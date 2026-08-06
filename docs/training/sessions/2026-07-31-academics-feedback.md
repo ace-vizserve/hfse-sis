@@ -22,27 +22,29 @@ questions each item still needs answered, written so the person who asked can
 answer them without a developer present. Every block states what the feature
 reaches **today** — which modules see it, whether it is on the report card,
 whether parents can see it — so the school confirms a boundary rather than
-inventing one. Ask them in the room, not in a design doc.
+inventing one. Ask them in the room, not in a design doc. Replies land verbatim
+in _Answers received_, and a block that has been answered stays where it is
+rather than being edited into the reply.
 
 ---
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                           | Where                             |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | -------------------------------- | --------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03           | KD #177, migration 109            |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Shipped** 2026-08-03           | KD #178, migration 110            |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03           | Records → Academic tab            |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Half shipped**                 | KD #179 — see todo T1             |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | Open                             | Design question unresolved        |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | Open — security pass first       | Bucket appears public-by-URL      |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                             | New table + surface               |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                             | Needs its own table               |
-| 9   | House points                                          | Chandana (23:51)                                     | Open — rules undefined           | Overlaps #8                       |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard         | Christina owns the number         |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible             | `APPROVER_FLOWS` was built for it |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended | KD #176                           |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it      | See _Waiting on the school_       |
+| #   | Ask                                                   | Who                                                  | Status                            | Where                             |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | --------------------------------- | --------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03            | KD #177, migration 109            |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Shipped** — names in 2026-08-06 | KD #178, migration 110            |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03            | Records → Academic tab            |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Half shipped**                  | KD #179 — see todo T1             |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | Open                              | Design question unresolved        |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | Open — security pass first        | Bucket appears public-by-URL      |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                              | New table + surface               |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                              | Needs its own table               |
+| 9   | House points                                          | Chandana (23:51)                                     | Open — Hanafi runs it today       | Overlaps #8                       |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard          | Christina owns the number         |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible              | `APPROVER_FLOWS` was built for it |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended  | KD #176                           |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it       | See _Waiting on the school_       |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -76,15 +78,41 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 - **T5 — disciplinary records** (#7) and **awards** (#8), each needing its own
   table. Do **not** extend `lib/compute/awards.ts`: "award" there means a tier
   derived from a numeric average, with no entity, id, date or issuer.
+- **T6 — rename the four house rows.** Chandana's 2026-08-06 reply names them
+  (see _Answers received_), and the four colour tokens already in
+  `app/globals.css` happen to match: `--av-house-1` is orange, `-2` blue, `-3`
+  green, `-4` yellow. So this is a four-row `UPDATE` and no token work. Held on
+  one open question only — whether the screen says "Orange House" or "Orange
+  House – The Flame".
+- **T7 — there is no way to assign a house in bulk.** One per-student `PATCH` at
+  `app/api/sis/students/[enroleeNumber]/house/route.ts`, driven from the profile
+  tab, is the only write path. Hanafi has already allocated ~400 students, so
+  the field cannot be populated as it stands. Whatever arrives from him needs an
+  import path — deliberately not designed until the list is in hand and its
+  actual shape is known.
 
 ### Waiting on the school
 
-- **Chandana** — the four house names and their real colours; whether a student
-  ever changes house; whether siblings go in the same house. Four rows are
-  seeded as placeholders. Then ~400 students need assigning. Also: the house
-  points rules (what earns a point, who records it, does it reset each year, is
-  there a running leaderboard), and whether a mid-year SOW change reaches
-  in-flight terms or only future ones.
+- **Chandana** — **partly answered 2026-08-06**; see _Answers received_. Still
+  open, and all of it is reach: does a house belong on the report card, can
+  parents see it, and does it touch the Gold/Silver/Bronze awards. Plus one
+  factual point her two messages disagree on — whether a house is called "Orange
+  House" or "Orange House – The Flame" — and whether the symbol is real artwork
+  or the coloured circle in her picture. Also still hers: whether a mid-year SOW
+  change reaches in-flight terms or only future ones.
+
+  Dropped rather than asked: whether a student ever changes house (the audit log
+  already records the change by name, KD #178, so nothing turns on the answer)
+  and whether siblings share a house (it would only matter if the system
+  assigned houses, and Hanafi already has).
+
+- **Mr Hanafi** — **new, and not a training attendee.** Named in Chandana's
+  2026-08-06 reply as the person who holds both the house allocation list and
+  the points. Two things wanted from him: the allocation list in whatever form
+  he keeps it, and a look at how he records points today — the file as it is,
+  not a description of it. ⚠ He does not appear anywhere in this repo's
+  provisioning scripts, so **check whether he has an SIS account at all** before
+  promising him anything he would have to log in to use.
 - **Christina** — the approver count (#10) and the AEB rule (#11). Also the
   relief-teacher policy, **raised by Marrie at 33:18** and answered in the room
   by Christina (designate an admin rather than share a login): admins can
@@ -130,7 +158,10 @@ confirmed that is what was wanted.
 Four entries marked **⚠** are places where the system does not work the way
 somebody in the room believed it did. Those are corrections, not questions.
 
-### To Chandana — house
+### To Chandana — house · sent, answered 2026-08-06
+
+**Kept as sent.** Questions 4 and 5 came back; 1, 2, 3, 6 and 7 did not. Her
+reply is in _Answers received_; the follow-up is the next block.
 
 > Hi Ms Chandana,
 >
@@ -160,6 +191,74 @@ somebody in the room believed it did. Those are corrections, not questions.
 >    (Gold, Silver, Bronze) are worked out purely from a student's average marks
 >    — nothing else feeds them. Should an award also give that student's house
 >    some points?
+>
+> Thank you.
+
+### To Chandana — house, follow-up
+
+> Hi Ms Chandana,
+>
+> Thank you — the names and colours are exactly what I needed, and I have
+> written to Mr Hanafi for the list.
+>
+> Three of my earlier questions did not get answered, and they are the ones that
+> decide what I build next. As a reminder, a house today is saved on the
+> student's record and shown to staff in three places: the student list, the
+> student's own record page, and the class roster.
+>
+> 1. Should a house appear on the report card?
+> 2. Should parents be able to see which house their child is in?
+> 3. Should a house, or its points, have any effect on the Gold, Silver and
+>    Bronze awards? At the training you mentioned awards and house points in the
+>    same breath, so I want to be sure I have not misread it. Today those awards
+>    are worked out purely from a student's average marks, and nothing else
+>    feeds them.
+>
+> Two smaller things, from your message and the picture:
+>
+> 4. Your message said the houses go by colour only, but the picture gives each
+>    one a name and a set of values as well — Orange House – The Flame, and so
+>    on. On screen, should it read **Orange House**, or **Orange House – The
+>    Flame**?
+> 5. You mentioned a house symbol. Is there a real symbol or crest I should be
+>    using, or is the coloured circle in the picture the symbol?
+>
+> Thank you.
+
+### To Hanafi — the house list and the points
+
+**Not a training attendee.** He is named in Chandana's reply as the owner of
+both the list and the points, and this is a cold first contact — hence the
+introduction, and hence asking to _see_ his file rather than asking him to
+describe a system.
+
+> Hi Mr Hanafi,
+>
+> I am Ace — I build the school's student information system, the one the
+> teachers now use for grades, attendance and report cards. Ms Chandana tells me
+> you are the person who keeps the house list and the house points.
+>
+> **Where things stand on my side.** Every student's record now has a place for
+> their house, and staff can see it in three places: the student list, the
+> student's own record page, and the class roster. It is not on the report card
+> and parents cannot see it. The four houses are set up but still carry
+> placeholder names, and **no student has been assigned to one yet** — that is
+> the part I need from you. There is nothing about house points in the system at
+> all.
+>
+> 1. Could you send me your list of which student is in which house, in whatever
+>    form you keep it — Excel, a Google Sheet, even a photo of a printout. Their
+>    full name and their house is enough. If your list happens to carry the
+>    student number too, that saves me matching people up by name.
+> 2. Could you also send how you record the points at the moment — the actual
+>    file, exactly as it is, with nothing tidied up for me. I am not asking you
+>    to explain it or design anything. I would rather see how it really works
+>    before deciding whether it should live in the system at all, because the
+>    surest way to get this wrong is to build something that does not match what
+>    you already do.
+> 3. One thing only you can answer: should the house standings be something
+>    staff can see inside the system, or is that list yours to keep and share
+>    when you choose?
 >
 > Thank you.
 
@@ -339,16 +438,89 @@ room. It is a policy question the school owns, not a design question for her.
 
 **Joel** — no open items.
 
+**Hanafi** — not in the room, and asked anyway. Chandana's reply named him as
+the owner of both the house list and the points, so the questions that were
+being held for her turned out not to be hers.
+
 **Where the line falls.** Reach is theirs to decide; mechanics are ours until
 they ask. So nobody is being asked how long a medical certificate should be
 kept, whether house points reset each year, whether points can be taken away, or
 whether there should be a leaderboard — none of it was raised, and asking would
 turn a request into a specification exercise.
 
+**The Hanafi message stays on the right side of that line**, though it comes
+close. It asks him to send the file he already keeps; it does not ask him how
+points should work. The distinction matters: house points is a live manual
+process with an owner, so the mechanics are observable, and observing them is
+cheaper and truer than getting them specified in an email. The one genuine
+question in it — whether staff should see the standings — is reach.
+
 The relief-teacher question is also held back, but for a different reason: the
 real gap is that **a form class adviser cannot see the attendance audit log at
 all**, so a teacher cannot check who altered their own register. That needs
 fixing before it is worth asking anyone how covering should be recorded.
+
+## Answers received
+
+Replies to _Questions to send_, under the same rule as _The record_: the words
+as they arrived, not a summary of them.
+
+### Chandana — house · 2026-08-06
+
+Two messages. The first is her reply to the block above; the picture followed
+after her class, as its last line promises.
+
+> Dear Mr Ace,
+>
+> There is a House point system where the students are given points for all the
+> competitions they participate. We have allocated houses to all the students.
+> Currently Mr Hanafi is the one handling the list and the points. Towards the
+> end of the year, there will be trophy for the overall points. There is no
+> particular names given other than the house colours - Blue House, Green House,
+> Yellow House, and Orange house, with a house symbol. I will share the details
+> after my class today
+
+Then the picture — headed "House Colours, Names & Meanings", with the line "Each
+House represents a core set of values":
+
+| House        | Named     | Values                                          |
+| ------------ | --------- | ----------------------------------------------- |
+| Orange House | The Flame | Courage · Energy · Drive · Leadership           |
+| Green House  | The Leaf  | Growth · Balance · Endurance · Renewal          |
+| Blue House   | The Ocean | Wisdom · Integrity · Stability · Excellence     |
+| Yellow House | The Sun   | Optimism · Creativity · Brilliance · Innovation |
+
+**What it settles.**
+
+- **Four houses, named by colour.** The tokens shipped with migration 110
+  already match what she describes — `--av-house-1` is orange, `-2` blue, `-3`
+  green, `-4` yellow — so this is a rename and nothing more (T6).
+- **The virtue clash flagged in question 4 is a non-issue.** Sections are named
+  after virtues, houses after colours and natural symbols, so no word does
+  double duty on a screen. "Integrity" is one of Blue House's values _and_ a
+  section name, but the house is only ever labelled Blue House, so the two never
+  meet.
+- **Every student is already allocated**, and the list exists. It is Hanafi's.
+- **House points is not a proposal — it is already running.** Points for
+  competitions entered, recorded by Hanafi, with an overall trophy at year end.
+
+**What it does not settle.** Questions 1, 2, 3, 6 and 7 came back unanswered:
+the report card, parents, and the awards link. The last of those is the one that
+matters. At the training she tied points to awards herself — "all the awards,
+everything, they will also receive the house points" — and this reply describes
+points as coming from competitions instead. Those are two different claims, and
+the first is part of why KD #178 built no points ledger.
+
+**Where her two messages disagree.** The written reply says "no particular names
+given other than the house colours". The picture gives every house a name and
+four values. The picture came second and carries more, but she never restated it
+in words, so whether it is settled HFSE branding or someone's draft is exactly
+what the follow-up's question 4 asks.
+
+**What changed hands.** Points belongs to Hanafi, not Chandana. Item #9 has been
+sitting on the wrong person's list since the training.
+
+---
 
 ## The record
 
@@ -460,6 +632,11 @@ in the records module and **teachers are not allowed yet to view that module**."
 
 Note the linkage: Chandana ties house points to awards herself. Building points
 before the awards table exists risks building it twice.
+
+Her 2026-08-06 reply describes points as earned from competitions and says
+nothing about awards — see _Answers received_. It does not withdraw the link,
+so the caution above still stands. Question 3 of the follow-up puts the two
+readings to her side by side and asks her to pick one.
 
 ### At-risk students
 
