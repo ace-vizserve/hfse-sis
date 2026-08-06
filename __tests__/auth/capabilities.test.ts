@@ -271,14 +271,37 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
       'documents_pre_enrolment.validate',
     ],
   },
+  // The three queues became three routes, so the checks that were one page's
+  // `canReadPre`/`canReadPost` pair are now spread across a shared layout (the
+  // OR that admits you to the surface at all) and each queue's own page (the
+  // single capability that queue needs). A hidden tab used to be enough; a
+  // route can be typed, so each one guards itself.
   {
-    file: 'app/(p-files)/p-files/document-validation/page.tsx',
+    file: 'app/(p-files)/p-files/document-validation/layout.tsx',
     capabilities: [
       'documents_pre_enrolment.read',
       'documents_post_enrolment.read',
       'documents_pre_enrolment.validate',
       'documents_post_enrolment.validate',
     ],
+  },
+  {
+    file: 'app/(p-files)/p-files/document-validation/page.tsx',
+    capabilities: [
+      'documents_post_enrolment.read',
+      'documents_post_enrolment.validate',
+    ],
+  },
+  {
+    file: 'app/(p-files)/p-files/document-validation/applicants/page.tsx',
+    capabilities: [
+      'documents_pre_enrolment.read',
+      'documents_pre_enrolment.validate',
+    ],
+  },
+  {
+    file: 'app/(p-files)/p-files/document-validation/expiring/page.tsx',
+    capabilities: ['documents_post_enrolment.read'],
   },
   // Phase 3
   {

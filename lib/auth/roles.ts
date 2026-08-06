@@ -151,6 +151,25 @@ const PFILES_NAV: NavSection[] = [
     items: [
       {
         href: '/p-files/document-validation',
+        // Three queues, three routes. Each child is deliberately left without
+        // its own `requiresCapability`: this page's guard is an OR of two
+        // capabilities (see the NavItem comment above), and the pages
+        // themselves redirect a viewer who holds only one of them. Naming a
+        // single capability on a child here would contradict that.
+        children: [
+          {
+            href: '/p-files/document-validation/applicants',
+            label: 'Applicants',
+          },
+          {
+            href: '/p-files/document-validation',
+            label: 'Enrolled students',
+          },
+          {
+            href: '/p-files/document-validation/expiring',
+            label: 'Expiring soon',
+          },
+        ],
         label: 'Document validation',
         badgeKey: 'pfileAwaitingVerification',
         requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
@@ -563,6 +582,13 @@ const SIS_NAV: NavSection[] = [
         label: 'AY Setup',
         countKey: 'aySetupReadiness',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+        // Both cuts are their own routes now. They were client-state tabs with
+        // no URL at all, so neither could be linked, bookmarked or reached
+        // from here.
+        children: [
+          { href: '/sis/ay-setup', label: 'Year Setup' },
+          { href: '/sis/ay-setup/manage', label: 'Manage years' },
+        ],
       },
       {
         href: '/sis/calendar',

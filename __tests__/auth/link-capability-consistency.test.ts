@@ -67,12 +67,17 @@ type PageGuard = {
   requiredAnyOf: Capability[];
 };
 
+// LAYOUTS COUNT AS GUARDS. When a page's sub-views became their own routes, the
+// session/role/capability check moved up into the shared `layout.tsx` so it
+// covers the whole subtree — and a scanner that only reads `page.tsx` stops
+// seeing the guard entirely, reporting a guarded route as unguarded. Same
+// failure mode as enumerating `section.items` and missing nav children.
 function walkPages(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) walkPages(full, out);
-    else if (entry === 'page.tsx') out.push(full);
+    else if (entry === 'page.tsx' || entry === 'layout.tsx') out.push(full);
   }
   return out;
 }
@@ -83,7 +88,7 @@ function routeFor(file: string): string {
   const rel = file.slice(REPO_ROOT.length).replace(/\\/g, '/');
   const segments = rel
     .replace(/^\/app\//, '')
-    .replace(/\/page\.tsx$/, '')
+    .replace(/\/(page|layout)\.tsx$/, '')
     .split('/')
     .filter((s) => s.length > 0 && !(s.startsWith('(') && s.endsWith(')')));
   return '/' + segments.join('/');
@@ -190,7 +195,30 @@ const GUARDS: PageGuard[] = walkPages(join(REPO_ROOT, 'app'))
   .map(guardsFor)
   .filter((g): g is PageGuard => g !== null);
 
-const GUARD_BY_ROUTE = new Map(GUARDS.map((g) => [g.route, g]));
+// A route can be guarded twice — once in its layout, once in its own page.
+// Merged into one entry rather than letting the later file win, because losing
+// either half would understate what the route demands.
+//
+// The merge is a union under `requiredAnyOf`. In reality a layout guard and a
+// page guard compose as AND, so this reads LOOSER than the route behaves. That
+// is the safe direction for what this map is for — catching a nav link offered
+// to someone the page will bounce — but it means the map cannot be used to
+// prove a route is reachable, only that a link is not obviously dead.
+const GUARD_BY_ROUTE = new Map<string, PageGuard>();
+for (const guard of GUARDS) {
+  const existing = GUARD_BY_ROUTE.get(guard.route);
+  GUARD_BY_ROUTE.set(
+    guard.route,
+    existing
+      ? {
+          route: guard.route,
+          requiredAnyOf: [
+            ...new Set([...existing.requiredAnyOf, ...guard.requiredAnyOf]),
+          ],
+        }
+      : guard
+  );
+}
 
 // ─── what each role is actually offered ─────────────────────────────────────
 
