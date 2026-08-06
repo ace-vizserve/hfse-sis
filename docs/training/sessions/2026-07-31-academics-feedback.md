@@ -97,9 +97,25 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   following the attendance/grading pattern — preview + apply SQL, output
   gitignored, run through the SQL editor. No review screen, no CRUD page.
 
-  **391 of 410 matched. Dry run against production is clean: 391 set, 0
-  overwrites, 0 unresolved student numbers.** Resulting sizes Orange 99 / Green
-  101 / Blue 94 / Yellow 97. Awaiting `house-assignment-apply.sql`.
+  **402 of 410. Dry run against production is clean: 402 set, 0 overwrites, 0
+  unresolved student numbers.** Resulting sizes Orange 102 / Green 104 / Blue 95
+  / Yellow 101 — eight short of the sheet's own totals, which is exactly the
+  eight withdrawn students. Awaiting `house-assignment-apply.sql`.
+
+  391 matched automatically; **the other eleven are carried as
+  `MANUAL_RESOLUTIONS` in the generator**, each with the reasoning beside it.
+  They are not name guesses: matching the roster against the sheet leaves
+  exactly one unassigned student per class, and the sheet's tab codes map onto
+  our section names precisely (`SEC 1D1` = Discipline 1, `SEC 2I1`/`I2` =
+  Integrity 1 and 2, `SEC 3` = Consistency, `SEC 4` = Excellence), so each
+  pairing is corroborated by the child sitting in the class the tab represents.
+  Two guards keep the list honest: an override naming a student who is not on
+  the live roster **throws**, and one that no sheet row needed is reported as
+  stale — which is what will happen when Hanafi corrects the sheet upstream.
+
+  The least certain is `Ajith Sharwan, Micheal` → AJITH KUMAR, Sarwan, the only
+  one resting on elimination rather than a legible name; it is flagged as such
+  in the code and in his message.
 
   **All 19 misses are now explained**, after a check that was missed first time
   round — see below. **Eight have WITHDRAWN** and are still on the sheet;

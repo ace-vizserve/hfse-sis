@@ -53,7 +53,118 @@ const NON_CANDIDATE_STATUSES = new Set(['Cancelled', 'Withdrawn']);
 // 'fuzzy' is a Levenshtein guess. It is reported but NEVER written: a wrong
 // house is invisible once set, so an uncertain match is worth less than a gap
 // somebody can fill in by hand.
-const ACCEPTED_TIERS = new Set<MatchTier>(['exact', 'strong']);
+const ACCEPTED_TIERS = new Set<string>(['exact', 'strong', 'manual']);
+
+/**
+ * Sheet rows the matcher cannot resolve, resolved by hand.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * HOW THESE WERE FOUND, AND WHY THEY ARE NOT GUESSES
+ *
+ * Matching the sheet against the roster leaves these unmatched. Matching the
+ * ROSTER AGAINST THE SHEET — asking which enrolled students no sheet row names
+ * — leaves exactly one unassigned candidate per class, and pairs them off
+ * one-to-one (`house/check-reverse-gap.ts`).
+ *
+ * The class is what makes it evidence rather than a guess: the sheet's tab
+ * codes map onto our section names exactly — `SEC 1D1` is Discipline 1,
+ * `SEC 2I1`/`SEC 2I2` are Integrity 1 and 2, `SEC 3` is Consistency, `SEC 4` is
+ * Excellence — so each pairing below is corroborated by the student sitting in
+ * the class the tab represents, not merely by a name looking similar.
+ *
+ * ⚠ Every entry is a claim about a real child. Anything that cannot be
+ * corroborated by class stays out and goes to Mr Hanafi instead.
+ */
+type ManualResolution = {
+  tab: string;
+  rawName: string;
+  studentNumber: string;
+  why: string;
+};
+
+const MANUAL_RESOLUTIONS: ManualResolution[] = [
+  // First name only on the sheet. Each is the sole unassigned student in the
+  // class the tab maps to.
+  {
+    tab: 'SEC 3',
+    rawName: 'Ariana',
+    studentNumber: 'H260495',
+    why: 'Pabayos, Ariana Megan — Consistency',
+  },
+  {
+    tab: 'SEC 3',
+    rawName: 'Richie',
+    studentNumber: 'H260501',
+    why: 'Martinez, Richie Lyandrei — Consistency',
+  },
+  {
+    tab: 'SEC 3',
+    rawName: 'Matthew',
+    studentNumber: 'H260516',
+    why: 'Udtuhan, Matthew Jordan — Consistency',
+  },
+  // Surname only, and spelled a letter differently: sheet "Rabaya", roster
+  // "Rabiya". Sole unassigned student in Courageous.
+  {
+    tab: 'P3 COURAGEOUS',
+    rawName: 'Rabaya',
+    studentNumber: 'H260486',
+    why: 'Akter, Mst Rabiya — Courageous',
+  },
+  // Written First Last rather than "LAST, First", so the comma split puts the
+  // whole string in the surname.
+  {
+    tab: 'SEC 2I2',
+    rawName: 'Shen Bustamante',
+    studentNumber: 'H260515',
+    why: 'Bustamante, Shen — Integrity 2',
+  },
+  // First and last name the wrong way round on the sheet. These two are why an
+  // earlier note wrongly reported them missing from AY2026 altogether.
+  {
+    tab: 'P4 TRUST',
+    rawName: 'TAYEB, Taseen',
+    studentNumber: 'H230122',
+    why: 'Taseen, Tayeb — name order reversed — Trust',
+  },
+  {
+    tab: 'SEC 1D1',
+    rawName: 'TOKI, Sayeda',
+    studentNumber: 'H230124',
+    why: 'Sayeda, Toki — name order reversed — Discipline 1',
+  },
+  // Middle name on the sheet, absent from the roster.
+  {
+    tab: 'SEC 3',
+    rawName: 'CALIMBAS, Audrey Elizabeth L.',
+    studentNumber: 'H260441',
+    why: 'Calimbas, Audrey — Consistency',
+  },
+  {
+    tab: 'SEC 2I1',
+    rawName: 'FAYLONA, Lucas Paulus C.',
+    studentNumber: 'H190268',
+    why: 'Faylona, Lucas — Integrity 1',
+  },
+  // A dropped letter: sheet "Aleksndr", roster "Aleksandr". Only Chio on roll.
+  {
+    tab: 'P2 HUMILITY',
+    rawName: 'CHIO, Karlyle Aleksndr Ysmael C.',
+    studentNumber: 'H250815',
+    why: 'Chio, Karlyle Aleksandr Ysmael — Humility',
+  },
+  // ⚠ The least certain of the eleven, and the only one resting on elimination
+  // rather than a clean name. The roster has two Ajith Kumar siblings; the
+  // sheet's Sec 2 I2 row matched Bhawan Micheal cleanly, leaving Sarwan as the
+  // only Ajith Kumar unassigned and Excellence as the class Sec 4 maps to. The
+  // sheet appears to have blended the two siblings' names.
+  {
+    tab: 'SEC 4',
+    rawName: 'Ajith Sharwan, Micheal',
+    studentNumber: 'H260481',
+    why: 'AJITH KUMAR, Sarwan — Excellence — by elimination, confirm with Hanafi',
+  },
+];
 
 function sqlStr(s: string): string {
   return `'${s.replace(/'/g, "''")}'`;
@@ -110,34 +221,89 @@ async function main() {
     }));
   console.log(`Roster:   ${candidates.length} live ${AY_CODE} applications\n`);
 
+  type Tier = MatchTier | 'manual';
   type Resolved = {
     tab: string;
     rawName: string;
     colour: string;
     houseCode: string;
-    tier: MatchTier;
+    tier: Tier;
     studentNumber: string | null;
     matchedTo: string | null;
   };
 
+  const manualKey = (tab: string, rawName: string) => `${tab}${rawName}`;
+  const manualBy = new Map(
+    MANUAL_RESOLUTIONS.map((m) => [manualKey(m.tab, m.rawName), m])
+  );
+  const manualUsed = new Set<string>();
+
+  const byNumber = new Map(candidates.map((c) => [c.studentNumber!, c]));
+
   const resolved: Resolved[] = sheetRows.map((r) => {
-    const m = matchName(parseSheetFullName(r.rawName), candidates);
-    return {
+    const base = {
       tab: r.tab,
       rawName: r.rawName,
       colour: r.colour,
       houseCode: HOUSE_CODE_BY_COLOUR[r.colour],
-      tier: m.tier,
-      studentNumber: m.candidate?.studentNumber ?? null,
-      matchedTo: m.candidate
-        ? `${m.candidate.lastName}, ${m.candidate.firstName} ${m.candidate.middleName ?? ''}`.trim()
-        : null,
     };
+
+    const m = matchName(parseSheetFullName(r.rawName), candidates);
+    if (m.candidate) {
+      // A manual entry for a row the matcher CAN resolve means the sheet has
+      // been corrected upstream and the override is now stale — surfaced below.
+      return {
+        ...base,
+        tier: m.tier,
+        studentNumber: m.candidate.studentNumber,
+        matchedTo:
+          `${m.candidate.lastName}, ${m.candidate.firstName} ${m.candidate.middleName ?? ''}`.trim(),
+      };
+    }
+
+    const manual = manualBy.get(manualKey(r.tab, r.rawName));
+    if (manual) {
+      manualUsed.add(manualKey(manual.tab, manual.rawName));
+      return {
+        ...base,
+        tier: 'manual',
+        studentNumber: manual.studentNumber,
+        matchedTo: manual.why,
+      };
+    }
+
+    return { ...base, tier: m.tier, studentNumber: null, matchedTo: null };
   });
 
-  const byTier = (t: MatchTier) => resolved.filter((r) => r.tier === t);
+  // Guard 1 — an override naming a student who is not on the live roster. That
+  // means they withdrew, or the number is simply wrong; either way it must not
+  // reach the SQL as a silently-unmatched row.
+  const strayOverrides = MANUAL_RESOLUTIONS.filter(
+    (m) => !byNumber.has(m.studentNumber)
+  );
+  if (strayOverrides.length > 0) {
+    throw new Error(
+      `manual resolutions naming a student not on the live roster:\n` +
+        strayOverrides.map((m) => `  ${m.studentNumber} — ${m.why}`).join('\n')
+    );
+  }
+
+  // Guard 2 — an override that no sheet row needed. Either Hanafi corrected the
+  // sheet (delete the entry) or a tab/name was mistyped here (fix it). Left
+  // unchecked, a typo'd override is indistinguishable from a working one.
+  const unusedOverrides = MANUAL_RESOLUTIONS.filter(
+    (m) => !manualUsed.has(manualKey(m.tab, m.rawName))
+  );
+  if (unusedOverrides.length > 0) {
+    console.log(`\n  ⚠ UNUSED MANUAL RESOLUTIONS (${unusedOverrides.length}):`);
+    for (const m of unusedOverrides) {
+      console.log(`    [${m.tab}] "${m.rawName}" — ${m.why}`);
+    }
+  }
+
+  const byTier = (t: Tier) => resolved.filter((r) => r.tier === t);
   console.log('MATCH RESULTS');
-  for (const t of ['exact', 'strong', 'fuzzy', 'none'] as MatchTier[]) {
+  for (const t of ['exact', 'strong', 'manual', 'fuzzy', 'none'] as Tier[]) {
     console.log(`  ${t.padEnd(7)} ${String(byTier(t).length).padStart(4)}`);
   }
 
