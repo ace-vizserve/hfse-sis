@@ -638,6 +638,12 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/audit-log',
         label: 'Audit Log',
         requiresRoles: ['school_admin', 'superadmin'],
+        // Log first — it is the default view, and the order should match how
+        // often each is opened rather than build order.
+        children: [
+          { href: '/sis/audit-log', label: 'Log' },
+          { href: '/sis/audit-log/overview', label: 'Overview' },
+        ],
       },
     ],
   },
