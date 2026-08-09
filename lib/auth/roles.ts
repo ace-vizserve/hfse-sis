@@ -334,7 +334,25 @@ const ATTENDANCE_NAV: NavSection[] = [
   },
   {
     label: 'Admin',
-    items: [{ href: '/attendance/audit-log', label: 'Audit Log' }],
+    items: [
+      {
+        href: '/attendance/audit-log',
+        label: 'Audit Log',
+        // The page itself admits only these three. Without the list here the
+        // row rendered for teachers too — ROUTE_ACCESS lets them through on
+        // the broad `/attendance` prefix, so nav and route agreed with each
+        // other and only the page disagreed. A form class adviser clicked
+        // "Audit Log" and landed on the home page. Found 2026-08-08 by the
+        // role half of `link-capability-consistency.test.ts`.
+        //
+        // This hides the row rather than widening the page, which leaves the
+        // real gap open and recorded: an adviser still cannot see who altered
+        // their own register (2026-07-31 training, the relief-teacher thread).
+        // Opening it up is a scoping job — an adviser may read their own
+        // sections and nobody else's — not a line in this list.
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+    ],
   },
 ];
 

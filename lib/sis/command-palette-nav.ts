@@ -42,11 +42,16 @@ export type NavEntry = {
   icon: LucideIcon;
   shortcut?: string;
   // Explicit role gate, bypassing the href→isRouteAllowed() lookup below.
-  // Only needed when an entry's href carries a query string that would
-  // otherwise resolve to the WRONG ROUTE_ACCESS row once the query is
-  // stripped for matching (see "Staff accounts" below) — every other entry
-  // should omit this and let isRouteAllowed() (the same gate the proxy +
-  // sidebar use) decide.
+  // Needed in exactly two cases; every other entry should omit it and let
+  // isRouteAllowed() (the same gate the proxy + sidebar use) decide.
+  //
+  //   1. The href carries a query string that would resolve to the WRONG
+  //      ROUTE_ACCESS row once the query is stripped for matching — see
+  //      "Staff accounts" below.
+  //   2. The PAGE guards more strictly than ROUTE_ACCESS does, which a prefix
+  //      rule cannot express — see "Markbook — Audit Log" below. Offering a
+  //      row the destination will bounce is KD #173's defect, and
+  //      `link-capability-consistency.test.ts` now fails on it.
   requiresRoles?: Role[];
   // A capability the DESTINATION PAGE itself requires. `requiresRoles` and
   // isRouteAllowed() answer "may the proxy let you through"; this answers
@@ -159,6 +164,12 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Markbook — Audit Log',
     group: 'Modules',
     icon: ClipboardListIcon,
+    // The page redirects anyone below coordinator, but ROUTE_ACCESS admits
+    // teachers on the broad `/markbook` prefix, so `isRouteAllowed` offered
+    // this to them and the page bounced them home. The Markbook SIDEBAR never
+    // had the bug — its teacher variant simply omits the row — which is why
+    // the palette was the only surface carrying it. Found 2026-08-08.
+    requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     href: '/attendance',

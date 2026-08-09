@@ -1,6 +1,6 @@
 /**
- * A page that guards on a CAPABILITY must never be advertised to a role that
- * lacks it.
+ * A page that guards on a CAPABILITY — or on a ROLE — must never be advertised
+ * to a viewer the page will bounce.
  *
  * THE BUG THIS EXISTS FOR (KD #173). Page guards were migrated to capabilities;
  * the things that LINK to those pages were not. Every link source resolves
@@ -22,6 +22,18 @@
  * The live-vs-code check is `scripts/audit-role-permissions.ts`, which is a
  * separate, deliberately-manual pre-flight.
  *
+ * THE SECOND HALF (added 2026-08-08). The same defect exists one layer over,
+ * with roles instead of capabilities, and neither this test nor
+ * `nav-route-consistency-all-modules.test.ts` could see it. A page may guard
+ * on `sessionUser.role` directly — 41 pages and layouts do — and that guard can
+ * be STRICTER than both the nav item and ROUTE_ACCESS. `/attendance/audit-log`
+ * was exactly that: the nav row carries no `requiresRoles`, ROUTE_ACCESS admits
+ * teachers under the broad `/attendance` prefix, and the page redirects anyone
+ * who is not a coordinator or admin. A teacher saw the link, clicked it, and
+ * landed on the home page with no explanation. The nav and the route agreed
+ * with each other, which is why the prefix test passed; the page was the odd
+ * one out.
+ *
  * The guard map is read from source with the TypeScript compiler API because
  * `app/**\/page.tsx` files are async server components that cannot be imported
  * and inspected at runtime — the same constraint (and the same technique) as
@@ -29,7 +41,7 @@
  * for the reason given there: it crosses statement boundaries.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -220,6 +232,145 @@ for (const guard of GUARDS) {
   );
 }
 
+// ─── the role guard map: which roles does each page let stay? ───────────────
+
+function isRole(value: string): value is Role {
+  return (ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * The role literal in a `x.role !== 'teacher'` (or bare `role !== 'teacher'`)
+ * comparison, if it is one.
+ */
+function roleOfInequality(node: ts.Node): Role | null {
+  if (!ts.isBinaryExpression(node)) return null;
+  const op = node.operatorToken.kind;
+  if (
+    op !== ts.SyntaxKind.ExclamationEqualsEqualsToken &&
+    op !== ts.SyntaxKind.ExclamationEqualsToken
+  ) {
+    return null;
+  }
+
+  const [subject, literal] = ts.isStringLiteral(node.right)
+    ? [node.left, node.right]
+    : ts.isStringLiteral(node.left)
+      ? [node.right, node.left]
+      : [null, null];
+  if (!subject || !literal) return null;
+
+  const readsRole = ts.isPropertyAccessExpression(subject)
+    ? subject.name.text === 'role'
+    : ts.isIdentifier(subject) && subject.text === 'role';
+  if (!readsRole) return null;
+
+  return isRole(literal.text) ? literal.text : null;
+}
+
+/**
+ * Which roles may stay on a page, read from its own bouncing `if`s.
+ *
+ * MODELLED SHAPE, and only this one:
+ *
+ *   if (role !== 'a' && role !== 'b') redirect('/')   →  allowed = [a, b]
+ *
+ * Anything else is skipped rather than guessed at, and each skip is deliberate:
+ *
+ *   * `||` between role checks inverts the meaning, exactly as it does for
+ *     capabilities above — refused for the same reason.
+ *   * An `if` that mixes a role comparison with a `can()` call is a disjunction
+ *     across two vocabularies ("superadmin OR holds the capability"), so the
+ *     role half alone reads stricter than the page behaves. The capability map
+ *     covers those pages already.
+ *   * `role === 'x'` bouncing means "everyone EXCEPT x", which is a different
+ *     shape and is not in use today. `roleGuardCoverage` below fails if that
+ *     stops being true, so this stays a decision rather than an oversight.
+ */
+function roleGuardsFor(file: string): Role[] | null {
+  const src = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+
+  const allowed = new Set<Role>();
+
+  collect(src, (n) => {
+    if (!ts.isIfStatement(n)) return;
+
+    let bounces = false;
+    collect(n.thenStatement, (t) => {
+      if (
+        ts.isCallExpression(t) &&
+        ts.isIdentifier(t.expression) &&
+        (t.expression.text === 'redirect' || t.expression.text === 'notFound')
+      ) {
+        bounces = true;
+      }
+    });
+    if (!bounces) return;
+
+    const found = new Set<Role>();
+    let mixesCapability = false;
+    let disjoint = false;
+    collect(n.expression, (c) => {
+      const role = roleOfInequality(c);
+      if (role) found.add(role);
+      if (capabilityOfCanCall(c)) mixesCapability = true;
+      if (
+        ts.isBinaryExpression(c) &&
+        c.operatorToken.kind === ts.SyntaxKind.BarBarToken
+      ) {
+        disjoint = true;
+      }
+    });
+
+    if (found.size === 0 || mixesCapability || disjoint) return;
+    for (const role of found) allowed.add(role);
+  });
+
+  if (allowed.size === 0) return null;
+  return [...allowed];
+}
+
+/**
+ * The routes a guard file covers.
+ *
+ * A LAYOUT COVERS ITS SUBTREE, and `routeFor` cannot say so on its own: a route
+ * group contributes no URL segment, so `app/(records)/layout.tsx` derives as
+ * `/`. Taken literally that would register the Records role guard against the
+ * home page and flag every link in the app. The scope is therefore read from
+ * the file tree — the pages actually sitting beneath that layout — which is
+ * also how Next.js decides it.
+ */
+function scopeOf(file: string): string[] {
+  if (!file.endsWith('layout.tsx')) return [routeFor(file)];
+  return walkPages(dirname(file))
+    .filter((f) => f.endsWith('page.tsx'))
+    .map(routeFor);
+}
+
+// A layout guard and a page guard both have to be satisfied, so two guards on
+// one route INTERSECT. That is the opposite direction from the capability map
+// above, which unions — and deliberately so. There, a union reads looser than
+// the route behaves, which is safe for "is this link obviously dead". Here the
+// same reasoning points the other way: a role must clear both gates, so the
+// intersection is what the viewer actually meets.
+const ROLE_GUARD_BY_ROUTE = new Map<string, Role[]>();
+for (const file of walkPages(join(REPO_ROOT, 'app'))) {
+  const allowed = roleGuardsFor(file);
+  if (!allowed) continue;
+  for (const route of scopeOf(file)) {
+    const existing = ROLE_GUARD_BY_ROUTE.get(route);
+    ROLE_GUARD_BY_ROUTE.set(
+      route,
+      existing ? existing.filter((r) => allowed.includes(r)) : allowed
+    );
+  }
+}
+
 // ─── what each role is actually offered ─────────────────────────────────────
 
 type Link = { source: string; label: string; href: string };
@@ -309,6 +460,69 @@ describe('a capability-guarded page is never advertised to a role without it', (
 
     expect(offences).toEqual([]);
   });
+});
+
+describe('a role-guarded page is never advertised to a role it bounces', () => {
+  it.each(ROLES)('%s is offered nothing that would bounce them', (role) => {
+    const offences: string[] = [];
+
+    for (const link of linksFor(role)) {
+      const allowed = ROLE_GUARD_BY_ROUTE.get(pathOf(link.href));
+      if (!allowed) continue;
+      if (allowed.includes(role)) continue;
+      offences.push(
+        `${link.source}: "${link.label}" -> ${link.href} is visible to ` +
+          `${role}, but that page redirects anyone who is not ` +
+          `[${[...allowed].sort().join(', ')}]`
+      );
+    }
+
+    expect([...new Set(offences)]).toEqual([]);
+  });
+});
+
+describe('the role guard map is really looking at something', () => {
+  it('found a plausible number of role-guarded routes', () => {
+    expect(ROLE_GUARD_BY_ROUTE.size).toBeGreaterThanOrEqual(30);
+  });
+
+  it('reads the attendance audit log as coordinator-and-above', () => {
+    // The route that prompted this half of the test. Pinned by name so a
+    // future widening of the page guard has to come here and say so.
+    expect(
+      [...(ROLE_GUARD_BY_ROUTE.get('/attendance/audit-log') ?? [])].sort()
+    ).toEqual(['academic_coordinator', 'school_admin', 'superadmin']);
+  });
+
+  it('scopes a group layout to its own subtree, not to the home page', () => {
+    // `app/(records)/layout.tsx` derives as `/` under a naive reading. If that
+    // ever regresses, the home page acquires a role guard and every assertion
+    // above turns into noise.
+    expect(ROLE_GUARD_BY_ROUTE.has('/')).toBe(false);
+    expect(ROLE_GUARD_BY_ROUTE.has('/records/students')).toBe(true);
+  });
+
+  it('reads a role-guarded route that admits teachers as admitting them', () => {
+    // A one-sided map — everything coordinator-and-above — would satisfy every
+    // assertion above while being useless, since no teacher link would ever
+    // match a route in it. Evaluation sections is the counter-example.
+    expect(
+      [...(ROLE_GUARD_BY_ROUTE.get('/evaluation/sections') ?? [])].sort()
+    ).toEqual([
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+      'teacher',
+    ]);
+  });
+
+  // ON THE SHAPES NOT MODELLED. `if (role === 'x') redirect()` is common in
+  // `app/` and is almost never a guard: it is a branch choosing a friendlier
+  // destination inside an outer guard (`(admissions)/layout.tsx` sends a
+  // teacher to /markbook rather than /), or a whole alternate render
+  // (`attendance/page.tsx` returns the adviser dashboard). Ten files match it
+  // and none of them are the defect this test looks for, so treating the shape
+  // as a guard would produce ten false reports and no true one.
 });
 
 describe('the guard map is really looking at something', () => {
