@@ -152,6 +152,18 @@ The Attendance module is the sole writer of daily attendance (KD #47).
 
 The legacy PTC routes (`/api/evaluation/checklist-items`, `.../checklist-items/:id`, `.../checklist-responses`, `.../subject-comments`, `.../ptc-feedback`, `.../terms/:termId/config`) all return **410 Gone** — the PTC features were removed (KD #114) and the files kept as tombstones.
 
+## Classroom
+
+| Route                                               | Method | Role                     | Description                                                                |
+| --------------------------------------------------- | ------ | ------------------------ | -------------------------------------------------------------------------- |
+| `/api/classroom/:sectionId/notes`                   | PATCH  | any classroom capability | Upsert the caller's own private class note (migration 094, KD #172)        |
+| `/api/classroom/:sectionId/students/:studentNumber` | GET    | any classroom capability | Medical, learning needs and home contacts for the details drawer (KD #181) |
+| `/api/classroom/:sectionId/at-risk?term_id=`        | GET    | adviser + oversight      | Students whose marks have fallen, ranked, across every subject (KD #182)   |
+
+**The student route is scoped by section twice over**, and both halves are load-bearing: the caller must hold a classroom capability over `:sectionId`, **and** the student must be on that section's roster. Without the second check a teacher could pair their own section id with any student number and read that child's medical record. Every failure is a **404**, never a 403 — distinguishing "you may not" from "no such student" would confirm a student number exists.
+
+The response carries a deliberately narrow field set built by `lib/classroom/student-details.ts`; the application row behind it also holds NRIC, passport, address and fee columns, and none of them cross.
+
 ## P-Files (document renewals)
 
 | Route                                   | Method | Role                             | Description                                                                               |

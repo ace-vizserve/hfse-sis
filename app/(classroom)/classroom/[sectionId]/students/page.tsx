@@ -38,6 +38,16 @@ export default async function ClassroomStudentsPage({
   if (!capability) notFound();
 
   const supabase = await createClient();
+  // The class's own name, for the details drawer's header — a teacher who
+  // advises one class and teaches four should not have to work out which
+  // roster the open panel came from.
+  const { data: section } = await supabase
+    .from('sections')
+    .select('name')
+    .eq('id', sectionId)
+    .maybeSingle();
+  const sectionName = (section as { name: string } | null)?.name ?? null;
+
   const { data: rows } = await supabase
     .from('section_students')
     .select(
@@ -89,6 +99,7 @@ export default async function ClassroomStudentsPage({
           the page does. */}
       <ClassroomRosterTable
         sectionId={sectionId}
+        sectionName={sectionName}
         data={rosterRows}
         showReportCard={canReadReportCard(capability)}
         showRecordLink={canOpenStudentRecord(capability)}

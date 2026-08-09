@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowUpRight, BookOpen, CheckCircle2, Lock } from 'lucide-react';
 
+import { AtRiskLookup } from '@/components/classroom/at-risk-lookup';
 import { Badge } from '@/components/ui/badge';
 import { subjectTeacherPairs } from '@/lib/auth/teacher-assignments';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
+import { canReadReportCard } from '@/lib/classroom/scope';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -91,11 +93,27 @@ export default async function ClassroomGradesPage({
             {sheets.length}
           </span>
         </h2>
-        {selectedTerm && (
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            {selectedTerm.label}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Adviser + oversight only, the same bar as the report card and for
+              the same reason: this carries every subject's marks for the whole
+              class, which a subject teacher has no business seeing. Their half
+              of Ms Koh's ask is the lookup on their own grading sheet
+              (KD #179). Hidden entirely in Term 1 — there is no earlier term to
+              have fallen from, so the button would open onto a permanent
+              nothing. */}
+          {selectedTerm && selectedTermId && canReadReportCard(capability) && (
+            <AtRiskLookup
+              sectionId={sectionId}
+              termId={selectedTermId}
+              termLabel={selectedTerm.label}
+            />
+          )}
+          {selectedTerm && (
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {selectedTerm.label}
+            </span>
+          )}
+        </div>
       </div>
 
       {!selectedTermId ? (

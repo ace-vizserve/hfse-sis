@@ -30,21 +30,21 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                             | Where                             |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- | --------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03             | KD #177, migration 109            |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading    | KD #178, migrations 110 / 111     |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03             | Records → Academic tab            |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Half shipped**                   | KD #179 — see todo T1             |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | Open                               | Design question unresolved        |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | Open — security pass first         | Bucket appears public-by-URL      |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                               | New table + surface               |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                               | Needs its own table               |
-| 9   | House points                                          | Chandana (23:51)                                     | Open — rules known, needs #8 first | Overlaps #8, now confirmed        |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard           | Christina owns the number         |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible               | `APPROVER_FLOWS` was built for it |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended   | KD #176                           |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it        | See _Waiting on the school_       |
+| #   | Ask                                                   | Who                                                  | Status                             | Where                              |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- | ---------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03             | KD #177, migration 109             |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading    | KD #178, migrations 110 / 111      |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03             | Records → Academic tab             |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09             | KD #179 (subject) + #182 (adviser) |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09             | KD #181 — Classroom drawer         |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | Open — security pass first         | Bucket appears public-by-URL       |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                               | New table + surface                |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                               | Needs its own table                |
+| 9   | House points                                          | Chandana (23:51)                                     | Open — rules known, needs #8 first | Overlaps #8, now confirmed         |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard           | Christina owns the number          |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible               | `APPROVER_FLOWS` was built for it  |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended   | KD #176                            |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it        | See _Waiting on the school_        |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -56,17 +56,51 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ### Ours
 
-- **T1 — the FCA half of Koh's ask.** The subject-teacher half shipped as the
-  grade lookup. Koh said "the subject teacher **or the FCA**", and a form class
-  adviser has no grading sheet, so nothing built so far reaches them. They need
-  it per student **across subjects** — Classroom is the obvious candidate, next
-  to the FCA attendance dashboard (KD #171). The endpoint she named was
-  contacting the parents, so whatever ships must carry enough to make that call.
-- **T2 — the student profile** (#5). Three people asked five versions of "when I
-  click the name I want to see X". Three of those five things already exist in
-  Records; teachers simply cannot reach that module. Unresolved: is Classroom
-  the teacher's home for everything, or a section×term workspace with the
-  profile as a page reached _from_ it?
+- **T1 — the FCA half of Koh's ask. Shipped 2026-08-09** as KD #182. A
+  **Look up student** button on Classroom → Grades — the same words and the
+  same two-view shape as the attendance sheet and the grading sheet, so it is
+  one habit across three surfaces. It ranks the class by the steepest single
+  fall across **every subject the class takes**, and the second view carries
+  what fell plus the parents' numbers, because her sentence ended at
+  "contact the parents".
+
+  **Adviser and oversight only**, the same bar as the report card: a subject
+  teacher already has this for their own subject on their own sheet, and every
+  other subject's marks for the whole class is a different thing. Hidden in
+  Term 1, which has nothing behind it to compare against.
+
+  **Still open with her, and both are in the unsent message:** whether anyone
+  should be _notified_ when a student is flagged (the bell carries only
+  grade-change requests today), and how big a drop should count — five points
+  is a display heuristic nobody at HFSE has expressed an opinion about.
+
+- **T2 — the student profile** (#5). **Shipped 2026-08-09.** Three people asked
+  five versions of "when I click the name I want to see X". Three of those five
+  things already existed in Records; teachers simply could not reach that
+  module.
+
+  Built as a **drawer inside Classroom**, not as access to Records — the
+  question in the old version of this entry ("is Classroom the teacher's home
+  for everything, or a page reached from it?") is answered by neither. Opening
+  the registrar's page to teachers would have handed them passport numbers,
+  home addresses and the family's fee arrangement to surface an allergy.
+  Instead `View details` on the class roster opens a panel with three tabs —
+  Medical, Learning, Contacts — over a deliberately narrow field set. A
+  **medical flag sits above the tabs and stays visible on all of them**, so it
+  cannot be navigated away from.
+
+  Authorisation is the section, twice: the caller must hold a classroom
+  capability over it, and the student must be on that roster. So a teacher
+  cannot read a child they do not teach by guessing a student number. Adviser
+  and subject teacher alike — Melissa asked as a subject teacher.
+
+  The student's **name** is the trigger too, for viewers who cannot open the
+  permanent record. That gives the name somewhere to go again after KD #174
+  correctly took its link away.
+
+  **Still open:** whether teachers may _add_ to any of this (question 3 in the
+  rewritten message above). And the **Grades tab** — see T1.
+
 - **T3 — MC upload** (#6) needs a security design pass **before any build**. The
   storage bucket appears public-by-URL (`getPublicUrl` everywhere, no signed
   URLs in the codebase) and its policies are not in this repo. Granting teachers
@@ -446,24 +480,48 @@ correction.
 
 ### To Christina — 1 of 5 · student details for teachers
 
+⚠ **Rewritten 2026-08-09, because the original was wrong on its central claim,
+and shipped since.** The old question 3 told her the system had nowhere to
+record a special-needs declaration. It has: `additionalLearningNeeds` and
+`otherLearningNeeds` are on the enrolment form, on the application row, on the
+Records page and in the edit sheet. Sending that question would have asked her
+to specify something the school already collects. See _Answers received_ →
+_What production actually holds_ for the counts.
+
+The drawer described below is now live, so what remains for her is confirmation
+and the one genuinely open question (whether teachers may add to it).
+
 > Hi Ms Christina,
 >
 > On the allergies and special-needs information you wanted teachers to see.
 >
-> **Right now teachers cannot open the Records module at all**, so they see none
-> of this. What the system already holds, from the enrolment form: allergies,
-> food allergies, asthma, heart conditions, epilepsy, diabetes, eczema, plus
-> written details for allergies, food allergies, other conditions and dietary
-> restrictions, and whether you have paracetamol consent.
+> **This is now built, and I want to check I have it right rather than ask you
+> to design it.** A teacher opens a student from their own class list and sees
+> three things: any medical conditions and allergies, anything recorded under
+> learning needs, and the parents' contact numbers. It is read-only. Teachers
+> still cannot open the Records module — this is inside their own class.
 >
-> 1. Should teachers see all of that, or only some of it?
-> 2. Every teacher, or only the ones who teach that student?
-> 3. You also mentioned special-needs declarations — "diagnosed with ADHD, for
->    instance". **The system has nowhere to record that today**; it is not on
->    the enrolment form and there is no field for it anywhere. Where is that
->    kept at the moment, and should the system start holding it?
-> 4. Should teachers only be able to read this, or should they be able to add to
->    it as well?
+> **On the special-needs declarations you mentioned** — "diagnosed with ADHD,
+> for instance" — those are already being collected on the enrolment form, in a
+> box called Additional learning needs. **65 families have written something
+> there, and about half of it is real**: ADHD, autism spectrum disorder, speech
+> and language delay, shadow support, SPED. The rest is parents typing "NA",
+> which the system now hides. So this was on file all along; it simply never
+> reached a teacher.
+>
+> 1. Is that the right set — medical, learning needs, contacts — or is something
+>    missing?
+> 2. Every teacher who teaches that student can see it, including subject
+>    teachers, not only the form class adviser. Is that what you want?
+> 3. Should teachers be able to **add** to any of this, or only read it? At the
+>    moment only the office can change it.
+>
+> One thing worth knowing: **the tick-box medical fields are nearly all empty.**
+> Out of 498 students there are 4 with allergies recorded, 1 with asthma, and
+> none at all for epilepsy, diabetes or heart conditions. One parent described
+> their child's epilepsy in the learning-needs box instead, where the tick-box
+> would never have found it. If the school holds this information somewhere
+> else, it is worth getting it into the system so it reaches teachers.
 >
 > Thank you.
 
@@ -641,6 +699,40 @@ The relief-teacher question is also held back, but for a different reason: the
 real gap is that **a form class adviser cannot see the attendance audit log at
 all**, so a teacher cannot check who altered their own register. That needs
 fixing before it is worth asking anyone how covering should be recorded.
+
+## What production actually holds
+
+Not a reply from anyone — read straight out of `ay2026_enrolment_applications`
+on 2026-08-09, 498 rows, while building T2. Recorded here because two of the
+questions drafted above were written on a wrong picture of the data, and the
+next person to read this file should not have to re-derive it.
+
+**The learning-needs field exists and is in use.** 65 applications carry
+something in `additionalLearningNeeds`. Running the drawer's junk filter over
+them splits the free text cleanly:
+
+- **35 values are nothing-to-declare** — `NA`, `N/A`, `N.A.`, `Na`, `na`,
+  `None`, `none`, `No`, `-`. Parents filling a box because it is there.
+- **32 are real**, and they are exactly what Christina described: `Attention
+Deficit Hyperactivity Disorder (ADHD)` (three students), `Autism Spectrum
+Disorder` (two), `Speech and Language Delay`, `Behavioral Concerns
+(General)`, `ABA Therapy`, `Shadow Support`, `SPED`, `HAPI Journey Learning
+Support`, `EIP because of speech delay`, `may need supplemental classes for
+Math`.
+
+**The tick-box medical fields are all but empty.** Allergies 4, food allergies
+2, eczema 3, asthma 1, dietary restrictions 8, paracetamol consent 25 — and
+**zero** for epilepsy, diabetes, heart conditions and other conditions.
+
+⚠ **One student's focal epilepsy is recorded in the learning-needs box while
+the epilepsy tick-box is unticked.** That single row is the argument for
+surfacing both fields together rather than trusting the structured one, and it
+is why the drawer treats a free-text medical note as reason enough to raise the
+safety strip with no condition ticked.
+
+The counts also set expectations honestly: **most students will show "Nothing
+recorded" on both tabs.** That is the data being thin, not the feature being
+broken, and the drawer does not disguise it.
 
 ## Answers received
 

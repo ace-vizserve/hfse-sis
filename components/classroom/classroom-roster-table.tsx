@@ -17,6 +17,7 @@
 
 import Link from 'next/link';
 
+import { StudentDetailsSheet } from '@/components/classroom/student-details-sheet';
 import { Button } from '@/components/ui/button';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { HouseChip } from '@/components/ui/house-chip';
@@ -48,11 +49,14 @@ export type ClassroomRosterRow = {
 
 export function ClassroomRosterTable({
   sectionId,
+  sectionName = null,
   data,
   showReportCard = false,
   showRecordLink,
 }: {
   sectionId: string;
+  /** Shown in the details drawer's header, so the panel says which class. */
+  sectionName?: string | null;
   data: ClassroomRosterRow[];
   /**
    * Adviser + oversight only — the caller decides via
@@ -88,11 +92,9 @@ export function ClassroomRosterTable({
             <TableHead>Student number</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Status</TableHead>
-            {showReportCard && (
-              <TableHead className="w-32 text-right">
-                <span className="sr-only">Report card</span>
-              </TableHead>
-            )}
+            <TableHead className="w-56 text-right">
+              <span className="sr-only">Actions</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -106,12 +108,30 @@ export function ClassroomRosterTable({
               </TableCell>
               <TableCell>
                 <span className="flex flex-wrap items-center gap-2">
-                  <StudentRecordLink
-                    studentNumber={row.student_number}
-                    canOpen={showRecordLink}
-                  >
-                    {row.student_name}
-                  </StudentRecordLink>
+                  {/* Two different names, by who is reading. Oversight keeps
+                      the link into the permanent record. A teacher, who cannot
+                      open that page (KD #174), gets the same name back as the
+                      trigger for the details drawer — so the name is a way in
+                      again rather than the dead text it became. */}
+                  {showRecordLink ? (
+                    <StudentRecordLink
+                      studentNumber={row.student_number}
+                      canOpen={showRecordLink}
+                    >
+                      {row.student_name}
+                    </StudentRecordLink>
+                  ) : (
+                    <StudentDetailsSheet
+                      asName
+                      sectionId={sectionId}
+                      sectionName={sectionName}
+                      studentNumber={row.student_number}
+                      studentName={row.student_name}
+                      indexNumber={row.index_number}
+                      houseName={row.house_name}
+                      houseColourToken={row.house_colour_token}
+                    />
+                  )}
                   <HouseChip
                     name={row.house_name}
                     colourToken={row.house_colour_token}
@@ -121,17 +141,28 @@ export function ClassroomRosterTable({
               <TableCell>
                 <EnrollmentStatusBadge status={row.enrollment_status} />
               </TableCell>
-              {showReportCard && (
-                <TableCell className="text-right">
-                  {row.student_id ? (
+              <TableCell className="text-right">
+                <span className="flex items-center justify-end gap-1">
+                  {/* Offered to every capability, because the people who asked
+                      were a form adviser and two subject teachers. */}
+                  <StudentDetailsSheet
+                    sectionId={sectionId}
+                    sectionName={sectionName}
+                    studentNumber={row.student_number}
+                    studentName={row.student_name}
+                    indexNumber={row.index_number}
+                    houseName={row.house_name}
+                    houseColourToken={row.house_colour_token}
+                  />
+                  {showReportCard && row.student_id ? (
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/markbook/report-cards/${row.student_id}`}>
                         Report card
                       </Link>
                     </Button>
                   ) : null}
-                </TableCell>
-              )}
+                </span>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
