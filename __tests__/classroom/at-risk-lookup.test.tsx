@@ -31,6 +31,7 @@ const FALLEN: AtRiskStudent = {
       prior: 91,
       current: 78,
       diff: -13,
+      display: { prior: '91', current: '78', kind: 'points' },
     },
     {
       subject: 'Science',
@@ -40,6 +41,7 @@ const FALLEN: AtRiskStudent = {
       prior: 88,
       current: 81,
       diff: -7,
+      display: { prior: '88', current: '81', kind: 'points' },
     },
   ],
 };
@@ -159,5 +161,51 @@ describe('a student who has slipped', () => {
       await screen.findByRole('button', { name: /all students/i })
     );
     expect(await screen.findByText(/91 → 78/)).toBeInTheDocument();
+  });
+});
+
+describe('a letter-graded subject on screen', () => {
+  it('reads as bands, with no points figure to misread', async () => {
+    stubFetchOnce(
+      jsonResponse({
+        students: [
+          {
+            ...FALLEN,
+            // Self-consistent on purpose: a band-only student's summary must
+            // be derived from the drops, not left over from the fixture.
+            worstDiff: -8,
+            drops: [
+              {
+                subject: 'MAPEH',
+                metric: 'quarterly',
+                metricLabel: 'Term grade',
+                priorTermLabel: 'Term 1',
+                prior: 90,
+                current: 82,
+                diff: -8,
+                display: { prior: 'A', current: 'C', kind: 'band' },
+              },
+            ],
+          },
+        ],
+      })
+    );
+    render();
+    await open();
+    expect(await screen.findByText(/A → C/)).toBeInTheDocument();
+    // "-8" anywhere on this row invites the reader to treat it as points —
+    // including in the summary badge, which is where it survived the first
+    // version of this test.
+    expect(screen.queryByText('-8')).toBeNull();
+    expect(screen.getByText('Band down')).toBeInTheDocument();
+  });
+
+  it('still headlines the points figure when a real fall is present', async () => {
+    stubFetchOnce(jsonResponse({ students: [FALLEN] }));
+    render();
+    await open();
+    // Twice over: the summary badge and the Maths row it came from.
+    expect(await screen.findAllByText('-13')).toHaveLength(2);
+    expect(screen.queryByText('Band down')).toBeNull();
   });
 });

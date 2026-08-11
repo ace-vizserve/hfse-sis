@@ -3,6 +3,7 @@ import {
   GRADE_ALERT_THRESHOLD,
   type AlertMetric,
 } from '@/lib/markbook/alert-threshold';
+import { numericToLetter } from '@/lib/compute/letter-grade';
 import type { PriorTermGrade } from '@/lib/markbook/grade-diff';
 
 // The form adviser's at-risk ranking — the half of Ms Koh's 2026-07-31 ask
@@ -31,6 +32,14 @@ export type CurrentComponents = {
 export type AtRiskObservation = {
   sectionStudentId: string;
   subject: string;
+  /**
+   * MAPEH and the other letter-graded subjects store a band-representative
+   * integer in `quarterly_grade` standing in for a letter (KD #104). A student
+   * moving down one band changes that integer by about five, which this would
+   * otherwise report as "fell 5 points" — a sentence that is not true in the
+   * way an adviser will read it.
+   */
+  isExaminable: boolean;
   current: CurrentComponents;
   /** Ascending by term_number, as `loadPriorTermGrades` returns them. */
   priors: PriorTermGrade[];
@@ -57,6 +66,14 @@ export type AtRiskDrop = {
   current: number;
   /** Negative. `current - prior`. */
   diff: number;
+  /**
+   * How the two values should READ. For an examinable subject that is the
+   * numbers themselves; for a letter-graded one it is the band each number
+   * stands for, so the row says "Very Good → Good" rather than "87 → 82".
+   * Computed here rather than in the component so every consumer — a future
+   * export, an email, a second screen — tells the same story.
+   */
+  display: { prior: string; current: string; kind: 'points' | 'band' };
 };
 
 export type AtRiskStudent = AtRiskStudentRef & {
@@ -106,6 +123,30 @@ function baselineFor(
 }
 
 /**
+ * How a fall should read.
+ *
+ * A letter-graded subject's stored number is a stand-in for a band, so only the
+ * TERM GRADE carries a band — the written-work and exam percentages underneath
+ * it are ordinary percentages even there, and converting those to letters would
+ * invent a meaning the data does not have.
+ */
+function describe(
+  prior: number,
+  current: number,
+  obs: AtRiskObservation,
+  metric: AlertMetric
+): AtRiskDrop['display'] {
+  if (obs.isExaminable || metric !== 'quarterly') {
+    return { prior: String(prior), current: String(current), kind: 'points' };
+  }
+  return {
+    prior: numericToLetter(prior),
+    current: numericToLetter(current),
+    kind: 'band',
+  };
+}
+
+/**
  * Students whose marks have fallen at least `GRADE_ALERT_THRESHOLD` points in
  * any subject, on any component, since their most recent marked term. Steepest
  * fall first.
@@ -136,6 +177,7 @@ export function rankAtRisk(input: AtRiskInput): AtRiskStudent[] {
         prior: baseline.value,
         current,
         diff,
+        display: describe(baseline.value, current, obs, metric),
       });
       byStudent.set(obs.sectionStudentId, drops);
     }

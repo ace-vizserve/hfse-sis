@@ -63,11 +63,17 @@ function Row({
             {student.studentNumber} · No. {student.indexNumber}
           </p>
         </div>
+        {/* The summary figure is points, so it is only shown when at least
+            one fall IS points. A student whose only movement is a letter band
+            would otherwise be headlined "−8", which is the exact misreading
+            the band display exists to prevent. */}
         <Badge
           variant="outline"
           className="shrink-0 border-destructive/40 bg-destructive/10 font-mono tabular-nums text-destructive"
         >
-          {student.worstDiff}
+          {student.drops.some((d) => d.display.kind === 'points')
+            ? student.worstDiff
+            : 'Band down'}
         </Badge>
       </div>
 
@@ -81,12 +87,14 @@ function Row({
               <span className="font-medium text-foreground">{d.subject}</span>
               <span className="text-muted-foreground">
                 {' '}
-                · {d.metricLabel} · {d.prior} → {d.current}
+                · {d.metricLabel} · {d.display.prior} → {d.display.current}
               </span>
             </span>
-            <span className="shrink-0 font-mono tabular-nums text-destructive">
-              {d.diff}
-            </span>
+            {d.display.kind === 'points' && (
+              <span className="shrink-0 font-mono tabular-nums text-destructive">
+                {d.diff}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -155,12 +163,14 @@ function StudentView({
                 <span className="font-medium text-foreground">{d.subject}</span>
                 <span className="text-muted-foreground">
                   {' '}
-                  · {d.metricLabel} · {d.prior} → {d.current}
+                  · {d.metricLabel} · {d.display.prior} → {d.display.current}
                 </span>
               </span>
-              <span className="shrink-0 font-mono tabular-nums text-destructive">
-                {d.diff}
-              </span>
+              {d.display.kind === 'points' && (
+                <span className="shrink-0 font-mono tabular-nums text-destructive">
+                  {d.diff}
+                </span>
+              )}
             </li>
           ))}
         </ul>
