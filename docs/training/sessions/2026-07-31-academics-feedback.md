@@ -618,24 +618,42 @@ and the one genuinely open question (whether teachers may add to it).
 
 ### To Koh — at-risk students
 
+⚠ **Rewritten 2026-08-10.** The original told her only subject teachers could
+see the flagging and asked, as question 1, whether the form class adviser
+should get it too. That shipped on 2026-08-09 as KD #182, so sending the old
+version would have asked her to decide something already built — the same
+mistake the message to Christina made about learning needs. Both of her
+genuinely open questions survive below.
+
 > Hi Ms Koh,
 >
-> The at-risk flagging you asked for is on the grading sheet now — a **Look up
-> student** button lists who needs a look, with what dropped and by how much.
+> The at-risk flagging you asked for is in, and it reaches both of the people
+> you named.
 >
-> **Right now only the subject teacher for that subject can see it.** Nobody is
-> notified; you have to open the sheet. It does not appear on the report card
-> and parents cannot see it.
+> **A subject teacher** sees it on their own grading sheet — a **Look up
+> student** button listing who needs a look in that subject, with what dropped
+> and by how much.
 >
-> 1. You mentioned the subject teacher **or the FCA** — should the form class
->    adviser see this as well? They have no grading sheet of their own, so this
->    would need to go somewhere else for them.
-> 2. Should anyone be **told** when a student is flagged, or is seeing it on the
->    sheet enough? There is a bell in the system today, but it only carries
+> **A form class adviser** now has the same button in Classroom, under Grades.
+> Theirs covers **every subject the class takes**, ranked by the steepest fall,
+> and opening a student shows what slipped along with the parents' phone
+> numbers — since you said the point of the flag was contacting them.
+>
+> Nobody is notified; you open it yourself. It is not on the report card and
+> parents cannot see it.
+>
+> 1. Should anyone be **told** when a student is flagged, or is opening it
+>    enough? There is a bell in the system today, but it only carries
 >    grade-change requests.
-> 3. How big a drop should raise a flag? It is set to five points at the moment.
-> 4. Should this ever reach parents? I have assumed it stays staff-only and that
+> 2. How big a drop should raise a flag? It is set to five points at the
+>    moment, which is my guess rather than the school's.
+> 3. Should this ever reach parents? I have assumed it stays staff-only and that
 >    contacting the parents is the teacher's own call.
+>
+> One thing you will notice: subjects marked with letters rather than numbers —
+> MAPEH and the like — show as a band change, "A → C", instead of a points
+> drop. A five-point movement in those subjects usually just means the letter
+> moved, which is not the same thing as a child slipping.
 >
 > ⚠ Also a correction to something you were told in the session. You asked
 > (47:20) whether an exam's total marks could be changed through a change
