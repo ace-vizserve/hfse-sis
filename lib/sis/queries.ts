@@ -939,6 +939,52 @@ export type StudentDetail = {
 const MINIMAL_APP_COLUMNS =
   'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied';
 
+/**
+ * Columns the parent portal stores as NUMBERS while every consumer here treats
+ * them as text. Measured 2026-08-10 against `ay2026_enrolment_applications`:
+ * `motherMobile` is a `number` on 498 of 498 rows; `fatherMobile` (474),
+ * `guardianMobile` (120) and `contactPersonNumber` (498) likewise.
+ *
+ * `postalCode`, `homePhone` and `referrerMobile` are on the list defensively —
+ * same portal, same shape, and the cost of coercing a value that was already a
+ * string is nil.
+ */
+const NUMERIC_TEXT_COLUMNS = [
+  'motherMobile',
+  'fatherMobile',
+  'guardianMobile',
+  'contactPersonNumber',
+  'homePhone',
+  'referrerMobile',
+  'postalCode',
+] as const;
+
+/**
+ * Make the row match the type that describes it.
+ *
+ * WHY THIS EXISTS. `ApplicationRow` types these columns as `string | null`, and
+ * the raw cast below used to hand a caller a `number` while promising a string.
+ * Two things broke on that: the Classroom drawer threw
+ * `value.toLowerCase is not a function` for every student, and — quieter and
+ * worse — both SIS edit sheets carried the number back to the server on save,
+ * where the zod schemas rejected it and 400'd the WHOLE form, so a registrar
+ * editing a preferred name lost the edit over a field they never touched.
+ *
+ * Coercing here fixes it at the boundary, once, for every consumer. The write
+ * schemas were also made number-tolerant (`coerceToText` in lib/schemas/sis.ts)
+ * — belt and braces on purpose, because a second writer could always reach
+ * these columns without passing through this function.
+ */
+export function normaliseApplicationRow(
+  raw: Record<string, unknown>
+): ApplicationRow {
+  const out = { ...raw };
+  for (const key of NUMERIC_TEXT_COLUMNS) {
+    if (typeof out[key] === 'number') out[key] = String(out[key]);
+  }
+  return out as unknown as ApplicationRow;
+}
+
 export async function getStudentDetail(
   ayCode: string,
   enroleeNumber: string
@@ -1015,7 +1061,9 @@ export async function getStudentDetail(
     );
   }
 
-  const app = appData as unknown as ApplicationRow;
+  const app = normaliseApplicationRow(
+    appData as unknown as Record<string, unknown>
+  );
   const status = (statusRes.data ?? null) as StatusRow | null;
   const docsRow = (docsRes.data ?? null) as Record<string, unknown> | null;
 

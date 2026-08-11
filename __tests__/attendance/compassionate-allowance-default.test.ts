@@ -25,6 +25,11 @@ vi.mock('@/lib/supabase/service', () => {
     eq: () => makeChain(result),
     in: () => makeChain(result),
     order: () => makeChain(result),
+    // `.range()` is part of the chain now: the quota tallies and the daily
+    // grid page through `fetchAllPages` since the real worst case (5,925 rows
+    // for one section, measured 2026-08-10) passed PostgREST's 1,000-row cap.
+    // Returning the whole fixture on the first page ends the walk immediately.
+    range: () => makeChain(result),
     maybeSingle: () => Promise.resolve(result),
     then: (resolve: (v: unknown) => unknown) =>
       Promise.resolve(result).then(resolve),
@@ -80,6 +85,7 @@ describe('compassionate-allowance override precedence (regression guard)', () =>
         eq: () => makeChain(result),
         in: () => makeChain(result),
         order: () => makeChain(result),
+        range: () => makeChain(result),
         maybeSingle: () => Promise.resolve(result),
         then: (resolve: (v: unknown) => unknown) =>
           Promise.resolve(result).then(resolve),
@@ -122,6 +128,7 @@ describe('getCompassionateUsageForSection default wiring', () => {
         eq: () => makeChain(result),
         in: () => makeChain(result),
         order: () => makeChain(result),
+        range: () => makeChain(result),
         maybeSingle: () => Promise.resolve(result),
         then: (resolve: (v: unknown) => unknown) =>
           Promise.resolve(result).then(resolve),

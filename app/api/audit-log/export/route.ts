@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { buildCsv } from '@/lib/csv';
 
@@ -24,27 +25,6 @@ export async function GET(req: Request) {
   const fromIso = `${fromParam}T00:00:00.000Z`;
   const toIso = `${toParam}T23:59:59.999Z`;
 
-  // Service client — superadmin is already authenticated; we want an
-  // unbounded (no RLS scoping) read for the archive.
-  const service = createServiceClient();
-
-  const [newRes, legacyRes] = await Promise.all([
-    service
-      .from('audit_log')
-      .select(
-        'id, actor_email, action, entity_type, entity_id, context, created_at'
-      )
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso)
-      .order('created_at', { ascending: false }),
-    service
-      .from('grade_audit_log')
-      .select('*')
-      .gte('changed_at', fromIso)
-      .lte('changed_at', toIso)
-      .order('changed_at', { ascending: false }),
-  ]);
-
   type NewRow = {
     id: string;
     actor_email: string;
@@ -66,6 +46,39 @@ export async function GET(req: Request) {
     changed_at: string;
   };
 
+  // Service client — superadmin is already authenticated; the read is
+  // deliberately not RLS-scoped, because the archive is the whole trail.
+  //
+  // "Unbounded" used to be literal, and that was the bug: PostgREST caps a
+  // response at 1,000 rows and returns the first page with no error and no
+  // flag. `audit_log` held 1,390 rows on 2026-08-10, 1,322 of them in the
+  // preceding 90 days, so any term-length export was already stopping short —
+  // silently, on the one artifact where a gap is worst. Paginated now.
+  const service = createServiceClient();
+
+  const [newRaw, legacyRaw] = await Promise.all([
+    fetchAllPages<NewRow>((from, to) =>
+      service
+        .from('audit_log')
+        .select(
+          'id, actor_email, action, entity_type, entity_id, context, created_at'
+        )
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+    ),
+    fetchAllPages<LegacyRow>((from, to) =>
+      service
+        .from('grade_audit_log')
+        .select('*')
+        .gte('changed_at', fromIso)
+        .lte('changed_at', toIso)
+        .order('changed_at', { ascending: false })
+        .range(from, to)
+    ),
+  ]);
+
   type Row = {
     timestamp_utc: string;
     source: 'audit_log' | 'grade_audit_log';
@@ -77,7 +90,7 @@ export async function GET(req: Request) {
     context_json: string;
   };
 
-  const newRows: Row[] = ((newRes.data ?? []) as NewRow[]).map((r): Row => {
+  const newRows: Row[] = newRaw.map((r): Row => {
     const ctx = r.context ?? {};
     const sheetId =
       (ctx['grading_sheet_id'] as string | undefined) ??
@@ -94,30 +107,28 @@ export async function GET(req: Request) {
       context_json: JSON.stringify(ctx),
     };
   });
-  const legacyRows: Row[] = ((legacyRes.data ?? []) as LegacyRow[]).map(
-    (r): Row => {
-      const isTotals =
-        r.field_changed.startsWith('ww_totals') ||
-        r.field_changed.startsWith('pt_totals') ||
-        r.field_changed === 'qa_total';
-      return {
-        timestamp_utc: r.changed_at,
-        source: 'grade_audit_log',
-        actor_email: r.changed_by,
-        action: isTotals ? 'totals.update' : 'entry.update',
-        entity_type: isTotals ? 'grading_sheet' : 'grade_entry',
-        entity_id: r.grade_entry_id,
-        sheet_id: r.grading_sheet_id,
-        context_json: JSON.stringify({
-          field: r.field_changed,
-          old: r.old_value,
-          new: r.new_value,
-          approval_reference: r.approval_reference,
-          legacy: true,
-        }),
-      };
-    }
-  );
+  const legacyRows: Row[] = legacyRaw.map((r): Row => {
+    const isTotals =
+      r.field_changed.startsWith('ww_totals') ||
+      r.field_changed.startsWith('pt_totals') ||
+      r.field_changed === 'qa_total';
+    return {
+      timestamp_utc: r.changed_at,
+      source: 'grade_audit_log',
+      actor_email: r.changed_by,
+      action: isTotals ? 'totals.update' : 'entry.update',
+      entity_type: isTotals ? 'grading_sheet' : 'grade_entry',
+      entity_id: r.grade_entry_id,
+      sheet_id: r.grading_sheet_id,
+      context_json: JSON.stringify({
+        field: r.field_changed,
+        old: r.old_value,
+        new: r.new_value,
+        approval_reference: r.approval_reference,
+        legacy: true,
+      }),
+    };
+  });
 
   // Linear two-pointer merge — both sources are already `ORDER BY ... DESC`
   // from the queries above, so a `[...a, ...b].sort()` would be O(n log n)

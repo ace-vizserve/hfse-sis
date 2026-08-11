@@ -1,3 +1,4 @@
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 import {
@@ -106,15 +107,30 @@ function normalizeRollup(row: RollupRaw): RollupRow {
   };
 }
 
+// Shape of an `attendance_daily` row as the quota tallies read it. Hoisted to
+// module scope when both tallies moved to `fetchAllPages`, which needs the row
+// type at the call site rather than after it.
+type DailyRow = {
+  section_student_id: string;
+  date: string;
+  period_id: string | null;
+  status: AttendanceStatus;
+  ex_reason: ExReason | null;
+  recorded_at: string;
+};
+
 // ─────────────────────────────────────────────────────────────────────────
 // Daily grid — one (section × date range) fetch
 // ─────────────────────────────────────────────────────────────────────────
 //
 // Returns the LATEST row per (section_student_id, date, period_id). Older
-// corrections are filtered out client-side for simplicity; the dataset per
-// section × date-range is at most ~30 students × ~47 school-days = 1,410 rows
-// which dedupe in-memory without pain. If volume explodes, push the distinct-
-// on into a view.
+// corrections are filtered out in memory.
+//
+// The volume note that used to sit here ("~1,410 rows... dedupe in-memory
+// without pain") was the bug: it sized the dedupe and never mentioned the
+// server's 1,000-row response cap, which the real worst case (1,610, measured
+// 2026-08-10) had already passed. The read is paginated now; the dedupe cost
+// was never the constraint.
 
 export async function getDailyForSection(
   sectionId: string,
@@ -139,31 +155,40 @@ export async function getDailyForSection(
   if (enrolmentIds.length === 0) return [];
 
   // Step 2: pull daily rows.
-  let query = service
-    .from('attendance_daily')
-    .select(
-      'id, section_student_id, term_id, date, status, ex_reason, ex_note, period_id, recorded_by, recorded_at'
-    )
-    .eq('term_id', termId)
-    .in('section_student_id', enrolmentIds)
-    .order('recorded_at', { ascending: false });
+  //
+  // PAGINATED, AND IT WAS OVER THE CAP BEFORE THIS WAS WRITTEN. Measured
+  // 2026-08-10: the worst (section × term) holds **1,610 rows** against
+  // PostgREST's 1,000-row response cap, so this query was silently returning
+  // about two-thirds of a term and the register printed from it looked
+  // complete. The comment above this function estimated "~1,410 rows" and
+  // concluded that was fine to dedupe in memory — the estimate was roughly
+  // right and the conclusion drawn from it was wrong, because it never
+  // mentioned the cap.
+  //
+  // The dedupe below depends on `recorded_at desc` ordering to keep the LATEST
+  // correction per (student, date, period). That ordering is applied by the
+  // server across the whole result set, and `fetchAllPages` walks pages in
+  // order, so the invariant survives pagination.
+  const data = await fetchAllPages<DailyRaw>((from, to) => {
+    let query = service
+      .from('attendance_daily')
+      .select(
+        'id, section_student_id, term_id, date, status, ex_reason, ex_note, period_id, recorded_by, recorded_at'
+      )
+      .eq('term_id', termId)
+      .in('section_student_id', enrolmentIds)
+      .order('recorded_at', { ascending: false });
 
-  if (opts?.fromDate) query = query.gte('date', opts.fromDate);
-  if (opts?.toDate) query = query.lte('date', opts.toDate);
+    if (opts?.fromDate) query = query.gte('date', opts.fromDate);
+    if (opts?.toDate) query = query.lte('date', opts.toDate);
 
-  const { data, error } = await query;
-  if (error) {
-    console.error(
-      '[attendance] getDailyForSection fetch failed:',
-      error.message
-    );
-    return [];
-  }
+    return query.range(from, to);
+  });
 
   // Dedupe to latest per (student, date, period). `recorded_at desc` came first.
   const seen = new Set<string>();
   const out: DailyEntryRow[] = [];
-  for (const raw of (data ?? []) as DailyRaw[]) {
+  for (const raw of data) {
     const key = `${raw.section_student_id}|${raw.date}|${raw.period_id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -681,22 +706,25 @@ export async function getCompassionateUsageForSection(
     }
     return out;
   }
-  const { data: daily } = await service
-    .from('attendance_daily')
-    .select(
-      'section_student_id, date, period_id, status, ex_reason, recorded_at'
-    )
-    .in('section_student_id', allAyEnrolmentIds)
-    .order('recorded_at', { ascending: false });
-
-  type DailyRow = {
-    section_student_id: string;
-    date: string;
-    period_id: string | null;
-    status: AttendanceStatus;
-    ex_reason: ExReason | null;
-    recorded_at: string;
-  };
+  // PAGINATED — this one is the worst in the module. It is AY-wide with no
+  // term filter at all, and the worst section measured **5,925 rows** on
+  // 2026-08-10, nearly six times PostgREST's 1,000-row cap. Truncated, the
+  // tally silently undercounts from roughly T2 onward, so a student who has
+  // genuinely exceeded their compassionate-leave allowance stops showing as
+  // over-quota and nobody follows up with the family.
+  //
+  // `recorded_at desc` + latest-per-key dedupe below survives paging: the
+  // server orders the whole set and `fetchAllPages` walks it in order.
+  const daily = await fetchAllPages<DailyRow>((from, to) =>
+    service
+      .from('attendance_daily')
+      .select(
+        'section_student_id, date, period_id, status, ex_reason, recorded_at'
+      )
+      .in('section_student_id', allAyEnrolmentIds)
+      .order('recorded_at', { ascending: false })
+      .range(from, to)
+  );
 
   // Walk once: latest-per-key, tally compassionate by section_student_id.
   const seen = new Set<string>();
@@ -911,23 +939,19 @@ export async function getVacationLeaveUsageForSection(
     return out;
   }
 
-  const { data: daily } = await service
-    .from('attendance_daily')
-    .select(
-      'section_student_id, date, period_id, status, ex_reason, recorded_at'
-    )
-    .in('section_student_id', allAyEnrolmentIds)
-    .eq('term_id', termId)
-    .order('recorded_at', { ascending: false });
-
-  type DailyRow = {
-    section_student_id: string;
-    date: string;
-    period_id: string | null;
-    status: AttendanceStatus;
-    ex_reason: ExReason | null;
-    recorded_at: string;
-  };
+  // PAGINATED for the same reason as its compassionate sibling above: the
+  // worst (section x term) measured 1,610 rows on 2026-08-10, over the cap.
+  const daily = await fetchAllPages<DailyRow>((from, to) =>
+    service
+      .from('attendance_daily')
+      .select(
+        'section_student_id, date, period_id, status, ex_reason, recorded_at'
+      )
+      .in('section_student_id', allAyEnrolmentIds)
+      .eq('term_id', termId)
+      .order('recorded_at', { ascending: false })
+      .range(from, to)
+  );
 
   const seen = new Set<string>();
   const vacationBySsId = new Map<string, number>();

@@ -45,12 +45,29 @@ const optionalBool = z.boolean().nullable();
 // availUniform, availStudentCare, preCourseAnswer). Three-state tri-string.
 const optionalYesNo = z.enum(['Yes', 'No']).nullable();
 
-// Phone / postal columns. Production DB reads sometimes round-trip as JS
-// numbers from the parent portal; the SIS Profile sheet writes them as
-// strings (form-driven). Schema accepts string-form for write validation;
-// reads coerce numeric DB values to string at the row-mapping layer. Empty
-// string → null per optionalText.
-const optionalNumberOrText = optionalText(60);
+// NUMBERS ARRIVE HERE, AND THAT IS NOT HYPOTHETICAL. Every mobile column on
+// the admissions tables is numeric in production — `motherMobile` is a `number`
+// on 498 of 498 AY2026 rows, and `fatherMobile`, `guardianMobile` and
+// `contactPersonNumber` likewise, because the parent portal writes them that
+// way. Both edit sheets submit the WHOLE form on every save (see the gated-field
+// note further down), so an untouched phone field carries that number straight
+// back to the server.
+//
+// Until 2026-08-10 every branch of these validators was `z.string()`, so the
+// parse failed and the route 400'd the ENTIRE form — a registrar editing a
+// preferred name lost the edit because of a field they never touched. The
+// comment that used to sit here claimed reads "coerce numeric DB values to
+// string at the row-mapping layer"; no such coercion existed. It does now
+// (`toText` in lib/sis/queries.ts), and this is the second half of that fix:
+// the server accepts what the database really holds, whatever the read layer
+// did or did not do.
+//
+// Applied ONLY to the phone/postal family. `optionalText` stays string-only —
+// a number arriving in a name or an address is a bug worth failing on.
+const coerceToText = (schema: z.ZodTypeAny) =>
+  z.preprocess((v) => (typeof v === 'number' ? String(v) : v), schema);
+
+const optionalNumberOrText = coerceToText(optionalText(60));
 
 // NRIC / FIN — adopted verbatim from the admissions portal's own schema.
 const optionalNric = z
@@ -65,28 +82,32 @@ const optionalNric = z
 
 // Phone numbers — adopted verbatim from the admissions portal's own
 // schema. Digits only, optional leading +.
-const optionalPhone = z
-  .string()
-  .trim()
-  .max(60)
-  .transform((s) => (s.length === 0 ? null : s))
-  .refine((s) => s === null || /^\+?\d+$/.test(s), {
-    message: 'Enter digits only, with an optional leading +',
-  })
-  .nullable();
+const optionalPhone = coerceToText(
+  z
+    .string()
+    .trim()
+    .max(60)
+    .transform((s) => (s.length === 0 ? null : s))
+    .refine((s) => s === null || /^\+?\d+$/.test(s), {
+      message: 'Enter digits only, with an optional leading +',
+    })
+    .nullable()
+);
 
 // Postal code — digits only. No extra length bound beyond the existing
 // 60-char ceiling (a Singapore 6-digit code isn't hard-coded — legacy or
 // overseas addresses may be on file).
-const optionalPostalCode = z
-  .string()
-  .trim()
-  .max(60)
-  .transform((s) => (s.length === 0 ? null : s))
-  .refine((s) => s === null || /^\d+$/.test(s), {
-    message: 'Enter digits only',
-  })
-  .nullable();
+const optionalPostalCode = coerceToText(
+  z
+    .string()
+    .trim()
+    .max(60)
+    .transform((s) => (s.length === 0 ? null : s))
+    .refine((s) => s === null || /^\d+$/.test(s), {
+      message: 'Enter digits only',
+    })
+    .nullable()
+);
 
 // Nationality — constrained to the canonical country-name list (see
 // lib/data/countries.ts). Stores the country NAME, matching the admissions
