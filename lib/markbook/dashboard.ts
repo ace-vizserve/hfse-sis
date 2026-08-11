@@ -1076,10 +1076,18 @@ async function loadMarkbookTeacherPriorityUncached(
   const sectionIds = Array.from(new Set(subjectPairs.map((p) => p.section_id)));
 
   // Resolve current AY → terms.
-  const { data: termRows } = await service
+  //
+  // ERRORS THROW. Both reads here used to discard `.error`, and the fallthrough
+  // is a hard-coded `severity: 'good'` / "No grading sheets pending" — so a
+  // failed query told a teacher they had nothing to mark, and
+  // `lib/home/todos.ts` dropped the row from their home page entirely (it hides
+  // a to-do whose headline value is <= 0). "We could not find out" and "you are
+  // up to date" are not the same sentence.
+  const { data: termRows, error: termsError } = await service
     .from('terms')
     .select('id, term_number, academic_years!inner(ay_code)')
     .eq('academic_years.ay_code', input.ayCode);
+  if (termsError) throw new Error(`terms: ${termsError.message}`);
   const termIds = ((termRows ?? []) as Array<{ id: string }>).map((t) => t.id);
 
   if (termIds.length === 0) {
@@ -1095,12 +1103,13 @@ async function loadMarkbookTeacherPriorityUncached(
 
   // Load all sheets for this teacher's section+subject pairs in current AY,
   // open (not locked) only.
-  const { data: sheetRows } = await service
+  const { data: sheetRows, error: sheetsError } = await service
     .from('grading_sheets')
     .select('id, section_id, subject_id, is_locked, sections!inner(name)')
     .in('section_id', sectionIds)
     .in('term_id', termIds)
     .eq('is_locked', false);
+  if (sheetsError) throw new Error(`grading_sheets: ${sheetsError.message}`);
 
   type SheetRow = {
     id: string;

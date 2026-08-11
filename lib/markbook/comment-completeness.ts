@@ -74,7 +74,11 @@ export async function loadActiveRoster(
   service: SupabaseClient,
   sectionId: string
 ): Promise<RosterStudent[]> {
-  const { data: enrolments } = await service
+  // THROWS RATHER THAN RETURNING AN EMPTY ROSTER. An empty roster means "no
+  // student can be missing a comment", which is indistinguishable from "the
+  // comments are all written" — and this feeds a report-card hard gate. A
+  // failure has to be loud enough that the gate never passes on it.
+  const { data: enrolments, error } = await service
     .from('section_students')
     .select(
       'id, index_number, enrollment_status, enrollment_date, student:students(id, last_name, first_name)'
@@ -82,6 +86,9 @@ export async function loadActiveRoster(
     .eq('section_id', sectionId)
     .in('enrollment_status', ENROLLED_STATUSES)
     .order('index_number');
+  if (error) {
+    throw new Error(`loadActiveRoster(${sectionId}): ${error.message}`);
+  }
 
   return (enrolments ?? []).map((e) => {
     const s = Array.isArray(e.student) ? e.student[0] : e.student;
@@ -195,11 +202,25 @@ export type CumulativeGap = {
  * Returns the list of terms 1..N that are still incomplete. An empty array
  * means the cumulative comment requirement is satisfied (publish allowed).
  */
+/**
+ * @param roster The caller's already-loaded active roster.
+ *
+ * TAKING THE ROSTER RATHER THAN RE-READING IT IS THE FIX, not a tidy-up.
+ * This used to call `loadActiveRoster` itself — a second, independent read of
+ * `section_students` whose error was discarded. If that read failed while the
+ * caller's identical read had succeeded, the roster here became `[]`, no
+ * student could be missing a comment, and `commentGate.ok` came back **true**
+ * vacuously: the report-card comment hard gate passing because a query broke.
+ * `computePublishReadiness` already holds the roster and already trips
+ * `no_students` when it is genuinely empty, so there is nothing to re-read and
+ * no second failure mode to guard.
+ */
 export async function cumulativeCommentGaps(
   service: SupabaseClient,
   sectionId: string,
   allTerms: CumulativeTerm[],
-  viewingTermNumber: number
+  viewingTermNumber: number,
+  roster: RosterStudent[]
 ): Promise<CumulativeGap[]> {
   // T4 (or anything ≥4): no FCA comment block, no comment gate.
   if (viewingTermNumber >= 4) return [];
@@ -207,9 +228,6 @@ export async function cumulativeCommentGaps(
   const requiredTerms = allTerms
     .filter((t) => t.term_number >= 1 && t.term_number <= viewingTermNumber)
     .sort((a, b) => a.term_number - b.term_number);
-
-  // Roster is the same active set for every term — load once.
-  const roster = await loadActiveRoster(service, sectionId);
 
   const gaps: CumulativeGap[] = [];
   for (const t of requiredTerms) {

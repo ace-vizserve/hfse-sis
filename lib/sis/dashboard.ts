@@ -1107,18 +1107,26 @@ async function loadClassAssignmentReadinessUncached(
   const service = createServiceClient();
   const admissions = createAdmissionsClient();
 
-  const { data: ayRow } = await service
+  // EVERY ERROR HERE THROWS. This feed answers "which enrolled students still
+  // have no class", and it used to read all four of its queries as `.data`
+  // with `.error` never touched — so a failed fetch produced an empty array,
+  // which the SIS Admin hub renders as "every enrolled student already has a
+  // class". That is the opposite of the truth, on the surface built to catch
+  // exactly that gap. An empty list must mean the queue is empty, nothing else.
+  const { data: ayRow, error: ayError } = await service
     .from('academic_years')
     .select('id')
     .eq('ay_code', ayCode)
     .maybeSingle();
+  if (ayError) throw new Error(`academic_years: ${ayError.message}`);
   const ayId = ayRow?.id as string | undefined;
   if (!ayId) return [];
 
-  const { data: sectionsData } = await service
+  const { data: sectionsData, error: sectionsError } = await service
     .from('sections')
     .select('id')
     .eq('academic_year_id', ayId);
+  if (sectionsError) throw new Error(`sections: ${sectionsError.message}`);
   const sectionIds = ((sectionsData ?? []) as { id: string }[]).map(
     (r) => r.id
   );
@@ -1148,6 +1156,14 @@ async function loadClassAssignmentReadinessUncached(
       : Promise.resolve({ data: [] as { enrolee_number: string | null }[] }),
   ]);
 
+  // The two parallel reads above resolve to PostgREST results, so their errors
+  // live on the settled value rather than as a rejection.
+  if (enrolledRes.error) {
+    throw new Error(`enrolment status: ${enrolledRes.error.message}`);
+  }
+  if ('error' in ssRes && ssRes.error) {
+    throw new Error(`section_students: ${ssRes.error.message}`);
+  }
   const enrolledRows = (enrolledRes.data ?? []) as EnrolledRow[];
   const assignedEnrolees = new Set(
     ((ssRes.data ?? []) as { enrolee_number: string | null }[])
@@ -1174,12 +1190,13 @@ async function loadClassAssignmentReadinessUncached(
     levelApplied: string | null;
     created_at: string | null;
   };
-  const { data: appsData } = await admissions
+  const { data: appsData, error: appsError } = await admissions
     .from(`${prefix}_enrolment_applications`)
     .select(
       'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
     )
     .in('enroleeNumber', unassignedEnrolees);
+  if (appsError) throw new Error(`applications: ${appsError.message}`);
   const appsByEnrolee = new Map<string, AppRow>();
   for (const a of (appsData ?? []) as AppRow[]) {
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);

@@ -281,7 +281,7 @@ async function loadReportCardGapsTodoUncached(
     .eq('academic_year_id', ayId);
   const sectionRows = (sections ?? []) as Array<{ id: string; name: string }>;
 
-  const { cumulativeCommentGaps } =
+  const { cumulativeCommentGaps, loadActiveRoster } =
     await import('@/lib/markbook/comment-completeness');
   const allTerms = termRows.map((t) => ({
     id: t.id,
@@ -290,13 +290,20 @@ async function loadReportCardGapsTodoUncached(
     virtue_theme: t.virtue_theme,
   }));
 
+  // The roster is loaded here and passed in, rather than left for
+  // `cumulativeCommentGaps` to fetch for itself. That second read discarded
+  // its error, and a failure made the report-card comment gate pass vacuously
+  // — see the note on `cumulativeCommentGaps`. `loadActiveRoster` throws now,
+  // and the gather below is `allSettled`, so a broken section is reported
+  // instead of quietly counting as "no gaps".
   const gapsPerSection = await mapInChunks(sectionRows, 5, async (s) => ({
     section: s,
     gaps: await cumulativeCommentGaps(
       service,
       s.id,
       allTerms,
-      currentTerm.term_number
+      currentTerm.term_number,
+      await loadActiveRoster(service, s.id)
     ),
   }));
   const sectionsWithGaps = gapsPerSection.filter((r) =>
@@ -454,7 +461,29 @@ export async function getHomeTodos(
         can(capabilities, source.requiresCapability))
   );
 
-  const results = await Promise.all(sources.map((source) => source.load(ctx)));
+  // allSettled, NOT all. Every loader here is a separate question — "are there
+  // unsynced students", "is anything waiting for approval" — and one of them
+  // failing is not a reason to show a blank home page for all of them. It IS a
+  // reason to say so in the log: a source that throws contributes nothing,
+  // which on this panel is indistinguishable from "nothing to do", and that
+  // silence is the bug class this sweep exists for.
+  const settled = await Promise.allSettled(
+    sources.map((source) => source.load(ctx))
+  );
+
+  const results: Array<HomeTodoItem | HomeTodoItem[] | null> = [];
+  settled.forEach((outcome, i) => {
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value);
+      return;
+    }
+    console.error(
+      `[home] to-do source "${sources[i].id}" failed; it will be absent from the panel:`,
+      outcome.reason instanceof Error
+        ? (outcome.reason.stack ?? outcome.reason.message)
+        : outcome.reason
+    );
+  });
 
   return results
     .flatMap((result) => (Array.isArray(result) ? result : [result]))

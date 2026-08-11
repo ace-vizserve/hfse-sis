@@ -56,7 +56,17 @@ export async function loadSectionAtRisk(
   // rather than an error — the list is simply empty until a second term exists.
   if (!termNumber || termNumber < 2) return [];
 
-  const [{ data: rosterRaw }, { data: sheetsRaw }] = await Promise.all([
+  // ERRORS THROW, THEY DO NOT DEGRADE TO AN EMPTY LIST. Both of these used to
+  // be read with the error discarded, so a failed fetch reached the adviser as
+  // "nobody in this class is at risk" — the most reassuring possible rendering
+  // of a broken query, on a surface whose entire job is to say who needs a
+  // phone call home. The route above catches, logs the step and returns a 500,
+  // which is a panel that says something went wrong instead of a panel that
+  // lies.
+  const [
+    { data: rosterRaw, error: rosterError },
+    { data: sheetsRaw, error: sheetsError },
+  ] = await Promise.all([
     service
       .from('section_students')
       .select(
@@ -82,8 +92,13 @@ export async function loadSectionAtRisk(
       middle_name: string | null;
     } | null;
   };
+  if (rosterError) throw new Error(`roster: ${rosterError.message}`);
+  if (sheetsError) throw new Error(`grading sheets: ${sheetsError.message}`);
+
   const roster = (rosterRaw ?? []) as unknown as RosterRow[];
   const sheets = (sheetsRaw ?? []) as unknown as SheetRow[];
+  // Genuinely empty is a real answer — a class with no roster or no sheets for
+  // the term has nobody to flag. It only means that now the errors are gone.
   if (roster.length === 0 || sheets.length === 0) return [];
 
   const students: AtRiskStudentRef[] = roster

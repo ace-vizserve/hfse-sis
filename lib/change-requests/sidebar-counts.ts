@@ -64,7 +64,18 @@ export async function getSidebarChangeRequestCount(
   }
 
   const { count, error } = await query;
-  if (error) return 0;
+  if (error) {
+    // Zero is also the healthy answer here — "no requests waiting for you" —
+    // so a silent 0 on failure is indistinguishable from an empty queue, on a
+    // badge that gates an approval workflow. The count still degrades to 0
+    // (a wrong badge beats a crashed sidebar), but it no longer does so
+    // invisibly.
+    console.error(
+      '[change-requests] sidebar count failed; badge will read 0:',
+      error.message
+    );
+    return 0;
+  }
   return count ?? 0;
 }
 
@@ -128,7 +139,14 @@ export async function getSidebarChangeRequestPreview(
   }
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error) {
+    console.error(
+      '[change-requests] notification preview failed; bell will read empty:',
+      error.message
+    );
+    return [];
+  }
+  if (!data) return [];
 
   const rows = data as unknown as Array<{
     id: string;

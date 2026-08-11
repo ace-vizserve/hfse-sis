@@ -283,17 +283,27 @@ async function fetchTransferEvents(
       return [];
     }
   } else {
-    const { data, error } = await service
-      .from('audit_log')
-      .select('id, actor_email, entity_id, context, created_at')
-      .eq('action', 'student.section.transfer')
-      .eq('context->>ay_code', currentAyCode)
-      .order('created_at', { ascending: false });
-    if (error) {
-      console.warn('[movements] transfer fetch failed:', error.message);
+    // Paged like its all-AYs sibling above. `audit_log` is the one table here
+    // that grows with nothing but time — 1,390 rows on 2026-08-10 and only
+    // ever upward — so a transfer history that silently stops at 1,000 is a
+    // matter of when, not whether.
+    try {
+      rows = await fetchAllPages<AuditRow>((from, to) =>
+        service
+          .from('audit_log')
+          .select('id, actor_email, entity_id, context, created_at')
+          .eq('action', 'student.section.transfer')
+          .eq('context->>ay_code', currentAyCode)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
+    } catch (e) {
+      console.warn(
+        '[movements] transfer fetch failed:',
+        e instanceof Error ? e.message : e
+      );
       return [];
     }
-    rows = (data ?? []) as AuditRow[];
   }
 
   const out: TransferPartial[] = [];
@@ -375,25 +385,31 @@ async function fetchMetadataEvents(
       return [];
     }
   } else {
+    // Ranged for the same reason as the transfer read above: `audit_log` grows
+    // with time alone, and a movements page that silently loses the oldest
+    // withdrawals is a history that quietly rewrites itself.
     const [wRes, lRes, rRes] = await Promise.all([
       service
         .from('audit_log')
         .select('id, actor_email, entity_id, context, created_at')
         .eq('action', 'enrolment.metadata.update')
         .eq('context->after->>enrollment_status', 'withdrawn')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(0, 999),
       service
         .from('audit_log')
         .select('id, actor_email, entity_id, context, created_at')
         .eq('action', 'enrolment.metadata.update')
         .eq('context->>lateEnrolleeTransition', 'true')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(0, 999),
       service
         .from('audit_log')
         .select('id, actor_email, entity_id, context, created_at')
         .eq('action', 'enrolment.metadata.update')
         .eq('context->>reEnrolment', 'true')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(0, 999),
     ]);
     if (wRes.error) {
       console.warn('[movements] withdrawn fetch failed:', wRes.error.message);

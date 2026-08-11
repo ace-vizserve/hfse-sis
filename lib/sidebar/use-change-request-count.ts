@@ -114,7 +114,18 @@ export function useChangeRequestCount(
       );
       if (!scoped) return null;
 
-      const { count: fresh } = await (scoped as unknown as typeof baseQuery);
+      const { count: fresh, error } =
+        await (scoped as unknown as typeof baseQuery);
+      if (error) {
+        // Returning null here freezes the badge at its last known value with
+        // no signal at all — the count silently stops tracking reality while
+        // still looking authoritative. Logged so a stuck badge is findable.
+        console.error(
+          '[change-requests] live recount failed; badge is now stale:',
+          error.message
+        );
+        return null;
+      }
       return fresh ?? null;
     };
 

@@ -38,7 +38,11 @@ export async function getSectionTransfersForStudent(
     .select('id, action, actor_email, context, created_at')
     .eq('action', 'student.section.transfer')
     .in('entity_id', enroleeNumbers)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    // Bounded by one student's enrolee numbers, so small today — ranged
+    // anyway because `audit_log` only grows, and a truncated transfer history
+    // silently rewrites where a child has been.
+    .range(0, 999);
 
   if (error) {
     console.warn(

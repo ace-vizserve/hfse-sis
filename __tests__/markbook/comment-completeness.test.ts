@@ -141,6 +141,25 @@ function makeService(opts: {
   } as unknown as SupabaseClient;
 }
 
+// `cumulativeCommentGaps` is now GIVEN its roster rather than fetching one for
+// itself — that second read discarded its error, and a failure made the
+// report-card comment gate pass vacuously. Derived from the very rows the fake
+// service returns so the two can never drift; mirrors `loadActiveRoster`.
+type RosterRowFixture = {
+  id: string;
+  index_number: number;
+  enrollment_date: string | null;
+  student: { id: string; last_name: string; first_name: string };
+};
+const rosterArgFrom = (rows: RosterRowFixture[]): RosterStudent[] =>
+  rows.map((r) => ({
+    sectionStudentId: r.id,
+    studentId: r.student.id,
+    indexNumber: r.index_number,
+    name: `${r.student.last_name}, ${r.student.first_name}`,
+    enrollmentDate: r.enrollment_date,
+  }));
+
 const ROSTER_ROWS = [
   {
     id: 'ssA',
@@ -173,7 +192,13 @@ describe('cumulativeCommentGaps', () => {
         // t2/t3 deliberately empty — must NOT be required for a T1 publish.
       },
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 1);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      1,
+      rosterArgFrom(ROSTER_ROWS)
+    );
     expect(gaps).toHaveLength(0);
   });
 
@@ -182,7 +207,13 @@ describe('cumulativeCommentGaps', () => {
       rosterRows: ROSTER_ROWS,
       writeupsByTerm: { t1: [done('A')] }, // B missing
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 1);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      1,
+      rosterArgFrom(ROSTER_ROWS)
+    );
     expect(gaps).toHaveLength(1);
     expect(gaps[0].termNumber).toBe(1);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
@@ -196,7 +227,13 @@ describe('cumulativeCommentGaps', () => {
         t2: [done('A')], // B missing in T2
       },
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 2);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      2,
+      rosterArgFrom(ROSTER_ROWS)
+    );
     expect(gaps.map((g) => g.termNumber)).toEqual([2]);
   });
 
@@ -208,9 +245,15 @@ describe('cumulativeCommentGaps', () => {
         t2: [done('A'), done('B')],
       },
     });
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 2)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        2,
+        rosterArgFrom(ROSTER_ROWS)
+      )
+    ).toHaveLength(0);
   });
 
   it('a late enrollee (not on the active roster) is never required for any term', async () => {
@@ -226,9 +269,15 @@ describe('cumulativeCommentGaps', () => {
         t3: [done('A'), done('B')],
       },
     });
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 3)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        3,
+        rosterArgFrom(ROSTER_ROWS)
+      )
+    ).toHaveLength(0);
   });
 
   // ── Per-term roster correctness (late-enrollee edge) ─────────────────────
@@ -259,9 +308,15 @@ describe('cumulativeCommentGaps', () => {
       },
     });
     // Under the old logic C would be required for T1 → a T1 gap → fail.
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 2)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        2,
+        rosterArgFrom(ROSTER_WITH_T2_JOINER)
+      )
+    ).toHaveLength(0);
   });
 
   it('a T2 joiner IS still required to have a T2 comment', async () => {
@@ -272,7 +327,13 @@ describe('cumulativeCommentGaps', () => {
         t2: [done('A'), done('B')], // C missing in T2 → must block T2
       },
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 2);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      2,
+      rosterArgFrom(ROSTER_WITH_T2_JOINER)
+    );
     expect(gaps.map((g) => g.termNumber)).toEqual([2]);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['C']);
   });
@@ -286,7 +347,13 @@ describe('cumulativeCommentGaps', () => {
         t2: [done('A'), done('B'), done('C')],
       },
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 2);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      2,
+      rosterArgFrom(ROSTER_WITH_T2_JOINER)
+    );
     expect(gaps.map((g) => g.termNumber)).toEqual([1]);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
   });
@@ -312,9 +379,15 @@ describe('cumulativeCommentGaps', () => {
         t3: [done('A'), done('B')], // D absent everywhere — must still pass
       },
     });
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 3)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        3,
+        rosterArgFrom(rosterWithLateJoiner)
+      )
+    ).toHaveLength(0);
   });
 
   it('a student who joined exactly on a term end_date is required for that term', async () => {
@@ -336,7 +409,13 @@ describe('cumulativeCommentGaps', () => {
         t1: [done('A'), done('B')], // E missing → must block T1
       },
     });
-    const gaps = await cumulativeCommentGaps(service, 'sec', TERMS, 1);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      1,
+      rosterArgFrom(rosterBoundary)
+    );
     expect(gaps.map((g) => g.termNumber)).toEqual([1]);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['E']);
   });
@@ -346,9 +425,15 @@ describe('cumulativeCommentGaps', () => {
       rosterRows: ROSTER_ROWS,
       writeupsByTerm: {}, // nothing anywhere
     });
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 4)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        4,
+        rosterArgFrom(ROSTER_ROWS)
+      )
+    ).toHaveLength(0);
   });
 
   // ── Virtue-theme gate ─────────────────────────────────────────────────────
@@ -361,7 +446,13 @@ describe('cumulativeCommentGaps', () => {
     const termsNoVirtue: CumulativeTerm[] = [
       { id: 't1', term_number: 1, end_date: '2026-03-31', virtue_theme: '   ' },
     ];
-    const gaps = await cumulativeCommentGaps(service, 'sec', termsNoVirtue, 1);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      termsNoVirtue,
+      1,
+      rosterArgFrom(ROSTER_ROWS)
+    );
     expect(gaps).toHaveLength(1);
     expect(gaps[0].virtueMissing).toBe(true);
     expect(gaps[0].missing).toHaveLength(0);
@@ -375,7 +466,13 @@ describe('cumulativeCommentGaps', () => {
     const termsNoVirtue: CumulativeTerm[] = [
       { id: 't1', term_number: 1, end_date: '2026-03-31', virtue_theme: null },
     ];
-    const gaps = await cumulativeCommentGaps(service, 'sec', termsNoVirtue, 1);
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      termsNoVirtue,
+      1,
+      rosterArgFrom(ROSTER_ROWS)
+    );
     expect(gaps).toHaveLength(1);
     expect(gaps[0].virtueMissing).toBe(true);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
@@ -386,8 +483,14 @@ describe('cumulativeCommentGaps', () => {
       rosterRows: ROSTER_ROWS,
       writeupsByTerm: { t1: [done('A'), done('B')] },
     });
-    expect(await cumulativeCommentGaps(service, 'sec', TERMS, 1)).toHaveLength(
-      0
-    );
+    expect(
+      await cumulativeCommentGaps(
+        service,
+        'sec',
+        TERMS,
+        1,
+        rosterArgFrom(ROSTER_ROWS)
+      )
+    ).toHaveLength(0);
   });
 });

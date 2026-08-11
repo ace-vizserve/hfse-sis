@@ -586,7 +586,12 @@ export async function computePublishReadiness(
         end_date: string | null;
         virtue_theme: string | null;
       }[],
-      term.term_number
+      term.term_number,
+      // The roster this function already loaded, rather than a second
+      // independent read. See `cumulativeCommentGaps` — that second read
+      // discarded its error, and a failure turned the comment hard gate into
+      // a vacuous pass.
+      roster
     );
     commentGate = {
       ok: cumulativeGaps.length === 0,
