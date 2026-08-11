@@ -38,6 +38,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import {
   ENROLLED_PREREQ_STAGES,
   isAdmissionsStageFrozen,
+  STAGE_COLUMN_MAP,
   type StageKey,
 } from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
@@ -671,6 +672,26 @@ function ApplicationStatusCard({
 }) {
   const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
+
+  // The five stages that must be terminal before Enrolled is allowed, read off
+  // the status row this card already holds.
+  //
+  // WITHOUT THIS THE DIALOG'S CHECKLIST WAS DEAD CODE. `prereqStatuses` is an
+  // optional prop and neither call site passed it, so `showPrereqChecklist` was
+  // permanently false: the "N requirements not met yet · saving will fail"
+  // warning never rendered, and the inline class picker offered itself to a
+  // student who could not be enrolled at all. Same source of truth as the
+  // server's `evaluateEnrolledFlipGate`, so the dialog and the route cannot
+  // disagree about what "ready" means.
+  const prereqStatuses = Object.fromEntries(
+    ENROLLED_PREREQ_STAGES.map((stage) => [
+      stage,
+      (s[STAGE_COLUMN_MAP[stage].statusCol as keyof StatusRow] as
+        | string
+        | null
+        | undefined) ?? null,
+    ])
+  ) as Partial<Record<StageKey, string | null>>;
   const isEnrolled =
     applicationTone === 'enrolled' || applicationTone === 'enrolledConditional';
   const classChip =
@@ -745,6 +766,7 @@ function ApplicationStatusCard({
               initialExtras={applicationCard.extrasInitial}
               frozen={frozen}
               canAssignSection={canAssignSection}
+              prereqStatuses={prereqStatuses}
             />
           )}
         </div>

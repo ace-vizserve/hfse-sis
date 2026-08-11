@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, CheckCircle2, Loader2, Pencil } from 'lucide-react';
+import { AlertTriangle, Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -185,10 +185,23 @@ export function EditStageDialog({
   // for a coordinator doing both jobs in one sitting; the stage PATCH route
   // is the real enforcement and 422s (prereqs) or 403s (placement role) on a
   // miss, which `saveMutation.onError` surfaces as a toast.
+  // ALL FIVE PREREQUISITES MUST ACTUALLY BE MET, and we must know that they
+  // are. `incompleteCount === 0` alone is not enough: `prereqRows` is also
+  // empty when the checklist is not showing at all — including when
+  // `prereqStatuses` was never supplied — so a bare count check reads "we have
+  // no idea" as "all clear". Requiring `showPrereqChecklist` too means the
+  // picker appears only when the prerequisites are known AND met, and stays
+  // hidden when they are unknown. Hiding is the safe direction: the stage
+  // PATCH route 422s on a miss regardless, so the only thing an ungated picker
+  // buys is a registrar filling in a class for a student who cannot be
+  // enrolled, then losing the lot to a failed save.
+  const prereqsAllMet = showPrereqChecklist && incompleteCount === 0;
+
   const canPickSectionNow =
     stageKey === 'application' &&
     effectiveStatus === 'Enrolled' &&
-    canAssignSection;
+    canAssignSection &&
+    prereqsAllMet;
 
   const [sectionId, setSectionId] = useState<string | null>(null);
 
@@ -477,57 +490,6 @@ export function EditStageDialog({
                 onSubmit={form.handleSubmit(onSubmit)}
                 className="space-y-5"
               >
-                {showPrereqChecklist && (
-                  <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Required steps before enrolment
-                    </p>
-                    <ul className="space-y-1.5">
-                      {prereqRows.map((row) => (
-                        <li
-                          key={row.key}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          {row.ok ? (
-                            <CheckCircle2 className="size-3.5 shrink-0 text-brand-mint" />
-                          ) : (
-                            <AlertTriangle className="size-3.5 shrink-0 text-brand-amber" />
-                          )}
-                          <span className="font-medium text-foreground">
-                            {STAGE_LABELS[row.key]}
-                          </span>
-                          <span className="text-muted-foreground">·</span>
-                          <span
-                            className={
-                              row.ok
-                                ? 'text-muted-foreground'
-                                : 'text-foreground'
-                            }
-                          >
-                            {row.current ?? 'not started'}
-                          </span>
-                          {!row.ok && (
-                            <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                              → needs {row.expected}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                    {incompleteCount === 0 ? (
-                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-mint">
-                        All requirements met
-                      </p>
-                    ) : (
-                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
-                        {incompleteCount} requirement
-                        {incompleteCount === 1 ? '' : 's'} not met yet
-                        {' · '}saving will fail
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 {canPickSectionNow && (
                   <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
