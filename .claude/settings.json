@@ -26,7 +26,9 @@
       "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && echo \"=== guard + canWrite ===\" && sed -n '/const canWrite/,/^$/p' \"app/\\(p-files\\)/p-files/[enroleeNumber]/page.tsx\" | head -8 && echo \"=== components rendered with canWrite ===\" && grep -n \"canWrite\\\\|DocumentValidationActions\\\\|DocumentCard\\\\|NotifyDialog\\\\|PromiseDialog\\\\|UploadDialog\" \"app/\\(p-files\\)/p-files/[enroleeNumber]/page.tsx\")",
       "PowerShell(npx tsc --noEmit)",
       "PowerShell(npx tsc --noEmit 2>&1)",
-      "Bash(sed 's/\\\\*\\\\*//g')"
+      "Bash(sed 's/\\\\*\\\\*//g')",
+      "Bash(pandoc --version)",
+      "Bash(tee /dev/stderr)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",
