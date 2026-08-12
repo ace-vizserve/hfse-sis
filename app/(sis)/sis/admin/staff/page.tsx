@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, UserCheck, Users2 } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { StaffDirectoryChrome } from '@/components/sis/staff-directory-chrome';
@@ -78,6 +79,21 @@ export default async function StaffAssignmentsPage({
             >
               {sectionsMissingFca}
             </CardTitle>
+            {/* A link only when there is something to look at. At zero it
+                stays plain text — a link promising a list of nothing is worse
+                than a number. Points at the existing sections list, which
+                already flags a missing adviser per row; a separate filtered
+                view would be a second page saying the same thing. */}
+            {sectionsMissingFca > 0 && (
+              <CardDescription>
+                <Link
+                  href="/sis/sections"
+                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  See which classes
+                </Link>
+              </CardDescription>
+            )}
             <CardAction>
               <div
                 className={`flex size-9 items-center justify-center rounded-xl ${

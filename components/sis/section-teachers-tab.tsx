@@ -8,6 +8,7 @@ import {
   Trash2,
   UserCheck,
   UserCog,
+  RefreshCw,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -76,6 +77,42 @@ type Assignment = {
   role: 'form_adviser' | 'subject_teacher';
 };
 
+/** Names BOTH people. "Being covered" alone leaves the reader asking the only
+ *  question that matters. Amber because cover is neither healthy-normal nor
+ *  broken — it is a fact worth noticing. */
+function CoverBadge({ name, startedOn }: { name: string; startedOn: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className="h-6 border-brand-amber bg-brand-amber-light text-ink"
+    >
+      <RefreshCw className="h-3 w-3" />
+      {name} covering since {formatCoverDay(startedOn)}
+    </Badge>
+  );
+}
+
+/** "12 Aug" — short enough for a badge, precise enough to act on. */
+function formatCoverDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  if (!y || !m || !d) return iso;
+  return `${d} ${months[m - 1]}`;
+}
+
 // Teachers tab on /sis/sections/[id]. Moved from
 // components/admin/teacher-assignments-panel.tsx during the 2026-04-22 SIS
 // Admin consolidation sprint — same logic, new home, unchanged exported
@@ -85,12 +122,15 @@ export function TeacherAssignmentsPanel({
   levelSubjects,
   initialTeachers,
   initialAssignments,
+  coverByAssignment,
   termStarted,
 }: {
   sectionId: string;
   levelSubjects: Subject[];
   initialTeachers: Teacher[];
   initialAssignments: Assignment[];
+  /** assignmentId -> who is standing in on it today, and since when. */
+  coverByAssignment: Record<string, { name: string; startedOn: string }>;
   /** Has the school year begun? If so, a removal has to say why. */
   termStarted: boolean;
 }) {
@@ -266,6 +306,9 @@ export function TeacherAssignmentsPanel({
                     formAdviser.teacher_user_id}
                 </div>
               </div>
+              {coverByAssignment[formAdviser.id] && (
+                <CoverBadge {...coverByAssignment[formAdviser.id]!} />
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -354,6 +397,9 @@ export function TeacherAssignmentsPanel({
                         {t?.display_name ?? '(unknown user)'}
                       </div>
                     </div>
+                    {coverByAssignment[a.id] && (
+                      <CoverBadge {...coverByAssignment[a.id]!} />
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"

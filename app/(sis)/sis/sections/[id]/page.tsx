@@ -112,6 +112,7 @@ export default async function SisSectionDetailPage({
     { data: rawSibRows },
     teacherList,
     { data: rawAssignments },
+    { data: rawCover },
     { data: termRows },
     { data: sectionSubjectRows },
   ] = await Promise.all([
@@ -161,6 +162,16 @@ export default async function SisSectionDetailPage({
       .from('teacher_assignments')
       .select('id, teacher_user_id, section_id, subject_id, role')
       .eq('section_id', id),
+    // Who is standing in on any of them today. Active means started and not
+    // ended, the same window `has_active_relief_for_assignment` applies in SQL.
+    supabase
+      .from('assignment_reliefs')
+      .select(
+        'assignment_id, relief_teacher_user_id, started_on, assignment:teacher_assignments!inner(section_id)'
+      )
+      .eq('assignment.section_id', id)
+      .lte('started_on', sgToday())
+      .or(`ended_on.is.null,ended_on.gte.${sgToday()}`),
     // Terms for this AY — used to compute termStarted (see hasTermStarted in
     // lib/sis/current-term.ts). Gates both the escalated Generate-index warning
     // and the "why was this teacher removed?" prompt on the Teachers tab.
@@ -175,6 +186,26 @@ export default async function SisSectionDetailPage({
       .select('subject_config_id')
       .eq('section_id', id),
   ]);
+
+  // assignmentId -> who is covering it and since when. Names resolved from the
+  // teacher list already loaded above, so this costs no extra round trip.
+  const teacherNameById = new Map(teacherList.map((t) => [t.id, t.name]));
+  const coverByAssignment = Object.fromEntries(
+    (
+      (rawCover ?? []) as Array<{
+        assignment_id: string;
+        relief_teacher_user_id: string;
+        started_on: string;
+      }>
+    ).map((c) => [
+      c.assignment_id,
+      {
+        name:
+          teacherNameById.get(c.relief_teacher_user_id) ?? 'Another teacher',
+        startedOn: c.started_on,
+      },
+    ])
+  );
 
   const termStarted = hasTermStarted(
     (termRows ?? []) as Array<{ start_date: string | null }>,
@@ -577,6 +608,7 @@ export default async function SisSectionDetailPage({
             levelSubjects={levelSubjects}
             initialTeachers={initialTeachers}
             initialAssignments={initialAssignments}
+            coverByAssignment={coverByAssignment}
             termStarted={termStarted}
           />
         </TabsContent>

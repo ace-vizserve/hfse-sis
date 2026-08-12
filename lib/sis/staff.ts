@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { createServiceClient } from '@/lib/supabase/service';
+import { sgToday } from '@/lib/dates';
 
 export type StaffSubjectAssignment = {
   assignmentId: string;
@@ -20,6 +21,10 @@ export type StaffRow = {
   disabled: boolean;
   fcaSection: { id: string; name: string; levelCode: string } | null;
   subjectAssignments: StaffSubjectAssignment[];
+  /** Classes of THEIRS that somebody else is standing in on today. */
+  coveredCount: number;
+  /** Classes they are standing in on for somebody else today. */
+  coveringCount: number;
 };
 
 type RawSection = {
@@ -75,6 +80,9 @@ async function loadStaffAssignmentsUncached(
       name: t.name,
       disabled: t.disabled,
       fcaSection: null,
+      // No sections in this year means no assignments, so no cover either.
+      coveredCount: 0,
+      coveringCount: 0,
       subjectAssignments: [],
     }));
   }
@@ -91,6 +99,40 @@ async function loadStaffAssignmentsUncached(
   const assignments = (assignmentRows ?? []) as RawAssignment[];
 
   const teachers = await getTeacherList({ excludeDisabled: false });
+
+  // One query for the whole page: every cover running today on any assignment
+  // in this year. Counted from both ends below, because "who is short-handed"
+  // and "who is carrying extra" are the two things this column is read for.
+  const today = sgToday();
+  const { data: coverRows } = assignments.length
+    ? await service
+        .from('assignment_reliefs')
+        .select('assignment_id, relief_teacher_user_id')
+        .in(
+          'assignment_id',
+          assignments.map((a) => a.id)
+        )
+        .lte('started_on', today)
+        .or(`ended_on.is.null,ended_on.gte.${today}`)
+    : { data: [] };
+
+  const assignmentOwner = new Map(
+    assignments.map((a) => [a.id, a.teacher_user_id as string])
+  );
+  const coveredByTeacher = new Map<string, number>();
+  const coveringByTeacher = new Map<string, number>();
+  for (const c of (coverRows ?? []) as Array<{
+    assignment_id: string;
+    relief_teacher_user_id: string;
+  }>) {
+    const owner = assignmentOwner.get(c.assignment_id);
+    if (owner)
+      coveredByTeacher.set(owner, (coveredByTeacher.get(owner) ?? 0) + 1);
+    coveringByTeacher.set(
+      c.relief_teacher_user_id,
+      (coveringByTeacher.get(c.relief_teacher_user_id) ?? 0) + 1
+    );
+  }
 
   return teachers.map((teacher) => {
     const mine = assignments.filter((a) => a.teacher_user_id === teacher.id);
@@ -123,6 +165,8 @@ async function loadStaffAssignmentsUncached(
         ? { id: fcaSec.id, name: fcaSec.name, levelCode: fcaSec.levelCode }
         : null,
       subjectAssignments,
+      coveredCount: coveredByTeacher.get(teacher.id) ?? 0,
+      coveringCount: coveringByTeacher.get(teacher.id) ?? 0,
     };
   });
 }
