@@ -41,7 +41,7 @@ rather than being edited into the reply.
 | 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                               | New table + surface                |
 | 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                               | Needs its own table                |
 | 9   | House points                                          | Chandana (23:51)                                     | Open — rules known, needs #8 first | Overlaps #8, now confirmed         |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Open — structurally hard           | Christina owns the number          |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Count answered — folds into #11    | Christina said two, 46:04          |
 | 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible               | `APPROVER_FLOWS` was built for it  |
 | —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended   | KD #176                            |
 | —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it        | See _Waiting on the school_        |
@@ -269,16 +269,25 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   Also dropped, and staying dropped: whether siblings share a house — it would
   only matter if the system assigned houses, and Hanafi already has.
 
-- **Mr Hanafi** — **new, and not a training attendee.** Answered 2026-08-06 and
-  sent both sheets; see _Answers received_. **Nothing of his blocks the import
-  any more.** All that is outstanding is the full names of five students his
-  sheet lists by first name alone, and those five can be left unassigned without
-  holding up the other ~485.
-- **Christina** — the approver count (#10) and the AEB rule (#11). Also the
-  relief-teacher policy, **raised by Marrie at 33:18** and answered in the room
-  by Christina (designate an admin rather than share a login): admins can
-  already write any section's attendance, but the audit log has no
-  on-behalf-of concept and advisers cannot read it.
+- **Mr Hanafi** — **closed 2026-08-11, nothing outstanding.** He answered on
+  2026-08-06 and sent both sheets. The follow-up about unmatched names was
+  **dropped rather than sent** (Mr Ace's call): ~12 of 410 students go without a
+  house and the eleven hand-matched names go in unconfirmed, which is the
+  accepted cost. Do not reopen this as an open question — it was decided, not
+  forgotten.
+- **Christina** — **the AEB rule (#11), and only that.** Revised 2026-08-11: the
+  approver count (#10) was recorded here as hers to define, but she had already
+  defined it on the recording — 46:04, "two approvers, Ms. Chandana and I only."
+  That covers the pre-issue route completely. What is unknown is the second
+  route: who AEB is, whether it is one person or several, and therefore how many
+  approvers the system needs to allow at all. Wynne's "can we add more" (45:30)
+  reduces to the same question.
+
+  Also hers: the relief-teacher policy, **raised by Marrie at 33:18** and
+  answered in the room by Christina (designate an admin rather than share a
+  login): admins can already write any section's attendance, but the audit log
+  has no on-behalf-of concept and advisers cannot read it.
+
 - **Wynne** — the Transcript of Records template. The data layer is complete and
   cross-AY on `studentNumber`; the template is the whole blocker. She asked for
   it directly at 1:00:57 and **offered the template herself** in the same
@@ -290,9 +299,16 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   (she asked at 47:20, the answer came at 48:00). She cannot. That is
   coordinator-only subject config, blocked at the schema, at a DB `CHECK`, and
   at the apply RPC.
-- **The two approvers are NOT a dual signature.** The first to act sets the
-  status and nothing ever reads `secondary_decision`. Christina's 46:04 answer
-  assumes both must agree; the system does not work that way today.
+- ~~**The two approvers are NOT a dual signature.**~~ **Withdrawn 2026-08-11 —
+  this was never a correction, because she never made the claim.** The first to
+  act does set the status and nothing reads `secondary_decision`, but her 46:04
+  words were _"it would require two approvers, Ms. Chandana and I only"_ — a
+  statement about **who** approves, not about how many signatures are needed.
+  "Christina assumes both must agree" was our inference, written here as though
+  it were hers, and it nearly went to her as a correction to something she had
+  not said. **Current behaviour stands.** Mr Ace's call. What _is_ changing is
+  that the two approvers become her and Chandana by rule rather than by the
+  teacher's choice.
 - **Chandana's 53:09 question is an unqualified yes**, and always has been —
   production already runs eleven different Maths exam totals across sections.
 
@@ -302,22 +318,83 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 Ready to copy. Send separately — short lists get answered.
 
-**Two kinds of question, and only one of them belongs here.**
+**Ask only what the build needs, and anchor every question to something they
+actually said.**
 
 - **Reach** — "should this appear on the report card?", "do parents see it?",
-  "does it affect the awards?" These have yes/no answers, and getting one wrong
-  means the system does not do what the school wanted. **Ask these.**
-- **Mechanics** — "can points be taken away?", "how long is it kept?", "is there
-  a leaderboard?" These invite a bigger feature than the one requested. **Leave
-  these out** until the school raises them.
+  "does it affect the awards?" **Ask these only about something already live.**
+  House is why they exist: it was on production for days, read in exactly three
+  places, and nobody had ever confirmed that was wanted. For something not yet
+  built there is no default to ratify — the default is staff-only, same as
+  everything else — so a reach question there is not a safeguard, it is an
+  invitation to design a bigger feature than the one requested. The school will
+  ask for more once they can see it.
+- **Mechanics** — "where is the file stored?", "how long is it kept?", "is there
+  a leaderboard?" These are ours to decide. **Leave them out.**
+- **Anything they did not raise is not a question.** This is the one that bloats
+  a message fastest, because each invented question looks reasonable on its own.
 
 Each block opens by stating what the feature reaches _today_, so the reply is a
-confirmation rather than an invitation to design. House is why: it has been on
-production for days, is read in exactly three places, and nobody has ever
-confirmed that is what was wanted.
+confirmation rather than an invitation to design.
 
-Four entries marked **⚠** are places where the system does not work the way
-somebody in the room believed it did. Those are corrections, not questions.
+Entries marked **⚠** are places where the system does not work the way somebody
+in the room believed it did. Those are corrections, not questions.
+
+### ✅ Decided by Mr Ace, 2026-08-11 — do not ask her these
+
+Nine questions became four plus two file requests. **Everything below is settled;
+re-raising any of it with the school is a mistake.**
+
+| Was asked                                                     | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Can every teacher see a student's details, or only the FCA?   | **All teachers who teach the student.** Confirms what shipped.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Should teachers be able to _add_ to medical / learning needs? | **No — read-only, permanently.** Parents encode it on the application form; the office stays the only editor. Not a question, a principle.                                                                                                                                                                                                                                                                                                                                                                                        |
+| Who can see a disciplinary record?                            | ~~Teachers who teach the student.~~ **Reopened and put to her, 2026-08-11.** The first answer covered viewing but left "who writes an incident record" undecided, and the awards decision had the mirror gap — who records was settled, who sees was not. Both file requests now also ask **who should see them and who should record them**, so each feature gets both halves from the person who owns the policy. Our working assumptions stay teachers-who-teach-them for viewing and FCA for recording; her answer overrides. |
+| Who enters an award?                                          | **The form class adviser**, for now. Subject teachers will not do this.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Who can open an uploaded medical certificate?                 | **The student's form class adviser, plus `school_admin` and above.** Not every teacher who teaches the student — narrower than the disciplinary record and narrower than the Classroom student drawer, deliberately: an MC is a document about one absence, and the FCA is the one chasing it. The message says this in plain English ("the form class adviser and the office"); the role list is the build spec. Who _uploads_ it is still open.                                                                                 |
+| Must both approvers agree before a grade change takes effect? | **Question withdrawn — keep the current behaviour.** Her words at 46:04 were _"it would require two approvers, Ms. Chandana and I only"_ — she never said both must sign. "Both must agree" was **our inference**, recorded as an assumption in _To correct with the team_ and never checked against what she actually said. Do not present it to her as a correction.                                                                                                                                                            |
+| Should the two approvers always be her and Chandana?          | **Yes — build it, do not ask.** The pre-publication flow is right; only the teacher-picks-the-approvers part changes.                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+**Two design questions became requests for a file instead** (disciplinary
+records, awards/certificates). Asking "what fields do you want?" makes her design
+a form; asking to see two real incident reports lets us build around the form the
+school already uses. This is the move that worked on Hanafi — asking to _see_ his
+sheet surfaced a scoring scheme and a conflicting allocation that his summary of
+it had not mentioned.
+
+**The AEB question was wrong, not just long.** It asked _"who is AEB, in terms of
+actual people?"_ — presuming a person. Wynne's phrasing (45:46, _"you still have
+the AEB, right?"_) reads as a body or a process. It now asks what AEB **is** and
+what should happen when a change is requested after publication.
+
+📄 **The five blocks to Christina are no longer sent as five messages.** They
+were consolidated on 2026-08-11 into one —
+`docs/training/2026-08-11-questions-for-academic-head.md` — which is what
+actually goes to her. **That file is the live version; the five blocks below are
+kept as the working record of how each ask was arrived at.** If an ask changes,
+change it in both or the next person to read this file will send the stale one.
+
+Why the format changed, given this section says "send separately": that rule
+exists because Chandana answered 2 of 7 questions in one long message. The
+failure there was questions buried in prose, not question count. Four answers and
+two file requests for one person is one conversation, not five.
+
+**It briefly became a Word document and then stopped being one.** At nine
+questions across five topics that was right — it needed headings and a fill-in
+box under each question. Once Mr Ace answered five of the nine himself and two
+more turned into "send me the file you already use", 441 words of plain text
+carried it, and a .docx was ceremony. The generator survives at
+`scripts/md-to-docx.py` if a future school-facing document needs one; the
+markdown is the source and it renders headings, callouts and bordered answer
+boxes.
+
+**Trimmed 2026-08-11.** The four blocks to Christina carried roughly twenty
+questions between them and now carry six. Almost everything cut was invented
+here rather than asked for in the room — report-card and parent reach questions
+on features that do not exist, storage mechanics, and one question she had
+already answered on the recording. The rule above is the corrected version; the
+previous wording said to ask the reach questions always, which is what produced
+the bloat.
 
 ### To Chandana — house · sent, answered 2026-08-06
 
@@ -429,31 +506,63 @@ the block below.
 >
 > Thank you.
 
-### To Hanafi — the names I cannot match
+### To Hanafi — the names I cannot match · NOT SENDING, dropped 2026-08-11
 
-**Was two questions; the first is answered.** Which allocation is live was
-settled internally on 2026-08-06 — the per-class tabs — so only the unmatched
-names remain. The superseded tab is mentioned last and as a courtesy, not as a
-correction.
+🚫 **Mr Ace's call: drop both remaining questions and do not send this at all.**
+Kept below as the record of what was matched by hand, which is the only place it
+is written down.
+
+**What that accepts, so it is not discovered later as a surprise.** Roughly 12 of
+410 students go without a house: the 3 below whom Hanafi's sheet never listed,
+the 8 the generator could not match, and possibly PANGILINAN Rafael Noah if the
+trailing space in `"H250326 "` is real in the database. **And the eleven manual
+matches in the table below go in unconfirmed** — they were matched by class and
+first name, which is good but not certain. If a wrong one landed, a student sits
+in the wrong house until somebody notices. That is the accepted cost of not
+asking; all of it is reversible from the permanent record's house tile.
+
+**Was two questions; the first was answered.** Which allocation is live was
+settled internally on 2026-08-06 — the per-class tabs.
+
+⚠ **The "eight students have left the school" claim was cut, 2026-08-11 — it was
+never established.** The generator reports all eight as tier `none`, but a row
+reaches `none` for **three** different reasons that its output cannot tell
+apart: the application is Withdrawn/Cancelled (`gen-house-assignment.ts:200–205`),
+the application has **no `studentNumber`** (`:214` — the comment there names real
+enrolled children dropped this way), or the name genuinely matches nothing. Only
+the first means the child left.
+
+The message asserted the first for all eight and asked Hanafi to delete them from
+his sheet. Had any one of them been a spelling mismatch or a missing student
+number, we would have told a colleague to remove a currently-enrolled child from
+the house list.
+
+**Resolved by removing the claim, not by chasing it — Mr Ace's call, 2026-08-11,
+and the right one.** Eight of 410 is a 2% gap, the cost of leaving them is that a
+few students show a blank house until someone notices, and the fix then is
+trivial. The message now says only that eight could not be matched confidently
+and that Hanafi need do nothing about them, which is true regardless of which of
+the three reasons applies.
+
+**If it is ever reopened:** `house/check-house-unmatched-8.ts` (read-only, two
+SELECTs, no filters) prints the actual reason per student and resolves the padded
+`H250326` at the same time. The generator's own `NOT WRITTEN` block cannot —
+it only ever prints `none`.
 
 > Hi Mr Hanafi,
 >
 > Thank you — both sheets are exactly what I needed, and the points legend
 > answered more than I had asked.
 >
-> I have loaded the list — 391 of the 410 students went straight in. I worked
-> out most of the rest myself, so this is mainly to confirm rather than to ask.
+> I have loaded the list — 402 of the 410 students are in. I worked out most of
+> the trickier ones myself, so this is mainly to confirm rather than to ask.
+> (Eight I could not match against our records with enough confidence to be
+> sure, so I have left those alone for now — nothing you need to do.)
 >
-> 1. **Eight students on the list have left the school**: Alexxa Singson (P2
->    Humility), Kairo Alonzo Santos and Johannah Bruno (P4 Trust), Kaung Khant
->    Min Phone Naing and Ichigo Suzara (P5 Commitment), Muhammad Ibrahim Ajmal
->    (P6 Loyalty), Joan Irawan (Sec 2 I2) and Ashley Rae Cama (Sec 3). I have
->    left them out rather than put them in a house — worth removing from your
->    sheet so your counts stay right.
-> 2. **Three students are missing from the list entirely**, and have no house:
+> 1. **Three students are missing from the list entirely**, and have no house:
 >    Pin Sin Huang (P4 Diligence), Lushi Liquiran (P2 Humility) and James Aaron
 >    Alcantara (Sec 2 I2). Which houses should they be in?
-> 3. **Please confirm these eleven** — the names are written differently on the
+> 2. **Please confirm these eleven** — the names are written differently on the
 >    sheet than in our records, so I matched them by class and I would rather
 >    check than guess:
 >
@@ -491,6 +600,17 @@ _What production actually holds_ for the counts.
 The drawer described below is now live, so what remains for her is confirmation
 and the one genuinely open question (whether teachers may add to it).
 
+**Trimmed 2026-08-11.** "Is that the right set — medical, learning needs,
+contacts — or is something missing?" is cut. It is open-ended fishing with no
+build attached; she will either say nothing or invent scope on the spot. The two
+that remain both have consequences: one ratifies a live permissive default, the
+other decides whether teachers get write access to medical data.
+
+**The counts are now dated in the message rather than stated as standing fact.**
+They came from an ad-hoc query on 2026-08-09 and no script reproduces them, so
+they cannot be re-verified without going back to production. "When I looked at
+the start of August" is true and checkable; the bare present tense was not.
+
 > Hi Ms Christina,
 >
 > On the allergies and special-needs information you wanted teachers to see.
@@ -503,22 +623,21 @@ and the one genuinely open question (whether teachers may add to it).
 >
 > **On the special-needs declarations you mentioned** — "diagnosed with ADHD,
 > for instance" — those are already being collected on the enrolment form, in a
-> box called Additional learning needs. **65 families have written something
-> there, and about half of it is real**: ADHD, autism spectrum disorder, speech
-> and language delay, shadow support, SPED. The rest is parents typing "NA",
-> which the system now hides. So this was on file all along; it simply never
-> reached a teacher.
+> box called Additional learning needs. When I looked at the start of August,
+> **65 families had written something there, and about half of it was real**:
+> ADHD, autism spectrum disorder, speech and language delay, shadow support,
+> SPED. The rest is parents typing "NA", which the system now hides. So this was
+> on file all along; it simply never reached a teacher.
 >
-> 1. Is that the right set — medical, learning needs, contacts — or is something
->    missing?
-> 2. Every teacher who teaches that student can see it, including subject
+> 1. Every teacher who teaches that student can see it, including subject
 >    teachers, not only the form class adviser. Is that what you want?
-> 3. Should teachers be able to **add** to any of this, or only read it? At the
+> 2. Should teachers be able to **add** to any of this, or only read it? At the
 >    moment only the office can change it.
 >
 > One thing worth knowing: **the tick-box medical fields are nearly all empty.**
-> Out of 498 students there are 4 with allergies recorded, 1 with asthma, and
-> none at all for epilepsy, diabetes or heart conditions. One parent described
+> On the same look at the start of August, out of 498 students there were 4 with
+> allergies recorded, 1 with asthma, and none at all for epilepsy, diabetes or
+> heart conditions. One parent described
 > their child's epilepsy in the learning-needs box instead, where the tick-box
 > would never have found it. If the school holds this information somewhere
 > else, it is worth getting it into the system so it reaches teachers.
@@ -526,6 +645,26 @@ and the one genuinely open question (whether teachers may add to it).
 > Thank you.
 
 ### To Christina — 2 of 5 · medical certificates
+
+**Trimmed 2026-08-11, four questions to two.** Her ask (31:07) was two things:
+can we still edit the attendance, and can we upload the MC. The first was
+answered in the room. Where the file is stored is mechanics — ours to decide, and
+it follows from who uploads it anyway. The report-card line stays because it is
+a live behaviour she has never been told about, but as a statement, not a
+question.
+
+**Second pass the same day:** the two questions had been merged into one, which
+would have got one answer to a two-part question. Split. The merged version also
+explained that teacher-upload is harder than office-upload — **cut deliberately.**
+That is our constraint, not hers, and putting it in front of her steers the
+answer toward the cheaper build. If she says teachers, the security work is ours
+to do.
+
+**Facts in this block are verified** (2026-08-11): the rollup at
+`068_attendance_late_enrollee_proration.sql:54` counts `P`, `L` and `EX` into
+`days_present`, and `ATTENDANCE_ROWS` in `components/report-card/report-card-document.tsx:386`
+renders only School Days / Days Present / Days Late — `days_excused` and
+`days_absent` are stored and never shown.
 
 > Hi Ms Christina,
 >
@@ -537,82 +676,113 @@ and the one genuinely open question (whether teachers may add to it).
 >
 > 1. Who would upload it — the teacher who marked the absence, or the office?
 > 2. Who needs to be able to open it afterwards?
-> 3. Should it sit with the student's other documents (birth certificate,
->    passport and so on) so everything is in one place, or only against that
->    day's attendance?
-> 4. **Worth confirming, because it is easy to miss:** an excused absence
->    already counts as **present** on the report card. The card shows only
->    Number of School Days, Days Present and Days Late — so a student with an MC
->    is not shown as absent at all, and the reason never appears. Is that what
->    you want?
+>
+> One thing worth knowing, because it is easy to miss: **an excused absence
+> already counts as present on the report card.** The card shows only Number of
+> School Days, Days Present and Days Late — so a student who was out on an MC is
+> not shown as absent at all, and the reason never appears on it. Tell me if that
+> should change.
 >
 > Thank you.
 
 ### To Christina — 3 of 5 · disciplinary records
 
+**Trimmed 2026-08-11, six questions to three.** Her ask (18:20) was already a
+spec — open a student, see the incidents they were involved in for the whole
+year, warning letter or suspension. The report-card, parent, awards-effect and
+FCA-comment questions were invented here; she raised none of them, nothing is
+built, so the default is staff-only. Asking would have offered her four features
+she never requested.
+
+**Corrected the same day: the first trim went too far.** "Where are incident
+reports kept today?" had been cut as invented — it is not. She said "we file
+incident reports" herself, and the answer decides whether this is a migration of
+existing records or a fresh start. Restored. The rule is _anchored in something
+they said_, and that question is anchored; over-cutting is its own failure.
+
+**Verified 2026-08-11:** there is genuinely nothing behavioural in the schema.
+The five migration hits for `incident`/`disciplin` are all false positives —
+"Discipline" as a **subject name** in the schedule seeds (074, 090), "KD #119
+discipline" meaning rigour, and one code comment.
+
 > Hi Ms Christina,
 >
 > On the incident reports and disciplinary records.
 >
-> **Right now there is nothing about behaviour in the system at all.** The
-> report card shows grades, attendance and the form class adviser's comment, and
-> nothing else.
+> **Right now there is nothing about behaviour in the system at all.** What you
+> described — open a student and see the incidents they were involved in across
+> the year, and whether it was a warning letter or a suspension — is all
+> buildable, and it would sit on the student's record where you would expect to
+> find it. Staff only.
 >
-> 1. Where are incident reports written and kept today? I want to know whether
->    the system should replace that, or just show what is already on file.
-> 2. Who should be able to see a student's record — every teacher who teaches
->    them, only the form class adviser, or only leadership?
-> 3. Should anything about it ever appear on the report card?
-> 4. Should parents be able to see it?
-> 5. Should it affect whether a student can receive an award? At the moment
->    awards are worked out purely from marks, and nothing else is considered.
-> 6. The form class adviser's report-card comment is currently the only place
->    anyone writes about a student's character, as free text. Should disciplinary
->    records be kept completely separate from that, or are they related?
+> 1. Where are incident reports written and kept at the moment? You mentioned you
+>    already file them, and knowing where they live decides whether we bring the
+>    existing ones across or start fresh from here.
+> 2. When an incident is recorded, would you want to **upload the report or
+>    warning letter itself**, or type a short summary of what happened, or both?
+> 3. Who should be able to see a student's record — every teacher who teaches
+>    them, only the form class adviser, or only leadership? I ask because you said
+>    "click the name of the student", and that page is one teachers cannot open
+>    today.
 >
 > Thank you.
 
 ### To Christina — 4 of 5 · awards and certificates
+
+**Trimmed 2026-08-11, five questions to one.** Her ask (19:08) named most of the
+fields itself, so question 1 became an assumption to correct rather than a
+question to answer. Report card and parents were invented here. House points is
+Chandana's thread and Hanafi's sheet — it does not belong in a message to
+Christina, and Chandana has already confirmed points do not touch the academic
+tiers.
 
 > Hi Ms Christina,
 >
 > On the awards and certificates of participation.
 >
 > **Right now the system only has Gold, Silver and Bronze**, worked out
-> automatically from a student's average marks. They are visible to staff only —
-> they are not printed on the report card, and parents cannot see them.
+> automatically from a student's average marks, and visible to staff only. What
+> you described is a different thing altogether — competitions, certificates of
+> participation, something you can pull up at the end of the year to cite at the
+> moving up ceremony. So it needs its own place rather than being added onto
+> those three.
 >
-> 1. What would you want recorded for each new award? I am assuming the award
->    name, the date, who gave it, and the certificate file — tell me if anything
->    is missing.
-> 2. Who would enter it — the teacher who ran the activity, or the office?
-> 3. Should these new awards appear on the report card?
-> 4. Should parents be able to see them?
-> 5. Should they feed the house points Ms Chandana mentioned?
+> I am assuming each entry would record the **award name, the date, who gave it,
+> and the certificate file** where there is a soft copy. Tell me if anything is
+> missing.
+>
+> 1. Who would enter these — the teacher who ran the activity, or the office?
 >
 > Thank you.
 
 ### To Christina — 5 of 5 · grade-change approvals
 
+**Trimmed 2026-08-11, five questions to three — and two of the three are
+corrections, not questions.** She answered the count and the names herself at
+46:04 ("two approvers, Ms. Chandana and I only"), so asking again is asking her
+to repeat herself; Wynne's "can we add more" was overridden in the room by that
+answer. "Should anything else need approval" was invented here. What is genuinely
+unknown is who AEB is — the term is never expanded anywhere, by anyone.
+
 > Hi Ms Christina,
 >
-> On approving grade changes. Two things about how it works today may not match
-> what you have in mind.
+> On approving grade changes. You described two routes — two approvers before the
+> report book goes out, AEB approval after it has been issued. Two things about
+> how the system works today do not match that, and there is one thing I still
+> need from you.
 >
-> 1. How many approvers do you need, and who are they?
-> 2. ⚠ **Whoever responds first decides the request.** The second person's
->    response is never used. So it is not really two signatures — it is
->    whichever of you gets there first. If you need both to agree before a change
->    goes through, tell me and I will change it.
-> 3. ⚠ **The teacher raising the request chooses which two approvers it goes
->    to**, from a list of everyone eligible. You said "two approvers, Ms Chandana
->    and I only" — if it should always be the same two people rather than the
->    teacher's choice, that is a change too.
-> 4. For a change after the report book has gone out, you mentioned AEB
->    approval. Who should that be in the system?
-> 5. Should anything other than a grade change need approval — a correction to
->    attendance, for example? Nothing else in the system has an approval step at
->    the moment.
+> 1. ⚠ **Whoever responds first decides the request.** The second person's
+>    response is recorded, and the system does ask them for it, but it cannot
+>    change the outcome — the change goes through, or does not, on the first
+>    reply alone. So it is not really two signatures. If you need both of you to
+>    agree before a change takes effect, tell me and I will change it.
+> 2. ⚠ **The teacher raising the request chooses which two approvers it goes
+>    to**, from a list of everyone eligible. You said it should be you and Ms.
+>    Chandana only — today the system does not enforce that.
+> 3. On the second route: **who is AEB, in terms of actual people?** I have the
+>    rule — once the report book has been issued, the request goes to them instead
+>    — but I need to know who to send it to, and whether it is one person or
+>    several.
 >
 > Thank you.
 
@@ -624,6 +794,33 @@ should get it too. That shipped on 2026-08-09 as KD #182, so sending the old
 version would have asked her to decide something already built — the same
 mistake the message to Christina made about learning needs. Both of her
 genuinely open questions survive below.
+
+**Trimmed again 2026-08-11 — this block now asks her nothing.** All three
+questions are gone and it is a notification plus a correction, which is the right
+shape for it.
+
+- **"Should anyone be told when a student is flagged?"** — cut. Notification is
+  not built and she never asked for it; she asked to "flag out students", which
+  is a list, and she has one. Same invented-question pattern removed from
+  Christina's blocks the same day; it survived only because it was already
+  written.
+- **The five-point threshold** — **decided by Mr Ace 2026-08-11: keep 5 as the
+  default, do not ask.** The message now states the number and offers to change
+  it after she has used it for a term. Asking a teacher to pick a sensitivity
+  threshold before she has seen the feature fire is asking her to guess.
+- **"Should this ever reach parents?"** — **decided by Mr Ace 2026-08-11: no,
+  and do not ask.** The teachers want the ability to see and monitor; contacting
+  the parent stays the teacher's own judgement, as it already is. The message
+  already states it is staff-only, so the fact reaches her without the question.
+
+What remains is worth sending on its own: she learns the feature shipped and
+reaches both people she named, and she gets the ⚠ correction about exam totals.
+
+**The exam-total correction is verified** (2026-08-11): change requests can only
+carry `ww_scores`, `pt_scores`, `qa_score`, `letter_grade` or `is_na` — enforced
+twice, at the zod enum in `lib/schemas/change-request.ts:3` and a DB `CHECK` at
+`009_change_requests.sql:31` — and the row keys off a `grade_entry_id`, so it
+cannot address subject config at all. She was told wrong in the session.
 
 > Hi Ms Koh,
 >
@@ -642,13 +839,9 @@ genuinely open questions survive below.
 > Nobody is notified; you open it yourself. It is not on the report card and
 > parents cannot see it.
 >
-> 1. Should anyone be **told** when a student is flagged, or is opening it
->    enough? There is a bell in the system today, but it only carries
->    grade-change requests.
-> 2. How big a drop should raise a flag? It is set to five points at the
->    moment, which is my guess rather than the school's.
-> 3. Should this ever reach parents? I have assumed it stays staff-only and that
->    contacting the parents is the teacher's own call.
+> A drop of five points or more is what raises a flag. If that turns out to be
+> too sensitive or not sensitive enough once you have used it for a term, tell me
+> and I will change the number.
 >
 > One thing you will notice: subjects marked with letters rather than numbers —
 > MAPEH and the like — show as a band change, "A → C", instead of a points
@@ -665,17 +858,19 @@ genuinely open questions survive below.
 
 ### To Wynne
 
+**Trimmed 2026-08-11, two items to one.** The approver question was hers (45:30)
+but Christina answered it in the same exchange at 46:04 — two for the normal
+route, AEB after issue. Asking Wynne for a number would be asking her to decide
+something the Academic Head had already decided ninety seconds later on the same
+recording. The remaining unknown is who AEB is, and that is Christina's to
+answer, not Wynne's.
+
 > Hi Ms Wynne,
 >
-> Two things from the training:
->
-> 1. **Transcript of Records** — you offered to send the template during the
->    session. The data is all there and goes back across school years, so the
->    template is the only thing I am waiting on. Could you send a copy, or a
->    recent one with the student's details removed?
-> 2. **Approvers** — you mentioned there are quite a few people who approve
->    grade changes. How many should the system allow? Ms Christina is deciding
->    who they are, so this is just the number.
+> **Transcript of Records** — you offered to send the template during the
+> training. The data is all there and goes back across school years, so the
+> template is the only thing I am waiting on. Could you send a copy, or a recent
+> one with the student's details removed?
 >
 > Thank you.
 
