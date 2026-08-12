@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
+import {
+  isSubjectTeacher,
+  loadEffectiveAssignmentsForUser,
+} from '@/lib/auth/teacher-assignments';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
 import type { SlotMeta } from '@/lib/schemas/grading-sheet';
@@ -68,15 +72,15 @@ export async function PATCH(
     if (!sectionId || !subjectId) {
       return NextResponse.json({ error: 'sheet not found' }, { status: 404 });
     }
-    const { data: assignment } = await supabase
-      .from('teacher_assignments')
-      .select('id')
-      .eq('teacher_user_id', auth.user.id)
-      .eq('section_id', sectionId)
-      .eq('subject_id', subjectId)
-      .eq('role', 'subject_teacher')
-      .maybeSingle();
-    if (!assignment) {
+    // Renaming an activity is part of running the sheet, so a substitute
+    // covering this slot may do it. Goes through the shared loader rather than
+    // an inline query so cover is honoured here exactly as it is on the score
+    // write a few files over — one answer, one place.
+    const assignments = await loadEffectiveAssignmentsForUser(
+      supabase,
+      auth.user.id
+    );
+    if (!isSubjectTeacher(assignments, sectionId, subjectId)) {
       return NextResponse.json(
         { error: 'not assigned to this sheet' },
         { status: 403 }

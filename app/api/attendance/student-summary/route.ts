@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { presentOnlyCount } from '@/lib/attendance/queries';
 import {
   currentTermMonthsFromRaw,
@@ -72,14 +73,17 @@ export async function GET(req: NextRequest) {
   // Teacher scope gate — teachers may only view students in sections they
   // form-advise. Registrar / school_admin / superadmin skip this check.
   if (auth.role === 'teacher') {
-    const { data: assignment } = await service
-      .from('teacher_assignments')
-      .select('section_id')
-      .eq('teacher_user_id', auth.user.id)
-      .eq('section_id', (ss as { section_id: string }).section_id)
-      .eq('role', 'form_adviser')
-      .maybeSingle();
-    if (!assignment) {
+    // A substitute covering the adviser passes: reading a student's attendance
+    // is part of taking the register, which is the work they are there to do.
+    const sectionId = (ss as { section_id: string }).section_id;
+    const assignments = await loadEffectiveAssignmentsForUser(
+      service,
+      auth.user.id
+    );
+    const advises = assignments.some(
+      (a) => a.role === 'form_adviser' && a.section_id === sectionId
+    );
+    if (!advises) {
       return NextResponse.json(
         { error: 'not form adviser for this section' },
         { status: 403 }

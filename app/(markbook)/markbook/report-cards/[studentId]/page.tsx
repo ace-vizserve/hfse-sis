@@ -63,12 +63,15 @@ export default async function ReportCardPreview({
   // Runs after buildReportCard because the section is only known from the
   // payload's primary enrolment — which is also the right section to gate on
   // for a mid-year transfer: access follows the student's CURRENT adviser.
-  const { capability } = await loadClassroomAccess(
+  const { substantiveCapability } = await loadClassroomAccess(
     role,
     sessionUser.id,
     payload.section.id
   );
-  if (!canReadReportCard(capability)) notFound();
+  // substantiveCapability, not capability. The card names the regular adviser
+  // and carries the comment they wrote, so it stays theirs while they are away;
+  // a substitute covering the class gets 404 here.
+  if (!canReadReportCard(substantiveCapability)) notFound();
 
   // Which term to view: the URL param wins; otherwise the canonical resolver
   // (KD #116) decides. It used to read `.eq('is_current', true)` and fall back

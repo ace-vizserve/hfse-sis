@@ -32,6 +32,7 @@ import {
   ASSIGNMENT_CHANGE_REASON_LABELS,
   ASSIGNMENT_ROLE_LABELS,
 } from '@/lib/schemas/teacher-assignment';
+import { RELIEF_REASON_LABELS } from '@/lib/schemas/assignment-relief';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. auditActionLabel
@@ -78,6 +79,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Teacher assignments
   'assignment.create': 'Teacher assigned',
   'assignment.delete': 'Teacher assignment removed',
+  'assignment.relief.start': 'Relief teacher arranged',
+  'assignment.relief.end': 'Relief teacher finished',
 
   // Sections
   'section.create': 'Section created',
@@ -764,6 +767,39 @@ function templateSummary(
       if (reason) parts.push(reason);
       const notes = str(ctx.change_notes);
       if (notes) parts.push(notes);
+
+      return joinParts(parts);
+    }
+
+    // Cover for an absent teacher. Deliberately names BOTH people — the whole
+    // point of the entry is who stood in for whom, and a line reading only
+    // "Ms Radhika · P5 Tenacity, Mathematics" would be indistinguishable from
+    // an ordinary assignment. Reads e.g.
+    //   "Ms Radhika covering Ms Koh · Subject teacher, Mathematics, P5 Tenacity · On leave"
+    case 'assignment.relief.start':
+    case 'assignment.relief.end': {
+      const parts: string[] = [];
+
+      const relief = str(ctx.relief_teacher_name);
+      const covered = str(ctx.covered_teacher_name);
+      if (relief && covered) parts.push(`${relief} covering ${covered}`);
+      else if (relief) parts.push(relief);
+      else if (covered) parts.push(`Cover for ${covered}`);
+
+      const roleLabel =
+        (ASSIGNMENT_ROLE_LABELS as Record<string, string>)[str(ctx.role)] ?? '';
+      const where = [roleLabel, str(ctx.subject_name), str(ctx.section_name)]
+        .filter(Boolean)
+        .join(', ');
+      if (where) parts.push(where);
+
+      // Not labelFor() — it has no `reason` case, so it would fall through to
+      // the raw value and print "on_leave" at a school admin.
+      const reliefReason =
+        (RELIEF_REASON_LABELS as Record<string, string>)[str(ctx.reason)] ?? '';
+      if (reliefReason) parts.push(reliefReason);
+      const reliefNotes = str(ctx.notes);
+      if (reliefNotes) parts.push(reliefNotes);
 
       return joinParts(parts);
     }

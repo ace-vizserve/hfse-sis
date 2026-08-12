@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, UserCheck, Users2 } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
+import { StaffDirectoryChrome } from '@/components/sis/staff-directory-chrome';
 import { StaffTable } from '@/components/sis/staff-table';
 import {
   Card,
@@ -13,7 +14,7 @@ import {
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
 import { loadStaffAssignments } from '@/lib/sis/staff';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Teaching assignments — the staff directory's default cut. Form-adviser and
 // subject-teacher assignments for the current year.
@@ -29,6 +30,9 @@ export default async function StaffAssignmentsPage({
   // may be bookmarked, so it keeps working.
   const params = await searchParams;
   if (params.view === 'accounts') redirect('/sis/admin/staff/accounts');
+
+  const sessionUser = await getSessionUser();
+  if (!sessionUser?.role) redirect('/sis');
 
   const supabase = await createClient();
   const { data: ayRow } = await supabase
@@ -53,7 +57,7 @@ export default async function StaffAssignmentsPage({
   const teachingCount = teacherList.length;
 
   return (
-    <>
+    <StaffDirectoryChrome role={sessionUser.role}>
       {/* "Sections missing FCA" leads — it is the one actionable metric of the
           three (Serial Position / Pareto). */}
       <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:shadow-xs sm:grid-cols-3">
@@ -149,6 +153,6 @@ export default async function StaffAssignmentsPage({
           <StaffTable rows={rows} ayCode={ayCode} />
         </CardContent>
       </Card>
-    </>
+    </StaffDirectoryChrome>
   );
 }

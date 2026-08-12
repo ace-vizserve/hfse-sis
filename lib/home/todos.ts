@@ -110,7 +110,10 @@ async function evaluationPriorityTodo({
   userId,
   profile,
 }: TodoContext): Promise<HomeTodoItem | null> {
-  if (!profile.advises) return null;
+  // advisesSubstantively, not advises. Write-ups stay with the regular adviser
+  // while a substitute covers the class, so a cover-only teacher has no
+  // write-ups to chase and this row would count someone else's work at them.
+  if (!profile.advisesSubstantively) return null;
   const { getEvaluationTeacherPriority } =
     await import('@/lib/evaluation/dashboard');
   const payload = await getEvaluationTeacherPriority({

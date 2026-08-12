@@ -2,6 +2,7 @@ import { School, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -89,17 +90,31 @@ export default async function AttendanceSectionsListPage() {
   // Registrar+ see all sections in the current AY.
   let allowedSectionIds: Set<string> | null = null;
   if (isTeacherOnly && session?.id && ay) {
+    // Held OR covered — a substitute needs the class they are taking the
+    // register for to appear in this list at all.
+    //
+    // The shared loader has no AY filter, so the AY narrowing the old inline
+    // query did with `sections.academic_year_id` is applied here instead. It
+    // matters: without it a prior year's adviser row would put a section on
+    // this list that the current-AY query below never returns, and the count
+    // and the table would disagree.
     const service = createServiceClient();
-    const { data: assignments } = await service
-      .from('teacher_assignments')
-      .select('section_id, sections!inner(academic_year_id)')
-      .eq('teacher_user_id', session.id)
-      .eq('role', 'form_adviser')
-      .eq('sections.academic_year_id', ay.id);
+    const assignments = await loadEffectiveAssignmentsForUser(
+      service,
+      session.id
+    );
+    const advisedIds = assignments
+      .filter((a) => a.role === 'form_adviser')
+      .map((a) => a.section_id);
+    const { data: thisYear } = advisedIds.length
+      ? await service
+          .from('sections')
+          .select('id')
+          .eq('academic_year_id', ay.id)
+          .in('id', advisedIds)
+      : { data: [] };
     allowedSectionIds = new Set(
-      ((assignments ?? []) as Array<{ section_id: string }>).map(
-        (a) => a.section_id
-      )
+      ((thisYear ?? []) as Array<{ id: string }>).map((s) => s.id)
     );
   }
 

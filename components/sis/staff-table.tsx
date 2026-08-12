@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import { ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import {
@@ -120,17 +121,39 @@ export function StaffTable({
       header: '',
       enableSorting: false,
       enableHiding: false,
+      // Two ways in, doing different jobs. "Edit" opens the drawer for a quick
+      // change without losing your place in the table; the chevron opens the
+      // teacher's own page, which has an address you can send to someone and
+      // is where cover lives. Disabled accounts get neither — their row is
+      // read-only until somebody re-enables them.
       cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          disabled={row.original.disabled}
-          onClick={() => openSheet(row.original)}
-          aria-label={`Edit assignments for ${row.original.name}`}
-        >
-          <ChevronRight className="size-4" />
-        </Button>
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={row.original.disabled}
+            onClick={() => openSheet(row.original)}
+            aria-label={`Edit assignments for ${row.original.name}`}
+          >
+            Edit
+          </Button>
+          <Button
+            asChild={!row.original.disabled}
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            disabled={row.original.disabled}
+            aria-label={`Open ${row.original.name}'s page`}
+          >
+            {row.original.disabled ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <Link href={`/sis/admin/staff/${row.original.userId}`}>
+                <ChevronRight className="size-4" />
+              </Link>
+            )}
+          </Button>
+        </div>
       ),
     },
   ];

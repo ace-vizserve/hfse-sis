@@ -40,8 +40,15 @@ export async function GET(
 
   let step = 'capability';
   try {
-    const { capability } = await loadClassroomAccess(role, user.id, sectionId);
-    if (!canReadReportCard(capability)) {
+    const { substantiveCapability } = await loadClassroomAccess(
+      role,
+      user.id,
+      sectionId
+    );
+    // substantiveCapability: the at-risk list is the adviser's own pastoral
+    // view, alongside the report card comment they write. It stays with the
+    // regular adviser while a substitute covers the teaching.
+    if (!canReadReportCard(substantiveCapability)) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 

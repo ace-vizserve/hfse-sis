@@ -14,12 +14,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Role } from '@/lib/auth/roles';
 import {
-  loadAssignmentsForUser,
-  type AssignmentRow,
+  loadEffectiveAssignmentsForUser,
+  type EffectiveAssignmentRow,
 } from '@/lib/auth/teacher-assignments';
 import {
   capabilityForSection,
   resolveClassroomScope,
+  substantiveCapabilityForSection,
   type ClassroomCapability,
 } from '@/lib/classroom/scope';
 import type { ClassroomTerm } from '@/lib/classroom/terms';
@@ -31,8 +32,24 @@ import {
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type ClassroomAccess = {
+  /**
+   * What the viewer may DO here, cover included. Gate the working surfaces on
+   * this: attendance, marks, roster.
+   */
   capability: ClassroomCapability | null;
-  assignments: AssignmentRow[];
+  /**
+   * What the viewer IS here, cover excluded. Gate the adviser's own work on
+   * this — write-ups and the report card comment stay with the regular adviser
+   * while they are away, so a substitute must get `null` from it.
+   *
+   * The two differ ONLY for an active relief. Passing `capability` where this
+   * belongs is the mistake this split exists to prevent, and
+   * `__tests__/auth/assignment-read-classification.test.ts` fails the build on it —
+   * `evaluation_writeups` has no adviser predicate in RLS to catch it at
+   * runtime.
+   */
+  substantiveCapability: ClassroomCapability | null;
+  assignments: EffectiveAssignmentRow[];
 };
 
 export async function loadClassroomAccess(
@@ -42,10 +59,14 @@ export async function loadClassroomAccess(
 ): Promise<ClassroomAccess> {
   const assignments =
     role === 'teacher'
-      ? await loadAssignmentsForUser(createServiceClient(), userId)
+      ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
       : [];
   const scope = resolveClassroomScope(role, assignments);
-  return { capability: capabilityForSection(scope, sectionId), assignments };
+  return {
+    capability: capabilityForSection(scope, sectionId),
+    substantiveCapability: substantiveCapabilityForSection(scope, sectionId),
+    assignments,
+  };
 }
 
 export async function getTermsForAy(

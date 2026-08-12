@@ -58,6 +58,8 @@ const ACTION_LABELS: Record<string, string> = {
   'section.realphabetize': 'Roster re-alphabetised',
   'assignment.create': 'Teacher assigned',
   'assignment.delete': 'Teacher unassigned',
+  'assignment.relief.start': 'Relief teacher arranged',
+  'assignment.relief.end': 'Relief teacher finished',
   'student.section.transfer': 'Student transferred',
   'enrolment.metadata.update': 'Enrolment record updated',
   'ay.create': 'Academic year created',

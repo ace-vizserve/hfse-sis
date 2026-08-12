@@ -36,11 +36,8 @@ export default async function ClassroomGradesPage({
   if (!sessionUser) redirect('/login');
   const { id: userId, role } = sessionUser;
 
-  const { capability, assignments } = await loadClassroomAccess(
-    role,
-    userId,
-    sectionId
-  );
+  const { capability, substantiveCapability, assignments } =
+    await loadClassroomAccess(role, userId, sectionId);
   if (!capability) notFound();
 
   const supabase = await createClient();
@@ -101,13 +98,17 @@ export default async function ClassroomGradesPage({
               (KD #179). Hidden entirely in Term 1 — there is no earlier term to
               have fallen from, so the button would open onto a permanent
               nothing. */}
-          {selectedTerm && selectedTermId && canReadReportCard(capability) && (
-            <AtRiskLookup
-              sectionId={sectionId}
-              termId={selectedTermId}
-              termLabel={selectedTerm.label}
-            />
-          )}
+          {/* substantiveCapability: the at-risk panel and report-card link are
+              the adviser's own pastoral work, kept with them during cover. */}
+          {selectedTerm &&
+            selectedTermId &&
+            canReadReportCard(substantiveCapability) && (
+              <AtRiskLookup
+                sectionId={sectionId}
+                termId={selectedTermId}
+                termLabel={selectedTerm.label}
+              />
+            )}
           {selectedTerm && (
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               {selectedTerm.label}

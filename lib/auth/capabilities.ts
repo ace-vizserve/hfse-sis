@@ -108,7 +108,19 @@ export const RESOURCES = [
     label: 'Staff & Accounts',
     description:
       'The staff directory, login accounts, and which classes each teacher is assigned to.',
-    actions: ['read', 'view_accounts', 'manage_accounts', 'edit_assignments'],
+    // `manage_relief` is separate from `edit_assignments` on purpose, not for
+    // tidiness. Reassigning a class is day-to-day work the academic
+    // coordinator does; arranging cover puts one teacher's name against
+    // another's class while that teacher is away, which Mr Ace scoped to
+    // school admin and above. Folding the two would have handed cover to the
+    // coordinator as a side effect of a grant she already holds.
+    actions: [
+      'read',
+      'view_accounts',
+      'manage_accounts',
+      'edit_assignments',
+      'manage_relief',
+    ],
   },
   {
     key: 'approvers',
@@ -258,6 +270,10 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     // read-only; canManageAccounts is superadmin-only (:65).
     'staff.view_accounts',
     'staff.edit_assignments',
+    // Arranging cover for an absent teacher. Held here and by superadmin only
+    // — deliberately NOT by the academic coordinator, who holds
+    // `staff.edit_assignments` beside it (Mr Ace, 2026-08-11).
+    'staff.manage_relief',
     'grade_changes.read',
     // The ONLY holder. lib/change-requests/decide.ts:124 permits exactly this
     // role — see the superadmin block below for why that matters.
@@ -290,6 +306,7 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'staff.view_accounts',
     'staff.manage_accounts',
     'staff.edit_assignments',
+    'staff.manage_relief',
     'approvers.manage',
     'grade_changes.read',
     // DELIBERATELY ABSENT: 'grade_changes.approve'.

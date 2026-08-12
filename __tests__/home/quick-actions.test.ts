@@ -7,10 +7,33 @@ import {
 } from '@/lib/auth/capabilities';
 import type { TeachingProfile } from '@/lib/sidebar/module-visibility';
 
-const ADVISER: TeachingProfile = { advises: true, teachesSubject: false };
-const SUBJECT: TeachingProfile = { advises: false, teachesSubject: true };
-const BOTH: TeachingProfile = { advises: true, teachesSubject: true };
-const NEITHER: TeachingProfile = { advises: false, teachesSubject: false };
+const ADVISER: TeachingProfile = {
+  advises: true,
+  advisesSubstantively: true,
+  teachesSubject: false,
+};
+const SUBJECT: TeachingProfile = {
+  advises: false,
+  advisesSubstantively: false,
+  teachesSubject: true,
+};
+const BOTH: TeachingProfile = {
+  advises: true,
+  advisesSubstantively: true,
+  teachesSubject: true,
+};
+const NEITHER: TeachingProfile = {
+  advises: false,
+  advisesSubstantively: false,
+  teachesSubject: false,
+};
+// A substitute covering a form adviser: does the adviser's day-to-day work,
+// but is not the adviser of record, so write-ups are not theirs.
+const COVERING_ADVISER: TeachingProfile = {
+  advises: true,
+  advisesSubstantively: false,
+  teachesSubject: false,
+};
 
 // The real grants, so a role's expected action list is checked against what
 // that role actually holds — not against a hand-written literal that could

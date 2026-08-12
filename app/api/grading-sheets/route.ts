@@ -4,7 +4,7 @@ import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
-  loadAssignmentsForUser,
+  loadEffectiveAssignmentsForUser,
   subjectTeacherPairs,
 } from '@/lib/auth/teacher-assignments';
 import { logAction } from '@/lib/audit/log-action';
@@ -47,7 +47,10 @@ export async function GET(request: NextRequest) {
 
   // Teachers: filter to assigned (section, subject) pairs.
   if (role === 'teacher') {
-    const assignments = await loadAssignmentsForUser(supabase, auth.user.id);
+    const assignments = await loadEffectiveAssignmentsForUser(
+      supabase,
+      auth.user.id
+    );
     const pairs = subjectTeacherPairs(assignments);
     const allowed = new Set(
       pairs.map((p) => `${p.section_id}::${p.subject_id}`)

@@ -69,7 +69,11 @@ export default async function ClassroomOverviewPage({
   // Belt-and-braces re-check (see the layout for the section-level gate);
   // Overview itself has no RLS-restricted data, but capability drives which
   // stat cards below are meaningful to show.
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability, substantiveCapability } = await loadClassroomAccess(
+    role,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
 
   const supabase = await createClient();
@@ -107,8 +111,12 @@ export default async function ClassroomOverviewPage({
     lockedCount = (sheets ?? []).filter((s) => s.is_locked).length;
   }
 
+  // Attendance is work a substitute does, so it takes the effective capability.
+  // Write-ups are the adviser's own and stay with them while they are away, so
+  // that panel takes the substantive one. These two used to be the same
+  // question; relief teachers split them.
   const showAttendance = canReadAttendance(capability);
-  const showWriteups = canReadWriteups(capability);
+  const showWriteups = canReadWriteups(substantiveCapability);
 
   const attendanceSummary =
     showAttendance && selectedTermId

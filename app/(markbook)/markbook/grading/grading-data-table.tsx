@@ -131,6 +131,12 @@ export type GradingSheetRow = {
   form_adviser?: string | null;
   /** auth user_id of the section's form_adviser — drives "My sheets". */
   form_adviser_id?: string | null;
+  /** True when the VIEWER is standing in on this slot for an absent colleague.
+   *  Drives "My sheets" alongside the two ids above, and nothing else — the
+   *  Teacher and Form adviser columns keep naming the regular teacher for the
+   *  whole of a cover, because they answer who the class belongs to rather
+   *  than who is working it this week (migrations 112/113). */
+  covering?: boolean;
   is_locked: boolean;
   graded_count: number;
   total_students: number;
@@ -566,7 +572,11 @@ export function GradingDataTable({
       label: 'My sheets',
       icon: UserCheck,
       predicate: (row, uid) =>
-        row.subject_teacher_id === uid || row.form_adviser_id === uid,
+        row.subject_teacher_id === uid ||
+        row.form_adviser_id === uid ||
+        // A sheet this viewer is covering is one of theirs to work on, even
+        // though neither name column carries their name.
+        row.covering === true,
     };
   }, [currentUserId]);
 

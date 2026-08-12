@@ -22,7 +22,11 @@ export type QuickAction = { label: string; href: string };
  * Omitted on every non-teacher row: oversight roles hold no assignments, and a
  * requirement there would silently strip their actions.
  */
-type JobRequirement = 'adviser' | 'subject';
+// `adviser` and `adviser_substantive` differ only for a relief teacher: a
+// substitute does the adviser's day-to-day work but is not the adviser of
+// record, so anything that is the adviser's OWN output — write-ups, the report
+// card comment — takes the second.
+type JobRequirement = 'adviser' | 'adviser_substantive' | 'subject';
 
 type QuickActionRow = QuickAction & {
   requires?: JobRequirement;
@@ -68,7 +72,14 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
       href: '/attendance/sections',
       requires: 'adviser',
     },
-    { label: 'Write evaluation', href: '/evaluation', requires: 'adviser' },
+    // `adviser_substantive`, not `adviser`. Attendance above is work a
+    // substitute does; write-ups stay with the regular adviser while they are
+    // away, and /evaluation would be empty for a cover-only teacher.
+    {
+      label: 'Write evaluation',
+      href: '/evaluation',
+      requires: 'adviser_substantive',
+    },
   ],
   academic_coordinator: [
     { label: 'Review applications', href: '/admissions/applications' },
@@ -159,6 +170,12 @@ export function getQuickActions(
   const actions = QUICK_ACTIONS[role]
     .filter((a) => {
       if (a.requires === 'adviser' && !profile.advises) return false;
+      if (
+        a.requires === 'adviser_substantive' &&
+        !profile.advisesSubstantively
+      ) {
+        return false;
+      }
       if (a.requires === 'subject' && !profile.teachesSubject) return false;
       return true;
     })

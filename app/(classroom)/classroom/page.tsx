@@ -14,7 +14,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -39,7 +39,7 @@ export default async function ClassroomListPage() {
   // reach this page at all (ROUTE_ACCESS excludes them).
   const assignments =
     role === 'teacher'
-      ? await loadAssignmentsForUser(createServiceClient(), userId)
+      ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
       : [];
   const scope = resolveClassroomScope(role, assignments);
 

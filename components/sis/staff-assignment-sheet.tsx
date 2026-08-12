@@ -37,7 +37,7 @@ type FcaAssignment = {
   id: string;
   sectionId: string;
   sectionName: string;
-} | null;
+};
 
 type SubjectAssignment = {
   id: string;
@@ -49,7 +49,7 @@ type SubjectAssignment = {
 };
 
 type SheetData = {
-  fcaAssignment: FcaAssignment;
+  fcaAssignments: FcaAssignment[];
   subjectAssignments: SubjectAssignment[];
   allSections: Section[];
   allSubjects: Subject[];
@@ -60,9 +60,15 @@ type SheetData = {
 // What the confirm dialog is currently asking about. The adviser path carries
 // the section being moved to, because confirming runs a remove-then-assign
 // sequence rather than a plain delete.
-type PendingRemoval =
-  | { kind: 'subject'; assignmentId: string; label: string }
-  | { kind: 'fca'; targetSectionId: string };
+// Both kinds now carry the row being removed. The form-adviser variant used to
+// carry `targetSectionId` — the section being moved TO — because changing the
+// adviser was one delete-then-create action. Adding and removing are separate
+// now, so removal only ever needs to know what is going.
+type PendingRemoval = {
+  kind: 'subject' | 'fca';
+  assignmentId: string;
+  label: string;
+};
 
 export type StaffSheetTeacher = {
   userId: string;
@@ -95,6 +101,7 @@ export function StaffAssignmentSheet({
   const router = useRouter();
   const [data, setData] = useState<SheetData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [newFcaSectionId, setNewFcaSectionId] = useState('');
   const [newSubjectId, setNewSubjectId] = useState('');
   const [newSectionId, setNewSectionId] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(
@@ -130,101 +137,97 @@ export function StaffAssignmentSheet({
   // FCA change is a DELETE-then-POST sequence (clear existing, then assign the
   // new section). Sequencing + per-step error copy preserved; the local-state
   // update + success toast happen on the resolved result.
-  const fcaMutation = useMutation({
-    mutationFn: async ({
-      sectionId,
-      reason,
-      notes,
-    }: {
-      sectionId: string;
-      reason: AssignmentChangeReason | null;
-      notes: string | null;
-    }): Promise<
-      | { kind: 'cleared' }
-      | { kind: 'assigned'; assignmentId: string; sectionId: string }
-    > => {
-      // Remove existing FCA if present. Tag a failure so onError can show the
-      // 'Failed to remove existing FCA' copy distinctly.
-      if (data!.fcaAssignment) {
-        try {
-          await apiFetch(
-            `/api/teacher-assignments/${data!.fcaAssignment.id}`,
-            jsonInit('DELETE', { change_reason: reason, change_notes: notes })
-          );
-        } catch (err) {
-          throw new ApiError(
-            err instanceof ApiError ? err.status : 0,
-            err instanceof ApiError ? err.body : undefined,
-            apiErrorField(err) ?? 'Failed to remove existing FCA'
-          );
-        }
-      }
-
-      if (sectionId === '__none__') {
-        return { kind: 'cleared' };
-      }
-
-      const json = await apiFetch<{ assignment?: { id: string } }>(
+  // Form classes are a LIST, added and removed one at a time — not a single
+  // dropdown that swaps one for another.
+  //
+  // The unique index behind them is on `(section_id)` alone (migration 003):
+  // it enforces one adviser PER SECTION and says nothing about how many
+  // sections a teacher may advise. The old single Select could not express
+  // that, and its "change" path deleted whichever adviser row it happened to
+  // be holding — so a two-class adviser lost one silently.
+  //
+  // Splitting it into add and remove also retires a fragile delete-then-create
+  // sequence whose second half could fail after the first had succeeded.
+  const addFcaMutation = useMutation({
+    mutationFn: (sectionId: string) =>
+      apiFetch<{ assignment?: { id: string } }>(
         '/api/teacher-assignments',
         jsonInit('POST', {
           teacher_user_id: teacher!.userId,
           section_id: sectionId,
           role: 'form_adviser',
         })
-      ).catch((err) => {
-        throw new ApiError(
-          err instanceof ApiError ? err.status : 0,
-          err instanceof ApiError ? err.body : undefined,
-          apiErrorField(err) ?? 'Failed to save FCA'
-        );
-      });
-      return {
-        kind: 'assigned',
-        assignmentId: json.assignment!.id,
-        sectionId,
-      };
-    },
-    onSuccess: (result) => {
-      setPendingRemoval(null);
-      if (result.kind === 'cleared') {
-        setData((d) => (d ? { ...d, fcaAssignment: null } : d));
-        toast.success('FCA assignment cleared');
-        router.refresh();
-        return;
-      }
-      const sectionName =
-        data!.allSections.find((s) => s.id === result.sectionId)?.name ?? '';
+      ),
+    onSuccess: (json, sectionId) => {
+      const section = data!.allSections.find((s) => s.id === sectionId);
       setData((d) =>
         d
           ? {
               ...d,
-              fcaAssignment: {
-                id: result.assignmentId,
-                sectionId: result.sectionId,
-                sectionName,
-              },
+              fcaAssignments: [
+                ...d.fcaAssignments,
+                {
+                  id: json.assignment!.id,
+                  sectionId,
+                  sectionName: section?.name ?? '',
+                },
+              ].sort((x, y) => x.sectionName.localeCompare(y.sectionName)),
             }
           : d
       );
-      toast.success('FCA assignment saved');
+      setNewFcaSectionId('');
+      toast.success('Form class added');
       router.refresh();
     },
     onError: (err) => {
-      // The mutationFn already normalized the per-step message onto err.message.
-      toast.error(err instanceof Error ? err.message : 'Failed to save FCA');
+      // The POST route turns the unique-index violation into "This section
+      // already has a form adviser. Remove the existing one first."
+      toast.error(apiErrorField(err) ?? 'Failed to add form class');
     },
   });
 
-  // Changing the adviser removes the old assignment before creating the new
-  // one, so mid-year it has to be explained just like a plain removal. Ask
-  // first, then run the sequence. Clearing to "no class" is the same story.
-  function handleFcaChange(sectionId: string) {
-    if (!teacher || !data) return;
-    if (data.termStarted && data.fcaAssignment) {
-      setPendingRemoval({ kind: 'fca', targetSectionId: sectionId });
-      return;
-    }
-    fcaMutation.mutate({ sectionId, reason: null, notes: null });
+  const removeFcaMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      reason,
+      notes,
+    }: {
+      assignmentId: string;
+      reason: AssignmentChangeReason | null;
+      notes: string | null;
+    }) =>
+      apiFetch(
+        `/api/teacher-assignments/${assignmentId}`,
+        jsonInit('DELETE', { change_reason: reason, change_notes: notes })
+      ),
+    onSuccess: (_res, { assignmentId }) => {
+      setPendingRemoval(null);
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              fcaAssignments: d.fcaAssignments.filter(
+                (a) => a.id !== assignmentId
+              ),
+            }
+          : d
+      );
+      toast.success('Form class removed');
+      router.refresh();
+    },
+    onError: (err) => {
+      // Dialog stays open so the typed reason survives a failure.
+      toast.error(apiErrorField(err) ?? 'Failed to remove form class');
+    },
+  });
+
+  function handleRemoveFca(assignmentId: string) {
+    const assignment = data?.fcaAssignments.find((a) => a.id === assignmentId);
+    setPendingRemoval({
+      kind: 'fca',
+      assignmentId,
+      label: assignment?.sectionName ?? 'this form class',
+    });
   }
 
   const removeSubjectMutation = useMutation({
@@ -322,7 +325,8 @@ export function StaffAssignmentSheet({
   }
 
   const mutating =
-    fcaMutation.isPending ||
+    addFcaMutation.isPending ||
+    removeFcaMutation.isPending ||
     removeSubjectMutation.isPending ||
     addSubjectMutation.isPending;
 
@@ -331,27 +335,9 @@ export function StaffAssignmentSheet({
   const sectionsByLevel = data ? groupByLevel(data.allSections) : {};
   const levelCodes = Object.keys(sectionsByLevel).sort();
 
-  // Moving an adviser to another class and taking them off one entirely are the
-  // same operation underneath, but they are not the same thing to the person
-  // doing it — so name each one for what it does.
-  const fcaTargetName =
-    pendingRemoval?.kind === 'fca' &&
-    pendingRemoval.targetSectionId !== '__none__'
-      ? (data?.allSections.find((s) => s.id === pendingRemoval.targetSectionId)
-          ?.name ?? null)
-      : null;
-  const fcaDialogCopy = fcaTargetName
-    ? {
-        title: 'Move this form class adviser?',
-        description: `${teacher?.name ?? 'This teacher'} will take over ${fcaTargetName} and leave ${data?.fcaAssignment?.sectionName ?? 'their current class'}.`,
-        confirmLabel: 'Move adviser',
-      }
-    : {
-        title: 'Remove this form class adviser?',
-        description: `${data?.fcaAssignment?.sectionName ?? 'This class'} will have no form class adviser until someone is assigned.`,
-        confirmLabel: 'Remove',
-      };
-
+  // Removal copy is now the same shape for both kinds — adding a form class is
+  // its own action, so a removal is only ever a removal. The old "move adviser"
+  // wording existed because changing the adviser was delete-then-create.
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex w-full flex-col overflow-y-auto sm:max-w-md">
@@ -372,35 +358,80 @@ export function StaffAssignmentSheet({
 
         {!loading && data && (
           <div className="mt-6 space-y-8">
-            {/* FCA Section -------------------------------------------------- */}
+            {/* Form classes ------------------------------------------------ */}
             <section className="space-y-3">
               <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Form Class Adviser
+                Form Classes
               </p>
-              <Select
-                value={data.fcaAssignment?.sectionId ?? '__none__'}
-                onValueChange={(v) => void handleFcaChange(v)}
-                disabled={mutating}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">
-                    <span className="text-muted-foreground">None</span>
-                  </SelectItem>
-                  {levelCodes.map((lc) => (
-                    <SelectGroup key={lc}>
-                      <SelectLabel>{lc}</SelectLabel>
-                      {sectionsByLevel[lc]!.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+
+              {data.fcaAssignments.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Not a form class adviser this year.
+                </p>
+              )}
+
+              {data.fcaAssignments.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                >
+                  <span className="text-sm font-medium">{a.sectionName}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    disabled={mutating}
+                    onClick={() => handleRemoveFca(a.id)}
+                    aria-label={`Remove ${a.sectionName}`}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* A list plus an add, not a dropdown that swaps one for
+                  another. One section has one adviser; one adviser may have
+                  several sections. Sections that already have an adviser stay
+                  in the list and are refused by the server with a message
+                  naming the reason — hiding them would leave the admin
+                  wondering where a class went. */}
+              <div className="flex gap-2">
+                <Select
+                  value={newFcaSectionId}
+                  onValueChange={setNewFcaSectionId}
+                  disabled={mutating}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Add a form class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levelCodes.map((lc) => (
+                      <SelectGroup key={lc}>
+                        <SelectLabel>{lc}</SelectLabel>
+                        {sectionsByLevel[lc]!.filter(
+                          (sec) =>
+                            !data.fcaAssignments.some(
+                              (a) => a.sectionId === sec.id
+                            )
+                        ).map((sec) => (
+                          <SelectItem key={sec.id} value={sec.id}>
+                            {sec.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={mutating || !newFcaSectionId}
+                  onClick={() => addFcaMutation.mutate(newFcaSectionId)}
+                  aria-label="Add form class"
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
             </section>
 
             <Separator />
@@ -511,27 +542,23 @@ export function StaffAssignmentSheet({
         termStarted={data?.termStarted ?? false}
         title={
           pendingRemoval?.kind === 'fca'
-            ? fcaDialogCopy.title
+            ? 'Remove this form class?'
             : 'Remove this subject?'
         }
         description={
           pendingRemoval?.kind === 'fca'
-            ? fcaDialogCopy.description
+            ? `${pendingRemoval.label} will have no form class adviser until someone is assigned, so nobody will be able to write its report card comments.`
             : `${teacher?.name ?? 'This teacher'} will lose access to ${
-                pendingRemoval?.kind === 'subject'
-                  ? pendingRemoval.label
-                  : 'this subject'
+                pendingRemoval?.label ?? 'this subject'
               }. Their marks stay on the class.`
         }
-        confirmLabel={
-          pendingRemoval?.kind === 'fca' ? fcaDialogCopy.confirmLabel : 'Remove'
-        }
+        confirmLabel="Remove"
         busy={mutating}
         onConfirm={(reason, notes) => {
           if (!pendingRemoval) return;
           if (pendingRemoval.kind === 'fca') {
-            fcaMutation.mutate({
-              sectionId: pendingRemoval.targetSectionId,
+            removeFcaMutation.mutate({
+              assignmentId: pendingRemoval.assignmentId,
               reason,
               notes,
             });

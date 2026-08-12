@@ -19,7 +19,10 @@
 // below are the single source for that decision — do not re-derive it inline.
 
 import type { Role } from '@/lib/auth/roles';
-import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
+import type {
+  AssignmentRow,
+  EffectiveAssignmentRow,
+} from '@/lib/auth/teacher-assignments';
 
 /** What a user may do in a given class. */
 export type ClassroomCapability =
@@ -44,57 +47,122 @@ export type ClassroomScope = {
   sectionIds: string[] | null;
   /** Only populated for assignment-derived scopes; empty for oversight. */
   capabilityBySection: Record<string, ClassroomCapability>;
+  /**
+   * The same map built from assignments the teacher actually HOLDS — cover
+   * excluded.
+   *
+   * Two maps because relief teachers split one question in two. A substitute
+   * takes attendance and enters marks, but the regular adviser still writes the
+   * write-ups and the report card comment even while away (Mr Ace, 2026-08-11).
+   * So "may act" and "is the adviser of record" now have different answers, and
+   * a single map cannot express both.
+   *
+   * Use `capabilityForSection` for what someone may do; use
+   * `substantiveCapabilityForSection` for anything that is the adviser's own
+   * work. Which predicates take which is enforced by
+   * `__tests__/auth/assignment-read-classification.test.ts` — evaluation_writeups
+   * has no adviser predicate in RLS at all, so these call sites are the only
+   * thing keeping a substitute out of another teacher's write-ups.
+   */
+  substantiveCapabilityBySection: Record<string, ClassroomCapability>;
   isOversight: boolean;
 };
 
 /**
  * Pure. Derives scope from assignment rows already loaded by
- * `loadAssignmentsForUser`, so it is unit-testable without a database.
+ * `loadEffectiveAssignmentsForUser`, so it is unit-testable without a database.
  *
  * A section where the user holds BOTH a form_adviser row and a
  * subject_teacher row resolves to 'adviser' — the wider capability wins,
  * matching `is_teacher_for_sheet`, which lets an adviser read every subject
  * in their own section.
+ *
+ * Rows with `via: 'relief'` count toward `capabilityBySection` and are kept out
+ * of `substantiveCapabilityBySection`. Plain `AssignmentRow`s carry no `via` and
+ * are treated as substantive, so existing callers that pass held assignments
+ * behave exactly as before.
  */
 export function resolveClassroomScope(
   role: Role | null,
-  assignments: AssignmentRow[]
+  assignments: Array<AssignmentRow | EffectiveAssignmentRow>
 ): ClassroomScope {
   if (role != null && OVERSIGHT_ROLES.has(role)) {
-    return { sectionIds: null, capabilityBySection: {}, isOversight: true };
+    return {
+      sectionIds: null,
+      capabilityBySection: {},
+      substantiveCapabilityBySection: {},
+      isOversight: true,
+    };
   }
 
   // Only `teacher` derives scope from assignments. Every other role
   // (admissions, p_file_officer, or a null/unknown role) gets nothing —
   // they have no teaching relationship to any class.
   if (role !== 'teacher') {
-    return { sectionIds: [], capabilityBySection: {}, isOversight: false };
+    return {
+      sectionIds: [],
+      capabilityBySection: {},
+      substantiveCapabilityBySection: {},
+      isOversight: false,
+    };
   }
 
   const capabilityBySection: Record<string, ClassroomCapability> = {};
+  const substantiveCapabilityBySection: Record<string, ClassroomCapability> =
+    {};
+
   for (const a of assignments) {
-    if (a.role === 'form_adviser') {
-      capabilityBySection[a.section_id] = 'adviser';
-    } else if (a.role === 'subject_teacher') {
-      // Never downgrade an adviser to subject, regardless of row order.
-      capabilityBySection[a.section_id] ??= 'subject';
+    const isRelief = 'via' in a && a.via === 'relief';
+    const targets = isRelief
+      ? [capabilityBySection]
+      : [capabilityBySection, substantiveCapabilityBySection];
+
+    for (const map of targets) {
+      if (a.role === 'form_adviser') {
+        map[a.section_id] = 'adviser';
+      } else if (a.role === 'subject_teacher') {
+        // Never downgrade an adviser to subject, regardless of row order.
+        map[a.section_id] ??= 'subject';
+      }
     }
   }
 
   return {
     sectionIds: Object.keys(capabilityBySection),
     capabilityBySection,
+    substantiveCapabilityBySection,
     isOversight: false,
   };
 }
 
-/** The capability this user holds over one section, or null if none. */
+/**
+ * What this user may DO in one section — including a class they are only
+ * covering. Use for attendance, marks, roster: the working surfaces.
+ */
 export function capabilityForSection(
   scope: ClassroomScope,
   sectionId: string
 ): ClassroomCapability | null {
   if (scope.isOversight) return 'oversight';
   return scope.capabilityBySection[sectionId] ?? null;
+}
+
+/**
+ * What this user IS in one section, ignoring cover. Use for the adviser's own
+ * work — write-ups and the report card comment — which stays with the regular
+ * adviser while they are away.
+ *
+ * A substitute covering an adviser gets `null` here and `'adviser'` from
+ * `capabilityForSection`. That difference is the entire point; passing the
+ * wrong one to `canReadWriteups` would let a stand-in write in the adviser's
+ * name, and `evaluation_writeups` has no RLS predicate to catch it.
+ */
+export function substantiveCapabilityForSection(
+  scope: ClassroomScope,
+  sectionId: string
+): ClassroomCapability | null {
+  if (scope.isOversight) return 'oversight';
+  return scope.substantiveCapabilityBySection[sectionId] ?? null;
 }
 
 /**

@@ -225,6 +225,10 @@ const DELIBERATELY_NOT_MIGRATED: Array<{ file: string; why: string }> = [
     why: 'its GET admits teacher so they can read their own assignments; staff.read is registrar+',
   },
   {
+    file: 'app/api/assignment-reliefs/route.ts',
+    why: 'same split as teacher-assignments: the GET admits teacher so a substitute can see what they are covering and a covered teacher can see who is holding their class; the POST is capability-gated on staff.manage_relief',
+  },
+  {
     file: 'app/api/sis/students/[enroleeNumber]/profile/route.ts',
     why: 'two role sets in one folder — one capability would grant `admissions` section placement; see lib/auth/student-record.ts',
   },
@@ -427,6 +431,10 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
   {
     file: 'app/api/teacher-assignments/by-teacher/route.ts',
     capabilities: ['staff.read'],
+  },
+  {
+    file: 'app/api/assignment-reliefs/[id]/end/route.ts',
+    capabilities: ['staff.manage_relief'],
   },
 ];
 
@@ -698,6 +706,11 @@ const SEED_MIGRATIONS = [
   // here on: the replay below applies these in sequence, so a later file can
   // undo an earlier one.
   'supabase/migrations/106_role_permissions_document_reassignment.sql',
+  // `staff.manage_relief` — arranging cover for an absent teacher. A brand-new
+  // capability rather than a re-transcription, and deliberately narrower than
+  // the `staff.edit_assignments` sitting beside it: the academic coordinator
+  // holds that one and does NOT hold this.
+  'supabase/migrations/113_role_permissions_manage_relief.sql',
 ];
 
 /** `('role', 'capability')` tuples inside one SQL statement block. */

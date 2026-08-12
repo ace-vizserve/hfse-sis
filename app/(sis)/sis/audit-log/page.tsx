@@ -47,6 +47,12 @@ const SIS_AUDIT_ALLOWLIST = [
   'section.subjects.attach_many',
   'assignment.create',
   'assignment.delete',
+  // Cover for an absent teacher (migration 112). Sits with the assignment
+  // actions because it is read the same way — "who is on this class, and since
+  // when" — and because a relief starting is often the next line after the
+  // reason a teacher stepped away.
+  'assignment.relief.start',
+  'assignment.relief.end',
   // Grade levels & progression (migration 078) — the admin page + write
   // routes were removed by migration 086; kept in this allowlist so
   // historical rows stay visible (Hard Rule #6, append-only). sis.level.create

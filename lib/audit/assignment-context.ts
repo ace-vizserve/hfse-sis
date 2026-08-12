@@ -90,3 +90,63 @@ export async function buildAssignmentAuditContext(
 
   return base;
 }
+
+/**
+ * Build the `context` for an `assignment.relief.start` / `assignment.relief.end`
+ * audit row.
+ *
+ * A relief row on its own says almost nothing readable — it is two uuids and a
+ * date. So this resolves the covered assignment first and reuses
+ * `buildAssignmentAuditContext` for the class and subject, then adds the
+ * substitute's name on top. The result answers "who covered whose class, and
+ * which class" from the audit log alone, without a follow-up query.
+ *
+ * Best-effort in the same way as its sibling: never throws, degrades to raw ids.
+ */
+export async function buildReliefAuditContext(
+  service: SupabaseClient,
+  relief: {
+    id: string;
+    assignment_id: string;
+    relief_teacher_user_id: string;
+  },
+  extra: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
+  const base: Record<string, unknown> = {
+    relief_id: relief.id,
+    assignment_id: relief.assignment_id,
+    relief_teacher_user_id: relief.relief_teacher_user_id,
+    ...extra,
+  };
+
+  try {
+    const { data } = await service
+      .from('teacher_assignments')
+      .select('teacher_user_id, section_id, subject_id, role')
+      .eq('id', relief.assignment_id)
+      .maybeSingle();
+
+    if (data) {
+      const assignmentContext = await buildAssignmentAuditContext(
+        service,
+        data as AssignmentAuditRow
+      );
+      // `teacher_name` from the assignment is the person BEING covered. Rename
+      // it so a reader can't mistake it for the substitute.
+      const { teacher_name, teacher_user_id, ...rest } = assignmentContext;
+      Object.assign(base, rest);
+      if (teacher_user_id) base.covered_teacher_user_id = teacher_user_id;
+      if (teacher_name) base.covered_teacher_name = teacher_name;
+    }
+
+    const { getStaffDisplayNameById } = await import('@/lib/auth/staff-list');
+    const nameById = new Map(await getStaffDisplayNameById());
+    const reliefName = nameById.get(relief.relief_teacher_user_id);
+    if (reliefName) base.relief_teacher_name = reliefName;
+  } catch {
+    // Swallow — the ids are already recorded, and a missing display name must
+    // never block cover being arranged or ended.
+  }
+
+  return base;
+}

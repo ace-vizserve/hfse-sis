@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
 import {
-  loadAssignmentsForUser,
+  loadEffectiveAssignmentsForUser,
   isSubjectTeacher,
 } from '@/lib/auth/teacher-assignments';
 import { computeQuarterly } from '@/lib/compute/quarterly';
@@ -171,9 +171,14 @@ export async function PATCH(
   // they do registrar data-entry fixes and the post-lock correction paths
   // below. Being adviser AND subject teacher for the same subject is
   // unaffected: that person holds a `subject_teacher` row and passes.
+  //
+  // EFFECTIVE assignments, so a substitute covering this slot passes. Entering
+  // marks is the substitute's whole job; the regular teacher stays the name on
+  // the sheet regardless, because the sheet header resolves that from
+  // teacher_assignments and this table is never written for cover.
   if (role === 'teacher') {
     const cookieClient = await createClient();
-    const assignments = await loadAssignmentsForUser(
+    const assignments = await loadEffectiveAssignmentsForUser(
       cookieClient,
       auth.user.id
     );

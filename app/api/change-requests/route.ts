@@ -12,7 +12,7 @@ import {
 } from '@/lib/schemas/change-request';
 import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import {
-  loadAssignmentsForUser,
+  loadEffectiveAssignmentsForUser,
   isSubjectTeacher,
 } from '@/lib/auth/teacher-assignments';
 import {
@@ -243,10 +243,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Teachers must be assigned to this section + subject to file a request.
+  // Teachers must be assigned to this section + subject to file a request —
+  // held OR covered. A substitute who finds a wrong mark on a locked sheet has
+  // to be able to raise it; the alternative is waiting for a teacher who is on
+  // leave. Self-approval is already impossible: the approver check below
+  // refuses to let a requester name themselves, keyed on user id, and a
+  // substitute acts under their own login.
   if (auth.role === 'teacher') {
     const cookieClient = await createClient();
-    const assignments = await loadAssignmentsForUser(
+    const assignments = await loadEffectiveAssignmentsForUser(
       cookieClient,
       auth.user.id
     );

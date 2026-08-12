@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -57,14 +58,20 @@ export async function GET(
 
   if (auth.role === 'teacher') {
     const session = await getSessionUser();
-    const { data: assigned } = await service
-      .from('teacher_assignments')
-      .select('id')
-      .eq('section_id', sectionId)
-      .eq('teacher_user_id', session?.id ?? '')
-      .eq('role', 'form_adviser')
-      .limit(1);
-    if (!assigned || assigned.length === 0) {
+    // Held OR actively covered — a substitute taking this class's register
+    // needs to be able to print it. Uses the shared loader so cover is honoured
+    // the same way it is on the write gate in /api/attendance/daily.
+    //
+    // NOTE: the adviser NAME printed on the workbook is resolved separately,
+    // further down, and stays the regular adviser's. The export is a record of
+    // the class, not of who pressed the button.
+    const assignments = session?.id
+      ? await loadEffectiveAssignmentsForUser(service, session.id)
+      : [];
+    const advises = assignments.some(
+      (a) => a.role === 'form_adviser' && a.section_id === sectionId
+    );
+    if (!advises) {
       return new Response('You are not the form adviser for this class.', {
         status: 403,
       });

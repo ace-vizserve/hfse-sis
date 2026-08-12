@@ -20,7 +20,7 @@ import {
   canReadAttendance,
   resolveClassroomScope,
 } from '@/lib/classroom/scope';
-import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
 import { sgToday } from '@/lib/dates';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
@@ -81,7 +81,9 @@ async function loadAdvisedSections(
   academicYearId: string
 ): Promise<SectionLite[]> {
   const service = createServiceClient();
-  const assignments = await loadAssignmentsForUser(service, userId);
+  // Effective, not held: taking attendance is exactly the work a substitute is
+  // there to do, so a class they are covering belongs on this dashboard.
+  const assignments = await loadEffectiveAssignmentsForUser(service, userId);
   const scope = resolveClassroomScope(role, assignments);
 
   // Oversight never reaches this page (it has its own dashboard), and a

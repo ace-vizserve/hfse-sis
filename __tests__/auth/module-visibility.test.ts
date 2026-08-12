@@ -173,6 +173,9 @@ describe('teachingProfileFor', () => {
   it('reports adviser-only', () => {
     expect(teachingProfileFor('teacher', [adviser('sec-1')])).toEqual({
       advises: true,
+      // A plain assignment row carries no `via`, so it is a class this teacher
+      // actually holds — both axes true.
+      advisesSubstantively: true,
       teachesSubject: false,
     });
   });
@@ -180,6 +183,7 @@ describe('teachingProfileFor', () => {
   it('reports subject-only', () => {
     expect(teachingProfileFor('teacher', [subject('sec-1', 'sub-1')])).toEqual({
       advises: false,
+      advisesSubstantively: false,
       teachesSubject: true,
     });
   });
@@ -194,7 +198,11 @@ describe('teachingProfileFor', () => {
         subject('sec-2', 'sub-1'),
         subject('sec-3', 'sub-2'),
       ])
-    ).toEqual({ advises: true, teachesSubject: true });
+    ).toEqual({
+      advises: true,
+      advisesSubstantively: true,
+      teachesSubject: true,
+    });
   });
 
   it('is order-independent', () => {
@@ -204,9 +212,41 @@ describe('teachingProfileFor', () => {
     );
   });
 
+  // Relief teachers (migrations 112/113). A substitute covering a form adviser
+  // does the adviser's day-to-day work but is not the adviser of record — the
+  // regular adviser still writes the write-ups while away. So the two axes
+  // disagree, and everything keyed on the second must stay shut.
+  it('a cover-only adviser advises, but not substantively', () => {
+    const covering = { ...adviser('sec-1'), via: 'relief' as const };
+    expect(teachingProfileFor('teacher', [covering])).toEqual({
+      advises: true,
+      advisesSubstantively: false,
+      teachesSubject: false,
+    });
+  });
+
+  it('holding one class and covering another still counts as substantive', () => {
+    const covering = { ...adviser('sec-2'), via: 'relief' as const };
+    expect(teachingProfileFor('teacher', [adviser('sec-1'), covering])).toEqual(
+      {
+        advises: true,
+        advisesSubstantively: true,
+        teachesSubject: false,
+      }
+    );
+  });
+
+  it('shows Attendance but hides Evaluation for a cover-only adviser', () => {
+    const covering = { ...adviser('sec-1'), via: 'relief' as const };
+    const hidden = hiddenModulesForTeacher('teacher', [covering]);
+    expect(hidden).not.toContain('attendance');
+    expect(hidden).toContain('evaluation');
+  });
+
   it('reports neither for a teacher with no assignments', () => {
     expect(teachingProfileFor('teacher', [])).toEqual({
       advises: false,
+      advisesSubstantively: false,
       teachesSubject: false,
     });
   });
@@ -225,6 +265,7 @@ describe('teachingProfileFor', () => {
     ] as const) {
       expect(teachingProfileFor(role, [adviser('sec-1')]), `${role}`).toEqual({
         advises: false,
+        advisesSubstantively: false,
         teachesSubject: false,
       });
     }

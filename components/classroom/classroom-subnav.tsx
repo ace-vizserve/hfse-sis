@@ -59,10 +59,18 @@ function activeTabFromPathname(
 export function ClassroomSubnav({
   sectionId,
   capability,
+  substantiveCapability,
   terms,
 }: {
   sectionId: string;
+  /** What the viewer may DO here — cover included. */
   capability: ClassroomCapability | null;
+  /**
+   * What the viewer IS here — cover excluded. The Write-ups tab turns on this
+   * rather than `capability`, because a substitute covering the class does not
+   * write the adviser's write-ups and the page behind that tab 404s for them.
+   */
+  substantiveCapability: ClassroomCapability | null;
   terms: ClassroomTerm[];
 }) {
   const pathname = usePathname();
@@ -72,7 +80,7 @@ export function ClassroomSubnav({
     terms,
     searchParams.get('term_id') ?? undefined
   );
-  const tabs = tabsForCapability(capability);
+  const tabs = tabsForCapability(capability, substantiveCapability);
   const activeTabKey = activeTabFromPathname(pathname, sectionId);
 
   return (

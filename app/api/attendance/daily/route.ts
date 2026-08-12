@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
@@ -56,22 +57,27 @@ async function assertAdviserForSections(
     return { ok: false, reason: 'unknown section_student_id(s)' };
   }
 
-  const { data: assignments, error: taErr } = await service
-    .from('teacher_assignments')
-    .select('section_id, role')
-    .eq('teacher_user_id', userId)
-    .eq('role', 'form_adviser')
-    .in('section_id', sectionIds);
-  if (taErr) {
+  // Held OR covered. Taking the register is precisely the work a substitute is
+  // brought in for, so a class they are covering must pass this gate — while
+  // the regular adviser stays the name of record on the section everywhere it
+  // is displayed.
+  let assignments;
+  try {
+    assignments = await loadEffectiveAssignmentsForUser(service, userId);
+  } catch (err) {
     return {
       ok: false,
-      reason: `teacher_assignments lookup failed: ${taErr.message}`,
+      reason: `teacher_assignments lookup failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     };
   }
-  const covered = new Set(
-    (assignments ?? []).map((a) => a.section_id as string)
+  const advisedSectionIds = new Set(
+    assignments
+      .filter((a) => a.role === 'form_adviser')
+      .map((a) => a.section_id)
   );
-  const uncovered = sectionIds.filter((s) => !covered.has(s));
+  const uncovered = sectionIds.filter((s) => !advisedSectionIds.has(s));
   if (uncovered.length > 0) {
     return {
       ok: false,

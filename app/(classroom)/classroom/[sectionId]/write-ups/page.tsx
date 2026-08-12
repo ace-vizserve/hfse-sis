@@ -38,9 +38,16 @@ export default async function ClassroomWriteupsPage({
   if (!sessionUser) redirect('/login');
   const { id: userId, role } = sessionUser;
 
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability, substantiveCapability } = await loadClassroomAccess(
+    role,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
-  if (!canReadWriteups(capability)) notFound();
+  // substantiveCapability, not capability: write-ups stay with the regular
+  // adviser while they are away, so a substitute covering this class gets 404
+  // here even though they can take its attendance and enter its marks.
+  if (!canReadWriteups(substantiveCapability)) notFound();
 
   const supabase = await createClient();
   const { data: section } = await supabase

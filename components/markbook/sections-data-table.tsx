@@ -44,6 +44,13 @@ export type MarkbookSectionRow = {
    * class who teaches a subject in another needs a different answer per row.
    */
   capability: ClassroomCapability | null;
+  /**
+   * The same answer with cover excluded. Only the Write-ups cross-link uses it:
+   * a substitute covering this class works its marks and attendance, but the
+   * regular adviser still writes the write-ups, so that one destination would
+   * 404 for them (migrations 112/113).
+   */
+  substantiveCapability: ClassroomCapability | null;
 };
 
 // ─── facetFilterFn (verbatim copy from SisSectionsDataTable / EvaluationSectionsList) ─
@@ -136,6 +143,7 @@ function buildColumns(
           // and the row's own name can't send you to different places.
           isOversight={isOversight}
           capability={row.original.capability}
+          substantiveCapability={row.original.substantiveCapability}
         />
       ),
     },

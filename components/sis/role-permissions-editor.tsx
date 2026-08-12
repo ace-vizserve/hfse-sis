@@ -110,6 +110,7 @@ function actionLabel(action: string): string {
     view_accounts: 'See accounts',
     manage_accounts: 'Manage accounts',
     edit_assignments: 'Assign classes',
+    manage_relief: 'Arrange relief teachers',
     disable: 'Disable',
     manage: 'Manage',
   };

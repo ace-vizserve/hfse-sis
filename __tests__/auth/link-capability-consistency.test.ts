@@ -65,7 +65,13 @@ const SKIP_DIRS = new Set(['.claude', 'node_modules', '.next', '.git']);
 
 /** A teacher holding BOTH jobs, so the job filter (KD #170) never masks a row
  *  this test is trying to inspect. */
-const BOTH_JOBS = { advises: true, teachesSubject: true } as const;
+// Every job, including adviser-of-record — this sweep asks "is every link this
+// role could ever see reachable", so it must not narrow the surface.
+const BOTH_JOBS = {
+  advises: true,
+  advisesSubstantively: true,
+  teachesSubject: true,
+} as const;
 
 function capsOf(role: Role): Capability[] {
   return DEFAULT_ROLE_CAPABILITIES[role];

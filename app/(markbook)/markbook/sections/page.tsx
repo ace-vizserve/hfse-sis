@@ -14,10 +14,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import {
   capabilityForSection,
   resolveClassroomScope,
+  substantiveCapabilityForSection,
 } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { hasTermStarted } from '@/lib/sis/current-term';
@@ -49,7 +50,10 @@ export default async function SectionsListPage() {
   // data is adviser-only at the RLS level (see lib/classroom/scope.ts).
   const assignments =
     role === 'teacher' && sessionUser
-      ? await loadAssignmentsForUser(createServiceClient(), sessionUser.id)
+      ? await loadEffectiveAssignmentsForUser(
+          createServiceClient(),
+          sessionUser.id
+        )
       : [];
   const scope = resolveClassroomScope(role, assignments);
   // `[]` (scoped, no assigned classes) is distinct from `null` (unscoped) —
@@ -147,6 +151,11 @@ export default async function SectionsListPage() {
     // one the viewer only teaches a subject in, and the row menu's
     // Attendance / Write-ups cross-links go to adviser-only surfaces.
     capability: capabilityForSection(scope, c.id),
+    // The row's "Open write-ups" cross-link goes to an adviser-only page, so it
+    // asks what the viewer IS here, not what they may do (KD #173). A
+    // substitute covering this class gets the Grades and Attendance links and
+    // not that one.
+    substantiveCapability: substantiveCapabilityForSection(scope, c.id),
   }));
 
   // Unique levels for the Level facet, sorted canonically

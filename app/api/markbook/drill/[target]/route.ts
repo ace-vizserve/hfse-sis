@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { buildCsv } from '@/lib/csv';
 import {
   buildMarkbookDrillRows,
@@ -84,14 +85,14 @@ export async function GET(
   // Teacher scoping — narrow rows to sections they're assigned to.
   let allowedSectionIds: string[] | null = null;
   if (!REGISTRAR_PLUS.has(guard.role)) {
+    // Effective, so a class this teacher is covering appears in their drill —
+    // they are the one entering its marks, so they need to see them.
     const service = createServiceClient();
-    const { data: assignments } = await service
-      .from('teacher_assignments')
-      .select('section_id')
-      .eq('teacher_user_id', guard.user.id);
-    allowedSectionIds = ((assignments ?? []) as { section_id: string }[]).map(
-      (a) => a.section_id
+    const assignments = await loadEffectiveAssignmentsForUser(
+      service,
+      guard.user.id
     );
+    allowedSectionIds = assignments.map((a) => a.section_id);
   }
 
   const rows = await buildMarkbookDrillRows({

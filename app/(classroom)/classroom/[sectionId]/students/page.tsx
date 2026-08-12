@@ -34,7 +34,11 @@ export default async function ClassroomStudentsPage({
   if (!sessionUser) redirect('/login');
   const { id: userId, role } = sessionUser;
 
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability, substantiveCapability } = await loadClassroomAccess(
+    role,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
 
   const supabase = await createClient();
@@ -97,11 +101,14 @@ export default async function ClassroomStudentsPage({
       {/* The student record is registrar-and-above, so a teacher clicking a
           name here used to be bounced to `/`. The link asks the same question
           the page does. */}
+      {/* showReportCard takes substantiveCapability, not capability: the card
+          carries the adviser's own comment, so it stays with the regular
+          adviser while a substitute is covering the class. */}
       <ClassroomRosterTable
         sectionId={sectionId}
         sectionName={sectionName}
         data={rosterRows}
-        showReportCard={canReadReportCard(capability)}
+        showReportCard={canReadReportCard(substantiveCapability)}
         showRecordLink={canOpenStudentRecord(capability)}
       />
     </div>

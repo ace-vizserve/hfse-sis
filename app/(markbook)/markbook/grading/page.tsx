@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { getTeacherList } from '@/lib/auth/staff-list';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -119,6 +120,30 @@ export default async function GradingListPage({
         .eq('teacher_user_id', userId)
         .eq('role', 'form_adviser')
     : Promise.resolve({ data: [] as unknown });
+
+  // Which slots the VIEWER is currently covering for an absent colleague.
+  //
+  // Deliberately separate from the assignment query below, which builds the
+  // Teacher and Form Adviser COLUMNS. Those columns must keep naming the
+  // regular teacher for the whole of a cover, so they are left alone; this is
+  // only used to decide whether a row belongs under "My sheets", which is a
+  // question about who may work on it. One query answering both is how the
+  // wrong name ends up in a column.
+  const coveredSlots = userId
+    ? await loadEffectiveAssignmentsForUser(supabase, userId).then((rows) =>
+        rows.filter((r) => r.via === 'relief')
+      )
+    : [];
+  const coveredSectionSubject = new Set(
+    coveredSlots
+      .filter((a) => a.role === 'subject_teacher' && a.subject_id)
+      .map((a) => `${a.section_id}|${a.subject_id}`)
+  );
+  const coveredAdviserSections = new Set(
+    coveredSlots
+      .filter((a) => a.role === 'form_adviser')
+      .map((a) => a.section_id)
+  );
 
   // Sheets are scoped to the current AY via `section.academic_year_id`
   // (the sections table FKs the AY by UUID, not `ay_code`). The `!inner`
@@ -393,6 +418,13 @@ export default async function GradingListPage({
       subject_teacher_id: subjectTeacher?.userId ?? null,
       form_adviser: formAdviser?.name ?? null,
       form_adviser_id: formAdviser?.userId ?? null,
+      // True when the VIEWER is standing in on this slot. Feeds "My sheets"
+      // only — the two name columns above still show the regular teacher.
+      covering:
+        (section?.id != null &&
+          subject?.id != null &&
+          coveredSectionSubject.has(`${section.id}|${subject.id}`)) ||
+        (section?.id != null && coveredAdviserSections.has(section.id)),
       is_locked: s.is_locked,
       graded_count: bucket.graded,
       total_students: bucket.total,

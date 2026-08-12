@@ -84,6 +84,7 @@ describe('getHomeTodos', () => {
   it('gives teacher review-only rows from the teacher priority payloads', async () => {
     const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
       advises: true,
+      advisesSubstantively: true,
       teachesSubject: true,
     });
     expect(todos).toEqual([MARKBOOK_ROW, EVALUATION_ROW]);
@@ -96,6 +97,7 @@ describe('getHomeTodos', () => {
   it('gives a form adviser the write-up row only', async () => {
     const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
       advises: true,
+      advisesSubstantively: true,
       teachesSubject: false,
     });
     expect(todos).toEqual([EVALUATION_ROW]);
@@ -104,6 +106,7 @@ describe('getHomeTodos', () => {
   it('gives a subject teacher the grading row only', async () => {
     const todos = await getHomeTodos('teacher', 'AY2026', 'teacher-1', {
       advises: false,
+      advisesSubstantively: false,
       teachesSubject: true,
     });
     expect(todos).toEqual([MARKBOOK_ROW]);

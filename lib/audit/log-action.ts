@@ -30,6 +30,11 @@ export const ALL_AUDIT_ACTIONS = [
   'enrolment.metadata.update',
   'assignment.create',
   'assignment.delete',
+  // Cover for an absent teacher — arranged and ended. Separate actions rather
+  // than one `relief.update`, so the audit log can answer "who is covering
+  // right now" and "how long did that cover run" without reading a diff.
+  'assignment.relief.start',
+  'assignment.relief.end',
   'section.create',
   'section.rename',
   'section.delete',
@@ -165,6 +170,7 @@ export type AuditEntityType =
   | 'section'
   | 'section_student'
   | 'teacher_assignment'
+  | 'assignment_relief'
   | 'attendance_record'
   | 'attendance_daily'
   | 'school_calendar'

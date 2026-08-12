@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
 import {
   hiddenModulesForTeacher,
@@ -38,7 +38,7 @@ export async function resolveTeacherNavScope(
     return { hiddenModules: [], profile: NO_TEACHING_PROFILE };
   }
   try {
-    const assignments = await loadAssignmentsForUser(
+    const assignments = await loadEffectiveAssignmentsForUser(
       createServiceClient(),
       userId
     );
@@ -53,7 +53,16 @@ export async function resolveTeacherNavScope(
     );
     return {
       hiddenModules: [],
-      profile: { advises: true, teachesSubject: true },
+      // Fails OPEN, including on the substantive axis. This governs nav
+      // visibility only — every page and route behind these tiles re-checks
+      // properly — so the worst case is an offered tile that turns out empty,
+      // against the worse case of hiding Attendance from a form adviser
+      // because one read hiccupped.
+      profile: {
+        advises: true,
+        advisesSubstantively: true,
+        teachesSubject: true,
+      },
     };
   }
 }

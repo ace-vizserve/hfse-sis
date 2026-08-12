@@ -1,4 +1,7 @@
-import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
+import type {
+  AssignmentRow,
+  EffectiveAssignmentRow,
+} from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
 import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
 
@@ -65,11 +68,30 @@ export const ADVISER_ONLY_MODULES: readonly SidebarModule[] = [
  */
 export function hiddenModulesForTeacher(
   role: Role | null,
-  assignments: readonly AssignmentRow[]
+  assignments: readonly (AssignmentRow | EffectiveAssignmentRow)[]
 ): SidebarModule[] {
   if (role !== 'teacher') return [];
-  const advisesSomewhere = assignments.some((a) => a.role === 'form_adviser');
-  return advisesSomewhere ? [] : [...ADVISER_ONLY_MODULES];
+
+  // The two adviser-only modules stopped moving together when relief teachers
+  // landed. A substitute covering a form adviser takes that class's attendance
+  // but does not write its write-ups — the regular adviser keeps those while
+  // away — so Attendance must appear for them and Evaluation must not.
+  const isCover = (a: AssignmentRow | EffectiveAssignmentRow) =>
+    'via' in a && a.via === 'relief';
+  const advises = assignments.some((a) => a.role === 'form_adviser');
+  const advisesSubstantively = assignments.some(
+    (a) => a.role === 'form_adviser' && !isCover(a)
+  );
+
+  // Derived from ADVISER_ONLY_MODULES rather than naming the two modules
+  // again, so adding a third adviser-only module forces a decision here about
+  // which axis it belongs to instead of silently defaulting to visible.
+  const requiresSubstantive: ReadonlySet<SidebarModule> = new Set([
+    'evaluation',
+  ]);
+  return ADVISER_ONLY_MODULES.filter((m) =>
+    requiresSubstantive.has(m) ? !advisesSubstantively : !advises
+  );
 }
 
 /**
@@ -96,8 +118,22 @@ export function hiddenModulesForTeacher(
  *    documented on `hiddenModulesForTeacher`.
  */
 export type TeachingProfile = {
-  /** Holds at least one `form_adviser` row — attendance, write-ups, report cards. */
+  /**
+   * Does adviser work somewhere — attendance, the class overview — whether the
+   * class is theirs or one they are covering.
+   */
   advises: boolean;
+  /**
+   * Is the adviser OF RECORD somewhere, cover excluded.
+   *
+   * Split from `advises` by relief teachers (migrations 112/113). A substitute
+   * covering an adviser takes that class's attendance, but the regular adviser
+   * still writes the write-ups and the report card comment while they are away.
+   * So "Mark attendance" turns on `advises` and "Write evaluation" turns on
+   * this — offering the second to a substitute would land them on a page that
+   * 404s.
+   */
+  advisesSubstantively: boolean;
   /** Holds at least one `subject_teacher` row — the only job that may enter grades. */
   teachesSubject: boolean;
 };
@@ -105,16 +141,22 @@ export type TeachingProfile = {
 /** A role that holds no teaching assignments at all. */
 export const NO_TEACHING_PROFILE: TeachingProfile = {
   advises: false,
+  advisesSubstantively: false,
   teachesSubject: false,
 };
 
 export function teachingProfileFor(
   role: Role | null,
-  assignments: readonly AssignmentRow[]
+  assignments: readonly (AssignmentRow | EffectiveAssignmentRow)[]
 ): TeachingProfile {
   if (role !== 'teacher') return NO_TEACHING_PROFILE;
+  const isCover = (a: AssignmentRow | EffectiveAssignmentRow) =>
+    'via' in a && a.via === 'relief';
   return {
     advises: assignments.some((a) => a.role === 'form_adviser'),
+    advisesSubstantively: assignments.some(
+      (a) => a.role === 'form_adviser' && !isCover(a)
+    ),
     teachesSubject: assignments.some((a) => a.role === 'subject_teacher'),
   };
 }

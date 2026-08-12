@@ -103,19 +103,25 @@ export async function GET(request: NextRequest) {
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
 
-  const fcaRaw = assignments.find((a) => a.role === 'form_adviser');
-  const fcaSection = fcaRaw
-    ? Array.isArray(fcaRaw.sections)
-      ? fcaRaw.sections[0]
-      : fcaRaw.sections
-    : null;
-  const fcaAssignment = fcaRaw
-    ? {
-        id: fcaRaw.id,
-        sectionId: fcaRaw.section_id,
-        sectionName: fcaSection?.name ?? '',
-      }
-    : null;
+  // ALL of them, not the first.
+  //
+  // `teacher_assignments_form_adviser_unique` is on `(section_id)` alone
+  // (migration 003), so it enforces one adviser PER SECTION and says nothing
+  // about how many sections one teacher may advise. This used to `.find()` the
+  // first row, which showed a two-class adviser only one of their classes —
+  // and, worse, the drawer's change flow deleted the id it happened to be
+  // holding, stranding the other.
+  const fcaAssignments = assignments
+    .filter((a) => a.role === 'form_adviser')
+    .map((a) => {
+      const sec = Array.isArray(a.sections) ? a.sections[0] : a.sections;
+      return {
+        id: a.id,
+        sectionId: a.section_id,
+        sectionName: sec?.name ?? '',
+      };
+    })
+    .sort((x, y) => x.sectionName.localeCompare(y.sectionName));
 
   const subjectAssignments = assignments
     .filter((a) => a.role === 'subject_teacher')
@@ -133,7 +139,7 @@ export async function GET(request: NextRequest) {
     });
 
   return NextResponse.json({
-    fcaAssignment,
+    fcaAssignments,
     subjectAssignments,
     allSections,
     allSubjects,

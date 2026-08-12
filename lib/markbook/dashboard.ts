@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
-import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { sgToday } from '@/lib/dates';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
@@ -1051,7 +1051,7 @@ async function loadMarkbookTeacherPriorityUncached(
   const service = createServiceClient();
 
   // Resolve teacher's subject_teacher assignments → (section, subject) pairs.
-  const assignments = await loadAssignmentsForUser(
+  const assignments = await loadEffectiveAssignmentsForUser(
     service,
     input.teacherUserId
   );

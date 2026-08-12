@@ -15,6 +15,7 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { loadStaffAssignments } from '@/lib/sis/staff';
 import { computeStaffFamilies } from '@/lib/sis/staff-families';
 import { listStaffUsers } from '@/lib/sis/users/queries';
+import { StaffDirectoryChrome } from '@/components/sis/staff-directory-chrome';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Staff accounts — create, set role, enable/disable.
@@ -25,7 +26,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // who may open Staff at all could read the account directory.
 export default async function StaffAccountsPage() {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  if (!sessionUser?.role) redirect('/login');
 
   const capabilities = await getCapabilitiesForRole(sessionUser.role);
   // Matches the old behaviour for someone arriving on a bookmarked
@@ -61,7 +62,7 @@ export default async function StaffAccountsPage() {
   );
 
   return (
-    <>
+    <StaffDirectoryChrome role={sessionUser.role}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {computeStaffFamilies(accounts).map((family) => (
           <Card key={family.key} data-slot="card" className="gap-0 py-0">
@@ -120,6 +121,6 @@ export default async function StaffAccountsPage() {
           />
         </CardContent>
       </Card>
-    </>
+    </StaffDirectoryChrome>
   );
 }

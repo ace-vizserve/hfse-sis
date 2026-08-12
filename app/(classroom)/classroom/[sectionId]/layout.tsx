@@ -56,7 +56,11 @@ export default async function ClassroomSectionLayout({
   // This check alone does NOT protect the attendance/write-ups sub-routes
   // (a subject-teacher capability passes it) — those pages re-check
   // canReadAttendance/canReadWriteups themselves. See lib/classroom/queries.ts.
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability, substantiveCapability } = await loadClassroomAccess(
+    role,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
 
   const supabase = await createClient();
@@ -134,6 +138,7 @@ export default async function ClassroomSectionLayout({
       <ClassroomSubnav
         sectionId={sectionId}
         capability={capability}
+        substantiveCapability={substantiveCapability}
         terms={terms}
       />
 

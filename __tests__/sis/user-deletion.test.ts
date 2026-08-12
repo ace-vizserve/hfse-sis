@@ -38,6 +38,11 @@ describe('getUserFootprint', () => {
     expect(queriedTables).toEqual(
       new Set([
         'teacher_assignments',
+        // Cover this teacher worked for an absent colleague (migration 112).
+        // Migration 112 declares no cross-schema FK — the convention its
+        // parent table follows — so this footprint check is the only thing
+        // stopping a delete from leaving a cover pointing at nobody.
+        'assignment_reliefs',
         'grade_change_requests',
         'attendance_daily',
         'evaluation_writeups',

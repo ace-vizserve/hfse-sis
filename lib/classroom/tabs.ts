@@ -60,12 +60,27 @@ const ALL_TABS: ClassroomTab[] = [
   { key: 'settings', label: 'Settings', path: 'settings' },
 ];
 
+/**
+ * @param capability             what the viewer may DO here, cover included
+ * @param substantiveCapability  what the viewer IS here, cover excluded
+ *
+ * Two arguments because the Write-ups tab and the Attendance tab stopped
+ * having the same answer when relief teachers landed: a substitute takes the
+ * attendance but the regular adviser still writes the write-ups. KD #173 —
+ * the thing that LINKS to a page gates on what the page gates on — so this
+ * must make the same distinction the write-ups page makes, or the tab renders
+ * for a substitute and then 404s.
+ *
+ * Required rather than defaulted: a default of `capability` would silently
+ * offer the tab to every substitute, which is the bug this exists to stop.
+ */
 export function tabsForCapability(
-  capability: ClassroomCapability | null
+  capability: ClassroomCapability | null,
+  substantiveCapability: ClassroomCapability | null
 ): ClassroomTab[] {
   return ALL_TABS.filter((tab) => {
     if (tab.key === 'attendance') return canReadAttendance(capability);
-    if (tab.key === 'write-ups') return canReadWriteups(capability);
+    if (tab.key === 'write-ups') return canReadWriteups(substantiveCapability);
     // Overview, Grades, Students, Timeline, Settings all just require the
     // roster-read floor — any capability at all (adviser / subject /
     // oversight).

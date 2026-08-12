@@ -25,7 +25,7 @@ import {
   type SubjectTeacherAssignmentRow,
 } from '@/lib/markbook/subject-teacher';
 import {
-  loadAssignmentsForUser,
+  loadEffectiveAssignmentsForUser,
   isSubjectTeacher,
 } from '@/lib/auth/teacher-assignments';
 import { Badge } from '@/components/ui/badge';
@@ -166,10 +166,10 @@ export default async function GradingSheetPage({
   // Fetch teacher's assignments concurrently with entries/requests — only
   // needed for the subject-teacher gate; skip for non-teacher roles.
   const assignmentsPromise: Promise<
-    Awaited<ReturnType<typeof loadAssignmentsForUser>>
+    Awaited<ReturnType<typeof loadEffectiveAssignmentsForUser>>
   > =
     role === 'teacher' && sessionUser
-      ? loadAssignmentsForUser(supabase, sessionUser.id)
+      ? loadEffectiveAssignmentsForUser(supabase, sessionUser.id)
       : Promise.resolve([]);
 
   // Prior-term grades for grade-difference analysis. Extracted early so the
@@ -189,7 +189,7 @@ export default async function GradingSheetPage({
       : Promise.resolve({});
 
   // Who teaches this (section × subject) — the live answer, from
-  // teacher_assignments. The page's own loadAssignmentsForUser call above is
+  // teacher_assignments. The page's own loadEffectiveAssignmentsForUser call above is
   // keyed on the CURRENT user and only gates their edit rights; it cannot
   // answer "who teaches this". Declared here so it runs inside the Promise.all
   // below rather than adding a serial round-trip.

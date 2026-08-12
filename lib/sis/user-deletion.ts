@@ -19,11 +19,21 @@ const ROLE_FOOTPRINT_COLUMNS: Record<
 > = {
   teacher: [
     { table: 'teacher_assignments', column: 'teacher_user_id' },
+    // A teacher who has stood in for an absent colleague. Migration 112
+    // declares no cross-schema FK (the convention this table's own parent,
+    // teacher_assignments, follows), so this registry is the only thing
+    // stopping a delete from leaving a cover pointing at nobody.
+    { table: 'assignment_reliefs', column: 'relief_teacher_user_id' },
     { table: 'grade_change_requests', column: 'requested_by' },
     { table: 'attendance_daily', column: 'recorded_by' },
     { table: 'evaluation_writeups', column: 'created_by' },
   ],
   academic_coordinator: [
+    // Cover worked BEFORE this account was promoted. This list is scoped to
+    // the account's CURRENT role, so leaving relief under `teacher` alone
+    // would mean a teacher who once covered a class, then became a
+    // coordinator, deletes cleanly and strands the cover row.
+    { table: 'assignment_reliefs', column: 'relief_teacher_user_id' },
     { table: 'grade_change_requests', column: 'requested_by' },
     { table: 'grade_change_requests', column: 'applied_by' },
     { table: 'p_file_outreach', column: 'created_by_user_id' },
@@ -49,6 +59,12 @@ const ROLE_FOOTPRINT_COLUMNS: Record<
     { table: 'calendar_events', column: 'created_by' },
     { table: 'evaluation_writeups', column: 'created_by' },
     { table: 'level_aliases', column: 'created_by' },
+    // Holds staff.manage_relief (migration 113) — so this role is who
+    // arranges and ends cover. `relief_teacher_user_id` is here too for the
+    // same promoted-account reason as the coordinator block above.
+    { table: 'assignment_reliefs', column: 'created_by' },
+    { table: 'assignment_reliefs', column: 'ended_by' },
+    { table: 'assignment_reliefs', column: 'relief_teacher_user_id' },
   ],
   superadmin: [
     { table: 'approver_assignments', column: 'created_by' },
@@ -62,6 +78,9 @@ const ROLE_FOOTPRINT_COLUMNS: Record<
     { table: 'calendar_events', column: 'created_by' },
     { table: 'evaluation_writeups', column: 'created_by' },
     { table: 'level_aliases', column: 'created_by' },
+    { table: 'assignment_reliefs', column: 'created_by' },
+    { table: 'assignment_reliefs', column: 'ended_by' },
+    { table: 'assignment_reliefs', column: 'relief_teacher_user_id' },
   ],
   p_file_officer: [
     { table: 'p_file_revisions', column: 'replaced_by_user_id' },

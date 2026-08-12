@@ -18,6 +18,12 @@ import { getSessionUser } from '@/lib/supabase/server';
 // capability that separates them (`staff.view_accounts`) is checked in the
 // Accounts page itself — a route needs its own guard, because the URL can be
 // typed.
+//
+// It is ONLY the guard and the shell. The "Staff." header and the two-cut tab
+// switcher live in the list pages themselves, not here, because the teacher
+// detail page at `[teacherId]` is also a child: rendering them here would have
+// stacked a second header above its own, and left the switcher showing two
+// tabs with neither selected on a URL that is neither.
 export default async function StaffLayout({
   children,
 }: {
@@ -33,60 +39,5 @@ export default async function StaffLayout({
     redirect('/sis');
   }
 
-  const capabilities = await getCapabilitiesForRole(sessionUser.role);
-  const canSeeAccounts = can(capabilities, 'staff.view_accounts');
-
-  // Both are free: they share the single 5-minute-cached listUsers() call
-  // underlying every helper in lib/auth/staff-list.ts.
-  const [staffCount, teacherList] = await Promise.all([
-    getStaffCount(),
-    getTeacherList(),
-  ]);
-  const teachingCount = teacherList.length;
-
-  return (
-    <PageShell>
-      <SisPageHeader
-        group="This year"
-        title="Staff."
-        description="Everyone who works in the school — their accounts, roles, and what they teach."
-        chips={
-          <Badge
-            variant="outline"
-            className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-          >
-            {staffCount} people · {teachingCount} teaching
-          </Badge>
-        }
-      />
-
-      {/* Switcher and the content it controls are one region (space-y-4,
-          tighter than PageShell's space-y-8) so the tabs read as bound to what
-          is directly below them. */}
-      <div className="space-y-4">
-        {canSeeAccounts && (
-          <PageTabNav
-            tabs={[
-              {
-                href: '/sis/admin/staff',
-                label: 'Teaching assignments',
-                count: teachingCount,
-              },
-              {
-                href: '/sis/admin/staff/accounts',
-                label: 'Accounts',
-                // staffCount, not the loaded account list. It excludes disabled
-                // accounts, so it can read one or two lower than the Accounts
-                // table — but it is the same number on both tabs, where the old
-                // page showed a different one depending on which tab you were
-                // standing on.
-                count: staffCount,
-              },
-            ]}
-          />
-        )}
-        {children}
-      </div>
-    </PageShell>
-  );
+  return <PageShell>{children}</PageShell>;
 }

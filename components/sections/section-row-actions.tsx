@@ -76,6 +76,12 @@ export type SectionRowActionsProps = {
    *  those items; when absent it falls back to oversight-or-nothing, so a
    *  caller that forgets it hides the items rather than dead-ending a teacher. */
   capability?: ClassroomCapability | null;
+  /** This viewer's capability in THIS section IGNORING cover. Gates the
+   *  Write-ups cross-link only, whose destination stays with the regular
+   *  adviser while a substitute covers the teaching (KD #173 — the link asks
+   *  what the page asks). Omitted callers fall back to `capability`, which is
+   *  correct for every surface that has no cover to distinguish. */
+  substantiveCapability?: ClassroomCapability | null;
   /** SIS only: whether this section already has a form adviser assigned.
    *  Controls the label of the adviser action item. */
   hasAdviser?: boolean;
@@ -102,6 +108,7 @@ export function SectionRowActions({
   todayHref,
   isOversight,
   capability,
+  substantiveCapability,
   hasAdviser,
   ayId,
   levelType,
@@ -140,6 +147,12 @@ export function SectionRowActions({
   // Fail closed: an omitted capability grants oversight only, never a teacher.
   const effectiveCapability: ClassroomCapability | null =
     capability ?? (oversight ? 'oversight' : null);
+  // Write-ups alone asks the substantive question. Callers with no cover to
+  // distinguish omit the prop and fall through to the same value as before.
+  const effectiveSubstantiveCapability: ClassroomCapability | null =
+    substantiveCapability !== undefined
+      ? substantiveCapability
+      : effectiveCapability;
   const openHref =
     module === 'sis'
       ? `/sis/sections/${sectionId}`
@@ -202,7 +215,7 @@ export function SectionRowActions({
                 </Link>
               </DropdownMenuItem>
             )}
-            {canReadWriteups(effectiveCapability) && (
+            {canReadWriteups(effectiveSubstantiveCapability) && (
               <DropdownMenuItem asChild>
                 <Link
                   href={`/evaluation/sections/${sectionId}`}
