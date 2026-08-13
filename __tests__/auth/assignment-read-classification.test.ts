@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-// Relief teachers (migrations 112/113) split one question into two that used to
+// Relief teachers (migration 117) split one question into two that used to
 // have the same answer:
 //
 //   ACT   — "who may work on this class?"   substantive teacher + active relief
@@ -46,7 +46,6 @@ const CLASSIFIED: Record<string, Category[]> = {
   'lib/auth/teacher-assignments.ts': ['plumbing'],
   'lib/classroom/queries.ts': ['plumbing'],
   'lib/classroom/scope.ts': ['plumbing'],
-  'lib/audit/assignment-context.ts': ['plumbing'],
 
   // ── act ─────────────────────────────────────────────────────────────────
   'lib/sidebar/resolve-hidden-modules.ts': ['act'],
@@ -119,9 +118,8 @@ const CLASSIFIED: Record<string, Category[]> = {
 
   // ── crud ────────────────────────────────────────────────────────────────
   'app/api/teacher-assignments/route.ts': ['crud'],
+  // Also the cover switch — PATCH sets and clears relief_teacher_user_id.
   'app/api/teacher-assignments/[id]/route.ts': ['crud'],
-  'app/api/assignment-reliefs/route.ts': ['crud'],
-  'app/api/assignment-reliefs/[id]/end/route.ts': ['crud'],
 
   // ── self-profile ────────────────────────────────────────────────────────
   // "Your sections" on /account — the viewer's own list, not a gate and not a
@@ -254,7 +252,7 @@ describe('the name-of-record boundary', () => {
       expect(
         source(file),
         `${file} answers "is the post filled" and must not see relief`
-      ).not.toMatch(/loadEffectiveAssignmentsForUser|assignment_reliefs/);
+      ).not.toMatch(/loadEffectiveAssignmentsForUser|relief_teacher_user_id/);
     }
   });
 

@@ -37,12 +37,13 @@ describe('getUserFootprint', () => {
     const queriedTables = new Set(queryCalls.map((c) => c.table));
     expect(queriedTables).toEqual(
       new Set([
+        // Twice over: the classes they hold, and any they are covering for an
+        // absent colleague (migration 117, `relief_teacher_user_id`). Both are
+        // columns on the same table, so the deduped set names it once.
+        // Migration 117 declares no cross-schema FK — the convention its
+        // neighbour teacher_user_id follows — so this footprint check is the
+        // only thing stopping a delete from leaving a cover pointing at nobody.
         'teacher_assignments',
-        // Cover this teacher worked for an absent colleague (migration 112).
-        // Migration 112 declares no cross-schema FK — the convention its
-        // parent table follows — so this footprint check is the only thing
-        // stopping a delete from leaving a cover pointing at nobody.
-        'assignment_reliefs',
         'grade_change_requests',
         'attendance_daily',
         'evaluation_writeups',

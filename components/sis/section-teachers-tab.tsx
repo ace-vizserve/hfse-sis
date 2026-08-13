@@ -7,8 +7,6 @@ import {
   Plus,
   Trash2,
   UserCheck,
-  UserCog,
-  RefreshCw,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -16,6 +14,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { AssignmentReliefControl } from '@/components/sis/assignment-relief-control';
 import { AssignmentRemovalDialog } from '@/components/sis/assignment-removal-dialog';
 import { StaffAvatar } from '@/components/sis/staff-visuals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -27,10 +26,18 @@ import {
   CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
   Select,
@@ -75,43 +82,9 @@ type Assignment = {
   section_id: string;
   subject_id: string | null;
   role: 'form_adviser' | 'subject_teacher';
+  /** Who is standing in on this class right now, or null when nobody is. */
+  relief_teacher_user_id: string | null;
 };
-
-/** Names BOTH people. "Being covered" alone leaves the reader asking the only
- *  question that matters. Amber because cover is neither healthy-normal nor
- *  broken — it is a fact worth noticing. */
-function CoverBadge({ name, startedOn }: { name: string; startedOn: string }) {
-  return (
-    <Badge
-      variant="outline"
-      className="h-6 border-brand-amber bg-brand-amber-light text-ink"
-    >
-      <RefreshCw className="h-3 w-3" />
-      {name} covering since {formatCoverDay(startedOn)}
-    </Badge>
-  );
-}
-
-/** "12 Aug" — short enough for a badge, precise enough to act on. */
-function formatCoverDay(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  if (!y || !m || !d) return iso;
-  return `${d} ${months[m - 1]}`;
-}
 
 // Teachers tab on /sis/sections/[id]. Moved from
 // components/admin/teacher-assignments-panel.tsx during the 2026-04-22 SIS
@@ -122,15 +95,15 @@ export function TeacherAssignmentsPanel({
   levelSubjects,
   initialTeachers,
   initialAssignments,
-  coverByAssignment,
+  canManageRelief,
   termStarted,
 }: {
   sectionId: string;
   levelSubjects: Subject[];
   initialTeachers: Teacher[];
   initialAssignments: Assignment[];
-  /** assignmentId -> who is standing in on it today, and since when. */
-  coverByAssignment: Record<string, { name: string; startedOn: string }>;
+  /** May this user put someone on cover? Narrower than editing assignments. */
+  canManageRelief: boolean;
   /** Has the school year begun? If so, a removal has to say why. */
   termStarted: boolean;
 }) {
@@ -146,6 +119,7 @@ export function TeacherAssignmentsPanel({
   const [teacherId, setTeacherId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   // Two parallel reads to refresh in-component state. Kept inline (no query
   // key) but routed through apiFetch so no raw fetch remains; preserves the
@@ -174,26 +148,43 @@ export function TeacherAssignmentsPanel({
     }
   }
 
+  // The payload travels as mutation variables rather than being read off state
+  // inside onSuccess: state has already been cleared by then, and the toast
+  // names a teacher and a subject. Reading it from `vars` means the sentence
+  // always describes what was actually sent.
   const createMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (vars: {
+      teacher_user_id: string;
+      subject_id: string | null;
+      role: 'form_adviser' | 'subject_teacher';
+    }) =>
       apiFetch(
         '/api/teacher-assignments',
-        jsonInit('POST', {
-          teacher_user_id: teacherId,
-          section_id: sectionId,
-          subject_id: role === 'subject_teacher' ? subjectId : null,
-          role,
-        })
+        jsonInit('POST', { ...vars, section_id: sectionId })
       ),
-    onSuccess: async () => {
+    onSuccess: async (_data, vars) => {
       setTeacherId('');
       setSubjectId('');
-      toast.success('Assignment added');
+      setAssignOpen(false);
+      // Say who now does what, not that a row was written. `vars` carries what
+      // was actually sent, so the message can't drift from the save.
+      const who =
+        teachers.find((t) => t.id === vars.teacher_user_id)?.display_name ??
+        'That teacher';
+      toast.success(
+        vars.role === 'form_adviser'
+          ? `${who} is now the form adviser for this class.`
+          : `${who} now teaches ${subjectsById.get(vars.subject_id ?? '')?.name ?? 'this subject'} to this class.`
+      );
       await load();
       router.refresh();
     },
     onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to add assignment');
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : 'That teacher could not be assigned. Try again.'
+      );
     },
   });
 
@@ -213,7 +204,7 @@ export function TeacherAssignmentsPanel({
       ),
     onSuccess: async () => {
       setPendingRemoveId(null);
-      toast.success('Assignment removed');
+      toast.success('Taken off this class.');
       await load();
       router.refresh();
     },
@@ -228,14 +219,18 @@ export function TeacherAssignmentsPanel({
 
   function createAssignment() {
     if (!teacherId) {
-      toast.error('Pick a teacher');
+      toast.error('Choose a teacher first.');
       return;
     }
     if (role === 'subject_teacher' && !subjectId) {
-      toast.error('Pick a subject');
+      toast.error('Choose which subject they teach.');
       return;
     }
-    createMutation.mutate();
+    createMutation.mutate({
+      teacher_user_id: teacherId,
+      subject_id: role === 'subject_teacher' ? subjectId : null,
+      role,
+    });
   }
 
   function removeAssignment(
@@ -256,6 +251,16 @@ export function TeacherAssignmentsPanel({
   );
 
   const formAdviser = assignments.find((a) => a.role === 'form_adviser');
+
+  // Both "one per class" rules, applied to what the dialog offers rather than
+  // left for the save to refuse. A dropdown that lists a subject already taken
+  // is an invitation to an error message.
+  const takenSubjectIds = new Set(
+    assignments
+      .filter((a) => a.role === 'subject_teacher' && a.subject_id)
+      .map((a) => a.subject_id as string)
+  );
+  const openSubjects = levelSubjects.filter((s) => !takenSubjectIds.has(s.id));
   const subjectTeachers = assignments
     .filter((a) => a.role === 'subject_teacher')
     .sort((a, b) => {
@@ -266,6 +271,15 @@ export function TeacherAssignmentsPanel({
 
   return (
     <div className="space-y-5">
+      {/* The tab's one primary action (§9.2). It sits above the two lists
+          rather than inside either, because it can add to both. */}
+      <div className="flex justify-end">
+        <Button onClick={() => setAssignOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Assign a teacher
+        </Button>
+      </div>
+
       {/* Form Class Adviser */}
       <Card className="@container/card">
         <CardHeader>
@@ -306,9 +320,26 @@ export function TeacherAssignmentsPanel({
                     formAdviser.teacher_user_id}
                 </div>
               </div>
-              {coverByAssignment[formAdviser.id] && (
-                <CoverBadge {...coverByAssignment[formAdviser.id]!} />
-              )}
+              <AssignmentReliefControl
+                assignmentId={formAdviser.id}
+                coveredTeacherId={formAdviser.teacher_user_id}
+                coveredTeacherName={
+                  teachersById.get(formAdviser.teacher_user_id)?.display_name ??
+                  'this teacher'
+                }
+                reliefTeacherName={
+                  formAdviser.relief_teacher_user_id
+                    ? (teachersById.get(formAdviser.relief_teacher_user_id)
+                        ?.display_name ?? 'Someone')
+                    : null
+                }
+                teacherOptions={teachers.map((t) => ({
+                  id: t.id,
+                  name: t.display_name,
+                }))}
+                canManage={canManageRelief}
+                onChanged={load}
+              />
               <Button
                 variant="ghost"
                 size="icon"
@@ -397,9 +428,23 @@ export function TeacherAssignmentsPanel({
                         {t?.display_name ?? '(unknown user)'}
                       </div>
                     </div>
-                    {coverByAssignment[a.id] && (
-                      <CoverBadge {...coverByAssignment[a.id]!} />
-                    )}
+                    <AssignmentReliefControl
+                      assignmentId={a.id}
+                      coveredTeacherId={a.teacher_user_id}
+                      coveredTeacherName={t?.display_name ?? 'this teacher'}
+                      reliefTeacherName={
+                        a.relief_teacher_user_id
+                          ? (teachersById.get(a.relief_teacher_user_id)
+                              ?.display_name ?? 'Someone')
+                          : null
+                      }
+                      teacherOptions={teachers.map((x) => ({
+                        id: x.id,
+                        name: x.display_name,
+                      }))}
+                      canManage={canManageRelief}
+                      onChanged={load}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -418,22 +463,34 @@ export function TeacherAssignmentsPanel({
         </CardContent>
       </Card>
 
-      {/* Add assignment */}
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            New assignment
-          </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            Assign a teacher
-          </CardTitle>
-          <CardAction>
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <UserCog className="size-5" />
-            </div>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
+      {/* Assigning is a DIALOG, not a third card sitting under the two lists.
+          As a card it was permanent furniture: three dropdowns on screen at all
+          times, below the answer they change, on a tab you mostly open to read.
+          Behind a button it appears when you want it and gets out of the way
+          when you don't — the same shape arranging cover already uses. */}
+      <Dialog
+        open={assignOpen}
+        onOpenChange={(next) => {
+          setAssignOpen(next);
+          if (next) {
+            // The adviser option is hidden once the class has one. Without this
+            // reset, someone who assigned an adviser a moment ago reopens the
+            // dialog with a Role box showing a choice no longer on the list.
+            if (formAdviser) setRole('subject_teacher');
+          } else {
+            setTeacherId('');
+            setSubjectId('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-serif">Assign a teacher</DialogTitle>
+            <DialogDescription>
+              Give this class a form adviser, or a teacher for one of its
+              subjects.
+            </DialogDescription>
+          </DialogHeader>
           <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
             <Field>
               <FieldLabel htmlFor="ta-role">Role</FieldLabel>
@@ -450,9 +507,14 @@ export function TeacherAssignmentsPanel({
                   <SelectItem value="subject_teacher">
                     Subject teacher
                   </SelectItem>
-                  <SelectItem value="form_adviser">
-                    Form class adviser
-                  </SelectItem>
+                  {/* A class has one adviser. Once it has one, the only way to
+                      change who it is, is to take the current one off — which
+                      is a decision with a reason attached, not a dropdown. */}
+                  {!formAdviser && (
+                    <SelectItem value="form_adviser">
+                      Form class adviser
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </Field>
@@ -479,10 +541,16 @@ export function TeacherAssignmentsPanel({
               {role === 'subject_teacher' ? (
                 <Select value={subjectId} onValueChange={setSubjectId}>
                   <SelectTrigger id="ta-subject">
-                    <SelectValue placeholder="— pick a subject —" />
+                    <SelectValue
+                      placeholder={
+                        openSubjects.length === 0
+                          ? 'Every subject already has a teacher'
+                          : '— pick a subject —'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {levelSubjects.map((s) => (
+                    {openSubjects.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="inline-flex items-center gap-2">
                           <span>{s.name}</span>
@@ -502,38 +570,37 @@ export function TeacherAssignmentsPanel({
 
           {teachers.length === 0 && !loading && (
             <Alert className="mt-4">
+              {/* Was: "create users in the Supabase dashboard and set
+                  app_metadata.role". Account creation has been in the UI since
+                  KD #87 — that text told a school admin to open a developer
+                  console for a job the app already does. */}
               <AlertDescription>
-                No teacher users found. Create users in the Supabase dashboard
-                and set{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                  app_metadata.role
-                </code>{' '}
-                to{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                  &quot;teacher&quot;
-                </code>
-                .
+                Nobody has a teacher account yet. Create one on the Staff page,
+                then come back and assign them.
               </AlertDescription>
             </Alert>
           )}
-        </CardContent>
-        <CardFooter className="justify-end border-t border-border pt-6">
-          <Button
-            onClick={createAssignment}
-            disabled={
-              busy || !teacherId || (role === 'subject_teacher' && !subjectId)
-            }
-            size="sm"
-          >
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            {busy ? 'Adding…' : 'Add assignment'}
-          </Button>
-        </CardFooter>
-      </Card>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              onClick={createAssignment}
+              disabled={
+                busy || !teacherId || (role === 'subject_teacher' && !subjectId)
+              }
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              {busy ? 'Assigning…' : 'Assign'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AssignmentRemovalDialog
         open={pendingRemoveId !== null}

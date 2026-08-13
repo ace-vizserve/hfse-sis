@@ -1,7 +1,7 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -14,7 +14,6 @@ import {
   RoleChip,
   StaffAvatar,
 } from '@/components/sis/staff-visuals';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -96,46 +95,6 @@ export function StaffTable({
           align="start"
         />
       ),
-    },
-    {
-      id: 'cover',
-      // Sorts by "how disrupted is this person", either direction — someone
-      // being covered and someone carrying an extra class both matter.
-      accessorFn: (r) => r.coveredCount + r.coveringCount,
-      header: ({ column }) => (
-        <SortableHeader column={column}>Cover</SortableHeader>
-      ),
-      // KD #161 — a render-function header must declare its own plain name,
-      // or the Columns menu and the CSV header get a humanised id instead.
-      meta: { label: 'Cover' },
-      cell: ({ row }) => {
-        const { coveredCount, coveringCount } = row.original;
-        if (coveredCount === 0 && coveringCount === 0) {
-          return <span className="text-muted-foreground">—</span>;
-        }
-        return (
-          <div className="flex flex-wrap gap-1">
-            {coveredCount > 0 && (
-              <Badge
-                variant="outline"
-                className="h-6 border-brand-amber bg-brand-amber-light text-ink"
-              >
-                <RefreshCw className="h-3 w-3" />
-                {coveredCount} covered
-              </Badge>
-            )}
-            {coveringCount > 0 && (
-              <Badge
-                variant="outline"
-                className="h-6 border-brand-amber bg-brand-amber-light text-ink"
-              >
-                <RefreshCw className="h-3 w-3" />
-                covering {coveringCount}
-              </Badge>
-            )}
-          </div>
-        );
-      },
     },
     {
       id: 'load',

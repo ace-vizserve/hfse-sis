@@ -2,9 +2,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
-import { buildAssignmentAuditContext } from '@/lib/audit/assignment-context';
+import {
+  buildAssignmentAuditContext,
+  buildReliefAuditContext,
+} from '@/lib/audit/assignment-context';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import { AssignmentRemovalSchema } from '@/lib/schemas/teacher-assignment';
+import {
+  AssignmentRemovalSchema,
+  AssignmentReliefSchema,
+} from '@/lib/schemas/teacher-assignment';
 import { hasTermStarted } from '@/lib/sis/current-term';
 import { sgToday } from '@/lib/dates';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -53,6 +59,131 @@ async function sectionYearIsUnderway(
     .select('start_date')
     .eq('academic_year_id', section.academic_year_id);
   return hasTermStarted(terms ?? [], sgToday());
+}
+
+// PATCH /api/teacher-assignments/[id] — set or clear this class's relief teacher.
+//
+// Body: { relief_teacher_user_id: "<uuid>" } to put someone on cover, or
+//       { relief_teacher_user_id: null }     to take them off.
+//
+// Cover is a switch, not a booking (migration 117). There is no start date, no
+// end date and no history table: setting the column grants the substitute the
+// same access as the teacher, clearing it takes that access away, and the
+// audit log is where a finished cover stays readable.
+//
+// Capability is `staff.manage_relief` — school admin and above, deliberately
+// narrower than the `staff.edit_assignments` the DELETE below uses. Arranging
+// cover changes who may act on a class; it should not be as widely held as
+// editing the timetable.
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireCapability('staff.manage_relief');
+  if ('error' in auth) return auth.error;
+
+  const { id } = await params;
+
+  const parsed = AssignmentReliefSchema.safeParse(
+    await request.json().catch(() => null)
+  );
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error:
+          parsed.error.issues[0]?.message ?? 'Check the form and try again.',
+      },
+      { status: 400 }
+    );
+  }
+  const reliefTeacherId = parsed.data.relief_teacher_user_id;
+
+  const service = createServiceClient();
+
+  const { data: existing } = await service
+    .from('teacher_assignments')
+    .select('id, teacher_user_id, section_id, subject_id, role')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!existing) {
+    return NextResponse.json(
+      {
+        error:
+          'That class is no longer assigned to this teacher. Refresh the page and try again.',
+      },
+      { status: 404 }
+    );
+  }
+
+  if (reliefTeacherId) {
+    // Also a CHECK constraint since migration 117, but say it in words rather
+    // than letting a constraint name reach the screen.
+    if (reliefTeacherId === existing.teacher_user_id) {
+      return NextResponse.json(
+        { error: 'A teacher cannot cover their own class.' },
+        { status: 400 }
+      );
+    }
+
+    // The substitute must be an actual TEACHER account.
+    //
+    // `getTeacherList()`, not `getStaffDisplayNameById()`. The latter returns
+    // every auth user with an email — which in this database means the ~1,000
+    // parent portal accounts as well as staff. Validating against it would let
+    // a parent's uuid be written here, and the RLS helpers in migration 117
+    // would then hand that parent read on the class's students, grading sheets
+    // and attendance. There is no FK across schemas, so this is the only place
+    // the check can happen.
+    //
+    // DISABLED ACCOUNTS ARE EXCLUDED, deliberately disagreeing with the POST on
+    // the parent route, which passes `excludeDisabled: false`. The two answer
+    // different questions: there it is "whose class is this?" — the teacher of
+    // record, who may be disabled while on long leave and is still the name on
+    // the report card; here it is "who is actually taking the lesson?" — and a
+    // disabled account cannot sign in to enter a mark or take the register.
+    const { getTeacherList } = await import('@/lib/auth/staff-list');
+    const teachers = await getTeacherList();
+    if (!teachers.some((t) => t.id === reliefTeacherId)) {
+      return NextResponse.json(
+        {
+          error:
+            'Choose a teacher with an active account. Refresh the list and try again.',
+        },
+        { status: 400 }
+      );
+    }
+  }
+
+  const { error } = await service
+    .from('teacher_assignments')
+    .update({ relief_teacher_user_id: reliefTeacherId })
+    .eq('id', id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: reliefTeacherId
+      ? 'assignment.relief.start'
+      : 'assignment.relief.end',
+    entityType: 'teacher_assignment',
+    entityId: id,
+    context: await buildReliefAuditContext(service, existing, reliefTeacherId),
+  });
+
+  // Cover changes who may act on the section, so the three teaching modules'
+  // drill caches would otherwise show the wrong person's sheets for up to their
+  // 60s TTL. Best-effort — never fail the change because a tag could not be
+  // worked out.
+  await invalidateForSection(service, existing.section_id);
+
+  return NextResponse.json({
+    ok: true,
+    relief_teacher_user_id: reliefTeacherId,
+  });
 }
 
 // DELETE /api/teacher-assignments/[id] — registrar+ only.

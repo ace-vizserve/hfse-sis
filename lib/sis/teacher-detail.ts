@@ -5,7 +5,6 @@ import { cache } from 'react';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
-import { sgToday } from '@/lib/dates';
 
 // Everything the teacher page needs, for one teacher in one academic year.
 //
@@ -21,13 +20,8 @@ import { sgToday } from '@/lib/dates';
 // the assignment onto the substitute's page.
 
 export type CoverSummary = {
-  reliefId: string;
   reliefTeacherId: string;
   reliefTeacherName: string;
-  reason: string;
-  notes: string | null;
-  startedOn: string;
-  endedOn: string | null;
 };
 
 export type TeacherClassRow = {
@@ -38,10 +32,8 @@ export type TeacherClassRow = {
   role: 'form_adviser' | 'subject_teacher';
   subjectId: string | null;
   subjectName: string | null;
-  /** Set only while someone is actively standing in on this class. */
+  /** Set while someone is standing in on this class; null when nobody is. */
   cover: CoverSummary | null;
-  /** Set when cover has been arranged for this class but has not started yet. */
-  scheduledCover: CoverSummary | null;
 };
 
 export type TeacherDetail = {
@@ -49,14 +41,11 @@ export type TeacherDetail = {
   name: string;
   email: string | null;
   classes: TeacherClassRow[];
-  /** Cover on this teacher's classes that has finished — the record of who ran what. */
-  pastCover: Array<CoverSummary & { assignmentId: string; label: string }>;
-  /** Cover this teacher is working for SOMEONE ELSE right now. */
+  /** Classes this teacher is covering for SOMEONE ELSE. */
   coveringForOthers: Array<{
-    reliefId: string;
+    assignmentId: string;
     label: string;
     coveredTeacherName: string;
-    startedOn: string;
   }>;
 };
 
@@ -76,7 +65,6 @@ export async function loadTeacherDetail(
   ayCode: string
 ): Promise<TeacherDetail | null> {
   const service = createServiceClient();
-  const today = sgToday();
 
   const [nameEntries, emailEntries] = await Promise.all([
     getStaffDisplayNameById(),
@@ -99,7 +87,7 @@ export async function loadTeacherDetail(
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
     .select(
-      `id, role, subject_id,
+      `id, role, subject_id, relief_teacher_user_id,
        section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
        subject:subjects(id, name)`
     )
@@ -110,6 +98,7 @@ export async function loadTeacherDetail(
     id: string;
     role: 'form_adviser' | 'subject_teacher';
     subject_id: string | null;
+    relief_teacher_user_id: string | null;
     section:
       | { id: string; name: string; level: LevelLite | LevelLite[] | null }
       | Array<{
@@ -125,66 +114,11 @@ export async function loadTeacherDetail(
   };
 
   const assignments = (assignmentRows ?? []) as AssignmentRaw[];
-  const assignmentIds = assignments.map((a) => a.id);
-
-  // Every cover on those classes — running and finished. One query; the split
-  // is done below so the page can show "who has it now" apart from "who has
-  // had it".
-  const { data: coverRows } = assignmentIds.length
-    ? await service
-        .from('assignment_reliefs')
-        .select(
-          'id, assignment_id, relief_teacher_user_id, reason, notes, started_on, ended_on'
-        )
-        .in('assignment_id', assignmentIds)
-        .order('started_on', { ascending: false })
-    : { data: [] };
-
-  type CoverRaw = {
-    id: string;
-    assignment_id: string;
-    relief_teacher_user_id: string;
-    reason: string;
-    notes: string | null;
-    started_on: string;
-    ended_on: string | null;
-  };
-
-  const isRunning = (c: CoverRaw) =>
-    c.started_on <= today && (c.ended_on === null || c.ended_on >= today);
-  // Arranged, dated to begin later, and NOT yet granting anybody anything.
-  // Without a name of its own this fell in with "finished" and the page said
-  // "Nobody is covering for this teacher" — which is true today and useless,
-  // because somebody has plainly been arranged and the admin who arranged them
-  // has no way to tell whether it saved.
-  const isScheduled = (c: CoverRaw) => c.started_on > today;
-
-  const runningByAssignment = new Map<string, CoverRaw>();
-  const scheduledByAssignment = new Map<string, CoverRaw>();
-  const finished: CoverRaw[] = [];
-  for (const c of (coverRows ?? []) as CoverRaw[]) {
-    if (isRunning(c)) runningByAssignment.set(c.assignment_id, c);
-    else if (isScheduled(c)) scheduledByAssignment.set(c.assignment_id, c);
-    else finished.push(c);
-  }
-
-  const toSummary = (c: CoverRaw): CoverSummary => ({
-    reliefId: c.id,
-    reliefTeacherId: c.relief_teacher_user_id,
-    reliefTeacherName:
-      nameById.get(c.relief_teacher_user_id) ?? 'Unknown teacher',
-    reason: c.reason,
-    notes: c.notes,
-    startedOn: c.started_on,
-    endedOn: c.ended_on,
-  });
 
   const classes: TeacherClassRow[] = assignments.map((a) => {
     const section = one(a.section);
     const subject = one(a.subject);
     const level = one(section?.level ?? null);
-    const running = runningByAssignment.get(a.id) ?? null;
-    const scheduled = scheduledByAssignment.get(a.id) ?? null;
     return {
       assignmentId: a.id,
       sectionId: section?.id ?? '',
@@ -193,8 +127,13 @@ export async function loadTeacherDetail(
       role: a.role,
       subjectId: a.subject_id,
       subjectName: subject?.name ?? null,
-      cover: running ? toSummary(running) : null,
-      scheduledCover: scheduled ? toSummary(scheduled) : null,
+      cover: a.relief_teacher_user_id
+        ? {
+            reliefTeacherId: a.relief_teacher_user_id,
+            reliefTeacherName:
+              nameById.get(a.relief_teacher_user_id) ?? 'Unknown teacher',
+          }
+        : null,
     };
   });
 
@@ -205,46 +144,23 @@ export async function loadTeacherDetail(
     return (x.subjectName ?? '').localeCompare(y.subjectName ?? '');
   });
 
-  const labelFor = (assignmentId: string) => {
-    const c = classes.find((k) => k.assignmentId === assignmentId);
-    if (!c) return 'A class';
-    return c.role === 'form_adviser'
-      ? c.sectionName
-      : `${c.subjectName ?? '—'} · ${c.sectionName}`;
-  };
-
-  const pastCover = finished.map((c) => ({
-    ...toSummary(c),
-    assignmentId: c.assignment_id,
-    label: labelFor(c.assignment_id),
-  }));
-
   // The other direction: classes this teacher is covering for a colleague.
   // Belongs on their page too — "what am I responsible for right now" is one
   // question, and answering half of it would send them looking for the rest.
   const { data: mine } = await service
-    .from('assignment_reliefs')
+    .from('teacher_assignments')
     .select(
-      `id, started_on,
-       assignment:teacher_assignments!inner(
-         id, teacher_user_id, role,
-         section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
-         subject:subjects(id, name)
-       )`
+      `id, teacher_user_id, role,
+       section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
+       subject:subjects(id, name)`
     )
     .eq('relief_teacher_user_id', teacherUserId)
-    .lte('started_on', today)
-    .or(`ended_on.is.null,ended_on.gte.${today}`);
+    .eq('section.academic_year_id', ayId);
 
-  type MineRaw = {
-    id: string;
-    started_on: string;
-    assignment: AssignmentRaw & { teacher_user_id: string };
-  };
+  type MineRaw = AssignmentRaw & { teacher_user_id: string };
 
   const coveringForOthers = ((mine ?? []) as unknown as MineRaw[]).flatMap(
-    (row) => {
-      const a = one(row.assignment as unknown as MineRaw['assignment']);
+    (a) => {
       if (!a) return [];
       const section = one(a.section);
       const subject = one(a.subject);
@@ -252,14 +168,13 @@ export async function loadTeacherDetail(
       const where = sectionLabel(section?.name ?? '—', level);
       return [
         {
-          reliefId: row.id,
+          assignmentId: a.id,
           label:
             a.role === 'form_adviser'
               ? where
               : `${subject?.name ?? '—'} · ${where}`,
           coveredTeacherName:
             nameById.get(a.teacher_user_id) ?? 'Unknown teacher',
-          startedOn: row.started_on,
         },
       ];
     }
@@ -270,7 +185,6 @@ export async function loadTeacherDetail(
     name,
     email: emailById.get(teacherUserId) ?? null,
     classes,
-    pastCover,
     coveringForOthers,
   };
 }
@@ -278,9 +192,8 @@ export async function loadTeacherDetail(
 /**
  * `loadTeacherDetail`, deduped for one request.
  *
- * The teacher layout renders the header and the stat cards; the two child
- * routes beneath it render the classes and the cover. All three need the same
- * payload, and React's `cache` makes that one round trip instead of three —
- * without it, opening a teacher would run the whole query set three times.
+ * The teacher layout renders the header and the stat cards; the page beneath it
+ * renders the classes. Both need the same payload, and React's `cache` makes
+ * that one round trip instead of two.
  */
 export const getTeacherDetail = cache(loadTeacherDetail);

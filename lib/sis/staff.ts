@@ -2,7 +2,6 @@ import { unstable_cache } from 'next/cache';
 
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { createServiceClient } from '@/lib/supabase/service';
-import { sgToday } from '@/lib/dates';
 
 export type StaffSubjectAssignment = {
   assignmentId: string;
@@ -39,6 +38,7 @@ type RawAssignment = {
   section_id: string;
   subject_id: string | null;
   role: string;
+  relief_teacher_user_id: string | null;
   subjects:
     | { code: string; name: string }
     | { code: string; name: string }[]
@@ -92,7 +92,7 @@ async function loadStaffAssignmentsUncached(
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
     .select(
-      'id, teacher_user_id, section_id, subject_id, role, subjects(code, name)'
+      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, subjects(code, name)'
     )
     .in('section_id', sectionIds);
 
@@ -100,37 +100,20 @@ async function loadStaffAssignmentsUncached(
 
   const teachers = await getTeacherList({ excludeDisabled: false });
 
-  // One query for the whole page: every cover running today on any assignment
-  // in this year. Counted from both ends below, because "who is short-handed"
-  // and "who is carrying extra" are the two things this column is read for.
-  const today = sgToday();
-  const { data: coverRows } = assignments.length
-    ? await service
-        .from('assignment_reliefs')
-        .select('assignment_id, relief_teacher_user_id')
-        .in(
-          'assignment_id',
-          assignments.map((a) => a.id)
-        )
-        .lte('started_on', today)
-        .or(`ended_on.is.null,ended_on.gte.${today}`)
-    : { data: [] };
-
-  const assignmentOwner = new Map(
-    assignments.map((a) => [a.id, a.teacher_user_id as string])
-  );
+  // Cover is a column on the rows already loaded (migration 117), so counting
+  // it costs nothing. Counted from both ends, because "who is short-handed" and
+  // "who is carrying extra" are the two things these figures are read for.
   const coveredByTeacher = new Map<string, number>();
   const coveringByTeacher = new Map<string, number>();
-  for (const c of (coverRows ?? []) as Array<{
-    assignment_id: string;
-    relief_teacher_user_id: string;
-  }>) {
-    const owner = assignmentOwner.get(c.assignment_id);
-    if (owner)
-      coveredByTeacher.set(owner, (coveredByTeacher.get(owner) ?? 0) + 1);
+  for (const a of assignments) {
+    if (!a.relief_teacher_user_id) continue;
+    coveredByTeacher.set(
+      a.teacher_user_id,
+      (coveredByTeacher.get(a.teacher_user_id) ?? 0) + 1
+    );
     coveringByTeacher.set(
-      c.relief_teacher_user_id,
-      (coveringByTeacher.get(c.relief_teacher_user_id) ?? 0) + 1
+      a.relief_teacher_user_id,
+      (coveringByTeacher.get(a.relief_teacher_user_id) ?? 0) + 1
     );
   }
 

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
@@ -70,6 +71,17 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Every staff lookup in the app reads one cached list (lib/auth/staff-list.ts,
+  // `unstable_cache` on the `teacher-emails` tag, 5-minute window, shared by
+  // every user). Nothing busted it, so a brand-new account was in the Accounts
+  // table — which reads live — but missing from that list for up to five
+  // minutes. The Accounts row for a teacher offers "Manage teaching
+  // assignments" straight away, and POST /api/teacher-assignments validates
+  // against the cached list, so the obvious next click answered "that person
+  // does not have a teacher account" about an account created seconds earlier,
+  // and no amount of refreshing helped: the staleness is on the server.
+  revalidateTag('teacher-emails', 'max');
 
   await logAction({
     service,

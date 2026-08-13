@@ -225,10 +225,6 @@ const DELIBERATELY_NOT_MIGRATED: Array<{ file: string; why: string }> = [
     why: 'its GET admits teacher so they can read their own assignments; staff.read is registrar+',
   },
   {
-    file: 'app/api/assignment-reliefs/route.ts',
-    why: 'same split as teacher-assignments: the GET admits teacher so a substitute can see what they are covering and a covered teacher can see who is holding their class; the POST is capability-gated on staff.manage_relief',
-  },
-  {
     file: 'app/api/sis/students/[enroleeNumber]/profile/route.ts',
     why: 'two role sets in one folder — one capability would grant `admissions` section placement; see lib/auth/student-record.ts',
   },
@@ -425,16 +421,15 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
     capabilities: ['approvers.manage'],
   },
   {
+    // Two capabilities in one file, deliberately: DELETE takes a teacher off a
+    // class (staff.edit_assignments), PATCH decides who stands in for them
+    // (staff.manage_relief, narrower — school admin and above).
     file: 'app/api/teacher-assignments/[id]/route.ts',
-    capabilities: ['staff.edit_assignments'],
+    capabilities: ['staff.edit_assignments', 'staff.manage_relief'],
   },
   {
     file: 'app/api/teacher-assignments/by-teacher/route.ts',
     capabilities: ['staff.read'],
-  },
-  {
-    file: 'app/api/assignment-reliefs/[id]/end/route.ts',
-    capabilities: ['staff.manage_relief'],
   },
 ];
 

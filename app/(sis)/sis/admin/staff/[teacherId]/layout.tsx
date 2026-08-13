@@ -1,10 +1,8 @@
 import { BookOpen, RefreshCw, UserCheck } from 'lucide-react';
 import { notFound, redirect } from 'next/navigation';
 
-import { PageTabNav } from '@/components/sis/page-tab-nav';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { TeacherAssignmentEditorButton } from '@/components/sis/teacher-assignment-editor-button';
-import { TeacherCoverActions } from '@/components/sis/teacher-cover-actions';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -15,7 +13,6 @@ import {
 } from '@/components/ui/card';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getTeacherList } from '@/lib/auth/staff-list';
 import { getTeacherDetail } from '@/lib/sis/teacher-detail';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -27,9 +24,13 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // be linked, bookmarked or sent to anyone. The drawer stays for quick edits
 // from the table; this is the durable view.
 //
-// The header, the figures and the switcher are here so the two child routes
-// share them. `getTeacherDetail` is request-deduped, so the layout and the
-// child that follows it cost one round trip between them, not two.
+// Cover is arranged on the class itself, one row at a time — there is no Cover
+// tab and no dialog up here. Somebody is standing in on a class or nobody is,
+// so the control belongs beside the class, not behind a page-level button that
+// then has to ask which class it meant.
+//
+// `getTeacherDetail` is request-deduped, so the layout and the page beneath it
+// cost one round trip between them, not two.
 
 export default async function TeacherLayout({
   params,
@@ -48,7 +49,6 @@ export default async function TeacherLayout({
   // is the capability the page's own data turns on, checked here because a URL
   // can be typed.
   if (!can(capabilities, 'staff.read')) redirect('/sis');
-  const canManageRelief = can(capabilities, 'staff.manage_relief');
   const canEditAssignments = can(capabilities, 'staff.edit_assignments');
 
   const supabase = await createClient();
@@ -60,10 +60,7 @@ export default async function TeacherLayout({
   const ayCode = (ayRow as { ay_code: string } | null)?.ay_code;
   if (!ayCode) redirect('/sis');
 
-  const [teacher, allTeachers] = await Promise.all([
-    getTeacherDetail(teacherId, ayCode),
-    getTeacherList(),
-  ]);
+  const teacher = await getTeacherDetail(teacherId, ayCode);
   if (!teacher) notFound();
 
   const formClasses = teacher.classes.filter((c) => c.role === 'form_adviser');
@@ -90,51 +87,15 @@ export default async function TeacherLayout({
           ) : undefined
         }
         actions={
-          <>
-            {/* Two capabilities, side by side. The academic coordinator can
-                change who teaches what and cannot arrange cover; a school
-                admin can do both. Editing sits on `outline` because cover is
-                the primary path on this page (§9.2 — one default button). */}
-            <TeacherAssignmentEditorButton
-              teacher={{
-                userId: teacher.userId,
-                name: teacher.name,
-                email: teacher.email ?? '',
-              }}
-              ayCode={ayCode}
-              canEdit={canEditAssignments}
-            />
-            <TeacherCoverActions
-              teacherId={teacher.userId}
-              teacherName={teacher.name}
-              classes={teacher.classes.map((c) => ({
-                assignmentId: c.assignmentId,
-                label:
-                  c.role === 'form_adviser'
-                    ? c.sectionName
-                    : `${c.subjectName ?? '—'} · ${c.sectionName}`,
-                sublabel:
-                  c.role === 'form_adviser' ? 'Form class' : c.levelLabel,
-                // Scheduled cover holds the slot just as firmly as running
-                // cover: the unique index is on "has not ended", and says
-                // nothing about whether it has started. Counting only running
-                // cover let the dialog offer a class that was already spoken
-                // for, and the save then failed with "Someone is already
-                // covering this class" against a row nothing on screen showed.
-                alreadyCovered: c.cover !== null || c.scheduledCover !== null,
-                coverNote:
-                  c.cover !== null
-                    ? `${c.cover.reliefTeacherName} is covering this`
-                    : c.scheduledCover !== null
-                      ? `${c.scheduledCover.reliefTeacherName} is booked from ${c.scheduledCover.startedOn}`
-                      : null,
-              }))}
-              teacherOptions={allTeachers
-                .filter((t) => t.id !== teacher.userId)
-                .map((t) => ({ id: t.id, name: t.name }))}
-              canManage={canManageRelief}
-            />
-          </>
+          <TeacherAssignmentEditorButton
+            teacher={{
+              userId: teacher.userId,
+              name: teacher.name,
+              email: teacher.email ?? '',
+            }}
+            ayCode={ayCode}
+            canEdit={canEditAssignments}
+          />
         }
       />
 
@@ -211,23 +172,7 @@ export default async function TeacherLayout({
         </Card>
       </div>
 
-      <div className="space-y-4">
-        <PageTabNav
-          tabs={[
-            {
-              href: `/sis/admin/staff/${teacherId}`,
-              label: 'Classes',
-              count: teacher.classes.length,
-            },
-            {
-              href: `/sis/admin/staff/${teacherId}/cover`,
-              label: 'Cover',
-              count: coveredCount,
-            },
-          ]}
-        />
-        {children}
-      </div>
+      <div className="space-y-4">{children}</div>
     </>
   );
 }

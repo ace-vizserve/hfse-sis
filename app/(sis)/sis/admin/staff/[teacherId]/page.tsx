@@ -2,6 +2,7 @@ import { BookOpen, RefreshCw, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { AssignmentReliefControl } from '@/components/sis/assignment-relief-control';
 import { SisEmptyState } from '@/components/sis/empty-state';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,11 +12,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { can } from '@/lib/auth/capabilities';
+import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { getTeacherDetail } from '@/lib/sis/teacher-detail';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
-// The classes this teacher holds. Session, role and capability are guarded by
-// the layout, which runs for this route and its sibling.
+// The classes this teacher holds — and, on each row, who is standing in on it.
+//
+// This is where cover is arranged. "Ms Koh is away" is a statement about a
+// PERSON, and this page is the only place that lists everything one person
+// holds, so the five decisions it produces are five rows here. The same control
+// appears on a class's own Teachers tab for the other direction.
+//
+// Session, role and staff.read are guarded by the layout.
 export default async function TeacherClassesPage({
   params,
 }: {
@@ -33,8 +43,19 @@ export default async function TeacherClassesPage({
   if (!ayCode) redirect('/sis');
 
   // Deduped with the layout's call — one round trip between them.
-  const teacher = await getTeacherDetail(teacherId, ayCode);
+  const [teacher, allTeachers, capabilities] = await Promise.all([
+    getTeacherDetail(teacherId, ayCode),
+    getTeacherList(),
+    getSessionUser().then((u) =>
+      u?.role ? getCapabilitiesForRole(u.role) : []
+    ),
+  ]);
   if (!teacher) notFound();
+
+  // Arranging cover is narrower than editing assignments: the academic
+  // coordinator staffs the year, a school admin decides who stands in.
+  const canManageRelief = can(capabilities, 'staff.manage_relief');
+  const reliefOptions = allTeachers.map((t) => ({ id: t.id, name: t.name }));
 
   const formClasses = teacher.classes.filter((c) => c.role === 'form_adviser');
   const subjectClasses = teacher.classes.filter(
@@ -67,7 +88,14 @@ export default async function TeacherClassesPage({
           ) : (
             <div className="divide-y divide-border">
               {formClasses.map((c) => (
-                <ClassRow key={c.assignmentId} row={c} />
+                <ClassRow
+                  key={c.assignmentId}
+                  row={c}
+                  teacherId={teacher.userId}
+                  teacherName={teacher.name}
+                  reliefOptions={reliefOptions}
+                  canManageRelief={canManageRelief}
+                />
               ))}
             </div>
           )}
@@ -99,7 +127,14 @@ export default async function TeacherClassesPage({
           ) : (
             <div className="divide-y divide-border">
               {subjectClasses.map((c) => (
-                <ClassRow key={c.assignmentId} row={c} />
+                <ClassRow
+                  key={c.assignmentId}
+                  row={c}
+                  teacherId={teacher.userId}
+                  teacherName={teacher.name}
+                  reliefOptions={reliefOptions}
+                  canManageRelief={canManageRelief}
+                />
               ))}
             </div>
           )}
@@ -125,7 +160,7 @@ export default async function TeacherClassesPage({
             <div className="divide-y divide-border">
               {teacher.coveringForOthers.map((c) => (
                 <div
-                  key={c.reliefId}
+                  key={c.assignmentId}
                   className="flex flex-wrap items-center justify-between gap-3 py-3"
                 >
                   <div>
@@ -133,8 +168,7 @@ export default async function TeacherClassesPage({
                       {c.label}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      For {c.coveredTeacherName} · since{' '}
-                      {formatDay(c.startedOn)}
+                      For {c.coveredTeacherName}
                     </p>
                   </div>
                   <Badge
@@ -156,12 +190,20 @@ export default async function TeacherClassesPage({
 
 function ClassRow({
   row,
+  teacherId,
+  teacherName,
+  reliefOptions,
+  canManageRelief,
 }: {
   row: Awaited<ReturnType<typeof getTeacherDetail>> extends infer T
     ? T extends { classes: (infer R)[] }
       ? R
       : never
     : never;
+  teacherId: string;
+  teacherName: string;
+  reliefOptions: Array<{ id: string; name: string }>;
+  canManageRelief: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-3">
@@ -178,39 +220,16 @@ function ClassRow({
           {row.role === 'form_adviser' ? 'Form class' : row.levelLabel}
         </p>
       </div>
-      {row.cover && (
-        // Names both people. "Being covered" alone would leave the reader
-        // asking the only question that matters.
-        <Badge
-          variant="outline"
-          className="h-6 border-brand-amber bg-brand-amber-light text-ink"
-        >
-          <RefreshCw className="size-3" />
-          {row.cover.reliefTeacherName} covering since{' '}
-          {formatDay(row.cover.startedOn)}
-        </Badge>
-      )}
+      {/* Names both people when cover is on. "Being covered" alone would leave
+          the reader asking the only question that matters. */}
+      <AssignmentReliefControl
+        assignmentId={row.assignmentId}
+        coveredTeacherId={teacherId}
+        coveredTeacherName={teacherName}
+        reliefTeacherName={row.cover?.reliefTeacherName ?? null}
+        teacherOptions={reliefOptions}
+        canManage={canManageRelief}
+      />
     </div>
   );
-}
-
-/** "12 Aug" — short enough for a badge, unambiguous enough to act on. */
-function formatDay(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  if (!y || !m || !d) return iso;
-  return `${d} ${months[m - 1]}`;
 }

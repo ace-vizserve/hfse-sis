@@ -1,32 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getTeacherSections } from '@/lib/account/sections';
 
-// Two tables now: the classes this teacher holds, and the ones they are
-// standing in on for an absent colleague (migration 112). The cover query is
-// date-windowed — `.eq().lte().or()` — so the stub has to offer that chain or
-// the loader throws rather than returning nothing.
+// Two reads of ONE table now: the classes this teacher holds
+// (`teacher_user_id`), and the ones they are standing in on for an absent
+// colleague (`relief_teacher_user_id`, migration 117). Both are a plain
+// `.select().eq()` — cover has no date window to chain onto.
 function fakeSupabase(rows: unknown[], coverRows: unknown[] = []) {
   return {
-    from: vi.fn((table: string) => {
-      if (table === 'assignment_reliefs') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              lte: vi.fn(() => ({
-                or: vi.fn(() =>
-                  Promise.resolve({ data: coverRows, error: null })
-                ),
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => Promise.resolve({ data: rows, error: null })),
-        })),
-      };
-    }),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn((column: string) =>
+          Promise.resolve({
+            data: column === 'relief_teacher_user_id' ? coverRows : rows,
+            error: null,
+          })
+        ),
+      })),
+    })),
   } as never;
 }
 
@@ -82,7 +72,7 @@ describe('getTeacherSections', () => {
     expect(rows).toEqual([]);
   });
 
-  // Relief teachers (migration 112). "Your sections" is the one place a
+  // Relief teachers (migration 117). "Your sections" is the one place a
   // substitute should find the class they were asked to take — without it they
   // are told to go to a class that does not appear on their own profile.
   it('lists a class this teacher is covering, marked as cover', async () => {
@@ -90,11 +80,9 @@ describe('getTeacherSections', () => {
       [],
       [
         {
-          assignment: {
-            role: 'subject_teacher',
-            section: { id: 's3', name: 'Secondary One Discipline 2' },
-            subject: { id: 'sub9', name: 'English' },
-          },
+          role: 'subject_teacher',
+          section: { id: 's3', name: 'Secondary One Discipline 2' },
+          subject: { id: 'sub9', name: 'English' },
         },
       ]
     );
@@ -118,11 +106,9 @@ describe('getTeacherSections', () => {
       ],
       [
         {
-          assignment: {
-            role: 'form_adviser',
-            section: { id: 's4', name: 'Primary Five Tenacity' },
-            subject: null,
-          },
+          role: 'form_adviser',
+          section: { id: 's4', name: 'Primary Five Tenacity' },
+          subject: null,
         },
       ]
     );

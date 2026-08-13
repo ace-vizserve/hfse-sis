@@ -31,27 +31,24 @@ const TEACHER_ID = 'u-teacher';
 
 // Which assignment rows the cookie client returns for the acting teacher.
 // Mutated per test before invoking the handler.
-let assignmentRows: Array<{
+type AssignmentRow = {
   id: string;
   teacher_user_id: string;
   section_id: string;
   subject_id: string | null;
   role: 'form_adviser' | 'subject_teacher';
-}> = [];
+  relief_teacher_user_id?: string | null;
+};
+let assignmentRows: AssignmentRow[] = [];
 
-// Active cover this teacher is working (migration 112). Empty for every case
-// below except the relief one, which proves a substitute passes the same gate.
-let reliefRows: Array<{
-  id: string;
-  relief_teacher_user_id: string;
-  assignment: {
-    id: string;
-    teacher_user_id: string;
-    section_id: string;
-    subject_id: string | null;
-    role: 'form_adviser' | 'subject_teacher';
-  };
-}> = [];
+// Cover this teacher is working (migration 117). Empty for every case below
+// except the relief ones, which prove a substitute passes the same gate.
+//
+// Since cover is a COLUMN on teacher_assignments, these rows come back from
+// the same query as the held ones — `teacher_user_id` names the absent
+// colleague and `relief_teacher_user_id` names the acting teacher. The loader
+// tells the two apart by which column matches the caller.
+let reliefRows: AssignmentRow[] = [];
 
 // Set to true when the sheet under test is locked.
 let sheetLocked = false;
@@ -103,12 +100,9 @@ vi.mock('@/lib/notifications/email-change-request', () => ({
 // isSubjectTeacher predicate run — the point is to test the wiring, not a
 // stubbed decision.
 //
-// `assignment_reliefs` is the second half of that loader (migration 112): it
-// asks which classes this teacher is currently covering for an absent
-// colleague. These cases stage no cover, so it answers with nothing — but it
-// must ANSWER. The loader deliberately does not swallow an error there, because
-// a silent empty result would read as "covers nothing" and lock a substitute
-// out of the class they were asked to take.
+// Since migration 117 that is ONE query with an `.or()` across two columns of
+// this table — held rows and covered rows come back together — so the stub
+// answers `.select().or()` with both sets concatenated.
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() =>
     Promise.resolve({
@@ -116,21 +110,12 @@ vi.mock('@/lib/supabase/server', () => ({
         if (table === 'teacher_assignments') {
           return {
             select: () => ({
-              eq: () => Promise.resolve({ data: assignmentRows, error: null }),
-            }),
-          };
-        }
-        if (table === 'assignment_reliefs') {
-          // `.eq().lte().or()` — the cover query is date-windowed (migration
-          // 115), so it filters on started_on and ended_on rather than just
-          // testing ended_on for null.
-          return {
-            select: () => ({
-              eq: () => ({
-                lte: () => ({
-                  or: () => Promise.resolve({ data: reliefRows, error: null }),
+              or: () =>
+                Promise.resolve({
+                  data: [...assignmentRows, ...reliefRows],
+                  error: null,
                 }),
-              }),
+              eq: () => Promise.resolve({ data: assignmentRows, error: null }),
             }),
           };
         }
@@ -244,15 +229,12 @@ describe('PATCH grade entry — subject-teacher gate', () => {
     assignmentRows = []; // holds nothing of their own
     reliefRows = [
       {
-        id: 'relief-1',
+        id: 'a-9',
+        teacher_user_id: 'the-absent-teacher',
         relief_teacher_user_id: TEACHER_ID,
-        assignment: {
-          id: 'a-9',
-          teacher_user_id: 'the-absent-teacher',
-          section_id: SECTION_ID,
-          subject_id: SUBJECT_ID,
-          role: 'subject_teacher',
-        },
+        section_id: SECTION_ID,
+        subject_id: SUBJECT_ID,
+        role: 'subject_teacher',
       },
     ];
 
@@ -272,15 +254,12 @@ describe('PATCH grade entry — subject-teacher gate', () => {
     assignmentRows = [];
     reliefRows = [
       {
-        id: 'relief-2',
+        id: 'a-9',
+        teacher_user_id: 'the-absent-teacher',
         relief_teacher_user_id: TEACHER_ID,
-        assignment: {
-          id: 'a-9',
-          teacher_user_id: 'the-absent-teacher',
-          section_id: SECTION_ID,
-          subject_id: 'some-other-subject',
-          role: 'subject_teacher',
-        },
+        section_id: SECTION_ID,
+        subject_id: 'some-other-subject',
+        role: 'subject_teacher',
       },
     ];
 

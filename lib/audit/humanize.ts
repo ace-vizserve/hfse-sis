@@ -32,7 +32,6 @@ import {
   ASSIGNMENT_CHANGE_REASON_LABELS,
   ASSIGNMENT_ROLE_LABELS,
 } from '@/lib/schemas/teacher-assignment';
-import { RELIEF_REASON_LABELS } from '@/lib/schemas/assignment-relief';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. auditActionLabel
@@ -775,13 +774,20 @@ function templateSummary(
     // point of the entry is who stood in for whom, and a line reading only
     // "Ms Radhika · P5 Tenacity, Mathematics" would be indistinguishable from
     // an ordinary assignment. Reads e.g.
-    //   "Ms Radhika covering Ms Koh · Subject teacher, Mathematics, P5 Tenacity · On leave"
+    //   "Ms Radhika covering Ms Koh · Subject teacher, Mathematics, P5 Tenacity"
+    //
+    // Since migration 117 these two entries are the ONLY record of a finished
+    // cover — clearing the column leaves nothing behind on the assignment. So
+    // this pair has to read as a complete account on its own.
     case 'assignment.relief.start':
     case 'assignment.relief.end': {
       const parts: string[] = [];
 
       const relief = str(ctx.relief_teacher_name);
       const covered = str(ctx.covered_teacher_name);
+      // On an `.end` entry there is no substitute name — the column was
+      // cleared, and the context records the null. "Cover for Ms Koh ended" is
+      // the whole fact; who it was is on the `.start` entry above it.
       if (relief && covered) parts.push(`${relief} covering ${covered}`);
       else if (relief) parts.push(relief);
       else if (covered) parts.push(`Cover for ${covered}`);
@@ -792,14 +798,6 @@ function templateSummary(
         .filter(Boolean)
         .join(', ');
       if (where) parts.push(where);
-
-      // Not labelFor() — it has no `reason` case, so it would fall through to
-      // the raw value and print "on_leave" at a school admin.
-      const reliefReason =
-        (RELIEF_REASON_LABELS as Record<string, string>)[str(ctx.reason)] ?? '';
-      if (reliefReason) parts.push(reliefReason);
-      const reliefNotes = str(ctx.notes);
-      if (reliefNotes) parts.push(reliefNotes);
 
       return joinParts(parts);
     }

@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { sgToday } from '@/lib/dates';
 
 export type TeacherSectionRow = { sectionName: string; roleTag: string };
 
@@ -49,53 +48,16 @@ export async function getTeacherSections(
   return [...held, ...covering];
 }
 
-type CoverRawRow = {
-  assignment:
-    | {
-        role: 'form_adviser' | 'subject_teacher';
-        section:
-          | { id: string; name: string }
-          | { id: string; name: string }[]
-          | null;
-        subject:
-          | { id: string; name: string }
-          | { id: string; name: string }[]
-          | null;
-      }
-    | Array<{
-        role: 'form_adviser' | 'subject_teacher';
-        section:
-          | { id: string; name: string }
-          | { id: string; name: string }[]
-          | null;
-        subject:
-          | { id: string; name: string }
-          | { id: string; name: string }[]
-          | null;
-      }>
-    | null;
-};
-
 async function loadActiveCoverRows(
   supabase: SupabaseClient,
   userId: string
 ): Promise<TeacherSectionRow[]> {
-  const today = sgToday();
   const { data } = await supabase
-    .from('assignment_reliefs')
-    .select(
-      `assignment:teacher_assignments!inner(
-         role, section:sections(id, name), subject:subjects(id, name)
-       )`
-    )
-    .eq('relief_teacher_user_id', userId)
-    .lte('started_on', today)
-    .or(`ended_on.is.null,ended_on.gte.${today}`);
+    .from('teacher_assignments')
+    .select('role, section:sections(id, name), subject:subjects(id, name)')
+    .eq('relief_teacher_user_id', userId);
 
-  return ((data ?? []) as CoverRawRow[]).flatMap((row) => {
-    const a = Array.isArray(row.assignment)
-      ? row.assignment[0]
-      : row.assignment;
+  return ((data ?? []) as RawRow[]).flatMap((a) => {
     if (!a) return [];
     const section = one(a.section);
     const subject = one(a.subject);

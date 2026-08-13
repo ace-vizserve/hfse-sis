@@ -1,0 +1,664 @@
+<title>Subject Setup — step strip mockup</title>
+<style>
+  :root {
+    --indigo: #4f46e5;
+    --indigo-deep: #4338ca;
+    --indigo-soft: #818cf8;
+    --navy: #0b1120;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #475569;
+    --ink-4: #64748b;
+    --ink-5: #94a3b8;
+    --hairline: #e2e8f0;
+    --hairline-strong: #cbd5e1;
+    --muted: #f8fafc;
+    --card: #ffffff;
+    --bg: #ffffff;
+    --mint: #34d399;
+    --mint-wash: #ecfdf5;
+    --amber: #ed7622;
+    --amber-wash: #fff7ed;
+    --accent: #eef2ff;
+    --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --sans: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #0b1120;
+      --card: #111a2e;
+      --muted: #16203a;
+      --ink: #f1f5f9;
+      --ink-2: #cbd5e1;
+      --ink-3: #b6c2d4;
+      --ink-4: #94a3b8;
+      --ink-5: #64748b;
+      --hairline: #24314e;
+      --hairline-strong: #33425f;
+      --accent: #1e2749;
+      --mint-wash: #0d2f24;
+      --amber-wash: #331a09;
+      --indigo: #818cf8;
+      --indigo-deep: #a5b4fc;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #0b1120;
+    --card: #111a2e;
+    --muted: #16203a;
+    --ink: #f1f5f9;
+    --ink-2: #cbd5e1;
+    --ink-3: #b6c2d4;
+    --ink-4: #94a3b8;
+    --ink-5: #64748b;
+    --hairline: #24314e;
+    --hairline-strong: #33425f;
+    --accent: #1e2749;
+    --mint-wash: #0d2f24;
+    --amber-wash: #331a09;
+    --indigo: #818cf8;
+    --indigo-deep: #a5b4fc;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 40px 24px 80px;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+  }
+
+  .note {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    border: 1px solid var(--hairline);
+    background: var(--accent);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 40px;
+  }
+  .note-dot {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 10px;
+    background: linear-gradient(to bottom right, var(--indigo), var(--navy));
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .note p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-3);
+  }
+  .note strong {
+    color: var(--ink);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-4);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: 42px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 14px;
+  }
+  .lede {
+    max-width: 64ch;
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--ink-4);
+  }
+
+  .chiprow {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    border: 1px solid var(--hairline);
+    border-radius: 7px;
+    padding: 6px 11px;
+    color: var(--ink);
+  }
+  header.page {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 26px;
+  }
+
+  /* ---------- the step strip: the one addition ---------- */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: var(--card);
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .step {
+    padding: 16px 20px;
+    border-left: 1px solid var(--hairline);
+    position: relative;
+  }
+  .step:first-child {
+    border-left: 0;
+  }
+  .step-top {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 9px;
+  }
+  .step-n {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    flex: 0 0 20px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--muted);
+    color: var(--ink-4);
+  }
+  .step.done .step-n {
+    background: var(--mint);
+    color: var(--navy);
+  }
+  .step.now .step-n {
+    background: linear-gradient(to bottom right, var(--indigo), var(--navy));
+    color: #fff;
+  }
+  .step-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--ink-4);
+  }
+  .step-figure {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .step-figure span {
+    font-size: 14px;
+    color: var(--ink-5);
+    font-family: var(--sans);
+    font-weight: 400;
+  }
+  .step-hint {
+    font-size: 12.5px;
+    color: var(--ink-4);
+    margin-top: 7px;
+  }
+  .step.now {
+    background: linear-gradient(to bottom, var(--accent), var(--card));
+  }
+
+  .strip-foot {
+    font-size: 13px;
+    color: var(--ink-4);
+    margin: 0 0 34px;
+    padding-left: 2px;
+  }
+
+  /* ---------- gap banner ---------- */
+  .gap {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    border: 1px solid var(--amber);
+    background: var(--amber-wash);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 30px;
+  }
+  .gap-tile {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border-radius: 11px;
+    background: var(--amber);
+    color: var(--navy);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .gap h3 {
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 5px;
+  }
+  .gap p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-3);
+  }
+  .gap a {
+    color: var(--indigo-deep);
+    font-weight: 500;
+  }
+
+  /* ---------- tabs ---------- */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  .tab {
+    font-size: 13.5px;
+    padding: 8px 15px;
+    border-radius: 9px;
+    color: var(--ink-4);
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .tab.active {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 500;
+  }
+  .tab.new {
+    border: 1px dashed var(--indigo);
+    color: var(--indigo-deep);
+  }
+  .tab .n {
+    font-family: var(--mono);
+    font-size: 10px;
+    opacity: 0.7;
+    margin-left: 6px;
+  }
+
+  /* ---------- catalog ---------- */
+  .card {
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: var(--card);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .card-title {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+  }
+  th {
+    background: var(--muted);
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--ink-4);
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  td {
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: middle;
+  }
+  tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .subj-code {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+  }
+  .subj-name {
+    font-family: var(--serif);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .box {
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    border: 1px solid var(--hairline-strong);
+    display: inline-block;
+  }
+  .box.on {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    position: relative;
+  }
+  .box.on::after {
+    content: '✓';
+    color: #fff;
+    font-size: 11px;
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  .box.off {
+    background: var(--muted);
+    border-style: dashed;
+  }
+
+  .w {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+  }
+  .used {
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+  .used.none {
+    color: var(--ink-5);
+  }
+
+  /* the row-level step hint — replaces a hover-only tooltip */
+  .blocked {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--indigo-deep);
+    background: var(--accent);
+    border: 1px solid var(--indigo-soft);
+    border-radius: 7px;
+    padding: 3px 8px;
+  }
+  .blocked b {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .linkbtn {
+    color: var(--indigo-deep);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 9px 15px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn-outline {
+    border-color: var(--hairline-strong);
+    background: var(--card);
+    color: var(--ink-2);
+  }
+  .btn-primary {
+    background: linear-gradient(to bottom, var(--indigo), var(--indigo-deep));
+    color: #fff;
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.16) inset,
+      0 2px 8px rgb(79 70 229 / 0.35);
+  }
+  .btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--hairline);
+    background: var(--muted);
+  }
+  .foot-note {
+    font-size: 13px;
+    color: var(--ink-4);
+  }
+
+  @media (max-width: 780px) {
+    body {
+      padding: 26px 14px 60px;
+    }
+    h1 {
+      font-size: 32px;
+    }
+    .steps {
+      grid-template-columns: 1fr;
+    }
+    .step {
+      border-left: 0;
+      border-top: 1px solid var(--hairline);
+    }
+    .step:first-child {
+      border-top: 0;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <div class="note">
+    <div class="note-dot">i</div>
+    <p>
+      <strong>Mockup.</strong> The only new elements are the numbered strip and
+      the row-level "set weights first" hint. Everything else is the page as it
+      is today — same one card, same catalog table.
+      <strong>Corrected:</strong> an earlier version showed a Preschool tab;
+      migration 086 deleted those levels, so there are ten (P1&ndash;S4) and two
+      tabs is right. Fonts fall back to system faces here.
+    </p>
+  </div>
+
+  <header class="page">
+    <div>
+      <p class="eyebrow">SIS Admin · Subject Setup</p>
+      <h1>Subjects.</h1>
+      <p class="lede">
+        Add a subject, set how it is marked, then attach it to the classes that
+        take it. A subject only reaches a report card once all three are done.
+      </p>
+    </div>
+    <div class="chiprow">
+      <span class="chip">AY2026</span>
+      <button class="btn btn-outline">Change year</button>
+    </div>
+  </header>
+
+  <!-- THE ONE ADDITION -->
+  <div class="steps">
+    <div class="step done">
+      <div class="step-top">
+        <span class="step-n">1</span
+        ><span class="step-label">Subjects added</span>
+      </div>
+      <div class="step-figure">7</div>
+      <p class="step-hint">The list of subjects Primary can teach.</p>
+    </div>
+    <div class="step now">
+      <div class="step-top">
+        <span class="step-n">2</span><span class="step-label">Marking set</span>
+      </div>
+      <div class="step-figure">5 <span>of 7</span></div>
+      <p class="step-hint">2 still need weights before they can be attached.</p>
+    </div>
+    <div class="step">
+      <div class="step-top">
+        <span class="step-n">3</span
+        ><span class="step-label">Attached to classes</span>
+      </div>
+      <div class="step-figure">4 <span>of 7</span></div>
+      <p class="step-hint">
+        Filipino and Science are set up but no class takes them yet.
+      </p>
+    </div>
+  </div>
+  <p class="strip-foot">
+    Changing weights affects every grading sheet already using that subject this
+    year.
+  </p>
+
+  <div class="gap">
+    <div class="gap-tile">!</div>
+    <div>
+      <h3>Secondary Four has no subjects yet</h3>
+      <p>
+        Nothing will appear on its report cards until a subject is attached.
+        <a href="#">Open Secondary →</a>
+      </p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <span class="tab active">Primary <span class="n">7</span></span>
+    <span class="tab">Secondary <span class="n">13</span></span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="card-title">Primary subjects</h2>
+      <button class="btn btn-primary">Add subject</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 44px"></th>
+          <th>Subject</th>
+          <th>Used by</th>
+          <th>Weights (WW · PT · QA)</th>
+          <th style="width: 56px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="box on"></span></td>
+          <td>
+            <div class="subj-code">ENG</div>
+            <div class="subj-name">English</div>
+          </td>
+          <td class="used">
+            P1, P2, P3, P4 <span style="color: var(--ink-5)">+2</span>
+          </td>
+          <td class="w">30 · 50 · 20</td>
+          <td><span class="linkbtn">Edit</span></td>
+        </tr>
+        <tr>
+          <td><span class="box on"></span></td>
+          <td>
+            <div class="subj-code">MATH</div>
+            <div class="subj-name">Mathematics</div>
+          </td>
+          <td class="used">
+            P1, P2, P4, P5 <span style="color: var(--ink-5)">+1</span>
+          </td>
+          <td class="w">40 · 40 · 20</td>
+          <td><span class="linkbtn">Edit</span></td>
+        </tr>
+        <tr>
+          <td><span class="box off"></span></td>
+          <td>
+            <div class="subj-code">FIL</div>
+            <div class="subj-name">Filipino</div>
+          </td>
+          <td class="used none">No classes yet</td>
+          <td class="w">30 · 50 · 20</td>
+          <td><span class="linkbtn">Edit</span></td>
+        </tr>
+        <tr>
+          <td><span class="box off"></span></td>
+          <td>
+            <div class="subj-code">MANDARIN</div>
+            <div class="subj-name">Mandarin</div>
+          </td>
+          <td class="used none">No classes yet</td>
+          <td>
+            <span class="blocked"><b>STEP 2</b> Set its weights first</span>
+          </td>
+          <td><span class="linkbtn">Set</span></td>
+        </tr>
+        <tr>
+          <td><span class="box off"></span></td>
+          <td>
+            <div class="subj-code">MAPEH</div>
+            <div class="subj-name">MAPEH</div>
+          </td>
+          <td class="used none">No classes yet</td>
+          <td>
+            <span class="blocked"><b>STEP 2</b> Set its weights first</span>
+          </td>
+          <td><span class="linkbtn">Set</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card-foot">
+      <span class="foot-note">2 subjects ticked.</span>
+      <button class="btn btn-primary">Attach to classes</button>
+    </div>
+  </div>
+</div>
