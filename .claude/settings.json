@@ -28,7 +28,9 @@
       "PowerShell(npx tsc --noEmit 2>&1)",
       "Bash(sed 's/\\\\*\\\\*//g')",
       "Bash(pandoc --version)",
-      "Bash(tee /dev/stderr)"
+      "Bash(tee /dev/stderr)",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && sed -n '/SIS_NAV/,/^];/p' lib/nav/*.ts 2>/dev/null | head -80 || grep -rn \"SIS_NAV\" lib/ --include=*.ts -l)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",

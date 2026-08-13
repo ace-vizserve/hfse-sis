@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
+import { Loader2, RefreshCw, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Cover for one class: on or off.
 //
@@ -155,7 +155,7 @@ export function AssignmentReliefControl({
           if (!next) setPicked('');
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-serif">
               Who is covering for {coveredTeacherName}?

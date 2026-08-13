@@ -30,21 +30,21 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                             | Where                              |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- | ---------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03             | KD #177, migration 109             |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading    | KD #178, migrations 110 / 111      |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03             | Records → Academic tab             |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09             | KD #179 (subject) + #182 (adviser) |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09             | KD #181 — Classroom drawer         |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | Open — security pass first         | Bucket appears public-by-URL       |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Open                               | New table + surface                |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Open                               | Needs its own table                |
-| 9   | House points                                          | Chandana (23:51)                                     | Open — rules known, needs #8 first | Overlaps #8, now confirmed         |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | Count answered — folds into #11    | Christina said two, 46:04          |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | Open — most feasible               | `APPROVER_FLOWS` was built for it  |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended   | KD #176                            |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it        | See _Waiting on the school_        |
+| #   | Ask                                                   | Who                                                  | Status                            | Where                              |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | --------------------------------- | ---------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03            | KD #177, migration 109             |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading   | KD #178, migrations 110 / 111      |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03            | Records → Academic tab             |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09            | KD #179 (subject) + #182 (adviser) |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09            | KD #181 — Classroom drawer         |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | **Spec'd 2026-08-12** — buildable | FCA uploads, FCA+ views            |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Waiting on her sample files       | Discipline Committee + FCAs view   |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Spec'd — waiting on her sample    | FCA+ records, one table with #9    |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**        | Same table as #8 — scoring sheet   |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | ⚠ **REOPENED, and much bigger**   | 5-step chain, see 2026-08-12       |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB is a 5-member board**     | Named members, see 2026-08-12      |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended  | KD #176                            |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it       | See _Waiting on the school_        |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -248,9 +248,11 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ### Waiting on the school
 
-- **Chandana** — **house is fully answered as of 2026-08-06**; see _Answers
-  received_. Nothing outstanding on it. Still hers: whether a mid-year SOW change
-  reaches in-flight terms or only future ones.
+- **Chandana** — **nothing outstanding as of 2026-08-12.** House was fully
+  answered 2026-08-06; the mid-year SOW question was answered 2026-08-12 (rare,
+  and applies to the current year — confirms the KD #176 accepted cost); and the
+  house-points rules arrived as the live scoring sheet. All three in _Answers
+  received_.
 
   **A house belongs to the child and stays with them — confirmed by Mr Ace,
   2026-08-06. Closed; do not reopen it.** This had been left here as "dropped
@@ -269,19 +271,55 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   Also dropped, and staying dropped: whether siblings share a house — it would
   only matter if the system assigned houses, and Hanafi already has.
 
-- **Mr Hanafi** — **closed 2026-08-11, nothing outstanding.** He answered on
+- **Mr Hanafi — the teacher deployment file, 2026-08-12.** He replied on the
+  AY2026 teaching assignments. **Three of four answered**; the fourth ("full names
+  for the report cards") he echoed back rather than answering — **and it turned
+  out to be largely unnecessary.**
+
+  **`Teachers Deployment_Updated 29 Jun 26_Teacherscopy.xlsx` (repo root) already
+  holds nearly everything.** Its `Teachers List` sheet carries **26 teachers, 24
+  with `@hfse.edu.sg` addresses**, and **the email encodes the legal name** —
+  `firstname.lastname`. So the full names were never blocked on him. They are not
+  guessable from the nicknames, which is why this looked blocked: **Ms Carl is
+  Christine Sarmiento, Ms Tina is Natividad Laguyo, Ms Aida is Zuraidah Zainal,
+  Ms J is Jocelyn Saguid, Mr "Jospeh" (sic, roster typo) is Joseph Ong.**
+
+  **The timetable sheets carry the assignments**, laid out as side-by-side column
+  blocks per class, not stacked — read per column band or two classes merge into
+  one row. **The Assembly / Homeroom cell names the form class adviser**; every
+  other cell is `Subject` + teacher, i.e. a subject teacher. That yields 20 of 21
+  advisers.
+
+  **Still genuinely missing:** Ms Jasmine and Ms Li (no email, so no legal name —
+  they use `jasmine.hfhse@gmail.com` and `liqun0815@gmail.com`), **P4 Trust's
+  adviser, whose cell just says "New Teacher"** — never asked, it was not one of
+  the four — and the **English relief teacher** for Sec 1 Discipline 2 / Sec 3
+  Consistency, which is with Ms Marrie. Mr Ace has also asked for the current-AY
+  list, since this file is dated 29 June and still carries AY2024/AY2025 rows near
+  the bottom.
+
+- **Mr Hanafi (house)** — **closed 2026-08-11, nothing outstanding.** He answered on
   2026-08-06 and sent both sheets. The follow-up about unmatched names was
   **dropped rather than sent** (Mr Ace's call): ~12 of 410 students go without a
   house and the eleven hand-matched names go in unconfirmed, which is the
   accepted cost. Do not reopen this as an open question — it was decided, not
   forgotten.
-- **Christina** — **the AEB rule (#11), and only that.** Revised 2026-08-11: the
-  approver count (#10) was recorded here as hers to define, but she had already
-  defined it on the recording — 46:04, "two approvers, Ms. Chandana and I only."
-  That covers the pre-issue route completely. What is unknown is the second
-  route: who AEB is, whether it is one person or several, and therefore how many
-  approvers the system needs to allow at all. Wynne's "can we add more" (45:30)
-  reduces to the same question.
+- **Christina** — **answered 2026-08-12, and the approvals answer reopened
+  everything.** See _Answers received_. What is still hers:
+  1. **Does the five-step chain belong in the SIS at all?** subject monitor →
+     subject head → OIC → Assistant Principal → Principal. If that is the
+     school's existing paper escalation, digitising it is the largest piece of
+     work anyone has proposed here and nobody has asked for it. **Ask before
+     designing.**
+  2. **Who records an award.** Asked, missed in her reply.
+  3. **The sample incident reports and the sample certificate** she has promised
+     by email.
+
+  ~~Revised 2026-08-11: the approver count was already answered at 46:04, "two
+  approvers, Ms. Chandana and I only."~~ **That is no longer operative.** Her
+  2026-08-12 reply describes two different routes, neither of which is two
+  approvers. Wynne's "can we add more" (45:30) is answered — yes, five, twice
+  over, and in one case in a fixed order.
 
   Also hers: the relief-teacher policy, **raised by Marrie at 33:18** and
   answered in the room by Christina (designate an admin rather than share a
@@ -1157,6 +1195,157 @@ and lateness. Nothing else on that sheet is derivable from the SIS.
 not shared with staff today, but confirmed points go up on the bulletin board,
 so students and staff do see them. He did not say whether they should be in the
 system.
+
+### House points — the live scoring sheet · 2026-08-12
+
+Mr Ace supplied the working Google Sheet (`House Points Tracking AY2026`; the
+local `house/House Points Tracking AY2026.xlsx` is a copy of the same thing).
+**This is the answer to #9, and it settles that #8 and #9 are ONE feature.**
+
+**Every points row is an award row.** The sheet's columns are literally
+`Class | Award | Name | Game Title | House Colour | Points`. So Christina's
+awards register (#8) and Chandana's house points (#9) are the same table read
+two ways — per student for the moving-up ceremony, summed per house for the
+standings. Chandana tied them together herself at 23:51 and this is the proof.
+
+**Four scoring scales, not one:**
+
+| Scale                     | Gold | Silver | Bronze | Participation |
+| ------------------------- | ---- | ------ | ------ | ------------- |
+| **External** competitions | 20   | 15     | 10     | 5             |
+| **Internal** competitions | 5    | 4      | 3      | 1             |
+
+| Sports Fest (major event) | Winner 20 · 1st Runner Up 15 · 2nd Runner Up 10 · Participation 5 |
+| **Attendance Challenge**, per month | 100% attendance **1** · 100% without tardiness ("On Time Bonus") **2** · capped at **3** |
+
+So the same word — Gold — is worth 20 points or 5 depending on whether the
+competition was external or internal. **`internal | external` is a required
+field on the award row**, not a nicety.
+
+⚠ **NAMING COLLISION, and it is a bad one.** These Gold / Silver / Bronze are
+**competition placings**. `lib/compute/awards.ts` Gold / Silver / Bronze are
+**academic tiers derived from a numeric average** (KD #95), with school-tunable
+thresholds in `school_config`. Same three words, unrelated meanings, and both
+will appear on the same student's record. Chandana has already confirmed house
+points do not touch the academic tiers — but whatever the new table calls its
+column, **do not reuse the academic vocabulary without a qualifier**.
+
+**Live AY2026 standings on the sheet:** Blue 101 · Orange 124 · Yellow 76 ·
+Green 117, across Sports Fest 2026, Visual Spatial Mathlympic (external), Maths
+Week (internal) and a Science Quiz Bee. The Attendance Challenge row is **blank**
+— scored by hand elsewhere, or not yet scored.
+
+**The Attendance Challenge is fully derivable from data the SIS already holds.**
+100% attendance in a month, and lateness, are `attendance_daily` queries — the
+only line on that sheet that is. Noted as an automation candidate at the Hanafi
+answers above and still not built; it is the cheapest useful thing here.
+
+**What the real sheet does NOT carry, against what we assumed:** no date, no
+issuer, no certificate file. It tracks event title, placing, house and points.
+The certificate file is still wanted — Christina asked for it for the moving-up
+ceremony — but the fields the school actually maintains are the competition
+ones. Wait for her sample certificate before fixing the schema.
+
+### Christina — the four asks · 2026-08-12
+
+Replied to the message sent 2026-08-11. **Three answers are small and usable.
+The fourth is not an answer to the question asked, and it is much larger than
+anything currently built.**
+
+**Medical certificates — settled.**
+
+- **The FCA uploads it**, as supporting evidence for marking the absence
+  excused. Her words: "supporting evidence to be considered as 'excused
+  absence'".
+- **The reason must NOT appear on the report card** — so the live behaviour
+  (`EX` counts into `days_present`, no reason rendered) is confirmed, not
+  changed. This is the first time that behaviour has been ratified by the
+  school.
+- She does want "an internal record of those absences as well as its supporting
+  documents" — an internal view, separate from the card.
+- **Viewing: FCA and above** — Mr Ace, 2026-08-12. She stated only who uploads.
+  In role terms: the student's form class adviser, plus academic_coordinator /
+  school_admin / superadmin. (Supersedes the narrower 2026-08-11 note of
+  "FCA + school_admin and above".)
+
+**⚠ Her second idea is a new feature, not an answer.** "In my sons' schools,
+parents file a leave of absence online and attach the medical certificate."
+That is a parent-portal workflow — parent-initiated absence requests with an
+attachment — and it is an order of magnitude larger than an FCA upload button.
+**Parked, not folded in.** If it is ever picked up it is its own piece of work,
+and note the parent portal can only read `school_config` and
+`report_card_publications` today.
+
+**Disciplinary records — samples coming by email.** Viewed by **the Discipline
+Committee and the FCAs, including the one who filed it**. "Including the one who
+filed it" implies the filer may not be an FCA, so filing is wider than viewing —
+worth pinning down when the samples arrive.
+
+**Awards — sample coming by email.** Viewed by **FCAs, academic leaders and the
+registrar**. She answered only who views; **who RECORDS an award was decided by
+Mr Ace, 2026-08-12: FCA and up** — the student's form class adviser plus
+academic_coordinator / school_admin / superadmin. Same shape as the MC decision.
+Note "registrar" is the pre-KD-#155 name for academic_coordinator.
+
+### Chandana — mid-year SOW changes · 2026-08-12
+
+**Answered, and it closes the last open SOW question.** Changes do happen
+mid-year, they are **rare**, and they **apply to the current year** — so a
+mid-year revision reaches in-flight terms rather than only future ones.
+
+**This confirms the KD #176 resolution rather than reopening it.** That entry
+accepted a cost — the Totals editor is coordinator+ only, so a real mid-year
+change means Joann opening each affected sheet — on the explicit condition that
+changes stay rare. Chandana has now said they are. The revisit trigger stands
+unchanged: a genuine mid-year revision across a whole level, at which point
+build bulk totals editing rather than per-level configs.
+
+**⚠ Grade-change approvals — she did not answer the question, and described
+something far bigger.** Asked whether changes would always go to her and Ms.
+Chandana, she neither confirmed nor denied. Instead:
+
+- **After the sheet is locked, before the report book is issued:** subject
+  monitor → subject head → OIC → Assistant Principal → Principal. The arrows are
+  hers; it reads as a **five-step sequential chain**.
+- **After the report book is issued:** the **Academic and Examination Board
+  (AEB)** — so AEB is a body, which is why "who is AEB" was the wrong question.
+  Five members: **Ms Chandana, Ms Tin, Ms Norma (`norma.hfhse@gmail.com`), Mr
+  Gary, Ms Nina.**
+
+**This contradicts what she said in the room** (46:04, "it would require two
+approvers, Ms. Chandana and I only") and it is not a widening of the current
+design, it is a different one. Today: two approvers, first to act decides, no
+concept of ordering. Her answer needs **ordered, sequential approval** through
+five stations for one route and a **five-member board** for the other. The
+dev-plan entry already calls widening past two structurally hard — six copies of
+a two-column predicate, and the primary/secondary ordinal derived from column
+emptiness rather than stored.
+
+**✅ SETTLED 2026-08-12 — it belongs in the SIS, and she said so at the training.**
+This had been written up as an open question ("is that chain the office's paper
+process?"). It is not a paper process and it was never open. **Melissa, 50:24**
+asked whether MS Teams Approvals was still needed alongside the system.
+**Christina, 50:57:** _"The same approvers who are giving the approval via the MS
+approvals will be the same approvers who will be put in this system. So you don't
+need to. **That will be superseded by this already.**"_
+
+So the chain already runs as a **digital sequential flow in MS Teams Approvals**,
+and she has explicitly said the SIS replaces it. That also explains why five
+sequential stations felt so unlike the current design — we are not inventing a
+workflow engine, we are replacing one the school already uses.
+
+**It is still the largest thing in this backlog.** Ordered approval needs a
+position, a current holder, and a rule for where a rejection returns to — none of
+which the schema has. But the question of _whether_ is closed; only _how_ remains.
+
+**Seven groups named that exist nowhere in the system:** subject monitor,
+subject head, OIC, Assistant Principal, Principal, Discipline Committee, AEB.
+None is a role, a capability or a group the system can route to.
+
+**Third personal-Gmail staff member.** `norma.hfhse@gmail.com` follows the same
+pattern as `jasmine.hfhse@gmail.com`. So Ms Jasmine, Ms Li and Ms Norma all need
+accounts on personal addresses — and Ms Norma sits on the board that would
+approve grade changes.
 
 ---
 
