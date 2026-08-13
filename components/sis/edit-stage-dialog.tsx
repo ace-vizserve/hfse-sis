@@ -327,6 +327,12 @@ export function EditStageDialog({
       const midTermPayload = body.midTermEnrolment;
       if (midTermPayload?.sectionId) {
         setPendingMidTerm(midTermPayload);
+        // Refresh HERE too, rather than leaving it to the prompt. The roster
+        // row was written by the request that just returned; the prompt only
+        // records which term the student joined. Skipping this left the page
+        // behind the dialog showing the pre-write state — observed on the
+        // assign-section dialog 2026-08-14 and fixed there the same way.
+        router.refresh();
         return;
       }
       setOpen(false);

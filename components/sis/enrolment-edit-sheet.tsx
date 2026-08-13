@@ -241,6 +241,12 @@ export function EnrolmentEditSheet({
       if (reEnrolment && midTermPayload?.sectionId) {
         setPendingMidTerm(midTermPayload);
         setMarkAsLate(true);
+        // Refresh HERE too, rather than leaving it to the prompt. The
+        // re-enrolment has already been written; the prompt only records which
+        // term the student joined. Skipping this left the page behind the sheet
+        // showing the pre-write state — observed on the assign-section dialog
+        // 2026-08-14 and fixed there the same way.
+        router.refresh();
         return;
       }
 

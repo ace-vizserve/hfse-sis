@@ -32,8 +32,9 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/sis/calendar',
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock('sonner', () => ({
+vi.mock('sonner', async () => ({
   toast: {
+    ...(await import('../_utils/mock-toast')).createToastMock(),
     success: toastSuccess,
     error: toastError,
     info: toastInfo,

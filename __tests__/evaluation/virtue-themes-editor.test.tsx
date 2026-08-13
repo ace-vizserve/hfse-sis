@@ -26,8 +26,12 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/evaluation/virtue-themes',
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock('sonner', () => ({
-  toast: { success: toastSuccess, error: toastError },
+vi.mock('sonner', async () => ({
+  toast: {
+    ...(await import('../_utils/mock-toast')).createToastMock(),
+    success: toastSuccess,
+    error: toastError,
+  },
 }));
 
 afterEach(() => {

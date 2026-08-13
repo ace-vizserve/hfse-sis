@@ -1,5 +1,6 @@
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { Loader2 } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -41,22 +42,92 @@ const buttonVariants = cva(
   }
 );
 
-export interface ButtonProps
-  extends
-    React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
-  asChild?: boolean;
-}
+type ButtonBaseProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof buttonVariants>;
+
+// `loading` is on the primitive rather than at the call site because
+// 09a-design-patterns.md:210 says so: "if the treatment is reusable, promote it
+// to the variant in components/ui/button.tsx". It was reusable — 83 files
+// imported Loader2 and ~107 hand-rolled `disabled={busy}`, in four different
+// idioms that disagreed about spinner size and whether the label changed.
+//
+// `asChild` and `loading` are mutually exclusive AT THE TYPE LEVEL: Slot
+// renders exactly one child, so injecting a spinner beside it breaks at
+// runtime. Better a compile error than a blank button.
+export type ButtonProps = ButtonBaseProps &
+  (
+    | { asChild: true; loading?: never; loadingText?: never }
+    | {
+        asChild?: false;
+        /** In flight. Shows a spinner, marks the button busy, blocks clicks. */
+        loading?: boolean;
+        /**
+         * Replaces the label while loading. Keep the same verb — "Save" becomes
+         * "Saving…", "Publish" becomes "Publishing…" — so the control keeps its
+         * name through the whole action. Omit it to leave the label alone and
+         * let the spinner carry the state.
+         */
+        loadingText?: React.ReactNode;
+      }
+  );
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button';
+  (allProps, ref) => {
+    const {
+      className,
+      variant,
+      size,
+      asChild = false,
+      loading = false,
+      loadingText,
+      disabled,
+      children,
+      ...props
+    } = allProps as ButtonBaseProps & {
+      asChild?: boolean;
+      loading?: boolean;
+      loadingText?: React.ReactNode;
+    };
+
+    const classes = cn(buttonVariants({ variant, size, className }));
+
+    if (asChild) {
+      return (
+        <Slot className={classes} ref={ref} {...props}>
+          {children}
+        </Slot>
+      );
+    }
+
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+      <button
+        className={classes}
         ref={ref}
+        // Announced to screen readers; the visual spinner is not.
+        aria-busy={loading || undefined}
+        // Matches what all ~107 hand-rolled sites already did, and the base
+        // class already carries the look (disabled:opacity-70).
+        //
+        // Known trade, recorded rather than hidden: `disabled` removes the
+        // button from the accessibility tree, so a screen reader loses focus
+        // and never hears the aria-busy it was just given. The fix is
+        // `aria-disabled` plus a click guard, which changes focus behaviour on
+        // every button in the app — too much to bundle into this change.
+        disabled={disabled || loading}
         {...props}
-      />
+      >
+        {loading ? (
+          // Size and spacing come from the base class ([&_svg]:size-4, gap-2),
+          // which is the point: the four idioms this replaces used size-3.5,
+          // size-4 and h-4 w-4 interchangeably.
+          //
+          // It keeps spinning under prefers-reduced-motion. A progress
+          // indicator that has stopped reads as a hung button, and this is
+          // status, not decoration — the motion IS the information.
+          <Loader2 className="animate-spin" aria-hidden="true" />
+        ) : null}
+        {loading && loadingText !== undefined ? loadingText : children}
+      </button>
     );
   }
 );

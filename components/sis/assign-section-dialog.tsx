@@ -1,11 +1,11 @@
 'use client';
 
-import { GraduationCap, Loader2, Plus } from 'lucide-react';
+import { GraduationCap, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -100,48 +100,66 @@ export function AssignSectionDialog({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assign-section?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('POST', { sectionId })
       ),
-    onSuccess: (body) => {
-      const where = body.sectionName ?? 'their new class';
-      const late = body.midTermEnrolment;
-      toast.success(
+  });
+
+  // The whole lifecycle — pending toast, the dialog closing, and waiting for
+  // the roster behind it to actually re-render — belongs to useWriteAction.
+  // Before it, this closed the dialog and said "Assigned" the moment the POST
+  // resolved, while `router.refresh()` was still in flight, so the queue behind
+  // it still listed the student it had just placed.
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function submit() {
+    if (!selectedId) return;
+    setSubmitting(true);
+    await run(() => assignMutation.mutateAsync(selectedId), {
+      pending: `Assigning ${studentName}…`,
+      success: (body) => {
+        const where = body.sectionName ?? 'their new class';
         // Don't promise a start date we're about to let them change — the
         // late-enrollee prompt can move it forward to a later term's first day.
-        late
+        return body.midTermEnrolment
           ? `Assigned ${studentName} to ${where}. Grading access is now active.`
-          : `Assigned ${studentName} to ${where}. Grading access is now active and attendance starts today.`
-      );
+          : `Assigned ${studentName} to ${where}. Grading access is now active and attendance starts today.`;
+      },
+      // Preserve the original two-tier error copy: prefer the server's `error`
+      // field, else a status-coded fallback; network errors fall back to the
+      // generic message.
+      error: (err) => {
+        if (err instanceof ApiError) {
+          const serverError =
+            err.body && typeof err.body === 'object'
+              ? (err.body as { error?: string }).error
+              : undefined;
+          return serverError ?? `Couldn't assign the section (${err.status}).`;
+        }
+        return err instanceof Error
+          ? err.message
+          : "Couldn't assign the section.";
+      },
       // Swap this dialog's body to the prompt rather than opening a second one.
-      if (late?.sectionId) {
-        setPendingMidTerm(late);
-        return;
-      }
-      onOpenChange(false);
-      router.refresh();
-    },
-    onError: (err) => {
-      // Preserve the original two-tier error copy: prefer the server's
-      // `error` field, else a status-coded fallback; network errors fall back
-      // to the generic message.
-      if (err instanceof ApiError) {
-        const serverError =
-          err.body && typeof err.body === 'object'
-            ? (err.body as { error?: string }).error
-            : undefined;
-        toast.error(
-          serverError ?? `Couldn't assign the section (${err.status}).`
-        );
-        return;
-      }
-      toast.error(
-        err instanceof Error ? err.message : "Couldn't assign the section."
-      );
-    },
-  });
-  const submitting = assignMutation.isPending;
-
-  function submit() {
-    if (!selectedId) return;
-    assignMutation.mutate(selectedId);
+      onResolved: (body) => {
+        if (body.midTermEnrolment?.sectionId) {
+          setPendingMidTerm(body.midTermEnrolment);
+          return;
+        }
+        onOpenChange(false);
+      },
+      // Refresh on BOTH branches, including the late-enrollee one.
+      //
+      // The old code skipped it there on the grounds that the prompt refreshes
+      // itself when it closes, and this inherited that. It is wrong: the roster
+      // row is created by THIS request — the prompt only sets which term the
+      // student joined — so by the time we get here the queue behind the dialog
+      // is already out of date and has no reason to wait for a second write.
+      //
+      // Observed 2026-08-14: assigning a late enrollee left them sitting in
+      // "Students needing setup" afterwards, with the roster row present in the
+      // database. The dialog stays mounted on this branch (its body swaps to
+      // the prompt rather than closing), so the refresh is awaited normally.
+    });
+    setSubmitting(false);
   }
 
   const hasOptions = sorted.length > 0;
@@ -278,9 +296,10 @@ export function AssignSectionDialog({
           <Button
             type="button"
             onClick={submit}
-            disabled={!selectedId || submitting || !hasOptions}
+            loading={submitting}
+            loadingText="Assigning…"
+            disabled={!selectedId || !hasOptions}
           >
-            {submitting && <Loader2 className="size-3.5 animate-spin" />}
             Assign section
           </Button>
         </DialogFooter>

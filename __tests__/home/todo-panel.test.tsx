@@ -3,7 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { renderWithClient } from '../_utils/render-with-client';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', async () => ({
+  toast: (await import('../_utils/mock-toast')).createToastMock(),
+}));
 
 import { TodoPanel } from '@/components/home/todo-panel';
 import type { HomeTodoItem } from '@/lib/home/todos';

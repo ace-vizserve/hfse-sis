@@ -87,8 +87,23 @@ export const toast = {
     if (id) sileo.dismiss(id);
     else sileo.clear();
   },
-  loading: (title: string, opts?: ToastOpts) =>
-    sileo.show({ title, type: 'loading', ...normalizeOpts(opts) }),
+  // A pending toast lasts until the work it describes finishes, so it opts out
+  // of the auto-dismiss every other toast gets: `duration: null` is sileo's
+  // "stay until dismissed". Without it this inherited the default timeout and
+  // vanished mid-write, which nobody had noticed because nothing called it.
+  //
+  // Returns sileo's toast id — the caller MUST keep it and `toast.dismiss(id)`
+  // when the work settles, or the toast stays on screen forever. In practice
+  // that bookkeeping belongs to `useWriteAction`, not to call sites.
+  //
+  // An explicit `duration` in opts still wins; the spread is deliberately last.
+  loading: (title: string, opts?: ToastOpts): string =>
+    sileo.show({
+      title,
+      type: 'loading',
+      duration: null,
+      ...normalizeOpts(opts),
+    }),
   custom: (node: React.ReactNode) => sileo.show({ description: node }),
   message: (title: string, opts?: ToastOpts) =>
     sileo.show({ title, ...normalizeOpts(opts) }),

@@ -11,8 +11,9 @@ vi.mock('next/navigation', () => ({
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
-vi.mock('sonner', () => ({
+vi.mock('sonner', async () => ({
   toast: {
+    ...(await import('../_utils/mock-toast')).createToastMock(),
     success: (...a: unknown[]) => toastSuccess(...a),
     error: (...a: unknown[]) => toastError(...a),
   },

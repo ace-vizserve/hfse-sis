@@ -22,8 +22,12 @@ const { refreshMock, toastSuccess, toastError } = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshMock }),
 }));
-vi.mock('sonner', () => ({
-  toast: { success: toastSuccess, error: toastError },
+vi.mock('sonner', async () => ({
+  toast: {
+    ...(await import('../_utils/mock-toast')).createToastMock(),
+    success: toastSuccess,
+    error: toastError,
+  },
 }));
 
 afterEach(() => {
