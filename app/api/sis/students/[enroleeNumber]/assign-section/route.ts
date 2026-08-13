@@ -92,8 +92,11 @@ export async function POST(
       .maybeSingle(),
     admissions
       .from(`${prefix}_enrolment_status`)
+      // `classUpdatedby` is the real column — lower-case b, as created by
+      // migration 012 and frozen since. Aliased back to camelCase so the row
+      // below keeps a sane key. See lib/sis/queries.ts for the other eight.
       .select(
-        'enroleeNumber, classLevel, classSection, classStatus, classUpdatedDate, classUpdatedBy, applicationStatus'
+        'enroleeNumber, classLevel, classSection, classStatus, classUpdatedDate, classUpdatedBy:classUpdatedby, applicationStatus'
       )
       .eq('enroleeNumber', enroleeNumber)
       .maybeSingle(),
@@ -232,7 +235,7 @@ export async function POST(
         classLevel: section.levelLabel,
         classStatus: 'Finished',
         classUpdatedDate: nowIso,
-        classUpdatedBy: actorEmail,
+        classUpdatedby: actorEmail,
       })
       .eq('enroleeNumber', enroleeNumber);
     if (assignErr) {
@@ -265,7 +268,7 @@ export async function POST(
           classLevel: statusRow.classLevel,
           classStatus: statusRow.classStatus,
           classUpdatedDate: statusRow.classUpdatedDate,
-          classUpdatedBy: statusRow.classUpdatedBy,
+          classUpdatedby: statusRow.classUpdatedBy,
         })
         .eq('enroleeNumber', enroleeNumber);
       if (rollbackErr) {

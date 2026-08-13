@@ -5,6 +5,7 @@ import {
   getUpcomingAcademicYear,
 } from '@/lib/academic-year';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -136,25 +137,82 @@ async function loadUnsyncedUncached(
     const app = appsByEnrolee.get(s.enroleeNumber!);
     if (app?.studentNumber) studentNumbersToCheck.push(app.studentNumber);
   }
+  // What counts as "in the grading schema" is an ENROLMENT in this year, not a
+  // row in `public.students`.
+  //
+  // Those are different things, and reading the wrong one hid a student
+  // completely on 2026-08-13. `syncOneStudent` writes the person row first and
+  // the roster row second; when the roster insert failed on a duplicate
+  // index_number, the person row stayed behind. The assign-section route rolls
+  // back its admissions columns but not that insert, so the student ended up
+  // with a `students` row, no class, and — because this check only asked
+  // whether the person existed — no place in the queue whose entire purpose is
+  // to list students with no class. The one screen that could have fixed them
+  // is the one that stopped showing them.
+  //
+  // ANY enrolment counts, withdrawn included. A student withdrawn through
+  // Records keeps `applicationStatus = 'Enrolled'` (KD #147), so testing for a
+  // live enrolment would drag every withdrawn student back into this queue as
+  // though they had never been given a class.
   const syncedSet = new Set<string>();
   if (studentNumbersToCheck.length > 0) {
-    const { data: syncedRows, error: syncedErr } = await service
+    const { data: personRows, error: personErr } = await service
       .from('students')
-      .select('student_number')
+      .select('id, student_number')
       .in('student_number', studentNumbersToCheck);
-    if (syncedErr) {
+    if (personErr) {
       console.warn(
         '[sis/unsynced-students] students table check failed:',
-        syncedErr.message
+        personErr.message
       );
       // Fail soft — without the sync set we'd wrongly mark everyone as
       // unsynced. Returning [] is safer than a flood of false positives.
       return [];
     }
-    for (const row of (syncedRows ?? []) as Array<{
+    const people = (personRows ?? []) as Array<{
+      id: string;
       student_number: string | null;
-    }>) {
-      if (row.student_number) syncedSet.add(row.student_number);
+    }>;
+    const numberById = new Map(people.map((p) => [p.id, p.student_number]));
+
+    if (people.length > 0) {
+      const { data: sectionRows, error: sectionErr } = await service
+        .from('sections')
+        .select('id, academic_year:academic_years!inner(ay_code)')
+        .eq('academic_year.ay_code', ayCode);
+      if (sectionErr) {
+        // Deliberately NOT fail-soft. An empty section list would mark every
+        // enrolled student as needing setup, which is a flood; an empty
+        // ENROLMENT list marks none of them, which reads as "nothing to do"
+        // and is the failure this whole comment is about.
+        throw new Error(
+          `[sis/unsynced-students] sections lookup failed: ${sectionErr.message}`
+        );
+      }
+      const sectionIds = (sectionRows ?? []).map((s) => s.id as string);
+
+      if (sectionIds.length > 0) {
+        // Filtered by SECTION only — 21 ids — and intersected with our
+        // candidates in memory. Naming the students instead would put ~400
+        // UUIDs in a query string; PostgREST reads these as a GET, and the URL
+        // simply fails to send.
+        //
+        // Paged: one row per student per section per year, so it grows with the
+        // school, and a short read here would put already-placed students back
+        // in the queue.
+        const enrolments = await fetchAllPages<{ student_id: string }>(
+          (from, to) =>
+            service
+              .from('section_students')
+              .select('student_id')
+              .in('section_id', sectionIds)
+              .range(from, to)
+        );
+        for (const e of enrolments) {
+          const number = numberById.get(e.student_id);
+          if (number) syncedSet.add(number);
+        }
+      }
     }
   }
 

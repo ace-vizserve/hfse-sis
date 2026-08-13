@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AdmissionsRow } from '@/lib/supabase/admissions';
 import { sgToday } from '@/lib/dates';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
 
@@ -32,6 +33,22 @@ export type GradingSnapshot = {
   sections: SectionRow[]; // only sections for the target academic year
   students: StudentRow[];
   enrollments: EnrollmentRow[]; // only for sections in the target academic year
+  /**
+   * Highest index_number currently used in each section, INCLUDING withdrawn
+   * rows — an index number is a permanent per-section ID and is never handed
+   * to a second student, so a section that looks empty can still have 1..N
+   * taken.
+   *
+   * Required because `enrollments` is not always section-complete. A
+   * single-student sync deliberately narrows it to that one student's rows
+   * (otherwise every other student in the year looks like a withdrawal), and
+   * the highest index in a section cannot be read off a slice like that: it
+   * came back 0, so the next index was always 1, and assigning anyone into a
+   * section whose #1 was held by a withdrawn student failed on the unique
+   * constraint. Callers with a section-complete `enrollments` may leave this
+   * undefined; the ceiling is then derived from it as before.
+   */
+  maxIndexBySection?: Record<string, number>;
 };
 
 export type StudentUpsert = {
@@ -98,8 +115,13 @@ export function buildSyncPlan(
     enrollmentBySectionAndStudent.set(`${e.section_id}::${e.student_id}`, e);
   }
 
-  // Current max index per section (for appending new enrollees).
-  const maxIndexBySection = new Map<string, number>();
+  // Current max index per section (for appending new enrollees). Seeded from
+  // the caller's section-wide ceilings where it supplied them, then raised by
+  // anything in `enrollments` — whichever is higher wins, so a caller that
+  // supplies neither, either or both cannot end up handing out a taken number.
+  const maxIndexBySection = new Map<string, number>(
+    Object.entries(snapshot.maxIndexBySection ?? {})
+  );
   for (const e of snapshot.enrollments) {
     const prev = maxIndexBySection.get(e.section_id) ?? 0;
     if (e.index_number > prev)
@@ -518,16 +540,43 @@ export async function syncOneStudent(
 
     // Enrolments for this specific student (across all sections in this AY)
     // so a stale row in another section doesn't produce a phantom insert.
+    const sectionIds = sections.map((s) => s.id);
     let enrollments: EnrollmentRow[] = [];
-    if (studentRow) {
-      const sectionIds = sections.map((s) => s.id);
-      if (sectionIds.length > 0) {
-        const enrRes = await service
+    if (studentRow && sectionIds.length > 0) {
+      const enrRes = await service
+        .from('section_students')
+        .select('id, section_id, student_id, index_number, enrollment_status')
+        .eq('student_id', studentRow.id)
+        .in('section_id', sectionIds);
+      enrollments = (enrRes.data ?? []) as EnrollmentRow[];
+    }
+
+    // The highest index_number already used in each section — read separately
+    // BECAUSE the slice above is one student's rows. An index number is a
+    // permanent per-section ID that is never reassigned, so a section holding
+    // nothing but withdrawn students still has 1..N taken, and appending at
+    // "0 + 1" hit the unique (section_id, index_number) constraint. Every row
+    // counts here, withdrawn included.
+    //
+    // Paged: one row per enrolment per AY, so this is students-sized (405
+    // non-withdrawn in AY2026 on 2026-08-13, ~500 rows including withdrawn)
+    // and will cross the 1,000-row cap as the school grows.
+    const maxIndexBySection: Record<string, number> = {};
+    if (sectionIds.length > 0) {
+      const indexRows = await fetchAllPages<{
+        section_id: string;
+        index_number: number;
+      }>((from, to) =>
+        service
           .from('section_students')
-          .select('id, section_id, student_id, index_number, enrollment_status')
-          .eq('student_id', studentRow.id)
-          .in('section_id', sectionIds);
-        enrollments = (enrRes.data ?? []) as EnrollmentRow[];
+          .select('section_id, index_number')
+          .in('section_id', sectionIds)
+          .range(from, to)
+      );
+      for (const r of indexRows) {
+        const prev = maxIndexBySection[r.section_id] ?? 0;
+        if (r.index_number > prev)
+          maxIndexBySection[r.section_id] = r.index_number;
       }
     }
 
@@ -536,6 +585,7 @@ export async function syncOneStudent(
       sections,
       students: studentRow ? [studentRow] : [],
       enrollments,
+      maxIndexBySection,
     };
 
     const plan = buildSyncPlan([admissionsRow], snapshot);

@@ -341,7 +341,11 @@ export async function transferStudentSection(
       classLevel: targetLevelLabel,
       classStatus: 'Finished',
       classUpdatedDate: new Date().toISOString(),
-      classUpdatedBy: actorEmail ?? '(unknown)',
+      // Lower-case b — the real column name. Spelled `classUpdatedBy` here
+      // until 2026-08-13, which failed the whole UPDATE (PostgREST rejects the
+      // statement, not just the key) and left classSection stale on every
+      // transfer. It only warns below, so nothing ever went red.
+      classUpdatedby: actorEmail ?? '(unknown)',
     })
     .eq('enroleeNumber', enroleeNumber);
   if (admissionsErr) {
