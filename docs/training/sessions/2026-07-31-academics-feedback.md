@@ -38,7 +38,7 @@ rather than being edited into the reply.
 | 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09            | KD #179 (subject) + #182 (adviser) |
 | 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09            | KD #181 — Classroom drawer         |
 | 6   | Upload the medical certificate                        | Christina (31:07)                                    | **Spec'd 2026-08-12** — buildable | FCA uploads, FCA+ views            |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | Waiting on her sample files       | Discipline Committee + FCAs view   |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Sample arrived 2026-08-13**     | Form is known; the outcome is not  |
 | 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Spec'd — waiting on her sample    | FCA+ records, one table with #9    |
 | 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**        | Same table as #8 — scoring sheet   |
 | 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | ⚠ **REOPENED, and much bigger**   | 5-step chain, see 2026-08-12       |
@@ -112,6 +112,20 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 - **T5 — disciplinary records** (#7) and **awards** (#8), each needing its own
   table. Do **not** extend `lib/compute/awards.ts`: "award" there means a tier
   derived from a numeric average, with no entity, id, date or issuer.
+
+  **The incident-report form is now known** — sample arrived 2026-08-13, fields
+  and findings in _Answers received_. Three things it changes before anything is
+  designed. **It is already computer-generated and already numbered** (case 702),
+  so this is a replacement of a running digital process, not a first system of
+  record. **The filer is an office, not a class role** — our FCA-records
+  assumption is wrong. And **the form has no outcome field at all**, so the half
+  of Christina's ask that named "a warning letter or suspension" is not on the
+  paper we were sent and has to be asked for separately.
+
+  Also: **the student is optional on the form** (`if applicable`), while #7's
+  whole shape is "open a student, see their incidents". Decide whether the SIS
+  holds only the student-linked subset. Nobody has asked for the rest.
+
 - **T6 — rename the four house rows. Done; migration 111 applied 2026-08-06.**
   Rather than choose between "Orange House" and "Orange House – The Flame" —
   her answer supports either, since her picture calls the colour one thing and
@@ -306,14 +320,24 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   forgotten.
 - **Christina** — **answered 2026-08-12, and the approvals answer reopened
   everything.** See _Answers received_. What is still hers:
-  1. **Does the five-step chain belong in the SIS at all?** subject monitor →
-     subject head → OIC → Assistant Principal → Principal. If that is the
-     school's existing paper escalation, digitising it is the largest piece of
-     work anyone has proposed here and nobody has asked for it. **Ask before
-     designing.**
-  2. **Who records an award.** Asked, missed in her reply.
-  3. **The sample incident reports and the sample certificate** she has promised
-     by email.
+  1. ~~**Does the five-step chain belong in the SIS at all?**~~ **Closed the same
+     day — it does, and she said so at the training (50:57).** See the ✅ note in
+     _Answers received_. Left here struck through because this line was written
+     before that quote was found and has been read as open since. Only _how_
+     remains.
+  2. ~~**Who records an award.**~~ **Decided by Mr Ace 2026-08-12: FCA and up.**
+     She answered only who views. Not hers any more.
+  3. **The samples she promised by email. One of two has arrived.** The
+     **incident report** came 2026-08-13 — see _Answers received_. The **awards /
+     certificate sample** has not.
+  4. **New, and created by that sample: where is the disciplinary _outcome_
+     recorded?** The incident form has no field for one. She asked at 18:20 to
+     see "whether the student received a warning letter or suspension", and the
+     form she sent records the incident and the counselling referral, not the
+     sanction. Either there is a second form, or it is not written down anywhere.
+  5. **New: what generates these today, and does case 702 come across?** The PDF
+     is computer-generated and sequentially numbered, so the existing cases are a
+     migration question, not a fresh start.
 
   ~~Revised 2026-08-11: the approver count was already answered at 46:04, "two
   approvers, Ms. Chandana and I only."~~ **That is no longer operative.** Her
@@ -1346,6 +1370,88 @@ None is a role, a capability or a group the system can route to.
 pattern as `jasmine.hfhse@gmail.com`. So Ms Jasmine, Ms Li and Ms Norma all need
 accounts on personal addresses — and Ms Norma sits on the board that would
 approve grade changes.
+
+### Christina — the incident report sample · 2026-08-13
+
+The first of the two files she promised. A **real completed case**, supplied by
+Mr Ace, sitting at the repo root and gitignored (`*.pdf`, line 59).
+
+⚠ **The case content is deliberately not reproduced here.** Everywhere else in
+this file the rule is "the words as they arrived", but this one is a named
+child's behavioural record, and the thing we need from it is the **form**, not
+the incident. Fields below; the narrative, the student and the second child named
+in it stay in the file. **If this doc's convention ever pulls you toward quoting
+it, don't.**
+
+**It is a controlled document**, not a memo: `C4.6.1-F02 INCIDENT REPORT · REV
+NO. 04 · 28 July 2025`, printed in the footer of all three pages, HFSE Global
+Education Group letterhead with the PEI registration number. That is
+EduTrust-style document control — the school revises this form and tracks which
+revision it is on.
+
+**Page 1 — the incident.**
+
+| Field                            | Notes                                                       |
+| -------------------------------- | ----------------------------------------------------------- |
+| Name · **Office**                | The filer. Identified by office ("Academics"), not by class |
+| Level / Class                    | Matches our section naming exactly ("Sec 1 Discipline 1")   |
+| Date · Time                      | Date and a clock time, both filled                          |
+| **Student Name (if applicable)** | `SURNAME, First M.` — and **optional**                      |
+| Nature of incident               | Reads as a picklist; one value seen                         |
+| Details                          | Free text, the narrative                                    |
+| **Supporting Document/s**        | A field on the form. Empty on this case                     |
+| Other Comments/Remarks           | Free text; carries the next action in practice              |
+
+**Pages 2 and 3 are a different form bolted on**, and blank on this case:
+**Referral for Academic / Pastoral Counselling** (is the student aware · may the
+counsellor tell them · area of concern · additional information), the same block
+again as **Learning Support Program**, an empty **NOTIFICATION** heading with no
+fields under it, and `Prepared By` — which is a typed name, because
+**"This is a computer-generated form. No signature is required."** Both referral
+blocks footnote a separate **Academic/Pastoral Counselling Form** that holds the
+detail. So the real chain is incident → referral → counselling form, and only the
+first link and the referral flags are on this paper.
+
+**What it settles, and what it breaks.**
+
+1. ⚠ **These are already computer-generated and already numbered — the filename
+   carries `Case No. 702`.** Question 1 of the sent block asked where incident
+   reports are written and kept, on the assumption the answer decides "migrate or
+   start fresh". The real answer is a third thing: **there is a running digital
+   process to replace**, exactly like MS Teams Approvals. 701 cases precede this
+   one and nobody has decided what happens to them.
+2. ⚠ **The filer is an office, not a class role.** "Name · Office" with no FCA
+   anywhere on the form. **Our working assumption that the FCA records an
+   incident is wrong**, and it is the assumption that made this look like the
+   same shape as the MC and award decisions. It corroborates her "including the
+   one who filed it" — filing is wider than viewing because filing is an office
+   function.
+3. ⚠ **There is no disciplinary outcome field anywhere on the form.** Her ask at
+   18:20 was two halves — the incidents, _and_ "whether the student received a
+   warning letter or suspension or any disciplinary action". This form carries
+   the first half and the counselling referral. The sanction appears only as free
+   text in Other Comments/Remarks. **The sample answers the half we could have
+   guessed and leaves the half she actually emphasised open.** Question 4 in her
+   list above.
+4. **The student is optional** (`if applicable`), while #7's whole shape is "open
+   the student, see their incidents". Decide whether the SIS holds only the
+   student-linked subset; a home for student-less incident reports is not
+   something anybody asked for.
+5. **One report, one subject student.** The Details name a second child as the
+   original complaint, and that child is not the subject — he has his own case.
+   Cross-references stay prose, which is a clean model and costs nothing.
+
+**Three smaller build facts.**
+
+- **"Nature of incident" is a picklist and we have seen one value.** Asking for
+  the list is small and anchored. Do not invent it.
+- **The footer is versioned, and will move to REV 05.** Anything the SIS renders
+  must carry the form ID and revision, and **store the revision a record was
+  captured under** rather than hardcoding it.
+- ⚠ **The evidence in this case was video.** The Supporting Document/s field is
+  empty precisely because what existed was footage. This is the T3 storage
+  problem again and worse — an explicit decision is needed that the SIS stores
+  documents, not media, before that field is built.
 
 ---
 

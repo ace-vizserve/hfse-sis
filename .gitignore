@@ -56,6 +56,7 @@ next-env.d.ts
 
 *.xls
 *.xlsm
+*.pdf
 
 # HFSE reference data exports (real student PII — admissions metadata,
 # reconciliation worklists). Root-level only; stay local, never committed.
