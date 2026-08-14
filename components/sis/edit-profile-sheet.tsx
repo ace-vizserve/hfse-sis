@@ -14,6 +14,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { composeFullName } from '@/lib/sis/full-name';
 import { Button } from '@/components/ui/button';
 import { CountryCombobox } from '@/components/sis/country-combobox';
 import { SensitiveInput } from '@/components/sis/sensitive-input';
@@ -151,27 +152,6 @@ export function filledSlots(
     if (v !== null && v !== undefined && String(v).trim() !== '') out.push(n);
   }
   return out;
-}
-
-/**
- * `Last, First Middle` — the shape the admissions rows already use
- * ("Cruz, Ana", "LORENZO, Nathaniel Inigo M."). Case is taken from what the
- * user typed rather than forced, since the stored data is inconsistent about
- * it and inventing a transformation here would fight whatever they intended.
- */
-export function composeFullName(values: {
-  firstName?: string | null;
-  middleName?: string | null;
-  lastName?: string | null;
-}): string {
-  const last = values.lastName?.trim() ?? '';
-  const rest = [values.firstName, values.middleName]
-    .map((p) => p?.trim())
-    .filter((p): p is string => Boolean(p))
-    .join(' ');
-  if (!last) return rest;
-  if (!rest) return last;
-  return `${last}, ${rest}`;
 }
 
 /**

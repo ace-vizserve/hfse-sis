@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { composeFullName } from '@/components/sis/edit-profile-sheet';
+import { composeFullName } from '@/lib/sis/full-name';
 
 describe('composeFullName', () => {
   it('writes Last, First', () => {

@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   useForm,
   type FieldErrors,
@@ -16,6 +16,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { composeFullName } from '@/lib/sis/full-name';
 import { Button } from '@/components/ui/button';
 import { CountryCombobox } from '@/components/sis/country-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -78,6 +79,12 @@ type FieldConfig = {
   wide?: boolean;
   /** Only used when kind === 'select' — bounded option list. */
   options?: readonly { label: string; value: string }[];
+  /**
+   * Computed from other fields and not typed into. Renders disabled with a
+   * line saying where it comes from; the value still saves, because RHF holds
+   * it rather than the input.
+   */
+  derived?: boolean;
 };
 
 /**
@@ -103,7 +110,10 @@ function labelForField(name: string): string {
 }
 
 const FATHER_FIELDS: FieldConfig[] = [
-  { name: 'fatherFullName', label: 'Full name', wide: true },
+  // Derived from the three name fields below — same rule as the student's own
+  // full name. Mother and guardian inherit this, since both lists are mapped
+  // from this one.
+  { name: 'fatherFullName', label: 'Full name', wide: true, derived: true },
   { name: 'fatherFirstName', label: 'First name' },
   { name: 'fatherMiddleName', label: 'Middle name' },
   { name: 'fatherLastName', label: 'Last name' },
@@ -216,6 +226,35 @@ export function EditFamilySheet({
     resolver: relaxedFamilyResolver(parent, defaults as ParentInput),
     defaultValues: defaults as ParentInput,
   });
+
+  // Full name follows the three name fields, and is not editable — the same
+  // rule as the student's own name, and for the same reason: two ways to set
+  // one name is how the full name drifted out of agreement with the parts.
+  //
+  // Keyed off `parent` because one sheet serves all three panels, so the fields
+  // are fatherFirstName / motherFirstName / guardianFirstName depending on
+  // which one is open.
+  useEffect(() => {
+    const first = `${parent}FirstName`;
+    const middle = `${parent}MiddleName`;
+    const last = `${parent}LastName`;
+    // A subscription, not a synchronous setState — `setValue` runs inside the
+    // callback, and only when one of those three actually changes.
+    const sub = form.watch((values, { name }) => {
+      if (name !== first && name !== middle && name !== last) return;
+      const v = values as Record<string, string | null | undefined>;
+      form.setValue(
+        `${parent}FullName` as Path<ParentInput>,
+        composeFullName({
+          firstName: v[first],
+          middleName: v[middle],
+          lastName: v[last],
+        }) as never,
+        { shouldDirty: true }
+      );
+    });
+    return () => sub.unsubscribe();
+  }, [form, parent]);
 
   const saveMutation = useMutation({
     mutationFn: (values: ParentInput) =>
@@ -353,8 +392,8 @@ function relaxedFamilyResolver(parent: ParentSlot, defaults: ParentInput) {
       )
     );
     const buildSchema = BUILD_SCHEMA_BY_PARENT[parent];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resolver = zodResolver(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       buildSchema(changed) as any
     ) as unknown as Resolver<ParentInput>;
     return resolver(values, context, options);
@@ -495,8 +534,23 @@ function SchemaField<T extends FieldValues>({
                   field.onChange(e.target.value === '' ? null : e.target.value)
                 }
                 placeholder=""
+                // Disabled rather than read-only: a read-only box still takes
+                // focus, so clicking it and typing does nothing — the exact
+                // "this field is dead" complaint these sheets were fixed for.
+                disabled={cfg.derived === true}
+                aria-describedby={
+                  cfg.derived ? `${cfg.name}-derived` : undefined
+                }
               />
             </FormControl>
+            {cfg.derived ? (
+              <p
+                id={`${cfg.name}-derived`}
+                className="text-xs text-muted-foreground"
+              >
+                Built from the first, middle and last name below.
+              </p>
+            ) : null}
             <FormMessage />
           </FormItem>
         );
