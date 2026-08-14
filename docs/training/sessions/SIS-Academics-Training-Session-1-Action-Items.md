@@ -1,4 +1,4 @@
-# 2026-07-31 · SIS training with the academics team — what was asked
+# SIS Academics Training Session #1 — Action Items
 
 **Session 1 of the faculty training** (~1 hour, ran long). Present: Christina
 Labrador, Chandana Dileep, Koh Suat Hoon, Melissa Balantac, Wynne Lynn Faustino,
@@ -30,21 +30,21 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                            | Where                              |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | --------------------------------- | ---------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03            | KD #177, migration 109             |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading   | KD #178, migrations 110 / 111      |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03            | Records → Academic tab             |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09            | KD #179 (subject) + #182 (adviser) |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09            | KD #181 — Classroom drawer         |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | **Spec'd 2026-08-12** — buildable | FCA uploads, FCA+ views            |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Sample arrived 2026-08-13**     | Form is known; the outcome is not  |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Spec'd — waiting on her sample    | FCA+ records, one table with #9    |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**        | Same table as #8 — scoring sheet   |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | ⚠ **REOPENED, and much bigger**   | 5-step chain, see 2026-08-12       |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB is a 5-member board**     | Named members, see 2026-08-12      |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended  | KD #176                            |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it       | See _Waiting on the school_        |
+| #   | Ask                                                   | Who                                                  | Status                                            | Where                                                          |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                            | KD #177, migration 109                                         |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                   | KD #178, migrations 110 / 111                                  |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                            | Records → Academic tab                                         |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                            | KD #179 (subject) + #182 (adviser)                             |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                            | KD #181 — Classroom drawer                                     |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | **Spec'd; re-confirmed 2026-08-14**               | Upload sits at the `EX` mark; ⚠ Hanafi files them today        |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Sample 2026-08-13; filer confirmed 2026-08-14** | Filer = whoever was at the venue. The outcome is still nowhere |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Spec'd — waiting on the sample                    | **Nothing digital to replace** — the cheapest of the three     |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                        | Same table as #8 — scoring sheet                               |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                           | "Teachers cannot choose the approvers"                         |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**           | Unanimous, 2026-08-14; today is first-to-act                   |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                  | KD #176                                                        |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                       | See _Waiting on the school_                                    |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -262,11 +262,22 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 
 ### Waiting on the school
 
-- **Chandana** — **nothing outstanding as of 2026-08-12.** House was fully
-  answered 2026-08-06; the mid-year SOW question was answered 2026-08-12 (rare,
-  and applies to the current year — confirms the KD #176 accepted cost); and the
-  house-points rules arrived as the live scoring sheet. All three in _Answers
-  received_.
+- **Chandana** — **three things outstanding as of 2026-08-14, all files.** She
+  was sent the same four asks as Christina and **answered all four on 2026-08-14**
+  (see _Answers received_), promising samples she has not yet handed over:
+  1. **Incident report / warning letter samples** — "I will send some samples
+     here." One incident report already arrived from Christina 2026-08-13, so
+     what is actually wanted from her is **a warning letter or whatever records a
+     suspension** — the half no source has yet produced.
+  2. **The award certificate sample** — "I will send the samples." Christina owes
+     the same file; either satisfies it.
+  3. **New, created by her reply: the "specific AEB approval form".** She named it
+     unprompted. Ask for it the same way the incident report was asked for.
+
+  Earlier and closed: house was fully answered 2026-08-06; the mid-year SOW
+  question was answered 2026-08-12 (rare, and applies to the current year —
+  confirms the KD #176 accepted cost); and the house-points rules arrived as the
+  live scoring sheet. All in _Answers received_.
 
   **A house belongs to the child and stays with them — confirmed by Mr Ace,
   2026-08-06. Closed; do not reopen it.** This had been left here as "dropped
@@ -335,7 +346,15 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      see "whether the student received a warning letter or suspension", and the
      form she sent records the incident and the counselling referral, not the
      sanction. Either there is a second form, or it is not written down anywhere.
-  5. **New: what generates these today, and does case 702 come across?** The PDF
+     ⚠ **Chandana was asked the same thing and did not answer it either**
+     (2026-08-14) — she named who _handles_ a case by severity, not what sanction
+     is recorded. **Three sources, nobody has said where the outcome lives.**
+  5. **New: confirm the five-station pre-issuance chain is real.** It rests on one
+     line of one message and contradicts her own 46:04. **Chandana's 2026-08-14
+     reply is silent on it** — she described only the post-issuance AEB route — so
+     it has neither been corroborated nor challenged, and it is the expensive
+     half of #10/#11.
+  6. **New: what generates these today, and does case 702 come across?** The PDF
      is computer-generated and sequentially numbered, so the existing cases are a
      migration question, not a fresh start.
 
@@ -1325,7 +1344,20 @@ unchanged: a genuine mid-year revision across a whole level, at which point
 build bulk totals editing rather than per-level configs.
 
 **⚠ Grade-change approvals — she did not answer the question, and described
-something far bigger.** Asked whether changes would always go to her and Ms.
+something far bigger.**
+
+> ⚠ **Attribution unverified — "she" here is almost certainly Christina, not
+> Chandana, and this block sits under the wrong heading.** Two other places in
+> this file put this answer with Christina: the Status table (#11, "Christina
+> 46:04") and _Waiting on the school_ ("**Christina** — answered 2026-08-12, and
+> the approvals answer reopened everything"). It matters now that a genuine
+> Chandana reply exists (2026-08-14) which is **silent on the five-station
+> chain**. Left unmoved rather than re-filed on inference — the rule in this file
+> is that a correction cites its source, and the source is the message thread,
+> which is not in the repo. **Mr Ace to confirm, then move or re-head this
+> block.**
+
+Asked whether changes would always go to her and Ms.
 Chandana, she neither confirmed nor denied. Instead:
 
 - **After the sheet is locked, before the report book is issued:** subject
@@ -1452,6 +1484,137 @@ first link and the referral flags are on this paper.
   empty precisely because what existed was footage. This is the T3 storage
   problem again and worse — an explicit decision is needed that the SIS stores
   documents, not media, before that field is built.
+
+### Chandana — the same four asks · 2026-08-14
+
+**The 2026-08-11 message went to Ms Chandana as well as Ms Christina** — the same
+four asks, the body unchanged (it still reads "will always go to you and ms.
+chandana", a copy-paste artefact, so she was asked to confirm a rule naming
+herself). This is her reply. **Samples promised in the same message; not yet
+handed over.**
+
+It is the first time two people have answered the same four questions, which is
+what makes it useful: **three of the four corroborate Christina independently,
+and the fourth answers a question Christina left open.** Her words, verbatim:
+
+**Medical certificates — the whole procedure, and it is paper.**
+
+> "When the student is absent, teacher will mark them absent. When they come back
+> they will submit the MC to the FCA. Then the FCA will change the absence to Ex.
+> By the end of the month, FCA will hand over all the MCs to Mr Hanafi and he
+> will file it. usually Excused absence is marked as present in the report book
+> and we do not usually mention the reason."
+
+1. **The FCA receives the MC and the FCA flips the mark** — same person, same
+   moment. This corroborates Christina ("the FCA uploads it") and adds where the
+   upload belongs: **at the point of marking `EX`, not on a separate documents
+   screen.** The current design already puts it there.
+2. **Second independent ratification that `EX` counts as present with no reason
+   shown.** Christina confirmed it 2026-08-12; Chandana confirms it unprompted.
+   Note her hedge — "**usually** ... we do **not usually** mention the reason" —
+   twice. It is the standing practice, not an absolute. That is still enough to
+   leave the live behaviour alone, which is all we needed.
+3. ⚠ **New, and nobody had mentioned it: there is already a custodian and a
+   monthly handoff.** The FCA hands every MC to **Mr Hanafi** at month end and he
+   files them. So the paper process this replaces has a filing endpoint, and the
+   "internal record of those absences as well as its supporting documents"
+   Christina asked for is **the thing Hanafi's folder is today**. Whoever holds
+   that folder needs to see the uploaded MCs — that is not covered by "FCA and
+   above" unless Hanafi is in it. **Not a blocker; a question for when it is
+   built.**
+
+**Disciplinary records — who files, and what happens next.**
+
+> "Incident reports are filed by the person in charge who is present at the venue
+> of incident. Later depending on the severity, it will be handled by FCA, or
+> Discipline committee or Student support services"
+
+1. ✅ **This independently confirms finding #2 from the incident-report sample.**
+   The form says "Name · Office" with no FCA on it; she says the filer is whoever
+   was in charge at the venue. **Two separate sources now say our
+   FCA-records-the-incident assumption was wrong.** Filing is not a role, it is a
+   circumstance — any staff member may end up filing one, so filing cannot be
+   gated the way the MC and award decisions are.
+2. **Severity routes the case to one of three handlers: FCA, Discipline
+   Committee, or Student Support Services.** This is the first description of what
+   happens _after_ filing, and it explains the sample's blank pages 2 and 3 — the
+   **Academic / Pastoral Counselling** and **Learning Support Program** referral
+   blocks _are_ the handoff she is describing. The form already carries the
+   routing; on case 702 nobody was routed.
+3. ⚠ **Student Support Services is an eighth named body that exists nowhere in
+   the system**, alongside subject monitor, subject head, OIC, Assistant
+   Principal, Principal, Discipline Committee and AEB.
+4. ⚠ **Still no answer on the outcome.** She describes who _handles_ a case, not
+   what sanction is recorded. Christina's 18:20 ask was explicitly "whether the
+   student received a warning letter or suspension or any disciplinary action",
+   and after a sample and two replies **nothing has yet said where that is
+   written down.** Item 4 in _Waiting on the school_ stands.
+
+**Awards — the certificate pipeline, and it is not a record system.**
+
+> "Usually we distribute the certs during term orientation or assemblies. Later it
+> will be displayed in the AV during the moving up. Usually Ms Apple initiates the
+> details for the AV, gathers from FCA. Certificates are usually prepared by Mr
+> Lloyd or Mr Kier."
+
+1. ✅ **The FCA is the origin of the data** — Ms Apple "gathers from FCA". That
+   corroborates Mr Ace's 2026-08-12 decision (FCA and up records an award) from
+   the other direction: he decided who records, she describes who already holds
+   it.
+2. **There is no existing digital record to replace.** Unlike #7 (computer-
+   generated, numbered to 702) and #10/#11 (running in MS Teams Approvals),
+   awards today are a certificate handed out and a slide in a ceremony deck.
+   **#8 is the one item in this backlog that starts clean**, which makes it the
+   cheapest of the three.
+3. **The one real job the SIS would absorb is Ms Apple's.** She chases every FCA
+   to assemble the moving-up AV list. A table plus an export replaces that
+   gathering; **it does not produce the certificate and does not build the AV** —
+   Mr Lloyd or Mr Kier prepare those, as Mr Lloyd already does the house logos.
+   ⚠ Nobody asked for certificate generation. **Do not build it.**
+4. **Three names appear who are not in the system:** Ms Apple, Mr Kier, and Mr
+   Lloyd. If Apple is to stop chasing FCAs she needs to _see_ the list; Christina
+   said awards are viewed by "FCAs, academic leaders and the registrar", which
+   may or may not include her. Small, and settle it when the sample arrives.
+
+**Grade-change approvals — she answered the question Christina did not.**
+
+> "Any changes in the grades after issuing the report book must be approved by
+> AEB. Teachers cannot choose the approvers. AEB stands for Academic and
+> Examination Board. We have specific AEB approval form and all the AEB members
+> will review the request and only after the full approval, the changes can be
+> made."
+
+1. ✅ **"Teachers cannot choose the approvers" — Wynne's 45:30 ask is answered,
+   flatly.** Christina neither confirmed nor denied it; Chandana states it. The
+   approver pool is fixed by policy, not picked at request time. **Item #10 is
+   settled on intent** (the shape of the pool is the part still moving).
+2. ⚠ **New hard requirement, and it is the biggest build fact in this reply:
+   approval is _unanimous_.** "**all** the AEB members will review the request and
+   only after the **full** approval, the changes can be made." Today the system
+   has **two approvers and first-to-act decides** — no ordering, no quorum, no
+   all-must-sign. Note this also reverses the 2026-08-11 decision that withdrew
+   the must-both-agree question as our own inference: it was our inference then,
+   and it is now the school's stated rule for the post-publication route.
+3. **AEB confirmed as Academic and Examination Board**, consistent with the
+   2026-08-12 answer and its five named members.
+4. ⚠ **She says nothing about the five-station pre-issuance chain** (subject
+   monitor → subject head → OIC → Assistant Principal → Principal). She addresses
+   only the post-issuance route. **Silence is not corroboration** — that chain
+   still rests on one message from one person, and it contradicts what that same
+   person said in the room at 46:04. It is also the expensive half. **Worth
+   confirming with her before anything is built on it.**
+5. **New artefact to ask for: the "specific AEB approval form".** Same anchor that
+   worked for the incident report — they have a controlled form, so follow it
+   rather than inventing fields. Small, anchored, and it will show whether
+   approval is recorded per member (which unanimity implies) and whether the form
+   itself is versioned like `C4.6.1-F02`.
+
+**Read together with the admin training the day before, ordered approval is no
+longer a one-off.** `SIS-Admin-Training-Session-1-Action-Items.md` §C carries a
+**second** ordered flow — mid-year section moves, Tin / Chandana / Wynne / Gary /
+Jill, "Mr. Gary final approver", explicitly **not** AEB. Two different bodies,
+two different orders, one missing mechanism. That changes the calculus: a general
+ordered-approval capability now has two callers, not one.
 
 ---
 

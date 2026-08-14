@@ -1,0 +1,59 @@
+# SIS Admin Training Session #1 — Action Items
+
+**Source:** "SIS Training with Admin Team" — Fathom recording, 13 Aug 2026 (1h 35m)
+**Recording:** https://fathom.video/calls/781034839
+**Compiled:** 14 Aug 2026 · timestamps are into the recording
+
+---
+
+## A. Build items (Ace)
+
+| #   | Item                                                            | Detail                                                                                                                                                                   | Raised by   | Ref                 |
+| --- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------- |
+| 1   | Block "Finished" on incomplete fields                           | A step (e.g. grades/assessment) can be marked finished while required data is still blank — enforce completion first                                                     | Wynne       | 24:43               |
+| 2   | Section / class roster export                                   | Export a class list per section. Columns wanted: student name, parents, contact details, allergies/medical. Not built yet                                                | Wynne       | 25:38, 15:52, 17:34 |
+| 3   | Supplies / books tracking                                       | Track which books/materials were issued per student (past disputes over issuance). Needs the per-level book list first                                                   | Tin         | 48:44               |
+| 4   | Subject naming MAPE → STAR                                      | Reflect approved name everywhere incl. full parenthetical "(Sports, Talent, Arts, and Research)". Currently STAR shows only on the report card; still "MAPE" in Markbook | Tin         | 50:36, 52:16        |
+| 5   | P-Files custom uploads                                          | Allow adding document types like the student contract                                                                                                                    | Wynne       | 18:35               |
+| 6   | "Not Applicable" status                                         | For enrollment processes not required for current students (e.g. assessment)                                                                                             | Wynne       | 19:15               |
+| 7   | "Returning student" category                                    | For students returning after leaving. Decision effectively made (Tin endorsed)                                                                                           | Wynne / Tin | 19:42, 20:21        |
+| 8   | Move referrer name/mobile into Discounts                        | Currently shows under Profile → Application Preferences; belongs with discount info                                                                                      | Tin         | 20:36, 25:38        |
+| 9   | Make "How parents hear about us" required                       | Enrollment portal field is optional; ~99% come in as "not specified"                                                                                                     | Samiksha    | 26:11               |
+| 10  | Field-selectable enrolled-student export                        | Choose fields to export, incl. nationality (like the old portal)                                                                                                         | Samiksha    | 26:27, 27:06        |
+| 11  | Add "recommendation form from previous school" to required docs | Wynne owns adding it to the P-Files required list                                                                                                                        | Tin / Wynne | 32:06               |
+
+## B. Inputs owed to Ace
+
+| Owner | Owes                                                     | Feeds |
+| ----- | -------------------------------------------------------- | ----- |
+| Tin   | Per-level book/supplies list                             | #3    |
+| Tin   | Confirm exact approved subject names + full STAR wording | #4    |
+| Wynne | List of additional P-Files document types                | #5    |
+| Wynne | Add recommendation form to required docs                 | #11   |
+
+## C. Policy / process decisions
+
+- **Mid-year section-move approval workflow** — system currently moves students freely with no approval. Management approval (not AEB), **Mr. Gary final approver** (room capacity). Approvers: Tin, Chandana, Wynne, Mr. Gary, Jill (compliance). Needs building as an ordered approval flow. `[58:40, 59:06, 59:43]`
+- **"Returning student" category** — decided; needs building (same as #7). `[20:21]`
+
+## D. Bugs from the live demo
+
+- **B1 — Section assignment failed live** with DB error "**plus updated by does not exist**," on both the "Students Needing Setup" and admissions "Assign a class" paths. To debug. **Highest priority — only thing that actually broke.** `[38:23, 39:08, 40:27]`
+
+## E. Open questions (unresolved on the recording)
+
+- Whether a separate Excel class list is still needed once everything lives in the system — Wynne deferred. `[18:08]`
+- Approver-list confirmation — Tin asked Wynne "Is that correct?"; no explicit yes captured. `[1:00:13]`
+
+## F. Team commitment
+
+- Admin team to run the new SIS **in parallel** with the current panel to build familiarity (Ms. Sermeng's suggestion). `[31:37]`
+
+---
+
+## G. Post-training follow-up requests (added 14 Aug 2026)
+
+| #   | Item                                                           | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Raised by |
+| --- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 12  | **Event registration in the parent portal**                    | Create events in the SIS (admin), show them in the parent portal for parents (who already have accounts) to register and see their prior registrations; registrations flow back into the SIS as a list + export. **Open decisions:** capacity/waitlist, per-child vs per-family, fees (assume free for MVP). **Note:** this is the first feature where a parent _writes_ data to the system (portal is read-only today) — needs its own auth/RLS design. | Apple     |
+| 13  | **Referrer category (New / Current Student), auto-identified** | Add a category for the referrer. Straightforward — the enrollment category (New/Current) is already captured at registration, so it's read from the existing record, not inferred. **Low effort.** Related to #8 (referrer placement).                                                                                                                                                                                                                   | Luz       |
