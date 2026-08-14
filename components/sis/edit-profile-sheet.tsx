@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Pencil, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useForm,
   type FieldErrors,
@@ -148,6 +148,27 @@ export function filledSlots(
 }
 
 /**
+ * `Last, First Middle` — the shape the admissions rows already use
+ * ("Cruz, Ana", "LORENZO, Nathaniel Inigo M."). Case is taken from what the
+ * user typed rather than forced, since the stored data is inconsistent about
+ * it and inventing a transformation here would fight whatever they intended.
+ */
+export function composeFullName(values: {
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+}): string {
+  const last = values.lastName?.trim() ?? '';
+  const rest = [values.firstName, values.middleName]
+    .map((p) => p?.trim())
+    .filter((p): p is string => Boolean(p))
+    .join(' ');
+  if (!last) return rest;
+  if (!rest) return last;
+  return `${last}, ${rest}`;
+}
+
+/**
  * The on-screen label for a field name, so an error can say "Date of birth"
  * rather than "dateOfBirth". Built from SECTIONS below, which is the same list
  * the sheet renders from, so the two cannot drift.
@@ -174,7 +195,11 @@ const SECTIONS: SectionConfig[] = [
       { name: 'middleName', label: 'Middle name' },
       { name: 'lastName', label: 'Last name' },
       { name: 'preferredName', label: 'Preferred name' },
-      { name: 'enroleeFullName', label: 'Full name (override)', wide: true },
+      {
+        name: 'enroleeFullName',
+        label: 'Full name (fills itself in)',
+        wide: true,
+      },
       { name: 'category', label: 'Category' },
       { name: 'nric', label: 'NRIC / FIN' },
       { name: 'birthDay', label: 'Date of birth', kind: 'date' },
@@ -385,6 +410,49 @@ export function EditProfileSheet({
     resolver: relaxedProfileResolver(defaults),
     defaultValues: defaults,
   });
+
+  // Full name follows the three name fields as they are typed.
+  //
+  // WHY THIS WAY ROUND. The obvious alternative — edit the full name and let
+  // the parts follow — cannot work here. Nothing derives the parts from it, and
+  // the name on class lists, mark sheets and report cards (`public.students`)
+  // syncs ONLY from firstName/middleName/lastName. Making the full name the
+  // single editable field would change the admissions screens while leaving
+  // every roster showing the old name. Splitting a full name back into parts is
+  // not a rescue either: this roll carries DELA CRUZ, SAN JOSE and SANTHOSH
+  // KUMAR, and any splitter gets those wrong.
+  //
+  // So the parts stay the source of truth, and the full name stops being a
+  // field you have to remember to update by hand.
+  //
+  // IT REMAINS AN OVERRIDE. Once it is edited directly it stops following —
+  // that is the whole point of the field, and a name that does not compose from
+  // three boxes is exactly the case it exists for. Editing it back into
+  // agreement with the parts hands control back.
+  const fullNameOverridden = useRef(false);
+  useEffect(() => {
+    // A subscription, not a synchronous setState — `setValue` runs inside the
+    // callback when a name field actually changes.
+    const sub = form.watch((values, { name }) => {
+      if (name === 'enroleeFullName') {
+        fullNameOverridden.current =
+          (values.enroleeFullName ?? '') !== composeFullName(values);
+        return;
+      }
+      if (
+        name !== 'firstName' &&
+        name !== 'middleName' &&
+        name !== 'lastName'
+      ) {
+        return;
+      }
+      if (fullNameOverridden.current) return;
+      form.setValue('enroleeFullName', composeFullName(values), {
+        shouldDirty: true,
+      });
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
 
   const saveMutation = useMutation({
     mutationFn: (values: ProfileUpdateInput) =>
