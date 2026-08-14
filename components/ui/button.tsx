@@ -51,25 +51,28 @@ type ButtonBaseProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
 // imported Loader2 and ~107 hand-rolled `disabled={busy}`, in four different
 // idioms that disagreed about spinner size and whether the label changed.
 //
-// `asChild` and `loading` are mutually exclusive AT THE TYPE LEVEL: Slot
-// renders exactly one child, so injecting a spinner beside it breaks at
-// runtime. Better a compile error than a blank button.
-export type ButtonProps = ButtonBaseProps &
-  (
-    | { asChild: true; loading?: never; loadingText?: never }
-    | {
-        asChild?: false;
-        /** In flight. Shows a spinner, marks the button busy, blocks clicks. */
-        loading?: boolean;
-        /**
-         * Replaces the label while loading. Keep the same verb — "Save" becomes
-         * "Saving…", "Publish" becomes "Publishing…" — so the control keeps its
-         * name through the whole action. Omit it to leave the label alone and
-         * let the spinner carry the state.
-         */
-        loadingText?: React.ReactNode;
-      }
-  );
+// `asChild` and `loading` do not combine — Slot renders exactly one child, so
+// injecting a spinner beside it would break at runtime. `loading` is therefore
+// IGNORED when `asChild` is set, rather than being forbidden by the type.
+//
+// A discriminated union was tried first and reverted: Radix triggers
+// (`PopoverTrigger asChild`, `DropdownMenuTrigger asChild`, …) clone their
+// child and spread their own props onto it, `asChild?: boolean` among them.
+// A union narrowing `asChild` to a literal makes every Button used as a Radix
+// trigger a type error — the most common composition in this codebase. Guarding
+// a combination nobody reaches is not worth breaking one everybody does.
+export type ButtonProps = ButtonBaseProps & {
+  asChild?: boolean;
+  /** In flight. Shows a spinner, marks the button busy, blocks clicks. */
+  loading?: boolean;
+  /**
+   * Replaces the label while loading. Keep the same verb — "Save" becomes
+   * "Saving…", "Publish" becomes "Publishing…" — so the control keeps its name
+   * through the whole action. Omit it to leave the label alone and let the
+   * spinner carry the state.
+   */
+  loadingText?: React.ReactNode;
+};
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (allProps, ref) => {
@@ -83,14 +86,13 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       children,
       ...props
-    } = allProps as ButtonBaseProps & {
-      asChild?: boolean;
-      loading?: boolean;
-      loadingText?: React.ReactNode;
-    };
+    } = allProps;
 
     const classes = cn(buttonVariants({ variant, size, className }));
 
+    // `loading` is deliberately dropped here, not forwarded: Slot demands a
+    // single child, and it is destructured above so it cannot leak onto the DOM
+    // element as an unknown attribute.
     if (asChild) {
       return (
         <Slot className={classes} ref={ref} {...props}>

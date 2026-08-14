@@ -35,6 +35,15 @@ const logAction = vi.fn((_call: { context: Record<string, unknown> }) =>
 );
 vi.mock('@/lib/audit/log-action', () => ({
   logAction: (call: { context: Record<string, unknown> }) => logAction(call),
+  // Mirrors the real helper (lib/audit/log-action.ts:258) — one logAction per
+  // row — so the route writing a whole class in one parallel wave still lands
+  // as one recorded call per student here, and every assertion below keeps
+  // measuring the same thing it did when the route looped.
+  logActions: (
+    _service: unknown,
+    _actor: unknown,
+    rows: Array<{ context: Record<string, unknown> }>
+  ) => Promise.all(rows.map((row) => logAction(row))),
 }));
 
 vi.mock('@/lib/cache/invalidate-drill-tags', () => ({
@@ -46,7 +55,23 @@ vi.mock('@/lib/academic-year', () => ({
 }));
 
 vi.mock('@/lib/attendance/mutations', () => ({
-  writeDailyEntry: vi.fn(() => Promise.resolve({ attendance_pct: 100 })),
+  // Mirrors the real contract: one rollup per unique (term, student), keyed
+  // the way the route looks them up. The route writes the whole class in one
+  // call now rather than looping one entry at a time.
+  writeDailyBatch: vi.fn(
+    (
+      _service: unknown,
+      inputs: Array<{ termId: string; sectionStudentId: string }>
+    ) =>
+      Promise.resolve(
+        new Map(
+          inputs.map((i) => [
+            `${i.termId}|${i.sectionStudentId}`,
+            { attendance_pct: 100 },
+          ])
+        )
+      )
+  ),
 }));
 
 // ── Supabase service stub ──────────────────────────────────────────────────

@@ -2,10 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
-import { logAction } from '@/lib/audit/log-action';
+import { logActions } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
-import { writeDailyEntry } from '@/lib/attendance/mutations';
+import {
+  writeDailyBatch,
+  type RollupAfterWrite,
+} from '@/lib/attendance/mutations';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DailyBulkSchema,
@@ -151,7 +154,7 @@ export async function PATCH(request: NextRequest) {
     termId: string;
     date: string;
     status: string;
-    rollup: Awaited<ReturnType<typeof writeDailyEntry>>;
+    rollup: RollupAfterWrite;
   }> = [];
 
   // Resolve each entry's section level type once so the day-type lookup
@@ -292,6 +295,12 @@ export async function PATCH(request: NextRequest) {
     return isBlocked;
   }
 
+  // ── Validate EVERY entry before writing ANY of them ──────────────────────
+  // This loop used to validate and write one entry at a time, so a rejection
+  // partway through left the earlier students marked and reported how many had
+  // got through (`writtenSoFar`). Checking first makes the request all-or-
+  // nothing, which is both faster and easier to reason about: a submit either
+  // happened or it did not.
   for (const entry of entries) {
     // Write-gate: encodable day_types are school_day + hbl. Others reject
     // unless registrar+ is writing NC (the legitimate way to mark "no class"
@@ -302,14 +311,21 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         {
           error: `${entry.date} isn't a school day (it's marked as a public holiday, school holiday, or no class). Update the school calendar if this is wrong.`,
-          writtenSoFar: results.length,
+          // Always zero now — nothing is written until every entry has passed.
+          // Kept in the shape so existing clients reading it stay valid.
+          writtenSoFar: 0,
         },
         { status: 409 }
       );
     }
+  }
 
-    try {
-      const rollup = await writeDailyEntry(service, {
+  // ── Write ────────────────────────────────────────────────────────────────
+  let rollups: Map<string, RollupAfterWrite>;
+  try {
+    rollups = await writeDailyBatch(
+      service,
+      entries.map((entry) => ({
         sectionStudentId: entry.sectionStudentId,
         termId: entry.termId,
         date: entry.date,
@@ -317,72 +333,87 @@ export async function PATCH(request: NextRequest) {
         exReason: entry.exReason ?? null,
         exNote: entry.exNote ?? null,
         recordedBy: auth.user.id,
-      });
-
-      await logAction({
-        service,
-        actor: { id: auth.user.id, email: auth.user.email ?? null },
-        action:
-          entry.date < today
-            ? 'attendance.daily.correct'
-            : 'attendance.daily.update',
-        entityType: 'attendance_daily',
-        entityId: null,
-        // Key names match the FIRST alternative in each `??` chain in
-        // lib/audit/humanize.ts (`section_name` at :358, `prior_status` at
-        // :365) and match what the import route already writes, so the two
-        // attendance writers finally agree. The renderer was always correct;
-        // only this writer was silent, which is why every daily row showed up
-        // on /attendance/audit-log with no class name and no before -> after.
-        context: {
-          section_student_id: entry.sectionStudentId,
-          section_id: sectionIdByEnrolment.get(entry.sectionStudentId) ?? null,
-          section_name:
-            sectionNameById.get(
-              sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
-            ) ?? null,
-          term_id: entry.termId,
-          date: entry.date,
-          status: entry.status,
-          // Omitted entirely when there is no prior row: a first mark is not a
-          // transition, and humanize renders just the new status for that case.
-          ...(priorStatusByKey.has(`${entry.sectionStudentId}|${entry.date}`)
-            ? {
-                prior_status: priorStatusByKey.get(
-                  `${entry.sectionStudentId}|${entry.date}`
-                ),
-              }
-            : {}),
-          ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
-          // PRESENCE ONLY — never the note text. `audit_log` is readable by
-          // every `is_registrar_or_above()` user, a wider audience than the
-          // mark itself (attendance_daily is registrar+ OR that section's form
-          // adviser), and its rows can never be updated or deleted. A note
-          // reading "MC submitted — dengue, hospitalised" would therefore be
-          // permanently un-redactable and visible to more people than the
-          // absence it explains. The trail still proves a note was attached or
-          // changed and by whom, which is what an audit needs to answer.
-          ...(entry.exNote != null ? { ex_note_present: true } : {}),
-        },
-      });
-
-      results.push({
-        sectionStudentId: entry.sectionStudentId,
-        termId: entry.termId,
-        date: entry.date,
-        status: entry.status,
-        rollup,
-      });
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      return NextResponse.json(
-        { error: reason, writtenSoFar: results.length },
-        { status: 500 }
-      );
-    }
+      }))
+    );
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return NextResponse.json(
+      { error: reason, writtenSoFar: 0 },
+      { status: 500 }
+    );
   }
 
+  for (const entry of entries) {
+    results.push({
+      sectionStudentId: entry.sectionStudentId,
+      termId: entry.termId,
+      date: entry.date,
+      status: entry.status,
+      rollup: rollups.get(`${entry.termId}|${entry.sectionStudentId}`)!,
+    });
+  }
+
+  // ── Audit ────────────────────────────────────────────────────────────────
+  // Written in ONE parallel wave instead of one awaited INSERT per student.
+  //
+  // Deliberately still awaited, and deliberately NOT moved into `after()`.
+  // `after()` was tried and reverted: an audit row is a compliance record, and
+  // if post-response work is ever dropped the trail gains a hole that nothing
+  // reports — the same "a failure that reads as good news" shape this codebase
+  // already guards against elsewhere. Parallelising takes 30 sequential
+  // round-trips down to roughly one, which is nearly all of the win at none of
+  // that risk.
+  const auditRows = entries.map((entry) => ({
+    action:
+      entry.date < today
+        ? ('attendance.daily.correct' as const)
+        : ('attendance.daily.update' as const),
+    entityType: 'attendance_daily' as const,
+    entityId: null,
+    // Key names match the FIRST alternative in each `??` chain in
+    // lib/audit/humanize.ts (`section_name` at :358, `prior_status` at
+    // :365) and match what the import route already writes, so the two
+    // attendance writers finally agree. The renderer was always correct;
+    // only this writer was silent, which is why every daily row showed up
+    // on /attendance/audit-log with no class name and no before -> after.
+    context: {
+      section_student_id: entry.sectionStudentId,
+      section_id: sectionIdByEnrolment.get(entry.sectionStudentId) ?? null,
+      section_name:
+        sectionNameById.get(
+          sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
+        ) ?? null,
+      term_id: entry.termId,
+      date: entry.date,
+      status: entry.status,
+      // Omitted entirely when there is no prior row: a first mark is not a
+      // transition, and humanize renders just the new status for that case.
+      ...(priorStatusByKey.has(`${entry.sectionStudentId}|${entry.date}`)
+        ? {
+            prior_status: priorStatusByKey.get(
+              `${entry.sectionStudentId}|${entry.date}`
+            ),
+          }
+        : {}),
+      ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
+      // PRESENCE ONLY — never the note text. `audit_log` is readable by
+      // every `is_registrar_or_above()` user, a wider audience than the
+      // mark itself (attendance_daily is registrar+ OR that section's form
+      // adviser), and its rows can never be updated or deleted. A note
+      // reading "MC submitted — dengue, hospitalised" would therefore be
+      // permanently un-redactable and visible to more people than the
+      // absence it explains. The trail still proves a note was attached or
+      // changed and by whom, which is what an audit needs to answer.
+      ...(entry.exNote != null ? { ex_note_present: true } : {}),
+    },
+  }));
+
   if (results.length > 0) {
+    await logActions(
+      service,
+      { id: auth.user.id, email: auth.user.email ?? null },
+      auditRows
+    );
     invalidateDrillTags('attendance', await requireCurrentAyCode(service));
   }
 

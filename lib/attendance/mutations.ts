@@ -63,15 +63,13 @@ export async function writeDailyEntry(
   return recomputeRollup(service, input.termId, input.sectionStudentId);
 }
 
-// Bulk daily write — used by the import route. Inserts all rows in one
-// batch, then recomputes rollup once per unique (term, section_student).
-export async function writeDailyBulk(
-  service: SupabaseClient,
-  inputs: DailyWriteInput[]
-): Promise<{ inserted: number; rollupsRecomputed: number }> {
-  if (inputs.length === 0) return { inserted: 0, rollupsRecomputed: 0 };
-
-  const rows = inputs.map((i) => ({
+/**
+ * One ledger row from one input. Shared so the single, batch and import
+ * writers cannot drift on the EX guards — a reason or note must never survive
+ * a switch away from EX.
+ */
+function toLedgerRow(i: DailyWriteInput) {
+  return {
     section_student_id: i.sectionStudentId,
     term_id: i.termId,
     date: i.date,
@@ -80,7 +78,75 @@ export async function writeDailyBulk(
     ex_note: i.status === 'EX' ? (i.exNote ?? null) : null,
     period_id: i.periodId ?? null,
     recorded_by: i.recordedBy,
-  }));
+  };
+}
+
+/** Rollups run this many at a time. See writeDailyBatch. */
+export const ROLLUP_CONCURRENCY = 8;
+
+/**
+ * Batch daily write for ONE user action — a Daily submit covering a class.
+ * Returns each affected (term, student)'s recomputed rollup, keyed
+ * `${termId}|${sectionStudentId}`.
+ *
+ * WHY IT EXISTS. The Daily route used to call `writeDailyEntry` in a `for`
+ * loop, and the client submits one entry per student on the roster rather than
+ * only the changed ones. A class of 30 therefore cost 30 inserts and 30 rollup
+ * RPCs, strictly one after another, plus an awaited audit insert each — about
+ * 90 sequential round-trips for one click of Submit.
+ *
+ * Here it is one insert, then the rollups in bounded-concurrency waves: ~4
+ * round-trips of latency for the same class.
+ *
+ * The bound matters and is not arbitrary. `writeDailyBulk` below runs its
+ * rollups strictly sequentially, and its comment records why: an import can
+ * carry 1,500+ pairs, and firing that many RPCs at once exhausts the client's
+ * connection pool and draws rate-limit warnings. A class-sized batch is two
+ * orders of magnitude smaller, so it can afford concurrency — but capped, so
+ * the same failure cannot reappear if somebody submits a whole level.
+ */
+export async function writeDailyBatch(
+  service: SupabaseClient,
+  inputs: DailyWriteInput[]
+): Promise<Map<string, RollupAfterWrite>> {
+  const rollups = new Map<string, RollupAfterWrite>();
+  if (inputs.length === 0) return rollups;
+
+  const { error: insertErr } = await service
+    .from('attendance_daily')
+    .insert(inputs.map(toLedgerRow));
+  if (insertErr) {
+    throw new Error(`attendance_daily insert failed: ${insertErr.message}`);
+  }
+
+  const pairs = [
+    ...new Set(inputs.map((i) => `${i.termId}|${i.sectionStudentId}`)),
+  ];
+  for (let i = 0; i < pairs.length; i += ROLLUP_CONCURRENCY) {
+    const wave = pairs.slice(i, i + ROLLUP_CONCURRENCY);
+    const settled = await Promise.all(
+      wave.map(async (key) => {
+        const [termId, sectionStudentId] = key.split('|');
+        return [
+          key,
+          await recomputeRollup(service, termId, sectionStudentId),
+        ] as const;
+      })
+    );
+    for (const [key, rollup] of settled) rollups.set(key, rollup);
+  }
+  return rollups;
+}
+
+// Bulk daily write — used by the import route. Inserts all rows in one
+// batch, then recomputes rollup once per unique (term, section_student).
+export async function writeDailyBulk(
+  service: SupabaseClient,
+  inputs: DailyWriteInput[]
+): Promise<{ inserted: number; rollupsRecomputed: number }> {
+  if (inputs.length === 0) return { inserted: 0, rollupsRecomputed: 0 };
+
+  const rows = inputs.map(toLedgerRow);
 
   const { error: insertErr } = await service
     .from('attendance_daily')
