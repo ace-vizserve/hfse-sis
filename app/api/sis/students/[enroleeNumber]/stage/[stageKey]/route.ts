@@ -458,9 +458,16 @@ export async function PATCH(
   // When one is supplied we piggyback the class columns onto the same UPDATE
   // so the flip and the placement land atomically.
   //
-  // 'Enrolled (Conditional)' skips this block entirely. It means ALN — the
-  // student didn't pass the assessment or came with a declaration and attends
-  // Trial Class + SPED. It is NOT a way to enrol someone without a class.
+  // 'Enrolled (Conditional)' skips this block entirely — the condition below
+  // tests plain 'Enrolled' only, unchanged since Sprint 21. Per the Disclaimer
+  // in docs/context/admission-process.md, conditional enrolment is an
+  // ASSESSMENT OUTCOME (step 8): "did not pass the examination and/or with
+  // declaration". It is NOT a way to enrol someone without a class, and NOT a
+  // paperwork override — nothing in the process doc excuses a conditionally
+  // enrolled student from registration, documents, contract or fees, all of
+  // which this skip waives. RATIFIED 2026-08-13 (KD #180): Mr Ace decided the
+  // skip stays. It is deliberate, not an oversight — do not "fix" this
+  // condition to include 'Enrolled (Conditional)' without him asking first.
   let classAutoAssigned = false;
   let awaitingPlacement = false;
   if (stageKey === 'application' && status === 'Enrolled') {

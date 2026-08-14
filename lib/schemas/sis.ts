@@ -833,10 +833,16 @@ export function validateTerminalReason(
 // here rather than silently accepted, which is what made the old code
 // contradict its own role model.
 //
-// Note `Enrolled (Conditional)` never reaches this function: it bypasses the
-// prereq gate by design and means ALN — the student didn't pass the
-// assessment or came with a declaration and attends Trial Class + SPED. It is
-// NOT a way to enrol someone without a class, and must never be used as one.
+// Note `Enrolled (Conditional)` never reaches this function — the route only
+// calls it for plain 'Enrolled', so Conditional skips the prereq gate outright.
+// Read the Disclaimer in docs/context/admission-process.md before touching
+// that: conditional enrolment is an ASSESSMENT OUTCOME (step 8) — "did not
+// pass the examination and/or with declaration" — not a paperwork override.
+// The doc never equates it with ALN; ALN (step 8) is the trigger for Trial
+// Classes, which the Disclaimer joins to conditional enrolment with "and/or",
+// so the two overlap without being the same thing. Nothing in the process doc
+// excuses a conditionally enrolled student from registration, documents,
+// contract or fees, and the bypass currently does. See KD #180.
 export type EnrolledFlipBlocker = {
   stage: string;
   current: string | null;
