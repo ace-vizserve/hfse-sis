@@ -4,7 +4,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Pencil, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useForm, type Resolver, type UseFormReturn } from 'react-hook-form';
+import {
+  useForm,
+  type FieldErrors,
+  type Resolver,
+  type UseFormReturn,
+} from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -133,6 +138,25 @@ export function filledSlots(
     if (v !== null && v !== undefined && String(v).trim() !== '') out.push(n);
   }
   return out;
+}
+
+/**
+ * The on-screen label for a field name, so an error can say "Date of birth"
+ * rather than "dateOfBirth". Built from SECTIONS below, which is the same list
+ * the sheet renders from, so the two cannot drift.
+ */
+function labelForField(name: PropertyKey): string {
+  for (const section of SECTIONS) {
+    for (const field of section.fields) {
+      if (field.name === name) {
+        // Slot sections repeat their labels ("Full name" appears once per
+        // sibling), so qualify with the section title or the message names a
+        // field the user cannot find.
+        return section.slot ? `${section.title} — ${field.label}` : field.label;
+      }
+    }
+  }
+  return String(name);
 }
 
 const SECTIONS: SectionConfig[] = [
@@ -382,6 +406,28 @@ export function EditProfileSheet({
     await saveMutation.mutateAsync(values).catch(() => {});
   }
 
+  // Reported 2026-08-14: "Save changes does nothing." `handleSubmit(onSubmit)`
+  // with no second argument is SILENT when validation fails — no request, no
+  // toast, no console line. If the offending field is off-screen (a collapsed
+  // sibling slot, a section scrolled out of view) its inline message is invisible
+  // too, so the button genuinely appears dead.
+  //
+  // Naming the fields is the point. "Something is invalid" would leave the user
+  // hunting a form this long; the label tells them where to look, and the first
+  // bad field is focused so a long sheet scrolls itself to the problem.
+  function onInvalid(errors: FieldErrors<ProfileUpdateInput>) {
+    const names = Object.keys(errors) as Array<keyof ProfileUpdateInput>;
+    if (names.length === 0) return;
+    const labels = names.map((n) => labelForField(n)).filter(Boolean);
+    const shown = labels.slice(0, 3).join(', ');
+    toast.error(
+      labels.length > 3
+        ? `Check these fields: ${shown}, and ${labels.length - 3} more.`
+        : `Check these fields: ${shown}.`
+    );
+    form.setFocus(names[0]);
+  }
+
   const busy = form.formState.isSubmitting;
 
   return (
@@ -434,7 +480,7 @@ export function EditProfileSheet({
           </SheetHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
               <div className="space-y-8 p-6">
                 {SECTIONS.map((section) => {
                   // Sibling slot: drawn only when it holds data or was added.

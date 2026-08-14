@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
   useForm,
+  type FieldErrors,
   type FieldValues,
   type Path,
   type Resolver,
@@ -78,6 +79,28 @@ type FieldConfig = {
   /** Only used when kind === 'select' — bounded option list. */
   options?: readonly { label: string; value: string }[];
 };
+
+/**
+ * The on-screen label for a field, prefixed by whose panel it sits in — the
+ * three panels reuse the same labels ("Mobile" appears three times), so an
+ * unqualified name would send the user to the wrong one.
+ */
+function labelForField(name: string): string {
+  const who = name.startsWith('father')
+    ? 'Father'
+    : name.startsWith('mother')
+      ? 'Mother'
+      : name.startsWith('guardian')
+        ? 'Guardian'
+        : null;
+  const match = FATHER_FIELDS.find(
+    (f) =>
+      f.name.replace(/^father/, '') ===
+      name.replace(/^(father|mother|guardian)/, '')
+  );
+  const label = match?.label ?? name;
+  return who ? `${who} — ${label}` : label;
+}
 
 const FATHER_FIELDS: FieldConfig[] = [
   { name: 'fatherFullName', label: 'Full name', wide: true },
@@ -221,6 +244,24 @@ export function EditFamilySheet({
     await saveMutation.mutateAsync(values).catch(() => {});
   }
 
+  // Reported 2026-08-14: "Save changes does nothing." `handleSubmit(onSubmit)`
+  // with no second argument is SILENT when validation fails — no request, no
+  // toast, nothing in the console. This sheet has three long parent panels, so
+  // the offending field is very often scrolled out of sight along with its
+  // inline message, and the button reads as dead.
+  function onInvalid(errors: FieldErrors<ParentInput>) {
+    const names = Object.keys(errors);
+    if (names.length === 0) return;
+    const labels = names.map(labelForField);
+    const shown = labels.slice(0, 3).join(', ');
+    toast.error(
+      labels.length > 3
+        ? `Check these fields: ${shown}, and ${labels.length - 3} more.`
+        : `Check these fields: ${shown}.`
+    );
+    form.setFocus(names[0] as Path<ParentInput>);
+  }
+
   const busy = form.formState.isSubmitting;
 
   return (
@@ -249,7 +290,7 @@ export function EditFamilySheet({
           </SheetHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
               <div className="p-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {fields.map((cfg) => (
