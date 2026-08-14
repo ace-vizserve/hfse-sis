@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Pencil, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   useForm,
   type FieldErrors,
@@ -109,6 +109,12 @@ type FieldConfig = {
   options?: readonly { label: string; value: string }[];
   /** Discount slots only — which of discount1..3 this field is. */
   slot?: number;
+  /**
+   * Computed from other fields and not typed into. Renders disabled with a
+   * line saying where it comes from; the value still saves, because RHF holds
+   * it rather than the input.
+   */
+  derived?: boolean;
 };
 
 type SectionConfig = {
@@ -197,8 +203,9 @@ const SECTIONS: SectionConfig[] = [
       { name: 'preferredName', label: 'Preferred name' },
       {
         name: 'enroleeFullName',
-        label: 'Full name (fills itself in)',
+        label: 'Full name',
         wide: true,
+        derived: true,
       },
       { name: 'category', label: 'Category' },
       { name: 'nric', label: 'NRIC / FIN' },
@@ -425,20 +432,14 @@ export function EditProfileSheet({
   // So the parts stay the source of truth, and the full name stops being a
   // field you have to remember to update by hand.
   //
-  // IT REMAINS AN OVERRIDE. Once it is edited directly it stops following —
-  // that is the whole point of the field, and a name that does not compose from
-  // three boxes is exactly the case it exists for. Editing it back into
-  // agreement with the parts hands control back.
-  const fullNameOverridden = useRef(false);
+  // IT IS NOT EDITABLE. Mr Ace's call, 2026-08-14 — an override was offered and
+  // declined. Two ways to set one name is how the full name drifted out of
+  // agreement with the parts in the first place, and the parts are the ones the
+  // class lists read.
   useEffect(() => {
     // A subscription, not a synchronous setState — `setValue` runs inside the
-    // callback when a name field actually changes.
+    // callback, and only when a name field actually changes.
     const sub = form.watch((values, { name }) => {
-      if (name === 'enroleeFullName') {
-        fullNameOverridden.current =
-          (values.enroleeFullName ?? '') !== composeFullName(values);
-        return;
-      }
       if (
         name !== 'firstName' &&
         name !== 'middleName' &&
@@ -446,7 +447,6 @@ export function EditProfileSheet({
       ) {
         return;
       }
-      if (fullNameOverridden.current) return;
       form.setValue('enroleeFullName', composeFullName(values), {
         shouldDirty: true,
       });
@@ -846,8 +846,26 @@ function SchemaField({
                   field.onChange(e.target.value === '' ? null : e.target.value)
                 }
                 placeholder={cfg.placeholder ?? ''}
+                // A derived field is disabled rather than read-only on
+                // purpose: a read-only box still takes focus, so clicking it
+                // and typing does nothing — which is precisely the "the field
+                // is dead" complaint this sheet was just fixed for. Disabled
+                // says so before the click. RHF holds the value either way, so
+                // it still saves.
+                disabled={cfg.derived === true}
+                aria-describedby={
+                  cfg.derived ? `${cfg.name}-derived` : undefined
+                }
               />
             </FormControl>
+            {cfg.derived ? (
+              <p
+                id={`${cfg.name}-derived`}
+                className="text-xs text-muted-foreground"
+              >
+                Built from the first, middle and last name above.
+              </p>
+            ) : null}
             <FormMessage />
           </FormItem>
         );
