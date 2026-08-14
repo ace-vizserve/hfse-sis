@@ -524,26 +524,52 @@ export const PROFILE_GATED_FIELDS = [
   'postalCode',
 ] as const;
 
+/**
+ * The PATCH schema for a profile edit.
+ *
+ * ⚠ IT IS PARTIAL, AND THAT IS LOAD-BEARING IN BOTH DIRECTIONS.
+ *
+ * The edit sheet renders about 60 of this schema's ~85 fields; the medical
+ * block (`allergies`, `asthma`, `allergyDetails`, …) is never drawn, because
+ * parents supply it on the application form and it is not the school's to edit.
+ * The sheet therefore submits only what it renders.
+ *
+ * Required keys made that impossible: `allergies` is `z.boolean().nullable()`,
+ * which rejects `undefined`, so every save failed on ~24 fields nobody could
+ * see. Reported 2026-08-14 as "Save changes does nothing" — validation was
+ * failing silently, so the sheet had in fact never been able to save.
+ *
+ * And the obvious repair — default the missing fields to null — would have been
+ * worse than the bug. `parsed.data` of a non-partial schema carries EVERY key,
+ * and the route hands it straight to `.update()`, so the first successful save
+ * would have written null over every medical field on that student. The
+ * validation failure was the only thing protecting that data.
+ *
+ * Partial gives PATCH its ordinary meaning: send what you are changing, and
+ * only that is written. Anything absent is left alone.
+ */
 export function buildProfileUpdateSchema(changedFields: ReadonlySet<string>) {
-  return z.object({
-    ...ProfileUpdateSchema.shape,
-    nric: changedFields.has('nric') ? optionalNric : optionalText(40),
-    nationality: changedFields.has('nationality')
-      ? optionalNationality
-      : optionalText(80),
-    homePhone: changedFields.has('homePhone')
-      ? optionalPhone
-      : optionalNumberOrText,
-    contactPersonNumber: changedFields.has('contactPersonNumber')
-      ? optionalPhone
-      : optionalNumberOrText,
-    referrerMobile: changedFields.has('referrerMobile')
-      ? optionalPhone
-      : optionalNumberOrText,
-    postalCode: changedFields.has('postalCode')
-      ? optionalPostalCode
-      : optionalNumberOrText,
-  });
+  return z
+    .object({
+      ...ProfileUpdateSchema.shape,
+      nric: changedFields.has('nric') ? optionalNric : optionalText(40),
+      nationality: changedFields.has('nationality')
+        ? optionalNationality
+        : optionalText(80),
+      homePhone: changedFields.has('homePhone')
+        ? optionalPhone
+        : optionalNumberOrText,
+      contactPersonNumber: changedFields.has('contactPersonNumber')
+        ? optionalPhone
+        : optionalNumberOrText,
+      referrerMobile: changedFields.has('referrerMobile')
+        ? optionalPhone
+        : optionalNumberOrText,
+      postalCode: changedFields.has('postalCode')
+        ? optionalPostalCode
+        : optionalNumberOrText,
+    })
+    .partial();
 }
 
 export const FATHER_GATED_FIELDS = [

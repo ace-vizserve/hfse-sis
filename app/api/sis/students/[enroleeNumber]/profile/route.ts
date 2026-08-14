@@ -107,6 +107,14 @@ export async function PATCH(
   }
   const update = parsed.data as ProfileUpdateInput;
 
+  // The schema is partial (see its comment), so only the fields the caller
+  // actually sent are written — the medical block the edit sheet never renders
+  // is left alone rather than being nulled. An empty body would make
+  // PostgREST's UPDATE a syntax error, so it stops here instead.
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ ok: true, changed: 0 });
+  }
+
   const { error: upErr } = await supabase
     .from(appsTable)
     .update(update)

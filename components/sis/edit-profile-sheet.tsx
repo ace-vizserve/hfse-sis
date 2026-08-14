@@ -78,7 +78,14 @@ function relaxedProfileResolver(
       )
     );
     const schema = buildProfileUpdateSchema(changed);
-    return zodResolver(schema)(values, context, options);
+    // The built schema is partial — the sheet renders about 60 of its ~85
+    // fields and submits only those. RHF wants a resolver typed to the full
+    // form shape, so re-cast, the same way relaxedFamilyResolver does for the
+    // same reason in edit-family-sheet.tsx.
+    const resolver = zodResolver(
+      schema
+    ) as unknown as Resolver<ProfileUpdateInput>;
+    return resolver(values, context, options);
   };
 }
 
