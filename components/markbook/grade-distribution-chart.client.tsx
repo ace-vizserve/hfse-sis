@@ -23,13 +23,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-const BAND_FILL: Record<string, string> = {
-  dnm: 'var(--destructive)',
-  fs: 'var(--chart-3)',
-  s: 'var(--chart-2)',
-  vs: 'var(--chart-1)',
-  o: 'var(--chart-5)',
-};
+// Hoisted to components/markbook/grade-band-colors.ts so the Academic Overview's
+// spread bars and donut paint the same bands identically (09a §10.2).
+import { GRADE_BAND_FILL as BAND_FILL } from '@/components/markbook/grade-band-colors';
 
 export type GradeDistributionChartProps = {
   data: GradeBucket[];

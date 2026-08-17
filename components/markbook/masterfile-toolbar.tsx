@@ -15,6 +15,8 @@ import {
 type LevelOption = { id: string; label: string };
 type SectionOption = { id: string; name: string };
 
+const ALL_LEVELS = '__all__';
+
 export function MasterfileToolbar({
   ayCodes,
   selectedAyCode,
@@ -22,6 +24,7 @@ export function MasterfileToolbar({
   selectedLevelId,
   sections,
   selectedSectionId,
+  allowAllLevels = false,
 }: {
   ayCodes: readonly string[];
   selectedAyCode: string;
@@ -29,6 +32,11 @@ export function MasterfileToolbar({
   selectedLevelId: string | null;
   sections: SectionOption[];
   selectedSectionId: string | null;
+  /**
+   * Offer "All grade levels" — the school-wide view. Off by default: the three
+   * quick views that share this toolbar cannot render without a single level.
+   */
+  allowAllLevels?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,7 +58,14 @@ export function MasterfileToolbar({
 
   function onLevelChange(levelId: string) {
     const next = new URLSearchParams(searchParams.toString());
-    next.set('level', levelId);
+    if (levelId === ALL_LEVELS) {
+      // School-wide is the absence of a level, not a level of its own — so the
+      // param is dropped rather than set to the sentinel. Keeps the default URL
+      // clean and matches what the scope resolver looks for.
+      next.delete('level');
+    } else {
+      next.set('level', levelId);
+    }
     // Reset class filter — sections are level-scoped, the previous class
     // wouldn't exist at the new level.
     next.delete('class');
@@ -106,7 +121,10 @@ export function MasterfileToolbar({
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Level
         </span>
-        <Select value={selectedLevelId ?? ''} onValueChange={onLevelChange}>
+        <Select
+          value={selectedLevelId ?? (allowAllLevels ? ALL_LEVELS : '')}
+          onValueChange={onLevelChange}
+        >
           <SelectTrigger className="h-9 w-[180px]">
             <div className="flex items-center gap-2">
               {pending ? (
@@ -118,6 +136,9 @@ export function MasterfileToolbar({
             </div>
           </SelectTrigger>
           <SelectContent>
+            {allowAllLevels && (
+              <SelectItem value={ALL_LEVELS}>All grade levels</SelectItem>
+            )}
             {levels.map((l) => (
               <SelectItem key={l.id} value={l.id}>
                 {l.label}

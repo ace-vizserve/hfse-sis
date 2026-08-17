@@ -50,11 +50,49 @@ export const GRADE_BANDS = [
 
 export type GradeBand = (typeof GRADE_BANDS)[number]['key'];
 
-/** Classify a numeric grade into its mastery band, or null when ungraded. */
+/**
+ * A grade at or above this passes (DepEd: below 75 is "Below Minimum
+ * Expectations", the band printed on the report card legend).
+ *
+ * Derived from the FS band's lower bound rather than written as a literal, so
+ * it can never drift from the bands above — redefine the bands and the pass
+ * mark follows.
+ *
+ * ⚠ Two OTHER failing thresholds ship elsewhere and are deliberately left
+ * alone, because they answer different questions on surfaces already in use:
+ *   - `IP_FAILING_QUARTERLY = 80` (lib/markbook/masterfile-dashboard.ts) — the
+ *     "worth a follow-up" flag on the per-level dashboard, not a pass mark.
+ *   - `FAILING_HI = 79` (lib/markbook/compare.ts) — the DNM+FS "failing tail"
+ *     the Insights regression chart plots.
+ * Anything reporting a PASSING RATE uses this constant, and says "75 and
+ * above" on screen so the three can never be read as the same number.
+ */
+export const PASS_MARK: number = GRADE_BANDS.find((b) => b.key === 'fs')!.lo;
+
+/** True when a numeric grade is a pass. Ungraded (null) is not a pass. */
+export function isPassingGrade(grade: number | null): boolean {
+  return grade != null && Number.isFinite(grade) && grade >= PASS_MARK;
+}
+
+/**
+ * Classify a numeric grade into its mastery band, or null when ungraded.
+ *
+ * Matches on each band's LOWER bound, highest first, rather than testing
+ * `lo <= grade <= hi`. For a stored `quarterly_grade` (a SMALLINT) the two are
+ * identical, because the bands tile the integers with no gaps.
+ *
+ * ⚠ They do NOT tile the reals. `hi` values are 74/79/84/89, so a FRACTIONAL
+ * value such as an 89.5 student average fell between `vs` (…–89) and `o`
+ * (90–…) and came back null — silently dropping that student from every
+ * distribution built on this. Measured on production 2026-08-17: 60 of 371
+ * AY2026 students vanished from the school-wide spread this way. Lower-bound
+ * matching has no gaps, so averages classify correctly and integers are
+ * unaffected.
+ */
 export function classifyGradeBucket(grade: number | null): GradeBand | null {
   if (grade == null || !Number.isFinite(grade)) return null;
-  for (const b of GRADE_BANDS) {
-    if (grade >= b.lo && grade <= b.hi) return b.key;
+  for (let i = GRADE_BANDS.length - 1; i >= 0; i--) {
+    if (grade >= GRADE_BANDS[i].lo) return GRADE_BANDS[i].key;
   }
   return null;
 }

@@ -16,6 +16,7 @@ import 'server-only';
 
 import { unstable_cache } from 'next/cache';
 
+import { isAttendanceAtRisk } from '@/lib/attendance/risk';
 import {
   computePublishReadiness,
   type PublishReadiness,
@@ -67,30 +68,14 @@ export async function getClassroomHealth(
 // Students at risk (attendance)
 // ─────────────────────────────────────────────────────────────────────────
 
-/**
- * At-risk attendance threshold — a DISPLAY HEURISTIC, not an HFSE-defined
- * policy. There is no school-policy number for "how low is too low"
- * documented anywhere in this codebase — the only real attendance quota
- * rules (KD #94) govern EXCUSED-day counts (vacation: 1/term,
- * compassionate: 5/year), not overall attendance percentage. 90% mirrors a
- * commonly-cited "chronic absenteeism" line (e.g. the U.S. Department of
- * Education's missing-≥10%-of-days benchmark) — chosen only so this strip
- * has SOME defensible, named cut-off instead of an unreasoned round number.
- * If HFSE ever defines an actual policy threshold, replace this constant;
- * do not let it silently drift, and do not present it as an official rule.
- */
-export const AT_RISK_ATTENDANCE_THRESHOLD_PCT = 90;
-
-/**
- * Pure. `null` means no rollup has been recorded yet for this student this
- * term — that is "no data," never "at risk." Never treat a missing
- * measurement as a bad one (the same discipline Hard Rule #3 applies to
- * grade cells).
- */
-export function isAttendanceAtRisk(attendancePct: number | null): boolean {
-  if (attendancePct == null) return false;
-  return attendancePct < AT_RISK_ATTENDANCE_THRESHOLD_PCT;
-}
+// The threshold and its predicate now live in lib/attendance/risk.ts — a pure
+// module, so the school-wide Academic Overview can share the same number
+// without importing this file's service client. Re-exported here because this
+// is where every existing caller looks for it.
+export {
+  AT_RISK_ATTENDANCE_THRESHOLD_PCT,
+  isAttendanceAtRisk,
+} from '@/lib/attendance/risk';
 
 export type AtRiskStudent = {
   sectionStudentId: string;

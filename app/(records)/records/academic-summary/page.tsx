@@ -1,9 +1,16 @@
+import { FileSpreadsheet } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { AcademicOverviewView } from '@/components/markbook/academic-overview-view';
+import { OverviewExportMenu } from '@/components/markbook/overview-export-menu';
+import { OverviewFilterBar } from '@/components/markbook/overview-filter-bar';
+import { Button } from '@/components/ui/button';
 import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
 import { MasterfileView } from '@/components/markbook/masterfile-view';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
+import { getAcademicOverview } from '@/lib/markbook/academic-overview';
 import {
   resolveAcademicSummaryScope,
   type AcademicSummaryScope,
@@ -40,6 +47,9 @@ export default async function AcademicSummaryPage({
     ay?: string;
     level?: string;
     class?: string;
+    subject?: string;
+    term?: string;
+    view?: string;
   }>;
 }) {
   const session = await getSessionUser();
@@ -53,7 +63,17 @@ export default async function AcademicSummaryPage({
   }
 
   const sp = await searchParams;
-  const scope = await resolveAcademicSummaryScope(sp);
+  // The overview is the page. Every filter — grade level included — narrows it
+  // in place rather than navigating somewhere with a different layout; the
+  // per-level masterfile is reached deliberately, via ?view=masterfile.
+  const wantsMasterfile = sp.view === 'masterfile';
+  // On the overview path the level is a FILTER, not a scope the resolver should
+  // load a masterfile for — so it is withheld here and applied to the overview
+  // aggregate instead. Only ?view=masterfile hands the level through.
+  const scope = await resolveAcademicSummaryScope(
+    wantsMasterfile ? sp : { ay: sp.ay },
+    { allowAllLevels: !wantsMasterfile }
+  );
 
   // Branch 1 (original "!ayRow"): the requested AY doesn't exist in academic_years.
   if (scope.noAyRow) {
@@ -67,7 +87,12 @@ export default async function AcademicSummaryPage({
   }
 
   // Branch 2 (original "!selectedLevelId"): AY exists but no levels with sections.
-  if (scope.empty || scope.selectedLevelId === null) {
+  //
+  // ⚠ `allLevels` must be excluded here. The school-wide view deliberately has
+  // no selected level, so the original `selectedLevelId === null` test — written
+  // when null could only mean "this AY has no sections" — now also matches the
+  // healthy all-levels state and would show the empty card instead of the page.
+  if (!scope.allLevels && (scope.empty || scope.selectedLevelId === null)) {
     return (
       <PageShell>
         <header className="space-y-3">
@@ -87,6 +112,74 @@ export default async function AcademicSummaryPage({
           roster from Admissions or seed sections from the Master Template
           before reviewing the academic summary.
         </div>
+      </PageShell>
+    );
+  }
+
+  // School-wide: no level picked. Loads its own light aggregate rather than a
+  // masterfile per level, and each ladder row links back into the per-level
+  // dashboard below.
+  if (scope.allLevels && scope.academicYearId) {
+    // Unknown ids are dropped rather than shown as a chip full of UUID.
+    const levelId =
+      sp.level && scope.levels.some((l) => l.id === sp.level) ? sp.level : null;
+    const termNumber =
+      sp.term && /^[1-4]$/.test(sp.term) ? Number(sp.term) : null;
+    const overview = await getAcademicOverview(
+      scope.ayCode,
+      scope.academicYearId,
+      {
+        levelId,
+        sectionId: sp.class ?? null,
+        subjectId: sp.subject ?? null,
+        termNumber,
+      }
+    );
+    return (
+      <PageShell>
+        {/* Canonical hero header (09a §8): title left, single action right. */}
+        <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-3">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Records · Academic Summary
+            </p>
+            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+              Academic Summary
+            </h1>
+            <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              School-wide performance for {scope.ayCode}, across all grade
+              levels. Pick a level to open its full masterfile.
+            </p>
+          </div>
+          <OverviewExportMenu ayCode={scope.ayCode} />
+        </header>
+
+        <OverviewFilterBar
+          ayCode={scope.ayCode}
+          ayCodes={scope.ayCodes}
+          options={overview.filterOptions}
+          filters={overview.filters}
+        />
+
+        {levelId && (
+          <div>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/records/academic-summary?ay=${encodeURIComponent(scope.ayCode)}&level=${encodeURIComponent(levelId)}&view=masterfile`}
+              >
+                <FileSpreadsheet className="size-4" />
+                Open full masterfile for this level
+              </Link>
+            </Button>
+          </div>
+        )}
+
+        <AcademicOverviewView
+          overview={overview}
+          levelHref={(id) =>
+            `/records/academic-summary?ay=${encodeURIComponent(scope.ayCode)}&level=${encodeURIComponent(id)}`
+          }
+        />
       </PageShell>
     );
   }
@@ -142,6 +235,7 @@ export default async function AcademicSummaryPage({
         selectedLevelId={scope.selectedLevelId}
         sections={scope.payload.sections}
         selectedSectionId={scope.selectedSectionId}
+        allowAllLevels
       />
 
       <MasterfileView

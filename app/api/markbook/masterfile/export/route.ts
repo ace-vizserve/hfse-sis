@@ -2,6 +2,11 @@ import { type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { getAcademicOverview } from '@/lib/markbook/academic-overview';
+import {
+  buildOverviewWorkbook,
+  overviewToCsv,
+} from '@/lib/markbook/academic-overview-export';
 import {
   buildMasterfileWorkbook,
   flattenMasterfileRows,
@@ -36,10 +41,8 @@ export async function GET(req: NextRequest) {
   const service = createServiceClient();
   const { searchParams } = new URL(req.url);
 
-  const levelId = searchParams.get('level');
-  if (!levelId) {
-    return new Response('Missing required ?level= parameter.', { status: 400 });
-  }
+  const levelParam = searchParams.get('level');
+  const wantsAllLevels = !levelParam || levelParam === '__all__';
 
   // Parse one or more section ids — repeated ?class= params, plus a comma-joined
   // single value for back-compat. Mirrors the on-screen multi-section filter so
@@ -73,10 +76,40 @@ export async function GET(req: NextRequest) {
   if (!ayRow) {
     return new Response('Could not resolve academic year.', { status: 404 });
   }
+  const academicYearId = (ayRow as { id: string }).id;
+
+  // No level selected → the school-wide overview (the three summary tables the
+  // all-levels page shows), not the per-student masterfile grid.
+  if (wantsAllLevels) {
+    const overview = await getAcademicOverview(ayCode, academicYearId);
+    const asCsv = searchParams.get('format')?.toLowerCase() === 'csv';
+    if (asCsv) {
+      return new Response(overviewToCsv(overview), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="academic-overview-${ayCode}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+    const wb = buildOverviewWorkbook(overview);
+    return new Response(new Uint8Array(wb), {
+      status: 200,
+      headers: {
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="Academic_Overview_${ayCode}.xlsx"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
+  const levelId = levelParam;
   const { data: levelInAy } = await service
     .from('sections')
     .select('id')
-    .eq('academic_year_id', (ayRow as { id: string }).id)
+    .eq('academic_year_id', academicYearId)
     .eq('level_id', levelId)
     .limit(1)
     .maybeSingle();

@@ -7,12 +7,23 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
+/** Sentinel for "no level — show the whole school". Only honoured by callers
+ *  that opt in via `allowAllLevels`; see the note on `resolveAcademicSummaryScope`. */
+export const ALL_LEVELS = '__all__';
+
 export type AcademicSummaryScope = {
   ayCode: string;
+  academicYearId: string | null;
   ayCodes: string[];
   levels: { id: string; label: string }[];
   selectedLevelId: string | null;
   selectedSectionId: string | null;
+  /**
+   * true when the caller opted into `allowAllLevels` and no level is selected.
+   * `payload` is null in this state — the school-wide view loads its own,
+   * much lighter, aggregate instead of a masterfile per level.
+   */
+  allLevels: boolean;
   payload: MasterfilePayload | null;
   /** true when no level has sections this AY (caller renders empty state). */
   empty: boolean;
@@ -25,11 +36,25 @@ export type AcademicSummaryScope = {
   noAyRow: boolean;
 };
 
-export async function resolveAcademicSummaryScope(sp: {
-  ay?: string;
-  level?: string;
-  class?: string;
-}): Promise<AcademicSummaryScope> {
+/**
+ * Resolve the AY / level / class scope shared by the Academic Summary page and
+ * the three relocated quick views.
+ *
+ * ⚠ `allowAllLevels` is OPT-IN and must stay that way. Three other pages call
+ * this — /markbook/awards, /attendance/summary and /evaluation/comments — and
+ * every one of them depends on the default behaviour of falling back to the
+ * FIRST level when `?level` is absent, because none of them can render without
+ * a masterfile payload. Flipping the default would silently blank all three.
+ * Only the Academic Summary page passes the flag.
+ */
+export async function resolveAcademicSummaryScope(
+  sp: {
+    ay?: string;
+    level?: string;
+    class?: string;
+  },
+  opts: { allowAllLevels?: boolean } = {}
+): Promise<AcademicSummaryScope> {
   const supabase = await createClient();
   const service = createServiceClient();
   const currentAyCode = await requireCurrentAyCode(service);
@@ -67,10 +92,12 @@ export async function resolveAcademicSummaryScope(sp: {
   if (!ayRow) {
     return {
       ayCode,
+      academicYearId: null,
       ayCodes,
       levels: [],
       selectedLevelId: null,
       selectedSectionId: null,
+      allLevels: false,
       payload: null,
       empty: true,
       noAyRow: true,
@@ -105,6 +132,29 @@ export async function resolveAcademicSummaryScope(sp: {
   });
   const levels = levelsFull.map((l) => ({ id: l.id, label: l.label }));
 
+  // School-wide: only when the caller opted in AND asked for it — either by
+  // omitting ?level entirely or by passing the explicit sentinel. Callers
+  // without the flag keep falling back to the first level, as they always have.
+  const wantsAllLevels =
+    opts.allowAllLevels === true &&
+    (!sp.level || sp.level === ALL_LEVELS) &&
+    levelsFull.length > 0;
+
+  if (wantsAllLevels) {
+    return {
+      ayCode,
+      academicYearId: ayId,
+      ayCodes,
+      levels,
+      selectedLevelId: null,
+      selectedSectionId: null,
+      allLevels: true,
+      payload: null,
+      empty: false,
+      noAyRow: false,
+    };
+  }
+
   const selectedLevelId =
     sp.level && levelsFull.some((l) => l.id === sp.level)
       ? sp.level
@@ -113,10 +163,12 @@ export async function resolveAcademicSummaryScope(sp: {
   if (!selectedLevelId) {
     return {
       ayCode,
+      academicYearId: ayId,
       ayCodes,
       levels,
       selectedLevelId: null,
       selectedSectionId: null,
+      allLevels: false,
       payload: null,
       empty: true,
       noAyRow: false,
@@ -136,10 +188,12 @@ export async function resolveAcademicSummaryScope(sp: {
 
   return {
     ayCode,
+    academicYearId: ayId,
     ayCodes,
     levels,
     selectedLevelId,
     selectedSectionId,
+    allLevels: false,
     payload: payload ?? null,
     empty: false,
     noAyRow: false,
