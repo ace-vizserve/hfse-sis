@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   Filter,
+  Globe2,
   GraduationCap,
   Info,
   LogOut,
@@ -74,6 +75,8 @@ import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
   getEnrolledCategoryMix,
+  getEnrolledNationalityByLevel,
+  getEnrolledNationalityMix,
   getInsightsHeadcount,
   getRecordsRetention,
   getRecordsRetentionByLevel,
@@ -84,6 +87,8 @@ import {
   rollupMovements,
   WITHDRAWAL_CONTROLLABILITY,
 } from '@/lib/sis/records-insights';
+import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
+import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
 import {
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
@@ -272,6 +277,9 @@ export default async function RecordsInsightsPage({
     movementEvents,
     categoryMix,
     priorCategoryMix,
+    nationalityMix,
+    priorNationalityMix,
+    nationalityByLevel,
   ] = await Promise.all([
     getInsightsHeadcount(selectedAy),
     compareAy ? getInsightsHeadcount(compareAy) : Promise.resolve(null),
@@ -280,6 +288,13 @@ export default async function RecordsInsightsPage({
     getMovementEvents(selectedAy),
     compareAy ? getEnrolledCategoryMix(selectedAy) : Promise.resolve(null),
     compareAy ? getEnrolledCategoryMix(compareAy) : Promise.resolve(null),
+    // Unlike the category mix above, this is NOT gated on a comparison year.
+    // "Who is enrolled here" is a standing fact an international school is
+    // asked for on its own; the prior-year column is an overlay when a
+    // comparison is selected, not the reason the card exists.
+    getEnrolledNationalityMix(selectedAy),
+    compareAy ? getEnrolledNationalityMix(compareAy) : Promise.resolve(null),
+    getEnrolledNationalityByLevel(selectedAy),
   ]);
 
   const priorTotal = priorHeadcount ? priorHeadcount.total : null;
@@ -650,6 +665,44 @@ export default async function RecordsInsightsPage({
             )}
           </InsightChartCard>
         )}
+
+        {/* The two nationality cuts sit side by side — the same population
+            read two ways, so they belong on one row. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap={`By nationality${compareAy ? ` · ${selectedAy} vs ${compareAy}` : ` · ${selectedAy}`}`}
+            title="Nationalities on roll"
+            icon={Globe2}
+            scopeNote="Enrolled students — excludes withdrawn"
+          >
+            {nationalityMix.length > 0 ? (
+              <NationalityMixPie
+                rows={nationalityMix}
+                compareRows={priorNationalityMix}
+                compareLabel={compareAy}
+                unitLabel="enrolled students"
+              />
+            ) : (
+              <EmptyChartState message="No enrolled students recorded for this year yet." />
+            )}
+          </InsightChartCard>
+
+          <InsightChartCard
+            cap={`By nationality and level · ${selectedAy}`}
+            title="Is diversity spread evenly across year groups?"
+            icon={Globe2}
+            scopeNote="Enrolled students — excludes withdrawn"
+          >
+            {nationalityByLevel.rows.length > 0 ? (
+              <NationalityByLevelBars
+                data={nationalityByLevel}
+                unitLabel="enrolled students"
+              />
+            ) : (
+              <EmptyChartState message="No enrolled students recorded for this year yet." />
+            )}
+          </InsightChartCard>
+        </div>
 
         {/* Mid-year movement — enrollments vs withdrawals per month. */}
         <InsightChartCard

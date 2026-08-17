@@ -21,10 +21,23 @@ function PopoverContent({
   className,
   align = 'center',
   sideOffset = 4,
+  portal = true,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /**
+   * Render in place instead of through a portal.
+   *
+   * Set this when the popover lives inside a `Sheet`/`Dialog` whose scroll
+   * lock (`react-remove-scroll`) swallows wheel events for anything portalled
+   * outside the dialog's own subtree — the list shows a scrollbar it refuses
+   * to move. Clicks still work, which is what makes it puzzling. Leave it
+   * `true` everywhere else so the popover can escape `overflow` ancestors.
+   */
+  portal?: boolean;
+}) {
+  const Wrapper = portal ? PopoverPrimitive.Portal : React.Fragment;
   return (
-    <PopoverPrimitive.Portal>
+    <Wrapper>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
@@ -35,7 +48,7 @@ function PopoverContent({
         )}
         {...props}
       />
-    </PopoverPrimitive.Portal>
+    </Wrapper>
   );
 }
 

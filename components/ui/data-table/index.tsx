@@ -54,6 +54,7 @@ import { resolveColumnLabel } from './column-label';
 import { exportCsv } from './csv';
 import { DataTableEmptyState } from './empty-state';
 import type { DataTableExportSheetProps } from './export-sheet';
+import type { DataTableExportSheetAdvancedProps } from './export-sheet-advanced';
 import { buildScreenFields, fieldsToCsvColumns } from './export-payload';
 import { FacetDropdown } from './facet-dropdown';
 import { filterRows } from './filter-rows';
@@ -80,6 +81,26 @@ const DataTableExportSheetLazy = dynamic(
   () => import('./export-sheet').then((m) => m.DataTableExportSheet),
   { ssr: false }
 ) as unknown as ComponentType<DataTableExportSheetProps<unknown>>;
+
+// Same lazy treatment as the simple sheet, and more important here: this one
+// pulls in @dnd-kit. Only the table that opts in ever downloads that.
+const DataTableExportSheetAdvancedLazy = dynamic(
+  () =>
+    import('./export-sheet-advanced').then(
+      (m) => m.DataTableExportSheetAdvanced
+    ),
+  { ssr: false }
+) as unknown as ComponentType<DataTableExportSheetAdvancedProps<unknown>>;
+
+function DataTableExportSheetAdvanced<TRow>(
+  props: DataTableExportSheetAdvancedProps<TRow>
+) {
+  return (
+    <DataTableExportSheetAdvancedLazy
+      {...(props as unknown as DataTableExportSheetAdvancedProps<unknown>)}
+    />
+  );
+}
 
 function DataTableExportSheet<TRow>(props: DataTableExportSheetProps<TRow>) {
   return (
@@ -573,8 +594,14 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
               variant="outline"
               size="sm"
               className="h-8"
+              // A sheet opens only when there is genuinely something to
+              // configure: raw sources to pick from, or the advanced opt-in.
+              // Everything else downloads on the click, which is what KD #162
+              // bought for the fourteen tables with nothing to ask about.
               onClick={() =>
-                csv.rawColumns ? setExportOpen(true) : handleInstantExport()
+                csv.rawColumns || csv.advanced
+                  ? setExportOpen(true)
+                  : handleInstantExport()
               }
             >
               <Download className="mr-1 h-3.5 w-3.5" />
@@ -788,7 +815,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         />
       )}
 
-      {csv && exportEverOpened && (
+      {csv && exportEverOpened && !csv.advanced && (
         <DataTableExportSheet
           open={exportOpen}
           onOpenChange={setExportOpen}
@@ -797,6 +824,40 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
           columns={columns}
           visibleColumnIds={exportScope.columnIds}
           csv={csv}
+        />
+      )}
+
+      {/* Opt-in only. `csv.advanced` is absent on every table but the one
+          that declares a full field set beyond the screen, so this branch is
+          dead code for the other fifteen and they keep instant download. */}
+      {csv?.advanced && exportEverOpened && (
+        <DataTableExportSheetAdvanced
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          data={data}
+          // The shell's own count, passed down rather than re-derived, so
+          // "on screen" in the sheet is the same number the screen shows.
+          screenRowCount={exportScope.rows.length}
+          columns={columns}
+          facets={allFacets}
+          searchKeys={searchKeys}
+          csv={csv}
+          statusTabs={statusTabs}
+          meScope={meScopeEnabled ? meScope : undefined}
+          selectionEnabled={Boolean(selection?.enabled)}
+          selectedRows={selectedRows}
+          seed={{
+            search,
+            mine: mineActive,
+            facets: columnFilters.map((f) => ({
+              id: f.id,
+              values: (Array.isArray(f.value) ? f.value : []).map(String),
+            })),
+            statusTab,
+            visibleColumnIds: exportScope.columnIds,
+            initialSortId: sorting[0]?.id,
+            initialSortDesc: sorting[0]?.desc,
+          }}
         />
       )}
     </div>

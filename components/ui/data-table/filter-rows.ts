@@ -1,5 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 
+import type { FacetConfig } from './types';
+
 // Shared row-filtering primitives. Single source of truth for the shell's
 // per-tab counts (`index.tsx`'s `tabCountData`) — extracted from what used
 // to be inline logic there — see KD #82/#84: a count/filter that reads a
@@ -57,6 +59,37 @@ export function resolveColumnValue<TRow>(
 }
 
 export type FacetSelection = { id: string; values: string[] };
+
+/**
+ * Distinct values for a facet, as `{ value, label }` options.
+ *
+ * Deleted as orphaned by KD #162 when the export sheet that used it was
+ * removed, and restored here for the advanced export sheet's filter rules —
+ * a rule on a low-cardinality column offers a picker rather than making the
+ * user type a value that has to match exactly.
+ *
+ * `facet.valueOptions` wins when declared, so a column with a fixed
+ * vocabulary keeps its full list even when the rows in scope only cover
+ * some of it.
+ */
+export function getFacetOptions<TRow>(
+  data: TRow[],
+  columns: ColumnDef<TRow>[],
+  facet: FacetConfig
+): Array<{ value: string; label: string }> {
+  if (facet.valueOptions) {
+    return facet.valueOptions.map((v) => ({ value: v, label: v }));
+  }
+  const accessor = getColumnAccessor(columns, facet.columnId);
+  const values = new Set<string>();
+  data.forEach((row, i) => {
+    const raw = accessor(row, i);
+    if (typeof raw === 'string' && raw.trim() !== '') values.add(raw);
+  });
+  return Array.from(values)
+    .sort()
+    .map((v) => ({ value: v, label: v }));
+}
 
 /**
  * Apply facet (column filter) + global search to a row array. Facets use

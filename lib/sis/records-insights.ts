@@ -3,7 +3,13 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 
 import { prefixFor } from '@/lib/admissions/_shared';
-import type { CategoryMixRow } from '@/lib/admissions/insights-funnel';
+import {
+  computeNationalityByLevel,
+  computeNationalityMix,
+  type CategoryMixRow,
+  type NationalityByLevel,
+  type NationalityMixRow,
+} from '@/lib/admissions/insights-funnel';
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import {
@@ -13,7 +19,7 @@ import {
 } from '@/lib/schemas/enrolment';
 import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
-import { LEVEL_LABELS } from '@/lib/sis/levels';
+import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
 import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -723,6 +729,186 @@ export function getEnrolledCategoryMix(
   return unstable_cache(
     () => loadEnrolledCategoryMixUncached(ayCode),
     ['sis', 'enrolled-category-mix', ayCode],
+    { tags: ['sis', `sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS }
+  )();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Enrolled nationality mix
+//
+// Same two-source cross as the category mix above, and the same rule: an
+// enrolled student whose enrolee_number is null, or whose enrolee_number has
+// no matching admissions row, or whose nationality is blank, buckets into
+// 'Unspecified' — never silently dropped from the total. The Records chart
+// total must equal the enrolled headcount shown in the same band, or the
+// bucketing is losing students (KD #124: counts agree by construction).
+//
+// Measured 2026-08-17: all 383 (AY2025) and 406 (AY2026) enrolled students
+// carry an enrolee_number, so Unspecified should render at 0 for both. If it
+// ever appears, that is a real sync gap worth chasing, not a display quirk.
+//
+// The folding, aliasing and ordering all come from computeNationalityMix in
+// lib/admissions/insights-funnel.ts — one implementation, so the Admissions
+// and Records charts can never disagree about how a country is spelled or
+// where 'Other' sits.
+// ──────────────────────────────────────────────────────────────────────────
+
+export function computeEnrolledNationalityMix(
+  enrolledRows: EnrolledStudentCategoryRow[],
+  nationalityByEnroleeNumber: Map<string, string>,
+  limit = 8
+): NationalityMixRow[] {
+  return computeNationalityMix(
+    enrolledRows.map((r) => {
+      const en = r.enroleeNumber?.trim();
+      return {
+        nationality: (en && nationalityByEnroleeNumber.get(en)) || null,
+      };
+    }),
+    limit
+  );
+}
+
+async function loadEnrolledNationalityMixUncached(
+  ayCode: string
+): Promise<NationalityMixRow[]> {
+  const service = createServiceClient();
+  const { data: ay } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = (ay as { id: string } | null)?.id;
+  if (!ayId) return computeEnrolledNationalityMix([], new Map());
+
+  type SsRow = { enrolee_number: string | null };
+  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
+    service
+      .from('section_students')
+      .select('enrolee_number, section:sections!inner(academic_year_id)')
+      .eq('section.academic_year_id', ayId)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
+
+  const prefix = prefixFor(ayCode);
+  type AppRow = { enroleeNumber: string | null; nationality: string | null };
+  const appRows = await fetchAllPages<AppRow>((from, to) =>
+    service
+      .from(`${prefix}_enrolment_applications`)
+      .select('enroleeNumber, nationality')
+      .range(from, to)
+  );
+
+  const nationalityByEnroleeNumber = new Map<string, string>();
+  for (const a of appRows) {
+    if (a.enroleeNumber && a.nationality) {
+      nationalityByEnroleeNumber.set(a.enroleeNumber, a.nationality);
+    }
+  }
+
+  return computeEnrolledNationalityMix(
+    enrolledRows.map((r) => ({ enroleeNumber: r.enrolee_number })),
+    nationalityByEnroleeNumber
+  );
+}
+
+export function getEnrolledNationalityMix(
+  ayCode: string
+): Promise<NationalityMixRow[]> {
+  return unstable_cache(
+    () => loadEnrolledNationalityMixUncached(ayCode),
+    ['sis', 'enrolled-nationality-mix', ayCode],
+    { tags: ['sis', `sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS }
+  )();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Nationality × level
+//
+// Answers the question the flat mix cannot: is the school's diversity spread
+// evenly, or does it sit in particular year groups?
+//
+// RECORDS ONLY, DELIBERATELY. The obvious alternative — cross Admissions'
+// `levelApplied` — was measured on production 2026-08-17 and rejected: it
+// carries 79 blanks in AY2025 (9.6%) and five inconsistent spellings of the
+// Youngstarters levels ("Youngstarters", "YoungStarter Little Star",
+// "Youngstarters | Junior Stars", …), so the same year group would draw as
+// several near-duplicate rows. Enrolled students take their level from the
+// managed `levels` table instead — exactly 10 values, no drift, no blanks.
+// Tidying `levelApplied` is the school's data decision, not this chart's.
+//
+// One shared legend across every level. The top nationalities are chosen
+// GLOBALLY, not per level, so a colour means the same thing on every bar —
+// per-level top-N would silently relabel the segments row to row.
+// ──────────────────────────────────────────────────────────────────────────
+
+async function loadEnrolledNationalityByLevelUncached(
+  ayCode: string
+): Promise<NationalityByLevel> {
+  const service = createServiceClient();
+  const { data: ay } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  const ayId = (ay as { id: string } | null)?.id;
+  if (!ayId) return computeNationalityByLevel([]);
+
+  type SsRow = {
+    enrolee_number: string | null;
+    section: unknown;
+  };
+  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
+    service
+      .from('section_students')
+      .select(
+        'enrolee_number, section:sections!inner(academic_year_id, levels!inner(label, code))'
+      )
+      .eq('section.academic_year_id', ayId)
+      .neq('enrollment_status', 'withdrawn')
+      .range(from, to)
+  );
+
+  const prefix = prefixFor(ayCode);
+  type AppRow = { enroleeNumber: string | null; nationality: string | null };
+  const appRows = await fetchAllPages<AppRow>((from, to) =>
+    service
+      .from(`${prefix}_enrolment_applications`)
+      .select('enroleeNumber, nationality')
+      .range(from, to)
+  );
+  const nationalityByEnroleeNumber = new Map<string, string>();
+  for (const a of appRows) {
+    if (a.enroleeNumber && a.nationality) {
+      nationalityByEnroleeNumber.set(a.enroleeNumber, a.nationality);
+    }
+  }
+
+  return computeNationalityByLevel(
+    enrolledRows.map((r) => {
+      const sec = (Array.isArray(r.section) ? r.section[0] : r.section) as {
+        levels?:
+          | { label?: string; code?: string }
+          | { label?: string; code?: string }[];
+      } | null;
+      const lvlRaw = sec?.levels;
+      const lvl = Array.isArray(lvlRaw) ? lvlRaw[0] : lvlRaw;
+      const en = r.enrolee_number?.trim();
+      return {
+        level: lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown',
+        nationality: (en && nationalityByEnroleeNumber.get(en)) || null,
+      };
+    })
+  );
+}
+
+export function getEnrolledNationalityByLevel(
+  ayCode: string
+): Promise<NationalityByLevel> {
+  return unstable_cache(
+    () => loadEnrolledNationalityByLevelUncached(ayCode),
+    ['sis', 'enrolled-nationality-by-level', ayCode],
     { tags: ['sis', `sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS }
   )();
 }

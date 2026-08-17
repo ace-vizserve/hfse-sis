@@ -266,6 +266,30 @@ export function StudentDataTable({
             : row.getValue(id) === value;
         },
       },
+      // Hidden by default. Ships as a real column rather than a raw-export
+      // extra because KD #162 made the Columns menu the export's field
+      // picker — a field that is not a column can only be exported by taking
+      // all ~118 raw columns, which is what training action item #10
+      // (Samiksha) was asking to avoid.
+      {
+        accessorKey: 'nationality',
+        id: 'nationality',
+        header: 'Nationality',
+        meta: { label: 'Nationality' },
+        cell: ({ row }) =>
+          row.original.nationality ? (
+            <span className="text-foreground">{row.original.nationality}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+        filterFn: (row, id, value) => {
+          if (!value || (Array.isArray(value) && value.length === 0))
+            return true;
+          return Array.isArray(value)
+            ? value.includes(row.getValue(id))
+            : row.getValue(id) === value;
+        },
+      },
       {
         accessorKey: 'classSection',
         id: 'section',
@@ -571,6 +595,9 @@ export function StudentDataTable({
     const base: Record<string, boolean> = {
       enroleeNumber: false,
       lastUpdated: false,
+      // Off by default — it is here to be tickable in the Columns menu and
+      // land in the "What's on screen" export, not to widen the roster.
+      nationality: false,
     };
     if (showPipeline) {
       for (const stageKey of STAGE_KEYS) {
@@ -636,6 +663,11 @@ export function StudentDataTable({
       pageSize={25}
       csv={{
         filename: `students-${ayCode ?? 'export'}.csv`,
+        // The one table with a defined "full" field set beyond the screen —
+        // the exception KD #162 named when it removed the shared sheet from
+        // the other fifteen. Training action item #10 (Samiksha): choose the
+        // fields to export rather than taking all ~118 raw columns.
+        advanced: true,
         // Only meaningful when the caller passes ayCode (the prefix the
         // fetch needs to resolve) — /admissions/applications and
         // /records/students both do; other StudentDataTable callers simply

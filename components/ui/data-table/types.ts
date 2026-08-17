@@ -128,6 +128,23 @@ export type CsvConfig<TRow> = {
    * enumerate for them. See `CsvRawColumnsConfig`.
    */
   rawColumns?: CsvRawColumnsConfig<TRow>;
+  /**
+   * Opt in to the advanced export sheet — pick and reorder individual
+   * fields, build filter rules, set a limit and a sort.
+   *
+   * OMITTING THIS IS THE DEFAULT AND MUST STAY A NO-OP. KD #162 measured
+   * that 14 of 16 exporting tables have nothing beyond their on-screen
+   * columns, so they download instantly with no dialog at all; a third of
+   * a second beats a sheet asking five questions with one possible answer.
+   * That finding still holds — this flag exists for the exception KD #162
+   * itself named ("does a defined 'full' set exist beyond the screen"),
+   * which today is only `StudentDataTable`.
+   *
+   * Turning it on for a table with no `rawColumns` is legal but thin: the
+   * field picker can then only offer the columns already on screen, which
+   * the Columns menu already does. Prefer instant download there.
+   */
+  advanced?: boolean;
 };
 
 export type UrlStateConfig = {

@@ -40,6 +40,9 @@ export type StudentListRow = {
   lastName: string | null;
   enroleeFullName: string | null;
   levelApplied: string | null;
+  /** Country name as supplied on the application. Hidden column by default —
+   *  shown/exported via the Columns menu (training action item #10). */
+  nationality: string | null;
   classLevel: string | null;
   classSection: string | null;
   applicationStatus: string | null;
@@ -98,8 +101,12 @@ export type StudentListRow = {
 // `created_at` carries the application's submission timestamp (Supabase default
 // column). Surfaced on StudentListRow so the admissions list can sort/show
 // "newest first" client-side without a second round-trip.
+// `nationality` is here for the Columns menu / CSV export, not for the
+// default screen — the column ships hidden (KD #162: the Columns menu IS the
+// export's field picker, so a field that is not a column cannot be exported
+// without dumping all ~118 raw columns). Training action item #10, Samiksha.
 const LIST_APP_COLUMNS =
-  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, created_at';
+  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, nationality, created_at';
 const LIST_STATUS_COLUMNS =
   'enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate, "applicationTerminalReason", "applicationTerminalNotes", enroleeType, enrolmentDate, assessmentStatus, assessmentGradeMath, assessmentGradeEnglish, contractStatus, feeStatus, registrationStatus, documentStatus, classStatus, suppliesStatus, orientationStatus, registrationUpdateDate, documentUpdatedDate, assessmentUpdatedDate, contractUpdatedDate, feeUpdatedDate, classUpdatedDate, suppliesUpdatedDate, orientationUpdatedDate';
 
@@ -166,6 +173,7 @@ export async function listStudents(
         lastName: string | null;
         enroleeFullName: string | null;
         levelApplied: string | null;
+        nationality: string | null;
         created_at: string | null;
       };
       type StatusLite = {
@@ -218,6 +226,7 @@ export async function listStudents(
           lastName: a.lastName,
           enroleeFullName: a.enroleeFullName,
           levelApplied: a.levelApplied,
+          nationality: a.nationality,
           classLevel: s?.classLevel ?? null,
           classSection: s?.classSection ?? null,
           applicationStatus: s?.applicationStatus ?? null,

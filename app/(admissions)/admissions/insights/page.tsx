@@ -4,6 +4,7 @@ import {
   Clock,
   FileStack,
   Filter,
+  Globe2,
   GraduationCap,
   Info,
   Megaphone,
@@ -57,11 +58,15 @@ import {
   type AssessmentConversionRow,
 } from '@/lib/admissions/dashboard';
 import {
+  getApplicantNationalityByLevel,
   getCategoryMix,
+  getNationalityMix,
   getReferralConversion,
   getWithdrawnByLevel,
   type CategoryMixRow,
 } from '@/lib/admissions/insights-funnel';
+import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
+import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
 import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
   getAdmissionsTerminalReasons,
@@ -266,6 +271,9 @@ export default async function AdmissionsInsightsPage({
     priorFeedback,
     categoryMix,
     priorCategoryMix,
+    nationalityMix,
+    priorNationalityMix,
+    nationalityByLevel,
   ] = await Promise.all([
     getConversionFunnel(selectedAy),
     compareAy ? getConversionFunnel(compareAy) : Promise.resolve(null),
@@ -287,6 +295,11 @@ export default async function AdmissionsInsightsPage({
     compareAy ? getAdmissionsFeedback(compareAy) : Promise.resolve(null),
     getCategoryMix(selectedAy),
     compareAy ? getCategoryMix(compareAy) : Promise.resolve(null),
+    // Where applicants come from. Same loader, one extra column — see
+    // computeNationalityMix for why the values need canonicalising first.
+    getNationalityMix(selectedAy),
+    compareAy ? getNationalityMix(compareAy) : Promise.resolve(null),
+    getApplicantNationalityByLevel(selectedAy),
   ]);
 
   // AY-wide funnel figures (whole-year, not the picker-windowed range count).
@@ -1051,6 +1064,44 @@ export default async function AdmissionsInsightsPage({
                 data={categoryMixData}
                 yFormat="number"
                 height={260}
+              />
+            ) : (
+              <EmptyChartState message="No applications recorded yet for this academic year." />
+            )}
+          </InsightChartCard>
+        </div>
+
+        {/* The two nationality cuts sit side by side — the same population
+            read two ways, so they belong on one row. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <InsightChartCard
+            cap={`By nationality${compareAy ? ` · ${selectedAy} vs ${compareAy}` : ` · ${selectedAy}`}`}
+            title="Where applicants come from"
+            icon={Globe2}
+            scopeNote="All applicants — includes cancelled/withdrawn"
+          >
+            {nationalityMix.length > 0 ? (
+              <NationalityMixPie
+                rows={nationalityMix}
+                compareRows={priorNationalityMix}
+                compareLabel={compareAy}
+                unitLabel="applicants"
+              />
+            ) : (
+              <EmptyChartState message="No applications recorded yet for this academic year." />
+            )}
+          </InsightChartCard>
+
+          <InsightChartCard
+            cap={`By nationality and level · ${selectedAy}`}
+            title="Which year groups are most international?"
+            icon={Globe2}
+            scopeNote="All applicants — level as applied for"
+          >
+            {nationalityByLevel.rows.length > 0 ? (
+              <NationalityByLevelBars
+                data={nationalityByLevel}
+                unitLabel="applicants"
               />
             ) : (
               <EmptyChartState message="No applications recorded yet for this academic year." />
