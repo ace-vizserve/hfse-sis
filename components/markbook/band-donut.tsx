@@ -25,14 +25,25 @@ const BOX = (RADIUS + STROKE / 2) * 2;
 export function BandDonut({ bands }: { bands: BandCounts }) {
   const total = bandTotal(bands);
 
-  let offset = 0;
-  const arcs = BAND_DISPLAY_ORDER.map((band) => {
+  // Each slice starts where the previous one ended. Accumulated with `reduce`
+  // rather than a mutable counter inside `map` — reassigning a variable during
+  // render is what `react-hooks/immutability` flags, and a torn offset would
+  // silently misdraw the ring rather than error.
+  const arcs = BAND_DISPLAY_ORDER.reduce<
+    {
+      band: (typeof BAND_DISPLAY_ORDER)[number];
+      count: number;
+      length: number;
+      offset: number;
+    }[]
+  >((acc, band) => {
     const count = bands[band.key];
     const length = total > 0 ? (count / total) * CIRCUMFERENCE : 0;
-    const arc = { band, count, length, offset };
-    offset += length;
-    return arc;
-  });
+    const previous = acc[acc.length - 1];
+    const offset = previous ? previous.offset + previous.length : 0;
+    acc.push({ band, count, length, offset });
+    return acc;
+  }, []);
 
   return (
     <div className="flex flex-wrap items-center gap-8">

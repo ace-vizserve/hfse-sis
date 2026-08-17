@@ -4,13 +4,15 @@ import {
   BookOpen,
   CalendarCheck2,
   CalendarX2,
+  CircleCheck,
+  CircleX,
   ClipboardList,
+  Clock,
   GraduationCap,
   Info,
   LineChart,
   ListChecks,
   MessageSquareText,
-  Minus,
   PieChart,
   School,
   TrendingDown,
@@ -20,8 +22,14 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-import { BandCompositionBar } from '@/components/markbook/band-composition-bar';
 import { BandDonut } from '@/components/markbook/band-donut';
+import { DonutChart } from '@/components/dashboard/charts/donut-chart';
+import { DASH, fmt, pct, pct1 } from '@/components/markbook/overview-cells';
+import {
+  OverviewLevelTable,
+  type OverviewLevelTableRow,
+} from '@/components/markbook/overview-level-table';
+import { OverviewSubjectTable } from '@/components/markbook/overview-subject-table';
 import {
   AttendanceTrendChart,
   TermTrendChart,
@@ -46,7 +54,6 @@ import {
 import {
   AT_RISK_ATTENDANCE_THRESHOLD_PCT,
   buildOverviewHighlights,
-  trendDirection,
   type AcademicOverview,
   type AttendanceHealth,
   type OverviewHighlight,
@@ -62,24 +69,13 @@ const SEVERITY_DOT: Record<OverviewHighlight['severity'], string> = {
 
 // School-wide Academic Overview (all grade levels).
 //
-// A server component throughout: nothing here is interactive beyond links, so
-// there is no client bundle to ship. The one chart that needs recharts (the
-// donut) is already a `next/dynamic` wrapper.
-
-const DASH = '–';
-
-function fmt(value: number | null, digits = 1): string {
-  return value == null ? DASH : value.toFixed(digits);
-}
-
-function pct(value: number | null): string {
-  return value == null ? DASH : `${Math.round(value)}%`;
-}
-
-/** One decimal, because attendance moves in fractions of a point. */
-function pct1(value: number | null): string {
-  return value == null ? DASH : `${value.toFixed(1)}%`;
-}
+// A server component. The two big tables (grade levels, subjects) are client
+// islands on the shared <DataTable> shell, so they carry sorting and column
+// visibility; everything around them — the tiles, the per-term table, the
+// student lists, the trends — still renders on the server with no client
+// JavaScript. Cell formatting is shared with those islands through
+// ./overview-cells so the same figure is produced by one function on both
+// sides of the boundary.
 
 /**
  * "Term 1 98.2% → Term 2 99.0%" — the movement behind the headline figure,
@@ -124,65 +120,6 @@ function StatusBadge({ status }: { status: OverviewTermRow['status'] }) {
     <Badge variant="outline" className="h-6 text-muted-foreground">
       Not started
     </Badge>
-  );
-}
-
-// Movement reads as a chip, not coloured text: mint is a background tint in
-// this design system (09a §9.3) — mint text on white does not carry enough
-// contrast, which is why every shipped delta chip pairs it with `text-ink`.
-const TREND_CHIP: Record<'up' | 'down' | 'flat', string> = {
-  up: 'border-brand-mint bg-brand-mint/30 text-ink',
-  down: 'border-destructive/40 bg-destructive/10 text-destructive',
-  flat: 'border-border bg-muted text-muted-foreground',
-};
-
-function TrendCell({ delta }: { delta: number | null }) {
-  const direction = trendDirection(delta);
-  if (direction == null || delta == null) {
-    return <span className="text-muted-foreground">{DASH}</span>;
-  }
-  const Icon =
-    direction === 'up'
-      ? TrendingUp
-      : direction === 'down'
-        ? TrendingDown
-        : Minus;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${TREND_CHIP[direction]}`}
-    >
-      <Icon className="size-3" aria-hidden />
-      {delta > 0 ? '+' : ''}
-      {delta.toFixed(1)}
-    </span>
-  );
-}
-
-function RateStat({
-  label,
-  rate,
-  days,
-  tone,
-}: {
-  label: string;
-  rate: number | null;
-  days: number;
-  tone?: 'bad';
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={`mt-1 font-serif text-[26px] font-semibold leading-none tabular-nums ${tone === 'bad' ? 'text-destructive' : 'text-foreground'}`}
-      >
-        {rate == null ? '–' : `${rate.toFixed(1)}%`}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {days.toLocaleString('en-SG')} days
-      </p>
-    </div>
   );
 }
 
@@ -413,6 +350,12 @@ export function AcademicOverviewView({
   // comparison it exists to make has no other side.
   const showLevelLadder = overview.levels.length > 1;
   const students = overview.studentLists;
+  // Resolved here rather than in the table: `levelHref` is a function, and a
+  // server component can only hand a client component serializable props.
+  const levelRows: OverviewLevelTableRow[] = overview.levels.map((level) => ({
+    ...level,
+    href: levelHref(level.levelId),
+  }));
 
   // Carry the live filter through to the focused views. Level and class are the
   // only two they understand — term and subject have no meaning on an awards or
@@ -606,120 +549,34 @@ export function AcademicOverviewView({
 
       {/* The level ladder */}
       {showLevelLadder && (
-        <SectionCard
-          cap={`${overview.levels[0]?.levelLabel ?? ''} → ${overview.levels[overview.levels.length - 1]?.levelLabel ?? ''} · ${rangeLabel}`}
-          title="Performance by grade level"
-          scope={scopeLabel}
-          icon={GraduationCap}
-          aside="Select a row to open that grade level"
-          footer={
-            <>
-              Rows follow the school ladder, not a ranking. “Subjects below 75”
-              is the average number of subjects a student in that level is
-              failing. “Below {AT_RISK_ATTENDANCE_THRESHOLD_PCT}%” counts
-              students, not days — they are named further down the page.
-            </>
-          }
-        >
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead>Grade level</TableHead>
-                  <TableHead className="text-right">Students</TableHead>
-                  <TableHead className="text-right">Average</TableHead>
-                  <TableHead className="text-right">Passing</TableHead>
-                  <TableHead className="text-right">
-                    Subjects below 75
-                  </TableHead>
-                  <TableHead>Strongest subject</TableHead>
-                  <TableHead>Weakest subject</TableHead>
-                  <TableHead>How marks are spread</TableHead>
-                  <TableHead className="text-right">Attendance</TableHead>
-                  <TableHead className="text-right">
-                    Below {AT_RISK_ATTENDANCE_THRESHOLD_PCT}%
-                  </TableHead>
-                  <TableHead className="text-right">Trend</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overview.levels.map((level) => (
-                  // The whole row is the door into that level. The link stays a
-                  // real <a> on the name so keyboard and middle-click still work;
-                  // `group` + an absolutely-positioned overlay makes the rest of
-                  // the row clickable without nesting interactive elements.
-                  <TableRow
-                    key={level.levelId}
-                    className="group relative cursor-pointer transition-colors hover:bg-accent/50"
-                  >
-                    <TableCell>
-                      <Link
-                        href={levelHref(level.levelId)}
-                        className="font-medium text-foreground underline-offset-4 after:absolute after:inset-0 after:content-[''] group-hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {level.levelLabel}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {level.students}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmt(level.average)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {pct(level.passingRate)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmt(level.failedSubjectsAvg)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {level.strongestSubject ? (
-                        <>
-                          {level.strongestSubject.name}{' '}
-                          <span className="tabular-nums text-muted-foreground">
-                            {level.strongestSubject.average.toFixed(1)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">{DASH}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {level.weakestSubject ? (
-                        <>
-                          {level.weakestSubject.name}{' '}
-                          <span className="tabular-nums text-muted-foreground">
-                            {level.weakestSubject.average.toFixed(1)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">{DASH}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <BandCompositionBar bands={level.bands} />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {pct(level.attendanceRate)}
-                    </TableCell>
-                    <TableCell
-                      className={`text-right tabular-nums ${
-                        level.attendanceBelowThreshold
-                          ? 'font-semibold text-destructive'
-                          : ''
-                      }`}
-                    >
-                      {level.attendanceBelowThreshold ?? DASH}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <TrendCell delta={level.delta} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+        <section className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {overview.levels[0]?.levelLabel ?? ''} →{' '}
+              {overview.levels[overview.levels.length - 1]?.levelLabel ?? ''} ·{' '}
+              {rangeLabel}
+            </p>
+            <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Performance by grade level
+              {scopeLabel ? (
+                <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
+                  ({scopeLabel})
+                </span>
+              ) : null}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Listed in school order, not ranked — sort by Grade level to put it
+              back. Select a grade level to open its full masterfile, or a
+              spread bar for the band-by-band breakdown.
+            </p>
           </div>
-        </SectionCard>
+          <OverviewLevelTable rows={levelRows} />
+          <p className="text-xs text-muted-foreground">
+            “Subjects below 75” is the average number of subjects a student in
+            that level is failing. “Below {AT_RISK_ATTENDANCE_THRESHOLD_PCT}%”
+            counts students, not days — they are named further down the page.
+          </p>
+        </section>
       )}
 
       {/* Attendance */}
@@ -779,7 +636,7 @@ export function AcademicOverviewView({
 
         <SectionCard
           cap={`Days attended · ${rangeLabel}`}
-          title="Present, late and absent"
+          title="How the days split"
           scope={scopeLabel}
           icon={CalendarCheck2}
           footer={
@@ -790,13 +647,14 @@ export function AcademicOverviewView({
                 {overview.filters.levelId || overview.filters.sectionId
                   ? ' this cohort'
                   : ' the whole school'}
-                . Late days are counted as present, so the three do not add to
-                100%.
+                .
               </>
             ) : (
               <>
-                A late day still counts as a day present, so the three figures
-                do not add up to 100%.
+                A late day still counts as a day present, so the{' '}
+                {pct1(attendance.presentRate)} attendance figure above is on
+                time plus late. These three do not overlap — they add to exactly
+                the days recorded.
               </>
             )
           }
@@ -808,38 +666,53 @@ export function AcademicOverviewView({
               </p>
             ) : (
               <div className="space-y-5">
+                {/* On time / Late / Absent, not Present / Late / Absent: a
+                    late day is also a present day, so those three overlap and
+                    cannot be the parts of one ring. These three add to exactly
+                    the days recorded, and match the ring below segment for
+                    segment. The headline Present % is the ring's centre. */}
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <RateStat
-                    label="Present"
-                    rate={attendance.presentRate}
-                    days={attendance.present}
+                  <StatTile
+                    label="On time"
+                    value={pct1(
+                      attendance.schoolDays > 0
+                        ? Math.round(
+                            (attendance.onTime / attendance.schoolDays) * 1000
+                          ) / 10
+                        : null
+                    )}
+                    footer={`${attendance.onTime.toLocaleString('en-SG')} days`}
+                    icon={CircleCheck}
                   />
-                  <RateStat
+                  <StatTile
                     label="Late"
-                    rate={attendance.lateRate}
-                    days={attendance.late}
+                    value={pct1(attendance.lateRate)}
+                    footer={`${attendance.late.toLocaleString('en-SG')} days`}
+                    icon={Clock}
                   />
-                  <RateStat
+                  <StatTile
                     label="Absent"
-                    rate={attendance.absentRate}
-                    days={attendance.absent}
+                    value={pct1(attendance.absentRate)}
+                    footer={`${attendance.absent.toLocaleString('en-SG')} days`}
+                    icon={CircleX}
                     tone="bad"
                   />
                 </div>
-                <div
-                  className="flex h-2.5 overflow-hidden rounded-full bg-muted"
-                  role="img"
-                  aria-label={`${attendance.presentRate}% present, ${attendance.absentRate}% absent`}
-                >
-                  <span
-                    className="block h-full bg-brand-mint"
-                    style={{ width: `${attendance.presentRate ?? 0}%` }}
-                  />
-                  <span
-                    className="block h-full bg-destructive"
-                    style={{ width: `${attendance.absentRate ?? 0}%` }}
-                  />
-                </div>
+                <DonutChart
+                  data={[
+                    { name: 'On time', value: attendance.onTime },
+                    { name: 'Late', value: attendance.late },
+                    { name: 'Absent', value: attendance.absent },
+                  ]}
+                  colors={[
+                    'var(--color-brand-mint)',
+                    'var(--color-brand-amber)',
+                    'var(--destructive)',
+                  ]}
+                  height={190}
+                  centerValue={pct1(attendance.presentRate)}
+                  centerLabel="Present"
+                />
                 <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                   {attendance.schoolDays.toLocaleString('en-SG')} student-days
                   recorded
@@ -984,92 +857,32 @@ export function AcademicOverviewView({
       </div>
 
       {/* Subjects */}
-      <SectionCard
-        cap={`Examinable subjects · ${rangeLabel}`}
-        title="Performance by subject"
-        scope={scopeLabel}
-        icon={BookOpen}
-        aside="Ordered by how many students take it"
-        footer={
-          <>
-            Examinable subjects only — the rest are graded by letter and are not
-            averaged here. “Passing” counts individual marks, while the spread
-            bar counts students by their average in that subject, so a subject
-            can pass most marks and still leave a group behind.
-          </>
-        }
-      >
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead>Subject</TableHead>
-                <TableHead className="text-right">Students</TableHead>
-                <TableHead className="text-right">Average</TableHead>
-                <TableHead className="text-right">Passing</TableHead>
-                <TableHead>Strongest level</TableHead>
-                <TableHead>Weakest level</TableHead>
-                <TableHead>How marks are spread</TableHead>
-                <TableHead className="text-right">Trend</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {overview.subjects.map((subject) => (
-                // No link — there is no per-subject page to open — but the row
-                // still highlights, because reading across ten numeric columns
-                // is where a row loses you.
-                <TableRow
-                  key={subject.subjectId}
-                  className="transition-colors hover:bg-accent/40"
-                >
-                  <TableCell className="font-medium">
-                    {subject.subjectName}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {subject.students}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmt(subject.average)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {pct(subject.passingRate)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {subject.strongestLevel ? (
-                      <>
-                        {subject.strongestLevel.label}{' '}
-                        <span className="tabular-nums text-muted-foreground">
-                          {subject.strongestLevel.average.toFixed(1)}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">{DASH}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {subject.weakestLevel ? (
-                      <>
-                        {subject.weakestLevel.label}{' '}
-                        <span className="tabular-nums text-muted-foreground">
-                          {subject.weakestLevel.average.toFixed(1)}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">Only level</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <BandCompositionBar bands={subject.bands} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <TrendCell delta={subject.delta} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      <section className="flex flex-col gap-4">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Examinable subjects · {rangeLabel}
+          </p>
+          <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Performance by subject
+            {scopeLabel ? (
+              <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
+                ({scopeLabel})
+              </span>
+            ) : null}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Listed by how many students take it — sort by Students to put it
+            back. Select a spread bar for the band-by-band breakdown.
+          </p>
         </div>
-      </SectionCard>
+        <OverviewSubjectTable rows={overview.subjects} />
+        <p className="text-xs text-muted-foreground">
+          Examinable subjects only — the rest are graded by letter and are not
+          averaged here. “Passing” counts individual marks, while the spread bar
+          counts students by their average in that subject, so a subject can
+          pass most marks and still leave a group behind.
+        </p>
+      </section>
 
       {students && (
         <div className="grid gap-5 lg:grid-cols-2">

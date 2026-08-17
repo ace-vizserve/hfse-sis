@@ -132,12 +132,103 @@ also mint thresholds the school owns — the handbook rule is theirs to maintain
   lines in "Worth a look", and that card's whole rule is that it invents
   nothing.
 
+## The two big tables moved onto `<DataTable>` (2026-08-17)
+
+Mr Ace asked for the spread bar to explain itself and for the tables to behave
+like data tables. Both done.
+
+**The spread bar is now a popover**, built the same way as the admissions
+pipeline strip: click it and every band is listed with its swatch, name, mark
+range, count and share. Empty bands stay listed but dimmed — a five-rung ladder
+with rungs missing is not a scale you can read a shape off. The swatches read
+`GRADE_BAND_FILL`, the same map the segments do (09a §10.2). The paint stays
+10px so the row keeps its rhythm; the button is 24px, because a 10px click
+target is not one.
+
+**`OverviewLevelTable` and `OverviewSubjectTable`** are client islands on the
+shared shell. Everything else on the page — tiles, per-term table, trends,
+student lists — still renders on the server.
+
+- **Default order is the meaning, so `initialSort` is empty** and rows arrive
+  pre-sorted. `SortableHeader` only cycles asc/desc, never clears, so without a
+  way back the ladder's school order would be lost the first time you sorted.
+  The fix: "Grade level" sorts by `sortOrder`, not by its own text (which would
+  read "Primary One, Primary Six, Primary Three" anyway), and "Students"
+  descending restores the subject table.
+- **No `csv` config on either.** The page already has one Export button
+  covering all three summary tables; a second export from the same screen would
+  produce a different file.
+- **"How marks are spread" is not sortable** — a five-band composition has no
+  single value to order by, and picking one would be a hidden choice the header
+  could not admit to.
+- **Whole-row click is gone**, replaced by a link on the level name. The shell
+  renders `<TableCell>` with no className hook, so the old full-bleed
+  `after:inset-0` overlay had no positioned ancestor to attach to. Every other
+  DataTable in the app links on the name; this now matches.
+- **`meta.label` matches the visible header on every column.** The KD #161
+  guard caught seven that had drifted — the fix was to align them, not to
+  register exceptions, because the registry is keyed by column id globally and
+  would have relaxed `average`/`passingRate`/`delta` app-wide.
+- Cell formatting moved to `components/markbook/overview-cells.tsx` so the same
+  figure is produced by one function on both sides of the server/client line.
+
+Also fixed a pre-existing `react-hooks/immutability` **error** in
+`band-donut.tsx` (a counter reassigned inside `map` during render), which
+shipped in the first commit.
+
+## The attendance card's ring (2026-08-17)
+
+The trend chart made the card beside it taller than its contents. The thin
+present/absent strip that filled the gap is replaced by the shared recharts
+`DonutChart` (`components/dashboard/charts/donut-chart`), drawing the SAME
+figures the three tiles above it already state.
+
+⚠ **The slices are On time / Late / Absent, not Present / Late / Absent, and
+that is not cosmetic.** `days_late` is a SUBSET of `days_present` (migration
+014: `L` counts in both), so present/late/absent overlap and adding them
+overshoots the total — the card's own footer had to apologise for it. The new
+`attendance.onTime` (`present − late`) makes the three actually partition:
+`onTime + late + absent === schoolDays`, with a test asserting exactly that.
+The old strip drew present + absent and dropped late entirely.
+
+The ring's centre still reads the headline **Present %**, so it ties back to
+the first tile rather than introducing a fourth number. Colours are semantic
+(mint / amber / destructive) and the wrapper keys both slice and legend swatch
+off the same index, so colour follows the measure and not its rank.
+
+**The three rate boxes are now `StatTile`s, in place.** They were a bespoke
+tile — a thing this page had no business inventing when `StatTile` (the
+canonical §8 metric card, used by every other row on this page) already
+existed.
+
+⚠ **Two lessons, one from each wrong turn.** First: reach for the existing
+metric card, never design a new one — a tile with its own colour rail, wash and
+icon chip is a second metric-card language on a page that already had one.
+Second, and more expensive: "use our metric card design" meant **restyle these
+in place**, not relocate them. Moving them into the tile row emptied the card
+and brought back the whitespace the whole exercise started from. When the note
+is about how something looks, change how it looks and nothing else.
+
+They read **On time / Late / Absent**, not Present / Late / Absent — a late day
+is also a present day, so those three overlap and cannot sit above a ring that
+partitions. These three match the ring segment for segment, and the headline
+Present % is the ring's centre.
+
+**An earlier attempt was reverted**: a "days missed per student by grade level"
+bar chart. It was a good chart, and it was the wrong answer — Mr Ace asked for
+the existing figures drawn differently, not another statistic. Worth keeping
+the finding though: **attendance rate cannot be charted by grade level.** Every
+level sits between 97% and 99%, so bars are identical on an honest axis and
+misleading on a zoomed one. If that comparison is ever wanted, days missed is
+the only honest scale for it.
+
 ## State of the build (re-verified 2026-08-17, after the attendance work)
 
 - `npx tsc --noEmit` — **clean**.
-- `npx vitest run` — **3,039 passing across 331 files, no failures.** The three
-  the other session was carrying (`data-table-advanced-export-*`,
-  `country-combobox`) are green now.
+- `npx vitest run` — **3,043 passing across 331 files.** Under full-suite load
+  a run occasionally drops 1–3 of the files CLAUDE.md already lists as flaky
+  (`role-permissions-guardrails`, `data-table-advanced-export-*`); every one
+  passes in isolation and two consecutive full runs were clean.
 - `npx next build` — **succeeds.** The `export-sheet-advanced.tsx` breakage
   noted below is resolved.
 - If a build fails on `.next/dev/types/routes.d.ts`, it is the dev server and the
@@ -148,7 +239,11 @@ New tests: 12 in `__tests__/markbook/academic-overview.test.ts`, under
 
 ## Not done
 
-- Browser pass at 375 / 768 / 1024 / 1440 and a keyboard pass on the ladder rows.
-  The ladder now carries **11 columns** — it is inside `overflow-x-auto`, but
-  nothing has looked at it on a narrow screen.
+- Browser pass at 375 / 768 / 1024 / 1440 and a keyboard pass on the ladder.
+  The ladder carries **11 columns** — the shell scrolls it horizontally, but
+  nothing has looked at it on a narrow screen. The spread-bar popover has not
+  been opened in a browser either.
+- ⚠ **`components/ui/data-table/*` is mid-rewrite in another session** (advanced
+  export sheet + filter rules, uncommitted). These two tables were built against
+  its current state and pass, but that shell is moving.
 - Nothing is committed; no KD written; `CLAUDE.md` and the dev plan are not synced.

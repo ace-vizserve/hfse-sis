@@ -260,6 +260,14 @@ export type AttendanceHealth = {
   /** Students with any attendance recorded in scope — the denominator below. */
   studentsRecorded: number;
   /**
+   * School days that were attended ON TIME — `present` minus `late`.
+   *
+   * `present`, `late` and `absent` overlap (late is a subset of present), so
+   * they cannot be drawn as parts of a whole. These three CAN: onTime + late
+   * + absent === schoolDays, exactly.
+   */
+  onTime: number;
+  /**
    * Named students under the at-risk line, worst first.
    *
    * ⚠ Named at EVERY scope, unlike `studentLists`, and the difference is
@@ -1136,6 +1144,9 @@ function summariseAttendance(
     present,
     late,
     absent,
+    // The only three-way split of school days that actually partitions, since
+    // `present` already contains `late`.
+    onTime: Math.max(0, present - late),
     presentRate: rate(present),
     lateRate: rate(late),
     absentRate: rate(absent),
