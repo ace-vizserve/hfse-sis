@@ -21,6 +21,10 @@ const { refreshMock, toastSpies } = vi.hoisted(() => ({
   toastSpies: {
     success: vi.fn(),
     error: vi.fn(),
+    // A surface may answer a SUCCESSFUL write with a warning instead — an
+    // upload that landed but merged the files. The helper stays out of the way
+    // when the success resolver returns null.
+    warning: vi.fn(),
     loading: vi.fn(() => 'toast-1'),
     dismiss: vi.fn(),
   },
@@ -168,6 +172,33 @@ describe('useWriteAction', () => {
 
     expect(toastSpies.success).toHaveBeenCalledWith('Assigned to Respect');
     expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('shows no success toast when the surface reports the outcome itself', async () => {
+    // The mirror of the error resolver's `null`. A write can succeed and still
+    // need a WARNING rather than a success — an upload that landed but merged
+    // the files, say (components/p-files/upload-dialog.tsx). Without this the
+    // only options were a green toast carrying warning text, or two toasts for
+    // one action.
+    const { result } = renderHook(() => useWriteAction());
+
+    await act(async () => {
+      await result.current(async () => ({ warning: 'Merged 3 PDFs' }), {
+        pending: 'Uploading…',
+        success: (body) => {
+          if (body.warning) {
+            toastSpies.warning(body.warning);
+            return null;
+          }
+          return 'Uploaded';
+        },
+      });
+    });
+
+    expect(toastSpies.success).not.toHaveBeenCalled();
+    expect(toastSpies.warning).toHaveBeenCalledWith('Merged 3 PDFs');
+    // Still a success in every other respect — the refresh happened.
+    expect(refreshMock).toHaveBeenCalled();
   });
 
   it('skips the refresh when told to', async () => {

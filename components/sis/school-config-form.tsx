@@ -1,18 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   Building2,
   CheckCircle2,
   Eye,
   ImageIcon,
-  Loader2,
   Phone,
   Save,
   ShieldCheck,
 } from 'lucide-react';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -76,7 +76,6 @@ function ClusterLabel({
 // School-wide settings form. Singleton row (id=1); patches via
 // PATCH /api/sis/admin/school-config. Empty string clears a field.
 export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
-  const router = useRouter();
   const [principal, setPrincipal] = useState(current.principalName);
   const [ceo, setCeo] = useState(current.ceoName);
   const [windowDays, setWindowDays] = useState(
@@ -179,7 +178,7 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
       toast.error('Logo URL must start with http:// or https://');
       return;
     }
-    saveMutation.mutate({
+    void commit({
       principalName: principal.trim(),
       ceoName: ceo.trim(),
       defaultPublishWindowDays: days,
@@ -205,17 +204,29 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch('/api/sis/admin/school-config', jsonInit('PATCH', payload)),
-    onSuccess: () => {
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 1500);
-      router.refresh();
-    },
-    onError: (e) => {
-      // Preserve the original `body?.error ?? 'save failed'` fallback string.
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    },
   });
-  const saving = saveMutation.isPending;
+
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function commit(payload: Record<string, unknown>) {
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(payload), {
+      // This form answers with its own inline "Saved" tick beside the button
+      // rather than a toast — a settings page saved in place, where a toast
+      // would be a second voice for the same event. Failures still toast,
+      // because the tick can only say the good outcome.
+      pending: false,
+      success: () => {
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 1500);
+        return null;
+      },
+      // Preserve the original `body?.error ?? 'save failed'` fallback string.
+      error: (e) => (e instanceof Error ? e.message : 'save failed'),
+    });
+    setSaving(false);
+  }
 
   // Assembled fresh each render from this form's own state so the preview
   // updates live as fields change (pure render, no debounce needed). Only
@@ -652,13 +663,15 @@ export function SchoolConfigForm({ current }: { current: SchoolConfig }) {
             <CheckCircle2 className="size-3.5" /> Saved
           </span>
         )}
-        <Button type="submit" disabled={saving || !dirty} className="gap-1.5">
-          {saving ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Save className="size-3.5" />
-          )}
-          {saving ? 'Saving…' : 'Save'}
+        <Button
+          type="submit"
+          loading={saving}
+          loadingText="Saving…"
+          disabled={!dirty}
+          className="gap-1.5"
+        >
+          {!saving && <Save className="size-3.5" />}
+          Save
         </Button>
       </div>
     </form>

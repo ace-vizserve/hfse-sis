@@ -1,9 +1,10 @@
 /**
- * Behavior test for the Tier-2 mutation reference in the evaluation module: the
+ * Behavior test for the write reference in the evaluation module: the
  * virtue-themes editor (`PATCH /api/evaluation/virtue-theme`). Proves:
- *  - while the save is in flight, the Save button is disabled (pending);
- *  - on success, the baseline updates (button disables again), toast.success
- *    fires, and router.refresh() is called;
+ *  - while the save is in flight, the Save button is disabled and nothing has
+ *    been claimed yet;
+ *  - on success, router.refresh() is awaited and the toast lands AFTER it, and
+ *    the baseline updates so the button disables again;
  *  - on an error response, the *route-specific* message is surfaced (not a
  *    flattened generic one) and no refresh happens.
  */
@@ -84,8 +85,12 @@ describe('VirtueThemesEditor (Tier-2 mutation)', () => {
     // Resolve the request.
     resolve(jsonResponse({ ok: true }));
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
-    expect(toastSuccess).toHaveBeenCalledWith('Term 1 virtue theme saved');
+    // The toast is the LAST step — it waits on the refresh, so waiting for the
+    // refresh alone would race it.
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('Term 1 virtue theme saved')
+    );
+    expect(refreshMock).toHaveBeenCalled();
     // Baseline updated → no longer dirty → Save disabled again.
     await waitFor(() => expect(saveButton()).toBeDisabled());
   });
@@ -106,7 +111,8 @@ describe('VirtueThemesEditor (Tier-2 mutation)', () => {
     );
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(refreshMock).not.toHaveBeenCalled();
-    // Still dirty (save failed) → Save remains enabled for a retry.
-    expect(saveButton()).toBeEnabled();
+    // Still dirty (save failed) → Save comes back enabled for a retry. The
+    // in-flight flag clears just after the error toast, so this waits.
+    await waitFor(() => expect(saveButton()).toBeEnabled());
   });
 });

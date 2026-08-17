@@ -1,11 +1,9 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -37,7 +35,6 @@ export function AyDeleteDialog({
   open: openProp,
   onOpenChange,
 }: Props) {
-  const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : internalOpen;
@@ -57,22 +54,30 @@ export function AyDeleteDialog({
         '/api/sis/ay-setup',
         jsonInit('DELETE', { ay_code: ayCode, confirm_code: ayCode })
       ),
-    onSuccess: () => {
-      toast.success(`${ayCode} deleted`);
-      setOpen(false);
-      setConfirm('');
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete AY');
-    },
   });
-  const submitting = deleteMutation.isPending;
+
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function remove() {
+    setSubmitting(true);
+    await run(() => deleteMutation.mutateAsync(), {
+      pending: `Deleting ${ayCode}…`,
+      success: `${ayCode} deleted`,
+      error: (err) =>
+        err instanceof Error ? err.message : 'Failed to delete AY',
+      onResolved: () => {
+        setOpen(false);
+        setConfirm('');
+      },
+    });
+    setSubmitting(false);
+  }
 
   function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     if (!canSubmit) return;
-    deleteMutation.mutate();
+    void remove();
   }
 
   return (
@@ -142,8 +147,7 @@ export function AyDeleteDialog({
             disabled={!canSubmit || submitting}
             className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive"
           >
-            {submitting && <Loader2 className="mr-1 size-4 animate-spin" />}
-            Delete AY
+            {submitting ? 'Deleting…' : 'Delete AY'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

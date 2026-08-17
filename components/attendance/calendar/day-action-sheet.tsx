@@ -8,8 +8,8 @@
 import { useMutation } from '@tanstack/react-query';
 import { CalendarPlus, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   DAY_TYPE_LEGEND_COLOR,
@@ -47,7 +47,6 @@ interface DayActionSheetProps {
   events: CalendarEventRow[];
   editable: boolean;
   onClose: () => void;
-  onSaved: () => void;
   onAddEvent: (iso: string) => void;
   onEditEvent: (e: CalendarEventRow) => void;
   onDeleteEvent: (id: string) => void;
@@ -87,7 +86,6 @@ export function DayActionSheet({
   events,
   editable,
   onClose,
-  onSaved,
   onAddEvent,
   onEditEvent,
   onDeleteEvent,
@@ -110,10 +108,15 @@ export function DayActionSheet({
 
   // Revert a school-status override back to a regular school day. Whole-school
   // ('all') is set explicitly to school_day; a level override is dropped so it
-  // follows the school-wide day again. Tier-2 mutation (Model A): the network
-  // call routes through useMutation (retry: 0 + consistent error handling),
-  // while `busyKey` still gates the specific row's button. Route-specific error
-  // copy is preserved — ApiError.message resolves the body's `error`/`message`.
+  // follows the school-wide day again. `busyKey` still gates the specific row's
+  // button. Route-specific error copy is preserved — ApiError.message resolves
+  // the body's `error`/`message`.
+  //
+  // This used to hand its refresh to the parent through an `onSaved` prop whose
+  // whole body was `router.refresh()`. That prop is gone: the write happens
+  // here, so the wait belongs here, and a caller cannot forget to do it. The
+  // same delegated-refresh assumption is what left an assigned student sitting
+  // in "Students needing setup" on 2026-08-14.
   const removeMutation = useMutation({
     mutationFn: (audience: Audience) =>
       audience === 'all'
@@ -140,22 +143,19 @@ export function DayActionSheet({
             }).toString()}`,
             { method: 'DELETE' }
           ),
-    onSuccess: () => {
-      toast.success('Reverted to a school day');
-      onSaved();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to revert');
-    },
-    onSettled: () => {
-      setBusyKey(null);
-    },
   });
 
-  function removeOverride(audience: Audience) {
+  const run = useWriteAction();
+
+  async function removeOverride(audience: Audience) {
     if (!iso) return;
     setBusyKey(`day:${audience}`);
-    removeMutation.mutate(audience);
+    await run(() => removeMutation.mutateAsync(audience), {
+      pending: 'Reverting to a school day…',
+      success: 'Reverted to a school day',
+      error: (err) => (err instanceof Error ? err.message : 'Failed to revert'),
+    });
+    setBusyKey(null);
   }
 
   return (
@@ -218,7 +218,7 @@ export function DayActionSheet({
                         aria-label="Revert to a regular school day"
                         title="Revert to a regular school day"
                         disabled={busyKey === `day:${row.audience}`}
-                        onClick={() => removeOverride(row.audience)}
+                        onClick={() => void removeOverride(row.audience)}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>

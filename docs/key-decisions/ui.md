@@ -105,3 +105,38 @@ CSV export **simplified to instant-download + a preset choice** (2026-07-29; no 
 - Mockup: `docs/superpowers/specs/2026-07-30-document-completeness-table-redesign.html`. Cross-ref KD #84 (the shell), KD #152 (the strip precedent), KD #161/#162 (labels + export), KD #60 (the seven statuses).
 
 **Note on KD #84's text:** it lists `document-completeness-table` as staying **bespoke** ("sticky col / dynamic slot-dot matrix / Level→Section cascade make a shell rewrite high-risk"). That is **stale** — the table was migrated onto the shared `<DataTable>` shell before this work, and the dynamic slot-dot matrix that justified the exemption no longer exists.
+
+### KD #186
+
+**Every write reports itself through one lifecycle — `useWriteAction`** (2026-08-14 → 2026-08-17; no migration). An audit of all 80 client components that perform a write found the three feedback signals were not equally covered: `toast.error` appeared in 78 of 78 applicable files and `toast.success` in 76, but the **in-flight phase appeared in exactly one**. So the gap was never "nobody toasts". It was that a write reported success at the wrong moment.
+
+**The defect this fixes.** A mutation resolves, the code toasts "Saved", closes the dialog and re-enables the button — while `router.refresh()` is still in flight. The list underneath is still the old list. The user is told the work is done while it visibly is not. That gap is the "sluggish and unfinished" complaint, and it is a correctness problem, not polish.
+
+**The contract.** `lib/hooks/use-write-action.ts` gives every write one lifecycle: pending toast (suppressed below `PENDING_DELAY_MS` = 250ms so a fast write never flashes) → the work → `onResolved` (the surface reacts: close the dialog, reset the form) → **awaited** `router.refresh()` → terminal toast. `run` **never rejects** — it resolves the parsed body, or `undefined` on failure — which removed the `.catch(() => {})` incantation from every call site.
+
+- **It wraps the promise, not `useMutation`.** Deliberate, and load-bearing: replacing `useMutation` would mean absorbing every branch its call sites rely on — `onMutate` optimistic snapshots, `onError` rollbacks, error handlers that open a dialog. Those all stay put. Only the toast and refresh lines move. Both optimistic validation queues (`p-files`, `admissions`) keep their snapshot-and-rollback untouched, which is the proof the choice was right.
+- **`error` may return `null`** — "the surface answers this itself" (a dialog explaining a 409). **`success` may return `null` too**, added when the sweep hit the case: a write can SUCCEED and still owe the user a _warning_. An upload that landed but merged the PDFs, an import that finished with sheet-level issues, a change request whose approvers couldn't be emailed. The alternatives were a green toast carrying warning text, or two toasts for one action.
+- **`refresh` takes a predicate.** Used where only the response knows: a dry-run import writes nothing; an all-failed batch changed nothing; `new-section-button` navigates away on one branch.
+- **`pending: false`** means the surface shows the change itself — the two optimistic queues, the house tile, the STP select, the pre-course date cell, the bulk-publish dialog (which shows a real "3 of 12" count), and `school-config-form` (inline "Saved" tick). Every one is allowlisted with a reason.
+- **`Button` gained `loading` / `loadingText`** (§9 / 09a:210 — reusable treatment belongs in the variant). This collapsed four hand-rolled in-flight idioms across ~107 sites onto one. ⚠ **`loadingText` changes a button's accessible name in flight** — "Save" becomes "Saving…" — so `getByRole('button', { name: /^save$/i })` stops matching it.
+
+**Guard:** `__tests__/ui/write-feedback-coverage.test.ts`, source-scanning, ratcheted through the sweep via `CONVERTED_ROOTS` and now covering every root. Five rules; the two that matter most catch silent damage — no `toast.success` beside the helper (double-toasting) and no bare `router.refresh()` beside it (double-_refreshing_, which is invisible and worse: `markbook/grading/[id]/page.tsx:156` performs a DB write on every render). Every exemption carries `{ decided, why }`, stale entries fail, and positive assertions check the exempt files still do the thing that exempts them — so the allowlist cannot become a lie by editing the allowlist alone.
+
+**Three things the guard itself taught, each a rule now:**
+
+1. **The write-detector cannot be `jsonInit(` alone.** That missed `p-files/upload-dialog.tsx`, which posts multipart FormData and therefore _cannot_ use `jsonInit` — the app's slowest write, and the one most needing a pending toast, was not classified as a write at all. It now also matches a hand-rolled `method: 'POST'|'PATCH'|'PUT'|'DELETE'`.
+2. **A source scan must read code, not prose.** Its first run flagged three files whose _comments_ explain why they no longer call `router.refresh()`. It now strips comments, string-aware, so a `https://` is not mistaken for a line comment.
+3. **`useDebouncedRefresh(() => router.refresh())` is not a second refresh.** A file may hold both kinds of write — `attendance/wide-grid.tsx` does — so the sweep reads **statements, not files**: its per-cell autosave stays exempt while its `metaMutation` converted.
+
+**Four real defects found by doing the conversion, not by looking for them:**
+
+- **Two parents double-refreshed their children.** `calendar-admin-client.tsx` passed `onSaved={() => router.refresh()}` _and_ an `onCreated` that refreshed again, while each child needed one too. Rule adopted: **the component that owns the write owns the wait.** A `onSaved`/`onCreated`/`onDone` prop whose whole body was `router.refresh()` is now deleted, not kept — the same for `late-enrollee-prompt` (two parents), `new-subject-form`, and `day-action-sheet`.
+- **`classroom-settings-form.tsx` never refreshed at all** — it saved the note, updated its own baseline, toasted, and left every server-rendered copy showing the old text.
+- **`bulk-publish-dialog.tsx` reported total failure as success:** `toast.success("Published 0 sections · 12 failed")`. Nothing-published-and-something-broke is now an error; partial outcomes are a warning.
+- **Both Class B late-enrollee bugs are fixed by construction.** `edit-stage-dialog` and `enrolment-edit-sheet` each returned early on the mid-term branch, relying on a later second refresh; the helper's unconditional awaited refresh removes the branch entirely.
+
+**Also:** `BulkActionFooter` now awaits `onTrigger`, holds per-action pending state and disables its siblings — honouring a `void | Promise<void>` contract its type had always declared. All three consumers today are synchronous, so this is a double-click guard and cover for the first async one, **not** a fix for anything currently broken.
+
+⚠ **Expect it to feel slower on day one.** Holding the toast until the refresh commits honestly reports a wait that was previously hidden behind a closed dialog. That is the point. It is affordable because the attendance batching landed first (90 → 6 round-trips for a class of 30).
+
+Plan: `C:\Users\Ace\.claude\plans\squishy-popping-lagoon.md` (and its predecessor `warm-roaming-cupcake.md`). Cross-ref KD #24 (Model A — RSC owns the data, `onSuccess` refreshes, `invalidateQueries` is never used; this makes the refresh _awaited_ rather than replacing the model), KD #20 (toasts), KD #14 (design tokens).

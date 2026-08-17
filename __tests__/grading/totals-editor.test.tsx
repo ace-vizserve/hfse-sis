@@ -1,10 +1,15 @@
 /**
  * Behavior test for the mutation pilot (Tier-2, Model A): TotalsEditor.
- * Proves the canonical useMutation conversion:
+ * Proves the canonical `useWriteAction` conversion:
  *  - pending → submit button disabled + "Saving…"
- *  - success → toast.success + router.refresh()
+ *  - success → router.refresh() is AWAITED, and only then toast.success
  *  - error (422 body.error) → the SPECIFIC message is surfaced (preservation
  *    rule), and router.refresh() is NOT called.
+ *
+ * The success toast now lands strictly AFTER the refresh commits, so a test
+ * that stops at "refresh was called" leaves a toast still in flight. That is
+ * the behaviour under test, not an inconvenience: every case here waits for the
+ * action to finish settling, or it bleeds into the next one.
  */
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -65,8 +70,8 @@ describe('TotalsEditor (mutation pilot)', () => {
 
     await openAndSave(user);
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
-    expect(toastSuccess).toHaveBeenCalled();
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
       '/api/grading-sheets/s1/totals',
       expect.objectContaining({ method: 'PATCH' })
@@ -83,9 +88,15 @@ describe('TotalsEditor (mutation pilot)', () => {
 
     const saving = await screen.findByRole('button', { name: /saving/i });
     expect(saving).toBeDisabled();
+    expect(saving).toHaveAttribute('aria-busy', 'true');
+    // The point of the helper: nothing has been claimed yet.
+    expect(toastSuccess).not.toHaveBeenCalled();
 
     resolveFetch(jsonResponse({ ok: true }));
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    // Waits for the whole lifecycle, not just the POST — the success toast is
+    // the last thing to happen, after the refresh transition commits.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(refreshMock).toHaveBeenCalled();
   });
 
   it('preserves the route-specific error message and does not refresh', async () => {

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { BookOpen, Languages, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { MOTHER_TONGUE_SUBJECT_CODES } from '@/lib/schemas/subject';
 import { Badge } from '@/components/ui/badge';
@@ -61,7 +61,6 @@ export function SectionSubjectsPanel({
   assigned: SectionSubjectChip[];
   availableToAdd: SectionSubjectChip[];
 }) {
-  const router = useRouter();
   const [pickerValue, setPickerValue] = useState<string>('');
   // Which language the Mother Tongue sub-choice currently has selected —
   // only meaningful while pickerValue === MOTHER_TONGUE_SENTINEL.
@@ -85,13 +84,6 @@ export function SectionSubjectsPanel({
         `/api/sections/${sectionId}/subjects`,
         jsonInit('POST', { subjectConfigId })
       ),
-    onSuccess: () => {
-      setPickerValue('');
-      setMotherTongueChoice('');
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Could not add subject'),
   });
 
   const removeMutation = useMutation({
@@ -99,9 +91,6 @@ export function SectionSubjectsPanel({
       apiFetch(`/api/sections/${sectionId}/subjects/${subjectConfigId}`, {
         method: 'DELETE',
       }),
-    onSuccess: () => router.refresh(),
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Could not remove subject'),
   });
 
   const loadDefaultsMutation = useMutation({
@@ -110,20 +99,62 @@ export function SectionSubjectsPanel({
         `/api/sections/${sectionId}/subjects/load-defaults`,
         jsonInit('POST', {})
       ),
-    onSuccess: (json) => {
-      const n = json?.inserted ?? 0;
-      toast.success(
-        n > 0
-          ? `Loaded ${n} default subject${n === 1 ? '' : 's'}.`
-          : 'Already fully loaded — nothing to add.'
-      );
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not load default subjects'
-      ),
   });
+
+  const run = useWriteAction();
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [loadingDefaults, setLoadingDefaults] = useState(false);
+
+  // Add and remove used to report NOTHING on success — the chip list simply
+  // changed once the refresh landed, with no indication in between that
+  // anything was happening. They now say so, like every other write.
+  async function addSubject(subjectConfigId: string) {
+    const name = availableToAdd.find(
+      (s) => s.subjectConfigId === subjectConfigId
+    )?.name;
+    setAdding(true);
+    await run(() => addMutation.mutateAsync(subjectConfigId), {
+      pending: `Adding ${name ?? 'subject'}…`,
+      success: `Added ${name ?? 'the subject'} to this section.`,
+      error: (e) => (e instanceof Error ? e.message : 'Could not add subject'),
+      onResolved: () => {
+        setPickerValue('');
+        setMotherTongueChoice('');
+      },
+    });
+    setAdding(false);
+  }
+
+  async function removeSubject(subjectConfigId: string, name: string) {
+    setRemoving(true);
+    await run(() => removeMutation.mutateAsync(subjectConfigId), {
+      pending: `Removing ${name}…`,
+      success: `Removed ${name} from this section.`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not remove subject',
+    });
+    setRemoving(false);
+  }
+
+  async function loadDefaults() {
+    setLoadingDefaults(true);
+    await run(() => loadDefaultsMutation.mutateAsync(), {
+      pending: 'Loading the default subject set…',
+      // "Nothing to add" is a notice, not work done.
+      success: (json) => {
+        const n = json?.inserted ?? 0;
+        if (n === 0) {
+          toast.info('Already fully loaded — nothing to add.');
+          return null;
+        }
+        return `Loaded ${n} default subject${n === 1 ? '' : 's'}.`;
+      },
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not load default subjects',
+    });
+    setLoadingDefaults(false);
+  }
 
   const total = assigned.length + availableToAdd.length;
 
@@ -156,14 +187,14 @@ export function SectionSubjectsPanel({
                   );
                   return;
                 }
-                addMutation.mutate(v);
+                void addSubject(v);
               }}
             >
               <SelectTrigger
                 className="h-8 w-auto gap-1.5 text-xs"
-                disabled={addMutation.isPending}
+                disabled={adding}
               >
-                {addMutation.isPending ? (
+                {adding ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
                   <Plus className="size-3.5" />
@@ -191,16 +222,12 @@ export function SectionSubjectsPanel({
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 text-xs"
-            disabled={
-              availableToAdd.length === 0 || loadDefaultsMutation.isPending
-            }
-            onClick={() => loadDefaultsMutation.mutate()}
+            loading={loadingDefaults}
+            loadingText="Loading…"
+            disabled={availableToAdd.length === 0}
+            onClick={() => void loadDefaults()}
           >
-            {loadDefaultsMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="size-3.5" />
-            )}
+            {!loadingDefaults && <Sparkles className="size-3.5" />}
             Load default subject set
           </Button>
         </div>
@@ -243,14 +270,12 @@ export function SectionSubjectsPanel({
               type="button"
               size="sm"
               className="h-7 gap-1.5 text-xs"
-              disabled={!motherTongueChoice || addMutation.isPending}
-              onClick={() => addMutation.mutate(motherTongueChoice)}
+              loading={adding}
+              loadingText="Adding…"
+              disabled={!motherTongueChoice}
+              onClick={() => void addSubject(motherTongueChoice)}
             >
-              {addMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Plus className="size-3.5" />
-              )}
+              {!adding && <Plus className="size-3.5" />}
               Add
             </Button>
           </div>
@@ -267,16 +292,12 @@ export function SectionSubjectsPanel({
             type="button"
             size="sm"
             className="gap-1.5"
-            disabled={
-              availableToAdd.length === 0 || loadDefaultsMutation.isPending
-            }
-            onClick={() => loadDefaultsMutation.mutate()}
+            loading={loadingDefaults}
+            loadingText="Loading…"
+            disabled={availableToAdd.length === 0}
+            onClick={() => void loadDefaults()}
           >
-            {loadDefaultsMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="size-3.5" />
-            )}
+            {!loadingDefaults && <Sparkles className="size-3.5" />}
             Load default subject set
           </Button>
         </div>
@@ -305,8 +326,8 @@ export function SectionSubjectsPanel({
                 type="button"
                 aria-label={`Remove ${s.name} from this section`}
                 className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
-                disabled={removeMutation.isPending}
-                onClick={() => removeMutation.mutate(s.subjectConfigId)}
+                disabled={removing}
+                onClick={() => void removeSubject(s.subjectConfigId, s.name)}
               >
                 <X className="size-3" />
               </button>

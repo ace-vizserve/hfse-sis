@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Clock, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Clock } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,7 +54,6 @@ export function SectionScheduleDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -75,20 +73,25 @@ export function SectionScheduleDialog({
         `/api/sections/${sectionId}/schedule`,
         jsonInit('PATCH', { schedule: next })
       ),
-    onSuccess: (_json, next) => {
-      toast.success(
-        next
-          ? `${sectionName} set to ${SCHEDULE_LABELS[next]}`
-          : `Cleared the schedule for ${sectionName}`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not save the schedule'
-      ),
   });
+
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const next = selected === '' ? null : selected;
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(next), {
+      pending: 'Saving schedule…',
+      success: next
+        ? `${sectionName} set to ${SCHEDULE_LABELS[next]}`
+        : `Cleared the schedule for ${sectionName}`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not save the schedule',
+      onResolved: () => setOpen(false),
+    });
+    setSaving(false);
+  }
 
   const isUnchanged = (currentSchedule ?? '') === selected;
 
@@ -156,17 +159,13 @@ export function SectionScheduleDialog({
           <Button
             type="button"
             className="gap-1.5"
-            disabled={isUnchanged || saveMutation.isPending}
-            onClick={() =>
-              saveMutation.mutate(selected === '' ? null : selected)
-            }
+            loading={saving}
+            loadingText="Saving…"
+            disabled={isUnchanged}
+            onClick={() => void save()}
           >
-            {saveMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Clock className="size-3.5" />
-            )}
-            {saveMutation.isPending ? 'Saving…' : 'Save'}
+            {!saving && <Clock className="size-3.5" />}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

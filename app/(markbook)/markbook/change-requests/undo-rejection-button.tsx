@@ -1,11 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
@@ -30,49 +30,47 @@ type Props = {
 // Server-side errors come back as plain-English text (no field names);
 // the client surfaces them verbatim via toast.error.
 export function UndoRejectionButton({ requestId }: Props) {
-  const router = useRouter();
   const [open, setOpen] = React.useState(false);
 
-  // Tier-2 mutation. The expected validation failures (400 wrong-status, 403
-  // not-the-rejecting-approver, 409 outside-the-2h-window) are surfaced WITHOUT
-  // the generic "please try again" description — they're definitive answers, so
-  // the route's plain-English `error` is shown alone. Any other status keeps the
-  // "try again or contact an administrator" description. apiFetch throws
-  // ApiError so we branch on e.status; ApiError.message already resolves to the
-  // body's `error` field for the title.
   const undoMutation = useMutation({
     mutationFn: () =>
       apiFetch(
         `/api/change-requests/${encodeURIComponent(requestId)}`,
         jsonInit('PATCH', { action: 'undo_rejection' })
       ),
-    onSuccess: () => {
-      toast.success('Decline undone — the request is back to Awaiting Review.');
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        const expected =
-          e.status === 400 || e.status === 403 || e.status === 409;
-        const body = (e.body ?? {}) as { error?: string };
-        toast.error(body.error ?? 'Could not undo the decline.', {
-          description: expected
-            ? undefined
-            : 'Please try again or contact a system administrator.',
-        });
-        return;
-      }
-      toast.error(
-        e instanceof Error ? e.message : 'Could not undo the decline.'
-      );
-    },
   });
 
-  const busy = undoMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = React.useState(false);
 
-  function handleUndo() {
-    undoMutation.mutate();
+  async function handleUndo() {
+    setBusy(true);
+    await run(() => undoMutation.mutateAsync(), {
+      pending: 'Undoing the decline…',
+      success: 'Decline undone — the request is back to Awaiting Review.',
+      // The expected validation failures (400 wrong-status, 403
+      // not-the-rejecting-approver, 409 outside-the-2h-window) are definitive
+      // answers, so the route's plain-English `error` is shown alone; anything
+      // else keeps the "try again or contact an administrator" description.
+      // That second line needs toast options a plain message can't carry, so
+      // it is raised here and `null` returned.
+      error: (e) => {
+        if (e instanceof ApiError) {
+          const expected =
+            e.status === 400 || e.status === 403 || e.status === 409;
+          const body = (e.body ?? {}) as { error?: string };
+          toast.error(body.error ?? 'Could not undo the decline.', {
+            description: expected
+              ? undefined
+              : 'Please try again or contact a system administrator.',
+          });
+          return null;
+        }
+        return e instanceof Error ? e.message : 'Could not undo the decline.';
+      },
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
   }
 
   return (

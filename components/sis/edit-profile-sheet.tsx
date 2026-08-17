@@ -1,8 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Pencil, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Pencil, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   useForm,
@@ -13,6 +12,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { composeFullName } from '@/lib/sis/full-name';
 import { Button } from '@/components/ui/button';
@@ -365,7 +365,6 @@ export function EditProfileSheet({
   enroleeNumber: string;
   initial: Partial<ProfileUpdateInput>;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   // Slots drawn this session: those with data, plus any revealed by "Add".
@@ -440,25 +439,26 @@ export function EditProfileSheet({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/profile?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('PATCH', values)
       ),
-    onSuccess: (body) => {
-      const changed = body.changed as number | undefined;
-      toast.success(
-        changed === 0
-          ? 'Profile saved (no changes)'
-          : `Profile updated (${changed} field${changed === 1 ? '' : 's'})`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
-    },
   });
 
+  const run = useWriteAction();
+
   // Awaited inside RHF's handleSubmit so `formState.isSubmitting` is the busy
-  // signal.
+  // signal — and because `run` is awaited, it stays true through the refresh
+  // rather than dropping when the PATCH resolves. `run` never rejects, so the
+  // `.catch(() => {})` this used to need is gone.
   async function onSubmit(values: ProfileUpdateInput) {
-    await saveMutation.mutateAsync(values).catch(() => {});
+    await run(() => saveMutation.mutateAsync(values), {
+      pending: 'Saving profile…',
+      success: (body) => {
+        const changed = body.changed as number | undefined;
+        return changed === 0
+          ? 'Profile saved (no changes)'
+          : `Profile updated (${changed} field${changed === 1 ? '' : 's'})`;
+      },
+      error: (e) => (e instanceof Error ? e.message : 'Failed to save'),
+      onResolved: () => setOpen(false),
+    });
   }
 
   // Reported 2026-08-14: "Save changes does nothing." `handleSubmit(onSubmit)`
@@ -640,9 +640,13 @@ export function EditProfileSheet({
                     Cancel
                   </Button>
                 </SheetClose>
-                <Button type="submit" size="sm" disabled={busy}>
-                  {busy && <Loader2 className="size-3.5 animate-spin" />}
-                  {busy ? 'Saving…' : 'Save changes'}
+                <Button
+                  type="submit"
+                  size="sm"
+                  loading={busy}
+                  loadingText="Saving…"
+                >
+                  Save changes
                 </Button>
               </SheetFooter>
             </form>

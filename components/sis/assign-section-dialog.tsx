@@ -1,7 +1,6 @@
 'use client';
 
 import { GraduationCap, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
 
@@ -56,7 +55,6 @@ export function AssignSectionDialog({
   open,
   onOpenChange,
 }: AssignSectionDialogProps) {
-  const router = useRouter();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
   // Set when the student turns out to be joining after the year began; the
@@ -170,10 +168,11 @@ export function AssignSectionDialog({
         <DialogContent className="sm:max-w-md">
           <LateEnrolleePrompt
             payload={pendingMidTerm}
+            // Just closes — the prompt awaits its own refresh now, so
+            // refreshing here too would render the server twice for one save.
             onDone={() => {
               setPendingMidTerm(null);
               onOpenChange(false);
-              router.refresh();
             }}
           />
         </DialogContent>

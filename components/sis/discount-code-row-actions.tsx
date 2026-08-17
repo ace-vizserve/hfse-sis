@@ -2,10 +2,9 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { Clock, Pencil } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { EditDiscountCodeDialog } from '@/components/sis/edit-discount-code-dialog';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { isExpired } from '@/components/ui/discount-code-status-badge';
@@ -38,7 +37,6 @@ function todayISO(): string {
 }
 
 export function DiscountCodeRowActions({ ayCode, code }: Props) {
-  const router = useRouter();
   const [expireOpen, setExpireOpen] = useState(false);
 
   const alreadyExpired = isExpired(code.endDate);
@@ -53,30 +51,30 @@ export function DiscountCodeRowActions({ ayCode, code }: Props) {
     details: code.details,
   };
 
-  // Tier-2: no local optimistic value — expire just mutates then
-  // router.refresh() so the server re-renders the new end date. `isPending`
-  // drives the disable; the route's `body.error` is preserved via
-  // ApiError.message (fallback 'Failed to expire code' unchanged).
+  // No local optimistic value — the row shows the new end date only once the
+  // server re-renders, so the toast waits for that. The route's `body.error` is
+  // preserved via ApiError.message (fallback 'Failed to expire code'
+  // unchanged).
   const expireMutation = useMutation({
     mutationFn: () =>
       apiFetch(
         `/api/sis/discount-codes/${encodeURIComponent(String(code.id))}?ay=${encodeURIComponent(ayCode)}&op=expire`,
         jsonInit('PATCH', { endDate: todayISO() })
       ),
-    onSuccess: () => {
-      toast.success('Code expired');
-      setExpireOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to expire code');
-    },
   });
 
-  const expiring = expireMutation.isPending;
+  const run = useWriteAction();
+  const [expiring, setExpiring] = useState(false);
 
-  function handleExpire() {
-    expireMutation.mutate();
+  async function handleExpire() {
+    setExpiring(true);
+    await run(() => expireMutation.mutateAsync(), {
+      pending: 'Expiring code…',
+      success: 'Code expired',
+      error: (e) => (e instanceof Error ? e.message : 'Failed to expire code'),
+      onResolved: () => setExpireOpen(false),
+    });
+    setExpiring(false);
   }
 
   return (
@@ -126,7 +124,13 @@ export function DiscountCodeRowActions({ ayCode, code }: Props) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={expiring}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleExpire} disabled={expiring}>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleExpire();
+              }}
+              disabled={expiring}
+            >
               {expiring ? 'Expiring…' : 'Expire code'}
             </AlertDialogAction>
           </AlertDialogFooter>

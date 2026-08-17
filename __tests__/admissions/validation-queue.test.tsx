@@ -2,8 +2,13 @@
  * Behavior test for the Tier-1 OPTIMISTIC mutation reference: the admissions
  * document-validation queue. The list is local state mirrored from RSC props
  * (not a useQuery cache), so the optimistic target is `rows`:
- *  - approve → row removed immediately (optimistic), toast.success + refresh
+ *  - approve → row removed immediately (optimistic), then refresh, THEN success
  *  - error → row is restored (rollback) and the route-specific message shows.
+ *
+ * The ordering is the point of `useWriteAction`: the row goes the instant it is
+ * clicked (which is why this surface passes `pending: false`), but nothing
+ * CLAIMS the change until the awaited refresh has corrected the badge count
+ * rendered on the server behind it.
  */
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -70,12 +75,14 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     await user.click(approveButton());
 
-    // Row gone (optimistic), and the success side-effects fire.
+    // Row gone (optimistic) — at this point nothing has been claimed yet.
     await waitFor(() =>
       expect(screen.queryByText('Ada Lovelace')).not.toBeInTheDocument()
     );
-    expect(toastSuccess).toHaveBeenCalled();
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+
+    // The success toast is last, after the refresh it waits on.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(refreshMock).toHaveBeenCalled();
   });
 
   it('rolls the row back on error and shows the route-specific message', async () => {

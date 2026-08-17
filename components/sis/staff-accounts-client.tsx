@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AssignmentChips,
@@ -286,33 +287,32 @@ function RoleSelect({
   isSelf: boolean;
   canManage: boolean;
 }) {
-  const router = useRouter();
-
   const roleMutation = useMutation({
     mutationFn: (next: Role) =>
       apiFetch(
         `/api/sis/admin/users/${user.id}`,
         jsonInit('PATCH', { role: next })
       ),
-    onSuccess: (_data, next) => {
-      toast.success(`Role updated: ${user.email} → ${ROLE_LABEL[next]}`);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    },
   });
-  const busy = roleMutation.isPending;
 
-  function setRole(next: Role) {
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function setRole(next: Role) {
     if (next === user.role) return;
-    roleMutation.mutate(next);
+    setBusy(true);
+    await run(() => roleMutation.mutateAsync(next), {
+      pending: `Updating ${user.email}…`,
+      success: `Role updated: ${user.email} → ${ROLE_LABEL[next]}`,
+      error: (e: unknown) => (e instanceof Error ? e.message : 'update failed'),
+    });
+    setBusy(false);
   }
 
   return (
     <Select
       value={user.role ?? undefined}
-      onValueChange={(v) => setRole(v as Role)}
+      onValueChange={(v) => void setRole(v as Role)}
       disabled={busy || isSelf || !canManage}
     >
       <SelectTrigger
@@ -355,25 +355,26 @@ function UserStatusToggle({
   isSelf: boolean;
   canManage: boolean;
 }) {
-  const router = useRouter();
-
   const toggleMutation = useMutation({
     mutationFn: (next: boolean) =>
       apiFetch(
         `/api/sis/admin/users/${user.id}`,
         jsonInit('PATCH', { disabled: next })
       ),
-    onSuccess: (_data, next) => {
-      toast.success(
-        next ? `Disabled: ${user.email}` : `Enabled: ${user.email}`
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    },
   });
-  const busy = toggleMutation.isPending;
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function toggleDisabled(next: boolean) {
+    setBusy(true);
+    await run(() => toggleMutation.mutateAsync(next), {
+      pending: next ? `Disabling ${user.email}…` : `Enabling ${user.email}…`,
+      success: next ? `Disabled: ${user.email}` : `Enabled: ${user.email}`,
+      error: (e: unknown) => (e instanceof Error ? e.message : 'update failed'),
+    });
+    setBusy(false);
+  }
 
   const disabledReason = !canManage
     ? 'Only superadmins can enable or disable accounts'
@@ -386,7 +387,7 @@ function UserStatusToggle({
       <Switch
         checked={!user.disabled}
         disabled={busy || isSelf || !canManage}
-        onCheckedChange={(v) => toggleMutation.mutate(!v)}
+        onCheckedChange={(v) => void toggleDisabled(!v)}
         aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}
       />
       <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
@@ -441,7 +442,6 @@ function EditUserDialog({
   onOpenChange: (open: boolean) => void;
   user: AdminUserRow;
 }) {
-  const router = useRouter();
   const [displayName, setDisplayName] = useState(
     user.display_name === user.email.split('@')[0] ? '' : user.display_name
   );
@@ -473,16 +473,24 @@ function EditUserDialog({
         `/api/sis/admin/users/${user.id}`,
         jsonInit('PATCH', vars.payload)
       ),
-    onSuccess: (_data, vars) => {
-      toast.success(`Updated: ${vars.email}`);
-      onOpenChange(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    },
   });
-  const saving = saveMutation.isPending;
+
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function commit(vars: {
+    payload: Record<string, unknown>;
+    email: string;
+  }) {
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(vars), {
+      pending: `Saving ${vars.email}…`,
+      success: `Updated: ${vars.email}`,
+      error: (e: unknown) => (e instanceof Error ? e.message : 'update failed'),
+      onResolved: () => onOpenChange(false),
+    });
+    setSaving(false);
+  }
 
   function submit() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -507,7 +515,7 @@ function EditUserDialog({
       return;
     }
 
-    saveMutation.mutate({ payload, email: trimmedEmail });
+    void commit({ payload, email: trimmedEmail });
   }
 
   return (
@@ -665,23 +673,26 @@ function DeleteUserDialog({
   onOpenChange: (open: boolean) => void;
   user: AdminUserRow;
 }) {
-  const router = useRouter();
-
   const deleteMutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/sis/admin/users/${user.id}`, jsonInit('DELETE')),
-    onSuccess: () => {
-      toast.success(`Deleted: ${user.email}`);
-      onOpenChange(false);
-      router.refresh();
-    },
-    onError: (e) => {
+  });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    setBusy(true);
+    await run(() => deleteMutation.mutateAsync(), {
+      pending: `Deleting ${user.email}…`,
+      success: `Deleted: ${user.email}`,
       // The route's has_activity / last-superadmin messages are precise —
       // never flatten them into a generic message (KD #24).
-      toast.error(e instanceof Error ? e.message : 'delete failed');
-    },
-  });
-  const busy = deleteMutation.isPending;
+      error: (e: unknown) => (e instanceof Error ? e.message : 'delete failed'),
+      onResolved: () => onOpenChange(false),
+    });
+    setBusy(false);
+  }
 
   return (
     <AlertDialog
@@ -706,7 +717,7 @@ function DeleteUserDialog({
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
-              deleteMutation.mutate();
+              void remove();
             }}
             disabled={busy}
             variant="destructive"
@@ -916,37 +927,12 @@ function InviteUserDialog({
           password,
         })
       ),
-    onSuccess: (_data, vars) => {
-      // The "account + teacher assignment" job used to span two pages
-      // (KD #154 / SIS Admin IA Phase 4). When the new account is a
-      // teacher, point straight at the Assignments cut of this same page
-      // so the registrar/superadmin can finish the job in one visit.
-      if (vars.role === 'teacher') {
-        toast.success(
-          `Account created for ${vars.email}. Share the password securely.`,
-          {
-            action: {
-              label: 'Now assign their classes →',
-              onClick: () => router.push('/sis/admin/staff'),
-            },
-          }
-        );
-      } else {
-        toast.success(
-          `Account created for ${vars.email}. Share the password securely.`
-        );
-      }
-      onOpenChange(false);
-      resetForm();
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'user creation failed');
-    },
   });
-  const saving = createMutation.isPending;
 
-  function submit() {
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
       toast.error('Valid email required');
@@ -956,7 +942,37 @@ function InviteUserDialog({
       toast.error('Password must be at least 8 characters');
       return;
     }
-    createMutation.mutate({ email: trimmedEmail, role });
+
+    setSaving(true);
+    await run(() => createMutation.mutateAsync({ email: trimmedEmail, role }), {
+      pending: `Creating the account for ${trimmedEmail}…`,
+      // The "account + teacher assignment" job used to span two pages
+      // (KD #154 / SIS Admin IA Phase 4). When the new account is a teacher,
+      // point straight at the Assignments cut of this same page so the
+      // registrar/superadmin can finish the job in one visit. That needs a
+      // toast action, which a plain message can't carry — so it is raised here
+      // and `null` returned to stop a second, plainer one landing on top.
+      success: () => {
+        const message = `Account created for ${trimmedEmail}. Share the password securely.`;
+        if (role === 'teacher') {
+          toast.success(message, {
+            action: {
+              label: 'Now assign their classes →',
+              onClick: () => router.push('/sis/admin/staff'),
+            },
+          });
+          return null;
+        }
+        return message;
+      },
+      error: (e: unknown) =>
+        e instanceof Error ? e.message : 'user creation failed',
+      onResolved: () => {
+        onOpenChange(false);
+        resetForm();
+      },
+    });
+    setSaving(false);
   }
 
   return (

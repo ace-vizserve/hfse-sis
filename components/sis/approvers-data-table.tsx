@@ -1,11 +1,11 @@
 'use client';
 
 import { AlertTriangle, Trash2, Users } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import type { ColumnDef } from '@tanstack/react-table';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { ApproverAssignDialog } from '@/components/sis/approver-assign-dialog';
@@ -116,26 +116,30 @@ function ApproverRowActions({
   email: string;
   flowLabel: string;
 }) {
-  const router = useRouter();
   const [revokeOpen, setRevokeOpen] = useState(false);
 
   const revokeMutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/sis/admin/approvers/${assignmentId}`, jsonInit('DELETE')),
-    onSuccess: () => {
-      toast.success(`${email} removed from ${flowLabel}`);
-      setRevokeOpen(false);
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to revoke');
-    },
   });
-  const submitting = revokeMutation.isPending;
+
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function revoke() {
+    setSubmitting(true);
+    await run(() => revokeMutation.mutateAsync(), {
+      pending: `Removing ${email}…`,
+      success: `${email} removed from ${flowLabel}`,
+      error: (err) => (err instanceof Error ? err.message : 'Failed to revoke'),
+      onResolved: () => setRevokeOpen(false),
+    });
+    setSubmitting(false);
+  }
 
   function onConfirm(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
-    revokeMutation.mutate();
+    void revoke();
   }
 
   return (

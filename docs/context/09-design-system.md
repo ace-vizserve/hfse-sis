@@ -228,6 +228,30 @@ Before marking a page done:
 - [ ] Keyboard-only pass: Tab order matches visual order, focus rings visible
 - [ ] Empty states exist for every data-driven region
 - [ ] Loading states use `Skeleton`, not spinners, when the wait exceeds 300ms and the shape is known
+- [ ] Every write reports itself — see §10.6
+
+---
+
+## 10.6 In-flight state on a write (KD #186)
+
+Route-level loading is covered above; this is the **write** path, which nothing here governed before 2026-08-17.
+
+**The button never hand-rolls its own spinner.** `Button` carries `loading` and `loadingText`, which render the spinner at the base class's size, set `aria-busy`, and disable the control. Before this existed, ~107 call sites hand-rolled `disabled={busy}` in four idioms that disagreed about spinner size and whether the label changed. Reusable treatment lives in the variant (09a §7.2 / :210), so:
+
+```tsx
+// Right — one prop, consistent everywhere
+<Button loading={saving} loadingText="Saving…">Save</Button>
+
+// Wrong — the four idioms this replaced
+<Button disabled={saving}>{saving && <Loader2 className="animate-spin" />}Save</Button>
+```
+
+- **`loadingText` keeps the verb and changes the tense** — "Save" → "Saving…", "Publish" → "Publishing…" — so a control keeps its name through the whole action. Omit it and the label stays put while the spinner carries the state; do that when the present tense can't be derived (a bulk action whose label is caller-supplied).
+- ⚠ **It changes the accessible name in flight.** A test selecting `getByRole('button', { name: /^save$/i })` will not find the button while it is saving. Match the in-flight name deliberately — that assertion is worth having.
+- **An icon beside the label must be suppressed while loading** (`{!saving && <Save />}`), or the button shows both a spinner and its resting icon.
+- **The busy flag is the whole write, not the request.** `mutation.isPending` drops the moment the POST resolves, while the screen behind is still the old screen. Hold a local flag across the awaited `useWriteAction` call instead — or let React Hook Form's `isSubmitting` do it, which it will, because `run` is awaited inside `handleSubmit`.
+
+**Every write says what it is doing, from click until the screen actually changes.** That lifecycle belongs to `useWriteAction` (`lib/hooks/use-write-action.ts`) and is enforced by `__tests__/ui/write-feedback-coverage.test.ts`. Read KD #186 before adding a write; the short version is that the success toast must not fire until the awaited `router.refresh()` has committed, because otherwise it announces a change the user cannot yet see.
 
 ---
 

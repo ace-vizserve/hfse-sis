@@ -129,3 +129,39 @@ A user-reported symptom — "every page hard-reloads / `loading.tsx` fires even 
   A `router.refresh()` call (KD #24, fired after most mutations) still forces a fresh fetch regardless of this window — raising it only smooths passive back-and-forth navigation, it does not risk showing stale data after a save.
 - **Config changes require a full process restart.** `next.config.ts` is read once at server startup — a running `next dev`/`next start` process will not pick up a config edit no matter how many times the browser is refreshed. Restart the process after any `next.config.ts` change before concluding a config fix "didn't work."
 - **Multi-checkout gotcha (worktrees):** if working in an isolated git worktree, verify which checkout the live dev/build server is actually running from before debugging "the fix didn't apply" — edits in one working directory are invisible to a server running from another, even on related branches.
+
+---
+
+## 12. The write path (2026-08-17, KD #186)
+
+Everything above concerns reads. These are the write-side rules, learned by measuring — and in two cases by measuring and discovering the estimate was wrong by an order of magnitude.
+
+### No serial per-row loops in a mutation handler
+
+Attendance Submit wrote every roster row in a serial loop: insert + rollup + audit, per student. **`3N` sequential round-trips — about 90 for a class of 30.** It now uses `writeDailyBatch` (`lib/attendance/mutations.ts`): one insert for the whole class, rollups in bounded-concurrency waves of 8, audit rows in one parallel wave via `logActions`. **`1 + ceil(N/8) + 1` — 90 → 6.**
+
+- **The wave bound is not arbitrary.** `writeDailyBulk` runs its rollups strictly sequentially because an import can carry 1,500+ pairs and firing those at once exhausts the connection pool. A class-sized batch is two orders of magnitude smaller and can afford concurrency, capped so that failure cannot reappear.
+- **Validate the whole batch before writing any of it.** The route used to validate-and-write one at a time, so a rejection partway through left the earlier students marked and reported how many got through. A submit is now all-or-nothing.
+
+### ⚠ `after()` is not for audit rows
+
+Moving audit-log inserts into `after()` was tried and **reverted**. An audit row is a compliance record; if post-response work is ever dropped the trail gains a hole and nothing reports it — the same "failure that reads as good news" shape this codebase guards against elsewhere. Parallelising the inserts takes ~30 sequential round-trips to about one, which is nearly all of the win at none of that risk.
+
+### The refresh is part of the write, and it must be awaited
+
+`router.refresh()` fired and forgotten is why writes felt broken rather than merely slow — see KD #186. `useWriteAction` awaits it and holds the pending toast across it. Two consequences for anything on this path:
+
+- **A doubled refresh doubles real work.** `app/(markbook)/markbook/grading/[id]/page.tsx:156` performs a **service-role RPC write on every render**, so a component that refreshes while its parent also refreshes runs that write twice. The guard test forbids a bare `router.refresh()` beside `useWriteAction` for exactly this reason.
+- **The component that owns the write owns the wait.** Passing an `onSaved`/`onDone` callback whose whole body is `router.refresh()` splits the responsibility and reliably goes stale — three components had this and one of them shipped the bug.
+
+### Examined and deliberately NOT done — do not re-add these
+
+Each was on the original list; each stopped making sense once the code was read.
+
+- **Scoping the 13-tag cache invalidation.** The premise was that a write pays for invalidating 13 tags. It does not — `revalidateTag` only marks entries stale, and the rebuild is paid by whoever next opens that page. The 180k-row attendance scan only rebuilds if somebody opens the attendance dashboard. Meanwhile a roster change genuinely does affect all six modules' rolled-up counts, so narrowing trades a benefit that could not be measured for staleness — the exact bug class this work was spent hunting. Three of the nine call sites (`generate-index`, `level-aliases`, `sections` create) are plausibly narrower and are worth revisiting **only with a measurement in hand**.
+- **The grading page's render-time RPC.** Idempotent and load-bearing: it is what picks up a late enrollee added after the sheet was generated, and the comment above it says so. Removing it trades a real self-healing behaviour for one round-trip, and it cannot simply move after the fetch because the entries query depends on it.
+- **Caching `requireCurrentAyCode()`.** It would have to move off the cookie client onto the service client inside `unstable_cache`, and be invalidated wherever `is_current` flips. The benefit is one small indexed SELECT per write; the failure mode is the whole app operating on the wrong academic year. Wrong trade.
+
+### Still open
+
+**14 write routes invalidate nothing.** A missing `revalidateTag` only bites when the surface reads through a cached loader, but caching here is pervasive (`lib/sis/` alone has 15 cached read modules), so the default expectation is that it does. `change-requests/act` is the one to look at first: it is the email approve/reject route, so the person acting never sees the queue — but everyone else's change-request list and notification bell go stale until the 60-second TTL expires.

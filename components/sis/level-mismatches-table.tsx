@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { CheckCircle2, Loader2, Save } from 'lucide-react';
+import { CheckCircle2, Save } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -136,7 +135,6 @@ function LevelMismatchAction({
   row: UnmatchedLevelLabel;
   levels: LevelOption[];
 }) {
-  const router = useRouter();
   const [selectedLevelId, setSelectedLevelId] = useState<string | null>(null);
 
   const saveMutation = useMutation({
@@ -148,19 +146,21 @@ function LevelMismatchAction({
           toLevelId: selectedLevelId,
         })
       ),
-    onSuccess: () => {
-      toast.success(
-        `Mapped "${row.rawLabel}" — this label now resolves automatically.`
-      );
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(
-        err instanceof Error ? err.message : 'Could not save mapping'
-      );
-    },
   });
-  const saving = saveMutation.isPending;
+
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(), {
+      pending: `Mapping "${row.rawLabel}"…`,
+      success: `Mapped "${row.rawLabel}" — this label now resolves automatically.`,
+      error: (err) =>
+        err instanceof Error ? err.message : 'Could not save mapping',
+    });
+    setSaving(false);
+  }
 
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -183,14 +183,12 @@ function LevelMismatchAction({
       </Select>
       <Button
         size="sm"
-        disabled={!selectedLevelId || saving}
-        onClick={() => saveMutation.mutate()}
+        loading={saving}
+        loadingText="Saving…"
+        disabled={!selectedLevelId}
+        onClick={() => void save()}
       >
-        {saving ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <Save className="size-3.5" />
-        )}
+        {!saving && <Save className="size-3.5" />}
         Save
       </Button>
     </div>

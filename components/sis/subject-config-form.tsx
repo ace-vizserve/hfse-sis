@@ -1,11 +1,11 @@
 'use client';
 
-import { AlertCircle, CheckCircle2, Loader2, Save } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { AlertCircle, CheckCircle2, Save } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { GradingSheetPreview } from '@/components/sis/grading-sheet-preview';
 import { Button } from '@/components/ui/button';
@@ -118,7 +118,6 @@ type SubjectConfigFormProps = {
 
 export function SubjectConfigForm(props: SubjectConfigFormProps) {
   const { subjects, onSaved, onCancel, mode } = props;
-  const router = useRouter();
 
   const subjectId = mode === 'edit' ? props.draft.id : props.subject.id;
   const subjectCode = mode === 'edit' ? props.draft.code : props.subject.code;
@@ -235,27 +234,27 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
             jsonInit('PATCH', payload)
           )
         : apiFetch('/api/sis/admin/subjects', jsonInit('POST', payload)),
-    onSuccess: () => {
-      toast.success(
-        mode === 'edit'
-          ? `${subjectName}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
-          : `Set weights for ${subjectCode}`
-      );
-      router.refresh();
-      onSaved?.();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
-    },
   });
-  const savingWeights = saveWeightsMutation.isPending;
 
-  function saveWeights() {
+  const run = useWriteAction();
+  const [savingWeights, setSavingWeights] = useState(false);
+
+  async function saveWeights() {
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? 'Invalid values');
       return;
     }
-    saveWeightsMutation.mutate(parsed.data);
+    setSavingWeights(true);
+    await run(() => saveWeightsMutation.mutateAsync(parsed.data), {
+      pending: `Saving weights for ${subjectCode}…`,
+      success:
+        mode === 'edit'
+          ? `${subjectName}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+          : `Set weights for ${subjectCode}`,
+      error: (e: unknown) => (e instanceof Error ? e.message : 'Save failed'),
+      onResolved: () => onSaved?.(),
+    });
+    setSavingWeights(false);
   }
 
   // ── Reports-to — edit mode only ──────────────────────────────────────
@@ -270,31 +269,29 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
         `/api/sis/admin/subjects/${subjectId}/report-map`,
         jsonInit('PUT', { report_subject_id: nextReportSubjectId })
       ),
-    onSuccess: (_data, nextReportSubjectId) => {
-      const target = subjects.find((s) => s.id === nextReportSubjectId);
-      toast.success(
-        nextReportSubjectId === subjectId
-          ? `${subjectCode} now reports as itself`
-          : `${subjectCode} now reports as ${target?.code ?? 'another subject'}`
-      );
-      router.refresh();
-      // Deliberately does NOT call onSaved() — this auto-saves silently in
-      // the background (matching the pre-extraction dialog's own
-      // behavior: changing "Reports to" never closed the dialog). onSaved
-      // is reserved for the one explicit, terminal action in this form
-      // (the weights Save button) — calling it here would close the
-      // caller's chrome (inline expansion / drawer) after a single field
-      // tweak, before the admin is necessarily done.
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Could not update mapping');
-      if (mode === 'edit') setReportSubjectId(props.draft.reportSubjectId);
-    },
   });
 
-  function onReportSubjectChange(next: string) {
+  // Deliberately does NOT call onSaved() — this auto-saves in the background
+  // (matching the pre-extraction dialog: changing "Reports to" never closed
+  // it). onSaved is reserved for the one explicit, terminal action in this
+  // form (the weights Save button); calling it here would close the caller's
+  // chrome after a single field tweak, before the admin is necessarily done.
+  async function onReportSubjectChange(next: string) {
     setReportSubjectId(next);
-    reportMapMutation.mutate(next);
+    const target = subjects.find((s) => s.id === next);
+    const result = await run(() => reportMapMutation.mutateAsync(next), {
+      // The picker already shows the new value.
+      pending: false,
+      success:
+        next === subjectId
+          ? `${subjectCode} now reports as itself`
+          : `${subjectCode} now reports as ${target?.code ?? 'another subject'}`,
+      error: (e: unknown) =>
+        e instanceof Error ? e.message : 'Could not update mapping',
+    });
+    if (result === undefined && mode === 'edit') {
+      setReportSubjectId(props.draft.reportSubjectId);
+    }
   }
 
   // ── Grade type + grading method + report label — new in Task 2 (+
@@ -312,44 +309,57 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
         `/api/sis/admin/subjects/catalog/${subjectId}`,
         jsonInit('PATCH', patch)
       ),
-    onSuccess: (_data, patch) => {
-      const what =
-        'is_examinable' in patch
-          ? 'grade type'
-          : 'grading_method' in patch
-            ? 'grading method'
-            : 'report label';
-      toast.success(`${subjectCode} ${what} updated`);
-      if ('report_label' in patch)
-        lastSavedReportLabelRef.current = patch.report_label ?? '';
-      router.refresh();
-      // No onSaved() here either — same reasoning as reportMapMutation
-      // above; these auto-save independently and shouldn't close the
-      // caller's chrome on their own.
-    },
-    onError: (e, patch) => {
-      toast.error(e instanceof Error ? e.message : 'Could not update');
-      if ('is_examinable' in patch) setIsExaminable(initialIsExaminable);
-      if ('grading_method' in patch) setGradingMethod(initialGradingMethod);
-      if ('report_label' in patch)
-        setReportLabel(lastSavedReportLabelRef.current);
-    },
   });
+
+  // No onSaved() here either — same reasoning as onReportSubjectChange above;
+  // these auto-save independently and shouldn't close the caller's chrome.
+  async function saveCatalogPatch(patch: {
+    is_examinable?: boolean;
+    grading_method?: GradingMethod;
+    report_label?: string;
+  }) {
+    const what =
+      'is_examinable' in patch
+        ? 'grade type'
+        : 'grading_method' in patch
+          ? 'grading method'
+          : 'report label';
+    const result = await run(() => catalogMutation.mutateAsync(patch), {
+      // Each control already displays the value the user just chose.
+      pending: false,
+      success: `${subjectCode} ${what} updated`,
+      error: (e: unknown) =>
+        e instanceof Error ? e.message : 'Could not update',
+    });
+
+    if (result !== undefined) {
+      if ('report_label' in patch) {
+        lastSavedReportLabelRef.current = patch.report_label ?? '';
+      }
+      return;
+    }
+    // Failed — put each optimistically-changed control back.
+    if ('is_examinable' in patch) setIsExaminable(initialIsExaminable);
+    if ('grading_method' in patch) setGradingMethod(initialGradingMethod);
+    if ('report_label' in patch) {
+      setReportLabel(lastSavedReportLabelRef.current);
+    }
+  }
 
   function onGradeTypeChange(next: 'numeric' | 'letter') {
     const nextExaminable = next === 'numeric';
     setIsExaminable(nextExaminable);
-    catalogMutation.mutate({ is_examinable: nextExaminable });
+    void saveCatalogPatch({ is_examinable: nextExaminable });
   }
 
   function onGradingMethodChange(next: GradingMethod) {
     setGradingMethod(next);
-    catalogMutation.mutate({ grading_method: next });
+    void saveCatalogPatch({ grading_method: next });
   }
 
   function onReportLabelBlur() {
     if (reportLabel === lastSavedReportLabelRef.current) return;
-    catalogMutation.mutate({ report_label: reportLabel });
+    void saveCatalogPatch({ report_label: reportLabel });
   }
 
   const previewValid =
@@ -571,7 +581,10 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
           eyebrow="Reports to"
           helper="Which report-card column this subject's grades show under. Most subjects report as themselves."
         >
-          <Select value={reportSubjectId} onValueChange={onReportSubjectChange}>
+          <Select
+            value={reportSubjectId}
+            onValueChange={(v) => void onReportSubjectChange(v)}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Pick a subject" />
             </SelectTrigger>
@@ -619,15 +632,13 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
             {gradingMethod !== 'no_sheet' && (
               <Button
                 type="button"
-                onClick={saveWeights}
-                disabled={savingWeights || !parsed.success}
+                onClick={() => void saveWeights()}
+                loading={savingWeights}
+                loadingText="Saving…"
+                disabled={!parsed.success}
                 className="gap-1.5"
               >
-                {savingWeights ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Save className="size-3.5" />
-                )}
+                {!savingWeights && <Save className="size-3.5" />}
                 {mode === 'edit' ? 'Save weights' : 'Set weights'}
               </Button>
             )}

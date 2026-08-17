@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Loader2, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -55,9 +56,8 @@ export function ImportAttendanceForm({
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
 
-  // Tier-2 mutation (Model A): a multipart upload — FormData passed straight to
-  // apiFetch (NO jsonInit / content-type header, so the browser sets the
-  // multipart boundary). useMutation owns the pending/error UX; the
+  // A multipart upload — FormData passed straight to apiFetch (NO jsonInit /
+  // content-type header, so the browser sets the multipart boundary). The
   // route-specific error copy is preserved via ApiError.message (body.error).
   const importMutation = useMutation({
     mutationFn: (formData: FormData) =>
@@ -65,29 +65,42 @@ export function ImportAttendanceForm({
         method: 'POST',
         body: formData,
       }),
-    onSuccess: (ok) => {
-      setResult(ok);
-      const totalErrors = ok.reports.reduce((n, r) => n + r.errors.length, 0);
-      if (totalErrors > 0) {
-        toast.warning(
-          `${ok.dryRun ? 'Parse' : 'Import'} finished with ${totalErrors} sheet-level issue${
-            totalErrors === 1 ? '' : 's'
-          } — review the report below.`
-        );
-      } else {
-        toast.success(
-          ok.dryRun
-            ? `Dry run OK: ${ok.totalDailyWritten.toLocaleString('en-SG')} rows parsed across ${ok.sections} sheet${ok.sections === 1 ? '' : 's'}`
-            : `Imported ${ok.totalDailyWritten.toLocaleString('en-SG')} rows across ${ok.sections} sheet${ok.sections === 1 ? '' : 's'}`
-        );
-      }
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'import failed');
-    },
   });
 
-  const submitting = importMutation.isPending;
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function runImport(formData: FormData) {
+    setSubmitting(true);
+    await run(() => importMutation.mutateAsync(formData), {
+      // A workbook of a whole term is the longest wait in the module.
+      pending: dryRun ? 'Parsing the workbook…' : 'Importing attendance…',
+      success: (ok) => {
+        const totalErrors = ok.reports.reduce((n, r) => n + r.errors.length, 0);
+        if (totalErrors > 0) {
+          // It finished, but with sheet-level issues — that is a warning, not a
+          // success, and it must not be recoloured into one.
+          toast.warning(
+            `${ok.dryRun ? 'Parse' : 'Import'} finished with ${totalErrors} sheet-level issue${
+              totalErrors === 1 ? '' : 's'
+            } — review the report below.`
+          );
+          return null;
+        }
+        return ok.dryRun
+          ? `Dry run OK: ${ok.totalDailyWritten.toLocaleString('en-SG')} rows parsed across ${ok.sections} sheet${ok.sections === 1 ? '' : 's'}`
+          : `Imported ${ok.totalDailyWritten.toLocaleString('en-SG')} rows across ${ok.sections} sheet${ok.sections === 1 ? '' : 's'}`;
+      },
+      error: (e) => (e instanceof Error ? e.message : 'import failed'),
+      // The report renders from this component's own state, so it is ready
+      // immediately either way.
+      onResolved: (ok) => setResult(ok),
+      // A dry run writes nothing, so there is no server state to re-read. A
+      // real import changes the term's attendance and every rollup off it.
+      refresh: (ok) => !ok.dryRun,
+    });
+    setSubmitting(false);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -105,7 +118,7 @@ export function ImportAttendanceForm({
     formData.set('file', file);
     formData.set('termId', termId);
     formData.set('dryRun', String(dryRun));
-    importMutation.mutate(formData);
+    void runImport(formData);
   }
 
   return (
@@ -183,19 +196,13 @@ export function ImportAttendanceForm({
       <div className="flex justify-end">
         <Button
           type="submit"
-          disabled={submitting || !file || !termId}
+          loading={submitting}
+          loadingText={dryRun ? 'Parsing…' : 'Importing…'}
+          disabled={!file || !termId}
           className="gap-2"
         >
-          {submitting ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Upload className="size-4" />
-          )}
-          {submitting
-            ? 'Working…'
-            : dryRun
-              ? 'Run dry parse'
-              : 'Import to ledger'}
+          {!submitting && <Upload className="size-4" />}
+          {dryRun ? 'Run dry parse' : 'Import to ledger'}
         </Button>
       </div>
 

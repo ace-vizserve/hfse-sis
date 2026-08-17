@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, RotateCcw, Save } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { RotateCcw, Save } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +29,6 @@ export function VacationAllowanceInline({
   disabled?: boolean;
   disabledReason?: string;
 }) {
-  const router = useRouter();
   const effective = initial ?? schoolDefault;
   const [value, setValue] = useState<string>(String(effective));
 
@@ -37,44 +37,46 @@ export function VacationAllowanceInline({
   const dirty = valid && numeric !== effective;
   const hasOverride = initial !== null;
 
-  // Tier-2: `value` is the form input (not an optimistic mirror of the server),
-  // so the mutation is a plain save → router.refresh(). `isPending` drives the
-  // disable; the route's `body.error` is preserved via ApiError.message
-  // (fallback 'save failed' unchanged).
+  // `value` is the form input (not an optimistic mirror of the server), so this
+  // is a plain save. The route's `body.error` is preserved via
+  // ApiError.message (fallback 'save failed' unchanged).
   const saveMutation = useMutation({
     mutationFn: (vlAllowance: number | null) =>
       apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/vl-allowance`,
         jsonInit('PATCH', { vlAllowance })
       ),
-    onSuccess: (_data, vlAllowance) => {
-      if (vlAllowance === null) {
-        toast.success(
-          `Reset — now using school default (${schoolDefault} per term)`
-        );
-      } else {
-        toast.success(`Vacation leave set to ${vlAllowance} per term`);
-      }
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    },
   });
 
-  const saving = saveMutation.isPending;
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  // Both entry points below are the same write; `null` means "drop the override
+  // and follow the school default again".
+  async function commit(vlAllowance: number | null) {
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(vlAllowance), {
+      pending: 'Saving vacation leave…',
+      success:
+        vlAllowance === null
+          ? `Reset — now using school default (${schoolDefault} per term)`
+          : `Vacation leave set to ${vlAllowance} per term`,
+      error: (err) => (err instanceof Error ? err.message : 'save failed'),
+    });
+    setSaving(false);
+  }
 
   function save() {
     if (!valid) {
       toast.error('Enter a whole number between 0 and 10');
       return;
     }
-    saveMutation.mutate(numeric);
+    void commit(numeric);
   }
 
   function resetToSchoolDefault() {
     setValue(String(schoolDefault));
-    saveMutation.mutate(null);
+    void commit(null);
   }
 
   return (
@@ -113,15 +115,13 @@ export function VacationAllowanceInline({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || saving || !dirty}
+          loading={saving}
+          loadingText="Saving…"
+          disabled={disabled || !dirty}
           onClick={save}
           className="gap-1.5"
         >
-          {saving ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Save className="size-3.5" />
-          )}
+          {!saving && <Save className="size-3.5" />}
           Save
         </Button>
         {hasOverride && (

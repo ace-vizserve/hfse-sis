@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
-import { toast } from 'sonner';
+import { Plus } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -82,6 +82,7 @@ export function NewSectionButton({
   onCreated?: (section: { id: string; name: string }) => void;
 }) {
   const router = useRouter();
+  const run = useWriteAction();
   const isControlled = controlledOpen !== undefined;
   // Auto-opens on first render when an initialLevelId arrives while
   // uncontrolled — e.g. a caller deep-links here via ?addSectionLevel=<id>,
@@ -109,9 +110,8 @@ export function NewSectionButton({
   const selectedLevelType =
     levels.find((l) => l.id === selectedLevelId)?.level_type ?? null;
 
-  // Tier-2 mutation (Model A): the POST is routed through useMutation; we keep
-  // onSubmit async + mutateAsync so RHF's isSubmitting still drives `busy`, and
-  // router.push/refresh fire on success exactly as before. The bespoke error
+  // RHF stays the submit-state owner — awaiting `run` below holds isSubmitting
+  // true across the whole lifecycle, refresh included. The bespoke error
   // fallback ('create failed') is preserved — ApiError.message already resolves
   // to body.error, so a thrown ApiError carries the route's specific copy.
   const createMutation = useMutation({
@@ -137,22 +137,25 @@ export function NewSectionButton({
       });
       return;
     }
-    try {
-      const body = await createMutation.mutateAsync(values);
-      toast.success(`Created ${values.name}`);
-      setOpen(false);
-      form.reset(blankValues());
-      if (onCreated) {
-        onCreated({ id: body.id, name: values.name.trim() });
-        router.refresh();
-      } else {
-        // Section setup lives in SIS Admin now (2026-04-22).
-        router.push(`/sis/sections/${body.id}`);
-        router.refresh();
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'create failed');
-    }
+    await run(() => createMutation.mutateAsync(values), {
+      pending: `Creating ${values.name.trim()}…`,
+      success: `Created ${values.name.trim()}`,
+      error: (e) => (e instanceof Error ? e.message : 'create failed'),
+      onResolved: (body) => {
+        setOpen(false);
+        form.reset(blankValues());
+        if (onCreated) {
+          onCreated({ id: body.id, name: values.name.trim() });
+        } else {
+          // Section setup lives in SIS Admin now (2026-04-22).
+          router.push(`/sis/sections/${body.id}`);
+        }
+      },
+      // Only worth waiting for when we stay on this page. On the other branch
+      // we navigate to the new section, and that page renders fresh anyway —
+      // the old one going away is the feedback.
+      refresh: () => Boolean(onCreated),
+    });
   }
 
   const busy = form.formState.isSubmitting;
@@ -294,13 +297,14 @@ export function NewSectionButton({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy} className="gap-1.5">
-                {busy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Plus className="size-3.5" />
-                )}
-                {busy ? 'Creating…' : 'Create section'}
+              <Button
+                type="submit"
+                loading={busy}
+                loadingText="Creating…"
+                className="gap-1.5"
+              >
+                {!busy && <Plus className="size-3.5" />}
+                Create section
               </Button>
             </DialogFooter>
           </form>

@@ -7,10 +7,11 @@ import {
   Lock,
   XCircle,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
@@ -52,7 +53,6 @@ export function TermDatesEditor({
   terms: TermRow[];
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<TermDraft[]>(() => toDrafts(terms));
   const [justSavedIds, setJustSavedIds] = useState<Set<string>>(new Set());
@@ -129,20 +129,34 @@ export function TermDatesEditor({
       });
       return { succeeded, failures, total: dirtyDrafts.length };
     },
-    onSuccess: ({ succeeded, failures, total }) => {
-      setJustSavedIds(succeeded);
-      if (failures.length === 0) {
-        toast.success(`${total} term${total === 1 ? '' : 's'} updated.`);
-        router.refresh();
-        setTimeout(() => setOpen(false), 400);
-      } else {
-        toast.error(failures.join(' · '));
-        // Partial success still worth refreshing so the UI reflects what landed.
-        if (succeeded.size > 0) router.refresh();
-      }
-    },
   });
-  const savingAll = saveAllMutation.isPending;
+
+  const run = useWriteAction();
+  const [savingAll, setSavingAll] = useState(false);
+
+  async function commitAll(dirtyDrafts: TermDraft[]) {
+    setSavingAll(true);
+    await run(() => saveAllMutation.mutateAsync(dirtyDrafts), {
+      pending: `Saving ${dirtyDrafts.length} term${dirtyDrafts.length === 1 ? '' : 's'}…`,
+      // A batch that partly failed is a failure to report, not a success —
+      // the per-term reasons are the useful part.
+      success: ({ failures, total }) => {
+        if (failures.length > 0) {
+          toast.error(failures.join(' · '));
+          return null;
+        }
+        return `${total} term${total === 1 ? '' : 's'} updated.`;
+      },
+      onResolved: ({ succeeded, failures }) => {
+        setJustSavedIds(succeeded);
+        if (failures.length === 0) setTimeout(() => setOpen(false), 400);
+      },
+      // Partial success is still worth refreshing so the UI reflects what
+      // landed; an all-failure batch changed nothing.
+      refresh: ({ succeeded }) => succeeded.size > 0,
+    });
+    setSavingAll(false);
+  }
 
   function saveAll() {
     // Pre-validate all dirty drafts — abort cleanly on any date-order issue
@@ -177,7 +191,7 @@ export function TermDatesEditor({
       }
     }
 
-    saveAllMutation.mutate(dirtyDrafts);
+    void commitAll(dirtyDrafts);
   }
 
   const sorted = drafts.slice().sort((a, b) => a.term_number - b.term_number);

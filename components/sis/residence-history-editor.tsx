@@ -1,10 +1,11 @@
 'use client';
 
-import { Loader2, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
@@ -141,7 +142,6 @@ export function ResidenceHistoryEditor({
   enroleeNumber: string;
   initialJson: unknown;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const initialEntries = useMemo(() => {
@@ -181,18 +181,12 @@ export function ResidenceHistoryEditor({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/residence-history?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('PATCH', { residenceHistory: payload })
       ),
-    onSuccess: () => {
-      toast.success('Residence history saved');
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
-    },
   });
-  const busy = saveMutation.isPending;
 
-  function onSave() {
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function onSave() {
     if (entries.length < 1) {
       toast.error('At least one residence entry is required for ICA');
       return;
@@ -204,7 +198,14 @@ export function ResidenceHistoryEditor({
         return;
       }
     }
-    saveMutation.mutate(serializeEntries(entries));
+    setBusy(true);
+    await run(() => saveMutation.mutateAsync(serializeEntries(entries)), {
+      pending: 'Saving residence history…',
+      success: 'Residence history saved',
+      error: (e) => (e instanceof Error ? e.message : 'Failed to save'),
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
   }
 
   // Quick-summary count for the trigger button label.
@@ -387,9 +388,14 @@ export function ResidenceHistoryEditor({
             >
               Cancel
             </Button>
-            <Button type="button" size="sm" onClick={onSave} disabled={busy}>
-              {busy && <Loader2 className="size-3.5 animate-spin" />}
-              {busy ? 'Saving…' : 'Save changes'}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void onSave()}
+              loading={busy}
+              loadingText="Saving…"
+            >
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>

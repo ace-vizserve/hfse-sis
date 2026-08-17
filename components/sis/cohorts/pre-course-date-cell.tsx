@@ -1,10 +1,9 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -34,7 +33,6 @@ export function PreCourseDateCell({
   ayCode: string;
   value: string | null;
 }) {
-  const router = useRouter();
   const [date, setDate] = useState<string>(value ?? '');
 
   // Tier-1 optimistic: `date` is local display state. onMutate snapshots the
@@ -53,33 +51,35 @@ export function PreCourseDateCell({
       setDate(next); // optimistic
       return { prev };
     },
-    onSuccess: (_data, next) => {
-      toast.success(next ? 'Session date saved' : 'Session date cleared');
-      router.refresh();
-    },
-    onError: (err, _next, ctx) => {
+    onError: (_err, _next, ctx) => {
       if (ctx) setDate(ctx.prev); // revert
-      if (err instanceof ApiError) {
-        const body = err.body;
-        const errStr =
-          body && typeof body === 'object'
-            ? (body as Record<string, unknown>).error
-            : undefined;
-        toast.error(
-          typeof errStr === 'string' && errStr
-            ? errStr
-            : 'Could not save the session date'
-        );
-        return;
-      }
-      toast.error(err instanceof Error ? err.message : 'Save failed');
     },
   });
 
-  const pending = commitMutation.isPending;
+  const run = useWriteAction();
+  const [pending, setPending] = useState(false);
 
-  function commit(next: string) {
-    commitMutation.mutate(next);
+  async function commit(next: string) {
+    setPending(true);
+    await run(() => commitMutation.mutateAsync(next), {
+      // The cell already shows the new date optimistically.
+      pending: false,
+      success: next ? 'Session date saved' : 'Session date cleared',
+      error: (err) => {
+        if (err instanceof ApiError) {
+          const body = err.body;
+          const errStr =
+            body && typeof body === 'object'
+              ? (body as Record<string, unknown>).error
+              : undefined;
+          return typeof errStr === 'string' && errStr
+            ? errStr
+            : 'Could not save the session date';
+        }
+        return err instanceof Error ? err.message : 'Save failed';
+      },
+    });
+    setPending(false);
   }
 
   return (
@@ -89,7 +89,7 @@ export function PreCourseDateCell({
       ) : (
         <DatePicker
           value={date}
-          onChange={commit}
+          onChange={(next) => void commit(next)}
           allowClear
           disabled={pending}
           placeholder="Record session"

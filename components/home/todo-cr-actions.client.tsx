@@ -1,17 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { Check, X } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 
 export function TodoCrActions({ requestId }: { requestId: string }) {
-  const router = useRouter();
-
   // Approve fires immediately, no dialog — decide.ts's approve path needs
   // no note (KD #123's email one-click Approve behaves the same way).
   // Reject stays a Link, not a mutation — rejecting requires a reason
@@ -22,23 +20,33 @@ export function TodoCrActions({ requestId }: { requestId: string }) {
         `/api/change-requests/${requestId}`,
         jsonInit('PATCH', { action: 'approve' })
       ),
-    onSuccess: () => {
-      toast.success('Change request approved');
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof ApiError ? e.message : 'Failed to approve');
-    },
     retry: 0,
   });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  // The row this button sits in disappears once the to-do list re-renders, so
+  // holding the toast until then is what stops it reappearing under a
+  // "approved" message.
+  async function approve() {
+    setBusy(true);
+    await run(() => approveMutation.mutateAsync(), {
+      pending: 'Approving change request…',
+      success: 'Change request approved',
+      error: (e) => (e instanceof ApiError ? e.message : 'Failed to approve'),
+    });
+    setBusy(false);
+  }
 
   return (
     <div className="flex shrink-0 gap-1.5">
       <Button
         variant="success"
         size="sm"
-        onClick={() => approveMutation.mutate()}
-        disabled={approveMutation.isPending}
+        onClick={() => void approve()}
+        loading={busy}
+        loadingText="Approving…"
       >
         <Check /> Approve
       </Button>

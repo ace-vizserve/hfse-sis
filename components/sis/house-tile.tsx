@@ -2,9 +2,9 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { House } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import {
   Select,
@@ -54,8 +54,6 @@ export function HouseTile({
   disabled?: boolean;
   disabledReason?: string;
 }) {
-  const router = useRouter();
-
   // Held locally so the tile changes colour on click rather than after the
   // round-trip and the refresh behind it. Re-syncs from the prop, which is
   // what reverts it when a save fails.
@@ -68,20 +66,30 @@ export function HouseTile({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/house`,
         jsonInit('PATCH', { houseId: next })
       ),
-    onSuccess: (_data, next) => {
-      const name = houses.find((h) => h.id === next)?.name;
-      toast.success(name ? `Moved to ${name}` : 'House cleared');
-      router.refresh();
-    },
-    onError: (err) => {
-      // A failed PATCH changed nothing, so the prop is still the saved value.
-      setHouseId(initialHouseId);
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    },
   });
 
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function save(next: string | null) {
+    setSaving(true);
+    const result = await run(() => saveMutation.mutateAsync(next), {
+      // The tile already changed colour on click — a pending toast would
+      // narrate a change the user is looking at.
+      pending: false,
+      success: () => {
+        const name = houses.find((h) => h.id === next)?.name;
+        return name ? `Moved to ${name}` : 'House cleared';
+      },
+      error: (err) => (err instanceof Error ? err.message : 'save failed'),
+    });
+    // A failed PATCH changed nothing, so the prop is still the saved value.
+    if (result === undefined) setHouseId(initialHouseId);
+    setSaving(false);
+  }
+
   const current = houseId ? houses.find((h) => h.id === houseId) : undefined;
-  const isDisabled = disabled || saveMutation.isPending || houses.length === 0;
+  const isDisabled = disabled || saving || houses.length === 0;
 
   return (
     <div
@@ -133,7 +141,7 @@ export function HouseTile({
           onValueChange={(v) => {
             const next = v === NONE ? null : v;
             setHouseId(next);
-            saveMutation.mutate(next);
+            void save(next);
           }}
         >
           <SelectTrigger

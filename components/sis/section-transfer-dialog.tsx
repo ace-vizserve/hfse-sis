@@ -1,10 +1,10 @@
 'use client';
 
-import { ArrowRightLeft, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ArrowRightLeft } from 'lucide-react';
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
@@ -44,7 +44,6 @@ export function SectionTransferDialog({
   siblings,
   trigger,
 }: SectionTransferDialogProps) {
-  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
@@ -58,33 +57,33 @@ export function SectionTransferDialog({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/transfer-section?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('POST', { targetSectionId })
       ),
-    onSuccess: (_data, targetSectionId) => {
-      const target = siblings.find((s) => s.id === targetSectionId);
-      toast.success(
-        `Moved ${studentName} from ${fromSectionName} to ${target?.name ?? 'target'}.`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (err) => {
+  });
+
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function submit() {
+    if (!selectedId) return;
+    const target = siblings.find((s) => s.id === selectedId);
+    setSubmitting(true);
+    await run(() => transferMutation.mutateAsync(selectedId), {
+      pending: `Moving ${studentName}…`,
+      success: `Moved ${studentName} from ${fromSectionName} to ${target?.name ?? 'target'}.`,
       // Preserve the two-tier error copy: prefer the server's `error`, else a
       // status-coded fallback; network errors → generic 'Transfer failed'.
-      if (err instanceof ApiError) {
-        const serverError =
-          err.body && typeof err.body === 'object'
-            ? (err.body as { error?: string }).error
-            : undefined;
-        toast.error(serverError ?? `Transfer failed (${err.status})`);
-        return;
-      }
-      toast.error(err instanceof Error ? err.message : 'Transfer failed');
-    },
-  });
-  const submitting = transferMutation.isPending;
-
-  function submit() {
-    if (!selectedId) return;
-    transferMutation.mutate(selectedId);
+      error: (err) => {
+        if (err instanceof ApiError) {
+          const serverError =
+            err.body && typeof err.body === 'object'
+              ? (err.body as { error?: string }).error
+              : undefined;
+          return serverError ?? `Transfer failed (${err.status})`;
+        }
+        return err instanceof Error ? err.message : 'Transfer failed';
+      },
+      onResolved: () => setOpen(false),
+    });
+    setSubmitting(false);
   }
 
   // Sort siblings by capacity (most-available first), then alphabetically.
@@ -168,10 +167,11 @@ export function SectionTransferDialog({
           </Button>
           <Button
             type="button"
-            onClick={submit}
-            disabled={!selectedId || submitting}
+            onClick={() => void submit()}
+            loading={submitting}
+            loadingText="Moving…"
+            disabled={!selectedId}
           >
-            {submitting && <Loader2 className="size-3.5 animate-spin" />}
             Move student
           </Button>
         </DialogFooter>

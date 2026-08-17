@@ -2,17 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Loader2,
-  Lock,
-  LockOpen,
-} from 'lucide-react';
-import { toast } from 'sonner';
+import { AlertTriangle, ArrowUpRight, Lock, LockOpen } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import {
@@ -34,7 +27,6 @@ export function LockToggle({
   sheetId: string;
   isLocked: boolean;
 }) {
-  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Surfaced after the server returns 409 because pending CRs exist; the
   // dialog this state opens is the explicit break-glass override path.
@@ -48,13 +40,6 @@ export function LockToggle({
 
   const action: 'lock' | 'unlock' = isLocked ? 'unlock' : 'lock';
 
-  // Tier-2 mutation. The two 409 break-glass codes are NOT errors to the user —
-  // they open a confirm dialog instead of toasting. apiFetch throws ApiError on
-  // a 409, so we intercept those codes in onError and open the matching dialog
-  // (returning without a toast); any other failure keeps the original
-  // `body.error ?? \`${action} failed\`` fallback message. The success toast still
-  // branches on whether this was a force-unlock, so `force` rides along in the
-  // mutation variables. router.refresh() stays on the success path (Model A).
   const toggleMutation = useMutation({
     mutationFn: (vars: { force: boolean }) => {
       const qs = vars.force ? '?force=true' : '';
@@ -63,68 +48,72 @@ export function LockToggle({
         jsonInit('POST')
       );
     },
-    onSuccess: (_body, vars) => {
-      toast.success(
-        action === 'lock'
-          ? 'Sheet locked'
-          : vars.force
-            ? 'Sheet unlocked (pending requests bypassed)'
-            : 'Sheet unlocked'
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        const body = (e.body ?? {}) as {
-          error?: string;
-          termLabel?: string;
-          lockDate?: string;
-          pendingCount?: number;
-        };
-        if (body.error === 'grading_lock_date_passed') {
-          setDeadlineBlock({
-            termLabel: body.termLabel ?? 'this term',
-            lockDate: body.lockDate ?? '',
-          });
-          return;
-        }
-        if (body.error === 'pending_change_requests') {
-          setPendingBlock({ pendingCount: body.pendingCount ?? 0 });
-          return;
-        }
-      }
-      // ApiError.message already resolves to the body's `error` field; fall
-      // back to the original generic message for non-JSON / unknown failures.
-      toast.error(e instanceof Error ? e.message : `Failed to ${action} sheet`);
-    },
   });
 
-  const busy = toggleMutation.isPending;
+  // Locking recomputes nothing but flips every score cell on the sheet behind
+  // this button to read-only, so the toast holds until that re-render lands.
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
 
   async function runToggle(opts: { force?: boolean } = {}) {
-    await toggleMutation
-      .mutateAsync({ force: opts.force ?? false })
-      .catch(() => {
-        // onError already surfaced the outcome (dialog or toast); swallow so the
-        // dialog-close callers don't see an unhandled rejection.
-      });
+    const force = opts.force ?? false;
+    setBusy(true);
+    await run(() => toggleMutation.mutateAsync({ force }), {
+      pending: action === 'lock' ? 'Locking sheet…' : 'Unlocking sheet…',
+      success:
+        action === 'lock'
+          ? 'Sheet locked'
+          : force
+            ? 'Sheet unlocked (pending requests bypassed)'
+            : 'Sheet unlocked',
+      // The two 409 break-glass codes are NOT errors to the user — each opens a
+      // dialog that explains the block and offers the override. Returning
+      // `null` dismisses the pending toast and suppresses the error one, so the
+      // user gets a single signal instead of a toast and a dialog saying the
+      // same thing.
+      error: (e) => {
+        if (e instanceof ApiError && e.status === 409) {
+          const body = (e.body ?? {}) as {
+            error?: string;
+            termLabel?: string;
+            lockDate?: string;
+            pendingCount?: number;
+          };
+          if (body.error === 'grading_lock_date_passed') {
+            setDeadlineBlock({
+              termLabel: body.termLabel ?? 'this term',
+              lockDate: body.lockDate ?? '',
+            });
+            return null;
+          }
+          if (body.error === 'pending_change_requests') {
+            setPendingBlock({ pendingCount: body.pendingCount ?? 0 });
+            return null;
+          }
+        }
+        // ApiError.message already resolves to the body's `error` field; fall
+        // back to the original generic message for non-JSON / unknown failures.
+        return e instanceof Error ? e.message : `Failed to ${action} sheet`;
+      },
+    });
+    setBusy(false);
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
       <Button
         onClick={() => setConfirmOpen(true)}
-        disabled={busy}
+        loading={busy}
+        loadingText={isLocked ? 'Unlocking…' : 'Locking…'}
         size="sm"
         variant={isLocked ? 'default' : 'destructive'}
       >
-        {busy ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : isLocked ? (
-          <LockOpen className="h-4 w-4" />
-        ) : (
-          <Lock className="h-4 w-4" />
-        )}
+        {!busy &&
+          (isLocked ? (
+            <LockOpen className="h-4 w-4" />
+          ) : (
+            <Lock className="h-4 w-4" />
+          ))}
         {isLocked ? 'Unlock sheet' : 'Lock sheet'}
       </Button>
 

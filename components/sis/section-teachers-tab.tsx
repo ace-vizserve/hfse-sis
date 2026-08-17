@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   Loader2,
   Plus,
@@ -13,6 +12,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { AssignmentReliefControl } from '@/components/sis/assignment-relief-control';
 import { AssignmentRemovalDialog } from '@/components/sis/assignment-removal-dialog';
@@ -107,7 +107,6 @@ export function TeacherAssignmentsPanel({
   /** Has the school year begun? If so, a removal has to say why. */
   termStarted: boolean;
 }) {
-  const router = useRouter();
   const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
   const [assignments, setAssignments] =
     useState<Assignment[]>(initialAssignments);
@@ -162,23 +161,6 @@ export function TeacherAssignmentsPanel({
         '/api/teacher-assignments',
         jsonInit('POST', { ...vars, section_id: sectionId })
       ),
-    onSuccess: async (_data, vars) => {
-      setTeacherId('');
-      setSubjectId('');
-      setAssignOpen(false);
-      // Say who now does what, not that a row was written. `vars` carries what
-      // was actually sent, so the message can't drift from the save.
-      const who =
-        teachers.find((t) => t.id === vars.teacher_user_id)?.display_name ??
-        'That teacher';
-      toast.success(
-        vars.role === 'form_adviser'
-          ? `${who} is now the form adviser for this class.`
-          : `${who} now teaches ${subjectsById.get(vars.subject_id ?? '')?.name ?? 'this subject'} to this class.`
-      );
-      await load();
-      router.refresh();
-    },
     onError: (e) => {
       toast.error(
         e instanceof Error
@@ -202,20 +184,12 @@ export function TeacherAssignmentsPanel({
         `/api/teacher-assignments/${id}`,
         jsonInit('DELETE', { change_reason: reason, change_notes: notes })
       ),
-    onSuccess: async () => {
-      setPendingRemoveId(null);
-      toast.success('Taken off this class.');
-      await load();
-      router.refresh();
-    },
-    onError: (e) => {
-      // Leave the dialog open so the reason the user typed isn't lost.
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to remove assignment'
-      );
-    },
   });
-  const busy = createMutation.isPending || removeMutation.isPending;
+
+  const run = useWriteAction();
+  const [creating, setCreating] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const busy = creating || removing;
 
   function createAssignment() {
     if (!teacherId) {
@@ -226,19 +200,56 @@ export function TeacherAssignmentsPanel({
       toast.error('Choose which subject they teach.');
       return;
     }
-    createMutation.mutate({
+    // The payload is captured here rather than read back off state inside the
+    // resolver: state is cleared by then, and the message names a teacher and
+    // a subject, so it would otherwise drift from what was actually sent.
+    const vars = {
       teacher_user_id: teacherId,
       subject_id: role === 'subject_teacher' ? subjectId : null,
       role,
-    });
+    };
+    const who =
+      teachers.find((t) => t.id === vars.teacher_user_id)?.display_name ??
+      'That teacher';
+
+    setCreating(true);
+    void run(() => createMutation.mutateAsync(vars), {
+      pending: `Assigning ${who}…`,
+      // Say who now does what, not that a row was written.
+      success:
+        vars.role === 'form_adviser'
+          ? `${who} is now the form adviser for this class.`
+          : `${who} now teaches ${subjectsById.get(vars.subject_id ?? '')?.name ?? 'this subject'} to this class.`,
+      error: (e: unknown) =>
+        e instanceof Error ? e.message : 'Failed to create assignment',
+      onResolved: () => {
+        setTeacherId('');
+        setSubjectId('');
+        setAssignOpen(false);
+        void load();
+      },
+    }).finally(() => setCreating(false));
   }
 
-  function removeAssignment(
+  async function removeAssignment(
     id: string,
     reason: AssignmentChangeReason | null,
     notes: string | null
   ) {
-    removeMutation.mutate({ id, reason, notes });
+    setRemoving(true);
+    await run(() => removeMutation.mutateAsync({ id, reason, notes }), {
+      pending: 'Taking them off this class…',
+      success: 'Taken off this class.',
+      error: (e: unknown) =>
+        e instanceof Error ? e.message : 'Failed to remove assignment',
+      // Only closes on success — a failure leaves the dialog open so the
+      // reason the user typed isn't lost.
+      onResolved: () => {
+        setPendingRemoveId(null);
+        void load();
+      },
+    });
+    setRemoving(false);
   }
 
   const teachersById = useMemo(
@@ -610,7 +621,7 @@ export function TeacherAssignmentsPanel({
         termStarted={termStarted}
         title="Remove this assignment?"
         description="The teacher will immediately lose access to this class. You can re-assign them later."
-        busy={removeMutation.isPending}
+        busy={removing}
         onConfirm={async (reason, notes) => {
           const id = pendingRemoveId;
           if (!id) return;

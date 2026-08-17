@@ -1,10 +1,10 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Sparkle } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Sparkle } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,8 +29,6 @@ function formatDate(iso: string | null): string {
 }
 
 export function VirtueThemesEditor({ terms }: { terms: TermProp[] }) {
-  const router = useRouter();
-
   // Controlled values per term, keyed by id
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(terms.map((t) => [t.id, t.virtueTheme]))
@@ -54,32 +52,29 @@ export function VirtueThemesEditor({ terms }: { terms: TermProp[] }) {
         jsonInit('PATCH', { termId: term.id, virtueTheme: value || null })
       );
     },
-    onSuccess: (_data, term) => {
-      const value = (values[term.id] ?? '').trim();
-      // Update baseline to current trimmed value
-      setBaselines((prev) => ({ ...prev, [term.id]: value }));
-      toast.success(`${term.label} virtue theme saved`);
-      router.refresh();
-    },
-    onError: (e) => {
-      // ApiError.message already equals the route's `error` body field, so a
-      // route-specific message (not a generic one) is surfaced.
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to save virtue theme'
-      );
-    },
-    onSettled: (_data, _error, term) => {
-      setSaving((prev) => {
-        const next = new Set(prev);
-        next.delete(term.id);
-        return next;
-      });
-    },
   });
 
-  function handleSave(term: TermProp) {
+  const run = useWriteAction();
+
+  async function handleSave(term: TermProp) {
     setSaving((prev) => new Set(prev).add(term.id));
-    saveMutation.mutate(term);
+    const value = (values[term.id] ?? '').trim();
+    await run(() => saveMutation.mutateAsync(term), {
+      pending: `Saving ${term.label} virtue theme…`,
+      success: `${term.label} virtue theme saved`,
+      // ApiError.message already equals the route's `error` body field, so a
+      // route-specific message (not a generic one) is surfaced.
+      error: (e) =>
+        e instanceof Error ? e.message : 'Failed to save virtue theme',
+      // Baseline moves to the value we just sent, so the field stops reading
+      // dirty the moment the write lands.
+      onResolved: () => setBaselines((prev) => ({ ...prev, [term.id]: value })),
+    });
+    setSaving((prev) => {
+      const next = new Set(prev);
+      next.delete(term.id);
+      return next;
+    });
   }
 
   return (
@@ -152,12 +147,13 @@ export function VirtueThemesEditor({ terms }: { terms: TermProp[] }) {
               <Button
                 type="button"
                 size="sm"
-                onClick={() => handleSave(term)}
-                disabled={!dirty || isSaving}
+                onClick={() => void handleSave(term)}
+                loading={isSaving}
+                loadingText="Saving…"
+                disabled={!dirty}
                 className="shrink-0"
               >
-                {isSaving && <Loader2 className="size-3.5 animate-spin" />}
-                {isSaving ? 'Saving…' : 'Save'}
+                Save
               </Button>
             </div>
           </div>

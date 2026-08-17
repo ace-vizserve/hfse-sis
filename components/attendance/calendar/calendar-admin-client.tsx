@@ -18,8 +18,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch } from '@/lib/query/fetcher';
 import { CalendarSidebar } from '@/components/attendance/calendar/calendar-sidebar';
@@ -118,8 +117,6 @@ export function CalendarAdminClient({
   events,
   copyFromPriorAyProps,
 }: CalendarAdminClientProps) {
-  const router = useRouter();
-
   // ── Selected term ─────────────────────────────────────────────────────────────
   // Default to the current active term (date-resolved, with the layered fallback
   // in resolveCurrentTermId), else the first term.
@@ -312,26 +309,25 @@ export function CalendarAdminClient({
   // The trash control sets a pending id; the AlertDialog confirms before the
   // actual DELETE fires (destructive action — no accidental one-click deletes).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // Tier-2 mutation (Model A): the DELETE routes through useMutation (retry: 0
-  // + consistent error handling); on success we router.refresh(). The
-  // route-specific error copy is preserved — ApiError.message resolves the
+  // The route-specific error copy is preserved — ApiError.message resolves the
   // body's `error` field.
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/attendance/calendar/events?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
-    onSuccess: () => {
-      toast.success('Event deleted');
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete event');
-    },
   });
+
+  const run = useWriteAction();
   const deleteEvent = useCallback(
-    (id: string) => deleteMutation.mutate(id),
-    [deleteMutation]
+    (id: string) =>
+      void run(() => deleteMutation.mutateAsync(id), {
+        pending: 'Deleting event…',
+        success: 'Event deleted',
+        error: (e) =>
+          e instanceof Error ? e.message : 'Failed to delete event',
+      }),
+    [run, deleteMutation]
   );
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -424,7 +420,6 @@ export function CalendarAdminClient({
         events={daySheetEvents}
         editable={daySheetIso ? termForIso(daySheetIso) !== null : false}
         onClose={() => setDaySheetIso(null)}
-        onSaved={() => router.refresh()}
         onAddEvent={(iso) => openEventEditor(null, iso)}
         onEditEvent={(e) => openEventEditor(e)}
         onDeleteEvent={(id) => setPendingDeleteId(id)}
@@ -438,10 +433,9 @@ export function CalendarAdminClient({
         defaultAudience={level}
         editing={editorEditing}
         onClose={closeEventEditor}
-        onCreated={() => {
-          closeEventEditor();
-          router.refresh();
-        }}
+        // Just closes now — the editor awaits its own refresh, so refreshing
+        // again here would run the server render twice for one save.
+        onCreated={closeEventEditor}
       />
 
       <AlertDialog

@@ -1,13 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Pencil } from 'lucide-react';
-import { toast } from 'sonner';
+import { Pencil } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,7 +47,6 @@ export function SectionRenameDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -66,15 +64,9 @@ export function SectionRenameDialog({
         `/api/sections/${sectionId}`,
         jsonInit('PATCH', { name: nextName })
       ),
-    onSuccess: (_data, nextName) => {
-      toast.success(`Section renamed to ${nextName}`);
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'update failed');
-    },
   });
+
+  const run = useWriteAction();
 
   async function onSubmit(values: SectionUpdateInput) {
     const nextName = values.name?.trim() ?? currentName;
@@ -83,8 +75,15 @@ export function SectionRenameDialog({
       return;
     }
     // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
-    // busy signal.
-    await renameMutation.mutateAsync(nextName).catch(() => {});
+    // busy signal — and because `run` is awaited, it stays true through the
+    // refresh, not just the PATCH. `run` never rejects, so the old
+    // `.catch(() => {})` is gone.
+    await run(() => renameMutation.mutateAsync(nextName), {
+      pending: `Renaming to ${nextName}…`,
+      success: `Section renamed to ${nextName}`,
+      error: (e) => (e instanceof Error ? e.message : 'update failed'),
+      onResolved: () => setOpen(false),
+    });
   }
 
   const busy = form.formState.isSubmitting;
@@ -139,9 +138,13 @@ export function SectionRenameDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy} className="gap-1.5">
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                {busy ? 'Saving…' : 'Save'}
+              <Button
+                type="submit"
+                loading={busy}
+                loadingText="Saving…"
+                className="gap-1.5"
+              >
+                Save
               </Button>
             </DialogFooter>
           </form>

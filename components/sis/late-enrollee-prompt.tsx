@@ -2,9 +2,8 @@
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,7 +30,13 @@ export function LateEnrolleePrompt({
   onDone,
 }: {
   payload: MidTermPayload;
-  /** Called once the user has chosen or dismissed — host closes and refreshes. */
+  /**
+   * Called once the user has chosen or dismissed, so the host can close.
+   *
+   * The host used to refresh here too. It no longer should: the write happens
+   * in this component, so the wait belongs in this component, and both hosts
+   * refreshing as well would run the server render twice for one save.
+   */
   onDone: () => void;
 }) {
   // Default to the joining term the server resolved; mid-term that's the
@@ -49,15 +54,27 @@ export function LateEnrolleePrompt({
           late_enrollee_term_number: vars.term,
         })
       ),
-    onSuccess: (_data, vars) => {
-      toast.success(`Marked as late enrollee · T${vars.term}`);
-    },
-    onError: () => {
-      toast.error('Failed to mark as late enrollee');
-    },
-    onSettled: onDone,
   });
-  const applyingLate = lateMutation.isPending;
+
+  const run = useWriteAction();
+  const [applyingLate, setApplyingLate] = useState(false);
+
+  async function confirm(term: number) {
+    setApplyingLate(true);
+    const result = await run(() => lateMutation.mutateAsync({ term }), {
+      pending: 'Marking as late enrollee…',
+      success: `Marked as late enrollee · T${term}`,
+      error: () => 'Failed to mark as late enrollee',
+      // Closes immediately on success while the toast keeps holding for the
+      // refresh. `useRefreshTransition` flushes its waiters on unmount, so
+      // closing here cannot strand the toast.
+      onResolved: onDone,
+    });
+    setApplyingLate(false);
+    // The old `onSettled: onDone` closed on failure too — the host offers no
+    // retry, so leaving it open would strand the user.
+    if (result === undefined) onDone();
+  }
 
   return (
     <>
@@ -120,14 +137,15 @@ export function LateEnrolleePrompt({
         <Button
           type="button"
           size="sm"
-          disabled={applyingLate || chosenTerm === null}
+          loading={applyingLate}
+          loadingText="Saving…"
+          disabled={chosenTerm === null}
           onClick={() => {
             if (chosenTerm === null) return;
-            lateMutation.mutate({ term: chosenTerm });
+            void confirm(chosenTerm);
           }}
         >
-          {applyingLate && <Loader2 className="size-3.5 animate-spin" />}
-          {applyingLate ? 'Saving…' : 'Confirm'}
+          Confirm
         </Button>
       </DialogFooter>
     </>

@@ -1,10 +1,10 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Send, Users } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { Send, Users } from 'lucide-react';
+import { useState } from 'react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,8 +44,6 @@ export function BulkNotifyDialog({
   onSuccess,
   module = 'p-files',
 }: BulkNotifyDialogProps) {
-  const router = useRouter();
-
   type BulkNotifyResult = {
     sent: number;
     requested: number;
@@ -69,29 +67,33 @@ export function BulkNotifyDialog({
           module,
         })
       ),
-    onSuccess: (body) => {
-      const skipped =
-        (body.skippedCooldown ?? 0) +
-        (body.skippedNoRecipients ?? 0) +
-        (body.skippedNotEnrolled ?? 0) +
-        (body.skippedNotActionable ?? 0);
-      const summary = `${body.sent} email${body.sent === 1 ? '' : 's'} sent across ${body.requested} item${body.requested === 1 ? '' : 's'}${
-        skipped > 0 ? ` · ${skipped} skipped` : ''
-      }`;
-      toast.success(summary);
-      onSuccess?.();
-      onOpenChange(false);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Bulk reminder failed'),
   });
 
-  const busy = notifyMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
 
-  function handleSend() {
+  async function handleSend() {
     if (items.length === 0) return;
-    notifyMutation.mutate();
+    setBusy(true);
+    await run(() => notifyMutation.mutateAsync(), {
+      pending: `Sending ${items.length} reminder${items.length === 1 ? '' : 's'}…`,
+      success: (body) => {
+        const skipped =
+          (body.skippedCooldown ?? 0) +
+          (body.skippedNoRecipients ?? 0) +
+          (body.skippedNotEnrolled ?? 0) +
+          (body.skippedNotActionable ?? 0);
+        return `${body.sent} email${body.sent === 1 ? '' : 's'} sent across ${body.requested} item${body.requested === 1 ? '' : 's'}${
+          skipped > 0 ? ` · ${skipped} skipped` : ''
+        }`;
+      },
+      error: (e) => (e instanceof Error ? e.message : 'Bulk reminder failed'),
+      onResolved: () => {
+        onSuccess?.();
+        onOpenChange(false);
+      },
+    });
+    setBusy(false);
   }
 
   return (
@@ -150,12 +152,13 @@ export function BulkNotifyDialog({
           >
             Cancel
           </Button>
-          <Button onClick={handleSend} disabled={busy || items.length === 0}>
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
+          <Button
+            onClick={() => void handleSend()}
+            loading={busy}
+            loadingText="Sending…"
+            disabled={items.length === 0}
+          >
+            {!busy && <Send className="size-4" />}
             Send {items.length} reminder{items.length === 1 ? '' : 's'}
           </Button>
         </DialogFooter>

@@ -7,9 +7,10 @@ import {
   Radio,
   XCircle,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
@@ -159,7 +160,7 @@ export function BulkPublishDialog({
   terms: TermLite[];
   defaultTermId?: string | null;
 }) {
-  const router = useRouter();
+  const run = useWriteAction();
   const [open, setOpen] = useState(false);
   const [termId, setTermId] = useState(defaultTermId ?? terms[0]?.id ?? '');
   const [from, setFrom] = useState('');
@@ -363,10 +364,50 @@ export function BulkPublishDialog({
       return toast.info('No publishable sections selected');
     }
 
-    const CHUNK_SIZE = 5;
     setSubmitting(true);
     setProgress({ done: 0, total: publishIds.length });
 
+    // The batch is one write from the user's point of view, so it gets one
+    // lifecycle. `pending: false` because this dialog already shows
+    // "Publishing 3 of 12…" against a real count — a pending toast would
+    // narrate the same thing less precisely.
+    await run(async () => runPublish(publishIds), {
+      pending: false,
+      success: (t) => {
+        const detail =
+          `Published ${t.published} section${t.published === 1 ? '' : 's'}` +
+          (t.skipped > 0 ? ` · ${t.skipped} skipped (incomplete)` : '') +
+          (t.failed > 0 ? ` · ${t.failed} failed` : '');
+        // Nothing published and something broke is not a success, and saying
+        // so in green is the "failure that reads as good news" shape this
+        // codebase guards against elsewhere.
+        if (t.published === 0 && t.failed > 0) {
+          toast.error(detail);
+          return null;
+        }
+        if (t.failed > 0 || t.skipped > 0) {
+          toast.warning(detail);
+          return null;
+        }
+        return detail;
+      },
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not publish the report cards.',
+      onResolved: (t) => {
+        setSubmitting(false);
+        setProgress(null);
+        if (t.failed === 0 && t.skipped === 0) setOpen(false);
+      },
+      // Only worth a server re-render if something actually published.
+      refresh: (t) => t.published > 0,
+    });
+    setSubmitting(false);
+    setProgress(null);
+  }
+
+  /** Publishes in chunks of 5, tallying the three outcomes. Never throws. */
+  async function runPublish(publishIds: string[]) {
+    const CHUNK_SIZE = 5;
     let published = 0;
     let skipped = 0; // 422 publish_blocked slipping through the pre-flight check
     let failed = 0;
@@ -433,17 +474,7 @@ export function BulkPublishDialog({
       setProgress({ done, total: publishIds.length });
     }
 
-    setSubmitting(false);
-    setProgress(null);
-
-    toast.success(
-      `Published ${published} section${published === 1 ? '' : 's'}` +
-        (skipped > 0 ? ` · ${skipped} skipped (incomplete)` : '') +
-        (failed > 0 ? ` · ${failed} failed` : '')
-    );
-
-    if (published > 0) router.refresh();
-    if (failed === 0 && skipped === 0) setOpen(false);
+    return { published, skipped, failed };
   }
 
   // ---------------------------------------------------------------------------

@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, RotateCcw, Save } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { RotateCcw, Save } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +24,6 @@ export function CompassionateAllowanceInline({
   disabled?: boolean;
   disabledReason?: string;
 }) {
-  const router = useRouter();
   const seed = initial ?? DEFAULT_ALLOWANCE;
   const [value, setValue] = useState<string>(String(seed));
 
@@ -31,37 +31,35 @@ export function CompassionateAllowanceInline({
   const valid = /^\d+$/.test(value) && numeric >= 0 && numeric <= 30;
   const dirty = valid && numeric !== seed;
 
-  // Tier-2: `value` is the form input (not an optimistic mirror of the server),
-  // so the mutation is a plain save → router.refresh(). `isPending` drives the
-  // disable; the route's `body.error` is preserved via ApiError.message
-  // (fallback 'save failed' unchanged).
+  // `value` is the form input (not an optimistic mirror of the server), so this
+  // is a plain save. The route's `body.error` is preserved via
+  // ApiError.message (fallback 'save failed' unchanged).
   const saveMutation = useMutation({
     mutationFn: (allowance: number) =>
       apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/allowance`,
         jsonInit('PATCH', { allowance })
       ),
-    onSuccess: (_data, allowance) => {
-      toast.success(
-        allowance === DEFAULT_ALLOWANCE
-          ? 'Reset to default (5 days/year)'
-          : `Allowance set to ${allowance} day${allowance === 1 ? '' : 's'}/year`
-      );
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    },
   });
 
-  const saving = saveMutation.isPending;
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
 
-  function save() {
+  async function save() {
     if (!valid) {
       toast.error('Enter an integer between 0 and 30');
       return;
     }
-    saveMutation.mutate(numeric);
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(numeric), {
+      pending: 'Saving allowance…',
+      success:
+        numeric === DEFAULT_ALLOWANCE
+          ? 'Reset to default (5 days/year)'
+          : `Allowance set to ${numeric} day${numeric === 1 ? '' : 's'}/year`,
+      error: (err) => (err instanceof Error ? err.message : 'save failed'),
+    });
+    setSaving(false);
   }
 
   return (
@@ -96,15 +94,13 @@ export function CompassionateAllowanceInline({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || saving || !dirty}
-          onClick={save}
+          loading={saving}
+          loadingText="Saving…"
+          disabled={disabled || !dirty}
+          onClick={() => void save()}
           className="gap-1.5"
         >
-          {saving ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Save className="size-3.5" />
-          )}
+          {!saving && <Save className="size-3.5" />}
           Save
         </Button>
         {seed !== DEFAULT_ALLOWANCE && (

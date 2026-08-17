@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Badge } from '@/components/ui/badge';
@@ -46,34 +47,32 @@ import { ChangeRequestDecisionButtons } from './decision-buttons';
 // Inline menu-item version of UndoRejectionButton — triggers the same dialog
 // but from a DropdownMenuItem so it fits inside RowActionsMenu.
 function UndoRejectionMenuItem({ requestId }: { requestId: string }) {
-  const router = useRouter();
   const [open, setOpen] = React.useState(false);
 
-  // Tier-2 mutation. ApiError.message already resolves to the body's `error`
-  // field, so `e.message` carries the route's plain-English copy; the original
-  // generic fallback is preserved for non-ApiError failures.
+  // ApiError.message already resolves to the body's `error` field, so
+  // `e.message` carries the route's plain-English copy; the original generic
+  // fallback is preserved for non-ApiError failures.
   const undoMutation = useMutation({
     mutationFn: () =>
       apiFetch(
         `/api/change-requests/${encodeURIComponent(requestId)}`,
         jsonInit('PATCH', { action: 'undo_rejection' })
       ),
-    onSuccess: () => {
-      toast.success('Decline undone — the request is back to Awaiting Review.');
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(
-        e instanceof Error ? e.message : 'Could not undo the decline.'
-      );
-    },
   });
 
-  const busy = undoMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = React.useState(false);
 
-  function handleUndo() {
-    undoMutation.mutate();
+  async function handleUndo() {
+    setBusy(true);
+    await run(() => undoMutation.mutateAsync(), {
+      pending: 'Undoing the decline…',
+      success: 'Decline undone — the request is back to Awaiting Review.',
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not undo the decline.',
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
   }
 
   return (

@@ -2,12 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { AlertCircle, Check, Loader2, X, XCircle } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { AlertCircle, Check, X, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -77,7 +77,6 @@ export function DocumentValidationActions({
   url,
   applicationStatus,
 }: Props) {
-  const router = useRouter();
   const [rejectOpen, setRejectOpen] = useState(false);
 
   const form = useForm<RejectFormInput>({
@@ -85,11 +84,17 @@ export function DocumentValidationActions({
     defaultValues: { rejectionReason: '' },
   });
 
-  // Tier-2: no local optimistic value — approve/reject just mutate then
-  // router.refresh() so the server re-renders the new status. The original
-  // `send` threw `data.error ?? successMsg + ' failed'`; ApiError.message
-  // already carries the route's `body.error`, and the per-handler onError
-  // preserves the exact `'Approve failed'` / `'Reject failed'` fallback.
+  // Declared up here, above the early returns below — hooks cannot live after
+  // a conditional return. (Reject's busy signal is RHF's `isSubmitting`; only
+  // Approve, which has no form, needs its own flag.)
+  const run = useWriteAction();
+  const [approving, setApproving] = useState(false);
+
+  // No local optimistic value — the new status only appears once the server
+  // re-renders, so each toast waits for it. The original `send` threw
+  // `data.error ?? successMsg + ' failed'`; ApiError.message already carries
+  // the route's `body.error`, and `errorMessage` below preserves the exact
+  // `'Approve failed'` / `'Reject failed'` fallback.
   const validateMutation = useMutation({
     mutationFn: ({ body }: { body: Record<string, unknown> }) =>
       apiFetch(
@@ -130,8 +135,6 @@ export function DocumentValidationActions({
     );
   }
 
-  const approving = validateMutation.isPending;
-
   // Mirrors the original `data.error ?? '<Action> failed'`: prefer the route's
   // `body.error` (ApiError surfaces non-string/absent bodies as a generic
   // message), else the action-specific fallback.
@@ -148,27 +151,37 @@ export function DocumentValidationActions({
   }
 
   async function handleApprove() {
-    try {
-      await validateMutation.mutateAsync({ body: { status: 'Valid' } });
-      toast.success(`${label} approved`);
-      router.refresh();
-    } catch (e) {
-      toast.error(errorMessage(e, 'Approve failed'));
-    }
+    setApproving(true);
+    await run(
+      () => validateMutation.mutateAsync({ body: { status: 'Valid' } }),
+      {
+        pending: `Approving ${label}…`,
+        success: `${label} approved`,
+        error: (e) => errorMessage(e, 'Approve failed'),
+      }
+    );
+    setApproving(false);
   }
 
   async function handleReject(values: RejectFormInput) {
-    try {
-      await validateMutation.mutateAsync({
-        body: { status: 'Rejected', rejectionReason: values.rejectionReason },
-      });
-      toast.success(`${label} rejected`);
-      setRejectOpen(false);
-      form.reset({ rejectionReason: '' });
-      router.refresh();
-    } catch (e) {
-      toast.error(errorMessage(e, 'Reject failed'));
-    }
+    await run(
+      () =>
+        validateMutation.mutateAsync({
+          body: {
+            status: 'Rejected',
+            rejectionReason: values.rejectionReason,
+          },
+        }),
+      {
+        pending: `Rejecting ${label}…`,
+        success: `${label} rejected`,
+        error: (e) => errorMessage(e, 'Reject failed'),
+        onResolved: () => {
+          setRejectOpen(false);
+          form.reset({ rejectionReason: '' });
+        },
+      }
+    );
   }
 
   const busy = form.formState.isSubmitting;
@@ -178,14 +191,11 @@ export function DocumentValidationActions({
       {!isValid && (
         <Button
           variant={'success'}
-          disabled={approving}
-          onClick={handleApprove}
+          loading={approving}
+          loadingText="Approving…"
+          onClick={() => void handleApprove()}
         >
-          {approving ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Check className="size-3" />
-          )}
+          {!approving && <Check className="size-3" />}
           Approve
         </Button>
       )}
@@ -258,10 +268,10 @@ export function DocumentValidationActions({
                   type="submit"
                   size="sm"
                   variant="destructive"
-                  disabled={busy}
+                  loading={busy}
+                  loadingText="Rejecting…"
                 >
-                  {busy && <Loader2 className="size-3.5 animate-spin" />}
-                  {busy ? 'Rejecting…' : 'Reject document'}
+                  Reject document
                 </Button>
               </DialogFooter>
             </form>

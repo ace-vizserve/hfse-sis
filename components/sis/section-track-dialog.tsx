@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Waypoints } from 'lucide-react';
-import { toast } from 'sonner';
+import { Waypoints } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -57,7 +56,6 @@ export function SectionTrackDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -74,19 +72,29 @@ export function SectionTrackDialog({
         `/api/sections/${sectionId}/track`,
         jsonInit('POST', { class_type: classType })
       ),
-    onSuccess: (json, classType) => {
-      const parts = [`Set ${sectionName} to ${classType}`];
-      if (json?.inserted)
-        parts.push(
-          `${json.inserted} subject${json.inserted === 1 ? '' : 's'} attached`
-        );
-      toast.success(parts.join(' — '));
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Could not set track'),
   });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function apply(classType: SectionClassType) {
+    setBusy(true);
+    await run(() => applyMutation.mutateAsync(classType), {
+      pending: `Setting ${sectionName} to ${classType}…`,
+      success: (json) => {
+        const parts = [`Set ${sectionName} to ${classType}`];
+        if (json?.inserted) {
+          parts.push(
+            `${json.inserted} subject${json.inserted === 1 ? '' : 's'} attached`
+          );
+        }
+        return parts.join(' — ');
+      },
+      error: (e) => (e instanceof Error ? e.message : 'Could not set track'),
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
+  }
 
   return (
     <Dialog
@@ -149,15 +157,13 @@ export function SectionTrackDialog({
           <Button
             type="button"
             className="gap-1.5"
-            disabled={!selected || applyMutation.isPending}
-            onClick={() => selected && applyMutation.mutate(selected)}
+            loading={busy}
+            loadingText="Applying…"
+            disabled={!selected}
+            onClick={() => selected && void apply(selected)}
           >
-            {applyMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Waypoints className="size-3.5" />
-            )}
-            {applyMutation.isPending ? 'Applying…' : 'Apply'}
+            {!busy && <Waypoints className="size-3.5" />}
+            Apply
           </Button>
         </DialogFooter>
       </DialogContent>

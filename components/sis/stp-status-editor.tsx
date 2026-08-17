@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import {
   Select,
@@ -34,7 +34,6 @@ export function StpStatusEditor({
   enroleeNumber: string;
   initialStatus: StpApplicationStatus | null;
 }) {
-  const router = useRouter();
   const [status, setStatus] = useState<StpApplicationStatus | null>(
     initialStatus
   );
@@ -54,22 +53,26 @@ export function StpStatusEditor({
       setStatus(next);
       return { prev };
     },
-    onSuccess: (_data, next) => {
-      toast.success(`STP status updated to ${next}`);
-      router.refresh();
-    },
-    onError: (e, _next, ctx) => {
+    onError: (_e, _next, ctx) => {
       // Roll back the optimistic update on failure.
       if (ctx) setStatus(ctx.prev);
-      toast.error(e instanceof Error ? e.message : 'save failed');
     },
   });
 
-  const saving = statusMutation.isPending;
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
 
-  function handleChange(next: StpApplicationStatus) {
+  async function handleChange(next: StpApplicationStatus) {
     if (next === status) return;
-    statusMutation.mutate(next);
+    setSaving(true);
+    await run(() => statusMutation.mutateAsync(next), {
+      // The Select already shows the new value optimistically, so a pending
+      // toast would narrate a change the user just made.
+      pending: false,
+      success: `STP status updated to ${next}`,
+      error: (e) => (e instanceof Error ? e.message : 'save failed'),
+    });
+    setSaving(false);
   }
 
   return (

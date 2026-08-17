@@ -1,19 +1,14 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Loader2,
-  Plus,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,53 +73,43 @@ function AySetupWizard({ preview, children }: Props) {
   const createMutation = useMutation({
     mutationFn: (values: CreateAyInput) =>
       apiFetch<CreateAyResponse>('/api/sis/ay-setup', jsonInit('POST', values)),
-    onSuccess: (body, values) => {
-      if (body.alreadyExisted) {
-        toast.info(
-          `${values.ay_code} is already fully set up — nothing to do.`
-        );
-        handleOpenChange(false);
-        router.refresh();
-        return;
-      }
-      // The RPC is idempotent (migration 030). When `summary.ay_existed`
-      // is true here it means we filled in missing terms / sections /
-      // subject_configs against an already-existing AY row — phrase it
-      // as "completed" rather than "created" so the user understands
-      // their existing admissions data wasn't disturbed.
-      const ayExisted = body.summary?.ay_existed === true;
-      const sectionsSeeded: number = body.summary?.sections_seeded ?? 0;
-      const configsSeeded: number = body.summary?.subject_configs_seeded ?? 0;
-      toast.success(
-        ayExisted
-          ? `${values.ay_code} setup completed`
-          : `${values.ay_code} created`
-      );
-      // Migration 090 always seeds the static default catalog for a
-      // genuinely new AY — reaching here (past the alreadyExisted
-      // early-return above) with sectionsSeeded===0 && configsSeeded===0
-      // means the AY row already had its full sections/subjects catalog
-      // and only the missing term rows were topped up. Not a bootstrap
-      // gap anymore (that case no longer exists).
-      if (sectionsSeeded === 0 && configsSeeded === 0) {
-        toast.info(
-          `${values.ay_code} already had its sections and subjects configured — only the missing term dates were added.`
-        );
-      }
-      setCreatedAyCode(values.ay_code);
-      setStep('follow-up');
-      router.refresh();
-    },
-    onError: (e) => {
-      // Preserve the original fallback: `body.error ?? 'Failed to create AY'`.
-      const serverError =
-        e instanceof ApiError && e.body && typeof e.body === 'object'
-          ? (e.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'Failed to create AY');
-    },
   });
-  const submitting = createMutation.isPending;
+
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  function describeSuccess(
+    body: CreateAyResponse,
+    values: CreateAyInput
+  ): string | null {
+    if (body.alreadyExisted) {
+      // Nothing was created — a notice, not work done.
+      toast.info(`${values.ay_code} is already fully set up — nothing to do.`);
+      return null;
+    }
+    // The RPC is idempotent (migration 030). When `summary.ay_existed`
+    // is true here it means we filled in missing terms / sections /
+    // subject_configs against an already-existing AY row — phrase it
+    // as "completed" rather than "created" so the user understands
+    // their existing admissions data wasn't disturbed.
+    const ayExisted = body.summary?.ay_existed === true;
+    const sectionsSeeded: number = body.summary?.sections_seeded ?? 0;
+    const configsSeeded: number = body.summary?.subject_configs_seeded ?? 0;
+    // Migration 090 always seeds the static default catalog for a
+    // genuinely new AY — reaching here (past the alreadyExisted
+    // early-return above) with sectionsSeeded===0 && configsSeeded===0
+    // means the AY row already had its full sections/subjects catalog
+    // and only the missing term rows were topped up. Not a bootstrap
+    // gap anymore (that case no longer exists).
+    if (sectionsSeeded === 0 && configsSeeded === 0) {
+      toast.info(
+        `${values.ay_code} already had its sections and subjects configured — only the missing term dates were added.`
+      );
+    }
+    return ayExisted
+      ? `${values.ay_code} setup completed`
+      : `${values.ay_code} created`;
+  }
 
   function resetAll() {
     form.reset(BLANK);
@@ -138,8 +123,30 @@ function AySetupWizard({ preview, children }: Props) {
     setStep('review');
   }
 
-  function onCommit() {
-    createMutation.mutate(form.getValues());
+  async function onCommit() {
+    const values = form.getValues();
+    setSubmitting(true);
+    await run(() => createMutation.mutateAsync(values), {
+      pending: `Setting up ${values.ay_code}…`,
+      success: (body: CreateAyResponse) => describeSuccess(body, values),
+      // Preserve the original fallback: `body.error ?? 'Failed to create AY'`.
+      error: (e: unknown) => {
+        const serverError =
+          e instanceof ApiError && e.body && typeof e.body === 'object'
+            ? (e.body as { error?: string }).error
+            : undefined;
+        return serverError ?? 'Failed to create AY';
+      },
+      onResolved: (body: CreateAyResponse) => {
+        if (body.alreadyExisted) {
+          handleOpenChange(false);
+          return;
+        }
+        setCreatedAyCode(values.ay_code);
+        setStep('follow-up');
+      },
+    });
+    setSubmitting(false);
   }
 
   function handleOpenChange(next: boolean) {
@@ -281,8 +288,12 @@ function AySetupWizard({ preview, children }: Props) {
               >
                 <ArrowLeft className="mr-1 size-4" /> Back
               </Button>
-              <Button type="button" onClick={onCommit} disabled={submitting}>
-                {submitting && <Loader2 className="mr-1 size-4 animate-spin" />}
+              <Button
+                type="button"
+                onClick={() => void onCommit()}
+                loading={submitting}
+                loadingText="Setting up…"
+              >
                 Commit
               </Button>
             </DialogFooter>

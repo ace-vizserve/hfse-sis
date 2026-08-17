@@ -114,8 +114,10 @@ describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
 
     await user.click(screen.getByRole('button', { name: /set weights/i }));
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
-    expect(toastSuccess).toHaveBeenCalled();
+    // The success toast is the LAST step — it waits on the refresh, so waiting
+    // for the refresh alone would race it.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
       '/api/sis/admin/subjects',
       expect.objectContaining({

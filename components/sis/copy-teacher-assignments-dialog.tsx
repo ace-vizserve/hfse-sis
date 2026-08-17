@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2, UserCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,7 +42,6 @@ export function CopyTeacherAssignmentsDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : internalOpen;
@@ -72,33 +70,37 @@ export function CopyTeacherAssignmentsDialog({
         '/api/sis/ay-setup/copy-teacher-assignments',
         jsonInit('POST', { sourceAyCode: sourceAy, targetAyCode })
       ),
-    onSuccess: (body) => {
-      setResult({
-        copied: Number(body.copied ?? 0),
-        skipped_no_section: Number(body.skipped_no_section ?? 0),
-        skipped_already_existed: Number(body.skipped_already_existed ?? 0),
-        source_total: Number(body.source_total ?? 0),
-      });
-      toast.success(
-        `Copied ${body.copied ?? 0} teacher assignment${(body.copied ?? 0) === 1 ? '' : 's'} from ${sourceAy}.`
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      // Preserve the original fallback: `body?.error ?? 'copy failed'`.
-      const serverError =
-        e instanceof ApiError && e.body && typeof e.body === 'object'
-          ? (e.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'copy failed');
-    },
   });
-  const submitting = copyMutation.isPending;
 
-  function commit() {
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function commit() {
     if (!sourceAy) return;
     setResult(null);
-    copyMutation.mutate();
+    setSubmitting(true);
+    await run(() => copyMutation.mutateAsync(), {
+      pending: `Copying teacher assignments from ${sourceAy}…`,
+      success: (body) =>
+        `Copied ${body.copied ?? 0} teacher assignment${(body.copied ?? 0) === 1 ? '' : 's'} from ${sourceAy}.`,
+      // Preserve the original fallback: `body?.error ?? 'copy failed'`.
+      error: (e) => {
+        const serverError =
+          e instanceof ApiError && e.body && typeof e.body === 'object'
+            ? (e.body as { error?: string }).error
+            : undefined;
+        return serverError ?? 'copy failed';
+      },
+      // The breakdown renders inside this dialog, so it is ready immediately.
+      onResolved: (body) =>
+        setResult({
+          copied: Number(body.copied ?? 0),
+          skipped_no_section: Number(body.skipped_no_section ?? 0),
+          skipped_already_existed: Number(body.skipped_already_existed ?? 0),
+          source_total: Number(body.source_total ?? 0),
+        }),
+    });
+    setSubmitting(false);
   }
 
   const disabled = sourceOptions.length === 0;
@@ -196,7 +198,7 @@ export function CopyTeacherAssignmentsDialog({
           {!result && (
             <Button
               type="button"
-              onClick={commit}
+              onClick={() => void commit()}
               disabled={submitting || disabled}
             >
               {submitting ? (

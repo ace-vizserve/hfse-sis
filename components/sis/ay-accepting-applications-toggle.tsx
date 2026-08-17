@@ -1,10 +1,10 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { useState } from 'react';
 
 import { Switch } from '@/components/ui/switch';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Per-row "Accepting applications" Switch on the SIS AY-setup table (KD #77).
@@ -28,35 +28,35 @@ export function AyAcceptingApplicationsToggle({
    */
   showCaption?: boolean;
 }) {
-  const router = useRouter();
-
-  // Tier-2: no local optimistic value — the Switch reflects the server-provided
-  // `current` prop, and a successful flip router.refresh()es to re-read it.
-  // `isPending` drives the disable, the route's `body.error` is preserved via
-  // ApiError.message (fallback 'Update failed' unchanged).
+  // No local optimistic value — the Switch reflects the server-provided
+  // `current` prop, so it only moves once the awaited refresh has re-read it.
+  // That is exactly why the toast has to wait too: claiming the year is open
+  // while the switch is still showing "closed" is the mismatch this fixes.
+  // The route's `body.error` is preserved via ApiError.message (fallback
+  // 'Update failed' unchanged).
   const flipMutation = useMutation({
     mutationFn: (next: boolean) =>
       apiFetch(
         '/api/sis/ay-setup/accepting-applications',
         jsonInit('PATCH', { ay_code: ayCode, accepting: next })
       ),
-    onSuccess: (_data, next) => {
-      toast.success(
-        next
-          ? `${ayCode} is now accepting applications.`
-          : `${ayCode} is no longer accepting applications.`
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Update failed');
-    },
   });
 
-  const busy = flipMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
 
-  function flip(next: boolean) {
-    flipMutation.mutate(next);
+  async function flip(next: boolean) {
+    setBusy(true);
+    await run(() => flipMutation.mutateAsync(next), {
+      pending: next
+        ? `Opening ${ayCode} for applications…`
+        : `Closing ${ayCode} to applications…`,
+      success: next
+        ? `${ayCode} is now accepting applications.`
+        : `${ayCode} is no longer accepting applications.`,
+      error: (e) => (e instanceof Error ? e.message : 'Update failed'),
+    });
+    setBusy(false);
   }
 
   const stateHint = current
@@ -75,7 +75,7 @@ export function AyAcceptingApplicationsToggle({
         <Switch
           checked={current}
           disabled={busy}
-          onCheckedChange={(v) => flip(Boolean(v))}
+          onCheckedChange={(v) => void flip(Boolean(v))}
           aria-label={`Accepting applications for ${ayCode}`}
         />
         <span className="whitespace-nowrap text-[13px] font-medium text-foreground">

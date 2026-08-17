@@ -1,10 +1,9 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -34,27 +33,29 @@ export function SectionDeleteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
-
   const deleteMutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/sections/${sectionId}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success(`Deleted ${sectionName}`);
-      onOpenChange(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      const message =
+  });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    setBusy(true);
+    await run(() => deleteMutation.mutateAsync(), {
+      pending: `Deleting ${sectionName}…`,
+      success: `Deleted ${sectionName}`,
+      error: (e) =>
         e instanceof ApiError && e.body && typeof e.body === 'object'
           ? ((e.body as { error?: string }).error ?? e.message)
           : e instanceof Error
             ? e.message
-            : 'Could not delete this section';
-      toast.error(message);
-    },
-  });
-  const busy = deleteMutation.isPending;
+            : 'Could not delete this section',
+      onResolved: () => onOpenChange(false),
+    });
+    setBusy(false);
+  }
 
   return (
     <AlertDialog
@@ -78,12 +79,11 @@ export function SectionDeleteDialog({
             disabled={busy}
             onClick={(e) => {
               e.preventDefault();
-              deleteMutation.mutate();
+              void remove();
             }}
             className="gap-1.5"
           >
-            {busy && <Loader2 className="size-3.5 animate-spin" />}
-            Delete section
+            {busy ? 'Deleting…' : 'Delete section'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

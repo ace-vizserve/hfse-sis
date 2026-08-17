@@ -8,14 +8,13 @@ import {
   CircleX,
   Clock,
   FileText,
-  Loader2,
   type LucideIcon,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type {
   CalendarEventRow,
@@ -328,8 +327,6 @@ function DailyPanel({
   roster: WideGridEnrolment[];
   initialDaily: DailyEntryRow[];
 }) {
-  const router = useRouter();
-
   const loaded = useMemo(
     () => loadedMarksForDate(initialDaily, date),
     [initialDaily, date]
@@ -338,26 +335,18 @@ function DailyPanel({
     () => new Map(loaded)
   );
 
-  // Tier-3 autosave surface: the per-date `marks` stay in local state
-  // (unchanged optimistic UX). The ONLY change is that the bulk PATCH now runs
-  // through useMutation for the shared retry: 0 + apiFetch error handling; on
-  // success we router.refresh() so `initialDaily` re-pulls (the saved stat
-  // cards reflect the new record). The route-specific error copy is preserved
-  // via ApiError.message (body.error).
+  // The per-date `marks` stay in local state, so the grid itself is instant.
+  // Submit is the one real write, and it is the slowest in the app for a full
+  // class — which is exactly why it holds a pending toast until the stat cards
+  // behind it have actually re-pulled `initialDaily`. The route-specific error
+  // copy is preserved via ApiError.message (body.error).
   const submitMutation = useMutation({
     mutationFn: (entries: ReturnType<typeof computeSubmitEntries>) =>
       apiFetch('/api/attendance/daily', jsonInit('PATCH', { entries })),
-    onSuccess: (_data, entries) => {
-      toast.success(
-        `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
-    },
   });
-  const saving = submitMutation.isPending;
+
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
 
   function setMark(enrolmentId: string, m: DailyMark | null) {
     setMarks((cur) => {
@@ -382,7 +371,7 @@ function DailyPanel({
   ).length;
   const exMissingReason = exMissingReasonCount > 0;
 
-  function submit() {
+  async function submit() {
     const entries = computeSubmitEntries({
       roster,
       marks,
@@ -394,7 +383,13 @@ function DailyPanel({
       toast.info('No changes to submit.');
       return;
     }
-    submitMutation.mutate(entries);
+    setSaving(true);
+    await run(() => submitMutation.mutateAsync(entries), {
+      pending: `Saving attendance for ${entries.length} student${entries.length === 1 ? '' : 's'}…`,
+      success: `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`,
+      error: (e) => (e instanceof Error ? e.message : 'Save failed'),
+    });
+    setSaving(false);
   }
 
   return (
@@ -624,8 +619,12 @@ function DailyPanel({
               : `${exMissingReasonCount} excused students still need a reason.`
             : `${counts.P + counts.unmarked} present · ${counts.L + counts.A + counts.EX} exceptions`}
         </p>
-        <Button onClick={submit} disabled={saving || exMissingReason}>
-          {saving && <Loader2 className="size-4 animate-spin" />}
+        <Button
+          onClick={() => void submit()}
+          loading={saving}
+          loadingText="Submitting…"
+          disabled={exMissingReason}
+        >
           Submit attendance
         </Button>
       </div>

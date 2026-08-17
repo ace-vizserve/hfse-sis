@@ -47,6 +47,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Local-tz ISO for today. Inline helper — the file doesn't pull from
@@ -318,9 +319,12 @@ export function AttendanceWideGrid({
   // marking goes quiet rather than once per cell — see the hook's own note.
   const refreshStats = useDebouncedRefresh(() => router.refresh());
 
-  // Low-frequency roster-metadata edit (Bus/Care, Academics, Admin notes) —
-  // unlike the high-frequency cell-mark mutation above, this one calls
-  // router.refresh() on success so the roster pane reflects the saved value.
+  // Low-frequency roster-metadata edit (Bus/Care, Academics, Admin notes).
+  //
+  // This file is BOTH kinds of write, which is why the sweep reads statements
+  // rather than files: the per-cell mark above stays on the debounced refresh
+  // with no toast (one per keystroke would be unusable), while this one is a
+  // deliberate single save and gets the full lifecycle.
   const metaMutation = useMutation({
     mutationFn: (vars: {
       enrolmentId: string;
@@ -330,15 +334,26 @@ export function AttendanceWideGrid({
         `/api/sections/${sectionId}/students/${vars.enrolmentId}`,
         jsonInit('PATCH', vars.patch)
       ),
-    onSuccess: () => {
-      toast.success('Saved.');
-      router.refresh();
-      setActiveMetaEnrolmentId(null);
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Could not save.');
-    },
   });
+
+  const run = useWriteAction();
+  // Not `metaMutation.isPending` — that goes false when the PATCH resolves,
+  // which is before the roster pane behind the editor has re-rendered.
+  const [metaSaving, setMetaSaving] = useState(false);
+
+  async function saveMeta(vars: {
+    enrolmentId: string;
+    patch: Record<string, string | null>;
+  }) {
+    setMetaSaving(true);
+    await run(() => metaMutation.mutateAsync(vars), {
+      pending: 'Saving…',
+      success: 'Saved.',
+      error: (e) => (e instanceof Error ? e.message : 'Could not save.'),
+      onResolved: () => setActiveMetaEnrolmentId(null),
+    });
+    setMetaSaving(false);
+  }
 
   async function writeCell(
     enrolmentId: string,
@@ -1102,9 +1117,9 @@ export function AttendanceWideGrid({
             canEditBusCare={canEditBusCare}
             canEditAcademics={canEditAcademics}
             canEditAdmin={canEditAdmin}
-            saving={metaMutation.isPending}
+            saving={metaSaving}
             onSave={(patch) =>
-              metaMutation.mutate({
+              void saveMeta({
                 enrolmentId: activeMetaEnrolmentId,
                 patch,
               })

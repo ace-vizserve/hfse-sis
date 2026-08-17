@@ -19,9 +19,10 @@
 // in SIS Admin, not a personal settings panel).
 
 import { useMutation } from '@tanstack/react-query';
-import { Lock, ListOrdered, Loader2, NotebookPen } from 'lucide-react';
+import { Lock, ListOrdered, NotebookPen } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import {
   Card,
@@ -75,14 +76,25 @@ export function ClassroomSettingsForm({
         `/api/classroom/${sectionId}/notes`,
         jsonInit('PATCH', { content })
       ),
-    onSuccess: () => {
-      setBaseline(content);
-      toast.success('Note saved');
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to save note');
-    },
   });
+
+  // This save had NO refresh at all before — it updated its own baseline,
+  // toasted, and left every server-rendered copy of the note showing the old
+  // text until something else happened to re-render. Routing it through the
+  // helper gives it the refresh it was missing.
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await run(() => saveNote.mutateAsync(), {
+      pending: 'Saving note…',
+      success: 'Note saved',
+      error: (e) => (e instanceof Error ? e.message : 'Failed to save note'),
+      onResolved: () => setBaseline(content),
+    });
+    setSaving(false);
+  }
 
   return (
     <div className="space-y-6">
@@ -156,7 +168,7 @@ export function ClassroomSettingsForm({
             placeholder="Jot anything worth remembering about this class — a seating quirk, who to follow up with, a reminder for next term…"
             maxLength={MAX_NOTE_LENGTH}
             className="min-h-[160px]"
-            disabled={saveNote.isPending}
+            disabled={saving}
           />
           <p className="mt-1.5 text-right font-mono text-[10px] text-muted-foreground">
             {content.length.toLocaleString('en-SG')} /{' '}
@@ -164,7 +176,7 @@ export function ClassroomSettingsForm({
           </p>
         </CardContent>
         <CardFooter className="justify-end gap-3">
-          {dirty && !saveNote.isPending && (
+          {dirty && !saving && (
             <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-amber">
               <span
                 className="size-1.5 rounded-full bg-brand-amber"
@@ -176,13 +188,12 @@ export function ClassroomSettingsForm({
           <Button
             type="button"
             size="sm"
-            onClick={() => saveNote.mutate()}
-            disabled={!dirty || saveNote.isPending}
+            onClick={() => void save()}
+            loading={saving}
+            loadingText="Saving…"
+            disabled={!dirty}
           >
-            {saveNote.isPending && (
-              <Loader2 className="size-3.5 animate-spin" />
-            )}
-            {saveNote.isPending ? 'Saving…' : 'Save note'}
+            Save note
           </Button>
         </CardFooter>
       </Card>

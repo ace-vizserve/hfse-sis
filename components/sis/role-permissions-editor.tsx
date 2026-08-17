@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import {
   Check,
   ChevronDown,
@@ -387,7 +387,6 @@ function EditRoleDialog({
   people: number;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [selected, setSelected] = React.useState<Set<string>>(
     () => new Set(current)
   );
@@ -401,19 +400,25 @@ function EditRoleDialog({
         '/api/sis/admin/role-permissions',
         jsonInit('PATCH', { role, capabilities: [...selected] })
       ),
-    onSuccess: () => {
-      toast.success(`${ROLE_LABELS[role]} permissions saved.`);
-      router.refresh();
-      onClose();
-    },
-    onError: (e) => {
-      // The route's own message — the last-holder and locked-role refusals each
-      // say what to do instead, and a generic toast would throw that away.
-      toast.error(
-        e instanceof Error ? e.message : 'Could not save the permissions.'
-      );
-    },
   });
+
+  const run = useWriteAction();
+  const [saving, setSaving] = React.useState(false);
+
+  async function commit() {
+    setSaving(true);
+    await run(() => save.mutateAsync(), {
+      pending: 'Saving permissions…',
+      success: `${ROLE_LABELS[role]} permissions saved.`,
+      // The route's own message — the last-holder and locked-role refusals
+      // each say what to do instead, and a generic toast would throw that
+      // away.
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not save the permissions.',
+      onResolved: () => onClose(),
+    });
+    setSaving(false);
+  }
 
   function toggle(capability: string, on: boolean) {
     setSelected((prev) => {
@@ -556,10 +561,12 @@ function EditRoleDialog({
             </DialogClose>
             <Button
               type="button"
-              disabled={!dirty || save.isPending}
-              onClick={() => save.mutate()}
+              loading={saving}
+              loadingText="Saving…"
+              disabled={!dirty}
+              onClick={() => void commit()}
             >
-              {save.isPending ? 'Saving…' : 'Save permissions'}
+              Save permissions
             </Button>
           </div>
         </DialogFooter>

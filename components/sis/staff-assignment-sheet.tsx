@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Loader2, Plus, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { AssignmentRemovalDialog } from '@/components/sis/assignment-removal-dialog';
@@ -98,7 +99,10 @@ export function StaffAssignmentSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
+  const run = useWriteAction();
+  // One flag for all four writes — the sheet disables every control while any
+  // of them is in flight, and they are mutually exclusive in practice.
+  const [mutating, setMutating] = useState(false);
   const [data, setData] = useState<SheetData | null>(null);
   const [loading, setLoading] = useState(false);
   const [newFcaSectionId, setNewFcaSectionId] = useState('');
@@ -158,33 +162,38 @@ export function StaffAssignmentSheet({
           role: 'form_adviser',
         })
       ),
-    onSuccess: (json, sectionId) => {
-      const section = data!.allSections.find((s) => s.id === sectionId);
-      setData((d) =>
-        d
-          ? {
-              ...d,
-              fcaAssignments: [
-                ...d.fcaAssignments,
-                {
-                  id: json.assignment!.id,
-                  sectionId,
-                  sectionName: section?.name ?? '',
-                },
-              ].sort((x, y) => x.sectionName.localeCompare(y.sectionName)),
-            }
-          : d
-      );
-      setNewFcaSectionId('');
-      toast.success('Form class added');
-      router.refresh();
-    },
-    onError: (err) => {
+  });
+
+  async function addFca(sectionId: string) {
+    const section = data?.allSections.find((s) => s.id === sectionId);
+    setMutating(true);
+    await run(() => addFcaMutation.mutateAsync(sectionId), {
+      pending: 'Adding form class…',
+      success: 'Form class added',
       // The POST route turns the unique-index violation into "This section
       // already has a form adviser. Remove the existing one first."
-      toast.error(apiErrorField(err) ?? 'Failed to add form class');
-    },
-  });
+      error: (err: unknown) => apiErrorField(err) ?? 'Failed to add form class',
+      onResolved: (json) => {
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                fcaAssignments: [
+                  ...d.fcaAssignments,
+                  {
+                    id: json.assignment!.id,
+                    sectionId,
+                    sectionName: section?.name ?? '',
+                  },
+                ].sort((x, y) => x.sectionName.localeCompare(y.sectionName)),
+              }
+            : d
+        );
+        setNewFcaSectionId('');
+      },
+    });
+    setMutating(false);
+  }
 
   const removeFcaMutation = useMutation({
     mutationFn: ({
@@ -200,26 +209,37 @@ export function StaffAssignmentSheet({
         `/api/teacher-assignments/${assignmentId}`,
         jsonInit('DELETE', { change_reason: reason, change_notes: notes })
       ),
-    onSuccess: (_res, { assignmentId }) => {
-      setPendingRemoval(null);
-      setData((d) =>
-        d
-          ? {
-              ...d,
-              fcaAssignments: d.fcaAssignments.filter(
-                (a) => a.id !== assignmentId
-              ),
-            }
-          : d
-      );
-      toast.success('Form class removed');
-      router.refresh();
-    },
-    onError: (err) => {
-      // Dialog stays open so the typed reason survives a failure.
-      toast.error(apiErrorField(err) ?? 'Failed to remove form class');
-    },
   });
+
+  async function removeFca(vars: {
+    assignmentId: string;
+    reason: AssignmentChangeReason | null;
+    notes: string | null;
+  }) {
+    setMutating(true);
+    await run(() => removeFcaMutation.mutateAsync(vars), {
+      pending: 'Removing form class…',
+      success: 'Form class removed',
+      error: (err: unknown) =>
+        apiErrorField(err) ?? 'Failed to remove form class',
+      // Only closes on success — the dialog stays open on failure so the
+      // typed reason survives.
+      onResolved: () => {
+        setPendingRemoval(null);
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                fcaAssignments: d.fcaAssignments.filter(
+                  (a) => a.id !== vars.assignmentId
+                ),
+              }
+            : d
+        );
+      },
+    });
+    setMutating(false);
+  }
 
   function handleRemoveFca(assignmentId: string) {
     const assignment = data?.fcaAssignments.find((a) => a.id === assignmentId);
@@ -244,25 +264,39 @@ export function StaffAssignmentSheet({
         `/api/teacher-assignments/${assignmentId}`,
         jsonInit('DELETE', { change_reason: reason, change_notes: notes })
       ),
-    onSuccess: (_data, { assignmentId }) => {
-      setPendingRemoval(null);
-      setData((d) =>
-        d
-          ? {
-              ...d,
-              subjectAssignments: d.subjectAssignments.filter(
-                (a) => a.id !== assignmentId
-              ),
-            }
-          : d
-      );
-      router.refresh();
-    },
-    onError: (err) => {
-      // Dialog stays open so the typed reason survives a failure.
-      toast.error(apiErrorField(err) ?? 'Failed to remove assignment');
-    },
   });
+
+  async function removeSubject(vars: {
+    assignmentId: string;
+    reason: AssignmentChangeReason | null;
+    notes: string | null;
+  }) {
+    setMutating(true);
+    await run(() => removeSubjectMutation.mutateAsync(vars), {
+      pending: 'Removing subject assignment…',
+      // This one reported NOTHING on success before — the row simply vanished
+      // from the list. It says so now, like its form-class sibling above.
+      success: 'Subject assignment removed',
+      error: (err: unknown) =>
+        apiErrorField(err) ?? 'Failed to remove assignment',
+      // Only closes on success — the dialog stays open on failure so the
+      // typed reason survives.
+      onResolved: () => {
+        setPendingRemoval(null);
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                subjectAssignments: d.subjectAssignments.filter(
+                  (a) => a.id !== vars.assignmentId
+                ),
+              }
+            : d
+        );
+      },
+    });
+    setMutating(false);
+  }
 
   function handleRemoveSubject(assignmentId: string) {
     const assignment = data?.subjectAssignments.find(
@@ -288,47 +322,45 @@ export function StaffAssignmentSheet({
           role: 'subject_teacher',
         })
       ),
-    onSuccess: (json) => {
-      const subject = data!.allSubjects.find((s) => s.id === newSubjectId);
-      const section = data!.allSections.find((s) => s.id === newSectionId);
-      setData((d) =>
-        d
-          ? {
-              ...d,
-              subjectAssignments: [
-                ...d.subjectAssignments,
-                {
-                  id: json.assignment!.id,
-                  subjectId: newSubjectId,
-                  subjectCode: subject?.code ?? '',
-                  subjectName: subject?.name ?? '',
-                  sectionId: newSectionId,
-                  sectionName: section?.name ?? '',
-                },
-              ],
-            }
-          : d
-      );
-      setNewSubjectId('');
-      setNewSectionId('');
-      toast.success('Subject assignment added');
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(apiErrorField(err) ?? 'Failed to add subject');
-    },
   });
 
-  function handleAddSubject() {
+  async function handleAddSubject() {
     if (!teacher || !data || !newSubjectId || !newSectionId) return;
-    addSubjectMutation.mutate();
-  }
+    const subjectId = newSubjectId;
+    const sectionId = newSectionId;
+    const subject = data.allSubjects.find((s) => s.id === subjectId);
+    const section = data.allSections.find((s) => s.id === sectionId);
 
-  const mutating =
-    addFcaMutation.isPending ||
-    removeFcaMutation.isPending ||
-    removeSubjectMutation.isPending ||
-    addSubjectMutation.isPending;
+    setMutating(true);
+    await run(() => addSubjectMutation.mutateAsync(), {
+      pending: 'Adding subject assignment…',
+      success: 'Subject assignment added',
+      error: (err: unknown) => apiErrorField(err) ?? 'Failed to add subject',
+      onResolved: (json) => {
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                subjectAssignments: [
+                  ...d.subjectAssignments,
+                  {
+                    id: json.assignment!.id,
+                    subjectId,
+                    subjectCode: subject?.code ?? '',
+                    subjectName: subject?.name ?? '',
+                    sectionId,
+                    sectionName: section?.name ?? '',
+                  },
+                ],
+              }
+            : d
+        );
+        setNewSubjectId('');
+        setNewSectionId('');
+      },
+    });
+    setMutating(false);
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -426,7 +458,7 @@ export function StaffAssignmentSheet({
                   variant="outline"
                   size="icon"
                   disabled={mutating || !newFcaSectionId}
-                  onClick={() => addFcaMutation.mutate(newFcaSectionId)}
+                  onClick={() => void addFca(newFcaSectionId)}
                   aria-label="Add form class"
                 >
                   <Plus className="size-4" />
@@ -557,13 +589,13 @@ export function StaffAssignmentSheet({
         onConfirm={(reason, notes) => {
           if (!pendingRemoval) return;
           if (pendingRemoval.kind === 'fca') {
-            removeFcaMutation.mutate({
+            void removeFca({
               assignmentId: pendingRemoval.assignmentId,
               reason,
               notes,
             });
           } else {
-            removeSubjectMutation.mutate({
+            void removeSubject({
               assignmentId: pendingRemoval.assignmentId,
               reason,
               notes,

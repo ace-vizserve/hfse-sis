@@ -1,11 +1,11 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
@@ -102,27 +102,30 @@ export function NewSubjectForm({
         '/api/sis/admin/subjects/catalog',
         jsonInit('POST', values)
       ),
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        const bodyError = (e.body as { error?: string } | null)?.error;
-        toast.error(bodyError ?? `Save failed (${e.status})`);
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Save failed');
-    },
   });
 
+  const run = useWriteAction();
+
+  // RHF's `isSubmitting` is the busy signal, and awaiting `run` holds it true
+  // through the refresh as well as the POST. The caller's `onSuccess` now only
+  // closes its chrome — this owns the refresh, so the caller refreshing too
+  // would render the server twice for one save.
   async function onSubmit(values: SubjectCreateInput) {
-    try {
-      const result = await createMutation.mutateAsync(values);
-      toast.success(`Added ${values.code} — ${values.name}`);
-      onSuccess(result);
-    } catch {
-      // onError already surfaced the toast.
-    }
+    await run(() => createMutation.mutateAsync(values), {
+      pending: `Adding ${values.code}…`,
+      success: `Added ${values.code} — ${values.name}`,
+      error: (e) => {
+        if (e instanceof ApiError) {
+          const bodyError = (e.body as { error?: string } | null)?.error;
+          return bodyError ?? `Save failed (${e.status})`;
+        }
+        return e instanceof Error ? e.message : 'Save failed';
+      },
+      onResolved: (result) => onSuccess(result),
+    });
   }
 
-  const submitting = createMutation.isPending;
+  const submitting = form.formState.isSubmitting;
 
   return (
     <Form {...form}>
@@ -225,8 +228,12 @@ export function NewSubjectForm({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting} className="gap-1.5">
-            {submitting && <Loader2 className="size-3.5 animate-spin" />}
+          <Button
+            type="submit"
+            loading={submitting}
+            loadingText="Adding…"
+            className="gap-1.5"
+          >
             Add subject
           </Button>
         </div>

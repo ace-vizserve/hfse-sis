@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useRefreshTransition } from '@/lib/hooks/use-refresh-transition';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,6 @@ export function ChangeRequestDecisionButtons({
   controlledOpen?: ControlledOpenRequest | null;
   onControlledOpenConsumed?: () => void;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action>('approve');
   const [note, setNote] = useState('');
@@ -78,12 +78,6 @@ export function ChangeRequestDecisionButtons({
 
   const rejectNeedsNote = action === 'reject' && note.trim().length === 0;
 
-  // Tier-2 mutation. The success toast text depends on the action, so `action`
-  // rides along in the mutation variables. The concurrent-decision race (409)
-  // is NOT a generic error — it closes the dialog, refreshes, and shows the
-  // "Already handled" toast with the route's specific description. apiFetch
-  // throws ApiError on a 409, so we intercept it in onError; ApiError.message
-  // already carries the body's `error` field for the non-409 fallback path.
   const decisionMutation = useMutation({
     mutationFn: (vars: { action: Action; note?: string }) =>
       apiFetch(
@@ -93,38 +87,50 @@ export function ChangeRequestDecisionButtons({
           decision_note: vars.note ? vars.note : undefined,
         })
       ),
-    onSuccess: (_body, vars) => {
-      toast.success(
-        vars.action === 'approve' ? 'Request approved' : 'Request declined'
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        // Concurrent-decision race: another administrator approved or declined
-        // this request before us. Clear the dialog, refresh the list, and tell
-        // the user what happened. Read body.error directly so the fallback
-        // matches the original (statusText is not an acceptable description).
-        const body = (e.body ?? {}) as { error?: string };
-        toast.error('Already handled', {
-          description:
-            body.error ??
-            'Another administrator already actioned this request. Refresh to see the latest status.',
-        });
-        setOpen(false);
-        router.refresh();
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Failed to submit decision');
-    },
   });
 
-  const busy = decisionMutation.isPending;
+  const run = useWriteAction();
+  // The 409 below is the one branch that needs a refresh on a FAILED write —
+  // `useWriteAction` only refreshes on success, correctly, because a failed
+  // write changed nothing. Here the write failed precisely BECAUSE somebody
+  // else changed the row, so the stale list is exactly what has to be re-read.
+  const awaitRefresh = useRefreshTransition();
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  async function submit() {
     const trimmed = note.trim();
-    decisionMutation.mutate({ action, note: trimmed ? trimmed : undefined });
+    setBusy(true);
+    await run(
+      () =>
+        decisionMutation.mutateAsync({
+          action,
+          note: trimmed ? trimmed : undefined,
+        }),
+      {
+        pending: action === 'approve' ? 'Approving…' : 'Declining…',
+        success: action === 'approve' ? 'Request approved' : 'Request declined',
+        error: (e) => {
+          if (e instanceof ApiError && e.status === 409) {
+            // Concurrent-decision race: another administrator approved or
+            // declined this request before us. Read body.error directly so the
+            // fallback matches the original (statusText is not an acceptable
+            // description).
+            const body = (e.body ?? {}) as { error?: string };
+            toast.error('Already handled', {
+              description:
+                body.error ??
+                'Another administrator already actioned this request. Refresh to see the latest status.',
+            });
+            setOpen(false);
+            void awaitRefresh();
+            return null;
+          }
+          return e instanceof Error ? e.message : 'Failed to submit decision';
+        },
+        onResolved: () => setOpen(false),
+      }
+    );
+    setBusy(false);
   }
 
   return (
@@ -192,14 +198,15 @@ export function ChangeRequestDecisionButtons({
             <Button
               ref={confirmRef}
               onClick={() => void submit()}
-              disabled={busy || rejectNeedsNote}
+              loading={busy}
+              loadingText={action === 'approve' ? 'Approving…' : 'Declining…'}
+              disabled={rejectNeedsNote}
               className={
                 action === 'reject'
                   ? 'bg-destructive text-white hover:bg-destructive/90'
                   : ''
               }
             >
-              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {action === 'approve' ? 'Approve' : 'Decline'}
             </Button>
           </DialogFooter>

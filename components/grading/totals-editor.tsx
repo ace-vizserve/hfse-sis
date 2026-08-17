@@ -1,11 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Minus, Pencil, Plus, Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { Minus, Pencil, Plus, Save } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import {
@@ -78,7 +77,6 @@ export function TotalsEditor({
   ptMaxSlots,
   isLocked,
 }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [ww, setWw] = useState<number[]>(initialWw);
   const [pt, setPt] = useState<number[]>(initialPt);
@@ -151,26 +149,22 @@ export function TotalsEditor({
     void doSave();
   }
 
-  // Tier-2 mutation (Model A): useMutation owns the pending/error UX; on
-  // success we still router.refresh() so the server-rendered grade tree
-  // re-pulls. The bespoke error message (422 body.error from the slot-shrink /
-  // validation path) is preserved — ApiError.message already resolves to
-  // body.error, so `e.message` carries the route's specific copy.
+  // Tier-2 mutation (Model A). The bespoke error message (422 body.error from
+  // the slot-shrink / validation path) is preserved — ApiError.message already
+  // resolves to body.error, so `e.message` carries the route's specific copy.
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(
         `/api/grading-sheets/${sheetId}/totals`,
         jsonInit('PATCH', payload)
       ),
-    onSuccess: () => {
-      setOpen(false);
-      toast.success('Totals saved — grades recomputed');
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to save totals');
-    },
   });
+
+  // Saving recomputes every student's grade on the server, so the sheet behind
+  // this one is meaningfully different afterwards. The toast holds until that
+  // re-render lands rather than claiming "recomputed" over the old numbers.
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
 
   async function doSave() {
     let lockExtras: Record<string, unknown> = {};
@@ -183,12 +177,24 @@ export function TotalsEditor({
       };
     }
 
-    saveMutation.mutate({
-      ww_totals: ww,
-      pt_totals: pt,
-      qa_total: qa,
-      ...lockExtras,
-    });
+    setSaving(true);
+    await run(
+      () =>
+        saveMutation.mutateAsync({
+          ww_totals: ww,
+          pt_totals: pt,
+          qa_total: qa,
+          ...lockExtras,
+        }),
+      {
+        pending: 'Saving totals…',
+        success: 'Totals saved — grades recomputed',
+        error: (e) =>
+          e instanceof Error ? e.message : 'Failed to save totals',
+        onResolved: () => setOpen(false),
+      }
+    );
+    setSaving(false);
   }
 
   return (
@@ -270,13 +276,14 @@ export function TotalsEditor({
                   Cancel
                 </Button>
               </SheetClose>
-              <Button type="submit" size="sm" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                {saveMutation.isPending ? 'Saving…' : 'Save totals'}
+              <Button
+                type="submit"
+                size="sm"
+                loading={saving}
+                loadingText="Saving…"
+              >
+                {!saving && <Save className="h-4 w-4" />}
+                Save totals
               </Button>
             </SheetFooter>
           </form>

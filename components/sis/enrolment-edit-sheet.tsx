@@ -1,10 +1,10 @@
 'use client';
 
 import { Loader2, Save } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
@@ -82,7 +82,6 @@ export function EnrolmentEditSheet({
   indexNumber: number;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busNo, setBusNo] = useState(initial.bus_no ?? '');
   const [officer, setOfficer] = useState(initial.classroom_officer_role ?? '');
@@ -214,54 +213,32 @@ export function EnrolmentEditSheet({
         `/api/sections/${sectionId}/students/${enrolmentId}`,
         jsonInit('PATCH', body)
       ),
-    onSuccess: (resBody) => {
-      const lateTerm = resBody.lateEnrolleeTerm;
-      const admissionsCascade = resBody.admissionsCascade;
-      const reEnrolment = resBody.reEnrolment;
-      const midTermPayload = resBody.midTermEnrolment ?? null;
-
-      if (reEnrolment) {
-        toast.success(`Restored ${studentName} to active enrolment`);
-      } else if (lateTerm?.termLabel) {
-        toast.success(
-          `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`
-        );
-      } else if (isConvertingLate) {
-        toast.success(`Converted ${studentName} to a normal enrollee`);
-      } else if (status === 'late_enrollee') {
-        toast.success(`Tagged ${studentName} as late enrollee · between terms`);
-      } else if (admissionsCascade) {
-        toast.success(
-          `Withdrew ${studentName} · admissions also marked Withdrawn`
-        );
-      } else {
-        toast.success(`Updated ${studentName}`);
-      }
-
-      if (reEnrolment && midTermPayload?.sectionId) {
-        setPendingMidTerm(midTermPayload);
-        setMarkAsLate(true);
-        // Refresh HERE too, rather than leaving it to the prompt. The
-        // re-enrolment has already been written; the prompt only records which
-        // term the student joined. Skipping this left the page behind the sheet
-        // showing the pre-write state — observed on the assign-section dialog
-        // 2026-08-14 and fixed there the same way.
-        router.refresh();
-        return;
-      }
-
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (err) => {
-      // Preserve the original `resBody?.error ?? 'save failed'` fallback.
-      const serverError =
-        err instanceof ApiError && err.body && typeof err.body === 'object'
-          ? (err.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'save failed');
-    },
   });
+
+  const run = useWriteAction();
+  const [savingSheet, setSavingSheet] = useState(false);
+
+  function describeSuccess(resBody: SaveResponse): string {
+    const lateTerm = resBody.lateEnrolleeTerm;
+    const admissionsCascade = resBody.admissionsCascade;
+
+    if (resBody.reEnrolment) {
+      return `Restored ${studentName} to active enrolment`;
+    }
+    if (lateTerm?.termLabel) {
+      return `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`;
+    }
+    if (isConvertingLate) {
+      return `Converted ${studentName} to a normal enrollee`;
+    }
+    if (status === 'late_enrollee') {
+      return `Tagged ${studentName} as late enrollee · between terms`;
+    }
+    if (admissionsCascade) {
+      return `Withdrew ${studentName} · admissions also marked Withdrawn`;
+    }
+    return `Updated ${studentName}`;
+  }
 
   function doSave() {
     setConfirmWithdraw(false);
@@ -310,7 +287,33 @@ export function EnrolmentEditSheet({
     if (isConvertingLate) {
       body.lateRevertReason = revertReason.trim();
     }
-    saveMutation.mutate(body);
+    setSavingSheet(true);
+    void run(() => saveMutation.mutateAsync(body), {
+      pending: `Saving ${studentName}…`,
+      success: describeSuccess,
+      // Preserve the original `resBody?.error ?? 'save failed'` fallback.
+      error: (err: unknown) => {
+        const serverError =
+          err instanceof ApiError && err.body && typeof err.body === 'object'
+            ? (err.body as { error?: string }).error
+            : undefined;
+        return serverError ?? 'save failed';
+      },
+      // The refresh is unconditional now, which is this file's Class B fix:
+      // the old code returned early on the re-enrolment branch and relied on a
+      // second refresh landing later, leaving the page behind the sheet
+      // showing the pre-write state. The re-enrolment is already written; the
+      // prompt only records WHICH term the student joined.
+      onResolved: (resBody: SaveResponse) => {
+        const midTermPayload = resBody.midTermEnrolment ?? null;
+        if (resBody.reEnrolment && midTermPayload?.sectionId) {
+          setPendingMidTerm(midTermPayload);
+          setMarkAsLate(true);
+          return;
+        }
+        setOpen(false);
+      },
+    }).finally(() => setSavingSheet(false));
   }
 
   // Joining-term correction PATCH. The original read `body.error` on failure
@@ -321,22 +324,31 @@ export function EnrolmentEditSheet({
         `/api/sections/${sectionId}/students/${enrolmentId}`,
         jsonInit('PATCH', { late_enrollee_term_number: termNumber })
       ),
-    onSuccess: (_data, termNumber) => {
-      toast.success(`Joining term updated to T${termNumber}`);
-      router.refresh();
-    },
-    onError: (err) => {
-      const serverError =
-        err instanceof ApiError && err.body && typeof err.body === 'object'
-          ? (err.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'Failed to update joining term');
-      setLateTermOverride(initial.late_enrollee_term_number);
-    },
   });
 
-  function handleTermOverride(termNumber: number) {
-    termOverrideMutation.mutate(termNumber);
+  const [savingTerm, setSavingTerm] = useState(false);
+
+  async function handleTermOverride(termNumber: number) {
+    setSavingTerm(true);
+    const result = await run(
+      () => termOverrideMutation.mutateAsync(termNumber),
+      {
+        pending: 'Updating joining term…',
+        success: `Joining term updated to T${termNumber}`,
+        error: (err: unknown) => {
+          const serverError =
+            err instanceof ApiError && err.body && typeof err.body === 'object'
+              ? (err.body as { error?: string }).error
+              : undefined;
+          return serverError ?? 'Failed to update joining term';
+        },
+      }
+    );
+    // The picker moved optimistically; put it back if the write failed.
+    if (result === undefined) {
+      setLateTermOverride(initial.late_enrollee_term_number);
+    }
+    setSavingTerm(false);
   }
 
   // Mid-term late-enrollee confirm after a successful re-enrolment. The
@@ -347,23 +359,33 @@ export function EnrolmentEditSheet({
         `/api/sections/${vars.sectionId}/students/${vars.sectionStudentId}`,
         jsonInit('PATCH', { enrollment_status: 'late_enrollee' })
       ),
-    onSuccess: () => {
-      toast.success(
-        `Marked ${studentName} as late enrollee · ${pendingMidTerm?.termLabel ?? ''}`
-      );
-    },
-    onError: () => {
-      toast.error('Failed to mark as late enrollee');
-    },
-    onSettled: () => {
-      setPendingMidTerm(null);
-      setOpen(false);
-      router.refresh();
-    },
   });
 
-  const saving = saveMutation.isPending || termOverrideMutation.isPending;
-  const applyingLate = lateMutation.isPending;
+  const [applyingLate, setApplyingLate] = useState(false);
+
+  async function confirmLate(vars: {
+    sectionId: string;
+    sectionStudentId: string;
+  }) {
+    const termLabel = pendingMidTerm?.termLabel ?? '';
+    setApplyingLate(true);
+    await run(() => lateMutation.mutateAsync(vars), {
+      pending: 'Marking as late enrollee…',
+      success: `Marked ${studentName} as late enrollee · ${termLabel}`,
+      error: () => 'Failed to mark as late enrollee',
+      // Closed on either outcome before (`onSettled`), and still is below —
+      // this sheet offers no retry, so leaving it open would strand the user.
+      onResolved: () => {
+        setPendingMidTerm(null);
+        setOpen(false);
+      },
+    });
+    setPendingMidTerm(null);
+    setOpen(false);
+    setApplyingLate(false);
+  }
+
+  const saving = savingSheet || savingTerm;
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -833,11 +855,13 @@ export function EnrolmentEditSheet({
           in T2/T3/T4 where the registrar restored to 'active'. */}
       <AlertDialog
         open={pendingMidTerm !== null}
+        // No refresh on these dismissal paths any more. The re-enrolment write
+        // that opened this prompt already awaited its own refresh, so the page
+        // behind is current; skipping the prompt writes nothing further.
         onOpenChange={(next) => {
           if (!next) {
             setPendingMidTerm(null);
             setOpen(false);
-            router.refresh();
           }
         }}
       >
@@ -873,7 +897,6 @@ export function EnrolmentEditSheet({
               onClick={() => {
                 setPendingMidTerm(null);
                 setOpen(false);
-                router.refresh();
               }}
             >
               Skip
@@ -884,10 +907,9 @@ export function EnrolmentEditSheet({
                 if (!markAsLate || !pendingMidTerm) {
                   setPendingMidTerm(null);
                   setOpen(false);
-                  router.refresh();
                   return;
                 }
-                lateMutation.mutate({
+                void confirmLate({
                   sectionId: pendingMidTerm.sectionId,
                   sectionStudentId: pendingMidTerm.sectionStudentId,
                 });

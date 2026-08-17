@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { CalendarRange, Loader2, Sparkles } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { CalendarRange, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -74,7 +74,6 @@ export function CopyFromPriorAyDialog({
   sourceHolidays,
   sourceEvents,
 }: CopyFromPriorAyProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   // Default every row checked. Tentative defaults true (per Q4 lock —
@@ -146,9 +145,7 @@ export function CopyFromPriorAyDialog({
     setEventSelection(Object.fromEntries(sourceEvents.map((e) => [e.id, v])));
   }
 
-  // Tier-2 mutation (Model A): the POST routes through useMutation (retry: 0 +
-  // consistent error handling); on success we close + router.refresh(). The
-  // mutationFn returns the parsed body so the success toast can read the
+  // The mutationFn returns the parsed body so the success toast can read the
   // route's per-kind copied counts. Route-specific error copy is preserved —
   // ApiError.message resolves the body's `error` field.
   const copyMutation = useMutation({
@@ -176,26 +173,12 @@ export function CopyFromPriorAyDialog({
           markTentative,
         })
       ),
-    onSuccess: (body) => {
-      const total = (body?.dayTypeRowsCopied ?? 0) + (body?.eventsCopied ?? 0);
-      toast.success(
-        `Copied ${total} entr${total === 1 ? 'y' : 'ies'} to ${targetTermLabel}. ${
-          markTentative
-            ? 'Each row is marked tentative — review the dates before locking.'
-            : ''
-        }`.trim()
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    },
   });
 
-  const saving = copyMutation.isPending;
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
 
-  function commit() {
+  async function commit() {
     const dayTypeRows = holidayRows
       .filter((r) => r.targetDate && holidaySelection[r.source.id])
       .map((r) => ({
@@ -221,7 +204,22 @@ export function CopyFromPriorAyDialog({
       return;
     }
 
-    copyMutation.mutate({ dayTypeRows, events });
+    setSaving(true);
+    await run(() => copyMutation.mutateAsync({ dayTypeRows, events }), {
+      pending: `Copying to ${targetTermLabel}…`,
+      success: (body) => {
+        const total =
+          (body?.dayTypeRowsCopied ?? 0) + (body?.eventsCopied ?? 0);
+        return `Copied ${total} entr${total === 1 ? 'y' : 'ies'} to ${targetTermLabel}. ${
+          markTentative
+            ? 'Each row is marked tentative — review the dates before locking.'
+            : ''
+        }`.trim();
+      },
+      error: (e) => (e instanceof Error ? e.message : 'save failed'),
+      onResolved: () => setOpen(false),
+    });
+    setSaving(false);
   }
 
   if (sourceHolidays.length === 0 && sourceEvents.length === 0) {
@@ -453,18 +451,14 @@ export function CopyFromPriorAyDialog({
           </Button>
           <Button
             type="button"
-            onClick={commit}
-            disabled={saving || totalSelected === 0}
+            onClick={() => void commit()}
+            loading={saving}
+            loadingText="Copying…"
+            disabled={totalSelected === 0}
             className="gap-1.5"
           >
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="size-3.5" />
-            )}
-            {saving
-              ? 'Copying…'
-              : `Copy ${totalSelected} entr${totalSelected === 1 ? 'y' : 'ies'}`}
+            {!saving && <Sparkles className="size-3.5" />}
+            {`Copy ${totalSelected} entr${totalSelected === 1 ? 'y' : 'ies'}`}
           </Button>
         </DialogFooter>
       </DialogContent>

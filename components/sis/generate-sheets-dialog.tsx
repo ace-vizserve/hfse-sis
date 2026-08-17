@@ -2,11 +2,11 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowUpRight, FilePlus2, Loader2 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -84,7 +84,6 @@ export function GenerateSheetsDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : internalOpen;
@@ -168,32 +167,39 @@ export function GenerateSheetsDialog({
         jsonInit('POST', body)
       );
     },
-    onSuccess: (json) => {
-      const inserted = Number(json?.inserted ?? 0);
-      const label = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;
-
-      if (inserted > 0) {
-        toast.success(
-          `Generated ${inserted.toLocaleString('en-SG')} sheet${inserted === 1 ? '' : 's'} for ${label}.`
-        );
-      } else {
-        toast.info(
-          `Nothing to generate — every selected sheet already exists.`
-        );
-      }
-
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      const serverError =
-        e instanceof ApiError && e.body && typeof e.body === 'object'
-          ? (e.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'generation failed');
-    },
   });
-  const busy = generateMutation.isPending;
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function generate() {
+    const label = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;
+    setBusy(true);
+    await run(() => generateMutation.mutateAsync(), {
+      pending: `Generating sheets for ${label}…`,
+      // "Nothing to generate" is a notice, not an achievement — it keeps its
+      // own neutral tone rather than being reported as work done.
+      success: (json) => {
+        const inserted = Number(json?.inserted ?? 0);
+        if (inserted === 0) {
+          toast.info(
+            'Nothing to generate — every selected sheet already exists.'
+          );
+          return null;
+        }
+        return `Generated ${inserted.toLocaleString('en-SG')} sheet${inserted === 1 ? '' : 's'} for ${label}.`;
+      },
+      error: (e) => {
+        const serverError =
+          e instanceof ApiError && e.body && typeof e.body === 'object'
+            ? (e.body as { error?: string }).error
+            : undefined;
+        return serverError ?? 'generation failed';
+      },
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
+  }
 
   const scopeLabel = scope.kind === 'ay' ? scope.ayCode : scope.sectionLabel;
 
@@ -411,15 +417,13 @@ export function GenerateSheetsDialog({
           </Button>
           <Button
             type="button"
-            onClick={() => generateMutation.mutate()}
+            onClick={() => void generate()}
+            loading={busy}
+            loadingText="Generating…"
             disabled={
-              busy ||
-              nothingSelected ||
-              !preview ||
-              preview.totals.toCreate === 0
+              nothingSelected || !preview || preview.totals.toCreate === 0
             }
           >
-            {busy && <Loader2 className="mr-1 size-4 animate-spin" />}
             Generate sheets
           </Button>
         </DialogFooter>

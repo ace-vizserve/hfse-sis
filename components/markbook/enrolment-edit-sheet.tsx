@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { Save } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -74,7 +73,6 @@ export function EnrolmentEditSheet({
   indexNumber: number;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busNo, setBusNo] = useState(initial.bus_no ?? '');
   const [officer, setOfficer] = useState(initial.classroom_officer_role ?? '');
@@ -158,11 +156,10 @@ export function EnrolmentEditSheet({
     }
   }
 
-  // Tier-2 mutation (Model A): both PATCH paths (main save + the inline
-  // joining-term override) target the same section-students route, so they
-  // share one mutation. `saving` derives from isPending. The success body
-  // carries lateEnrolleeTerm / admissionsCascade, so the per-path success
-  // toasts stay in the callers; the 'save failed' fallback is preserved
+  // Both PATCH paths (main save + the inline joining-term override) target the
+  // same section-students route, so they share one mutation. The success body
+  // carries lateEnrolleeTerm / admissionsCascade, so each path words its own
+  // toast off the response; the 'save failed' fallback is preserved
   // (ApiError.message already resolves to body.error).
   const patchMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -174,7 +171,11 @@ export function EnrolmentEditSheet({
         jsonInit('PATCH', body)
       ),
   });
-  const saving = patchMutation.isPending;
+
+  const run = useWriteAction();
+  // Not `patchMutation.isPending` — that drops the moment the PATCH resolves,
+  // while the roster behind this sheet is still the old one.
+  const [saving, setSaving] = useState(false);
 
   // Withdrawing flips both section_students AND admissions applicationStatus
   // to Withdrawn (server-side cascade). Confirm before firing.
@@ -236,49 +237,53 @@ export function EnrolmentEditSheet({
     if (isConvertingLate) {
       requestBody.lateRevertReason = revertReason.trim();
     }
-    try {
-      const body = await patchMutation.mutateAsync(requestBody);
+    setSaving(true);
+    await run(() => patchMutation.mutateAsync(requestBody), {
+      pending: `Saving ${studentName}…`,
       // When the registrar just tagged this student as a late enrollee, the
       // server resolves the joining term from `terms` and returns it so the
       // toast can confirm WHICH term they joined ("Late enrollee · T2"). Falls
       // back gracefully when the date sits outside any defined term window.
-      const lateTerm = body.lateEnrolleeTerm;
-      const admissionsCascade = body.admissionsCascade;
-      if (lateTerm?.termLabel) {
-        toast.success(
-          `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`
-        );
-      } else if (isConvertingLate) {
-        toast.success(`Converted ${studentName} to a normal enrollee`);
-      } else if (status === 'late_enrollee') {
-        toast.success(`Tagged ${studentName} as late enrollee · between terms`);
-      } else if (admissionsCascade) {
-        toast.success(
-          `Withdrew ${studentName} · admissions also marked Withdrawn`
-        );
-      } else {
-        toast.success(`Updated ${studentName}`);
-      }
-      setOpen(false);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'save failed');
-    }
+      success: (body) => {
+        const lateTerm = body.lateEnrolleeTerm;
+        const admissionsCascade = body.admissionsCascade;
+        if (lateTerm?.termLabel) {
+          return `Tagged ${studentName} as late enrollee · ${lateTerm.termLabel}`;
+        }
+        if (isConvertingLate) {
+          return `Converted ${studentName} to a normal enrollee`;
+        }
+        if (status === 'late_enrollee') {
+          return `Tagged ${studentName} as late enrollee · between terms`;
+        }
+        if (admissionsCascade) {
+          return `Withdrew ${studentName} · admissions also marked Withdrawn`;
+        }
+        return `Updated ${studentName}`;
+      },
+      error: (err) => (err instanceof Error ? err.message : 'save failed'),
+      onResolved: () => setOpen(false),
+    });
+    setSaving(false);
   }
 
   async function handleTermOverride(termNumber: number) {
-    try {
-      await patchMutation.mutateAsync({
-        late_enrollee_term_number: termNumber,
-      });
-      toast.success(`Joining term updated to T${termNumber}`);
-      router.refresh();
-    } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to update joining term'
-      );
+    setSaving(true);
+    const result = await run(
+      () =>
+        patchMutation.mutateAsync({ late_enrollee_term_number: termNumber }),
+      {
+        pending: 'Updating joining term…',
+        success: `Joining term updated to T${termNumber}`,
+        error: (e) =>
+          e instanceof Error ? e.message : 'Failed to update joining term',
+      }
+    );
+    // The picker was moved optimistically; put it back if the write failed.
+    if (result === undefined) {
       setLateTermOverride(initial.late_enrollee_term_number);
     }
+    setSaving(false);
   }
 
   return (
@@ -544,15 +549,12 @@ export function EnrolmentEditSheet({
               <Button
                 type="submit"
                 size="sm"
-                disabled={saving}
+                loading={saving}
+                loadingText="Saving…"
                 className="gap-1.5"
               >
-                {saving ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Save className="size-3.5" />
-                )}
-                {saving ? 'Saving…' : 'Save'}
+                {!saving && <Save className="size-3.5" />}
+                Save
               </Button>
             </SheetFooter>
           </form>

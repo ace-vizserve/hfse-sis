@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { CalendarClock, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { CalendarClock } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -51,7 +51,6 @@ export function PromiseDialog({
   trigger,
   module = 'p-files',
 }: PromiseDialogProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [promisedUntil, setPromisedUntil] = useState<string>(
     isoDateOffset(DEFAULT_HORIZON_DAYS)
@@ -66,8 +65,8 @@ export function PromiseDialog({
     }
   }
 
-  // Tier-2 mutation. The route's bespoke `body.error` surfaces via
-  // ApiError.message, preserving the 'Failed to record promise' fallback.
+  // The route's bespoke `body.error` surfaces via ApiError.message, preserving
+  // the 'Failed to record promise' fallback.
   const promiseMutation = useMutation({
     mutationFn: () =>
       apiFetch(
@@ -79,25 +78,25 @@ export function PromiseDialog({
           module,
         })
       ),
-    onSuccess: () => {
-      toast.success(
-        `Promise recorded — slot marked as 'To follow' through ${promisedUntil}`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Failed to record promise'),
   });
 
-  const busy = promiseMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!promisedUntil) {
       toast.error('Pick a promise date');
       return;
     }
-    promiseMutation.mutate();
+    setBusy(true);
+    await run(() => promiseMutation.mutateAsync(), {
+      pending: 'Recording promise…',
+      success: `Promise recorded — slot marked as 'To follow' through ${promisedUntil}`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Failed to record promise',
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
   }
 
   return (
@@ -170,12 +169,13 @@ export function PromiseDialog({
           >
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={busy || !promisedUntil}>
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <CalendarClock className="size-4" />
-            )}
+          <Button
+            onClick={() => void handleSubmit()}
+            loading={busy}
+            loadingText="Recording…"
+            disabled={!promisedUntil}
+          >
+            {!busy && <CalendarClock className="size-4" />}
             Record promise
           </Button>
         </DialogFooter>

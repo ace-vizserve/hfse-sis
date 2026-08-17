@@ -1,9 +1,13 @@
 /**
  * Behavior test for the calendar EventEditorDialog.
  *
- * Tier-2 mutation contract (via useMutation/apiFetch):
- *  - pending → Save disabled; success → toast.success + onCreated; error →
- *    route-specific message preserved (not flattened) and onCreated never runs.
+ * Write contract (via useWriteAction over useMutation/apiFetch):
+ *  - pending → the button reads "Saving…", is disabled and aria-busy, and
+ *    nothing has been claimed yet;
+ *  - success → onCreated (which closes) runs first, then the toast, once the
+ *    awaited refresh has landed;
+ *  - error → route-specific message preserved (not flattened) and onCreated
+ *    never runs.
  *
  * Date-based behavior (2026-06-15):
  *  - today/future date → saves directly, no warning;
@@ -62,6 +66,16 @@ function saveButton() {
   return screen.getByRole('button', { name: /^save$/i });
 }
 
+/**
+ * While the write is in flight the control keeps its verb and changes tense —
+ * "Save" becomes "Saving…" (components/ui/button.tsx `loadingText`). So the
+ * in-flight button has a DIFFERENT accessible name and cannot be found by
+ * `saveButton()`.
+ */
+function savingButton() {
+  return screen.getByRole('button', { name: /^saving/i });
+}
+
 describe('EventEditorDialog', () => {
   it('disables Save while pending, then toasts success + calls onCreated', async () => {
     const user = userEvent.setup();
@@ -85,13 +99,18 @@ describe('EventEditorDialog', () => {
 
     await user.click(saveButton());
 
-    await waitFor(() => expect(saveButton()).toBeDisabled());
+    await waitFor(() => expect(savingButton()).toBeDisabled());
+    expect(savingButton()).toHaveAttribute('aria-busy', 'true');
     expect(onCreated).not.toHaveBeenCalled();
+    // Nothing is claimed while the write is still in flight.
+    expect(toastSuccess).not.toHaveBeenCalled();
 
     resolve(jsonResponse({ ok: true }));
 
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    // onCreated (which closes the dialog) runs first; the success toast waits
+    // for the refresh behind it.
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     expect(toastError).not.toHaveBeenCalled();
   });
 

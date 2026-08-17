@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Layers, Loader2, Search } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Layers, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -65,7 +65,6 @@ export function AttachToSectionModal({
    * catalog table uses this to clear its checkbox selection. */
   onAttached: () => void;
 }) {
-  const router = useRouter();
   const [selectedSectionIds, setSelectedSectionIds] = useState<Set<string>>(
     new Set()
   );
@@ -199,32 +198,43 @@ export function AttachToSectionModal({
       }
       return { sectionCount, sheetCount, errors };
     },
-    onSuccess: ({ sectionCount, sheetCount, errors }) => {
-      if (sectionCount > 0) {
-        toast.success(
-          `Attached ${subjects.length} subject${subjects.length === 1 ? '' : 's'} to ${sectionCount} section${sectionCount === 1 ? '' : 's'}` +
-            (sheetCount > 0
-              ? ` — ${sheetCount} new sheet${sheetCount === 1 ? '' : 's'}`
-              : '')
-        );
-      }
-      if (errors.length > 0) {
-        toast.error(
-          `${errors.length} section${errors.length === 1 ? '' : 's'} failed`,
-          { description: errors.join('\n') }
-        );
-      }
-      if (sectionCount > 0) {
-        onAttached();
-        router.refresh();
-      }
-      if (errors.length === 0) onOpenChange(false);
-    },
-    onError: () => {
-      toast.error('Could not attach subjects to the selected sections');
-    },
   });
-  const busy = attachMutation.isPending;
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function attach() {
+    setBusy(true);
+    await run(() => attachMutation.mutateAsync(), {
+      pending: `Attaching to ${selectedSectionIds.size} section${selectedSectionIds.size === 1 ? '' : 's'}…`,
+      // A partial run is two facts, and the failure list needs a description
+      // only a raised toast can carry. An all-failure run returns `null` so
+      // nothing green lands over a run where nothing attached.
+      success: ({ sectionCount, sheetCount, errors }) => {
+        if (errors.length > 0) {
+          toast.error(
+            `${errors.length} section${errors.length === 1 ? '' : 's'} failed`,
+            { description: errors.join('\n') }
+          );
+        }
+        if (sectionCount === 0) return null;
+        return (
+          `Attached ${subjects.length} subject${subjects.length === 1 ? '' : 's'} to ${sectionCount} section${sectionCount === 1 ? '' : 's'}` +
+          (sheetCount > 0
+            ? ` — ${sheetCount} new sheet${sheetCount === 1 ? '' : 's'}`
+            : '')
+        );
+      },
+      error: () => 'Could not attach subjects to the selected sections',
+      onResolved: ({ sectionCount, errors }) => {
+        if (sectionCount > 0) onAttached();
+        if (errors.length === 0) onOpenChange(false);
+      },
+      // Nothing attached means nothing on the server changed.
+      refresh: ({ sectionCount }) => sectionCount > 0,
+    });
+    setBusy(false);
+  }
 
   const maxSheets = subjects.length * selectedSectionIds.size * 4;
 
@@ -416,11 +426,12 @@ export function AttachToSectionModal({
           </span>
           <Button
             type="button"
-            onClick={() => attachMutation.mutate()}
-            disabled={selectedSectionIds.size === 0 || busy}
+            onClick={() => void attach()}
+            loading={busy}
+            loadingText="Attaching…"
+            disabled={selectedSectionIds.size === 0}
             className="gap-1.5"
           >
-            {busy && <Loader2 className="size-3.5 animate-spin" />}
             Attach to {selectedSectionIds.size || ''} section
             {selectedSectionIds.size === 1 ? '' : 's'}
           </Button>

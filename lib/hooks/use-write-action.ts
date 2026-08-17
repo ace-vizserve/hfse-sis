@@ -52,8 +52,17 @@ export type WriteActionOptions<T> = {
    */
   pending: string | false;
 
-  /** What to say when it worked. Receives the parsed response body. */
-  success: string | ((data: T) => string);
+  /**
+   * What to say when it worked. Receives the parsed response body.
+   *
+   * Return `null` when the surface has already said it — the mirror of
+   * `error`'s null. Added for the one case that needed it: an upload can
+   * succeed and still come back with `body.warning`, which must be reported as
+   * a WARNING and not recoloured as a success
+   * (`components/p-files/upload-dialog.tsx`). Without this the choice was a
+   * green toast carrying warning text, or two toasts for one action.
+   */
+  success: string | ((data: T) => string | null);
 
   /**
    * What to say when it failed. Receives the thrown error — usually an
@@ -175,9 +184,13 @@ export function useWriteAction(): WriteAction {
         if (wantsRefresh) await awaitRefresh();
 
         clearPending();
-        toast.success(
-          typeof opts.success === 'function' ? opts.success(data) : opts.success
-        );
+        const message =
+          typeof opts.success === 'function'
+            ? opts.success(data)
+            : opts.success;
+        // `null` — the surface reported the outcome itself, in a tone this
+        // helper cannot pick (a warning on an otherwise-successful write).
+        if (message !== null) toast.success(message);
         return data;
       } catch (err) {
         clearPending();

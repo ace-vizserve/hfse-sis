@@ -4,10 +4,10 @@ import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
 import { useMutation } from '@tanstack/react-query';
-import { ChevronRight, Loader2, Mail } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ChevronRight, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,45 +42,53 @@ function NotifyButton({
   slotKey: string;
   fullName: string;
 }) {
-  const router = useRouter();
-
   const mutation = useMutation<NotifyResult, Error>({
     mutationFn: () =>
       apiFetch<NotifyResult>(
         `/api/p-files/${encodeURIComponent(enroleeNumber)}/notify`,
         jsonInit('POST', { slotKey, module: 'p-files' })
       ),
-    onSuccess: (body) => {
-      toast.success(
-        `Reminder sent to ${body.sent} of ${body.recipients} recipient${body.recipients === 1 ? '' : 's'}`
-      );
-      router.refresh();
-    },
-    onError: (e) => {
-      const kind =
-        e instanceof ApiError &&
-        e.body &&
-        typeof e.body === 'object' &&
-        (e.body as { kind?: string }).kind;
-      if (kind === 'no_recipients') {
-        toast.error(
-          'No parent or guardian email on file — update the contact record in Admissions to send a reminder.',
-          {
-            action: {
-              label: 'Open in Admissions',
-              onClick: () =>
-                window.open(
-                  `/admissions/applications/${encodeURIComponent(enroleeNumber)}?tab=family`,
-                  '_blank'
-                ),
-            },
-          }
-        );
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Failed to send reminder');
-    },
   });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = React.useState(false);
+
+  async function send() {
+    setBusy(true);
+    await run(() => mutation.mutateAsync(), {
+      pending: 'Sending reminder…',
+      success: (body) =>
+        `Reminder sent to ${body.sent} of ${body.recipients} recipient${body.recipients === 1 ? '' : 's'}`,
+      // `no_recipients` earns a toast with an action, which a plain message
+      // can't carry — raised here, then `null` stops a second one landing on
+      // top of it.
+      error: (e) => {
+        const kind =
+          e instanceof ApiError &&
+          e.body &&
+          typeof e.body === 'object' &&
+          (e.body as { kind?: string }).kind;
+        if (kind === 'no_recipients') {
+          toast.error(
+            'No parent or guardian email on file — update the contact record in Admissions to send a reminder.',
+            {
+              action: {
+                label: 'Open in Admissions',
+                onClick: () =>
+                  window.open(
+                    `/admissions/applications/${encodeURIComponent(enroleeNumber)}?tab=family`,
+                    '_blank'
+                  ),
+              },
+            }
+          );
+          return null;
+        }
+        return e instanceof Error ? e.message : 'Failed to send reminder';
+      },
+    });
+    setBusy(false);
+  }
 
   return (
     <Button
@@ -88,14 +96,10 @@ function NotifyButton({
       variant="ghost"
       className="h-8 gap-1.5 text-xs"
       aria-label={`Notify parent for ${fullName}`}
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate()}
+      loading={busy}
+      onClick={() => void send()}
     >
-      {mutation.isPending ? (
-        <Loader2 className="size-3 animate-spin" />
-      ) : (
-        <Mail className="size-3" />
-      )}
+      {!busy && <Mail className="size-3" />}
       Notify
     </Button>
   );

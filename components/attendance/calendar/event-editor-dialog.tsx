@@ -10,10 +10,10 @@
 // Design system: shadcn Dialog + Field-shaped rows; tokens only.
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { sgToday } from '@/lib/dates';
 import {
@@ -237,8 +237,8 @@ export function EventEditorDialog({
   }
   if (!open && initKey !== null) setInitKey(null);
 
-  // Tier-2 mutation (Model A): useMutation owns the pending/error UX; on success
-  // we toast + call onCreated() (the parent closes + router.refresh()s). The
+  // `onCreated` closes the dialog and nothing more — the refresh it used to
+  // also fire now belongs to this write, so the toast can wait for it. The
   // route-specific error copy is preserved — ApiError.message already resolves
   // to the body's `error` (then `message`), so `e.message` carries the route's
   // own wording (e.g. day-type not encodable / term-bound validation / 409).
@@ -282,16 +282,21 @@ export function EventEditorDialog({
         )
       );
     },
-    onSuccess: () => {
-      toast.success(isEdit ? 'Event updated' : 'Added to the calendar');
-      onCreated();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'save failed');
-    },
   });
 
-  const saving = saveMutation.isPending;
+  const run = useWriteAction();
+  const [saving, setSaving] = useState(false);
+
+  async function commitSave() {
+    setSaving(true);
+    await run(() => saveMutation.mutateAsync(), {
+      pending: isEdit ? 'Updating event…' : 'Adding to the calendar…',
+      success: isEdit ? 'Event updated' : 'Added to the calendar',
+      error: (e) => (e instanceof Error ? e.message : 'save failed'),
+      onResolved: () => onCreated(),
+    });
+    setSaving(false);
+  }
 
   function save() {
     if (end < start) {
@@ -312,7 +317,7 @@ export function EventEditorDialog({
       return;
     }
 
-    saveMutation.mutate();
+    void commitSave();
   }
 
   return (
@@ -414,8 +419,13 @@ export function EventEditorDialog({
             >
               Cancel
             </Button>
-            <Button type="button" size="sm" disabled={saving} onClick={save}>
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            <Button
+              type="button"
+              size="sm"
+              loading={saving}
+              loadingText={isEdit ? 'Updating…' : 'Saving…'}
+              onClick={save}
+            >
               {isEdit ? 'Update' : 'Save'}
             </Button>
           </DialogFooter>
@@ -439,7 +449,7 @@ export function EventEditorDialog({
             <AlertDialogAction
               onClick={() => {
                 setPastWarnOpen(false);
-                saveMutation.mutate();
+                void commitSave();
               }}
             >
               Save anyway

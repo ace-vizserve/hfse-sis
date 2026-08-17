@@ -3,10 +3,9 @@
 import { CheckCircle2, ExternalLink, Lock, UserCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { useMutation } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
-import { toast } from 'sonner';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
@@ -35,10 +34,9 @@ import { cn } from '@/lib/utils';
 
 // Self-contained per-row "Lock sheet" menu item. Owns its own AlertDialog +
 // useMutation so it doesn't couple to the parent's bulk-lock state machine.
-// Mirrors the existing bulk-lock mutation pattern exactly (same endpoint, same
-// error voices, same router.refresh() on success).
+// Mirrors the bulk-lock write below exactly — same endpoint, same error
+// voices, same awaited refresh.
 function LockSheetMenuItem({ sheetId }: { sheetId: string }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const lockMutation = useMutation({
@@ -47,21 +45,24 @@ function LockSheetMenuItem({ sheetId }: { sheetId: string }) {
         '/api/grading-sheets/bulk-lock',
         jsonInit('POST', { ids: [sheetId] })
       ),
-    onSuccess: () => {
-      toast.success('Sheet locked.');
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        toast.error(e.message || 'Could not lock the sheet.');
-      } else {
-        toast.error('Could not reach the server. Please try again.');
-      }
-    },
   });
 
-  const busy = lockMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function lock() {
+    setBusy(true);
+    await run(() => lockMutation.mutateAsync(), {
+      pending: 'Locking sheet…',
+      success: 'Sheet locked.',
+      error: (e) =>
+        e instanceof ApiError
+          ? e.message || 'Could not lock the sheet.'
+          : 'Could not reach the server. Please try again.',
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
+  }
 
   return (
     <>
@@ -95,7 +96,7 @@ function LockSheetMenuItem({ sheetId }: { sheetId: string }) {
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                lockMutation.mutate();
+                void lock();
               }}
               disabled={busy}
             >
@@ -445,52 +446,52 @@ export function GradingDataTable({
    *  Teachers never see selection — they can't lock. */
   canLock?: boolean;
 }) {
-  const router = useRouter();
   // Sheets queued for bulk lock — non-empty drives the confirm dialog open.
   const [pendingLock, setPendingLock] = useState<GradingSheetRow[]>([]);
   const [clearSelectionToken, setClearSelectionToken] = useState(0);
 
-  // Tier-2 mutation (Model A): the bulk-lock POST runs through useMutation. The
-  // success body carries `locked`/`skipped`, so that toast stays in onSuccess.
-  // The two distinct error voices are preserved: an ApiError (non-2xx) surfaces
-  // the route's message ('Could not lock the selected sheets.' fallback), while
-  // any other failure (network) keeps the 'Could not reach the server.' copy.
+  // The success body carries `locked`/`skipped`, so the toast reads them off
+  // the response. The two distinct error voices are preserved: an ApiError
+  // (non-2xx) surfaces the route's message ('Could not lock the selected
+  // sheets.' fallback), while any other failure (network) keeps the 'Could not
+  // reach the server.' copy.
   const lockMutation = useMutation({
     mutationFn: (ids: string[]) =>
       apiFetch<{ locked?: number; skipped?: number }>(
         '/api/grading-sheets/bulk-lock',
         jsonInit('POST', { ids })
       ),
-    onSuccess: (json) => {
-      const locked = json.locked ?? 0;
-      const skipped = json.skipped ?? 0;
-      toast.success(
-        skipped > 0
-          ? `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'} (${skipped} already locked)`
-          : `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'}`
-      );
-      setPendingLock([]);
-      setClearSelectionToken((t) => t + 1);
-      router.refresh();
-    },
-    onError: (e) => {
-      if (e instanceof ApiError) {
-        toast.error(e.message || 'Could not lock the selected sheets.');
-      } else {
-        toast.error('Could not reach the server. Please try again.');
-      }
-    },
   });
 
-  const isLocking = lockMutation.isPending;
+  const run = useWriteAction();
+  const [isLocking, setIsLocking] = useState(false);
 
-  function runBulkLock() {
+  async function runBulkLock() {
     const ids = pendingLock.filter((r) => !r.is_locked).map((r) => r.id);
     if (ids.length === 0) {
       setPendingLock([]);
       return;
     }
-    lockMutation.mutate(ids);
+    setIsLocking(true);
+    await run(() => lockMutation.mutateAsync(ids), {
+      pending: `Locking ${ids.length} ${ids.length === 1 ? 'sheet' : 'sheets'}…`,
+      success: (json) => {
+        const locked = json.locked ?? 0;
+        const skipped = json.skipped ?? 0;
+        return skipped > 0
+          ? `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'} (${skipped} already locked)`
+          : `Locked ${locked} ${locked === 1 ? 'sheet' : 'sheets'}`;
+      },
+      error: (e) =>
+        e instanceof ApiError
+          ? e.message || 'Could not lock the selected sheets.'
+          : 'Could not reach the server. Please try again.',
+      onResolved: () => {
+        setPendingLock([]);
+        setClearSelectionToken((t) => t + 1);
+      },
+    });
+    setIsLocking(false);
   }
   // Compute curated valueOptions for Teacher + Form adviser facets.
   // Include "(unassigned)" when any row has a null value for that column —

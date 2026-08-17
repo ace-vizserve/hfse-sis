@@ -13,12 +13,11 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition, type ReactNode } from 'react';
-import { toast } from 'sonner';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -432,8 +431,7 @@ export function PublishWindowPanel({
   levelId: string | null;
   terms: Term[];
 }) {
-  const router = useRouter();
-  const [, startTransition] = useTransition();
+  const run = useWriteAction();
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTermId, setEditingTermId] = useState<string | null>(null);
@@ -471,7 +469,8 @@ export function PublishWindowPanel({
   // body — so we read `code` / `hardBlockers` / `error` off it and re-throw the
   // same plain-English messages (comments_incomplete + publish_blocked + the
   // generic 'publish failed' fallback) the original built from `res.json()`.
-  // The reload-after-success + success toast + router.refresh stay identical.
+  // The reload-after-success is unchanged; the toast and the refresh now run
+  // through useWriteAction, so the toast waits for the re-render.
   const publishMutation = useMutation({
     mutationFn: async (termId: string) => {
       try {
@@ -529,15 +528,16 @@ export function PublishWindowPanel({
   async function save(termId: string) {
     setBusy(true);
     try {
-      const publications = await publishMutation.mutateAsync(termId);
-      setPublications(publications);
-      setEditingTermId(null);
-      toast.success('Publication window saved');
-      startTransition(() => router.refresh());
-    } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to save publication window'
-      );
+      await run(() => publishMutation.mutateAsync(termId), {
+        pending: 'Saving publication window…',
+        success: 'Publication window saved',
+        error: (e) =>
+          e instanceof Error ? e.message : 'Failed to save publication window',
+        onResolved: (publications) => {
+          setPublications(publications);
+          setEditingTermId(null);
+        },
+      });
     } finally {
       setBusy(false);
     }
@@ -554,16 +554,16 @@ export function PublishWindowPanel({
   async function revoke(publicationId: string) {
     setBusy(true);
     try {
-      await revokeMutation.mutateAsync(publicationId);
-      setPublications((prev) => prev.filter((p) => p.id !== publicationId));
-      toast.success('Publication revoked');
-      startTransition(() => router.refresh());
-    } catch (e) {
-      // ApiError.message already resolves to body.error ('revoke failed'
-      // fallback); any other failure keeps the generic message.
-      toast.error(
-        e instanceof Error ? e.message : 'Failed to revoke publication'
-      );
+      await run(() => revokeMutation.mutateAsync(publicationId), {
+        pending: 'Revoking publication…',
+        success: 'Publication revoked',
+        // ApiError.message already resolves to body.error ('revoke failed'
+        // fallback); any other failure keeps the generic message.
+        error: (e) =>
+          e instanceof Error ? e.message : 'Failed to revoke publication',
+        onResolved: () =>
+          setPublications((prev) => prev.filter((p) => p.id !== publicationId)),
+      });
     } finally {
       setBusy(false);
     }

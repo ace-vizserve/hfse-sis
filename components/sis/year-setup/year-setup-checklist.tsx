@@ -13,7 +13,6 @@ import {
   Clock,
   LayoutGrid,
   ListChecks,
-  Loader2,
   School,
   Sparkles,
   Stamp,
@@ -21,9 +20,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Fragment, useState, type ReactNode } from 'react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { VirtueThemesEditor } from '@/components/evaluation/virtue-themes-editor';
 import { AyAcceptingApplicationsToggle } from '@/components/sis/ay-accepting-applications-toggle';
@@ -541,31 +540,37 @@ function GenerateCalendarButton({
   ayCode: string;
   variant?: 'default' | 'outline';
 }) {
-  const router = useRouter();
   const m = useMutation({
     mutationFn: () =>
-      apiFetch(
+      apiFetch<{ inserted?: number }>(
         '/api/sis/ay-setup/seed-calendar',
         jsonInit('POST', { ay_code: ayCode })
       ),
-    onSuccess: (data: unknown) => {
-      const inserted = (data as { inserted?: number })?.inserted ?? 0;
-      toast.success(`School days generated (${inserted} added).`);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not generate school days.'
-      ),
   });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function seed() {
+    setBusy(true);
+    await run(() => m.mutateAsync(), {
+      pending: 'Generating school days…',
+      success: (data) =>
+        `School days generated (${data?.inserted ?? 0} added).`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not generate school days.',
+    });
+    setBusy(false);
+  }
+
   return (
     <Button
       variant={variant}
       size="sm"
-      onClick={() => m.mutate()}
-      disabled={m.isPending}
+      onClick={() => void seed()}
+      loading={busy}
+      loadingText="Generating…"
     >
-      {m.isPending && <Loader2 className="size-3.5 animate-spin" />}
       Generate school days
     </Button>
   );

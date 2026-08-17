@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { FileText, Loader2, Merge, Upload, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { FileText, Merge, Upload, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,7 +79,6 @@ export function UploadDialog({
   isReplacement,
   trigger,
 }: UploadDialogProps) {
-  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -148,31 +147,45 @@ export function UploadDialog({
     []
   );
 
-  // Tier-2 mutation — multipart/FormData upload. Pass the FormData body
-  // directly (no content-type header, the browser sets the multipart boundary).
-  // The route's `body.warning` drives a warning toast on otherwise-OK uploads;
-  // its bespoke `body.error` surfaces via ApiError.message ('Upload failed').
+  // Multipart/FormData upload. Pass the FormData body directly (no
+  // content-type header, the browser sets the multipart boundary). Its bespoke
+  // `body.error` surfaces via ApiError.message ('Upload failed').
   const uploadMutation = useMutation({
     mutationFn: (formData: FormData) =>
       apiFetch<{ warning?: string }>(`/api/p-files/${enroleeNumber}/upload`, {
         method: 'POST',
         body: formData,
       }),
-    onSuccess: (body) => {
-      if (body.warning) {
-        toast.warning(body.warning);
-      } else {
-        toast.success(`${label} uploaded successfully`);
-      }
-      setOpen(false);
-      resetForm();
-      router.refresh();
-    },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Upload failed'),
   });
 
-  const busy = uploadMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  async function upload(formData: FormData) {
+    setBusy(true);
+    await run(() => uploadMutation.mutateAsync(formData), {
+      // Files are the slowest write in the app, so this one always earns its
+      // pending toast.
+      pending: `Uploading ${label}…`,
+      // The route's `body.warning` means the file landed but something about it
+      // needs saying — a merged PDF, a re-used slot. Raising it here and
+      // returning `null` keeps the warning's own colour instead of dressing it
+      // up as a plain success.
+      success: (body) => {
+        if (body.warning) {
+          toast.warning(body.warning);
+          return null;
+        }
+        return `${label} uploaded successfully`;
+      },
+      error: (err) => (err instanceof Error ? err.message : 'Upload failed'),
+      onResolved: () => {
+        setOpen(false);
+        resetForm();
+      },
+    });
+    setBusy(false);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -233,7 +246,7 @@ export function UploadDialog({
     if (meta?.kind === 'pass') formData.append('passType', passType);
     if (isReplacement && note.trim()) formData.append('note', note.trim());
 
-    uploadMutation.mutate(formData);
+    void upload(formData);
   }
 
   const hasFiles = selectedFiles.length > 0;
@@ -477,8 +490,12 @@ export function UploadDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={busy || !hasFiles}>
-              {busy && <Loader2 className="size-3.5 animate-spin" />}
+            <Button
+              type="submit"
+              loading={busy}
+              loadingText="Uploading…"
+              disabled={!hasFiles}
+            >
               {isMerge
                 ? 'Merge & Upload'
                 : isReplacement

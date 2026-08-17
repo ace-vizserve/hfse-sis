@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import {
   CalendarClock,
@@ -12,8 +11,8 @@ import {
   Upload,
   XCircle,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { RejectDialog } from '@/components/p-files/document-validation/reject-dialog';
 
@@ -215,7 +214,6 @@ export function DocumentCard({
   lastReminderAt,
   activePromise,
 }: DocumentCardProps) {
-  const router = useRouter();
   const [rejectOpen, setRejectOpen] = React.useState(false);
 
   const hasFile = status !== 'missing' && status !== 'na';
@@ -224,20 +222,12 @@ export function DocumentCard({
 
   const docUrl = `/api/sis/students/${encodeURIComponent(enroleeNumber)}/document/${encodeURIComponent(slotKey)}?ay=${encodeURIComponent(ayCode)}`;
 
-  // Tier-2 mutations — settled card re-renders via router.refresh() (Model A),
-  // so there's no inline status to optimistically flip. Approve disables its
-  // own buttons via `approveMutation.isPending`. The route's bespoke
-  // `body.error` message is preserved via ApiError.message.
+  // The settled card re-renders from the server (Model A), so there is no
+  // inline status to flip optimistically — which is exactly why the toast has
+  // to hold until that re-render lands. The route's bespoke `body.error`
+  // message is preserved via ApiError.message.
   const approveMutation = useMutation({
     mutationFn: () => apiFetch(docUrl, jsonInit('PATCH', { status: 'Valid' })),
-    onSuccess: () => {
-      toast.success(`${label} approved.`);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not approve the document.'
-      ),
   });
 
   const rejectMutation = useMutation({
@@ -246,22 +236,31 @@ export function DocumentCard({
         docUrl,
         jsonInit('PATCH', { status: 'Rejected', rejectionReason: reason })
       ),
-    onSuccess: () => {
-      toast.success(`${label} rejected.`);
-      setRejectOpen(false);
-      router.refresh();
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'Could not reject the document.'
-      ),
   });
 
-  const approving = approveMutation.isPending;
+  const run = useWriteAction();
+  const [approving, setApproving] = React.useState(false);
+
+  async function handleApprove() {
+    setApproving(true);
+    await run(() => approveMutation.mutateAsync(), {
+      pending: `Approving ${label}…`,
+      success: `${label} approved.`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not approve the document.',
+    });
+    setApproving(false);
+  }
 
   async function handleReject(reason: string) {
-    await rejectMutation.mutateAsync(reason).catch(() => {
-      // onError already toasted; swallow so the dialog stays open for retry.
+    await run(() => rejectMutation.mutateAsync(reason), {
+      pending: `Rejecting ${label}…`,
+      success: `${label} rejected.`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'Could not reject the document.',
+      // Only close on success — a failure leaves the dialog open for a retry,
+      // which is what the swallowed `.catch()` here used to preserve.
+      onResolved: () => setRejectOpen(false),
     });
   }
   // Kept: these read as badges on the card ("reminded 4 days ago", "promised
@@ -350,10 +349,11 @@ export function DocumentCard({
             <Button
               size="sm"
               variant="default"
-              disabled={approving}
-              onClick={() => approveMutation.mutate()}
+              loading={approving}
+              loadingText="Approving…"
+              onClick={() => void handleApprove()}
             >
-              {approving ? 'Approving…' : 'Approve'}
+              Approve
             </Button>
             <Button
               size="sm"

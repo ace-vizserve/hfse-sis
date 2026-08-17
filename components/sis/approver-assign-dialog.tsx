@@ -1,11 +1,11 @@
 'use client';
 
-import { Loader2, UserPlus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,7 +36,6 @@ type Props = {
 };
 
 export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState('');
 
@@ -46,25 +45,33 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
         '/api/sis/admin/approvers',
         jsonInit('POST', { user_id: userId, flow })
       ),
-    onSuccess: (body) => {
-      if (body.alreadyAssigned) {
-        toast.info('User is already assigned to this flow');
-      } else {
-        toast.success('Approver assigned');
-      }
-      setOpen(false);
-      setUserId('');
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to assign approver');
-    },
   });
-  const submitting = assignMutation.isPending;
 
-  function onSubmit() {
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit() {
     if (!userId) return;
-    assignMutation.mutate();
+    setSubmitting(true);
+    await run(() => assignMutation.mutateAsync(), {
+      pending: 'Assigning approver…',
+      // "Already assigned" is a no-op, not an achievement — it keeps its own
+      // neutral tone rather than being reported as a change that happened.
+      success: (body) => {
+        if (body.alreadyAssigned) {
+          toast.info('User is already assigned to this flow');
+          return null;
+        }
+        return 'Approver assigned';
+      },
+      error: (e) =>
+        e instanceof Error ? e.message : 'Failed to assign approver',
+      onResolved: () => {
+        setOpen(false);
+        setUserId('');
+      },
+    });
+    setSubmitting(false);
   }
 
   const noCandidates = candidates.length === 0;
@@ -129,10 +136,11 @@ export function ApproverAssignDialog({ flow, flowLabel, candidates }: Props) {
           </Button>
           <Button
             type="button"
-            onClick={onSubmit}
-            disabled={!userId || submitting || noCandidates}
+            onClick={() => void onSubmit()}
+            loading={submitting}
+            loadingText="Assigning…"
+            disabled={!userId || noCandidates}
           >
-            {submitting && <Loader2 className="mr-1 size-4 animate-spin" />}
             Assign
           </Button>
         </DialogFooter>

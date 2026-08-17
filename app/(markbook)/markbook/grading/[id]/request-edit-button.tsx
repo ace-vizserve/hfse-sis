@@ -10,12 +10,12 @@ import {
   Search,
   Send,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
@@ -111,7 +111,6 @@ export function RequestEditButton({
   students,
   approvers,
 }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   // Narrow the field options to what this sheet supports.
@@ -201,11 +200,10 @@ export function RequestEditButton({
 
   const busy = form.formState.isSubmitting;
 
-  // Tier-2 mutation. The success response can carry a `warning` field (e.g.
-  // approvers couldn't be emailed) — in that case we show toast.warning with the
-  // warning text as the description INSTEAD of the success toast. apiFetch
-  // returns the parsed body, so onSuccess branches on `body.warning`; on failure
-  // ApiError.message already resolves to the route's `error` field.
+  // The success response can carry a `warning` field (e.g. approvers couldn't
+  // be emailed) — that is a warning, not a success, and must not be recoloured
+  // into one. On failure ApiError.message already resolves to the route's
+  // `error` field.
   const requestMutation = useMutation({
     mutationFn: (values: ChangeRequestFormInput) =>
       apiFetch<{ warning?: string }>(
@@ -215,32 +213,33 @@ export function RequestEditButton({
           current_value: currentValueDisplay || null,
         })
       ),
-    onSuccess: (body) => {
-      if (body.warning) {
-        toast.warning("Heads up — approvers couldn't be reached by email", {
-          description: body.warning,
-        });
-      } else {
-        toast.success('Change request submitted for approval');
-      }
-      setOpen(false);
-      form.reset();
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to submit request');
-    },
   });
 
-  // Keep RHF as the submit-state owner (busy = form.formState.isSubmitting) by
-  // awaiting the mutation here; the try/catch keeps the rejection from
-  // bubbling out of handleSubmit (onError already surfaced it).
+  const run = useWriteAction();
+
+  // RHF stays the submit-state owner (busy = form.formState.isSubmitting): the
+  // await below holds isSubmitting true across the whole lifecycle, including
+  // the refresh, so the button stops spinning when the queue behind the dialog
+  // is really up to date. `run` never rejects, so the old try/catch is gone.
   async function onSubmit(values: ChangeRequestFormInput) {
-    try {
-      await requestMutation.mutateAsync(values);
-    } catch {
-      // Handled in onError.
-    }
+    await run(() => requestMutation.mutateAsync(values), {
+      pending: 'Submitting change request…',
+      success: (body) => {
+        if (body.warning) {
+          toast.warning("Heads up — approvers couldn't be reached by email", {
+            description: body.warning,
+          });
+          return null;
+        }
+        return 'Change request submitted for approval';
+      },
+      error: (e) =>
+        e instanceof Error ? e.message : 'Failed to submit request',
+      onResolved: () => {
+        setOpen(false);
+        form.reset();
+      },
+    });
   }
 
   return (

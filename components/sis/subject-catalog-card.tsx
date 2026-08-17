@@ -9,7 +9,6 @@ import {
   Plus,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Fragment, useState } from 'react';
 
 import {
@@ -229,7 +228,6 @@ export function SubjectCatalogCard({
    * active catalog tab. */
   defaultSectionLevelType: 'primary' | 'secondary';
 }) {
-  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editSubject, setEditSubject] = useState<CatalogSubjectRow | null>(
     null
@@ -558,10 +556,9 @@ export function SubjectCatalogCard({
           <div className="px-1 py-5">
             {addOpen && (
               <NewSubjectForm
-                onSuccess={() => {
-                  setAddOpen(false);
-                  router.refresh();
-                }}
+                // Just closes — the form awaits its own refresh now, so
+                // refreshing here too would render the server twice.
+                onSuccess={() => setAddOpen(false)}
                 onCancel={() => setAddOpen(false)}
               />
             )}

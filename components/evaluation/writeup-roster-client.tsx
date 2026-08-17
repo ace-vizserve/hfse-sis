@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Save, Send } from 'lucide-react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,6 @@ export function WriteupRosterClient({
   roster: EvaluationRosterStudent[];
   canEdit: boolean;
 }) {
-  const router = useRouter();
   const [rows, setRows] = useState<RowState[]>(() =>
     roster.map((r) => ({
       student_id: r.student_id,
@@ -83,7 +82,7 @@ export function WriteupRosterClient({
         )
       );
     },
-    onSuccess: (body, { studentId, text, submit }) => {
+    onSuccess: (body, { studentId, text }) => {
       setRows((prev) =>
         prev.map((r) =>
           r.student_id === studentId
@@ -98,15 +97,11 @@ export function WriteupRosterClient({
             : r
         )
       );
-      toast.success(
-        submit ? (body?.submitted ? 'Submitted' : 'Saved') : 'Saved as draft'
-      );
-      // Refresh so the section's "X of Y submitted" header count stays live.
-      router.refresh();
     },
     onError: (e, { studentId }) => {
       // ApiError.message already equals the route's `error` body field, so the
-      // route-specific message (not a generic one) is surfaced + stored on the row.
+      // route-specific message (not a generic one) is surfaced + stored on the
+      // row as well as toasted.
       const message = e instanceof Error ? e.message : 'save failed';
       setRows((prev) =>
         prev.map((r) =>
@@ -115,15 +110,25 @@ export function WriteupRosterClient({
             : r
         )
       );
-      toast.error(message);
     },
   });
 
+  const run = useWriteAction();
+
+  // The per-row state (saving flag, inline error, saved baseline) stays on the
+  // mutation callbacks; only the toast and the refresh move. The refresh is
+  // what keeps the section header's "X of Y submitted" count honest, so the
+  // toast waits for it.
   const save = useCallback(
     (studentId: string, text: string, submit: boolean) => {
-      saveMutation.mutate({ studentId, text, submit });
+      void run(() => saveMutation.mutateAsync({ studentId, text, submit }), {
+        pending: submit ? 'Submitting…' : 'Saving draft…',
+        success: (body) =>
+          submit ? (body?.submitted ? 'Submitted' : 'Saved') : 'Saved as draft',
+        error: (e) => (e instanceof Error ? e.message : 'save failed'),
+      });
     },
-    [saveMutation]
+    [run, saveMutation]
   );
 
   const rowCount = rows.length;

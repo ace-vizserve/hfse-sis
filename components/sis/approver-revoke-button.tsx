@@ -1,11 +1,10 @@
 'use client';
 
-import { Loader2, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -31,26 +30,30 @@ export function ApproverRevokeButton({
   email,
   flowLabel,
 }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const revokeMutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/sis/admin/approvers/${assignmentId}`, jsonInit('DELETE')),
-    onSuccess: () => {
-      toast.success(`${email} removed from ${flowLabel}`);
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to revoke');
-    },
   });
-  const submitting = revokeMutation.isPending;
+
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function revoke() {
+    setSubmitting(true);
+    await run(() => revokeMutation.mutateAsync(), {
+      pending: `Removing ${email}…`,
+      success: `${email} removed from ${flowLabel}`,
+      error: (err) => (err instanceof Error ? err.message : 'Failed to revoke'),
+      onResolved: () => setOpen(false),
+    });
+    setSubmitting(false);
+  }
 
   function onConfirm(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
-    revokeMutation.mutate();
+    void revoke();
   }
 
   return (
@@ -78,8 +81,7 @@ export function ApproverRevokeButton({
             disabled={submitting}
             className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive"
           >
-            {submitting && <Loader2 className="mr-1 size-4 animate-spin" />}
-            Remove
+            {submitting ? 'Removing…' : 'Remove'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

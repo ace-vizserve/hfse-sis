@@ -1,11 +1,9 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -36,7 +34,6 @@ export function AySwitchActiveDialog({
   open: openProp,
   onOpenChange,
 }: Props) {
-  const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : internalOpen;
@@ -57,22 +54,32 @@ export function AySwitchActiveDialog({
           confirm_code: targetAyCode,
         })
       ),
-    onSuccess: () => {
-      toast.success(`Active AY is now ${targetAyCode}`);
-      setOpen(false);
-      setConfirm('');
-      router.refresh();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to switch AY');
-    },
   });
-  const submitting = switchMutation.isPending;
+
+  // Switching the active year re-renders essentially every surface in the app,
+  // so this is one of the writes most worth holding the toast for.
+  const run = useWriteAction();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function switchAy() {
+    setSubmitting(true);
+    await run(() => switchMutation.mutateAsync(), {
+      pending: `Switching to ${targetAyCode}…`,
+      success: `Active AY is now ${targetAyCode}`,
+      error: (err) =>
+        err instanceof Error ? err.message : 'Failed to switch AY',
+      onResolved: () => {
+        setOpen(false);
+        setConfirm('');
+      },
+    });
+    setSubmitting(false);
+  }
 
   function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     if (!canSubmit) return;
-    switchMutation.mutate();
+    void switchAy();
   }
 
   return (
@@ -128,8 +135,7 @@ export function AySwitchActiveDialog({
             onClick={handleConfirm}
             disabled={!canSubmit || submitting}
           >
-            {submitting && <Loader2 className="mr-1 size-4 animate-spin" />}
-            Switch active
+            {submitting ? 'Switching…' : 'Switch active'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

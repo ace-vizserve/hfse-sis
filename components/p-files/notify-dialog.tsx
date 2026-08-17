@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Mail, Send } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Mail, Send } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -86,7 +86,6 @@ export function NotifyDialog({
   trigger,
   module = 'p-files',
 }: NotifyDialogProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const resolved = useMemo(
@@ -102,52 +101,54 @@ export function NotifyDialog({
 
   type NotifyResult = { sent: number; recipients: number };
 
-  // Tier-2 mutation. The route's `no_recipients` kind drives the special
-  // "Open in Admissions" toast action — read off ApiError.body. All other
-  // errors fall back to the route's `body.error` (= ApiError.message).
   const notifyMutation = useMutation({
     mutationFn: () =>
       apiFetch<NotifyResult>(
         `/api/p-files/${encodeURIComponent(enroleeNumber)}/notify`,
         jsonInit('POST', { slotKey, module })
       ),
-    onSuccess: (body) => {
-      toast.success(
-        `Reminder sent to ${body.sent} of ${body.recipients} recipient${body.recipients === 1 ? '' : 's'}`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      const kind =
-        e instanceof ApiError &&
-        e.body &&
-        typeof e.body === 'object' &&
-        (e.body as { kind?: string }).kind;
-      if (kind === 'no_recipients') {
-        toast.error(
-          'No parent or guardian email on file — update the contact record in Admissions to send a reminder.',
-          {
-            action: {
-              label: 'Open in Admissions',
-              onClick: () =>
-                window.open(
-                  `/admissions/applications/${encodeURIComponent(enroleeNumber)}?tab=family`,
-                  '_blank'
-                ),
-            },
-          }
-        );
-        return;
-      }
-      toast.error(e instanceof Error ? e.message : 'Failed to send reminder');
-    },
   });
 
-  const busy = notifyMutation.isPending;
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
 
-  function handleSend() {
-    notifyMutation.mutate();
+  async function handleSend() {
+    setBusy(true);
+    await run(() => notifyMutation.mutateAsync(), {
+      pending: 'Sending reminder…',
+      success: (body) =>
+        `Reminder sent to ${body.sent} of ${body.recipients} recipient${body.recipients === 1 ? '' : 's'}`,
+      // The route's `no_recipients` kind earns a toast with an action, which a
+      // plain message can't carry — so it is raised here and `null` returned to
+      // stop the helper adding a second, plainer one on top. Everything else
+      // falls back to the route's `body.error` (= ApiError.message).
+      error: (e) => {
+        const kind =
+          e instanceof ApiError &&
+          e.body &&
+          typeof e.body === 'object' &&
+          (e.body as { kind?: string }).kind;
+        if (kind === 'no_recipients') {
+          toast.error(
+            'No parent or guardian email on file — update the contact record in Admissions to send a reminder.',
+            {
+              action: {
+                label: 'Open in Admissions',
+                onClick: () =>
+                  window.open(
+                    `/admissions/applications/${encodeURIComponent(enroleeNumber)}?tab=family`,
+                    '_blank'
+                  ),
+              },
+            }
+          );
+          return null;
+        }
+        return e instanceof Error ? e.message : 'Failed to send reminder';
+      },
+      onResolved: () => setOpen(false),
+    });
+    setBusy(false);
   }
 
   return (
@@ -222,14 +223,12 @@ export function NotifyDialog({
             Cancel
           </Button>
           <Button
-            onClick={handleSend}
-            disabled={busy || resolved.length === 0 || cooldownActive}
+            onClick={() => void handleSend()}
+            loading={busy}
+            loadingText="Sending…"
+            disabled={resolved.length === 0 || cooldownActive}
           >
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
+            {!busy && <Send className="size-4" />}
             Send reminder
           </Button>
         </DialogFooter>

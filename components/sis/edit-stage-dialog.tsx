@@ -1,13 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, Loader2, Pencil } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { AlertTriangle, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
@@ -101,7 +101,6 @@ export function EditStageDialog({
    */
   canAssignSection?: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
     null
@@ -265,134 +264,132 @@ export function EditStageDialog({
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/stage/${stageKey}?ay=${encodeURIComponent(ayCode)}`,
         jsonInit('PATCH', payload)
       ),
-    onSuccess: (body) => {
-      const changed = body.changed as number | undefined;
-      const classAutoAssigned = body.classAutoAssigned === true;
-      const autoSync = body.autoSync;
-      const autoSyncFailed = body.autoSyncFailed === true;
-      const withdrawalCascade = body.withdrawalCascade;
+  });
 
-      // Withdrawn / Cancelled cascade outcome takes priority on the toast.
-      // The cascade only fires when the flip actually changed section rows;
-      // null means "no active section to withdraw from" (acceptable no-op).
-      if (withdrawalCascade && withdrawalCascade.rowsAffected > 0) {
-        toast.success(
-          `${STAGE_LABELS[stageKey]} updated · ${withdrawalCascade.rowsAffected} section row${
-            withdrawalCascade.rowsAffected === 1 ? '' : 's'
-          } flipped to withdrawn`
-        );
-      } else if (autoSyncFailed) {
-        // Either Enrolled (class auto-assigned then sync skipped) OR
-        // Enrolled (Conditional) with classSection already set but sync
-        // failed for a non-empty reason. Either way the student appears
-        // Enrolled in admissions but is missing from grading/attendance
-        // rosters until the underlying reason is fixed.
-        toast.warning(
-          classAutoAssigned
-            ? 'Enrolled · section assigned, but roster sync was skipped'
-            : 'Enrolled (Conditional) · section roster sync was skipped',
-          {
-            description:
-              autoSync?.reason ??
-              autoSync?.error ??
-              'Check /records/unsynced to assign a section and complete the sync.',
-          }
-        );
-      } else if (classAutoAssigned) {
-        toast.success('Enrolled · class assigned · added to the roster');
-      } else if (body.awaitingPlacement === true) {
-        // Step 10 done, step 11 still to come. Say so — otherwise this reads
-        // identical to a fully-placed enrolment and nobody knows to follow up.
-        toast.success('Enrolled · awaiting class assignment', {
+  const run = useWriteAction();
+
+  /**
+   * Words the outcome. Returns a plain string for the simple cases and `null`
+   * for the two that need a toast this helper cannot build — a WARNING (the
+   * sync was skipped, which is not a success) and a success carrying a
+   * `description`. Both raise their own toast and return null so exactly one
+   * lands.
+   */
+  function describeSuccess(body: StageResponse): string | null {
+    const changed = body.changed as number | undefined;
+    const classAutoAssigned = body.classAutoAssigned === true;
+    const autoSync = body.autoSync;
+    const autoSyncFailed = body.autoSyncFailed === true;
+    const withdrawalCascade = body.withdrawalCascade;
+
+    // Withdrawn / Cancelled cascade outcome takes priority on the toast.
+    // The cascade only fires when the flip actually changed section rows;
+    // null means "no active section to withdraw from" (acceptable no-op).
+    if (withdrawalCascade && withdrawalCascade.rowsAffected > 0) {
+      return `${STAGE_LABELS[stageKey]} updated · ${withdrawalCascade.rowsAffected} section row${
+        withdrawalCascade.rowsAffected === 1 ? '' : 's'
+      } flipped to withdrawn`;
+    } else if (autoSyncFailed) {
+      // Either Enrolled (class auto-assigned then sync skipped) OR
+      // Enrolled (Conditional) with classSection already set but sync
+      // failed for a non-empty reason. Either way the student appears
+      // Enrolled in admissions but is missing from grading/attendance
+      // rosters until the underlying reason is fixed.
+      toast.warning(
+        classAutoAssigned
+          ? 'Enrolled · section assigned, but roster sync was skipped'
+          : 'Enrolled (Conditional) · section roster sync was skipped',
+        {
           description:
-            'They are now under Records → Students needing setup. Attendance starts on the day they are placed.',
-        });
-      } else if (
-        stageKey === 'application' &&
-        autoSync?.change &&
-        autoSync.change !== 'skipped' &&
-        autoSync.change !== 'no-op'
-      ) {
-        // Conditional path where the sync DID land a section_students row.
-        toast.success('Enrolled (Conditional) · synced to roster');
-      } else {
-        toast.success(
-          changed === 0
-            ? `${STAGE_LABELS[stageKey]} saved (no changes)`
-            : `${STAGE_LABELS[stageKey]} updated`
-        );
-      }
-      // Swap this dialog's body to the late-enrollee prompt rather than
-      // closing — never a second dialog stacked on the first.
-      const midTermPayload = body.midTermEnrolment;
-      if (midTermPayload?.sectionId) {
-        setPendingMidTerm(midTermPayload);
-        // Refresh HERE too, rather than leaving it to the prompt. The roster
-        // row was written by the request that just returned; the prompt only
-        // records which term the student joined. Skipping this left the page
-        // behind the dialog showing the pre-write state — observed on the
-        // assign-section dialog 2026-08-14 and fixed there the same way.
-        router.refresh();
-        return;
-      }
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      // 422 + `blockers` covers two different server-side gates. Discriminate
-      // by stageKey:
-      //   - documents → per-slot validation gate (P-Files hasn't marked all
-      //     required slots as 'Valid'). Surface the slot list and offer a
-      //     one-click hop to the student's P-Files profile.
-      //   - application → Enrolled-prereq gate (one of the 5 prereq stages
-      //     is incomplete).
-      if (e instanceof ApiError && e.status === 422) {
-        const body = (e.body ?? {}) as {
-          blockers?: unknown;
-          error?: string;
-        };
-        if (Array.isArray(body.blockers) && body.blockers.length > 0) {
-          if (stageKey === 'documents') {
-            const docBlockers = body.blockers as Array<{
-              slot: string;
-              label: string;
-              current: string | null;
-              expected: string;
-            }>;
-            const lines = docBlockers.map(
-              (b) => `${b.label} (${b.current ?? 'missing'})`
-            );
-            toast.error(
-              `Documents not ready — ${docBlockers.length} slot${docBlockers.length === 1 ? '' : 's'} pending validation`,
-              { description: lines.join(' · ') }
-            );
-            return;
-          }
-          const enrolBlockers = body.blockers as Array<{
-            stage: string;
+            autoSync?.reason ??
+            autoSync?.error ??
+            'Check /records/unsynced to assign a section and complete the sync.',
+        }
+      );
+      return null;
+    } else if (classAutoAssigned) {
+      return 'Enrolled · class assigned · added to the roster';
+    } else if (body.awaitingPlacement === true) {
+      // Step 10 done, step 11 still to come. Say so — otherwise this reads
+      // identical to a fully-placed enrolment and nobody knows to follow up.
+      toast.success('Enrolled · awaiting class assignment', {
+        description:
+          'They are now under Records → Students needing setup. Attendance starts on the day they are placed.',
+      });
+      return null;
+    } else if (
+      stageKey === 'application' &&
+      autoSync?.change &&
+      autoSync.change !== 'skipped' &&
+      autoSync.change !== 'no-op'
+    ) {
+      // Conditional path where the sync DID land a section_students row.
+      return 'Enrolled (Conditional) · synced to roster';
+    }
+    return changed === 0
+      ? `${STAGE_LABELS[stageKey]} saved (no changes)`
+      : `${STAGE_LABELS[stageKey]} updated`;
+  }
+
+  /**
+   * The 422 + `blockers` shape covers two different server-side gates, each
+   * needing a toast with a `description` this helper cannot build — so they
+   * raise their own and return null.
+   */
+  function describeError(e: unknown): string | null {
+    // 422 + `blockers` covers two different server-side gates. Discriminate
+    // by stageKey:
+    //   - documents → per-slot validation gate (P-Files hasn't marked all
+    //     required slots as 'Valid'). Surface the slot list and offer a
+    //     one-click hop to the student's P-Files profile.
+    //   - application → Enrolled-prereq gate (one of the 5 prereq stages
+    //     is incomplete).
+    if (e instanceof ApiError && e.status === 422) {
+      const body = (e.body ?? {}) as {
+        blockers?: unknown;
+        error?: string;
+      };
+      if (Array.isArray(body.blockers) && body.blockers.length > 0) {
+        if (stageKey === 'documents') {
+          const docBlockers = body.blockers as Array<{
+            slot: string;
+            label: string;
             current: string | null;
             expected: string;
           }>;
-          const lines = enrolBlockers.map(
-            (b) =>
-              `${b.stage}: ${b.current ?? 'not started'} → needs ${b.expected}`
+          const lines = docBlockers.map(
+            (b) => `${b.label} (${b.current ?? 'missing'})`
           );
           toast.error(
-            `Can't enroll yet — ${enrolBlockers.length} stage${enrolBlockers.length === 1 ? '' : 's'} still open`,
+            `Documents not ready — ${docBlockers.length} slot${docBlockers.length === 1 ? '' : 's'} pending validation`,
             { description: lines.join(' · ') }
           );
-          return;
+          return null;
         }
+        const enrolBlockers = body.blockers as Array<{
+          stage: string;
+          current: string | null;
+          expected: string;
+        }>;
+        const lines = enrolBlockers.map(
+          (b) =>
+            `${b.stage}: ${b.current ?? 'not started'} → needs ${b.expected}`
+        );
+        toast.error(
+          `Can't enroll yet — ${enrolBlockers.length} stage${enrolBlockers.length === 1 ? '' : 's'} still open`,
+          { description: lines.join(' · ') }
+        );
+        return null;
       }
-      // Mirror the original `throw new Error(body.error ?? 'Failed to save')`
-      // fallback string when the server body carries no `error` field.
-      const serverError =
-        e instanceof ApiError && e.body && typeof e.body === 'object'
-          ? (e.body as { error?: string }).error
-          : undefined;
-      toast.error(serverError ?? 'Failed to save');
-    },
-  });
+    }
+    // Mirror the original `throw new Error(body.error ?? 'Failed to save')`
+    // fallback string when the server body carries no `error` field.
+    const serverError =
+      e instanceof ApiError && e.body && typeof e.body === 'object'
+        ? (e.body as { error?: string }).error
+        : undefined;
+    return serverError ?? 'Failed to save';
+  }
 
   async function onSubmit(values: StageUpdateInput) {
     if (frozen) return;
@@ -405,14 +402,38 @@ export function EditStageDialog({
         }),
     };
     // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
-    // busy signal.
-    await saveMutation
-      .mutateAsync({
-        ...values,
-        extras: extrasPayload,
-        ...(canPickSectionNow && sectionId ? { section_id: sectionId } : {}),
-      })
-      .catch(() => {});
+    // busy signal — and the await now spans the refresh too. `run` never
+    // rejects, so the `.catch(() => {})` this used to need is gone.
+    await run(
+      () =>
+        saveMutation.mutateAsync({
+          ...values,
+          extras: extrasPayload,
+          ...(canPickSectionNow && sectionId ? { section_id: sectionId } : {}),
+        }),
+      {
+        pending: `Saving ${STAGE_LABELS[stageKey].toLowerCase()}…`,
+        success: describeSuccess,
+        error: describeError,
+        // Swap this dialog's body to the late-enrollee prompt rather than
+        // closing — never a second dialog stacked on the first.
+        //
+        // The refresh is unconditional now, which is the fix for this file's
+        // Class B bug: the old code returned early on the mid-term branch and
+        // relied on a second refresh landing later, leaving the page behind
+        // the dialog showing the pre-write state. The roster row is written by
+        // the request that just returned; the prompt only records WHICH term
+        // the student joined, so there is nothing to wait for.
+        onResolved: (body: StageResponse) => {
+          const midTermPayload = body.midTermEnrolment;
+          if (midTermPayload?.sectionId) {
+            setPendingMidTerm(midTermPayload);
+            return;
+          }
+          setOpen(false);
+        },
+      }
+    );
   }
 
   const busy = form.formState.isSubmitting;
@@ -474,10 +495,11 @@ export function EditStageDialog({
         {pendingMidTerm ? (
           <LateEnrolleePrompt
             payload={pendingMidTerm}
+            // Just closes — the prompt awaits its own refresh now, so
+            // refreshing here too would render the server twice for one save.
             onDone={() => {
               setPendingMidTerm(null);
               setOpen(false);
-              router.refresh();
             }}
           />
         ) : (
@@ -750,17 +772,16 @@ export function EditStageDialog({
                   <Button
                     type="submit"
                     size="sm"
+                    loading={busy}
+                    loadingText="Saving…"
                     disabled={
-                      busy ||
-                      (stageKey === 'application' &&
-                        isTerminalStatus &&
-                        (!terminalReason ||
-                          (terminalReason === 'other' &&
-                            !terminalNotes.trim())))
+                      stageKey === 'application' &&
+                      isTerminalStatus &&
+                      (!terminalReason ||
+                        (terminalReason === 'other' && !terminalNotes.trim()))
                     }
                   >
-                    {busy && <Loader2 className="size-3.5 animate-spin" />}
-                    {busy ? 'Saving…' : 'Save changes'}
+                    Save changes
                   </Button>
                 </DialogFooter>
               </form>

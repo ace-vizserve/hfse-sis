@@ -1,12 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import type { ColumnDef } from '@tanstack/react-table';
 import { ChevronRight, GalleryHorizontalEndIcon, ListIcon } from 'lucide-react';
 
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -92,7 +91,6 @@ function AwaitingGroupHeader({
 }
 
 export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
-  const router = useRouter();
   const [mode, setMode] = React.useState<'table' | 'triage'>('table');
   const [rows, setRows] = React.useState<PFileValidationRow[]>(initialRows);
   const [actingKey, setActingKey] = React.useState<string | null>(null);
@@ -115,9 +113,10 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
   // Tier-1 optimistic mutation. The list is local state mirrored from the RSC
   // `initialRows` (not a useQuery cache), so the optimistic target is `rows`:
   // onMutate snapshots + removes the row immediately, onError restores it.
-  // onSuccess router.refresh()es so the SSR badge count updates (Model A).
-  // The route's bespoke `body.error` message is preserved via ApiError.message.
-  // Per-row `actingKey` keeps the existing per-row disable.
+  //
+  // The optimistic snapshot and its rollback stay on `useMutation` — that is
+  // why `useWriteAction` wraps the promise instead of replacing the mutation.
+  // Only the toast and the refresh move.
   const statusMutation = useMutation({
     mutationFn: ({ row, body }: { row: PFileValidationRow; body: PatchBody }) =>
       apiFetch(
@@ -134,32 +133,35 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
       setRows((r) => r.filter((x) => rowKey(x) !== key));
       return { prev };
     },
-    onError: (e, _vars, ctx) => {
+    onError: (_e, _vars, ctx) => {
       if (ctx?.prev) setRows(ctx.prev); // rollback the optimistic removal
-      toast.error(
-        e instanceof Error ? e.message : 'Could not save the change.'
-      );
-    },
-    onSuccess: (_data, { row, body }) => {
-      const verb = body.status === 'Valid' ? 'approved' : 'rejected';
-      toast.success(`${row.slotLabel} ${verb}.`);
-      router.refresh();
     },
     onSettled: () => setActingKey(null),
   });
 
+  const run = useWriteAction();
+
   // Keeps the `Promise<boolean>` contract TriagePane + RejectDialog depend on
-  // (true → advance / close). Resolves false on error (rollback already done).
+  // (true → advance / close). `run` resolves `undefined` on failure, and the
+  // rollback has already run by then.
   const patchStatus = React.useCallback(
     async (row: PFileValidationRow, body: PatchBody): Promise<boolean> => {
-      try {
-        await statusMutation.mutateAsync({ row, body });
-        return true;
-      } catch {
-        return false;
-      }
+      const result = await run(
+        () => statusMutation.mutateAsync({ row, body }),
+        {
+          // The row disappears from the queue the instant it is clicked, so a
+          // pending toast would narrate something already visible. The refresh
+          // is still awaited underneath — it is what updates the SSR badge
+          // count — and the success toast lands when that count is real.
+          pending: false,
+          success: `${row.slotLabel} ${body.status === 'Valid' ? 'approved' : 'rejected'}.`,
+          error: (e) =>
+            e instanceof Error ? e.message : 'Could not save the change.',
+        }
+      );
+      return result !== undefined;
     },
-    [statusMutation]
+    [run, statusMutation]
   );
 
   const columns = React.useMemo<ColumnDef<PFileValidationRow>[]>(

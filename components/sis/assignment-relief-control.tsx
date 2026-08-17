@@ -1,10 +1,10 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, RefreshCw, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -66,7 +66,6 @@ export function AssignmentReliefControl({
    */
   onChanged?: () => void | Promise<void>;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState('');
 
@@ -76,27 +75,32 @@ export function AssignmentReliefControl({
         `/api/teacher-assignments/${assignmentId}`,
         jsonInit('PATCH', { relief_teacher_user_id: reliefTeacherUserId })
       ),
-    // `vars` rather than component state: by the time this runs the dialog has
-    // closed and `picked` is cleared, so a message read off state would name
-    // the wrong person or nobody.
-    onSuccess: async (_data, vars) => {
-      setOpen(false);
-      setPicked('');
-      const who = teacherOptions.find((t) => t.id === vars)?.name;
-      toast.success(
-        vars
-          ? `${who ?? 'That teacher'} is now covering this class for ${coveredTeacherName}.`
-          : `${coveredTeacherName} has this class back.`
-      );
-      await onChanged?.();
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(
-        e instanceof Error ? e.message : 'That change could not be saved.'
-      );
-    },
   });
+
+  const run = useWriteAction();
+  const [busy, setBusy] = useState(false);
+
+  // The argument rather than component state: by the time the toast is worded
+  // the dialog has closed and `picked` is cleared, so a message read off state
+  // would name the wrong person or nobody.
+  async function setRelief(next: string | null) {
+    const who = teacherOptions.find((t) => t.id === next)?.name;
+    setBusy(true);
+    await run(() => mutation.mutateAsync(next), {
+      pending: next ? 'Starting cover…' : 'Ending cover…',
+      success: next
+        ? `${who ?? 'That teacher'} is now covering this class for ${coveredTeacherName}.`
+        : `${coveredTeacherName} has this class back.`,
+      error: (e) =>
+        e instanceof Error ? e.message : 'That change could not be saved.',
+      onResolved: () => {
+        setOpen(false);
+        setPicked('');
+        void onChanged?.();
+      },
+    });
+    setBusy(false);
+  }
 
   // A teacher cannot cover their own class — enforced by the route and by a
   // CHECK constraint. Leaving them out of the list means nobody meets the
@@ -117,17 +121,13 @@ export function AssignmentReliefControl({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => mutation.mutate(null)}
-            disabled={mutation.isPending}
+            onClick={() => void setRelief(null)}
+            loading={busy}
             aria-label={`Stop ${reliefTeacherName} covering for ${coveredTeacherName}`}
             title={`${coveredTeacherName} is back`}
             className="text-muted-foreground hover:text-foreground"
           >
-            {mutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <X className="h-4 w-4" />
-            )}
+            {!busy && <X className="h-4 w-4" />}
           </Button>
         )}
       </div>
@@ -197,15 +197,13 @@ export function AssignmentReliefControl({
               <Button variant="outline">Cancel</Button>
             </DialogClose>
             <Button
-              onClick={() => mutation.mutate(picked)}
-              disabled={!picked || mutation.isPending}
+              onClick={() => void setRelief(picked)}
+              loading={busy}
+              loadingText="Saving…"
+              disabled={!picked}
             >
-              {mutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              {mutation.isPending ? 'Saving…' : 'Start cover'}
+              {!busy && <RefreshCw className="h-4 w-4" />}
+              Start cover
             </Button>
           </DialogFooter>
         </DialogContent>

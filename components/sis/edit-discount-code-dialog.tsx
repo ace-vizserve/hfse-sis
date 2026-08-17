@@ -1,12 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Plus, Tag } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Plus, Tag } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
@@ -81,7 +81,6 @@ export function EditDiscountCodeDialog({
   initial,
   children,
 }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   // Create mode lets the registrar pick which AY this code lands in. Edit
   // mode locks the AY (the row physically lives in `ay{YYYY}_discount_codes`
@@ -110,24 +109,25 @@ export function EditDiscountCodeDialog({
         : `/api/sis/discount-codes?ay=${encodeURIComponent(writeAy)}`;
       return apiFetch(url, jsonInit(isEdit ? 'PATCH' : 'POST', values));
     },
-    onSuccess: () => {
-      const isEdit = mode === 'edit';
-      const writeAy = isEdit ? ayCode : targetAy;
-      toast.success(
-        isEdit ? 'Discount code updated' : `Discount code created in ${writeAy}`
-      );
-      setOpen(false);
-      router.refresh();
-    },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
-    },
   });
 
+  const run = useWriteAction();
+
   // Awaited inside RHF's handleSubmit so `formState.isSubmitting` stays the
-  // single busy signal (mirrors the original try/catch behaviour).
+  // single busy signal — and because `run` is awaited, it now stays true
+  // through the refresh too. `run` never rejects, so the `.catch(() => {})`
+  // that used to be needed here is gone.
   async function onSubmit(values: DiscountCodeInput) {
-    await saveMutation.mutateAsync(values).catch(() => {});
+    const isEdit = mode === 'edit';
+    const writeAy = isEdit ? ayCode : targetAy;
+    await run(() => saveMutation.mutateAsync(values), {
+      pending: isEdit ? 'Saving changes…' : 'Creating discount code…',
+      success: isEdit
+        ? 'Discount code updated'
+        : `Discount code created in ${writeAy}`,
+      error: (e) => (e instanceof Error ? e.message : 'Failed to save'),
+      onResolved: () => setOpen(false),
+    });
   }
 
   const busy = form.formState.isSubmitting;
@@ -309,13 +309,13 @@ export function EditDiscountCodeDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={busy}>
-                {busy && <Loader2 className="size-3.5 animate-spin" />}
-                {busy
-                  ? 'Saving…'
-                  : mode === 'create'
-                    ? 'Create code'
-                    : 'Save changes'}
+              <Button
+                type="submit"
+                size="sm"
+                loading={busy}
+                loadingText="Saving…"
+              >
+                {mode === 'create' ? 'Create code' : 'Save changes'}
               </Button>
             </DialogFooter>
           </form>
