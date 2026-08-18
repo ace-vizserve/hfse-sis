@@ -598,21 +598,28 @@ export function DataTableExportSheetAdvanced<TRow>({
       {/* Wider than the simple sheet on purpose: a filter rule is four
           controls on one line, and at `max-w-lg` the field and value pickers
           truncate to the point of being unreadable. */}
-      <SheetContent className="flex flex-col gap-0 sm:max-w-xl">
-        <SheetHeader className="pb-0">
+      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-xl">
+        <SheetHeader className="gap-1 border-b border-hairline px-6 pb-4 pt-6">
           <SheetTitle className="font-serif text-xl font-semibold tracking-tight">
             Export CSV
           </SheetTitle>
-          <SheetDescription className="sr-only">
-            Choose which rows and fields to include, then download.
+          {/* Visible rather than sr-only: the header was a lone title with
+              nothing under it. Naming the file is the useful context — it
+              says which table and which year this came from. */}
+          <SheetDescription className="text-[12.5px] text-ink-4">
+            Choose the rows and fields, then download{' '}
+            <span className="font-mono text-[11.5px] text-ink-3">
+              {csv.filename}
+            </span>
+            .
           </SheetDescription>
         </SheetHeader>
 
         {/* `min-h-0` is load-bearing: without it this never scrolls, it just
             grows past the sheet and takes the footer with it. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           {/* ── Scope ─────────────────────────────────────────────────── */}
-          <section className="border-t border-hairline py-5">
+          <section className="border-t border-hairline py-5 first:border-t-0 first:pt-5">
             <div className="mb-3 flex items-baseline justify-between gap-2">
               <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
                 Scope
@@ -708,7 +715,7 @@ export function DataTableExportSheetAdvanced<TRow>({
           </section>
 
           {/* ── Filter ────────────────────────────────────────────────── */}
-          <section className="border-t border-hairline py-5">
+          <section className="border-t border-hairline py-5 first:border-t-0 first:pt-5">
             <div className="mb-3 flex items-baseline justify-between gap-2">
               <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
                 Filter
@@ -757,7 +764,7 @@ export function DataTableExportSheetAdvanced<TRow>({
           </section>
 
           {/* ── Fields ────────────────────────────────────────────────── */}
-          <section className="border-t border-hairline py-5">
+          <section className="border-t border-hairline py-5 first:border-t-0 first:pt-5">
             <div className="mb-3 flex items-baseline justify-between gap-2">
               <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
                 Fields
@@ -867,7 +874,10 @@ export function DataTableExportSheetAdvanced<TRow>({
           )}
         </div>
 
-        <SheetFooter className="flex-row items-center justify-between gap-2 border-t border-hairline bg-muted">
+        {/* Both actions grouped right. Splitting them to opposite edges gave
+            "Reset to screen" the same visual weight as the primary action,
+            which it does not have. */}
+        <SheetFooter className="flex-row items-center justify-end gap-2 border-t border-hairline bg-muted px-6 py-4">
           <Button variant="ghost" size="sm" onClick={resetToScreen}>
             Reset to screen
           </Button>
