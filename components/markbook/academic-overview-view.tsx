@@ -8,6 +8,7 @@ import {
   CircleX,
   ClipboardList,
   Clock,
+  FileCheck2,
   GraduationCap,
   Info,
   LineChart,
@@ -82,6 +83,12 @@ const SEVERITY_DOT: Record<OverviewHighlight['severity'], string> = {
  * from the first term with a register to the latest. A single term states
  * itself; none says so rather than inventing a comparison.
  */
+/** A day count as a share of the school days behind it. */
+function dayRate(days: number, of: AttendanceHealth): number | null {
+  if (of.schoolDays <= 0) return null;
+  return Math.round((days / of.schoolDays) * 1000) / 10;
+}
+
 function attendanceMovement(terms: AttendanceHealth['terms']): string {
   const reported = terms.filter((t) => t.rate != null);
   if (reported.length === 0) return 'No register recorded yet';
@@ -651,10 +658,11 @@ export function AcademicOverviewView({
               </>
             ) : (
               <>
-                A late day still counts as a day present, so the{' '}
-                {pct1(attendance.presentRate)} attendance figure above is on
-                time plus late. These three do not overlap — they add to exactly
-                the days recorded.
+                A late day and an excused day both still count as days present,
+                so the {pct1(attendance.presentRate)} attendance figure above is
+                on time plus late plus excused. These four do not overlap — they
+                add to exactly the days recorded. Excused means an MC or an
+                approved absence; Absent means no reason was recorded.
               </>
             )
           }
@@ -666,21 +674,21 @@ export function AcademicOverviewView({
               </p>
             ) : (
               <div className="space-y-5">
-                {/* On time / Late / Absent, not Present / Late / Absent: a
-                    late day is also a present day, so those three overlap and
-                    cannot be the parts of one ring. These three add to exactly
-                    the days recorded, and match the ring below segment for
-                    segment. The headline Present % is the ring's centre. */}
-                <div className="grid gap-4 sm:grid-cols-3">
+                {/* Four, not three, and not Present / Late / Absent.
+                    `days_present` swallows BOTH late and excused (migration
+                    014 counts P, L and EX alike), so those overlap and cannot
+                    be the parts of one ring. These four add to exactly the
+                    days recorded and match the ring segment for segment. The
+                    headline Present % is the ring's centre.
+
+                    Excused earns its own slice on the numbers: measured on
+                    production, 824 excused days against 822 absent — half of
+                    all non-attendance is authorised, and folding it into "on
+                    time" hid the larger half. */}
+                <div className="grid gap-4 sm:grid-cols-2">
                   <StatTile
                     label="On time"
-                    value={pct1(
-                      attendance.schoolDays > 0
-                        ? Math.round(
-                            (attendance.onTime / attendance.schoolDays) * 1000
-                          ) / 10
-                        : null
-                    )}
+                    value={pct1(dayRate(attendance.onTime, attendance))}
                     footer={`${attendance.onTime.toLocaleString('en-SG')} days`}
                     icon={CircleCheck}
                   />
@@ -691,9 +699,15 @@ export function AcademicOverviewView({
                     icon={Clock}
                   />
                   <StatTile
+                    label="Excused"
+                    value={pct1(dayRate(attendance.excused, attendance))}
+                    footer={`${attendance.excused.toLocaleString('en-SG')} days · MC or approved`}
+                    icon={FileCheck2}
+                  />
+                  <StatTile
                     label="Absent"
                     value={pct1(attendance.absentRate)}
-                    footer={`${attendance.absent.toLocaleString('en-SG')} days`}
+                    footer={`${attendance.absent.toLocaleString('en-SG')} days · no reason recorded`}
                     icon={CircleX}
                     tone="bad"
                   />
@@ -702,11 +716,13 @@ export function AcademicOverviewView({
                   data={[
                     { name: 'On time', value: attendance.onTime },
                     { name: 'Late', value: attendance.late },
+                    { name: 'Excused', value: attendance.excused },
                     { name: 'Absent', value: attendance.absent },
                   ]}
                   colors={[
                     'var(--color-brand-mint)',
                     'var(--color-brand-amber)',
+                    'var(--color-brand-sky)',
                     'var(--destructive)',
                   ]}
                   height={190}

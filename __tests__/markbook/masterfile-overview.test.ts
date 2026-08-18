@@ -17,7 +17,7 @@ function row(p: Partial<MasterfileStudentRow>): MasterfileStudentRow {
     generalAverage: null,
     overallAward: null,
     attendanceByTerm: [],
-    attendanceTotal: { present: 0, late: 0, schoolDays: 0 },
+    attendanceTotal: { present: 0, late: 0, excused: 0, schoolDays: 0 },
     commentsByTerm: [],
     enrolledTermNumbers: [1, 2, 3, 4],
     ...p,

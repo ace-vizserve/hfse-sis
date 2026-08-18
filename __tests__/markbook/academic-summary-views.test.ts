@@ -130,8 +130,14 @@ function makeStudent(opts: StudentOpts): MasterfileStudentRow {
     schoolDays: 40 as number | null,
     present: 38 as number | null,
     late: 1 as number | null,
+    excused: 1 as number | null,
   }));
-  const defaultAttTotal = { present: 152, late: 4, schoolDays: 160 };
+  const defaultAttTotal = {
+    present: 152,
+    late: 4,
+    excused: 4,
+    schoolDays: 160,
+  };
 
   return {
     studentId: `id-${opts.studentNumber}`,
@@ -355,7 +361,7 @@ describe('buildAttendanceRows', () => {
   it('total: uses attendanceTotal values', () => {
     const rows = buildAttendanceRows(payload, { termNumber: null });
     const r = rows.find((r) => r.studentNumber === 'A001')!;
-    // A001 attendanceTotal = { present: 152, late: 4, schoolDays: 160 }
+    // A001 attendanceTotal = { present: 152, late: 4, excused: 0, schoolDays: 160 }
     expect(r.schoolDays).toBe(160);
     expect(r.present).toBe(152);
     expect(r.late).toBe(4);
@@ -398,12 +404,13 @@ describe('buildAttendanceRows', () => {
             examRow(MATH_ID, [90, 90, 90, 90]),
             nonExamRow(MUSIC_ID),
           ],
-          attendanceTotal: { present: 0, late: 0, schoolDays: 0 },
+          attendanceTotal: { present: 0, late: 0, excused: 0, schoolDays: 0 },
           attendanceByTerm: TERMS.map((t) => ({
             termId: t.id,
             schoolDays: 0 as number | null,
             present: 0 as number | null,
             late: 0 as number | null,
+            excused: 0 as number | null,
           })),
         }),
       ],

@@ -86,11 +86,19 @@ export type MasterfileSubjectRow = {
   annualLetterSheetId: string | null;
 };
 
+/**
+ * ⚠ `present` CONTAINS both `late` and `excused` — migration 014 counts P, L
+ * and EX into `days_present` alike. Treating the three as separate quantities
+ * double-counts; the only partition of `schoolDays` is
+ * (present − late − excused) + late + excused + absent.
+ */
 export type MasterfileAttendanceTermCell = {
   termId: string;
   schoolDays: number | null;
   present: number | null;
   late: number | null;
+  /** Authorised absence — MC, compassionate, school activity. Inside `present`. */
+  excused: number | null;
 };
 
 export type MasterfileStudentRow = {
@@ -112,7 +120,12 @@ export type MasterfileStudentRow = {
   overallAward: OverallAwardLabel;
   // Attendance per term + AY total.
   attendanceByTerm: MasterfileAttendanceTermCell[];
-  attendanceTotal: { present: number; late: number; schoolDays: number };
+  attendanceTotal: {
+    present: number;
+    late: number;
+    excused: number;
+    schoolDays: number;
+  };
   // Form Class Adviser write-up comments, T1–T3 only (KD #49 — T4 has no FCA
   // comment). Only terms with non-empty content appear. Sourced from
   // `evaluation_writeups`, resolved per the student's `student_id` (not the
@@ -602,6 +615,19 @@ async function loadMasterfileUncached(
               sheets.map((s) => s.id)
             )
             .in('section_student_id', allEnrolmentIds)
+            // ⚠ `.order('id')` is REQUIRED, not tidiness. `fetchAllPages`
+            // walks with `.range()`, and PostgREST gives no stable row order
+            // for an unordered query — so once this filter exceeds the
+            // 1000-row page size, pages repeat rows and skip others. It fails
+            // silently, as a plausible smaller number.
+            //
+            // Measured on production 2026-08-18: the widest level (Secondary
+            // One) returns 672 rows with TWO terms marked, so nothing is lost
+            // today. At four terms that is ~1,344 and four levels cross the
+            // line — this bites when T3 and T4 are graded, not before. The
+            // same defect was measured live in the Academic Overview loader,
+            // where 4,640 entries came back as 3,534 distinct keys.
+            .order('id', { ascending: true })
             .range(from, to)
         )
       : [];
@@ -618,15 +644,18 @@ async function loadMasterfileUncached(
     school_days: number | null;
     days_present: number | null;
     days_late: number | null;
+    days_excused: number | null;
   };
   const attendanceRows = await fetchAllPages<AttRow>((from, to) =>
     service
       .from('attendance_records')
       .select(
-        'section_student_id, term_id, school_days, days_present, days_late'
+        'section_student_id, term_id, school_days, days_present, days_late, days_excused'
       )
       .in('section_student_id', allEnrolmentIds)
       .in('term_id', termIds)
+      // Ordered for the same reason as the grade_entries fetch above.
+      .order('id', { ascending: true })
       .range(from, to)
   );
 
@@ -830,18 +859,26 @@ async function loadMasterfileUncached(
           r.term_id === t.id && studentEnrolmentIds.has(r.section_student_id)
       );
       if (rowsForTerm.length === 0) {
-        return { termId: t.id, schoolDays: null, present: null, late: null };
+        return {
+          termId: t.id,
+          schoolDays: null,
+          present: null,
+          late: null,
+          excused: null,
+        };
       }
       let schoolDays: number | null = null;
       let present: number | null = null;
       let late: number | null = null;
+      let excused: number | null = null;
       for (const r of rowsForTerm) {
         if (r.school_days != null)
           schoolDays = (schoolDays ?? 0) + r.school_days;
         if (r.days_present != null) present = (present ?? 0) + r.days_present;
         if (r.days_late != null) late = (late ?? 0) + r.days_late;
+        if (r.days_excused != null) excused = (excused ?? 0) + r.days_excused;
       }
-      return { termId: t.id, schoolDays, present, late };
+      return { termId: t.id, schoolDays, present, late, excused };
     });
 
     const attendanceTotal = attendanceByTerm.reduce(
@@ -849,8 +886,9 @@ async function loadMasterfileUncached(
         schoolDays: acc.schoolDays + (c.schoolDays ?? 0),
         present: acc.present + (c.present ?? 0),
         late: acc.late + (c.late ?? 0),
+        excused: acc.excused + (c.excused ?? 0),
       }),
-      { schoolDays: 0, present: 0, late: 0 }
+      { schoolDays: 0, present: 0, late: 0, excused: 0 }
     );
 
     // FCA comments (T1–T3), ordered by term number, non-empty only.

@@ -267,6 +267,7 @@ async function loadAcademicOverviewUncached(
     school_days: number | null;
     days_present: number | null;
     days_late: number | null;
+    days_excused: number | null;
   };
   const enrolmentIds = sectionStudents.map((r) => r.id);
   const attendanceRows =
@@ -277,7 +278,7 @@ async function loadAcademicOverviewUncached(
             service
               .from('attendance_records')
               .select(
-                'section_student_id, term_id, school_days, days_present, days_late'
+                'section_student_id, term_id, school_days, days_present, days_late, days_excused'
               )
               .in('section_student_id', slice)
               .order('section_student_id', { ascending: true })
@@ -303,6 +304,7 @@ async function loadAcademicOverviewUncached(
       schoolDays: row.school_days,
       present: row.days_present,
       late: row.days_late,
+      excused: row.days_excused,
     });
   }
 

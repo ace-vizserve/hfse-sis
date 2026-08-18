@@ -106,7 +106,13 @@ export const NO_FILTERS: AcademicOverviewFilters = {
   termNumber: null,
 };
 
-/** One attendance rollup: a student's days for one term, in one class. */
+/**
+ * One attendance rollup: a student's days for one term, in one class.
+ *
+ * ⚠ `present` CONTAINS both `late` and `excused` — migration 014 counts P, L
+ * and EX into `days_present` alike. Anything that treats the three as separate
+ * quantities is double-counting.
+ */
 export type OverviewAttendanceInput = {
   studentId: string;
   levelId: string;
@@ -115,6 +121,8 @@ export type OverviewAttendanceInput = {
   schoolDays: number | null;
   present: number | null;
   late: number | null;
+  /** Authorised absence — MC, compassionate, school activity. Counted present. */
+  excused: number | null;
 };
 
 export type AcademicOverviewInput = {
@@ -259,12 +267,19 @@ export type AttendanceHealth = {
   terms: OverviewAttendanceTermRow[];
   /** Students with any attendance recorded in scope — the denominator below. */
   studentsRecorded: number;
+  /** Authorised absence — MC, compassionate, school activity. Inside `present`. */
+  excused: number;
   /**
-   * School days that were attended ON TIME — `present` minus `late`.
+   * School days attended on time — `present` minus `late` minus `excused`.
    *
-   * `present`, `late` and `absent` overlap (late is a subset of present), so
-   * they cannot be drawn as parts of a whole. These three CAN: onTime + late
-   * + absent === schoolDays, exactly.
+   * `present` swallows both of the others (migration 014 counts P, L and EX
+   * into `days_present`), so present/late/excused/absent cannot be drawn as
+   * parts of a whole. These four CAN: onTime + late + excused + absent ===
+   * schoolDays, exactly.
+   *
+   * ⚠ Measured on production 2026-08-18: excused is 824 days against 822
+   * absent — HALF of all non-attendance is authorised. Folding it into "on
+   * time" is not a rounding error, it is the larger of the two.
    */
   onTime: number;
   /**
@@ -1131,10 +1146,12 @@ function summariseAttendance(
   let schoolDays = 0;
   let present = 0;
   let late = 0;
+  let excused = 0;
   for (const r of rows) {
     schoolDays += r.schoolDays ?? 0;
     present += r.present ?? 0;
     late += r.late ?? 0;
+    excused += r.excused ?? 0;
   }
   const absent = Math.max(0, schoolDays - present);
   const rate = (part: number) =>
@@ -1143,10 +1160,11 @@ function summariseAttendance(
     schoolDays,
     present,
     late,
+    excused,
     absent,
-    // The only three-way split of school days that actually partitions, since
-    // `present` already contains `late`.
-    onTime: Math.max(0, present - late),
+    // The only split of school days that actually partitions, since `present`
+    // already contains both of the others.
+    onTime: Math.max(0, present - late - excused),
     presentRate: rate(present),
     lateRate: rate(late),
     absentRate: rate(absent),

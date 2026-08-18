@@ -155,10 +155,13 @@ function student(
         schoolDays: 50,
         present: 50,
         late: 0,
+
+        excused: 0,
       })),
     attendanceTotal: partial.attendanceTotal ?? {
       present: 200,
       late: 0,
+      excused: 0,
       schoolDays: 200,
     },
     commentsByTerm: (partial.commentsByTerm ?? []).map((c) => ({

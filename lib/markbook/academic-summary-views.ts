@@ -189,6 +189,16 @@ export type AttendanceRow = {
    * often as they were away.
    */
   absent: number;
+  /**
+   * Authorised absence — MC, compassionate, school activity. INSIDE `present`,
+   * exactly as `late` is (migration 014 counts P, L and EX into
+   * `days_present`), so it must never be subtracted from it either.
+   *
+   * Measured on production 2026-08-18: 824 excused days against 822 absent —
+   * half of all non-attendance is authorised, and until now no surface fed by
+   * the masterfile could tell the two apart.
+   */
+  excused: number;
   schoolDays: number;
   /** present / schoolDays × 100, rounded to 1dp.  null when schoolDays = 0. */
   rate: number | null;
@@ -208,17 +218,20 @@ export function buildAttendanceRows(
     .map((r) => {
       let present = 0;
       let late = 0;
+      let excused = 0;
       let schoolDays = 0;
 
       if (termId == null) {
         // Total across the AY
         present = r.attendanceTotal.present;
         late = r.attendanceTotal.late;
+        excused = r.attendanceTotal.excused;
         schoolDays = r.attendanceTotal.schoolDays;
       } else {
         const cell = r.attendanceByTerm.find((c) => c.termId === termId);
         present = cell?.present ?? 0;
         late = cell?.late ?? 0;
+        excused = cell?.excused ?? 0;
         schoolDays = cell?.schoolDays ?? 0;
       }
 
@@ -239,6 +252,7 @@ export function buildAttendanceRows(
         present,
         late,
         absent,
+        excused,
         schoolDays,
         rate,
       };

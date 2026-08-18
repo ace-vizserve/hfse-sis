@@ -146,10 +146,12 @@ function student(
         schoolDays: 50,
         present: 50,
         late: 0,
+        excused: 0,
       })),
     attendanceTotal: partial.attendanceTotal ?? {
       present: 200,
       late: 0,
+      excused: 0,
       schoolDays: 200,
     },
     commentsByTerm: (partial.commentsByTerm ?? []).map((c) => ({
@@ -194,8 +196,9 @@ function buildPayload(): MasterfilePayload {
       schoolDays: 50,
       present: 40,
       late: 5,
+      excused: 0,
     })),
-    attendanceTotal: { present: 160, late: 20, schoolDays: 200 },
+    attendanceTotal: { present: 160, late: 20, excused: 0, schoolDays: 200 },
     commentsByTerm: [{ termNumber: 1, text: 'Needs focus.' }], // T2,T3 blank
   });
 
@@ -496,12 +499,24 @@ describe('computeMasterfileDashboard — KD #148 enrolment-coverage exclusion', 
         nonExamRow(MUSIC.id, [null, null, 'A', 'A']),
       ],
       attendanceByTerm: [
-        { termId: 't1', schoolDays: null, present: null, late: null },
-        { termId: 't2', schoolDays: null, present: null, late: null },
-        { termId: 't3', schoolDays: 50, present: 48, late: 1 },
-        { termId: 't4', schoolDays: 50, present: 50, late: 0 },
+        {
+          termId: 't1',
+          schoolDays: null,
+          present: null,
+          late: null,
+          excused: null,
+        },
+        {
+          termId: 't2',
+          schoolDays: null,
+          present: null,
+          late: null,
+          excused: null,
+        },
+        { termId: 't3', schoolDays: 50, present: 48, late: 1, excused: 0 },
+        { termId: 't4', schoolDays: 50, present: 50, late: 0, excused: 0 },
       ],
-      attendanceTotal: { present: 98, late: 1, schoolDays: 100 },
+      attendanceTotal: { present: 98, late: 1, excused: 0, schoolDays: 100 },
       commentsByTerm: [], // T3 comment not yet written — a real, in-scope gap
     });
 
@@ -520,12 +535,24 @@ describe('computeMasterfileDashboard — KD #148 enrolment-coverage exclusion', 
         nonExamRow(MUSIC.id, ['A', 'A', null, null]),
       ],
       attendanceByTerm: [
-        { termId: 't1', schoolDays: 50, present: 48, late: 0 },
-        { termId: 't2', schoolDays: 50, present: 47, late: 1 },
-        { termId: 't3', schoolDays: null, present: null, late: null },
-        { termId: 't4', schoolDays: null, present: null, late: null },
+        { termId: 't1', schoolDays: 50, present: 48, late: 0, excused: 0 },
+        { termId: 't2', schoolDays: 50, present: 47, late: 1, excused: 0 },
+        {
+          termId: 't3',
+          schoolDays: null,
+          present: null,
+          late: null,
+          excused: null,
+        },
+        {
+          termId: 't4',
+          schoolDays: null,
+          present: null,
+          late: null,
+          excused: null,
+        },
       ],
-      attendanceTotal: { present: 95, late: 1, schoolDays: 100 },
+      attendanceTotal: { present: 95, late: 1, excused: 0, schoolDays: 100 },
       commentsByTerm: [
         { termNumber: 1, text: 'Settled in well.' },
         { termNumber: 2, text: 'Withdrew mid-term.' },

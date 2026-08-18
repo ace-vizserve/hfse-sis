@@ -722,6 +722,7 @@ describe('attendance', () => {
     schoolDays,
     present,
     late,
+    excused: 0,
   });
 
   it('counts late as present, so the rates do not sum to 100', () => {
@@ -810,6 +811,7 @@ describe('attendance over the year', () => {
     schoolDays,
     present,
     late,
+    excused: 0,
   });
 
   it('plots one row per term, in order, including terms with nothing recorded', () => {
@@ -893,6 +895,7 @@ describe('attendance concerns', () => {
     schoolDays,
     present,
     late: 0,
+    excused: 0,
   });
 
   it('names students under the at-risk line, worst first', () => {
@@ -968,9 +971,10 @@ describe('attendance concerns', () => {
     expect(overview.levels[0].attendanceBelowThreshold).toBeNull();
   });
 
-  it('splits school days three ways that actually add up', () => {
-    // `present` already contains `late`, so present/late/absent overlap and
-    // cannot be drawn as parts of a whole. onTime/late/absent can.
+  it('splits school days four ways that actually add up', () => {
+    // `present` contains BOTH `late` and `excused` (migration 014 counts P, L
+    // and EX into days_present), so those overlap and cannot be parts of one
+    // whole. onTime/late/excused/absent can.
     const overview = computeAcademicOverview(
       baseInput({
         attendance: [
@@ -982,16 +986,43 @@ describe('attendance concerns', () => {
             schoolDays: 100,
             present: 96,
             late: 6,
+            excused: 10,
           },
         ],
       })
     );
     const a = overview.attendance;
-    expect(a.onTime).toBe(90);
-    expect(a.onTime + a.late + a.absent).toBe(a.schoolDays);
+    expect(a.excused).toBe(10);
+    expect(a.onTime).toBe(80);
+    expect(a.absent).toBe(4);
+    expect(a.onTime + a.late + a.excused + a.absent).toBe(a.schoolDays);
   });
 
-  it('never reports negative on-time days when late exceeds present', () => {
+  it('does not count an excused day as time in class', () => {
+    // The defect this test exists for: onTime was `present - late`, so every
+    // excused day was reported as a day the student was in the room on time.
+    // Production carries 824 of them.
+    const overview = computeAcademicOverview(
+      baseInput({
+        attendance: [
+          {
+            studentId: 's1',
+            levelId: 'p1',
+            sectionId: 'p1-a',
+            termId: 't1',
+            schoolDays: 100,
+            present: 100,
+            late: 0,
+            excused: 25,
+          },
+        ],
+      })
+    );
+    expect(overview.attendance.onTime).toBe(75);
+    expect(overview.attendance.presentRate).toBe(100);
+  });
+
+  it('never reports negative on-time days when the subsets overshoot', () => {
     // Defensive: a hand-backfilled rollup could break the subset invariant,
     // and a negative slice would render as a wedge pointing the wrong way.
     const overview = computeAcademicOverview(
@@ -1005,6 +1036,7 @@ describe('attendance concerns', () => {
             schoolDays: 100,
             present: 10,
             late: 40,
+            excused: 40,
           },
         ],
       })

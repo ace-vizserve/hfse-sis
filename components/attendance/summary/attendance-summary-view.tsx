@@ -247,6 +247,26 @@ export function AttendanceSummaryView({
         ),
       },
       {
+        // Excused sits between Late and Absent because that is where it sits
+        // in the day's meaning: away, but with a reason on file. It is INSIDE
+        // Present (migration 014 counts EX there), so it is not subtracted
+        // from anything — the column answers "how many of these absences were
+        // authorised", which is the question the warning-letter process asks
+        // and which this page could not answer at all until now.
+        accessorKey: 'excused',
+        header: ({ column }) => (
+          <SortableHeader column={column} align="right">
+            Excused
+          </SortableHeader>
+        ),
+        meta: { label: 'Excused' },
+        cell: ({ row }) => (
+          <span className="block text-right font-mono text-sm tabular-nums text-foreground">
+            {row.original.excused}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'absent',
         header: ({ column }) => (
           <SortableHeader column={column} align="right">
@@ -406,7 +426,8 @@ export function AttendanceSummaryView({
       />
 
       <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-        Excused (EX) days are tracked in the Attendance module.
+        Excused days are already counted as present · Absent means no reason was
+        recorded
       </p>
     </div>
   );
