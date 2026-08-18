@@ -13,33 +13,57 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { AcademicOverview } from '@/lib/markbook/academic-overview-compute';
 
-const ALL = '__all__';
+export const ALL_FILTER_VALUE = '__all__';
 
-type Applied = { key: string; label: string; param: string[] };
-
-// Filters for the school-wide Academic Summary.
+// The filter bar for every school-wide Markbook page.
 //
-// Every control narrows THIS page — none of them navigates away — so the
-// layout is identical at every scope. When something is applied the bar gains
-// a chip row naming it, because a filtered dashboard that looks exactly like
-// an unfiltered one is how people misread a class's numbers as the school's.
+// Every control narrows THIS page — none of them navigates away — so the layout
+// is identical at every scope. When something is applied the bar gains a chip
+// row naming it, because a filtered dashboard that looks exactly like an
+// unfiltered one is how people misread a class's numbers as the school's.
+//
+// Generic over its selects rather than hard-coded, because Academic Summary and
+// Awards differ by exactly one control (Subject vs Award category) and every
+// other behaviour — the chips, the reset, clearing Class when Level changes,
+// dropping scope when the year changes — has to be the same on both. Two bars
+// would have drifted on the first change to either.
+
+export type OverviewFilterSelect = {
+  /** URL search param this control writes. */
+  param: string;
+  label: string;
+  /** Current value, or `null` when nothing is chosen. */
+  value: string | null;
+  options: { value: string; label: string }[];
+  /**
+   * Label for the "no choice" option. Omit for a control that always carries a
+   * value — Award category is always one ladder, so it has no "all".
+   */
+  allLabel?: string;
+  /** Prefix on the applied chip, e.g. "Grade level". Defaults to `label`. */
+  chipPrefix?: string;
+  /** Other params to clear when this one changes — Class hangs off Level. */
+  clears?: string[];
+  widthClass?: string;
+  disabled?: boolean;
+};
+
 export function OverviewFilterBar({
   ayCode,
   ayCodes,
-  options,
-  filters,
+  selects,
 }: {
   ayCode: string;
   ayCodes: readonly string[];
-  options: AcademicOverview['filterOptions'];
-  filters: AcademicOverview['filters'];
+  selects: OverviewFilterSelect[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [hidden, setHidden] = useState(false);
+
+  const scopeParams = selects.map((s) => s.param);
 
   function push(mutate: (next: URLSearchParams) => void) {
     const next = new URLSearchParams(searchParams.toString());
@@ -52,48 +76,27 @@ export function OverviewFilterBar({
     });
   }
 
-  const setParam = (name: string, value: string) =>
+  const setParam = (select: OverviewFilterSelect, value: string) =>
     push((next) => {
-      if (value === ALL) next.delete(name);
-      else next.set(name, value);
-      // A class belongs to a level, and a level's classes differ per level —
-      // so changing the level always clears the class beneath it.
-      if (name === 'level') next.delete('class');
+      if (value === ALL_FILTER_VALUE) next.delete(select.param);
+      else next.set(select.param, value);
+      for (const p of select.clears ?? []) next.delete(p);
     });
 
-  const sectionsForLevel = filters.levelId
-    ? options.sections.filter((s) => s.levelId === filters.levelId)
-    : options.sections;
+  const clearAll = () =>
+    push((next) => scopeParams.forEach((p) => next.delete(p)));
 
-  const applied: Applied[] = [];
-  if (filters.levelId) {
-    applied.push({
-      key: 'level',
-      label: `Grade level: ${options.levels.find((l) => l.id === filters.levelId)?.label ?? filters.levelId}`,
-      param: ['level', 'class'],
-    });
-  }
-  if (filters.sectionId) {
-    applied.push({
-      key: 'class',
-      label: `Class: ${options.sections.find((s) => s.id === filters.sectionId)?.name ?? filters.sectionId}`,
-      param: ['class'],
-    });
-  }
-  if (filters.subjectId) {
-    applied.push({
-      key: 'subject',
-      label: `Subject: ${options.subjects.find((s) => s.id === filters.subjectId)?.name ?? filters.subjectId}`,
-      param: ['subject'],
-    });
-  }
-  if (filters.termNumber != null) {
-    applied.push({
-      key: 'term',
-      label: `Term: ${filters.termNumber}`,
-      param: ['term'],
-    });
-  }
+  // A control with no "all" option is always set, so it is scope rather than a
+  // filter and never appears as a removable chip.
+  const applied = selects
+    .filter((s) => s.value != null && s.allLabel != null)
+    .map((s) => ({
+      key: s.param,
+      label: `${s.chipPrefix ?? s.label}: ${
+        s.options.find((o) => o.value === s.value)?.label ?? s.value
+      }`,
+      params: [s.param, ...(s.clears ?? [])],
+    }));
 
   const hasFilters = applied.length > 0;
 
@@ -138,25 +141,14 @@ export function OverviewFilterBar({
                 aria-label={`Remove filter ${chip.label}`}
                 className="rounded-sm p-0.5 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() =>
-                  push((next) => chip.param.forEach((p) => next.delete(p)))
+                  push((next) => chip.params.forEach((p) => next.delete(p)))
                 }
               >
                 <X className="size-3" />
               </button>
             </Badge>
           ))}
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            onClick={() =>
-              push((next) =>
-                ['level', 'class', 'subject', 'term'].forEach((p) =>
-                  next.delete(p)
-                )
-              )
-            }
-          >
+          <Button type="button" variant="link" size="sm" onClick={clearAll}>
             Clear all
           </Button>
         </div>
@@ -171,10 +163,9 @@ export function OverviewFilterBar({
                 onValueChange={(v) =>
                   push((next) => {
                     next.set('ay', v);
-                    // Levels, classes and subjects are all per-year.
-                    ['level', 'class', 'subject', 'term'].forEach((p) =>
-                      next.delete(p)
-                    );
+                    // Levels, classes, subjects and terms are all per-year, so
+                    // carrying one across would name a scope that may not exist.
+                    scopeParams.forEach((p) => next.delete(p));
                   })
                 }
               >
@@ -192,97 +183,40 @@ export function OverviewFilterBar({
             </Field>
           )}
 
-          <Field label="Term">
-            <Select
-              value={
-                filters.termNumber == null ? ALL : String(filters.termNumber)
-              }
-              onValueChange={(v) => setParam('term', v)}
-            >
-              <SelectTrigger className="h-9 w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All terms</SelectItem>
-                {options.terms.map((t) => (
-                  <SelectItem key={t.termNumber} value={String(t.termNumber)}>
-                    Term {t.termNumber}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Grade level">
-            <Select
-              value={filters.levelId ?? ALL}
-              onValueChange={(v) => setParam('level', v)}
-            >
-              <SelectTrigger className="h-9 w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All grade levels</SelectItem>
-                {options.levels.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Class">
-            <Select
-              value={filters.sectionId ?? ALL}
-              onValueChange={(v) => setParam('class', v)}
-              disabled={sectionsForLevel.length === 0}
-            >
-              <SelectTrigger className="h-9 w-[190px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All classes</SelectItem>
-                {sectionsForLevel.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Subject">
-            <Select
-              value={filters.subjectId ?? ALL}
-              onValueChange={(v) => setParam('subject', v)}
-            >
-              <SelectTrigger className="h-9 w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All subjects</SelectItem>
-                {options.subjects.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          {selects.map((select) => (
+            <Field key={select.param} label={select.label}>
+              <Select
+                value={select.value ?? ALL_FILTER_VALUE}
+                onValueChange={(v) => setParam(select, v)}
+                disabled={select.disabled}
+              >
+                <SelectTrigger
+                  className={`h-9 ${select.widthClass ?? 'w-[180px]'}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {select.allLabel != null && (
+                    <SelectItem value={ALL_FILTER_VALUE}>
+                      {select.allLabel}
+                    </SelectItem>
+                  )}
+                  {select.options.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ))}
 
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={!hasFilters}
-            onClick={() =>
-              push((next) =>
-                ['level', 'class', 'subject', 'term'].forEach((p) =>
-                  next.delete(p)
-                )
-              )
-            }
+            onClick={clearAll}
           >
             <RotateCcw className="size-4" />
             Reset filters

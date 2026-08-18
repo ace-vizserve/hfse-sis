@@ -3,11 +3,12 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-// `resolveAcademicSummaryScope` is shared by four pages. Three of them cannot
+// `resolveAcademicSummaryScope` is shared by four pages. Some of them cannot
 // render without a masterfile payload, so they depend on its default behaviour
 // of falling back to the FIRST grade level when `?level` is absent. Only the
-// Academic Summary page may pass `allowAllLevels`, which turns that same state
-// into the school-wide view and returns a null payload.
+// pages listed below may pass `allowAllLevels`, which turns that same state
+// into the school-wide view and returns a NULL payload — a page that opts in
+// and then reads `scope.payload` crashes on its own landing state.
 //
 // This is a source scan rather than a behavioural test because the resolver
 // talks to Supabase; what needs protecting is not the query but the fact that
@@ -25,7 +26,13 @@ const CALLERS = [
 
 /** Pages allowed to request the school-wide state, and why. */
 const ALLOWED_OPT_IN = new Set([
+  // Renders the school-wide aggregate itself and never touches scope.payload.
   'app/(records)/records/academic-summary/page.tsx',
+  // Same shape, added 2026-08-18: Awards went school-wide because the pattern
+  // it exists to show — every Gold sitting in Primary One to Four — is
+  // invisible one grade level at a time. It reads getAwardsOverview, not the
+  // masterfile payload.
+  'app/(markbook)/markbook/awards/page.tsx',
 ]);
 
 function read(relative: string): string {
@@ -39,7 +46,7 @@ describe('all-levels scope is opt-in', () => {
     }
   });
 
-  it('only the Academic Summary page passes allowAllLevels', () => {
+  it('only the school-wide pages pass allowAllLevels', () => {
     for (const file of CALLERS) {
       const optsIn = read(file).includes('allowAllLevels');
       expect(optsIn, `${file} opting in: ${optsIn}`).toBe(

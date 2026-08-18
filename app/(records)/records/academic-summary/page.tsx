@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { AcademicOverviewView } from '@/components/markbook/academic-overview-view';
 import { OverviewExportMenu } from '@/components/markbook/overview-export-menu';
 import { OverviewFilterBar } from '@/components/markbook/overview-filter-bar';
+import { academicSummarySelects } from '@/components/markbook/overview-filter-selects';
 import { Button } from '@/components/ui/button';
 import { MasterfileToolbar } from '@/components/markbook/masterfile-toolbar';
 import { MasterfileView } from '@/components/markbook/masterfile-view';
@@ -157,8 +158,10 @@ export default async function AcademicSummaryPage({
         <OverviewFilterBar
           ayCode={scope.ayCode}
           ayCodes={scope.ayCodes}
-          options={overview.filterOptions}
-          filters={overview.filters}
+          selects={academicSummarySelects(
+            overview.filterOptions,
+            overview.filters
+          )}
         />
 
         {levelId && (

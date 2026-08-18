@@ -77,6 +77,21 @@
   --av-amber: #ed7622;
   --av-amber-light: #fde8d5;
   --av-bronze: #cd7f32;
+
+  /* Medal colours for the award ladder. Gold and silver are real metallics
+     rather than the amber/slate stand-ins the first awards view borrowed —
+     "Bronze" rendered in sky blue is the kind of thing that makes a reader
+     distrust every other colour on the page.
+
+     Each has a `-deep` partner, exactly as the house colours do: the bright
+     value is a FILL (chart segment, solid chip) and carries dark ink; the deep
+     value is the TEXT colour for an outline chip, where the bright one sits at
+     roughly 2:1 on white and fails outright. Never swap the two. */
+  --av-medal-gold: #d4af37;
+  --av-medal-gold-deep: #8a6d1f;
+  --av-medal-silver: #a8a9ad;
+  --av-medal-silver-deep: #5b6169;
+  --av-medal-bronze-deep: #8a5320;
   --av-ink: #0f172a;
   --av-ink-2: #334155;
   --av-ink-3: #475569;
@@ -265,6 +280,12 @@
   --color-brand-amber: var(--av-amber);
   --color-brand-amber-light: var(--av-amber-light);
   --color-brand-bronze: var(--av-bronze);
+  --color-medal-gold: var(--av-medal-gold);
+  --color-medal-gold-deep: var(--av-medal-gold-deep);
+  --color-medal-silver: var(--av-medal-silver);
+  --color-medal-silver-deep: var(--av-medal-silver-deep);
+  --color-medal-bronze: var(--av-bronze);
+  --color-medal-bronze-deep: var(--av-medal-bronze-deep);
   --color-house-1: var(--av-house-1);
   --color-house-2: var(--av-house-2);
   --color-house-3: var(--av-house-3);
