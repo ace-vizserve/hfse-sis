@@ -293,12 +293,12 @@ const SECTIONS: SectionConfig[] = [
         wide: true,
       },
       { name: 'previousSchool', label: 'Previous school' },
-      { name: 'howDidYouKnowAboutHFSEIS', label: 'Referral source' },
-      { name: 'otherSource', label: 'Other source' },
+      { name: 'howDidYouKnowAboutHFSEIS', label: 'How did you hear about us' },
+      { name: 'otherSource', label: 'How did you hear about us (other)' },
       // "How did you know about HFSE" attribution. The discount-code
       // referrer pair moved to the Discounts section (action item #8) — it
       // belongs with the codes it credits, not with this marketing question.
-      { name: 'marketingReferrerName', label: 'Referral name' },
+      { name: 'marketingReferrerName', label: 'Who referred them' },
       {
         name: 'contractSignatory',
         label: 'Contract signatory',

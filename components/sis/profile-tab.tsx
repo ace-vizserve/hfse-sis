@@ -180,13 +180,13 @@ export function ProfileTab({
       multiline: true,
     },
     { label: 'Previous school', value: app.previousSchool },
-    { label: 'Referral source', value: app.howDidYouKnowAboutHFSEIS },
-    { label: 'Other source', value: app.otherSource },
+    { label: 'How did you hear about us', value: app.howDidYouKnowAboutHFSEIS },
+    { label: 'How did you hear about us (other)', value: app.otherSource },
     // "How did you know about HFSE" attribution. Stays here because it
     // belongs to the marketing question above it — the discount-code
     // referrer pair (referrerName / referrerMobile) moved to the billing
     // card with the discounts it credits (training action item #8, Tin).
-    { label: 'Referral name', value: app.marketingReferrerName },
+    { label: 'Who referred them', value: app.marketingReferrerName },
     { label: 'Contract signatory', value: app.contractSignatory },
   ];
 
