@@ -295,12 +295,10 @@ const SECTIONS: SectionConfig[] = [
       { name: 'previousSchool', label: 'Previous school' },
       { name: 'howDidYouKnowAboutHFSEIS', label: 'Referral source' },
       { name: 'otherSource', label: 'Other source' },
-      // "How did you know about HFSE" attribution — distinct from the
-      // referrerName/referrerMobile pair below, which is a discount-code
-      // referral (unrelated concept).
+      // "How did you know about HFSE" attribution. The discount-code
+      // referrer pair moved to the Discounts section (action item #8) — it
+      // belongs with the codes it credits, not with this marketing question.
       { name: 'marketingReferrerName', label: 'Referral name' },
-      { name: 'referrerName', label: 'Referrer name (discount code)' },
-      { name: 'referrerMobile', label: 'Referrer mobile (discount code)' },
       {
         name: 'contractSignatory',
         label: 'Contract signatory',
@@ -321,6 +319,11 @@ const SECTIONS: SectionConfig[] = [
       { name: 'discount1', label: 'Discount 1', slot: 1 },
       { name: 'discount2', label: 'Discount 2', slot: 2 },
       { name: 'discount3', label: 'Discount 3', slot: 3 },
+      // Slot-less, so they are always drawn here rather than appearing and
+      // disappearing with the discount slots — the registrar may need to
+      // record who referred before the code itself is issued.
+      { name: 'referrerName', label: 'Referred by' },
+      { name: 'referrerMobile', label: 'Referrer mobile' },
     ],
   },
   ...([1, 2, 3, 4, 5] as const).map(
@@ -545,14 +548,21 @@ export function EditProfileSheet({
 
                   // Discount slots share one section, so filter the FIELDS and
                   // keep the section (it owns the add control + empty state).
+                  // A field with no `slot` is not a slot at all (the referrer
+                  // pair) and is always drawn — `f.slot ?? 0` would have
+                  // filtered it out, since slot numbering starts at 1.
                   const fields =
                     section.slotGroup === 'discount'
-                      ? section.fields.filter((f) =>
-                          shownDiscounts.includes(f.slot ?? 0)
+                      ? section.fields.filter(
+                          (f) =>
+                            f.slot == null || shownDiscounts.includes(f.slot)
                         )
                       : section.fields;
 
                   const isDiscounts = section.slotGroup === 'discount';
+                  // The empty state is about the CODES, so count slot fields
+                  // only — the referrer pair must not suppress it.
+                  const hasDiscountSlots = fields.some((f) => f.slot != null);
                   const canAddDiscount =
                     isDiscounts && shownDiscounts.length < MAX_DISCOUNT_SLOTS;
 
@@ -561,7 +571,7 @@ export function EditProfileSheet({
                       <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
                         {section.title}
                       </h3>
-                      {isDiscounts && fields.length === 0 && (
+                      {isDiscounts && !hasDiscountSlots && (
                         <p className="text-sm text-muted-foreground">
                           No discount codes on this application.
                         </p>

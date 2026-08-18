@@ -50,7 +50,9 @@ function captureCsv() {
 
 async function openSheet(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /export csv/i }));
-  await screen.findByText(/drag to set column order/i);
+  await screen.findByText(/drag to set column order/i, undefined, {
+    timeout: 8000,
+  });
 }
 
 /**

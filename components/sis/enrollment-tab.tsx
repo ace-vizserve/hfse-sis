@@ -1366,6 +1366,12 @@ function BillingCard({ app }: { app: ApplicationRow }) {
     { label: 'Social media consent', value: app.socialMediaConsent ?? null },
     { label: 'Feedback consent', value: app.feedbackConsent ?? null },
   ];
+  // The discount-code referrer — NOT `marketingReferrerName`, which answers
+  // "how did you hear about us" and stays on the profile.
+  const referrer = {
+    name: (app.referrerName ?? '').trim(),
+    mobile: (app.referrerMobile ?? '').trim(),
+  };
   const activeDiscounts = discountSlots.filter(
     (d) => d.value && String(d.value).trim() !== ''
   );
@@ -1422,6 +1428,37 @@ function BillingCard({ app }: { app: ApplicationRow }) {
             </ul>
           )}
         </div>
+
+        {/* Who the discount is credited to. Lived under Profile → Application
+            preferences until training action item #8 (Tin) — it sat beside
+            the "how did you hear about us" marketing referral, which is an
+            unrelated question, and away from the codes it actually explains.
+            Hidden entirely when neither is recorded, which is most rows. */}
+        {(referrer.name || referrer.mobile) && (
+          <div className="space-y-2">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Referred by
+            </p>
+            <ul className="space-y-1.5">
+              {referrer.name && (
+                <li className="flex items-center justify-between gap-2.5 rounded-md border border-hairline bg-muted/20 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Name</span>
+                  <span className="font-medium text-foreground">
+                    {referrer.name}
+                  </span>
+                </li>
+              )}
+              {referrer.mobile && (
+                <li className="flex items-center justify-between gap-2.5 rounded-md border border-hairline bg-muted/20 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Mobile</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {referrer.mobile}
+                  </span>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
 
         <div className="space-y-2">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

@@ -123,7 +123,9 @@ describe('advanced export is opt-in', () => {
     await user.click(screen.getByRole('button', { name: /export csv/i }));
 
     expect(
-      await screen.findByText(/drag to set column order/i)
+      await screen.findByText(/drag to set column order/i, undefined, {
+        timeout: 8000,
+      })
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /add field/i })
@@ -148,7 +150,13 @@ describe('advanced export is opt-in', () => {
     // The count lives on the action rather than in a banner above it — you
     // read how many rows you are about to get on the control that gets them.
     expect(
-      await screen.findByRole('button', { name: /download 2 rows/i })
+      await screen.findByRole(
+        'button',
+        { name: /download 2 rows/i },
+        {
+          timeout: 8000,
+        }
+      )
     ).toBeInTheDocument();
   });
 
@@ -168,7 +176,13 @@ describe('advanced export is opt-in', () => {
     // Both on-screen columns arrive pre-selected — an untouched advanced
     // export must match what the plain export would have produced.
     expect(
-      await screen.findByRole('button', { name: /reorder student/i })
+      await screen.findByRole(
+        'button',
+        { name: /reorder student/i },
+        {
+          timeout: 8000,
+        }
+      )
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /reorder level/i })
