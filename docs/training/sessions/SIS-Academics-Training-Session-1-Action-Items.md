@@ -30,21 +30,22 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                                            | Where                                                          |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                            | KD #177, migration 109                                         |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                   | KD #178, migrations 110 / 111                                  |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                            | Records → Academic tab                                         |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                            | KD #179 (subject) + #182 (adviser)                             |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                            | KD #181 — Classroom drawer                                     |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | **Spec'd; re-confirmed 2026-08-14**               | Upload sits at the `EX` mark; ⚠ Hanafi files them today        |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Sample 2026-08-13; filer confirmed 2026-08-14** | Filer = whoever was at the venue. The outcome is still nowhere |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | Spec'd — waiting on the sample                    | **Nothing digital to replace** — the cheapest of the three     |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                        | Same table as #8 — scoring sheet                               |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                           | "Teachers cannot choose the approvers"                         |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**           | Unanimous, 2026-08-14; today is first-to-act                   |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                  | KD #176                                                        |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                       | See _Waiting on the school_                                    |
+| #   | Ask                                                   | Who                                                  | Status                                            | Where                                                     |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                            | KD #177, migration 109                                    |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                   | KD #178, migrations 110 / 111                             |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                            | Records → Academic tab                                    |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                            | KD #179 (subject) + #182 (adviser)                        |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                            | KD #181 — Classroom drawer                                |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ⚠ **RESHAPED 2026-08-17 — the PARENT files it**   | Her own child's school SIS. Blocked on what approval does |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Backend built + applied 2026-08-18. NO UI yet** | Migrations 120–122. Outcome still nowhere                 |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**      | Principal's List is an ACADEMIC honour, not a competition |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                        | Same table as #8 — scoring sheet                          |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                           | "Teachers cannot choose the approvers"                    |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**           | Unanimous, 2026-08-14. **Ordering settled 2026-08-21**    |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                  | KD #176                                                   |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                       | See _Waiting on the school_                               |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**            | Nothing scoped. See _Answers received_                    |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -74,6 +75,194 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   grade-change requests today), and how big a drop should count — five points
   is a display heuristic nobody at HFSE has expressed an opinion about.
 
+  **Reviewed with Mr Ace 2026-08-21 — four outcomes.**
+  1. ✅ **FIXED — the FCA list named the wrong term.** `baselineFor` resolves
+     the comparison term **per metric** (it walks back to the most recent prior
+     term carrying a mark, since a subject can go unmarked for a term), so one
+     student's falls can be measured from different terms. The panel printed
+     `drops[0].priorTermLabel` — the **worst** fall's term — as a single caption
+     over all of them. Now: one quiet caption when every row shares a baseline,
+     the term on each row when they disagree. `at-risk-lookup.tsx` + 2 tests.
+     Mr Ace's rule, and it is the general one: **be honest about what is being
+     compared against.**
+  2. ✅ **Max scores changing between terms are already handled — do not
+     re-derive this.** Mr Ace asked what happens when an exam is out of 50 in T1
+     and 60 in T2. Nothing: `PS = (Σ scores) / (Σ matching maxes) × 100`, stored
+     per entry as `ww_ps`/`pt_ps`/`qa_ps`, so **"Exam 81 → 55" is 81% → 55%**,
+     not marks. Weights cannot drift either — migration 080 collapsed them to
+     one set per subject. And **ON THIS SHEET** compares a sheet against its own
+     average, never across terms.
+  3. ✅ **SHIPPED 2026-08-21 — one shape across all three lookups, and the
+     term comparison is settled by showing every term.** All three now open to
+     **the whole roster in index order** with a search box and an **All students
+     / Only flagged · ‹term›** dropdown; the term is named in the option so an
+     empty result never reads as "this class has no problems". The grading
+     sheet's grouped headings ("Needs a look" / "Everyone else") are gone — the
+     reader chooses. Opening a student shows **every term side by side**, each
+     column carrying the change from the one before, which answers the
+     T4-against-T2 ask **without a picker** and removes the question a picker
+     could not answer honestly (what to show when the chosen term has no mark).
+     New shared `components/shared/term-history-table.tsx` — one table, used by
+     the grading sheet and by the adviser panel once per subject, fallen
+     subjects open and steady ones collapsed. `rankAtRisk` now returns the whole
+     roster (`drops: []`, `worstDiff: null` for the steady), so Term 1 shows the
+     class instead of a blank panel. Attendance rows carry the rate and mark
+     anything below `AT_RISK_ATTENDANCE_THRESHOLD_PCT` (90) — no new route, just
+     `getRollupForSection` passed down from the register page. Full suite green
+     (3,133).
+
+     ⚠ **Two defects were found and fixed while building this, both worth
+     keeping in mind.** First, **raw floats reached the screen**: the adviser's
+     panel printed `String(n)`, so a real class showed
+     `−40.833299999999994` beside a child's name. Component percentages are
+     genuine fractions, and the grading sheet had a private `fmt` that handled
+     it while the panel written later did not — **two surfaces owning private
+     copies of the same rule is the bug**. There is now exactly one:
+     `lib/markbook/format-grade.ts`, and nothing may render a grade figure
+     without it. Second, **a bare percentage is unreadable**. Mr Ace, on the
+     first build: _"add more details to it like max scores the actual score then
+     percentage, currently its like what the hell im looking at here."_ Every
+     component cell now shows the marks under the percentage — "44 / 50" under
+     "88%" — which needed `ww_scores`/`ww_totals` loading for prior terms
+     (`sumTaken` in `grade-diff.ts`); the percentage is what makes terms
+     comparable when a paper's total changes, the marks are what a teacher
+     recognises from the sheet, so the screen carries both. And the **term grade
+     is now its own table**, separate from what it is made of — _"can you
+     separate term grade and WW, PT, Exams?"_ — because a weighted 0–100 figure
+     and a percentage of one paper are not the same kind of number and should
+     not sit in one grid.
+
+  4. ✅ **REDESIGNED 2026-08-21 — one panel, both surfaces, chart-led.** Mockup
+     approved: `https://claude.ai/code/artifact/7a67c6df-eda7-4e92-a79c-bc9b363eff64`.
+     **New `components/shared/subject-term-panel.tsx` is the whole detail view**,
+     rendered identically by the grading sheet and by Classroom — Mr Ace: _"use
+     identical designs for grading sheet look up and classroom grades lookup its
+     basically the same data bro."_ The only difference the data forces is the
+     subject tab strip: an adviser has every subject, a subject teacher has the
+     one they are marking. Shape follows attendance deliberately: **headline
+     figure → chart → table**, so a teacher who has read one lookup has read all
+     three. **Three small charts** (written work / tasks / exam) share one
+     0–100 scale — that is the point of the feature, since a term grade can sit
+     still while written work collapses and the exam covers for it, which is
+     invisible in a single line. Charts reuse the existing `TrendChart` with a
+     new **`variant="compact"`** (no y-axis, grid or tooltip) rather than a
+     second charting path. The table gained real columns — **Term · Score · Out
+     of · Percentage · Change** — and sits behind a fold.
+
+     ⚠ **Max scores differing per term is handled, and visibly.** Mr Ace asked
+     how. The total lives on the ROW, so Written work reads 44/50, 42/50, then
+     48.6/60. **A total that changed from the term before is tinted and carries
+     an ↑**, with a footnote saying the score is no longer comparable but the
+     percentage is — without it, somebody reads 40.5 → 33 down the Score column
+     and concludes a child collapsed when the exam simply went from 50 marks to 60. The footnote also states that **marks count only the assessments the
+     student actually sat** (Blank ≠ Zero), so two students in one term can
+     legitimately show different totals.
+
+     ⚠ **The term grade is in the table as well as the chart** — its Score and
+     Out of cells stay empty, because a weighted figure out of 100 has no
+     denominator and inventing one would be a lie. It was chart-only for one
+     revision, which put those figures out of reach of a screen reader.
+
+     ⚠ **The LIST row was redesigned last, and only because Mr Ace saw it.**
+     It had been left alone through the whole detail rebuild, so it still
+     stacked a line per FALL — the same subject twice whenever two of its
+     components dropped, plus a `SINCE TERM 1 — AY2026` footer. His words:
+     _"what the hell is this design."_ It is now one line per student in the
+     grading sheet's shape: index number, name, **worst fall per SUBJECT** (max
+     three, then "+2 more"), and the steepest figure on the right. **A list is
+     scanned; the detail is read.** ⚠ Making the row a single button changed its
+     accessible name, which broke twelve selectors at once — the same trap
+     `loadingText` sprang in KD #186. `sharedBaseline` is gone with it: the row
+     no longer names a baseline because it no longer claims one, and the detail
+     table sets each term against the one immediately before it.
+
+     ⚠ **Falls stayed destructive red, on Mr Ace's call.** The mockup used burnt
+     orange after the dataviz validator failed red-against-mint for
+     deuteranopia (ΔE 5.8, under the floor of 8). Consistency with the rest of
+     the app won; the sign and the arrow carry the meaning for colourblind
+     readers, so colour is never doing the work alone. **If the app's semantic
+     palette is ever revisited, this pair is the known weak point.**
+
+  5. ⚠ **SUPERSEDED — dynamic term comparison.** _"not just previous term, like
+     term 4 can be compared to term 2… same for attendance as well."_ **Partly
+     already built, which is why it needs checking before scoping:** the
+     **subject teacher's** dialog (`grade-lookup-dialog.tsx`) already has a term
+     picker and its caption names the selected term. The **FCA's** list has no
+     picker. **Attendance** already lists every prior term but computes no
+     difference against any of them — a different job, not the same one.
+  6. ⚠ **Unguarded: an in-progress term.** `loadSectionAtRisk` reads the sheet
+     as it stands — no lock, no completeness check — and Blank ≠ Zero (Hard Rule
+     #3) drops nulls from both sides of the ratio. So a finished T1 against a T2
+     holding two of four tasks can read as a fall when the sheet is just
+     unfinished. Not a maths bug; the caption simply does not say the current
+     term is still in progress. **Wording, not formula. Not done.**
+
+  ⚠ **"Flag" vs "look up" — CLOSED, do not re-raise.** Her verb was "flag out
+  students", which surfaces itself; what shipped is a pull, and the button looks
+  the same whether the list is empty or holds five names. A count on the trigger
+  was proposed. **Mr Ace: _"look up student button seems fine as long as its
+  showing them correct data."_** Correctness over prominence.
+
+  ⚠ **"Flag" versus "look up" — raised and CLOSED by Mr Ace, 2026-08-21.** Her
+  verb was _"flag out students"_, which surfaces itself; what shipped is a
+  **pull** — you must remember to open it, and the button looks identical
+  whether the list is empty or holds five names (plain `Button`, no count). A
+  count on the trigger was proposed as the middle ground between a notification
+  and nothing. **Mr Ace: _"look up student button seems fine as long as its
+  showing them correct data."_ Parked — do not build the count, and do not
+  re-raise it.** Correctness is the priority instead.
+
+  ### ⚠ NEW ASK — dynamic term comparison (Mr Ace, 2026-08-21). Not built.
+
+  > _"add in dynamic term comparison not just previous term, like term 4 can be
+  > compared to term 2 for example you get the point. same for attendance as
+  > well."_
+
+  **The reader chooses the baseline term.** Today it is chosen for them:
+  `baselineFor` (`lib/classroom/at-risk.ts`) walks backwards from the most
+  recent prior term and takes **the most recent one that actually carries a mark
+  for that metric**. That is deliberate — a subject can go unmarked for a whole
+  term — but it is automatic, and T4-against-T2 is not expressible.
+
+  ⚠ **One wrinkle to settle before building, because it is not a picker bolted
+  on:** the baseline today is resolved **per metric**, so written work can
+  compare against T1 while the exam compares against T2 within the same student.
+  An explicitly chosen term either overrides that skipping (and then a metric
+  unmarked in the chosen term shows nothing) or coexists with it (and then the
+  caption is lying about what was compared). **Pick one deliberately.**
+
+  ⚠ **"Same for attendance as well"** — the attendance lookup
+  (`components/attendance/student-lookup-sheet.tsx`) needs the same treatment.
+  Scope it as one feature across both surfaces, not two builds: they already
+  share the button, the words and the two-view shape, and letting them diverge
+  on how a baseline is picked would break the one-habit-across-three-surfaces
+  property that made this pattern worth reusing.
+
+  ✅ **The comparison is sound against changing max scores — checked 2026-08-21,
+  and this is worth not re-deriving.** Mr Ace asked what happens if an exam is
+  out of 50 in T1 and 60 in T2. **Nothing: the dialog compares percentages, not
+  marks.** `PS = (Σ scores) / (Σ matching maxes) × 100` (`lib/compute/quarterly.ts`),
+  stored per entry as `ww_ps` / `pt_ps` / `qa_ps`, so each component is
+  normalised against its own total before anything is compared. "Exam 81 → 55"
+  is 81% → 55%. **Weights cannot drift either** — migration 080 collapsed them
+  to one set per subject, so they are identical in every term; were they
+  per-term, the term-grade line could move with no change in performance at all.
+  And the **ON THIS SHEET** block never crosses terms — it compares one sheet
+  against its own average, so max scores are irrelevant there by construction.
+  **This matters more once the baseline is user-chosen**, since T4-against-T2
+  spans more room for the totals to have changed.
+
+  ⚠ **What IS unguarded: an in-progress term.** `loadSectionAtRisk` reads the
+  sheet as it stands — **no lock, no completeness check** — and Blank ≠ Zero
+  (Hard Rule #3) excludes a null from both numerator and denominator. So the
+  current term's percentage is computed on **what has been entered so far**: a
+  finished T1 against a T2 holding two of four performance tasks can read
+  "-13.3" when the sheet is simply not done. **Not a maths bug** — it is a true
+  statement about work completed to date, and early warning is the point — but
+  the caption says _"Compared with Term 1"_ without saying the current term is
+  still in progress, so it reads as a finished comparison. **A wording fix, not
+  a formula fix.** Not yet done.
+
 - **T2 — the student profile** (#5). **Shipped 2026-08-09.** Three people asked
   five versions of "when I click the name I want to see X". Three of those five
   things already existed in Records; teachers simply could not reach that
@@ -101,11 +290,32 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   **Still open:** whether teachers may _add_ to any of this (question 3 in the
   rewritten message above). And the **Grades tab** — see T1.
 
-- **T3 — MC upload** (#6) needs a security design pass **before any build**. The
-  storage bucket appears public-by-URL (`getPublicUrl` everywhere, no signed
-  URLs in the codebase) and its policies are not in this repo. Granting teachers
-  the existing document capability would hand them replace-rights over every
-  enrolled student's passport and birth certificate.
+- **T3 — MC upload** (#6). ⚠ **RESHAPED 2026-08-17: the parent files it, not the
+  FCA.** Christina showed Mr Ace how her own child's school SIS does it and he
+  took it — _"this is the best way since parents are the ones who initially have
+  the doc."_ Full design in _Answers received_. **This supersedes the FCA-uploads
+  spec** and un-parks the version she raised herself on 2026-08-12. **Blocked on
+  one answer** Mr Ace is getting from her: what approval actually _does_ — write
+  the register, or only tell the adviser.
+
+  ⚠ **"Ms Tin" is Christina — Tin is her nickname** (Mr Ace, 2026-08-18,
+  correcting this file's first write-up, which called them two people and
+  therefore "two independent sources"). **It is one source saying the same thing
+  twice**: unprompted on 2026-08-12, then demonstrating the screen. Her sons
+  being at another school is the same fact from both angles. That is not weaker
+  evidence — it is the most invested kind there is — but it must not be counted
+  as corroboration. **It also resolves the AEB roster: the "Ms Tin" among its
+  five members is Christina**, so the board includes the Principal.
+
+  The security note below still stands for whichever shape wins: the storage
+  bucket appears public-by-URL (`getPublicUrl` everywhere, no signed URLs in the
+  codebase) and its policies are not in this repo. Granting teachers the existing
+  document capability would hand them replace-rights over every enrolled
+  student's passport and birth certificate. ⚠ **And the scale changed**: a
+  parent-facing form plus an approval queue plus a write into the attendance
+  register is an order of magnitude past an upload button, against a portal that
+  can read only `school_config` + `report_card_publications` today.
+
 - **T4 — run the students sync against a student who already has a house** and
   confirm it survives. A test guards it, but that test reads source code; only
   the sync running proves it.
@@ -125,6 +335,34 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   Also: **the student is optional on the form** (`if applicable`), while #7's
   whole shape is "open a student, see their incidents". Decide whether the SIS
   holds only the student-linked subset. Nobody has asked for the rest.
+
+  **#7 BACKEND BUILT AND APPLIED 2026-08-18 — migrations 120, 121, 122. Still no
+  UI; nothing is reachable from a screen.** `student_discipline_records` +
+  `lib/discipline/{queries,mutations}.ts` + `lib/schemas/discipline.ts` + three
+  routes under `app/api/classroom/[sectionId]/students/[studentNumber]/
+discipline/`. Decisions, all Mr Ace's:
+  - **ONE table with a `record_type`, not two** — _"one list is fine for now its
+    basically a type atp no?"_ The attendance warning letter hangs off no
+    incident, so incidents and letters are siblings, never parent/child, and one
+    chronological list is the whole point of the ask.
+  - **Filing is open to any staff member** (Chandana's rule), **editing is the
+    filer plus leadership**. **Filing lives in Classroom, not Records** — teachers
+    cannot open Records at all. **No new capability**: reach is gated by the
+    section exactly as the KD #181 drawer is, which also sidesteps KD #166's
+    "a code-only capability is inert until `role_permissions` has the row".
+  - **`nature` ships as free text** until the school sends the picklist. The
+    student is **required** despite being optional on their form.
+  - **`details`/`remarks` never reach `audit_log`** — append-only and
+    coordinator-readable, the same privacy line as `ex_note` (migration 109).
+  - **No sequence number.** Their cases run to 702 and nobody has decided whether
+    those come across; a second unrelated numbering scheme would make that call
+    harder, not easier.
+
+  ⚠ **The system decides nothing and generates nothing**, and that survived a
+  direct challenge — see the warning-letter sample in _Answers received_. No
+  threshold, no detection, no letters produced, and `lib/compute/awards.ts` is
+  untouched even though that letter asserts an attendance shortfall forfeits
+  academic awards.
 
 - **T6 — rename the four house rows. Done; migration 111 applied 2026-08-06.**
   Rather than choose between "Orange House" and "Orange House – The Flame" —
@@ -265,12 +503,15 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
 - **Chandana** — **three things outstanding as of 2026-08-14, all files.** She
   was sent the same four asks as Christina and **answered all four on 2026-08-14**
   (see _Answers received_), promising samples she has not yet handed over:
-  1. **Incident report / warning letter samples** — "I will send some samples
-     here." One incident report already arrived from Christina 2026-08-13, so
-     what is actually wanted from her is **a warning letter or whatever records a
-     suspension** — the half no source has yet produced.
-  2. **The award certificate sample** — "I will send the samples." Christina owes
-     the same file; either satisfies it.
+  1. ~~**Incident report / warning letter samples**~~ — **a warning letter
+     arrived 2026-08-14** (supplied by Mr Ace; the `.docx` is authored in Word
+     and last edited by Chandana herself). See _Answers received_. ⚠ **It does
+     not close the outcome question.** It is a **first warning on ATTENDANCE**,
+     triggered by the register rather than by any incident — so #7 has two
+     independent entry points, and **whatever records a suspension is still
+     unproduced by any source.**
+  2. ~~**The award certificate sample**~~ — **arrived 2026-08-14 from Christina.**
+     Satisfied, though not with the file this item expected; see #8 above.
   3. **New, created by her reply: the "specific AEB approval form".** She named it
      unprompted. Ask for it the same way the incident report was asked for.
 
@@ -338,9 +579,13 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      remains.
   2. ~~**Who records an award.**~~ **Decided by Mr Ace 2026-08-12: FCA and up.**
      She answered only who views. Not hers any more.
-  3. **The samples she promised by email. One of two has arrived.** The
-     **incident report** came 2026-08-13 — see _Answers received_. The **awards /
-     certificate sample** has not.
+  3. ~~**The samples she promised by email.**~~ **BOTH ARRIVED — closed.** The
+     **incident report** came 2026-08-13; the **certificate** came 2026-08-14,
+     alongside a warning letter nobody had asked for. All three are in _Answers
+     received_. ⚠ **The certificate is not the file this item expected** — it is
+     a Principal's List, an academic honour computed from grades, not the
+     competition certificate #8 describes. That is a finding, not a delivery
+     failure, and it is written up under its own heading.
   4. **New, and created by that sample: where is the disciplinary _outcome_
      recorded?** The incident form has no field for one. She asked at 18:20 to
      see "whether the student received a warning letter or suspension", and the
@@ -348,7 +593,26 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      sanction. Either there is a second form, or it is not written down anywhere.
      ⚠ **Chandana was asked the same thing and did not answer it either**
      (2026-08-14) — she named who _handles_ a case by severity, not what sanction
-     is recorded. **Three sources, nobody has said where the outcome lives.**
+     is recorded. **Four sources now, nobody has said where the outcome lives** —
+     the warning letter that arrived 2026-08-14 did not close it either, since it
+     turned out to be about attendance rather than the outcome of an incident.
+
+     **Mr Ace is asking Chandana and Christina directly (2026-08-18).** What he
+     already knows, and what the question should assume: _"suspension is the last
+     anyways like any other rule there are strikes before suspension."_ So it
+     sits at the end of a ladder, and the SIS already shows the strikes leading
+     up to it in date order. **Ask what gets written down when one happens, and
+     on what form — not whether they suspend students.**
+
+     ⚠ **A "suspended" tag on the student was considered and argued against the
+     same day.** A tag carries no date and no end, so somebody has to remember to
+     clear it, and a student suspended in March still reads as suspended in
+     November. A suspension is an **event with a start and a length**, which is
+     exactly what the record list already models. If the answer makes it real,
+     the cheap shape is a **third `record_type`** beside `incident` and `letter`
+     — same list, same dates, the strikes sitting above it in order — not a flag
+     on `students`. **Do not build either until they answer.**
+
   5. **New: confirm the five-station pre-issuance chain is real.** It rests on one
      line of one message and contradicts her own 46:04. **Chandana's 2026-08-14
      reply is silent on it** — she described only the post-issuance AEB route — so
@@ -937,7 +1201,16 @@ cannot address subject config at all. She was told wrong in the session.
 >
 > Thank you.
 
-### To Wynne
+### To Wynne · SENT 2026-08-21
+
+✅ **Sent, and it carried one more item than the draft below.** Mr Ace asked for
+the **Transcript of Records template** as written, **plus the additional list of
+documents to track for student P-Files**. Awaiting both. The P-Files half is new
+— it did not come from this session and is not one of the eleven action items;
+it will change `DOCUMENT_SLOTS` if she names slots the system does not hold.
+
+**Only one send now remains outstanding: Koh** (a notification plus the
+exam-total correction — it asks her nothing).
 
 **Trimmed 2026-08-11, two items to one.** The approver question was hers (45:30)
 but Christina answered it in the same exchange at 46:04 — two for the normal
@@ -954,6 +1227,49 @@ answer, not Wynne's.
 > one with the student's details removed?
 >
 > Thank you.
+
+### To Chandana — the AEB approval form · SENT 2026-08-21
+
+**Sent by Mr Ace, in his own words.** Awaiting reply.
+
+> hi ms. chandana,
+>
+> you mentioned po that grade changes after the report book is issued will
+> require the AEB approval form and approval from all AEB members.
+>
+> may i request po a copy of the AEB approval form? blank po or a recent one
+> with the student's details removed, whichever is easier.
+>
+> also po, does the AEB membership change — like every school year — or is it
+> the same group?
+>
+> thank you po!
+
+**Why the form, and not a question about the order.** Chandana named it herself
+on 2026-08-14 — _"We have specific AEB approval form"_ — so it exists and is
+controlled. **Signature blocks numbered down the page mean sequential; a grid of
+five names means parallel.** It should also show whether each member's approval
+is recorded separately, and whether the form is versioned like the incident
+report (`C4.6.1-F02`). Asking for the artefact beats asking anyone to describe
+their own process — the same move that worked for the incident report, and it
+settles the one real cost of Mr Ace's 2026-08-21 sequential ruling without
+reopening it as a discussion.
+
+**Why the membership question was re-aimed before sending.** The draft asked
+whether members _"can be changed/updated in the system"_ — but that is **ours to
+decide, not hers**, and we would build the roster editable either way since staff
+come and go. The version sent asks whether the membership **actually changes**,
+which only she knows and which has a real consequence: if people rotate on and
+off, an approval from a past year must keep **who was on the board then**, not
+re-render with today's roster (the historical-vs-current-truth rule, KD #147). If
+it is a fixed group it is just a list. Same trim the other blocks in this file
+have had — cut the storage mechanics that are ours, keep the fact that is theirs.
+
+"Blank or with the student's details removed" is deliberate: it is what unblocked
+the incident report sample, removing the privacy hesitation before she has it.
+
+**Not asked, and why not:** who the AEB members are — already resolved
+2026-08-12 (Chandana + Christina + Norma + Gary + Nina). Do not re-ask.
 
 ### Not asked, and why
 
@@ -1366,7 +1682,12 @@ Chandana, she neither confirmed nor denied. Instead:
 - **After the report book is issued:** the **Academic and Examination Board
   (AEB)** — so AEB is a body, which is why "who is AEB" was the wrong question.
   Five members: **Ms Chandana, Ms Tin, Ms Norma (`norma.hfhse@gmail.com`), Mr
-  Gary, Ms Nina.**
+  Gary, Ms Nina.** ⚠ **"Ms Tin" is Christina** — Tin is her nickname (Mr Ace,
+  2026-08-18). Kept verbatim above because it is her wording, but read it as
+  **Chandana + Christina + Norma + Gary + Nina**: the board includes the
+  Principal, she is describing one she sits on, and only three of the five are
+  people this file had never otherwise placed. It also removes the apparent
+  oddity of her naming a five-member board she was absent from.
 
 **This contradicts what she said in the room** (46:04, "it would require two
 approvers, Ms. Chandana and I only") and it is not a widening of the current
@@ -1615,6 +1936,327 @@ longer a one-off.** `SIS-Admin-Training-Session-1-Action-Items.md` §C carries a
 Jill, "Mr. Gary final approver", explicitly **not** AEB. Two different bodies,
 two different orders, one missing mechanism. That changes the calculus: a general
 ordered-approval capability now has two callers, not one.
+
+### The attendance warning letter · 2026-08-14
+
+Supplied by Mr Ace, alongside the certificate below. **Nobody asked for this
+one** — the ask was a warning letter or whatever records a suspension, and this
+is the former, from an angle nobody predicted.
+
+`First _Warning letter_Attendance_shortage_template 1.docx`, repo root.
+Stamped **`HFSE_2026_DIS_T2`** on each page — school / AY / DIS / term. ⚠ Note
+that is a **category** code, not a per-letter sequence number like the incident
+report's `Case No. 702`; nothing on this document uniquely identifies it.
+
+**It is a Word template somebody fills in by hand.** The file's own metadata:
+authored by "NASC", created 2026-03-09, last edited by **Chandana Dileep**
+2026-05-18, printed 2026-07-30. **There is no system behind it**, which is the
+single most useful fact on the page — see the link-vs-upload note under #7.
+
+Title: _Student Disciplinary Notice – First Letter of Warning on Attendance_.
+Fields: Date · Student Name · Class · Subject (meaning the letter's own type).
+Addressed to "Dear Parent/Guardian of ⟨Name⟩". Signed **Chandana Dileep,
+Assistant Principal**; "Noted by" **Christina Bacolod-Labrador, Principal**.
+
+**Five findings.**
+
+1. ⚠ **This is a disciplinary notice whose trigger is ATTENDANCE, not
+   behaviour.** So **#7 has two independent entry points** — incident-driven
+   (case 702, filed by whoever was at the venue) and register-driven (this,
+   issued by the Assistant Principal). The record had treated #7 as one thing.
+   And because this letter is not the outcome of any incident, **Christina's
+   18:20 "warning letter or suspension" is still not answered**: she was asking
+   what follows an incident.
+2. ⚠ **It states a rule the SIS does not have and must not acquire.** Verbatim:
+   _"As the minimum attendance requirement has not been met, the student is
+   **not eligible for academic awards**, in accordance with the Student
+   Handbook."_ `AwardEligibility` today is `{ enrolled, hasCompleteData }` —
+   no attendance term at all, so the Masterfile can hand Gold to a student the
+   Handbook says has forfeited it. **Mr Ace ruled on 2026-08-17 that this stays
+   a human judgement:** _"handbooks change let them do that themselves thats
+   there role and respobsibility."_ `lib/compute/awards.ts` is untouched.
+3. ⚠ **The letter's own arithmetic does not close.** _"a total of four (4) days
+   of absence… resulting in an attendance rate below 80%"_ — but 4 absences in
+   a 20-day month is **exactly** 80%, so "below" only holds for months with
+   fewer than 20 school days. The table has exactly four rows baked in, which
+   suggests 4 is the trigger and 80% the rationale. **Which one fires is
+   undecided, and we did not ask** — Mr Ace ruled out automation outright
+   (_"of course no automation you dummy thats too much"_), so the SIS never
+   needs to know.
+4. ⚠ **None of our three attendance rates is the school's rate.** All three
+   count `EX` as attending (the rollup, `sheet-summary.ts`, `getMonthlyBreakdown`),
+   and `sheet-summary.ts:196` explicitly forbids aligning them. A student with
+   four excused days sits at 100% by the register formula. There is also no
+   month-window rollup and no 80% threshold anywhere — the only rate constant
+   is `AT_RISK_ATTENDANCE_THRESHOLD_PCT = 90`, whose own comment calls it "a
+   DISPLAY HEURISTIC, not an HFSE-defined policy".
+5. **It names a ladder with two more documents on it**, neither of which we have
+   seen: a **second warning letter**, and a **Notice of Academic Promotion
+   Deferment Due to Attendance Shortfall**. It cites **Student Handbook pp.
+   16–18** for the policy behind all of them.
+
+**It also carries a tear-off PARENT'S ACKNOWLEDGEMENT RECEIPT** — three
+tick-boxes, parent's name, signature, date, headed _"[Please return this slip by
+May 27, 2026]"_, two days after the letter. That is what migration 122 records:
+a letter is not finished when it is sent. And it settles the delivery question —
+**the letter goes home on paper**, so nothing is being sent to a parent as a
+link.
+
+### Christina — the certificate sample · 2026-08-14
+
+`Sample Cert.png`, repo root. The second of the two files promised on
+2026-08-12, and ⚠ **it is not the certificate #8 describes.**
+
+**PRINCIPAL'S LIST** — _"is proudly awarded to ⟨SURNAME, First M.⟩… for
+achieving a **GPA of 97** during **Term 1 & Term 2**, Academic Year 2026."_
+Given at the school address, matching the letterhead config exactly. Three
+signatories: **Christina Bacolod-Labrador** (Principal | Head of Academics),
+**Gary G. Cacananta** (Co-Founder & Operations Director), **Ninalyn
+Sulit-Cacananta** (Founder & CEO). Carries the **student's photograph**.
+
+**Four findings.**
+
+1. ⚠ **This is an academic honour computed from grades, not a competition
+   placing.** #8's whole shape came from Christina's 19:08 words — certificates
+   of participation, competitions, cite them at the moving-up ceremony — and
+   from Chandana's house-points sheet (`Class | Award | Name | Game Title |
+House Colour | Points`). A Principal's List is a **third thing**, alongside
+   those and `lib/compute/awards.ts`'s Gold/Silver/Bronze tiers.
+2. ⚠ **"Term 1 & Term 2" has no implementation.** `computeGeneralAverage` is
+   full-year only (weights .2/.2/.2/.4) and returns `null` until T4 is in; the
+   per-term mean in `academic-summary-views.ts` is deliberately tier-less
+   because "a single term isn't an award period". A half-year honour needs a new
+   computation and a decision on how two terms combine.
+3. ⚠ **"GPA" appears nowhere in the codebase.** The equivalent is General
+   Average, and it is 1 dp, not the integer on this certificate.
+4. **It strains the standing note that HFSE uses no honour tiers.** That note
+   was about the report card and about Honors / High Honors / Highest Honors,
+   and a Principal's List is neither — but _"Bronze/Silver/Gold is the full
+   extent"_ is now too broad and should not be quoted as settled.
+
+⚠ **Not scope until Christina says so.** This arrived answering "send me a
+sample certificate", not as a request, and **Chandana's 2026-08-14 line still
+stands**: certificates are prepared by Mr Lloyd or Mr Kier, and _nobody asked
+for certificate generation_.
+
+### Christina — how her child's school files an absence · 2026-08-17
+
+Not a reply to anything we sent. Christina showed Mr Ace her own child's school
+SIS, and **he took it as the design for #6** — _"this is the best way since
+parents are the ones who initially have the doc."_
+
+⚠ **This block was first written up as "Ms Tin", and as a SECOND source
+corroborating Christina. Both were wrong.** Mr Ace, 2026-08-18: _"mis tin is
+christina bro what are you on tin is her nickname."_ So this is **one person
+saying the same thing twice** — unprompted on 2026-08-12 (_"in my sons' schools,
+parents file a leave of absence online and attach the medical certificate"_),
+then taking the trouble to show the screen. Her sons being at another school is
+the same fact from both angles, and it should have been the tell.
+
+**That is not weaker evidence.** She raised it herself and then went and
+demonstrated it, which is the most invested a request gets. But it must not be
+written up as corroboration, and this file has now made the
+one-person-two-names mistake once — **check nicknames against the roster before
+counting sources.**
+
+**It also resolves the AEB roster.** The five members were recorded as "Ms
+Chandana, Ms Tin, Ms Norma, Mr Gary, Ms Nina" — so the "Ms Tin" there is
+Christina, **the board includes the Principal**, and she was describing a body
+she sits on. Only three of the five remain people this file has never placed.
+
+**This supersedes the FCA-uploads spec of 2026-08-12** and un-parks her own
+version of the same idea, which this file had set aside as "a new feature, not
+an answer".
+
+Parent portal → a **Services** area → one option, **Student Absence and Travel
+Declaration**:
+
+- **Absence.** Select student(s) — **multi-select, for siblings** → start and
+  end date → radio, **with medical / without medical** → if with medical, an
+  upload control **or a link field** (Singapore's `mc.gov.sg`, so the proof can
+  be a URL rather than a file) → an optional note to the teacher → submit.
+- **Travel.** Select student(s) → duration yes/no → if yes, from and to dates →
+  country travelling to → optional city → submit.
+
+**What it is for — settled with Mr Ace the same day.** Not a mailbox for MCs.
+Today the reason for an absence exists as four disconnected things: a parent's
+WhatsApp message, a paper MC in Hanafi's drawer, the teacher's guess between
+`A` and `EX`, and the mark itself. This joins them — **the teacher stops
+guessing**, because the declaration lands before they mark, and the proof sits
+on the day. The payoff is the warning letter above: it lists absence dates and
+treats them as unexcused, so whoever writes it must know which of those days
+carried an MC, and today that means asking Hanafi. **The register mark stays the
+record; the declaration is the evidence**, and `ex_note` (KD #177) keeps its
+place for when a parent files nothing.
+
+⚠ **The travel declaration IS the LOA request the school already has.** The
+warning letter states the rule in the school's own words: one vacation leave per
+term, with a Leave of Absence request filed **at least five working days in
+advance**. We already model the quota (`default_vl_allowance_per_term`, KD #76)
+and the mark (`ex_reason='vacation'`, migration 070). So this is a form for an
+existing policy against existing columns — but **the five-day rule stays theirs
+to enforce, not ours to encode.**
+
+⚠ **Scale check before anyone estimates this.** A parent-facing form, an
+approval queue and a write into the attendance register is an order of magnitude
+past "an FCA upload button", against a portal that can read only two tables
+today — `school_config` and `report_card_publications` (KD #165).
+
+#### Her reply on the approvers · 2026-08-19
+
+Asked:
+
+> "regarding po sa feature for submitting medical certificates (MC) and travel
+> declaration for student absences, may i confirm po if meron po syang approval
+> process? if yes po, sino po yung mga designated approver/s for these requests?"
+
+Answered:
+
+> "Yes po merong approval process.
+>
+> Ito po ang list:
+>
+> Form Class Adviser
+> Officer in Charge (Primary or Secondary)"
+
+**Two approvers, and the first of them is the FCA.**
+
+1. ✅ **There IS an approval step** — so the parent's declaration is a request,
+   not a fact, and nothing becomes excused because a parent said so.
+2. ✅ **The FCA is the first approver, and that largely defuses the design
+   question.** The worry was a system writing attendance on a parent's say-so;
+   but the FCA is also the person who marks the register, so they are in the
+   loop either way. What remains is only whether their approval **writes** the
+   mark or whether they mark it afterwards — a convenience question, not a
+   safety one.
+3. ⚠ **The blocking question was NOT answered, because it was not asked.** The
+   message asked _whether_ there is an approval process and _who_ approves. It
+   did not ask what approval **does** to the register. Still open; ask it
+   plainly next time rather than inferring it from the approver list.
+4. ⚠ **"Officer in Charge (Primary or Secondary)" exists nowhere in this
+   system**, and it is not new — **OIC is the middle station of the
+   pre-issuance grade-change chain** she described on 2026-08-12 (subject
+   monitor → subject head → **OIC** → Assistant Principal → Principal). So the
+   same unmodelled position now gates two unrelated flows, and it is
+   **school-half-scoped**, which none of our roles are.
+5. ~~⚠ **The ORDER is not stated.**~~ **Answered by Mr Ace, 2026-08-21 —
+   sequential.** She gave a list, not the arrow chain she used for grade
+   changes, so the order was open. It is **FCA then OIC**, in that order.
+
+**This is the THIRD flow needing ordered approval** — grade changes, mid-year
+section moves (admin session §C), and now absence declarations. Three callers is
+past the point where each gets its own bespoke logic: see the #10/#11 note on
+configurable approval steps in `docs/sprints/development-plan.md`.
+
+#### Ordering — decided by Mr Ace, 2026-08-21
+
+> "approvers are always sequential its like teams approval every approval here
+> is sequential i think besides the grade change request before report card
+> publishing" · "i mean except"
+
+**Every approval flow is sequential, with exactly one exception: the
+pre-publication grade change, which keeps today's behaviour — a pool of
+approvers, first to act decides, no order.** Everything else is an ordered list
+of steps: the AEB, absence declarations, mid-year section moves.
+
+Three consequences, and the first is the reason this is worth writing down:
+
+1. ✅ **Unanimity stops being a second mechanism.** The #10/#11 note said the
+   system needs **both** shapes — "one named person in sequence, or a group
+   where everyone signs". If every step is sequential then a five-member board
+   where all five must sign is simply **five steps in a row**. One concept —
+   an ordered list of steps — not two. This removes the harder half of that
+   design before it is built.
+2. ⚠ **Correction to an earlier note.** CLAUDE.md recorded the AEB as
+   "unanimous, order irrelevant" and attributed it to Chandana. **She never
+   said that.** Her words (2026-08-14) are _"all the AEB members will review
+   the request and only after the full approval, the changes can be made"_ —
+   which states **unanimity and says nothing about order**. "Order irrelevant"
+   was our inference laid on top of her sentence. Sequential-and-unanimous is
+   fully compatible with what she actually told us.
+3. ⚠ **The one real cost is operational, and the artefact settles it.** A queue
+   stalls where a pool does not — if the third member is away, the fourth and
+   fifth cannot act. Do **not** open a discussion about it: ask for the
+   **"specific AEB approval form"** she named. Signature blocks numbered in
+   sequence versus a grid of five names answers it outright, without asking
+   anyone to describe their own process. Same anchor that worked for the
+   incident report.
+
+⚠ **"Except" means Christina's five-station pre-issuance chain is NOT being
+built** (subject monitor → subject head → OIC → Assistant Principal →
+Principal). That is the cautious call and it is the right one: that chain rests
+on a single message whose attribution this file marks unverified, and it
+contradicts what the same person said in the room at 46:04 ("two approvers,
+Ms. Chandana and I only"). The live pre-publication route stays as it is until
+she confirms the chain herself.
+
+---
+
+### Christina — a teachers' dashboard, and SOW reopened · 2026-08-21
+
+Unprompted, alongside the approvers answer:
+
+> "Oh may question pala ako. Will there be a teacher's dashboard for lesson
+> planning, scheme of work and teaching and delivery matters? This SIS is really
+> helpful for all of us. Yung teachers' dashboard will also contain the relief
+> monitoring when teachers are absent
+>
+> And if they are absent, we can easily check the lesson topics and lesson plan"
+
+⚠ **She is reopening SOW, and this is the third time it has been asked for.**
+Before replying, know what happened to the first two:
+
+- **Built twice, removed both times** — migrations 058–066, nine of them. First
+  coordinator-authored (KD #108), then rebuilt teacher-owned when field
+  investigation found subject teachers actually own it (KD #110), then deleted
+  entirely on 2026-05-28.
+- **The removal commit says why, in its own words:** _"The in-system SOW had
+  zero real users — HFSE teachers maintain their SOW in external documents;
+  coordinators check those directly."_
+
+**But her reason is new, and it is the first good one.** Both previous builds
+were about **authoring** the SOW and **spot-checking** it. Neither ever had a
+**reader**. Hers does: a substitute who did not write the plan, opening a class
+they do not normally teach, needing to know today's topic. That is a different
+job, and the old SOW would have served it badly.
+
+⚠ **The adoption trap is the same one that produced zero users.** The work falls
+on the subject teacher — keep your SOW in the system, keep it current. The
+benefit falls on **someone else**, the substitute, and only on the days somebody
+is sick. When the person paying the cost is not the person getting the value the
+data goes stale — and a stale lesson plan is **worse than none**, because the
+relief teaches the wrong thing and trusts it.
+
+**The cheapest thing that delivers what she described** (our proposal, not her
+ask): the thing that died was the **authoring surface**. The documents already
+exist and teachers already maintain them. So a **link per class/subject/term to
+where the SOW lives** gives the substitute what she asked for, with no
+authoring, no sync and no third teardown. Same call made for the discipline
+document on 2026-08-18 — the ask was the record, not the file. If a link is not
+enough we will learn precisely **why**, which we have never known before.
+
+**Before treating any of this as greenfield: much of it already exists.** The
+Classroom module (KD #160) is a teacher's per-class workspace — Overview,
+Grades, Students, Attendance, Write-ups, Discipline, Timeline, Settings. What it
+lacks is exactly **lesson topics and plans**. Show her that first and ask "is
+this the dashboard, plus lesson planning?" rather than scoping a new module.
+
+**It also confirms the relief page independently.** She asked for relief
+monitoring without being prompted — that is the academic head corroborating the
+2026-08-20 plan (`~/.claude/plans/relief-cover-dates.md`). Two riders:
+
+1. **It gives that page a second job.** The plan frames it administratively —
+   who is covering, is anything about to lapse. Hers is operational: _"we can
+   easily check the lesson topics and lesson plan."_ That is the substitute's
+   own question, not an administrator's.
+2. ⚠ **Different home, different gate.** The plan puts the page in SIS Admin
+   behind `staff.manage_relief`. She puts it on a **teachers'** dashboard. A
+   teacher seeing every cover in the school is not the same feature as a teacher
+   seeing the classes they are covering. Unresolved.
+
+⚠ **Scope note.** "Lesson planning, scheme of work and teaching and delivery
+matters" is a **module**, not a feature. Nothing here is scoped, costed or
+approved. Do not re-derive a SOW model from this message.
 
 ---
 

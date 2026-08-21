@@ -14,7 +14,47 @@ export type PriorTermGrade = {
   ww_ps: number | null;
   pt_ps: number | null;
   qa_ps: number | null;
+  /**
+   * What the percentage is a percentage OF — the marks scored and the marks
+   * available, summed over the slots the student actually took.
+   *
+   * Mr Ace, 2026-08-21, looking at a column reading "43.3": "add more details
+   * to it like max scores the actual score then percentage, currently its like
+   * what the hell im looking at here." A bare percentage is unreadable next to
+   * a sheet full of raw marks, and it is the percentage — not the marks — that
+   * makes terms comparable when the paper's total changes between them. So the
+   * screen carries both.
+   *
+   * Blank ≠ Zero (Hard Rule #3): a slot the student did not take is excluded
+   * from BOTH sums, exactly as `componentPercentage` excludes it.
+   */
+  ww_scored?: number | null;
+  ww_max?: number | null;
+  pt_scored?: number | null;
+  pt_max?: number | null;
+  qa_scored?: number | null;
+  qa_max?: number | null;
 };
+
+/** Sum of the taken slots and of their maxes. Mirrors `componentPercentage`. */
+export function sumTaken(
+  scores: (number | null)[] | null,
+  totals: (number | null)[] | null
+): { scored: number | null; max: number | null } {
+  if (!scores || !totals) return { scored: null, max: null };
+  let scored = 0;
+  let max = 0;
+  let any = false;
+  for (let i = 0; i < scores.length; i++) {
+    const s = scores[i];
+    const t = totals[i];
+    if (s == null || t == null) continue;
+    scored += s;
+    max += t;
+    any = true;
+  }
+  return any ? { scored, max } : { scored: null, max: null };
+}
 
 type TermLite = { term_number: number; label: string };
 
@@ -45,8 +85,20 @@ export function buildPriorGradeMap(args: {
     ww_ps: number | null;
     pt_ps: number | null;
     qa_ps: number | null;
+    ww_scores?: (number | null)[] | null;
+    pt_scores?: (number | null)[] | null;
+    qa_score?: number | null;
     grading_sheet_id: string;
   }[];
+  /** Max scores per sheet, so a percentage can be shown as the fraction it is. */
+  totalsBySheetId?: Map<
+    string,
+    {
+      ww: (number | null)[] | null;
+      pt: (number | null)[] | null;
+      qa: number | null;
+    }
+  >;
   termBySheetId: Map<string, TermLite>;
 }): Record<string, PriorTermGrade[]> {
   const byStudent = new Map<string, Map<number, PriorTermGrade>>();
@@ -65,6 +117,13 @@ export function buildPriorGradeMap(args: {
       !existing ||
       (existing.quarterly_grade == null && e.quarterly_grade != null)
     ) {
+      const totals = args.totalsBySheetId?.get(e.grading_sheet_id);
+      const ww = sumTaken(e.ww_scores ?? null, totals?.ww ?? null);
+      const pt = sumTaken(e.pt_scores ?? null, totals?.pt ?? null);
+      // The exam is one mark, not a row of slots, so it needs no summing —
+      // but it obeys the same Blank ≠ Zero rule.
+      const qaScored = e.qa_score ?? null;
+      const qaMax = totals?.qa ?? null;
       terms.set(term.term_number, {
         term_number: term.term_number,
         term_label: term.label,
@@ -72,6 +131,12 @@ export function buildPriorGradeMap(args: {
         ww_ps: e.ww_ps,
         pt_ps: e.pt_ps,
         qa_ps: e.qa_ps,
+        ww_scored: ww.scored,
+        ww_max: ww.max,
+        pt_scored: pt.scored,
+        pt_max: pt.max,
+        qa_scored: qaScored,
+        qa_max: qaScored == null ? null : qaMax,
       });
     }
   }
@@ -167,13 +232,19 @@ export async function loadPriorTermGrades(
   //    sheets.
   const { data: sheetsRaw } = await service
     .from('grading_sheets')
-    .select('id, term_id')
+    .select('id, term_id, ww_totals, pt_totals, qa_total')
     .eq('subject_id', subjectId)
     .in(
       'term_id',
       priorTerms.map((t) => t.id)
     );
-  const sheets = (sheetsRaw ?? []) as { id: string; term_id: string }[];
+  const sheets = (sheetsRaw ?? []) as {
+    id: string;
+    term_id: string;
+    ww_totals: (number | null)[] | null;
+    pt_totals: (number | null)[] | null;
+    qa_total: number | null;
+  }[];
   if (sheets.length === 0) return {};
 
   const termBySheetId = new Map<string, TermLite>();
@@ -187,7 +258,7 @@ export async function loadPriorTermGrades(
   const { data: entriesRaw } = await service
     .from('grade_entries')
     .select(
-      'section_student_id, quarterly_grade, ww_ps, pt_ps, qa_ps, grading_sheet_id'
+      'section_student_id, quarterly_grade, ww_ps, pt_ps, qa_ps, ww_scores, pt_scores, qa_score, grading_sheet_id'
     )
     .in(
       'grading_sheet_id',
@@ -207,8 +278,17 @@ export async function loadPriorTermGrades(
       ww_ps: number | null;
       pt_ps: number | null;
       qa_ps: number | null;
+      ww_scores: (number | null)[] | null;
+      pt_scores: (number | null)[] | null;
+      qa_score: number | null;
       grading_sheet_id: string;
     }[],
+    totalsBySheetId: new Map(
+      sheets.map((sh) => [
+        sh.id,
+        { ww: sh.ww_totals, pt: sh.pt_totals, qa: sh.qa_total },
+      ])
+    ),
     termBySheetId,
   });
 }

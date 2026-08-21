@@ -28,6 +28,15 @@ export type TrendChartProps = {
   height?: number;
   yFormat?: YFormat;
   alignComparison?: boolean;
+  /**
+   * `compact` strips the y-axis, grid and tooltip for use as a sparkline.
+   *
+   * A second charting component would have been the easy way to get a 40px
+   * trend, and it is how two surfaces end up drawing the same data two ways.
+   * One component, one shape, two densities — a teacher who has read the
+   * attendance chart has read these.
+   */
+  variant?: 'full' | 'compact';
 };
 
 function TrendChartImpl({
@@ -37,7 +46,9 @@ function TrendChartImpl({
   height = 220,
   yFormat,
   alignComparison = true,
+  variant = 'full',
 }: TrendChartProps) {
+  const compact = variant === 'compact';
   const yFormatter = formatterFor(yFormat);
 
   const merged = current.map((pt, i) => ({
@@ -55,7 +66,11 @@ function TrendChartImpl({
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart
         data={merged}
-        margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
+        margin={
+          compact
+            ? { top: 4, right: 2, left: 2, bottom: 0 }
+            : { top: 8, right: 4, left: 0, bottom: 0 }
+        }
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -71,27 +86,32 @@ function TrendChartImpl({
             />
           </linearGradient>
         </defs>
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
+        {!compact && (
+          <CartesianGrid
+            strokeDasharray="2 4"
+            stroke="var(--color-border)"
+            vertical={false}
+            opacity={0.6}
+          />
+        )}
         <XAxis
           dataKey="x"
+          hide={compact}
           tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
           tickLine={false}
           axisLine={false}
           interval="preserveStartEnd"
           minTickGap={32}
         />
-        <YAxis
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={yFormatter}
-          width={36}
-        />
+        {!compact && (
+          <YAxis
+            tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={yFormatter}
+            width={36}
+          />
+        )}
         <Tooltip
           cursor={{
             stroke: 'var(--color-muted-foreground)',

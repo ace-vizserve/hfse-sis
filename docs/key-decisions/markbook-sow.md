@@ -2,6 +2,24 @@
 
 ## Markbook — SOW (fully superseded / historical audit trail only)
 
+> ⚠ **REOPENED AS AN ASK, 2026-08-21 — not a decision, nothing built, no KD.**
+> Christina asked unprompted for a teachers' dashboard covering "lesson
+> planning, scheme of work and teaching and delivery matters", explicitly so a
+> **substitute can see the lesson topics when a teacher is absent**. Read this
+> file before responding to it: **SOW was built twice and removed both times**
+> (KD #108 coordinator-authored, KD #110 teacher-owned, migrations 058–066), and
+> the removal commit gives the reason — _"zero real users — HFSE teachers
+> maintain their SOW in external documents; coordinators check those directly."_
+> **What is new is that her version has a READER** — neither prior build did;
+> both were about authoring and spot-checking. ⚠ **The adoption trap is
+> unchanged:** the work falls on the subject teacher, the benefit falls on the
+> substitute, and only on days somebody is sick — a stale lesson plan is worse
+> than none. **Proposed alternative (ours, not her ask): a link per
+> class/subject/term to where the SOW already lives**, no authoring surface.
+> Full context in `docs/training/sessions/SIS-Academics-Training-Session-1-Action-Items.md`,
+> _Answers received · 2026-08-21_. **Do not re-derive a SOW model from her
+> message.**
+
 ### KD #108
 
 SOW Definition/Version/Instance model (migrations 058–060) — **admin-authoring half superseded by KD #110**; infrastructure half still live. **Admin-authoring infrastructure fully removed** (migrations 062–066): `sow_subject_scopes` dropped (062); `sections.curriculum_track` + `template_sections.curriculum_track` dropped (063); `sow_class_instances.published_version_id` dropped (064); `sow_published_versions` + `get_latest_sow_published_version` RPC dropped (065); `sow_class_instances`, remaining SOW provenance columns on `evaluation_checklist_items` + `grading_sheets` dropped (066). Nothing remains of the admin-authoring model in the schema. **Original KD reasoning preserved for history**: KD #108 Sprint 40+41 implemented a 3-table admin-authoring model (Chandana edits master template → publishes immutable version → class instances bind to version). This was replaced when field investigation showed subject teachers — not coordinators — actually own the SOW (see KD #110).

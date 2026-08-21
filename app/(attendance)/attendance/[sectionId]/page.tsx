@@ -35,6 +35,7 @@ import {
 import {
   getCompassionateUsageForSection,
   getDailyForSection,
+  getRollupForSection,
   getSectionAttendanceSummary,
   getVacationLeaveUsageForSection,
 } from '@/lib/attendance/queries';
@@ -236,6 +237,7 @@ export default async function SectionAttendancePage({
     vlQuotaByEnrolmentId,
     summary,
     schoolConfig,
+    rollups,
   ] = await Promise.all([
     getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
     getCalendarEventsForTerm(selectedTermId, audienceForEvents),
@@ -248,7 +250,17 @@ export default async function SectionAttendancePage({
     ),
     getSectionAttendanceSummary(sectionId, selectedTermId),
     getSchoolConfig(),
+    // Per-student rates for the lookup panel's list. Straight off
+    // `attendance_records.attendance_pct` — the same column the per-student
+    // summary API reads — so the figure on a row and the figure inside that
+    // student's record can never disagree.
+    getRollupForSection(sectionId, selectedTermId),
   ]);
+
+  const attendancePctByEnrolment: Record<string, number | null> = {};
+  for (const r of rollups) {
+    attendancePctByEnrolment[r.sectionStudentId] = r.attendancePct;
+  }
 
   const enrolments: WideGridEnrolment[] = enrolmentList.map((e) => {
     const s = Array.isArray(e.student) ? e.student[0] : e.student;
@@ -331,6 +343,7 @@ export default async function SectionAttendancePage({
           </Tabs>
           <StudentLookupSheet
             enrolments={enrolments}
+            attendancePctByEnrolment={attendancePctByEnrolment}
             termLabel={selectedTerm?.label ?? ''}
             termId={selectedTermId}
             sectionId={sectionId}

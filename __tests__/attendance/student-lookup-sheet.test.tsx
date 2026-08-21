@@ -63,12 +63,17 @@ const enrolments: WideGridEnrolment[] = [
   },
 ];
 
+// Luke is below the 90% line; Ellie is too, but she has withdrawn — which is
+// why she must never appear under "Only flagged".
+const pcts: Record<string, number | null> = { e1: 85, e2: 62 };
+
 describe('StudentLookupSheet search list', () => {
   it('opens to a searchable flat list of students', async () => {
     const user = userEvent.setup();
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -88,6 +93,7 @@ describe('StudentLookupSheet search list', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -114,6 +120,7 @@ describe('StudentLookupSheet search list', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -130,6 +137,7 @@ describe('StudentLookupSheet search list', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -197,6 +205,7 @@ describe('StudentLookupSheet detail view', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -223,6 +232,7 @@ describe('StudentLookupSheet detail view', () => {
     renderWithClient(
       <StudentLookupSheet
         enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
         sectionId="sec-1"
@@ -235,5 +245,73 @@ describe('StudentLookupSheet detail view', () => {
       await screen.findByText('No attendance recorded yet this term.')
     ).toBeInTheDocument();
     expect(screen.queryByText('This term by month')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The list used to carry a name and an index number and nothing else, so the
+ * only way to learn anything about a class was to open every student in turn.
+ * Mr Ace, 2026-08-21: "rather than then checking each student."
+ */
+describe('the list reports without being opened', () => {
+  function renderList() {
+    return renderWithClient(
+      <StudentLookupSheet
+        enrolments={enrolments}
+        attendancePctByEnrolment={pcts}
+        termLabel="Term 3"
+        termId="t3"
+        sectionId="sec-1"
+      />
+    );
+  }
+
+  async function open() {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /look up student/i }));
+    return user;
+  }
+
+  it('puts this term’s rate on every row', async () => {
+    renderList();
+    await open();
+    expect(screen.getByText('85%')).toBeInTheDocument();
+    expect(screen.getByText('62%')).toBeInTheDocument();
+  });
+
+  it('shows a dash rather than a zero when there is no rate yet', async () => {
+    renderWithClient(
+      <StudentLookupSheet
+        enrolments={enrolments}
+        attendancePctByEnrolment={{}}
+        termLabel="Term 3"
+        termId="t3"
+        sectionId="sec-1"
+      />
+    );
+    await open();
+    // A student with no register is not a student with 0% attendance.
+    expect(screen.queryByText('0%')).toBeNull();
+  });
+
+  it('narrows to the students below the line, and leaves withdrawn out', async () => {
+    renderList();
+    const user = await open();
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: /only flagged/i }));
+
+    expect(screen.getByText(/BALDONADO/)).toBeInTheDocument();
+    // Ellie is at 62% but has withdrawn — a leaver is not a phone call.
+    expect(screen.queryByText(/RIBLORA/)).toBeNull();
+  });
+
+  it('names the term on the filter, so an empty list is not read as "never"', async () => {
+    renderList();
+    const user = await open();
+    await user.click(screen.getByRole('combobox'));
+    expect(
+      screen.getByRole('option', { name: /only flagged/i })
+    ).toHaveTextContent('Term 3');
   });
 });

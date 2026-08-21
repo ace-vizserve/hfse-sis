@@ -35,7 +35,12 @@ const STUDENTS = [
 ];
 
 function input(over: Partial<AtRiskInput> = {}): AtRiskInput {
-  return { students: STUDENTS, observations: [], ...over };
+  return {
+    students: STUDENTS,
+    observations: [],
+    currentTermLabel: 'Term 3',
+    ...over,
+  };
 }
 
 describe('who gets flagged', () => {
@@ -62,7 +67,7 @@ describe('who gets flagged', () => {
         ],
       })
     );
-    expect(out).toEqual([]);
+    expect(out.every((r) => r.drops.length === 0)).toBe(true);
   });
 
   it('flags a term-grade fall past the threshold', () => {
@@ -88,7 +93,8 @@ describe('who gets flagged', () => {
         ],
       })
     );
-    expect(out).toHaveLength(1);
+    // The roster is the list now, so count the flagged rather than the rows.
+    expect(out.filter((r) => r.drops.length > 0)).toHaveLength(1);
     expect(out[0].studentName).toBe('Alvarez, Ana');
     expect(out[0].drops).toEqual([
       {
@@ -128,7 +134,7 @@ describe('who gets flagged', () => {
         ],
       })
     );
-    expect(out).toEqual([]);
+    expect(out.every((r) => r.drops.length === 0)).toBe(true);
   });
 
   it('never flags an improvement', () => {
@@ -154,7 +160,7 @@ describe('who gets flagged', () => {
         ],
       })
     );
-    expect(out).toEqual([]);
+    expect(out.every((r) => r.drops.length === 0)).toBe(true);
   });
 });
 
@@ -276,7 +282,8 @@ describe('ranking and grouping', () => {
         ],
       })
     );
-    expect(out).toHaveLength(1);
+    // The roster is the list now, so count the flagged rather than the rows.
+    expect(out.filter((r) => r.drops.length > 0)).toHaveLength(1);
     expect(out[0].drops.map((d) => d.subject)).toEqual([
       'Mathematics',
       'Science',
@@ -304,7 +311,7 @@ describe('missing data is not a signal', () => {
         ],
       })
     );
-    expect(out).toEqual([]);
+    expect(out.every((r) => r.drops.length === 0)).toBe(true);
   });
 
   it('says nothing when this term is not marked yet', () => {
@@ -330,7 +337,7 @@ describe('missing data is not a signal', () => {
         ],
       })
     );
-    expect(out).toEqual([]);
+    expect(out.every((r) => r.drops.length === 0)).toBe(true);
   });
 
   it('compares against the most recent term that HAS a mark', () => {
@@ -370,8 +377,13 @@ describe('missing data is not a signal', () => {
     expect(out[0].drops[0].diff).toBe(-20);
   });
 
-  it('omits a student who is on the roster but has no marks at all', () => {
-    expect(rankAtRisk(input())).toEqual([]);
+  it('still lists a student who has no marks at all, with nothing flagged', () => {
+    // The roster IS the list now. A student with no marks is not evidence of a
+    // problem, but hiding them means an adviser cannot look them up either.
+    const out = rankAtRisk(input());
+    expect(out).toHaveLength(2);
+    expect(out.map((r) => r.drops)).toEqual([[], []]);
+    expect(out.map((r) => r.worstDiff)).toEqual([null, null]);
   });
 });
 
@@ -472,6 +484,7 @@ describe('a letter-graded subject reads as a band, not as points', () => {
         ],
       })
     );
-    expect(out).toHaveLength(1);
+    // The roster is the list now, so count the flagged rather than the rows.
+    expect(out.filter((r) => r.drops.length > 0)).toHaveLength(1);
   });
 });

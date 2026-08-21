@@ -34,11 +34,33 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  AT_RISK_ATTENDANCE_THRESHOLD_PCT,
+  isAttendanceAtRisk,
+} from '@/lib/attendance/risk';
+import { cn } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Props = {
   enrolments: WideGridEnrolment[];
+  /**
+   * This term's rate per enrolment, keyed by `enrolmentId`.
+   *
+   * The list used to carry a name and an index number and nothing else, so the
+   * only way to learn anything was to open every student one at a time — Mr Ace,
+   * 2026-08-21: "rather than then checking each student". These come from
+   * `getRollupForSection`, the same `attendance_records.attendance_pct` the
+   * per-student summary reads, so a row and the record behind it always agree.
+   */
+  attendancePctByEnrolment: Record<string, number | null>;
   termLabel: string;
   termId: string;
   sectionId: string;
@@ -130,12 +152,14 @@ function BreakdownCell({
 
 export function StudentLookupSheet({
   enrolments,
+  attendancePctByEnrolment,
   termLabel,
   termId,
   sectionId,
 }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // The per-student summary is an action-triggered READ — fetched only once a
@@ -162,11 +186,20 @@ export function StudentLookupSheet({
 
   const selected = enrolments.find((e) => e.enrolmentId === selectedId);
 
+  // A withdrawn student is never flagged. Their rate stops being a fact about
+  // this term the moment they leave, and a leaver in a "needs a look" list is
+  // a phone call nobody should make.
+  const isFlagged = (e: WideGridEnrolment): boolean =>
+    !e.withdrawn &&
+    isAttendanceAtRisk(attendancePctByEnrolment[e.enrolmentId] ?? null);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return enrolments;
-    return enrolments.filter((e) => e.studentName.toLowerCase().includes(q));
-  }, [enrolments, query]);
+    return enrolments
+      .filter((e) => (onlyFlagged ? isFlagged(e) : true))
+      .filter((e) => (q ? e.studentName.toLowerCase().includes(q) : true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrolments, query, onlyFlagged, attendancePctByEnrolment]);
 
   // Current-term stat + previous terms both come from the canonical rollup via
   // the summary API (proration-aware, EX-as-present, school-day based).
@@ -187,6 +220,7 @@ export function StudentLookupSheet({
     setDialogOpen(open);
     if (!open) {
       setQuery('');
+      setOnlyFlagged(false);
       setSelectedId(null);
     }
   }
@@ -216,15 +250,34 @@ export function StudentLookupSheet({
         {!selectedId && (
           <>
             <div className="shrink-0 space-y-2 border-b border-border px-4 py-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Type a student name…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="pl-9"
-                  autoFocus
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Type a student name…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="pl-9"
+                    autoFocus
+                  />
+                </div>
+                {/* The term is named in the option. A narrowed list reading
+                    "nobody" otherwise invites "this class has no problems",
+                    when what it means is "nobody in THIS term". */}
+                <Select
+                  value={onlyFlagged ? 'flagged' : 'all'}
+                  onValueChange={(v) => setOnlyFlagged(v === 'flagged')}
+                >
+                  <SelectTrigger className="w-auto shrink-0 gap-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="all">All students</SelectItem>
+                    <SelectItem value="flagged">
+                      Only flagged · {termLabel}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <Button
                 asChild
@@ -245,30 +298,52 @@ export function StudentLookupSheet({
             <div className="flex-1 overflow-y-auto">
               {filtered.length === 0 ? (
                 <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-                  No students match &ldquo;{query}&rdquo;
+                  {query.trim()
+                    ? `No students match “${query}”`
+                    : `Nobody is below ${AT_RISK_ATTENDANCE_THRESHOLD_PCT}% in ${termLabel}.`}
                 </p>
               ) : (
                 <ul className="divide-y divide-border">
-                  {filtered.map((e) => (
-                    <li key={e.enrolmentId}>
-                      <button
-                        onClick={() => setSelectedId(e.enrolmentId)}
-                        className="flex w-full items-center gap-3 px-6 py-3 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                          {e.indexNumber}
-                        </span>
-                        <span className="flex-1 text-sm font-medium text-foreground">
-                          {e.studentName}
-                        </span>
-                        {e.withdrawn && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Withdrawn
-                          </Badge>
-                        )}
-                      </button>
-                    </li>
-                  ))}
+                  {filtered.map((e) => {
+                    const pct = attendancePctByEnrolment[e.enrolmentId] ?? null;
+                    const flagged = isFlagged(e);
+                    return (
+                      <li key={e.enrolmentId}>
+                        <button
+                          onClick={() => setSelectedId(e.enrolmentId)}
+                          className="flex w-full items-center gap-3 px-6 py-3 text-left transition-colors hover:bg-muted/50"
+                        >
+                          <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
+                            {e.indexNumber}
+                          </span>
+                          <span className="flex-1 text-sm font-medium text-foreground">
+                            {e.studentName}
+                          </span>
+                          {/* The rate belongs on the row, not behind a click.
+                            Below the line it is destructive; at or above it is
+                            quiet — a healthy class should read as unremarkable
+                            rather than as a wall of green. */}
+                          <span
+                            className={cn(
+                              'shrink-0 font-mono text-xs font-semibold tabular-nums',
+                              pct == null
+                                ? 'text-muted-foreground/50'
+                                : flagged
+                                  ? 'text-destructive'
+                                  : 'text-muted-foreground'
+                            )}
+                          >
+                            {pct == null ? '—' : `${pct}%`}
+                          </span>
+                          {e.withdrawn && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              Withdrawn
+                            </Badge>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>

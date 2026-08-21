@@ -757,6 +757,7 @@ export default async function GradingSheetPage({
           } | null) ?? undefined
         }
         letterDisplay={!isExaminable}
+        subjectName={subject?.name ?? 'This subject'}
         canEditLabels={canEditLabels}
         priorGrades={priorGrades}
         currentTermNumber={term?.term_number ?? 1}

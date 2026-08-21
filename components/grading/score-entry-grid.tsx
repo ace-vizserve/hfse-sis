@@ -67,7 +67,7 @@ import {
   priorValueFor,
   type SlotOutlier,
 } from '@/lib/markbook/alert-threshold';
-import type { PriorTermGrade } from '@/lib/markbook/grade-diff';
+import { sumTaken, type PriorTermGrade } from '@/lib/markbook/grade-diff';
 
 import {
   applyServerEntry,
@@ -124,6 +124,8 @@ type Props = {
   qaWeight: number;
   /** When true, renders the Quarterly column as a derived letter (non-examinable subjects). */
   letterDisplay?: boolean;
+  /** Named on the lookup panel, which shows one subject at a time. */
+  subjectName?: string;
   /** When true, the scoring guide rows become inline editors (description / page / date)
    *  that autosave on blur. Mirrors the old Activity Labels dialog's gate. */
   canEditLabels?: boolean;
@@ -181,6 +183,7 @@ export function ScoreEntryGrid({
   ptWeight,
   qaWeight,
   letterDisplay = false,
+  subjectName = 'This subject',
   canEditLabels = false,
   priorGrades,
   currentTermNumber = 1,
@@ -389,9 +392,20 @@ export function ScoreEntryGrid({
           r.pt_scores,
           ptTotals
         ),
+        // This term's marks, from the sheet on screen. Same Blank ≠ Zero rule
+        // as the percentage they sit under: a slot not taken counts in neither
+        // the score nor the total.
+        currentMarks: {
+          ww: sumTaken(r.ww_scores, wwTotals),
+          pt: sumTaken(r.pt_scores, ptTotals),
+          qa: {
+            scored: r.qa_score ?? null,
+            max: r.qa_score == null ? null : qaTotal,
+          },
+        },
       };
     });
-  }, [rows, wwTotals, ptTotals, currentTermNumber, priorGrades]);
+  }, [rows, wwTotals, ptTotals, qaTotal, currentTermNumber, priorGrades]);
 
   // Tier-3 autosave: the per-cell PATCH is routed through useMutation purely so
   // it gets retry:0 + the shared apiFetch error handling. The optimistic UX is
@@ -728,6 +742,8 @@ export function ScoreEntryGrid({
         />
         <GradeLookupDialog
           rows={alertRows}
+          subjectName={subjectName}
+          isExaminable={!letterDisplay}
           currentTermLabel={currentTermLabel}
           weights={{ ww: wwPct, pt: ptPct, qa: qaPct }}
         />
@@ -1236,6 +1252,24 @@ function computeComparisons(
         flagged: Math.abs(diff) >= GRADE_ALERT_THRESHOLD,
         metric: metric.key,
         metric_label: metric.label,
+        // What that term's percentage was a percentage OF. Absent on older
+        // callers, which is why the fields are optional.
+        prior_scored:
+          metric.key === 'ww'
+            ? p.ww_scored
+            : metric.key === 'pt'
+              ? p.pt_scored
+              : metric.key === 'qa'
+                ? p.qa_scored
+                : null,
+        prior_max:
+          metric.key === 'ww'
+            ? p.ww_max
+            : metric.key === 'pt'
+              ? p.pt_max
+              : metric.key === 'qa'
+                ? p.qa_max
+                : null,
       });
     }
   }

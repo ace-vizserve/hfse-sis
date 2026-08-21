@@ -3,6 +3,11 @@
 import { ArrowLeft, Search, TriangleAlert, UserSearch } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import {
+  SubjectTermPanel,
+  type Marks,
+  type TermFigures,
+} from '@/components/shared/subject-term-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,10 +20,21 @@ import {
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   GRADE_ALERT_THRESHOLD,
   type AlertMetric,
 } from '@/lib/markbook/alert-threshold';
-import { cn } from '@/lib/utils';
+// One copy of how a grade figure is written down — see the file header there.
+import {
+  fmtGrade as fmt,
+  signedGrade as signed,
+} from '@/lib/markbook/format-grade';
 
 // The grading sheet's at-risk surface.
 //
@@ -53,7 +69,19 @@ export type AlertComparison = {
    */
   metric: AlertMetric;
   metric_label: string;
+  /** That term's marks: what was scored, out of what was available. */
+  prior_scored?: number | null;
+  prior_max?: number | null;
 };
+
+/** Marks out of marks, or null when either half is missing. */
+function marks(
+  scored: number | null | undefined,
+  max: number | null | undefined
+): string | null {
+  if (scored == null || max == null) return null;
+  return `${fmt(scored)} / ${fmt(max)}`;
+}
 
 /**
  * One assessment on the CURRENT sheet sitting well below this student's own
@@ -83,41 +111,14 @@ export type StudentAlertRow = {
   currentGrade: number | null;
   comparisons: AlertComparison[];
   outliers: SheetOutlier[];
+  /** This term's marks per component, straight off the sheet being marked. */
+  currentMarks?: Partial<Record<AlertMetric, Marks>>;
 };
 
 // Formula order, which is also sheet order. Never alphabetical.
 const COMPONENT_ORDER: AlertMetric[] = ['ww', 'pt', 'qa'];
 
-/**
- * One decimal, and no trailing `.0`.
- *
- * Component percentages are genuine fractions — 110 out of 120 is 91.666… —
- * and this printed the float raw, which is how `−6.666699999999999` ended up
- * on screen beside a student's name.
- */
-function fmt(n: number): string {
-  const r = Math.round(n * 10) / 10;
-  return Number.isInteger(r) ? String(r) : r.toFixed(1);
-}
-
-function signed(n: number): string {
-  const v = fmt(Math.abs(n));
-  return n > 0 ? `+${v}` : n < 0 ? `−${v}` : '0';
-}
-
-/**
- * Colour by direction, and only once the movement is worth reporting.
- *
- * This used to be an orange "SIGNIFICANT" badge on every row that crossed the
- * threshold, including the ones that went UP — a 58-point rise in written work
- * was dressed as a problem. Direction belongs in the colour of the number.
- */
-function deltaClass(diff: number, flagged: boolean): string {
-  if (!flagged) return 'text-muted-foreground';
-  return diff > 0 ? 'text-brand-mint' : 'text-destructive';
-}
-
-/** The most recent earlier term — the one the detail view opens on. */
+/** The most recent earlier term, which is what the list summary reports on. */
 function latestTermNumber(comparisons: AlertComparison[]): number | null {
   let max: number | null = null;
   for (const c of comparisons) {
@@ -171,15 +172,21 @@ function summarise(row: StudentAlertRow): string {
 
 export function GradeLookupDialog({
   rows,
+  subjectName = 'This subject',
+  isExaminable = true,
   currentTermLabel,
   weights,
 }: {
   rows: StudentAlertRow[];
+  /** The sheet's subject — the panel shows one subject at a time. */
+  subjectName?: string;
+  isExaminable?: boolean;
   currentTermLabel: string;
   weights?: { ww: number; pt: number; qa: number };
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const withCounts = useMemo(
@@ -188,22 +195,22 @@ export function GradeLookupDialog({
   );
   const totalFlagged = withCounts.filter((r) => r.count > 0).length;
 
+  // ONE LIST, INDEX ORDER, AND A FILTER — not two headed groups.
+  //
+  // The groups ("Needs a look" / "Everyone else") sorted the class for the
+  // reader, which is the right default only if triage is the only question.
+  // Mr Ace, 2026-08-21: "list all students sorted by index numbers and a filter
+  // dropdown to show only flagged students or all." Index order is how a
+  // teacher already holds the class in their head — they call students by
+  // number — so a specific student is always where they expect, and the
+  // dropdown answers the triage question on demand instead of by default.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return withCounts;
-    return withCounts.filter((r) =>
-      r.row.studentName.toLowerCase().includes(q)
-    );
-  }, [withCounts, query]);
-
-  // Order encodes the finding: who needs attention first, roster order inside
-  // each group so a specific student is still where you expect them.
-  const flagged = filtered
-    .filter((r) => r.count > 0)
-    .sort((a, b) => a.row.indexNumber - b.row.indexNumber);
-  const rest = filtered
-    .filter((r) => r.count === 0)
-    .sort((a, b) => a.row.indexNumber - b.row.indexNumber);
+    return withCounts
+      .filter((r) => (onlyFlagged ? r.count > 0 : true))
+      .filter((r) => (q ? r.row.studentName.toLowerCase().includes(q) : true))
+      .sort((a, b) => a.row.indexNumber - b.row.indexNumber);
+  }, [withCounts, query, onlyFlagged]);
 
   const selected = rows.find((r) => r.entryId === selectedId) ?? null;
 
@@ -211,6 +218,7 @@ export function GradeLookupDialog({
     setOpen(nextOpen);
     if (!nextOpen) {
       setQuery('');
+      setOnlyFlagged(false);
       setSelectedId(null);
     }
   }
@@ -233,7 +241,7 @@ export function GradeLookupDialog({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[860px] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle className="font-serif text-xl font-semibold tracking-tight">
             {/* Mirrors attendance's "Attendance lookup" / "Attendance
@@ -244,8 +252,8 @@ export function GradeLookupDialog({
 
         {!selected && (
           <>
-            <div className="shrink-0 border-b border-border px-4 py-3">
-              <div className="relative">
+            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+              <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Type a student name…"
@@ -255,48 +263,43 @@ export function GradeLookupDialog({
                   autoFocus
                 />
               </div>
+              {/* The term is named in the option itself. Without it, a narrowed
+                  list reading "nobody" invites "this class has no problems",
+                  when what it means is "nobody in THIS term". */}
+              <Select
+                value={onlyFlagged ? 'flagged' : 'all'}
+                onValueChange={(v) => setOnlyFlagged(v === 'flagged')}
+              >
+                <SelectTrigger className="w-auto shrink-0 gap-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value="all">All students</SelectItem>
+                  <SelectItem value="flagged">
+                    Only flagged · {currentTermLabel}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {flagged.length === 0 && rest.length === 0 ? (
+              {filtered.length === 0 ? (
                 <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-                  No students match &ldquo;{query}&rdquo;
+                  {query.trim()
+                    ? `No students match “${query}”`
+                    : `Nobody needs a look in ${currentTermLabel}.`}
                 </p>
               ) : (
-                <>
-                  {flagged.length > 0 && (
-                    <>
-                      <GroupHead tone="flagged">
-                        Needs a look · {flagged.length}
-                      </GroupHead>
-                      <ul className="divide-y divide-border">
-                        {flagged.map(({ row, count }) => (
-                          <StudentRow
-                            key={row.entryId}
-                            row={row}
-                            count={count}
-                            onOpen={() => setSelectedId(row.entryId)}
-                          />
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  {rest.length > 0 && (
-                    <>
-                      <GroupHead tone="rest">Everyone else</GroupHead>
-                      <ul className="divide-y divide-border">
-                        {rest.map(({ row, count }) => (
-                          <StudentRow
-                            key={row.entryId}
-                            row={row}
-                            count={count}
-                            onOpen={() => setSelectedId(row.entryId)}
-                          />
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </>
+                <ul className="divide-y divide-border">
+                  {filtered.map(({ row, count }) => (
+                    <StudentRow
+                      key={row.entryId}
+                      row={row}
+                      count={count}
+                      onOpen={() => setSelectedId(row.entryId)}
+                    />
+                  ))}
+                </ul>
               )}
             </div>
           </>
@@ -305,6 +308,8 @@ export function GradeLookupDialog({
         {selected && (
           <StudentDetail
             row={selected}
+            subjectName={subjectName}
+            isExaminable={isExaminable}
             currentTermLabel={currentTermLabel}
             weights={weights}
             onBack={() => setSelectedId(null)}
@@ -312,25 +317,6 @@ export function GradeLookupDialog({
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function GroupHead({
-  tone,
-  children,
-}: {
-  tone: 'flagged' | 'rest';
-  children: React.ReactNode;
-}) {
-  return (
-    <p
-      className={cn(
-        'border-b border-border bg-muted px-6 pb-1.5 pt-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]',
-        tone === 'flagged' ? 'text-brand-amber' : 'text-muted-foreground'
-      )}
-    >
-      {children}
-    </p>
   );
 }
 
@@ -382,61 +368,80 @@ function StudentRow({
 
 function StudentDetail({
   row,
+  subjectName,
+  isExaminable,
   currentTermLabel,
   weights,
   onBack,
 }: {
   row: StudentAlertRow;
+  subjectName: string;
+  isExaminable: boolean;
   currentTermLabel: string;
   weights?: { ww: number; pt: number; qa: number };
   onBack: () => void;
 }) {
-  const byTerm = useMemo(() => {
-    const map = new Map<number, Map<AlertMetric, AlertComparison>>();
+  // Fold the flat comparison list back into one row per term. Every prior term
+  // is already in `row.comparisons` — the old term picker was hiding data the
+  // component had all along.
+  const terms = useMemo<TermFigures[]>(() => {
+    const byTerm = new Map<number, Map<AlertMetric, AlertComparison>>();
+    const labels = new Map<number, string>();
     for (const c of row.comparisons) {
-      let inner = map.get(c.term_number);
+      labels.set(c.term_number, c.term_label);
+      let inner = byTerm.get(c.term_number);
       if (!inner) {
         inner = new Map();
-        map.set(c.term_number, inner);
+        byTerm.set(c.term_number, inner);
       }
       inner.set(c.metric, c);
     }
-    return map;
-  }, [row.comparisons]);
+    const nums = [...byTerm.keys()].sort((a, b) => a - b);
 
-  const termNumbers = useMemo(
-    () => [...byTerm.keys()].sort((a, b) => a - b),
-    [byTerm]
-  );
+    const prior: TermFigures[] = nums.map((n) => {
+      const at = byTerm.get(n);
+      const marksFor = (k: 'ww' | 'pt' | 'qa') => ({
+        scored: at?.get(k)?.prior_scored ?? null,
+        max: at?.get(k)?.prior_max ?? null,
+      });
+      return {
+        label: labels.get(n) ?? `Term ${n}`,
+        quarterly: at?.get('quarterly')?.prior_grade ?? null,
+        ww: at?.get('ww')?.prior_grade ?? null,
+        pt: at?.get('pt')?.prior_grade ?? null,
+        qa: at?.get('qa')?.prior_grade ?? null,
+        marks: { ww: marksFor('ww'), pt: marksFor('pt'), qa: marksFor('qa') },
+      };
+    });
 
-  // Opens on the most recent earlier term: "what changed since last term" is
-  // the usual question, and the rest are one click away.
-  const [selected, setSelected] = useState<number | null>(
-    termNumbers.length > 0 ? termNumbers[termNumbers.length - 1] : null
-  );
-  const shownTerm =
-    selected != null && termNumbers.includes(selected)
-      ? selected
-      : (termNumbers[termNumbers.length - 1] ?? null);
-  const comparison = shownTerm != null ? byTerm.get(shownTerm) : undefined;
-  const termGrade = comparison?.get('quarterly');
+    // A component's CURRENT value is `prior_grade + diff` on any one of its
+    // comparisons: every prior term was diffed against the same current
+    // figure, so they all agree.
+    const currentOf = (k: AlertMetric): number | null => {
+      const c = row.comparisons.find((x) => x.metric === k);
+      return c ? c.prior_grade + c.diff : null;
+    };
 
-  const weightFor = (metric: AlertMetric): number | undefined =>
-    weights
-      ? metric === 'ww'
-        ? weights.ww
-        : metric === 'pt'
-          ? weights.pt
-          : metric === 'qa'
-            ? weights.qa
-            : undefined
-      : undefined;
-
-  const nothingFlagged = flaggedCount(row) === 0 && row.comparisons.length > 0;
+    return [
+      ...prior,
+      {
+        label: currentTermLabel,
+        quarterly: row.currentGrade,
+        ww: currentOf('ww'),
+        pt: currentOf('pt'),
+        qa: currentOf('qa'),
+        marks: {
+          ww: row.currentMarks?.ww ?? { scored: null, max: null },
+          pt: row.currentMarks?.pt ?? { scored: null, max: null },
+          qa: row.currentMarks?.qa ?? { scored: null, max: null },
+        },
+      },
+    ];
+  }, [row, currentTermLabel]);
 
   return (
     <ScrollArea className="flex-1">
-      <div className="space-y-4 p-6">
+      <div className="space-y-5 p-6">
         <button
           type="button"
           onClick={onBack}
@@ -451,127 +456,21 @@ function StudentDetail({
             {row.studentName}
           </h3>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            {currentTermLabel}
+            {subjectName} &middot; {currentTermLabel}
           </p>
         </div>
 
-        {/* One tab per earlier term. Rendered only when there is a choice to
-            make: a single prior term needs no control, and Term 1 has none at
-            all. This also replaces a shape that produced one card per prior
-            term PER COMPONENT — sixteen cards by Term 4. */}
-        {termNumbers.length > 1 && (
-          <div
-            role="tablist"
-            aria-label="Compare against"
-            className="flex gap-1 rounded-lg border border-border bg-muted p-0.5"
-          >
-            {termNumbers.map((n) => {
-              const on = n === shownTerm;
-              return (
-                <button
-                  key={n}
-                  role="tab"
-                  type="button"
-                  aria-selected={on}
-                  onClick={() => setSelected(n)}
-                  className={cn(
-                    'flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    on
-                      ? 'bg-card font-semibold text-foreground shadow-sm'
-                      : 'font-medium text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  vs Term {n}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* The term grade is the result, so it sits above the parts that
-            produce it. It used to be one row in a flat list alongside its own
-            components. */}
-        {termGrade && row.currentGrade != null && (
-          <div className="space-y-1.5">
-            <SectionHead>Term grade</SectionHead>
-            <div className="flex items-end justify-between gap-4 rounded-xl border border-border bg-muted/50 px-4 py-3.5">
-              <p className="flex items-baseline gap-2 font-serif leading-none tabular-nums">
-                <span className="text-[22px] font-semibold text-muted-foreground">
-                  {fmt(termGrade.prior_grade)}
-                </span>
-                <span className="text-sm text-muted-foreground">&rarr;</span>
-                <span className="text-4xl font-semibold text-foreground">
-                  {fmt(row.currentGrade)}
-                </span>
-              </p>
-              <span
-                className={cn(
-                  'font-mono text-xs font-semibold tabular-nums',
-                  deltaClass(termGrade.diff, termGrade.flagged)
-                )}
-              >
-                {signed(termGrade.diff)} points
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Written work, tasks and exam are the three parts of one formula, so
-            they stay together and in formula order. Their weights are printed
-            because the weights are the reason a fall in two parts can still
-            produce a rise overall. */}
-        {comparison && (
-          <div className="space-y-1.5">
-            <SectionHead hint="weighted into the grade above">
-              What it is made of
-            </SectionHead>
-            <div>
-              {COMPONENT_ORDER.map((metric) => {
-                const c = comparison.get(metric);
-                if (!c) return null;
-                const w = weightFor(metric);
-                return (
-                  <div
-                    key={metric}
-                    className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 rounded-lg px-2.5 py-2 [&+&]:border-t [&+&]:border-border"
-                  >
-                    <span className="text-[13px] font-medium text-foreground">
-                      {c.metric_label}
-                      {w != null && (
-                        <span className="ml-1.5 font-mono text-[10px] font-semibold text-muted-foreground">
-                          {w}%
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex items-baseline gap-1.5 font-serif leading-none tabular-nums">
-                      <span className="text-[15px] font-semibold text-muted-foreground">
-                        {fmt(c.prior_grade)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        &rarr;
-                      </span>
-                      <span className="text-[19px] font-semibold text-foreground">
-                        {fmt(c.prior_grade + c.diff)}
-                      </span>
-                    </span>
-                    <span
-                      className={cn(
-                        'min-w-[3.75rem] text-right font-mono text-[11px] font-semibold tabular-nums',
-                        deltaClass(c.diff, c.flagged)
-                      )}
-                    >
-                      {signed(c.diff)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <SubjectTermPanel
+          subject={subjectName}
+          isExaminable={isExaminable}
+          terms={terms}
+          weights={weights}
+        />
 
         {/* A single assessment, raw, compared only against this student's own
             other work on this sheet — the one place a slot appears, and the
-            only signal that exists in Term 1. */}
+            only signal that exists in Term 1. Nothing in Classroom can show
+            this, because it needs the sheet being marked. */}
         {row.outliers.length > 0 && (
           <div className="space-y-1.5">
             <SectionHead>On this sheet</SectionHead>
@@ -604,28 +503,6 @@ function StudentDetail({
             </div>
           </div>
         )}
-
-        {nothingFlagged && (
-          <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
-            <p className="font-serif text-[15px] font-semibold text-foreground">
-              Steady
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Nothing moved by {GRADE_ALERT_THRESHOLD} points or more.
-            </p>
-          </div>
-        )}
-
-        {/* Explains an absence rather than counting a presence. The old
-            "4 significant changes detected (threshold ±5)" did neither
-            plainly, and three of those words were ours, not a teacher's. */}
-        <p className="border-t border-border pt-3 text-[11px] text-muted-foreground">
-          {shownTerm != null
-            ? `Compared with Term ${shownTerm}. Only changes of ${GRADE_ALERT_THRESHOLD} points or more are highlighted.`
-            : row.currentGrade == null
-              ? 'No grades have been entered for this student yet.'
-              : 'There is no earlier term to compare against yet.'}
-        </p>
       </div>
     </ScrollArea>
   );

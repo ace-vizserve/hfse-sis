@@ -45,7 +45,7 @@ describe('buildPriorGradeMap', () => {
       termBySheetId,
     });
 
-    expect(result['ss-new']).toEqual([
+    expect(result['ss-new']).toMatchObject([
       {
         term_number: 1,
         term_label: 'Term 1',
@@ -93,7 +93,7 @@ describe('buildPriorGradeMap', () => {
         entries: ordered,
         termBySheetId,
       });
-      expect(result['ss-new']).toEqual([
+      expect(result['ss-new']).toMatchObject([
         {
           term_number: 1,
           term_label: 'Term 1',
@@ -122,7 +122,7 @@ describe('buildPriorGradeMap', () => {
       ],
       termBySheetId,
     });
-    expect(result['ss-plain']).toEqual([
+    expect(result['ss-plain']).toMatchObject([
       {
         term_number: 1,
         term_label: 'Term 1',

@@ -4,7 +4,7 @@ import {
   type AtRiskStudent,
   type AtRiskStudentRef,
 } from '@/lib/classroom/at-risk';
-import { loadPriorTermGrades } from '@/lib/markbook/grade-diff';
+import { loadPriorTermGrades, sumTaken } from '@/lib/markbook/grade-diff';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -25,6 +25,9 @@ type SubjectLite = { name: string; is_examinable: boolean };
 type SheetRow = {
   id: string;
   subject_id: string;
+  ww_totals: (number | null)[] | null;
+  pt_totals: (number | null)[] | null;
+  qa_total: number | null;
   subject: SubjectLite | SubjectLite[] | null;
 };
 
@@ -35,6 +38,9 @@ type EntryRow = {
   ww_ps: number | null;
   pt_ps: number | null;
   qa_ps: number | null;
+  ww_scores: (number | null)[] | null;
+  pt_scores: (number | null)[] | null;
+  qa_score: number | null;
 };
 
 const firstOf = <T>(v: T | T[] | null): T | null =>
@@ -48,13 +54,20 @@ export async function loadSectionAtRisk(
 
   const { data: term } = await service
     .from('terms')
-    .select('term_number')
+    .select('term_number, label')
     .eq('id', termId)
     .maybeSingle();
-  const termNumber = (term as { term_number: number } | null)?.term_number;
-  // Term 1 has nothing behind it to compare against, and that is a real answer
-  // rather than an error — the list is simply empty until a second term exists.
-  if (!termNumber || termNumber < 2) return [];
+  const termRow = term as { term_number: number; label: string } | null;
+  const termNumber = termRow?.term_number;
+  const currentTermLabel = termRow?.label ?? 'This term';
+  // A term id that names no term is a broken request, not an empty class.
+  if (!termNumber) return [];
+  // Term 1 has nothing behind it to compare against. That used to return an
+  // empty list, which was right while this was a triage list and wrong the
+  // moment it became the whole roster: in Term 1 an adviser should see their
+  // class with nothing flagged, not a blank panel. Everything below still
+  // runs; `loadPriorTermGrades` simply finds no earlier terms, so no student
+  // has any drops.
 
   // ERRORS THROW, THEY DO NOT DEGRADE TO AN EMPTY LIST. Both of these used to
   // be read with the error discarded, so a failed fetch reached the adviser as
@@ -77,7 +90,9 @@ export async function loadSectionAtRisk(
       .order('index_number'),
     service
       .from('grading_sheets')
-      .select('id, subject_id, subject:subjects(name, is_examinable)')
+      .select(
+        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable)'
+      )
       .eq('section_id', sectionId)
       .eq('term_id', termId),
   ]);
@@ -128,7 +143,7 @@ export async function loadSectionAtRisk(
       service
         .from('grade_entries')
         .select(
-          'section_student_id, grading_sheet_id, quarterly_grade, ww_ps, pt_ps, qa_ps'
+          'section_student_id, grading_sheet_id, quarterly_grade, ww_ps, pt_ps, qa_ps, ww_scores, pt_scores, qa_score'
         )
         .in(
           'grading_sheet_id',
@@ -143,6 +158,7 @@ export async function loadSectionAtRisk(
     ),
   ]);
 
+  const sheetById = new Map(sheets.map((s) => [s.id, s]));
   const subjectBySheet = new Map(
     sheets.map((s) => [
       s.id,
@@ -166,8 +182,23 @@ export async function loadSectionAtRisk(
       pt: e.pt_ps,
       qa: e.qa_ps,
     },
+    // What this term's percentages are percentages OF. Same Blank ≠ Zero rule
+    // as the percentage itself — a slot not taken counts in neither half.
+    currentMarks: (() => {
+      const sheet = sheetById.get(e.grading_sheet_id);
+      const ww = sumTaken(e.ww_scores, sheet?.ww_totals ?? null);
+      const pt = sumTaken(e.pt_scores, sheet?.pt_totals ?? null);
+      return {
+        ww,
+        pt,
+        qa: {
+          scored: e.qa_score ?? null,
+          max: e.qa_score == null ? null : (sheet?.qa_total ?? null),
+        },
+      };
+    })(),
     priors: priorsBySheet.get(e.grading_sheet_id)?.[e.section_student_id] ?? [],
   }));
 
-  return rankAtRisk({ students, observations });
+  return rankAtRisk({ students, observations, currentTermLabel });
 }

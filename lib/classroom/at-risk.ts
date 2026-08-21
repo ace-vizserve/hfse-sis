@@ -4,6 +4,7 @@ import {
   type AlertMetric,
 } from '@/lib/markbook/alert-threshold';
 import { numericToLetter } from '@/lib/compute/letter-grade';
+import { fmtGrade } from '@/lib/markbook/format-grade';
 import type { PriorTermGrade } from '@/lib/markbook/grade-diff';
 
 // The form adviser's at-risk ranking — the half of Ms Koh's 2026-07-31 ask
@@ -41,6 +42,10 @@ export type AtRiskObservation = {
    */
   isExaminable: boolean;
   current: CurrentComponents;
+  /** This term's marks per component — what the percentages are percentages of. */
+  currentMarks?: Partial<
+    Record<'ww' | 'pt' | 'qa', { scored: number | null; max: number | null }>
+  >;
   /** Ascending by term_number, as `loadPriorTermGrades` returns them. */
   priors: PriorTermGrade[];
 };
@@ -55,6 +60,43 @@ export type AtRiskStudentRef = {
 export type AtRiskInput = {
   students: AtRiskStudentRef[];
   observations: AtRiskObservation[];
+  /** Names the last column of every term history. "Term 2", not "T2". */
+  currentTermLabel: string;
+};
+
+/**
+ * One subject's whole year for one student — every term side by side.
+ *
+ * The list answers "who fell"; this answers "what has this child been doing all
+ * year", which is the question an adviser actually has once a name is in front
+ * of them. Mr Ace, 2026-08-21: "why not just show the same data in look up
+ * student when a selected student is clicked?" The values are already loaded
+ * to compute the drops; this stops throwing them away.
+ */
+/** Marks scored out of marks available. Either half may be unknown. */
+export type Marks = { scored: number | null; max: number | null };
+
+export type SubjectTermHistory = {
+  subject: string;
+  isExaminable: boolean;
+  /** Ascending by term. The term being looked at is last. */
+  terms: {
+    label: string;
+    quarterly: number | null;
+    ww: number | null;
+    pt: number | null;
+    qa: number | null;
+    /**
+     * What each percentage is a percentage OF, per component.
+     *
+     * Raw numbers rather than a joined "44 / 50" string: the table gives Score
+     * and Out of their own columns, and a total that changed between terms has
+     * to be detected by comparing the numbers.
+     */
+    marks?: Partial<Record<'ww' | 'pt' | 'qa', Marks>>;
+  }[];
+  /** Whether any component fell far enough to flag. Drives what opens. */
+  fell: boolean;
 };
 
 export type AtRiskDrop = {
@@ -77,10 +119,12 @@ export type AtRiskDrop = {
 };
 
 export type AtRiskStudent = AtRiskStudentRef & {
-  /** Steepest first. */
+  /** Steepest first. Empty for a student who has not fallen anywhere. */
   drops: AtRiskDrop[];
-  /** The steepest single fall — what the list is ranked on. */
-  worstDiff: number;
+  /** The steepest single fall, or null when nothing fell. */
+  worstDiff: number | null;
+  /** Every subject the class takes, whether or not it fell. */
+  subjects: SubjectTermHistory[];
 };
 
 function currentValue(
@@ -137,7 +181,11 @@ function describe(
   metric: AlertMetric
 ): AtRiskDrop['display'] {
   if (obs.isExaminable || metric !== 'quarterly') {
-    return { prior: String(prior), current: String(current), kind: 'points' };
+    return {
+      prior: fmtGrade(prior),
+      current: fmtGrade(current),
+      kind: 'points',
+    };
   }
   return {
     prior: numericToLetter(prior),
@@ -147,13 +195,23 @@ function describe(
 }
 
 /**
- * Students whose marks have fallen at least `GRADE_ALERT_THRESHOLD` points in
- * any subject, on any component, since their most recent marked term. Steepest
- * fall first.
+ * THE WHOLE ROSTER, with each student's falls attached.
  *
- * A student with no prior term, or no mark yet this term, produces nothing —
- * "we cannot tell" is not "at risk", and a list that flagged every late
- * enrollee is a list an adviser stops opening.
+ * This used to return the flagged subset and drop everyone else on the floor,
+ * which made the adviser's panel a triage list and nothing else — a steady
+ * class rendered as an empty screen, and there was no way to look a particular
+ * child up. Mr Ace, 2026-08-21: "list all students sorted by index numbers and
+ * a filter dropdown to show only flagged students or all." The filtering is the
+ * reader's to do now, so this hands over everything it knows.
+ *
+ * A fall is at least `GRADE_ALERT_THRESHOLD` points on any component of any
+ * subject, measured from that metric's most recent marked term. A student with
+ * no prior term, or no mark yet this term, has no drops — "we cannot tell" is
+ * not "at risk", and a filter that caught every late enrollee is a filter an
+ * adviser stops using.
+ *
+ * Order: steepest fall first, then everyone else in roster order. Ties keep
+ * roster order, so the list is stable between refreshes.
  */
 export function rankAtRisk(input: AtRiskInput): AtRiskStudent[] {
   const byStudent = new Map<string, AtRiskDrop[]>();
@@ -183,16 +241,67 @@ export function rankAtRisk(input: AtRiskInput): AtRiskStudent[] {
     }
   }
 
-  const out: AtRiskStudent[] = [];
-  for (const student of input.students) {
-    const drops = byStudent.get(student.sectionStudentId);
-    if (!drops || drops.length === 0) continue;
-    drops.sort((a, b) => a.diff - b.diff);
-    out.push({ ...student, drops, worstDiff: drops[0].diff });
+  // Every subject's whole year, per student — built from the same observations
+  // the drops came from, so the table and the flag can never disagree.
+  const subjectsByStudent = new Map<string, SubjectTermHistory[]>();
+  for (const obs of input.observations) {
+    const list = subjectsByStudent.get(obs.sectionStudentId) ?? [];
+    list.push({
+      subject: obs.subject,
+      isExaminable: obs.isExaminable,
+      terms: [
+        ...obs.priors.map((p) => ({
+          label: p.term_label,
+          quarterly: p.quarterly_grade,
+          ww: p.ww_ps,
+          pt: p.pt_ps,
+          qa: p.qa_ps,
+          marks: {
+            ww: { scored: p.ww_scored ?? null, max: p.ww_max ?? null },
+            pt: { scored: p.pt_scored ?? null, max: p.pt_max ?? null },
+            qa: { scored: p.qa_scored ?? null, max: p.qa_max ?? null },
+          },
+        })),
+        {
+          label: input.currentTermLabel,
+          quarterly: obs.current.quarterly,
+          ww: obs.current.ww,
+          pt: obs.current.pt,
+          qa: obs.current.qa,
+          marks: {
+            ww: obs.currentMarks?.ww ?? { scored: null, max: null },
+            pt: obs.currentMarks?.pt ?? { scored: null, max: null },
+            qa: obs.currentMarks?.qa ?? { scored: null, max: null },
+          },
+        },
+      ],
+      fell: (byStudent.get(obs.sectionStudentId) ?? []).some(
+        (d) => d.subject === obs.subject
+      ),
+    });
+    subjectsByStudent.set(obs.sectionStudentId, list);
   }
 
-  // Steepest first; ties keep roster order, so the list is stable between
-  // refreshes and an adviser can work down it.
-  out.sort((a, b) => a.worstDiff - b.worstDiff);
+  const out: AtRiskStudent[] = [];
+  for (const student of input.students) {
+    const drops = (byStudent.get(student.sectionStudentId) ?? []).slice();
+    drops.sort((a, b) => a.diff - b.diff);
+    out.push({
+      ...student,
+      drops,
+      worstDiff: drops.length > 0 ? drops[0].diff : null,
+      subjects: subjectsByStudent.get(student.sectionStudentId) ?? [],
+    });
+  }
+
+  // Steepest first, then the students who have not fallen, each group in
+  // roster order. The panel re-sorts by index number for the list itself; this
+  // order is what any other reader of the payload gets.
+  out.sort((a, b) => {
+    if (a.worstDiff == null && b.worstDiff == null) return 0;
+    if (a.worstDiff == null) return 1;
+    if (b.worstDiff == null) return -1;
+    return a.worstDiff - b.worstDiff;
+  });
   return out;
 }

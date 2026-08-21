@@ -1,21 +1,50 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Phone, TrendingDown, UserSearch } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronRight,
+  Phone,
+  Search,
+  TrendingDown,
+  UserSearch,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { SubjectTermPanel } from '@/components/shared/subject-term-panel';
+import { cn } from '@/lib/utils';
+import { numericToLetter } from '@/lib/compute/letter-grade';
+import { ALERT_METRICS } from '@/lib/markbook/alert-threshold';
+import { signedGrade } from '@/lib/markbook/format-grade';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { AtRiskStudent } from '@/lib/classroom/at-risk';
+import type {
+  AtRiskDrop,
+  AtRiskStudent,
+  SubjectTermHistory,
+} from '@/lib/classroom/at-risk';
 import type { StudentDetails } from '@/lib/classroom/student-details';
 import { GRADE_ALERT_THRESHOLD } from '@/lib/markbook/alert-threshold';
 import { apiFetch } from '@/lib/query/fetcher';
@@ -41,6 +70,38 @@ type Props = {
   termLabel: string;
 };
 
+// ONE LINE PER STUDENT, the same shape the grading sheet's list uses.
+//
+// This row used to stack every fall — three or four lines each naming its own
+// subject, its own metric, its own pair of figures, and a "since Term 1 —
+// AY2026" footer under them. Mr Ace, 2026-08-21: "what the hell is this
+// design." It was a detail view wearing a list's clothes, and the same subject
+// appeared twice whenever two of its components fell.
+//
+// A list exists to be scanned. So: the worst fall per SUBJECT, at most three
+// subjects, and the rest counted. Everything else is one tap away.
+function summarise(student: AtRiskStudent): string {
+  if (student.drops.length === 0) return 'Steady';
+
+  const worstBySubject = new Map<string, AtRiskDrop>();
+  for (const d of student.drops) {
+    const held = worstBySubject.get(d.subject);
+    if (!held || d.diff < held.diff) worstBySubject.set(d.subject, d);
+  }
+
+  const ranked = [...worstBySubject.values()].sort((a, b) => a.diff - b.diff);
+  const shown = ranked.slice(0, 3).map((d) =>
+    // A band never carries a points figure — a five-point move there usually
+    // just means the letter moved.
+    d.display.kind === 'band'
+      ? `${d.subject} ${d.display.prior}→${d.display.current}`
+      : `${d.subject} ${signedGrade(d.diff)}`
+  );
+
+  const rest = ranked.length - shown.length;
+  return rest > 0 ? `${shown.join(' · ')} · +${rest} more` : shown.join(' · ');
+}
+
 function Row({
   student,
   onOpen,
@@ -48,60 +109,104 @@ function Row({
   student: AtRiskStudent;
   onOpen: () => void;
 }) {
-  return (
-    <li className="space-y-2.5 px-4 py-3.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-sm text-left font-medium text-foreground underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            {student.studentName}
-          </button>
-          <p className="pt-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
-            {student.studentNumber} · No. {student.indexNumber}
-          </p>
-        </div>
-        {/* The summary figure is points, so it is only shown when at least
-            one fall IS points. A student whose only movement is a letter band
-            would otherwise be headlined "−8", which is the exact misreading
-            the band display exists to prevent. */}
-        <Badge
-          variant="outline"
-          className="shrink-0 border-destructive/40 bg-destructive/10 font-mono tabular-nums text-destructive"
-        >
-          {student.drops.some((d) => d.display.kind === 'points')
-            ? student.worstDiff
-            : 'Band down'}
-        </Badge>
-      </div>
+  const fell = student.drops.length > 0;
+  const points = student.drops.some((d) => d.display.kind === 'points');
 
-      <ul className="space-y-1">
-        {student.drops.map((d) => (
-          <li
-            key={`${d.subject}-${d.metric}`}
-            className="flex items-baseline justify-between gap-3 text-[13px]"
-          >
-            <span className="min-w-0">
-              <span className="font-medium text-foreground">{d.subject}</span>
-              <span className="text-muted-foreground">
-                {' '}
-                · {d.metricLabel} · {d.display.prior} → {d.display.current}
-              </span>
-            </span>
-            {d.display.kind === 'points' && (
-              <span className="shrink-0 font-mono tabular-nums text-destructive">
-                {d.diff}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-        since {student.drops[0].priorTermLabel}
-      </p>
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+          {student.indexNumber}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-foreground">
+            {student.studentName}
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {summarise(student)}
+          </span>
+        </span>
+        {/* The summary figure is points, so it only appears when at least one
+            fall IS points. A student whose only movement is a letter band
+            would otherwise be headlined "−8", the exact misreading the band
+            display exists to prevent. */}
+        {fell ? (
+          <span className="inline-flex shrink-0 items-center rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-destructive">
+            {points ? signedGrade(student.worstDiff ?? 0) : 'Band down'}
+          </span>
+        ) : (
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground/50">
+            —
+          </span>
+        )}
+      </button>
     </li>
+  );
+}
+
+// One subject's whole year, folded away until it is wanted.
+//
+// A class takes eight to ten subjects. Rendering every table open turns the
+// panel into a wall of numbers that hides the two that matter, so the subjects
+// that fell start open and the steady ones start shut — the information is all
+// there, ordered by whether anyone needs to act on it.
+// The subject strip. Tabs rather than stacked panels: a class takes eight to
+// ten subjects, and eight open tables is a wall of numbers that hides the two
+// that matter. A dot marks a subject that fell; a greyed tab is one nobody has
+// marked yet, listed so an adviser can see it exists.
+function SubjectTabs({
+  subjects,
+  selected,
+  onSelect,
+}: {
+  subjects: SubjectTermHistory[];
+  selected: string;
+  onSelect: (subject: string) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Subjects"
+      className="flex flex-wrap gap-0.5 border-b border-border"
+    >
+      {subjects.map((s) => {
+        const marked = s.terms.some(
+          (t) =>
+            t.quarterly != null || t.ww != null || t.pt != null || t.qa != null
+        );
+        const on = s.subject === selected;
+        return (
+          <button
+            key={s.subject}
+            role="tab"
+            type="button"
+            aria-selected={on}
+            disabled={!marked}
+            onClick={() => onSelect(s.subject)}
+            className={cn(
+              '-mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-2 pt-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              on
+                ? 'border-primary font-semibold text-foreground'
+                : marked
+                  ? 'border-transparent text-muted-foreground hover:text-foreground'
+                  : 'border-transparent text-muted-foreground/50'
+            )}
+          >
+            {s.fell && (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-destructive"
+                aria-label="fell this term"
+              />
+            )}
+            {s.subject}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -121,6 +226,21 @@ function StudentView({
   student: AtRiskStudent;
   onBack: () => void;
 }) {
+  // Opens on the steepest fall, because that is why the adviser is here. Falls
+  // back to the first subject that has any mark at all.
+  const firstMarked =
+    student.subjects.find((s) => s.fell) ??
+    student.subjects.find((s) =>
+      s.terms.some(
+        (t) =>
+          t.quarterly != null || t.ww != null || t.pt != null || t.qa != null
+      )
+    ) ??
+    student.subjects[0];
+  const [subject, setSubject] = useState<string | null>(null);
+  const shown =
+    student.subjects.find((s) => s.subject === subject) ?? firstMarked;
+
   const { data, isLoading } = useQuery<StudentDetails>({
     queryKey: queryKeys.classroomStudentDetails(
       sectionId,
@@ -149,32 +269,29 @@ function StudentView({
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border">
-        <p className="border-b border-border bg-muted/40 px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          What fell, since {student.drops[0].priorTermLabel}
+      {/* THE SAME PANEL THE GRADING SHEET RENDERS. Mr Ace, 2026-08-21: "use
+          identical designs for grading sheet look up and classroom grades
+          lookup its basically the same data bro." The only difference the data
+          forces is this tab strip — an adviser has every subject, a subject
+          teacher has one. */}
+      {student.subjects.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          No marks have been entered for this student yet.
         </p>
-        <ul className="divide-y divide-border">
-          {student.drops.map((d) => (
-            <li
-              key={`${d.subject}-${d.metric}`}
-              className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm"
-            >
-              <span className="min-w-0">
-                <span className="font-medium text-foreground">{d.subject}</span>
-                <span className="text-muted-foreground">
-                  {' '}
-                  · {d.metricLabel} · {d.display.prior} → {d.display.current}
-                </span>
-              </span>
-              {d.display.kind === 'points' && (
-                <span className="shrink-0 font-mono tabular-nums text-destructive">
-                  {d.diff}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
+      ) : !shown ? null : (
+        <div className="space-y-4">
+          <SubjectTabs
+            subjects={student.subjects}
+            selected={shown.subject}
+            onSelect={setSubject}
+          />
+          <SubjectTermPanel
+            subject={shown.subject}
+            isExaminable={shown.isExaminable}
+            terms={shown.terms}
+          />
+        </div>
+      )}
 
       <div>
         <p className="pb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -214,8 +331,10 @@ function StudentView({
   );
 }
 
-function Body({ sectionId, termId }: Omit<Props, 'termLabel'>) {
+function Body({ sectionId, termId, termLabel }: Props) {
   const [selected, setSelected] = useState<AtRiskStudent | null>(null);
+  const [query, setQuery] = useState('');
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
   const { data, isLoading, isError } = useQuery<{ students: AtRiskStudent[] }>({
     queryKey: ['classroom-at-risk', sectionId, termId],
     queryFn: ({ signal }) =>
@@ -256,8 +375,9 @@ function Body({ sectionId, termId }: Omit<Props, 'termLabel'>) {
 
   const students = data?.students ?? [];
 
-  // An empty list is good news and must read as good news. "No results" would
-  // look like the search had failed.
+  // An empty payload now means an empty CLASS, not a healthy one — the route
+  // returns the whole roster. A class with no students is the only case left
+  // where there is genuinely nothing to show.
   if (students.length === 0) {
     return (
       <div className="px-5 pb-5">
@@ -266,11 +386,10 @@ function Body({ sectionId, termId }: Omit<Props, 'termLabel'>) {
             <UserSearch className="size-4" />
           </div>
           <p className="font-serif text-base font-semibold text-foreground">
-            Nobody needs a look
+            No students yet
           </p>
           <p className="max-w-[38ch] text-sm text-muted-foreground">
-            No student in this class has fallen {GRADE_ALERT_THRESHOLD} points
-            or more in any subject since their last marked term.
+            Nobody is on this class list for {termLabel}.
           </p>
         </div>
       </div>
@@ -287,22 +406,77 @@ function Body({ sectionId, termId }: Omit<Props, 'termLabel'>) {
     );
   }
 
+  // Index order, because that is how a teacher already holds the class in their
+  // head — they call students by number. The panel used to arrive ranked by the
+  // steepest fall, which is only the right order if triage is the only question
+  // being asked; the filter answers that one on demand instead.
+  const q = query.trim().toLowerCase();
+  const shown = students
+    .filter((s) => (onlyFlagged ? s.drops.length > 0 : true))
+    .filter((s) => (q ? s.studentName.toLowerCase().includes(q) : true))
+    .sort((a, b) => a.indexNumber - b.indexNumber);
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-      <div className="overflow-hidden rounded-xl border border-border">
-        <ul className="divide-y divide-border">
-          {students.map((s) => (
-            <Row
-              key={s.sectionStudentId}
-              student={s}
-              onOpen={() => setSelected(s)}
-            />
-          ))}
-        </ul>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Type a student name…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {/* The term is named in the option. Without it a narrowed list reading
+            "nobody" invites "this class has no problems", when what it means
+            is "nobody in THIS term". */}
+        <Select
+          value={onlyFlagged ? 'flagged' : 'all'}
+          onValueChange={(v) => setOnlyFlagged(v === 'flagged')}
+        >
+          <SelectTrigger className="w-auto shrink-0 gap-1.5">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">All students</SelectItem>
+            <SelectItem value="flagged">Only flagged · {termLabel}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <p className="pt-3 text-[13px] text-muted-foreground">
-        Ranked by the steepest single fall. Open a name for the parents&rsquo;
-        numbers.
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {shown.length === 0 ? (
+          <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-border px-6 py-10 text-center">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+              <UserSearch className="size-4" />
+            </div>
+            <p className="font-serif text-base font-semibold text-foreground">
+              {q ? 'No match' : 'Nobody needs a look'}
+            </p>
+            <p className="max-w-[38ch] text-sm text-muted-foreground">
+              {q
+                ? `No student in this class matches “${query}”.`
+                : `No student has fallen ${GRADE_ALERT_THRESHOLD} points or more in any subject in ${termLabel}.`}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <ul className="divide-y divide-border">
+              {shown.map((s) => (
+                <Row
+                  key={s.sectionStudentId}
+                  student={s}
+                  onOpen={() => setSelected(s)}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <p className="shrink-0 text-[13px] text-muted-foreground">
+        Open a name for their whole year and the parents&rsquo; numbers.
       </p>
     </div>
   );
@@ -311,31 +485,41 @@ function Body({ sectionId, termId }: Omit<Props, 'termLabel'>) {
 export function AtRiskLookup({ sectionId, termId, termLabel }: Props) {
   const [open, setOpen] = useState(false);
 
+  // A DIALOG, NOT A SIDE SHEET — and the same one the grading sheet opens.
+  //
+  // This was a 512px drawer, which is fine for a list of names and hopeless for
+  // what it now holds: four terms across, for every subject the class takes.
+  // Mr Ace, 2026-08-21, looking at it: "its a sheet and what the hell is that
+  // UI." Three surfaces, one habit only works if the habit is the same shape,
+  // so this matches `grade-lookup-dialog` down to the width and the title pair.
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <UserSearch className="size-4" />
           Look up student
         </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-lg">
-        <SheetHeader className="gap-1.5 border-b border-border pb-5">
+      </DialogTrigger>
+      <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[860px] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogHeader className="shrink-0 gap-1.5 border-b border-border px-6 py-4">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {termLabel}
           </p>
-          <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
-            Students who need a look
-          </SheetTitle>
-          <SheetDescription>
-            Marks that have fallen {GRADE_ALERT_THRESHOLD} points or more since
-            the last marked term, across every subject this class takes.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex min-h-0 flex-1 flex-col pt-5">
-          {open && <Body sectionId={sectionId} termId={termId} />}
+          <DialogTitle className="font-serif text-xl font-semibold tracking-tight">
+            Grade lookup
+          </DialogTitle>
+          <DialogDescription>
+            Everyone in this class, with their whole year in every subject.
+            Filter to the students whose marks have fallen{' '}
+            {GRADE_ALERT_THRESHOLD} points or more.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex min-h-0 flex-1 flex-col pt-4">
+          {open && (
+            <Body sectionId={sectionId} termId={termId} termLabel={termLabel} />
+          )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
