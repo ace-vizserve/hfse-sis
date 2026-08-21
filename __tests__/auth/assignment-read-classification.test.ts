@@ -62,10 +62,24 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/api/classroom/[sectionId]/notes/route.ts': ['act'],
   'app/api/classroom/[sectionId]/at-risk/route.ts': ['act'],
   'app/api/classroom/[sectionId]/students/[studentNumber]/route.ts': ['act'],
+  // Disciplinary records (#7). ACT, not name: the school files an incident by
+  // whoever was in charge at the venue (Chandana, 2026-08-14), and a relief
+  // teacher covering the class IS that person. Locking a substitute out of
+  // filing would mean the one adult who saw it happen cannot report it.
+  // Nothing here prints a teacher's name — `filed_by` is stamped from the
+  // verified session, never resolved from an assignment.
+  'app/api/classroom/[sectionId]/students/[studentNumber]/discipline/route.ts':
+    ['act'],
+  'app/api/classroom/[sectionId]/students/[studentNumber]/discipline/[recordId]/route.ts':
+    ['act'],
   'app/(classroom)/classroom/[sectionId]/layout.tsx': ['act'],
   'app/(classroom)/classroom/[sectionId]/attendance/page.tsx': ['act'],
   'app/(classroom)/classroom/[sectionId]/grades/page.tsx': ['act'],
   'app/(classroom)/classroom/[sectionId]/students/page.tsx': ['act'],
+  // Same reasoning as the two discipline API routes above: a substitute
+  // covering the class is the adult who was at the venue, so the class's list
+  // of filings is theirs to read while they hold the cover.
+  'app/(classroom)/classroom/[sectionId]/discipline/page.tsx': ['act'],
   'app/(classroom)/classroom/[sectionId]/timeline/page.tsx': ['act'],
   'app/(classroom)/classroom/[sectionId]/settings/page.tsx': ['act'],
   'app/(attendance)/attendance/[sectionId]/summary/page.tsx': ['act'],
@@ -92,6 +106,13 @@ const CLASSIFIED: Record<string, Category[]> = {
   // annotation beside each one, never used to move a class onto the
   // substitute's page, because a covered class is still the regular teacher's.
   'lib/sis/teacher-detail.ts': ['name'],
+  // The Classroom "who runs this class" panel. Same shape as teacher-detail
+  // above: it reads `relief_teacher_user_id` on purpose, because showing who
+  // is covering is half of what the panel is for, but it never SUBSTITUTES —
+  // the holder is rendered first and the reliever only ever appears as
+  // "· X covering" beside them, so the name of record is never displaced.
+  // __tests__/classroom/classroom-staff-panel.test.tsx pins that.
+  'lib/classroom/staff.ts': ['name'],
   'app/api/teacher-assignments/by-teacher/route.ts': ['name'],
   'app/(sis)/sis/sections/page.tsx': ['name'],
   'app/(sis)/sis/sections/[id]/page.tsx': ['name'],

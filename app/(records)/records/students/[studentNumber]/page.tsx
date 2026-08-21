@@ -47,6 +47,7 @@ import {
 } from '@/components/sis/section-transfer-dialog';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { StpApplicationCard } from '@/components/sis/stp-application-card';
+import { StudentDisciplineTab } from '@/components/sis/student-discipline-tab';
 import { StudentLifecycleTimeline } from '@/components/sis/student-lifecycle-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,7 @@ import {
   subjectAward,
   type AwardThresholds,
 } from '@/lib/compute/awards';
+import { listDisciplineForStudent } from '@/lib/discipline/queries';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import {
   ENROLLED_STATUSES,
@@ -278,6 +280,7 @@ const TAB_KEYS = [
   'family',
   'placements',
   'academic',
+  'discipline',
   'lifecycle',
 ] as const;
 type TabKey = (typeof TAB_KEYS)[number];
@@ -334,13 +337,16 @@ export default async function RecordsStudentCrossYearPage({
     );
   }
 
-  const [placements, academics, attendance, history, currentAy] =
+  const [placements, academics, attendance, history, currentAy, discipline] =
     await Promise.all([
       getPlacementHistory(student.studentId),
       getAcademicHistory(student.studentId),
       getAttendanceHistory(student.studentId),
       getEnrollmentHistory(studentNumber),
       getCurrentAcademicYear(),
+      // Cross-year on purpose — no `academicYearId` narrowing. This is the
+      // permanent record, and behaviour does not restart in August.
+      listDisciplineForStudent(student.studentId),
     ]);
 
   // Synchronous derivations — no DB calls.
@@ -626,6 +632,7 @@ export default async function RecordsStudentCrossYearPage({
           <TabsTrigger value="family">Family &amp; care</TabsTrigger>
           <TabsTrigger value="placements">Placements</TabsTrigger>
           <TabsTrigger value="academic">Academic</TabsTrigger>
+          <TabsTrigger value="discipline">Discipline</TabsTrigger>
           <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
         </TabsList>
 
@@ -720,6 +727,16 @@ export default async function RecordsStudentCrossYearPage({
             allowance={allowance}
             currentEnroleeNumber={currentEnroleeNumber}
           />
+        </TabsContent>
+
+        {/* Read-only. Filing lives in Classroom — teachers cannot open this
+            page at all, and the school files by whoever was at the venue. */}
+        <TabsContent value="discipline" className="space-y-6">
+          {/* New records are filed in Classroom — teachers cannot open this
+              page, and the school files by whoever was at the venue. But every
+              role admitted here is `oversight`, so all of them may CORRECT a
+              filing, which is what canEdit turns on. */}
+          <StudentDisciplineTab records={discipline} canEdit={canEditRecord} />
         </TabsContent>
 
         <TabsContent value="lifecycle" className="space-y-6">

@@ -157,6 +157,13 @@ export const ALL_AUDIT_ACTIONS = [
   'environment.demo_accounts_removed',
   'grade_entry.annual_letter.update',
   'classroom.note.save',
+  // Disciplinary records (#7). Filing and later edits are separate actions
+  // because they answer different questions — "who reported this" is a fact
+  // about the incident, "who changed it afterwards" is a fact about the
+  // record. Neither context ever carries the narrative itself; see the write
+  // routes and migration 120.
+  'discipline.record.file',
+  'discipline.record.update',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
@@ -204,6 +211,7 @@ export type AuditEntityType =
   | 'evaluation_subject_comment'
   | 'evaluation_ptc_feedback'
   | 'classroom_note'
+  | 'student_discipline_record'
   // The entity is the ROLE whose permissions changed, so entity_id is the role
   // name — not a uuid. entity_id is `text` since migration 043.
   | 'role_permissions';

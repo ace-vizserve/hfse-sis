@@ -230,3 +230,23 @@ export function canOpenStudentRecord(
 ): boolean {
   return capability === 'oversight';
 }
+
+/**
+ * Whether this user may edit a disciplinary record they did not file.
+ *
+ * FILING is open to any staff member — Chandana, 2026-08-14: incident reports
+ * are filed by "the person in charge who is present at the venue of incident",
+ * which is a circumstance rather than a role. EDITING is narrower: the filer,
+ * plus leadership (Mr Ace, 2026-08-17). This predicate is only the second
+ * half; the route ORs it with `record.filedBy === user.id`.
+ *
+ * Named separately from `canOpenStudentRecord` despite the identical body, per
+ * this file's convention — that one answers "may they open /records", which is
+ * a routing question that could narrow on its own without changing who may
+ * correct a filing.
+ */
+export function canManageAnyDisciplineRecord(
+  capability: ClassroomCapability | null
+): boolean {
+  return capability === 'oversight';
+}

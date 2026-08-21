@@ -32,6 +32,7 @@ describe('tabsForCapability', () => {
       'overview',
       'grades',
       'students',
+      'discipline',
       'timeline',
       'settings',
     ]);
@@ -44,6 +45,7 @@ describe('tabsForCapability', () => {
       'students',
       'attendance',
       'write-ups',
+      'discipline',
       'timeline',
       'settings',
     ]);
@@ -56,6 +58,7 @@ describe('tabsForCapability', () => {
       'students',
       'attendance',
       'write-ups',
+      'discipline',
       'timeline',
       'settings',
     ]);

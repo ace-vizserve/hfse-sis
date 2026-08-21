@@ -53,6 +53,8 @@ export function ClassroomRosterTable({
   data,
   showReportCard = false,
   showRecordLink,
+  viewerUserId,
+  canManageAnyDiscipline,
 }: {
   sectionId: string;
   /** Shown in the details drawer's header, so the panel says which class. */
@@ -71,6 +73,12 @@ export function ClassroomRosterTable({
    * quietly re-create the dead link this replaced.
    */
   showRecordLink: boolean;
+  /** The signed-in user's own id — the details drawer's Discipline tab needs
+   * it to know whether this reader filed the record they are looking at. */
+  viewerUserId: string;
+  /** Oversight only — the caller decides via
+   * `canManageAnyDisciplineRecord(capability)`. */
+  canManageAnyDiscipline: boolean;
 }) {
   const [order] = useStudentOrder(sectionId);
   const rows = sortRosterByOrder(data, order);
@@ -130,6 +138,8 @@ export function ClassroomRosterTable({
                       indexNumber={row.index_number}
                       houseName={row.house_name}
                       houseColourToken={row.house_colour_token}
+                      viewerUserId={viewerUserId}
+                      canManageAnyDiscipline={canManageAnyDiscipline}
                     />
                   )}
                   <HouseChip
@@ -153,6 +163,8 @@ export function ClassroomRosterTable({
                     indexNumber={row.index_number}
                     houseName={row.house_name}
                     houseColourToken={row.house_colour_token}
+                    viewerUserId={viewerUserId}
+                    canManageAnyDiscipline={canManageAnyDiscipline}
                   />
                   {showReportCard && row.student_id ? (
                     <Button variant="ghost" size="sm" asChild>

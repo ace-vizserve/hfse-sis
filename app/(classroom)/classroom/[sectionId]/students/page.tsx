@@ -3,7 +3,11 @@ import { notFound, redirect } from 'next/navigation';
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
 import { listHouses } from '@/lib/sis/houses';
-import { canOpenStudentRecord, canReadReportCard } from '@/lib/classroom/scope';
+import {
+  canManageAnyDisciplineRecord,
+  canOpenStudentRecord,
+  canReadReportCard,
+} from '@/lib/classroom/scope';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type EnrolmentRow = {
@@ -110,6 +114,8 @@ export default async function ClassroomStudentsPage({
         data={rosterRows}
         showReportCard={canReadReportCard(substantiveCapability)}
         showRecordLink={canOpenStudentRecord(capability)}
+        viewerUserId={userId}
+        canManageAnyDiscipline={canManageAnyDisciplineRecord(capability)}
       />
     </div>
   );

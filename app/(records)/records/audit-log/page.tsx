@@ -84,6 +84,13 @@ export default async function SisAuditLogPage({
     'pfile.reminder.bulk',
     'pfile.mark.promised',
     'enrolment.metadata.update',
+    // Disciplinary records (#7). They surface here rather than under a
+    // teaching module because Records is where a student's whole year is
+    // read, and because the Classroom module has no audit-log page of its
+    // own. The rows name the student and the kind of record; the narrative
+    // itself is deliberately never written to audit_log (migration 120).
+    'discipline.record.file',
+    'discipline.record.update',
   ] as const;
   const actorFilter = params.actor?.trim();
 

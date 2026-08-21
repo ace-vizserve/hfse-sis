@@ -57,7 +57,24 @@ const SCANNED = [
  * true if the JSX gates it, and if you are sure of that you should say why.
  * Keyed `relativePath:hrefPrefix`.
  */
-const ALLOWLIST: Record<string, string> = {};
+const ALLOWLIST: Record<string, string> = {
+  // The "Manage teachers" link on the Classroom staff panel. Rendered inside
+  // `{canManage && ...}`, and the page passes `canManage={capability ===
+  // 'oversight'}` — which resolves to academic_coordinator | school_admin |
+  // superadmin, exactly the role set /sis/sections/[id] admits. A teacher
+  // never sees it, so the link cannot dead-end (KD #173). Verified by
+  // __tests__/classroom/classroom-staff-panel.test.tsx, which asserts both
+  // halves: absent without the flag, present with it.
+  'components/classroom/classroom-staff-panel.tsx:/sis/sections/':
+    'Gated on capability === oversight, the same role set the target page admits.',
+  // Each teacher's name on the same panel, linked to their staff page. Same
+  // gate, same reasoning: `<Person>` returns plain text unless `canManage`, and
+  // /sis/admin/staff is coordinator | school_admin | superadmin — see the nav
+  // entry in lib/auth/roles.ts. Both halves are asserted in
+  // __tests__/classroom/classroom-staff-panel.test.tsx.
+  'components/classroom/classroom-staff-panel.tsx:/sis/admin/staff/':
+    'Gated on capability === oversight, the same role set the target page admits.',
+};
 
 function walk(dir: string): string[] {
   let out: string[] = [];

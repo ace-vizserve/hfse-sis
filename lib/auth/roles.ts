@@ -205,6 +205,13 @@ const RECORDS_NAV: NavSection[] = [
     items: [
       { href: '/records/students', label: 'Students' },
       { href: '/records/movements', label: 'Movements' },
+      // Disciplinary records (#7). No `requiresRoles`: the page carries the
+      // same three-role guard as the rest of Records, and a narrower nav item
+      // than its own page is what link-capability-consistency reports on.
+      // No ROUTE_ACCESS row either — the `/records` subtree already admits
+      // exactly these roles, and a redundant prefix would oblige every role in
+      // it to have its own nav link.
+      { href: '/records/discipline', label: 'Discipline' },
       // Operational queue for enrolled-but-not-synced students. Per-row
       // sync gates on BOTH studentNumber AND classSection — when either
       // is missing the student is stranded outside grading. The queue

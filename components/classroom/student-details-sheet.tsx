@@ -2,7 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { HeartPulse, Mail, Phone, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 
+import {
+  DISCIPLINE_LIST_VIEW,
+  DisciplineList,
+  StudentDisciplineTakeover,
+  type DisciplineView,
+} from '@/components/classroom/student-discipline-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { HouseChip } from '@/components/ui/house-chip';
@@ -17,6 +24,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { StudentDetails } from '@/lib/classroom/student-details';
+import type { DisciplineRecordRow } from '@/lib/discipline/queries';
 import { ApiError, apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
@@ -41,6 +49,12 @@ import { cn } from '@/lib/utils';
 // discover they are all empty. The dot is only ever shown for content that
 // survived the junk filter (lib/classroom/student-details.ts), so a tab
 // promising something never opens onto "NA".
+//
+// THE FOURTH TAB WRITES. Discipline (#7) is the only tab that is not read-only:
+// filing lives here because teachers cannot open Records at all, and because
+// the school files by whoever was in charge at the venue. Its detail view and
+// its form replace this panel's body rather than opening a second Sheet on top
+// — see student-discipline-panel.tsx.
 
 type Props = {
   sectionId: string;
@@ -50,11 +64,24 @@ type Props = {
   sectionName: string | null;
   houseName: string | null;
   houseColourToken: string | null;
+  /**
+   * The signed-in user's own id. A disciplinary record may be corrected by the
+   * person who filed it, so the panel has to know who is reading — and the
+   * verified id can only come from the server.
+   */
+  viewerUserId: string;
+  /**
+   * Leadership may correct anyone's filing — the caller decides via
+   * `canManageAnyDisciplineRecord(capability)`. Required on purpose: a
+   * forgotten decision must fail the build rather than quietly offer an Edit
+   * button that answers 403.
+   */
+  canManageAnyDiscipline: boolean;
   /** Renders the trigger as the student's name rather than a button. */
   asName?: boolean;
 };
 
-type TabKey = 'medical' | 'learning' | 'contacts';
+type TabKey = 'medical' | 'learning' | 'contacts' | 'discipline';
 
 function ContentDot({ tone }: { tone: 'alert' | 'info' }) {
   return (
@@ -125,9 +152,13 @@ function FieldRow({
 function StudentDetailsBody({
   sectionId,
   studentNumber,
+  viewerUserId,
+  canManageAnyDiscipline,
 }: {
   sectionId: string;
   studentNumber: string;
+  viewerUserId: string;
+  canManageAnyDiscipline: boolean;
 }) {
   const { data, isLoading, isError, error } = useQuery<StudentDetails>({
     queryKey: queryKeys.classroomStudentDetails(sectionId, studentNumber),
@@ -137,6 +168,29 @@ function StudentDetailsBody({
         { signal }
       ),
   });
+
+  // A SECOND query, in parallel, not a fourth slice off the first. The details
+  // endpoint reads the enrolment record; this reads a separate table that any
+  // teacher can also write to, and folding them together would make one cache
+  // entry that a filing has to invalidate in order to refresh a phone number.
+  // It runs on open rather than on tab-select because the tab's dot has to be
+  // right before anyone clicks it.
+  const discipline = useQuery<{ records: DisciplineRecordRow[] }>({
+    queryKey: queryKeys.classroomStudentDiscipline(sectionId, studentNumber),
+    queryFn: ({ signal }) =>
+      apiFetch<{ records: DisciplineRecordRow[] }>(
+        `/api/classroom/${sectionId}/students/${encodeURIComponent(studentNumber)}/discipline`,
+        { signal }
+      ),
+  });
+  const records = discipline.data?.records ?? [];
+
+  // The detail and the form REPLACE everything below the header, tabs included.
+  // The state lives out here rather than inside the panel because the panel's
+  // list is a child of `TabsContent` — it cannot reach outside the tabs to
+  // remove them.
+  const [disciplineView, setDisciplineView] =
+    useState<DisciplineView>(DISCIPLINE_LIST_VIEW);
 
   // The status is shown, not swallowed. "Could not be loaded" on its own sent
   // the first real failure back as a screenshot with nothing to act on: a 404
@@ -167,6 +221,20 @@ function StudentDetailsBody({
     : data?.hasLearning
       ? 'learning'
       : 'contacts';
+
+  if (disciplineView.mode !== 'list') {
+    return (
+      <StudentDisciplineTakeover
+        sectionId={sectionId}
+        studentNumber={studentNumber}
+        records={records}
+        view={disciplineView}
+        onView={setDisciplineView}
+        viewerUserId={viewerUserId}
+        canManageAnyDiscipline={canManageAnyDiscipline}
+      />
+    );
+  }
 
   return (
     <>
@@ -246,6 +314,13 @@ function StudentDetailsBody({
                 {data.hasLearning && <ContentDot tone="info" />}
               </TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
+              {/* `info`, not `alert`. The alert dot is the medical strip's
+                  signal and has to stay sharp for a peanut allergy; a filed
+                  record is worth knowing about, not an emergency. */}
+              <TabsTrigger value="discipline" className="gap-1.5">
+                Discipline
+                {records.length > 0 && <ContentDot tone="info" />}
+              </TabsTrigger>
             </TabsList>
 
             <div className="min-h-0 flex-1 overflow-y-auto pt-5">
@@ -377,6 +452,20 @@ function StudentDetailsBody({
                   </div>
                 )}
               </TabsContent>
+
+              <TabsContent value="discipline">
+                <DisciplineList
+                  records={records}
+                  isLoading={discipline.isLoading}
+                  isError={discipline.isError}
+                  onOpen={(recordId) =>
+                    setDisciplineView({ mode: 'detail', recordId })
+                  }
+                  onFile={() =>
+                    setDisciplineView({ mode: 'form', recordId: null })
+                  }
+                />
+              </TabsContent>
             </div>
           </Tabs>
         </>
@@ -393,6 +482,8 @@ export function StudentDetailsSheet({
   sectionName,
   houseName,
   houseColourToken,
+  viewerUserId,
+  canManageAnyDiscipline,
   asName = false,
 }: Props) {
   return (
@@ -415,7 +506,10 @@ export function StudentDetailsSheet({
       {/* max-w-lg, not md. An email address and a full Filipino name in the
           `SURNAME, First, Middle` form the school uses both run long, and at
           md they truncated or wrapped mid-name. */}
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-lg">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-lg"
+      >
         <SheetHeader className="gap-1.5 border-b border-border pb-5">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Student details
@@ -442,6 +536,8 @@ export function StudentDetailsSheet({
           <StudentDetailsBody
             sectionId={sectionId}
             studentNumber={studentNumber}
+            viewerUserId={viewerUserId}
+            canManageAnyDiscipline={canManageAnyDiscipline}
           />
         </div>
       </SheetContent>

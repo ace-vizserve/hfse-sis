@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canManageAnyDisciplineRecord,
   canReadAttendance,
   canReadReportCard,
   canReadRoster,
@@ -185,6 +186,30 @@ describe('capability gates mirror RLS', () => {
       null,
     ];
     expect(all.filter(canReadReportCard)).toEqual(['adviser', 'oversight']);
+  });
+
+  // FILING a disciplinary record is open to any staff member — Chandana,
+  // 2026-08-14: incident reports are filed by "the person in charge who is
+  // present at the venue of incident", which is a circumstance, not a role.
+  // EDITING one you did not file is leadership only (Mr Ace, 2026-08-17), and
+  // this predicate is only that second half; the route ORs it with
+  // `record.filedBy === user.id`.
+  it('only oversight can edit a discipline record they did not file', () => {
+    const all: Array<ClassroomCapability | null> = [
+      'adviser',
+      'subject',
+      'oversight',
+      null,
+    ];
+    expect(all.filter(canManageAnyDisciplineRecord)).toEqual(['oversight']);
+  });
+
+  // A form adviser is NOT leadership here. They run the class, but correcting
+  // another staff member's account of an incident is a different authority —
+  // and the school routes a case to the FCA, the Discipline Committee or
+  // Student Support Services by severity, none of which the system models yet.
+  it('does not let a form adviser edit another person’s filing', () => {
+    expect(canManageAnyDisciplineRecord('adviser')).toBe(false);
   });
 });
 

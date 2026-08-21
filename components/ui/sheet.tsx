@@ -27,6 +27,19 @@ const SheetOverlay = React.forwardRef<
 ));
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
+// ⚠ NOT a flex column. The base below is a plain block with `h-full`, so a
+// body styled `flex-1 min-h-0 overflow-y-auto` — the usual way to make a
+// drawer's content scroll under a pinned header — is INERT here and the
+// content silently overflows instead. Every sheet with a scrolling body
+// therefore passes `flex flex-col` itself (score-entry-grid, export-sheet,
+// staff-assignment-sheet, enrolment-meta-editor, and the three classroom
+// drawers). Found 2026-08-21, when the discipline filing form became the first
+// sheet body tall enough to show it.
+//
+// Left as-is deliberately: `gap-4` above is currently inert, and turning this
+// into a flex column would make it real in every sheet that does not pass
+// `gap-0`, changing spacing app-wide. Fix it properly with a sweep of all
+// call sites, not as a drive-by.
 const sheetVariants = cva(
   'fixed z-50 gap-4 bg-white p-6 shadow-[-8px_0_32px_-8px_rgba(15,23,42,0.2)] ring-1 ring-inset ring-hairline transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out',
   {

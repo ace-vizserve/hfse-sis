@@ -42,6 +42,8 @@ describe('<ClassroomRosterTable> student-record link', () => {
         sectionId="sec-1"
         data={ROWS}
         showRecordLink={false}
+        viewerUserId="user-1"
+        canManageAnyDiscipline={false}
       />
     );
 
@@ -57,6 +59,8 @@ describe('<ClassroomRosterTable> student-record link', () => {
         sectionId="sec-1"
         data={ROWS}
         showRecordLink={true}
+        viewerUserId="user-1"
+        canManageAnyDiscipline={false}
       />
     );
 
@@ -74,6 +78,8 @@ describe('<ClassroomRosterTable> student-record link', () => {
         data={ROWS}
         showRecordLink={false}
         showReportCard
+        viewerUserId="user-1"
+        canManageAnyDiscipline={false}
       />
     );
 

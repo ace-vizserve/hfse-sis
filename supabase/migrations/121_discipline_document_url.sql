@@ -1,0 +1,62 @@
+-- 121_discipline_document_url.sql
+--
+-- A link to the document behind a disciplinary record — the incident report,
+-- the letter that went home, or the slip the parent signed and returned.
+--
+-- Mr Ace, 2026-08-18: "we need to at least attach the url of the docs tho so
+-- just for them to easily see it."
+--
+-- SEPARATE FROM 120 ONLY BECAUSE 120 IS ALREADY APPLIED. It was written as part
+-- of the same decision and would have been one migration a day earlier. Do not
+-- read the split as two thoughts.
+--
+-- ─────────────────────────────────────────────────────────────────────────
+-- ONE COLUMN, NOT THREE, AND NOT AN UPLOAD
+--
+-- One link covers all three cases because they are the same shape: a document
+-- that lives somewhere else and is worth reaching from the record. Whether the
+-- parent has RETURNED the slip is a different question — a state somebody
+-- chases — and nobody has asked for it. The letter gives it a two-day deadline,
+-- which is the only hint that anyone tracks it at all.
+--
+-- Uploads were considered the same day and rejected. Christina's ask (18:20)
+-- was the record, not the document: "find those incidents that the student was
+-- involved in… WHETHER the student received a warning letter or suspension."
+-- Beyond that, storing the file would make this the app's FIRST private file —
+-- the only bucket is `parent-portal`, every read in the codebase is
+-- `getPublicUrl`, and no signed URL exists anywhere. That is fine for a
+-- passport nobody guesses the URL of and not fine for a child's warning
+-- letter. It is a decision, not a task; a link needs neither.
+--
+-- ⚠ THE LINK IS AN UNTESTED ASSUMPTION. Nobody has confirmed the school's
+-- numbered incident PDFs live anywhere linkable — "computer-generated" is not
+-- "hosted", and all we have seen is a filename carrying `Case No. 702`. The
+-- warning letter certainly is not generated: that .docx was authored in Word
+-- and hand-filled. And the only direct evidence of how Christina thinks about
+-- files points the other way (19:08, on certificates: "we UPLOAD the
+-- certificate also for our soft copy"). The deciding question — what generates
+-- those PDFs today — is already on the outstanding list for the school. If the
+-- answer is "somebody's drive", this column stays empty and the upload
+-- question reopens with the storage decision owed first.
+--
+-- ⚠ A LINK CAN ROT AND THIS SYSTEM WILL NOT KNOW. It fails at click time, not
+-- at save time. Accepted deliberately: the row still says what happened, who
+-- filed it and when, which is the part that was actually asked for. The link is
+-- a convenience on top, never the record itself. Nothing may treat a dead link
+-- as a missing record.
+--
+-- NO SHAPE CONSTRAINT HERE. `text`, unconstrained. The scheme check lives in
+-- `lib/schemas/discipline.ts`, where a rejection can be a sentence a school
+-- admin can act on rather than a constraint name — the same split as the
+-- not-in-the-future date rule (see 120). And nothing in this system ever
+-- fetches the URL: it is rendered as a link for a person to click, never
+-- requested by the server, which would turn a typo in a text box into an
+-- outbound request from our infrastructure.
+--
+-- Idempotent — safe to re-run. APPLIED 2026-08-18, same day as 120.
+
+alter table public.student_discipline_records
+  add column if not exists document_url text;
+
+comment on column public.student_discipline_records.document_url is
+  'Optional link to the document behind this record — the incident report, the letter sent home, or the signed slip returned by the parent. A convenience for reaching the paperwork, NEVER the record itself: the row stands on its own if the link rots, and a dead link must never be read as a missing record. The server never fetches it. Shape is validated in lib/schemas/discipline.ts, not by a constraint, so a bad paste answers in words.';

@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ClassroomStaffPanel } from '@/components/classroom/classroom-staff-panel';
 import {
   ClassroomAtRiskPanel,
   ClassroomHealthChecklist,
@@ -37,6 +38,7 @@ import {
   canReadWriteups,
 } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
+import { getSectionStaff } from '@/lib/classroom/staff';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import {
   getSectionRoster,
@@ -93,11 +95,16 @@ export default async function ClassroomOverviewPage({
   const selectedTerm = terms.find((t) => t.id === selectedTermId) ?? null;
   const isT4 = selectedTerm?.term_number === 4;
 
-  const { count: activeCount } = await supabase
-    .from('section_students')
-    .select('id', { count: 'exact', head: true })
-    .eq('section_id', sectionId)
-    .neq('enrollment_status', 'withdrawn');
+  // Who runs the class is a section-wide fact, not a per-term one, so it is
+  // fetched alongside the roster count rather than behind the term resolver.
+  const [{ count: activeCount }, staff] = await Promise.all([
+    supabase
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('section_id', sectionId)
+      .neq('enrollment_status', 'withdrawn'),
+    getSectionStaff(sectionId),
+  ]);
 
   let sheetsCount = 0;
   let lockedCount = 0;
@@ -345,6 +352,15 @@ export default async function ClassroomOverviewPage({
       </div>
 
       <ClassroomHealthChecklist rows={healthRows} />
+      {/* Every capability sees this. Who teaches a class is section setup, not
+          RLS-restricted data — the no-adviser Health row above already tells
+          every teacher the same kind of fact. Only oversight gets the link
+          out, because only oversight can open /sis/sections/[id]. */}
+      <ClassroomStaffPanel
+        sectionId={sectionId}
+        staff={staff}
+        canManage={capability === 'oversight'}
+      />
       <ClassroomAtRiskPanel
         students={atRiskStudents}
         canOpenRecord={canOpenStudentRecord(capability)}

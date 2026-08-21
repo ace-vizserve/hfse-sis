@@ -24,6 +24,7 @@ export type ClassroomTabKey =
   | 'students'
   | 'attendance'
   | 'write-ups'
+  | 'discipline'
   | 'timeline'
   | 'settings';
 
@@ -37,6 +38,7 @@ export type ClassroomTab = {
     | 'students'
     | 'attendance'
     | 'write-ups'
+    | 'discipline'
     | 'timeline'
     | 'settings';
 };
@@ -47,6 +49,13 @@ const ALL_TABS: ClassroomTab[] = [
   { key: 'students', label: 'Students', path: 'students' },
   { key: 'attendance', label: 'Attendance', path: 'attendance' },
   { key: 'write-ups', label: 'Write-ups', path: 'write-ups' },
+  // Discipline (#7) sits in the "any capability" bucket below, deliberately.
+  // Filing is open to any staff member — Chandana, 2026-08-14: an incident is
+  // filed by "the person in charge who is present at the venue", which is a
+  // circumstance rather than a role — and the API gates reading and filing on
+  // exactly the same roster floor. A narrower tab than the route it links to
+  // would hide the page from people the server would let in.
+  { key: 'discipline', label: 'Discipline', path: 'discipline' },
   // Timeline is deliberately in the "any capability" bucket below, not
   // attendance/write-ups gated — it is a filtered view of audit_log, whose
   // rows are already scoped by which entity ids the query gathers, not by
@@ -81,9 +90,9 @@ export function tabsForCapability(
   return ALL_TABS.filter((tab) => {
     if (tab.key === 'attendance') return canReadAttendance(capability);
     if (tab.key === 'write-ups') return canReadWriteups(substantiveCapability);
-    // Overview, Grades, Students, Timeline, Settings all just require the
-    // roster-read floor — any capability at all (adviser / subject /
-    // oversight).
+    // Overview, Grades, Students, Discipline, Timeline, Settings all just
+    // require the roster-read floor — any capability at all (adviser /
+    // subject / oversight).
     return canReadRoster(capability);
   });
 }

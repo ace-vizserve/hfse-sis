@@ -65,6 +65,15 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // "length not content" convention as evaluation.writeup.save).
   'classroom.note.save': 'Class note saved',
 
+  // Disciplinary records (#7) — the row records THAT something was filed and
+  // by whom, never what it said. Same "metadata, not content" line as the
+  // class note above and attendance's excused-absence note: audit_log is
+  // append-only and readable by every coordinator and above, so a child's
+  // behavioural narrative typed in error would be permanent and widely
+  // visible. The record itself is the place to read it.
+  'discipline.record.file': 'Discipline record filed',
+  'discipline.record.update': 'Discipline record updated',
+
   // Students / enrolment
   'student.sync': 'Student synced',
   'student.add': 'Student added',

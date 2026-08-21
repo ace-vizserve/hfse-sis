@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { StudentDetailsSheet } from '@/components/classroom/student-details-sheet';
 import type { StudentDetails } from '@/lib/classroom/student-details';
 import { renderWithClient } from '../_utils/render-with-client';
-import { jsonResponse, stubFetchOnce } from '../_utils/mock-fetch';
+import { jsonResponse, stubFetch } from '../_utils/mock-fetch';
 
 function details(over: Partial<StudentDetails> = {}): StudentDetails {
   return {
@@ -28,6 +28,27 @@ function details(over: Partial<StudentDetails> = {}): StudentDetails {
   };
 }
 
+/**
+ * The drawer fires TWO requests on open — the enrolment details, and the
+ * student's disciplinary records for the fourth tab's marker. The stub has to
+ * answer by URL: a single shared `Response` cannot serve both, because a body
+ * can only be read once and whichever query lost the race would parse `null`
+ * and render an empty panel.
+ */
+function stubDrawer(
+  detailsBody: unknown,
+  status = 200,
+  records: unknown[] = []
+) {
+  return stubFetch((input) =>
+    Promise.resolve(
+      String(input).endsWith('/discipline')
+        ? jsonResponse({ records })
+        : jsonResponse(detailsBody, status)
+    )
+  );
+}
+
 function renderSheet() {
   return renderWithClient(
     <StudentDetailsSheet
@@ -38,6 +59,8 @@ function renderSheet() {
       indexNumber={2}
       houseName="Orange House"
       houseColourToken="house-1"
+      viewerUserId="user-1"
+      canManageAnyDiscipline={false}
     />
   );
 }
@@ -50,38 +73,36 @@ async function open() {
 
 describe('nothing is fetched until the drawer is opened', () => {
   it('makes no request while closed', () => {
-    const fetchSpy = stubFetchOnce(jsonResponse(details()));
+    const fetchSpy = stubDrawer(details());
     renderSheet();
     // A roster of forty closed drawers must not be forty requests.
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('asks for the student scoped to the section', async () => {
-    const fetchSpy = stubFetchOnce(jsonResponse(details()));
+    const fetchSpy = stubDrawer(details());
     renderSheet();
     await open();
     await screen.findByRole('tab', { name: /contacts/i });
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
-      '/api/classroom/sec-1/students/H260127'
-    );
+    const urls = fetchSpy.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain('/api/classroom/sec-1/students/H260127');
+    expect(urls).toContain('/api/classroom/sec-1/students/H260127/discipline');
   });
 });
 
 describe('a medical flag cannot be navigated away from', () => {
   it('shows the flag outside the tabs, so it survives a tab change', async () => {
-    stubFetchOnce(
-      jsonResponse(
-        details({
-          hasMedical: true,
-          medical: {
-            conditions: ['Allergies', 'Asthma'],
-            notes: [
-              { label: 'Allergies', value: 'Severe peanut allergy — EpiPen' },
-            ],
-            paracetamol: true,
-          },
-        })
-      )
+    stubDrawer(
+      details({
+        hasMedical: true,
+        medical: {
+          conditions: ['Allergies', 'Asthma'],
+          notes: [
+            { label: 'Allergies', value: 'Severe peanut allergy — EpiPen' },
+          ],
+          paracetamol: true,
+        },
+      })
     );
     renderSheet();
     const user = await open();
@@ -105,17 +126,15 @@ describe('a medical flag cannot be navigated away from', () => {
   });
 
   it('opens on Medical when there is something medical', async () => {
-    stubFetchOnce(
-      jsonResponse(
-        details({
-          hasMedical: true,
-          medical: {
-            conditions: ['Epilepsy'],
-            notes: [],
-            paracetamol: null,
-          },
-        })
-      )
+    stubDrawer(
+      details({
+        hasMedical: true,
+        medical: {
+          conditions: ['Epilepsy'],
+          notes: [],
+          paracetamol: null,
+        },
+      })
     );
     renderSheet();
     await open();
@@ -126,23 +145,21 @@ describe('a medical flag cannot be navigated away from', () => {
 
 describe('which tab opens for a student with nothing recorded', () => {
   it('opens on Contacts rather than an empty Medical tab', async () => {
-    stubFetchOnce(
-      jsonResponse(
-        details({
-          contacts: {
-            people: [
-              {
-                label: 'Mother',
-                name: 'Priya Chandran',
-                mobile: '+65 8234 1122',
-                email: null,
-              },
-            ],
-            emergency: null,
-            livingWith: 'Mother',
-          },
-        })
-      )
+    stubDrawer(
+      details({
+        contacts: {
+          people: [
+            {
+              label: 'Mother',
+              name: 'Priya Chandran',
+              mobile: '+65 8234 1122',
+              email: null,
+            },
+          ],
+          emergency: null,
+          livingWith: 'Mother',
+        },
+      })
     );
     renderSheet();
     await open();
@@ -152,7 +169,7 @@ describe('which tab opens for a student with nothing recorded', () => {
   });
 
   it('says so on the empty tabs rather than leaving them blank', async () => {
-    stubFetchOnce(jsonResponse(details()));
+    stubDrawer(details());
     renderSheet();
     const user = await open();
     await user.click(await screen.findByRole('tab', { name: /learning/i }));
@@ -166,15 +183,13 @@ describe('which tab opens for a student with nothing recorded', () => {
 
 describe('the tab markers', () => {
   it('marks only the tabs that hold something', async () => {
-    stubFetchOnce(
-      jsonResponse(
-        details({
-          hasLearning: true,
-          learning: [
-            { label: 'Additional learning needs', value: 'Mild autism' },
-          ],
-        })
-      )
+    stubDrawer(
+      details({
+        hasLearning: true,
+        learning: [
+          { label: 'Additional learning needs', value: 'Mild autism' },
+        ],
+      })
     );
     renderSheet();
     await open();
@@ -188,7 +203,7 @@ describe('the tab markers', () => {
   });
 
   it('leaves both tabs unmarked when the record is empty', async () => {
-    stubFetchOnce(jsonResponse(details()));
+    stubDrawer(details());
     renderSheet();
     await open();
     await screen.findByRole('tab', { name: /medical/i });
@@ -202,7 +217,7 @@ describe('when the details cannot be loaded', () => {
   // the browser came back as a screenshot reading "could not be loaded", which
   // was true and useless.
   it('names the roster as the problem on a 404', async () => {
-    stubFetchOnce(jsonResponse({ error: 'not found' }, 404));
+    stubDrawer({ error: 'not found' }, 404);
     renderSheet();
     await open();
     expect(
@@ -213,7 +228,7 @@ describe('when the details cannot be loaded', () => {
   });
 
   it('shows the status on any other failure, so it can be reported', async () => {
-    stubFetchOnce(jsonResponse({ error: 'lookup failed' }, 500));
+    stubDrawer({ error: 'lookup failed' }, 500);
     renderSheet();
     await open();
     expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
@@ -221,9 +236,7 @@ describe('when the details cannot be loaded', () => {
   });
 
   it('names the step the server died on, so a screenshot is a bug report', async () => {
-    stubFetchOnce(
-      jsonResponse({ error: 'lookup failed', step: 'admissions row' }, 500)
-    );
+    stubDrawer({ error: 'lookup failed', step: 'admissions row' }, 500);
     renderSheet();
     await open();
     expect(
@@ -234,7 +247,7 @@ describe('when the details cannot be loaded', () => {
 
 describe('the name as a trigger', () => {
   it('opens the same drawer from the student name', async () => {
-    stubFetchOnce(jsonResponse(details()));
+    stubDrawer(details());
     renderWithClient(
       <StudentDetailsSheet
         asName
@@ -245,6 +258,8 @@ describe('the name as a trigger', () => {
         indexNumber={2}
         houseName={null}
         houseColourToken={null}
+        viewerUserId="user-1"
+        canManageAnyDiscipline={false}
       />
     );
     const user = userEvent.setup();
