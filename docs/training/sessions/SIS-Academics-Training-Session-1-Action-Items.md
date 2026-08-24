@@ -182,8 +182,7 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      Classroom so both surfaces read alike. **"On this sheet" stays
      grading-sheet-only** — it needs the raw slot scores off the sheet being
      marked, which Classroom does not carry. Full suite green (3,152).
-     ⚠ **Reviewed by Mr Ace on screenshots, not checklist-verified in a
-     browser.**
+     ✅ **Browser-verified by Mr Ace, 2026-08-24.**
 
   6. <!-- superseded detail retained below -->**Detail of the 2026-08-21 build, kept for its reasoning:** Mockup
 
