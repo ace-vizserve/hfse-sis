@@ -295,6 +295,8 @@ What the column cannot express, and why that is fine: scheduled cover ("starts M
 
 **The substitute is validated against `getTeacherList()`, never `getStaffDisplayNameById()`.** The latter returns every auth user with an email — the ~1,000 parent portal accounts included. There is no FK across schemas, so this route is the only check, and a parent uuid in that column would be handed RLS read on the class's students, grading sheets and attendance. Disabled accounts are excluded here and admitted by the sibling create route, on purpose: there the question is "whose class is this?" (a teacher on long leave is still the name on the report card), here it is "who is taking the lesson?" (a disabled account cannot sign in to take the register).
 
+**Verified on prod (2026-08-13).** `scripts/verify-relief-migrations.ts` is read-only and safe to run against production; it passes 7/7. Its own header states that a **service-role check cannot see RLS** — which is the whole reason the 114 failure above went unnoticed until a cookie-scoped read hit it. Mr Ace then confirmed in a browser that a teacher can mark their own sheet, that adding a relief opens the cells for the substitute, and that clearing it closes them again.
+
 ### KD #185
 
 **One subject teacher per (section, subject)** (2026-08-13; migration 118). Migration 003's header stated this rule in words — _"subject_teacher — one per (section, subject) pair"_ — and then created an index on `(teacher_user_id, section_id, subject_id)`, which only stops the **same** teacher being listed twice. Two different teachers could both hold one class's Filipino, and did. Open since 003; found by Mr Ace reading the section Teachers tab.

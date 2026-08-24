@@ -137,3 +137,62 @@ SIS Admin IA & navigation redesign (sub-project 2 of the umbrella, 2026-07-11; n
 - **Accepted gap:** the "Full application record" export presets read raw admissions columns only and can never include house (KD #162 already warns these are not a superset of the screen).
 - **No houses CRUD page.** KD #153 built exactly that for grade levels and migration 086 deleted the whole thing unused. Four seeded rows, renamed once Chandana confirms the real names and colours.
 - **House _points_ is deliberately not built.** Nobody has defined what earns a point, who records it, whether it resets each year, or whether there is a running leaderboard — the ledger's shape follows those answers. It also overlaps the Awards ask, which Chandana explicitly linked, so building it now risks building it twice.
+
+### KD #189
+
+**Disciplinary records — the system records, and decides nothing** (shipped 2026-08-21; migrations 120 + 121 + 122 applied 2026-08-18; browser-verified 2026-08-24). Table `student_discipline_records`; `lib/discipline/{queries,mutations}.ts`; `lib/schemas/discipline.ts`; `canManageAnyDisciplineRecord` in `lib/classroom/scope.ts`; POST/GET/PATCH under `app/api/classroom/[sectionId]/students/[studentNumber]/discipline/`.
+
+⚠ **THE SYSTEM DECIDES NOTHING AND GENERATES NOTHING, and that is the whole design.** No threshold in `school_config`, no detection, no letter generation, and `lib/compute/awards.ts` is deliberately untouched even though the school's own warning letter asserts that an attendance shortfall forfeits academic awards. That rule lives in the Student Handbook (pp. 16–18), which the school revises on its own schedule — a hardcoded copy goes stale **silently**. Mr Ace, 2026-08-14, closing both doors at once: _"of course no automation you dummy thats too much"_ and _"handbooks change let them do that themselves thats there role and respobsibility"_. **Do not re-derive any of this from the sample documents.**
+
+**Two independent entry points, not one.** Two school documents arrived 2026-08-14, and the second reshaped the feature: a **first warning letter about _attendance_** — a hand-typed Word template, signed by the Assistant Principal, noted by the Principal, listing absence dates and citing "below 80%". It hangs off **no incident at all**. So discipline is incident-driven **and** register-driven, and the original model had treated it as one thing.
+
+**One table with a `record_type`, not two.** Mr Ace: _"one list is fine for now its basically a type atp no?"_ Because the attendance letter has no parent incident, the two kinds are **siblings — never parent and child**.
+
+**Where it lives, and who may touch it:**
+
+- **Filing and editing live in the Classroom student drawer** (`student-discipline-panel.tsx`), not in Records — Records student pages are oversight-only. List, detail and form are **three views in ONE panel** because nested dialogs are banned; the form replaces the body, tabs and all.
+- **Filing is open to any staff member.** Chandana: _"the person in charge who is present at the venue"_. **Editing is the filer plus leadership.**
+- **No new capability.** Reach is gated by the section exactly as the Classroom drawer is (KD #181), which also sidesteps KD #166's "a code-only capability is inert". `__tests__/auth/assignment-read-classification.test.ts` classifies both routes **`act`** — a relief teacher covering the class **is** the person at the venue (KD #184).
+
+**Five screens:** the Classroom student drawer; a per-class list `/classroom/[sectionId]/discipline` with its own File-a-record button and student picker (`file-discipline-record-button.tsx`); a read-only-plus-edit tab on the Records student page; and the school-wide register `/records/discipline`.
+
+**The register was Mr Ace's call, over my objection**, on 2026-08-21 — I argued nobody at the school had asked for it; he answered _"its common sense for software development bro"_, and he was right. It supersedes the earlier "do not pre-build the screen" note. It carries a **Slips outstanding** count and a **Slip back** facet (Returned / Not yet / —), so "which letters are still outstanding" is two clicks. ⚠ **Surfacing is not chasing:** no reminder, no computed deadline, no notification. Nothing sends anything.
+
+**The parent acknowledgement is tracked (122): `acknowledged_on date`, null until the signed slip comes back.** Mr Ace, 2026-08-18 — the school's warning letter ends with a tear-off receipt due back in two days, so **a letter is not finished when it is sent**. It is **one nullable date, not a flag plus a date**: two records of one fact drift the first time somebody sets one without the other.
+
+**Two CHECK constraints, each restated as a sentence in the zod schema:**
+
+- **Letters only** — shaped like `attendance_daily_ex_note_requires_ex_chk` (migration 109) so that switching a record's TYPE cannot strand the value, and `toColumns` nulls it defensively on edit.
+- **Not before `occurred_on`** — safely a CHECK precisely because it compares two **stored** columns rather than `current_date`.
+
+**The document is ONE OPTIONAL LINK, not an upload** (`document_url`, settled 2026-08-18 after working both sides). **2026-08-21 narrowed what it points at:** always the copy that came back **acknowledged**, never the one that went out. Mr Ace: _"they file here they send the document and attach here the signed/acknowledged document."_ So the field sits directly under the acknowledgement date and its label follows the type — "Link to the signed slip" / "Link to the acknowledged incident report".
+
+- ⚠ **A letter therefore has two documents and one box** (the letter out, the slip back). Last-one-wins was **accepted, not solved**.
+- **Uploads were rejected** because the ask was the record, not the document — and because storing the file would make this the app's **first private file**. The only bucket is `parent-portal`, every read is `getPublicUrl`, and no signed URL exists anywhere in the codebase. That is a decision, not a task; a link needs neither.
+- ⚠ **The link is an untested assumption.** Nobody knows where their numbered PDFs live, and Christina's only direct words about files point the other way (19:08, on certificates: _"we **upload** the certificate"_). **Validate its shape, never fetch it.**
+
+**Field-level decisions:** `nature` is **free text** until the school sends the picklist (exactly one value has been seen). `student_id` is **required** here though optional on their paper form. `details` and `remarks` **never reach `audit_log`** — it is append-only and coordinator-readable, the same reasoning as the `ex_note` line in migration 109. **No sequence number**: their cases run to 702 and nobody has decided whether those come across.
+
+**Design deviations from the approved mockup, both deliberate:** chips use the real `Badge` plus the §9.3 recipes (mono uppercase, like every other status pill in the app) rather than the mockup's hand-rolled sentence-case pill; and the date field starts **blank, not today**, because a pre-filled date gets accepted without being read. ⚠ **Approved mockup: `https://claude.ai/code/artifact/27b69d3a-206a-47c5-a826-cb0cdde7d8a6` — update THAT url, never publish a new one.**
+
+**Browser-verified 2026-08-24.** Mr Ace ran the checklist and it passed: filing an incident; a letter with its slip date; switching a letter to an incident (the acknowledgement clears); the register's outstanding-slips filter; and editing from Records. **Two gaps he found on the way, both fixed:**
+
+- The class Discipline list had **no click target at all**. The mockup drew it flat, which was fine until `/records/discipline` made the student name a link — **teachers cannot open Records**, so that list was a dead end. The name now opens the drawer straight on the Discipline tab, via a new `initialTab` prop.
+- The Records student page had **no way across to the class**. Now a sixth Classroom tile in the quick-action grid, greyed with "No class assigned" when there is no active placement, plus the class name in the hero sentence.
+
+⚠ **Still unanswered after four asks: where the disciplinary _outcome_ is recorded.** The sample incident report carries none, so the "warning letter or suspension" half of Christina's 18:20 ask remains open. Full suite green (3,104 at the last clean run).
+
+### KD #190
+
+**Assigning a student to a class had four independent defects in one path** (2026-08-14 → 2026-08-17; migration 119). Found by converting the surface to `useWriteAction` (KD #186), not by looking for them — which is the point: the write path was silent, so nothing reported any of the four.
+
+- **The column is `classUpdatedby`.** Eight of the nine `*Updatedby` columns lost the capital D, and `orientationUpdateby` also lost the "d". Living with the misspelling is fine; **assuming the pattern is not.** The same key in `lib/sis/section-transfer.ts` was written as `classUpdatedBy` and failed **silently** — Supabase ignores an unknown key on an update rather than erroring — so every section transfer left `classSection` stale while reporting success.
+- **A single-student sync could not see the section's other index numbers**, so it always asked for #1. Withdrawn students keep their index numbers (KD #83), so #1 is frequently taken and the collision surfaced as a failed assign.
+- **`transfer_student_section` always INSERTed**, so moving a student _back_ to a section they had left collided with their original `section_students` row. Migration 119 makes it reuse that row, which also preserves the index number they held there — the correct outcome, since the number is permanent per section (KD #83).
+- **"Students needing setup" asked for a `students` row** — the person — **instead of an enrolment.** So a student whose assign had just failed disappeared from the one screen built to fix them. A failure that hides its own remedy is worse than a loud failure.
+
+**The general rule:** a write that reports nothing hides its own bugs. Three of these four had been shipping for months.
+
+**Profile and family sheets — the PATCH schema is partial, and that is load-bearing in both directions** (browser-verified 2026-08-14). It began as a required-keys schema, which meant the sheet could **never** save — 24 medical fields were in the schema but not on the form, so validation failed invisibly and the button did nothing. The obvious fix (add the fields) was not taken; the schema became **partial**, because a required-keys schema that _did_ pass would have written `null` over every unsupplied field on the first save. `handleSubmit` now takes an invalid handler, so a rejected submit is visible instead of a dead button.
+
+**Full name is derived and disabled** on the student panel and all three parent panels — `lib/sis/full-name.ts`. **Compose, never split:** DELA CRUZ and SANTHOSH KUMAR are single surnames with spaces in them, and any splitter gets them wrong. Cross-ref KD #157 (student-profile validation parity), KD #186 (the write lifecycle that surfaced all of this).

@@ -41,7 +41,9 @@
       "Bash(find . -name \"*lagoon*\" -o -name \"*cupcake*\" 2>/dev/null | grep -v node_modules | head; echo \"---HOME---\"; find \"$HOME/.claude\" -maxdepth 3 -name \"*lagoon*\" -o -maxdepth 3 -name \"*cupcake*\" 2>/dev/null | head)",
       "Read(//c/Users/Ace/.claude/**)",
       "Bash(sed -n 471,584p components/grading/grade-lookup-dialog.tsx)",
-      "WebFetch(domain:claude.ai)"
+      "WebFetch(domain:claude.ai)",
+      "Bash(node -e \"const m=require\\('./.mcp.json'\\);console.log\\(Object.keys\\(m.mcpServers||{}\\).join\\('\\\\n'\\)\\)\")",
+      "Read(//c/Users/Ace/.claude/plugins/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",

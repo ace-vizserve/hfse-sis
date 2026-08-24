@@ -30,22 +30,22 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                                            | Where                                                     |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                            | KD #177, migration 109                                    |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                   | KD #178, migrations 110 / 111                             |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                            | Records → Academic tab                                    |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                            | KD #179 (subject) + #182 (adviser)                        |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                            | KD #181 — Classroom drawer                                |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ⚠ **RESHAPED 2026-08-17 — the PARENT files it**   | Her own child's school SIS. Blocked on what approval does |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **Backend built + applied 2026-08-18. NO UI yet** | Migrations 120–122. Outcome still nowhere                 |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**      | Principal's List is an ACADEMIC honour, not a competition |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                        | Same table as #8 — scoring sheet                          |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                           | "Teachers cannot choose the approvers"                    |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**           | Unanimous, 2026-08-14. **Ordering settled 2026-08-21**    |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                  | KD #176                                                   |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                       | See _Waiting on the school_                               |
-| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**            | Nothing scoped. See _Answers received_                    |
+| #   | Ask                                                   | Who                                                  | Status                                              | Where                                                     |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                              | KD #177, migration 109                                    |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                     | KD #178, migrations 110 / 111                             |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                              | Records → Academic tab                                    |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                              | KD #179 (subject) + #182 (adviser)                        |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                              | KD #181 — Classroom drawer                                |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ⚠ **RESHAPED 2026-08-17 — the PARENT files it**     | Her own child's school SIS. Blocked on what approval does |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24** | Five screens. Migrations 120–122. Outcome still nowhere   |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**        | Principal's List is an ACADEMIC honour, not a competition |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                          | Same table as #8 — scoring sheet                          |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                             | "Teachers cannot choose the approvers"                    |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**             | Unanimous, 2026-08-14. **Ordering settled 2026-08-21**    |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                    | KD #176                                                   |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                         | See _Waiting on the school_                               |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**              | Nothing scoped. See _Answers received_                    |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -389,11 +389,45 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   whole shape is "open a student, see their incidents". Decide whether the SIS
   holds only the student-linked subset. Nobody has asked for the rest.
 
-  **#7 BACKEND BUILT AND APPLIED 2026-08-18 — migrations 120, 121, 122. Still no
-  UI; nothing is reachable from a screen.** `student_discipline_records` +
-  `lib/discipline/{queries,mutations}.ts` + `lib/schemas/discipline.ts` + three
-  routes under `app/api/classroom/[sectionId]/students/[studentNumber]/
-discipline/`. Decisions, all Mr Ace's:
+  **#7 SHIPPED — backend applied 2026-08-18 (migrations 120, 121, 122), the five
+  screens landed 2026-08-21 (`031b3610`), browser-verified by Mr Ace 2026-08-24.**
+  `student_discipline_records` + `lib/discipline/{queries,mutations}.ts` +
+  `lib/schemas/discipline.ts` + three routes under
+  `app/api/classroom/[sectionId]/students/[studentNumber]/discipline/`.
+
+  **The five screens.** Filing and editing live in the **Classroom student
+  drawer** (`components/classroom/student-discipline-panel.tsx` — list, detail
+  and form as three views in ONE panel, because nested dialogs are banned; the
+  form replaces the body, tabs and all). Plus a per-class list
+  `/classroom/[sectionId]/discipline` with its own File-a-record button and
+  student picker, a read-only-plus-edit tab on the Records student page, and the
+  school-wide register `/records/discipline`.
+
+  ⚠ **The register was Mr Ace's call on 2026-08-21, over my objection**, and it
+  supersedes the "do not pre-build that screen" note that sat here and in the dev
+  plan. Nobody at the school asked for it; his answer was _"its common sense for
+  software development bro"_ and he was right — until it existed, a record was
+  reachable class by class only. It carries a **Slips outstanding** count and a
+  **Slip back** facet (Returned / Not yet / —), so "which letters are still
+  outstanding" is two clicks. **Surfacing is not chasing:** no reminder, no
+  computed deadline, no notification.
+
+  Two deliberate deviations from the approved mockup
+  (`https://claude.ai/code/artifact/27b69d3a-206a-47c5-a826-cb0cdde7d8a6` —
+  update THAT url, never publish a new one): chips use the real `Badge` + §9.3
+  recipes rather than the mockup's hand-rolled pill, and the date field starts
+  **blank, not today**, because a pre-filled date gets accepted without being
+  read.
+
+  **Two gaps Mr Ace found in the browser pass, both fixed** (`fca9d240`): the
+  class Discipline list had no click target at all — fine until `/records/
+discipline` made the student name a link, and teachers cannot open Records, so
+  that list was a dead end (the name now opens the drawer straight on the
+  Discipline tab via a new `initialTab` prop); and the Records student page had
+  no way across to the class (now a sixth Classroom tile in the quick-action
+  grid, greyed with "No class assigned" when there is no active placement).
+
+  Decisions, all Mr Ace's:
   - **ONE table with a `record_type`, not two** — _"one list is fine for now its
     basically a type atp no?"_ The attendance warning letter hangs off no
     incident, so incidents and letters are siblings, never parent/child, and one

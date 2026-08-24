@@ -139,6 +139,14 @@ CSV export **simplified to instant-download + a preset choice** (2026-07-29; no 
 
 ⚠ **Expect it to feel slower on day one.** Holding the toast until the refresh commits honestly reports a wait that was previously hidden behind a closed dialog. That is the point. It is affordable because the attendance batching landed first (90 → 6 round-trips for a class of 30).
 
+**Two ordering changes broke six existing tests, and both were correct.** `loadingText` renames a button while it is in flight ("Save" → "Saving…"), and the success toast now lands **after** the awaited refresh rather than before it. Six tests asserted the old selector or the old ordering; all six were asserting the bug. Found in passing: `toast.loading` carried no `duration: null`, so a pending toast would have vanished mid-write — nobody had noticed because, before this work, nothing called it.
+
+**Three writes reported nothing at all on success** — two in `section-subjects-panel`, one in `staff-assignment-sheet`. Not a missing pending phase: no terminal signal either. Converting them is what surfaced them.
+
+⚠ **`after()` was tried for audit rows and REVERTED.** Deferring the audit insert past the response is exactly the shape `after()` is for, and it is wrong here: an audit row is a **compliance record**, and post-response work that gets dropped leaves a hole nothing reports. Do not re-propose it for audit writes.
+
+⚠ **Three latency items were examined and deliberately dropped — do not re-add them from the original list:** scoping invalidation more narrowly, the grading page's render-time RPC, and caching the AY lookup. Reasons are in the plan. Each looked like free speed and each cost either correctness or a second source of truth.
+
 Plan: `C:\Users\Ace\.claude\plans\squishy-popping-lagoon.md` (and its predecessor `warm-roaming-cupcake.md`). Cross-ref KD #24 (Model A — RSC owns the data, `onSuccess` refreshes, `invalidateQueries` is never used; this makes the refresh _awaited_ rather than replacing the model), KD #20 (toasts), KD #14 (design tokens).
 
 ### KD #187
@@ -170,3 +178,9 @@ Plan: `C:\Users\Ace\.claude\plans\squishy-popping-lagoon.md` (and its predecesso
 - **The table is open, not folded, and Score / Out of are REMOVED on the term grade rather than dashed.** A weighted figure out of 100 has no denominator; four em-dashes read as missing data, not as "does not apply". Columns re-proportion (50/25/25 vs 34/16/16/17/17) so the table still fills the panel. `shortTerm()` strips the stored `— AY2026` suffix from the chip and the axis but not from the table, where a reader may be copying a figure out.
 - **Both surfaces render the same component**, and subject weights are now plumbed through `at-risk-source.ts` → `at-risk.ts` → `SubjectTermHistory` so Classroom says what the grading sheet says. Three things around it still differ by necessity: Classroom has the subject strip and the parents' numbers; the grading sheet has **"On this sheet"** (KD #179's within-sheet outlier), which cannot exist in Classroom because it needs the raw slot scores off the sheet being marked.
 - ⚠ **`__tests__/markbook/subject-term-panel.test.tsx` mocks `TrendChart` and asserts its props.** `TrendChart` is `next/dynamic` with `ssr: false`, so in jsdom it renders a skeleton and recharts never runs — every other test of this panel proves the data arrives and nothing about how it is drawn. That blind spot is exactly how the auto-scaling shipped. Cross-ref KD #179 (the outlier), KD #182 (the adviser list), KD #186 (`loadingText` sprang the same accessible-name trap that renaming these controls did).
+
+**All three lookups open to the whole roster, in index order.** Not to a filtered shortlist: a search box plus an **All students / Only flagged · ‹term›** dropdown, with the term **named in the option label** so an empty result reads as "nobody is flagged in Term 1" rather than "this class has no problems". `rankAtRisk` therefore returns **every** student rather than only those over threshold, which is what lets Term 1 — where there is no prior term to compare against — show the class instead of a blank panel. Attendance rows carry the rate and flag below `AT_RISK_ATTENDANCE_THRESHOLD_PCT` (90) via the existing `getRollupForSection`; **no new route was added.**
+
+**Verified in a browser by Mr Ace, 2026-08-24.** Full suite green at 3,152.
+
+**Superseded mockups, both now behind the built screen — do not reopen them:** `7a67c6df-eda7-4e92-a79c-bc9b363eff64` (the 2026-08-21 direction: one large chart, three 48px charts and a four-part table simultaneously) and `5360a49a-9d2b-426c-8fba-aad9e3125da2` (the table options that led here).
