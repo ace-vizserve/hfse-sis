@@ -132,7 +132,61 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      and a percentage of one paper are not the same kind of number and should
      not sit in one grid.
 
-  4. ✅ **REDESIGNED 2026-08-21 — one panel, both surfaces, chart-led.** Mockup
+  4. ✅ **SUPERSEDED 2026-08-24 by outcome 7 below.** The 2026-08-21 shape put
+     a term-grade chart, three 48px component charts and a four-part table on
+     screen at once. It is recorded here because the reasoning still holds —
+     one panel, both surfaces, headline → chart → table, and per-term max
+     scores shown on the row — but the layout below replaced it.
+     Mockup: `https://claude.ai/code/artifact/7a67c6df-eda7-4e92-a79c-bc9b363eff64`.
+
+  5. ✅ **ONE MEASURE AT A TIME — BUILT 2026-08-24 (KD #188), and this is the
+     first version that does what her verb asked for.** A segmented tab strip
+     (Term grade · Written work · Performance tasks · Exam, default term grade)
+     drives the figure, the chart and the marks table together. Mr Ace:
+     _"see that graphs? it must change depending on the selected tab."_
+
+     ⚠ **The tabs carry the flags, and that is the whole reason hiding three
+     measures is allowed.** Her verb was **"flag out"**; a control showing one
+     measure has to say where the problem is before it is clicked, or finding
+     it means clicking all four. So every tab prints its own change and a fall
+     past five points carries a dot — the same dot the Classroom subject tabs
+     already use.
+
+     ⚠ **The case is real production data, and it is her case exactly.** A
+     student whose **term grade moved −3 while his exam fell 40.8**, written
+     work having risen 23.4 and covered for it. A −3 term grade does not flag,
+     does not turn red, and would never put that child on a list — which is
+     precisely what she was complaining about at 55:10, and what the widening
+     at 56:00 (_"not only for the quizzes, but also for exam, for overall…
+     **alongside** with the term grades comparison"_) asked to fix.
+
+     ⚠ **A charting defect that the tests could not see.** `TrendChart`'s
+     compact variant rendered no `<YAxis>`, so recharts fitted the axis top to
+     each series: a steady 88–92 line and a 92 → 55 collapse both filled their
+     box, under a caption promising "all on one 0–100 scale". `TrendChart` now
+     takes `domain`/`ticks`/`showValues`/`tone`, and a fixed `[0,100]` is
+     mandatory wherever charts are read against each other. It survived because
+     `TrendChart` is `next/dynamic ssr:false` and renders a skeleton in jsdom —
+     `__tests__/markbook/subject-term-panel.test.tsx` now mocks it and asserts
+     its **props**.
+
+     ⚠ **A hand-drawn mockup does not predict recharts.** The approved mockup
+     anchored its end labels; recharts centres a `LabelList` on its point, so
+     "88%" landed on the y-axis and "73%" was sliced by the right edge. **Judge
+     a charting change against the library, never against the mockup.**
+
+     Also: the measure name is no longer repeated in the body (the selected tab
+     names it, and at 22% column width it wrapped to three lines); the table is
+     open rather than folded; Score and Out of are **removed** on the term
+     grade rather than dashed; and subject weights are plumbed through to
+     Classroom so both surfaces read alike. **"On this sheet" stays
+     grading-sheet-only** — it needs the raw slot scores off the sheet being
+     marked, which Classroom does not carry. Full suite green (3,152).
+     ⚠ **Reviewed by Mr Ace on screenshots, not checklist-verified in a
+     browser.**
+
+  6. <!-- superseded detail retained below -->**Detail of the 2026-08-21 build, kept for its reasoning:** Mockup
+
      approved: `https://claude.ai/code/artifact/7a67c6df-eda7-4e92-a79c-bc9b363eff64`.
      **New `components/shared/subject-term-panel.tsx` is the whole detail view**,
      rendered identically by the grading sheet and by Classroom — Mr Ace: _"use
@@ -183,14 +237,14 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
      readers, so colour is never doing the work alone. **If the app's semantic
      palette is ever revisited, this pair is the known weak point.**
 
-  5. ⚠ **SUPERSEDED — dynamic term comparison.** _"not just previous term, like
+  7. ⚠ **SUPERSEDED — dynamic term comparison.** _"not just previous term, like
      term 4 can be compared to term 2… same for attendance as well."_ **Partly
      already built, which is why it needs checking before scoping:** the
      **subject teacher's** dialog (`grade-lookup-dialog.tsx`) already has a term
      picker and its caption names the selected term. The **FCA's** list has no
      picker. **Attendance** already lists every prior term but computes no
      difference against any of them — a different job, not the same one.
-  6. ⚠ **Unguarded: an in-progress term.** `loadSectionAtRisk` reads the sheet
+  8. ⚠ **Unguarded: an in-progress term.** `loadSectionAtRisk` reads the sheet
      as it stands — no lock, no completeness check — and Blank ≠ Zero (Hard Rule
      #3) drops nulls from both sides of the ratio. So a finished T1 against a T2
      holding two of four tasks can read as a fall when the sheet is just

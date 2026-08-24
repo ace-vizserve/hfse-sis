@@ -1,29 +1,43 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { numericToLetter } from '@/lib/compute/letter-grade';
 import { GRADE_ALERT_THRESHOLD } from '@/lib/markbook/alert-threshold';
 import { fmtGrade, signedGrade } from '@/lib/markbook/format-grade';
 import { cn } from '@/lib/utils';
 
-// One student, one subject, the whole year — headline, then what moved, then
-// the marks.
+// One student, one subject, ONE MEASURE — headline, then the chart, then the
+// marks. The pill strip picks which measure the whole panel is about.
 //
 // THE SAME PANEL ON BOTH SURFACES. A subject teacher opens it from their
 // grading sheet and sees the subject they are marking; a form class adviser
 // opens it from Classroom and picks a subject from tabs. Mr Ace, 2026-08-21:
 // "use identical designs for grading sheet look up and classroom grades
 // lookup its basically the same data bro why not just use same designs."
-// Two components drew this before and had already drifted apart.
 //
-// The order is attendance's order, deliberately: a figure you can read at a
-// glance, a chart, and only then a table. Three surfaces, one habit.
+// WHY ONE AT A TIME. The panel used to draw a big chart, three 48px charts and
+// a four-part table at once, and Mr Ace could not read it: "see that graphs? it
+// must change depending on the selected tab." One measure gets the full width
+// and a legible chart; the table drops from twelve rows to as many terms as are
+// marked.
+//
+// THE PILLS ARE THE FLAG, and that is what makes hiding the rest honest. Koh
+// Suat Hoon (55:10) asked the system to "flag out" students, and the ask was
+// widened in the room to "not only for the quizzes, but also for exam, for
+// overall… alongside with the term grades comparison". A control that shows one
+// measure must therefore say where the problem is without being clicked — so
+// every pill carries its own change, and a fall carries a dot. The case that
+// proves it is real: a student whose term grade moved −3 while his exam fell
+// 40.8, because written work rose and covered for it.
 
 /** Marks scored out of marks available. Either half may be unknown. */
 export type Marks = { scored: number | null; max: number | null };
 
 export type TermFigures = {
-  /** "Term 1" — as the school names it, never "T1". */
+  /** "Term 1 — AY2026", as the school stores it. */
   label: string;
   /** The weighted result. A band-representative integer when letter-graded. */
   quarterly: number | null;
@@ -45,15 +59,40 @@ export type SubjectTermPanelProps = {
   isExaminable: boolean;
   /** Ascending. The term being looked at is last. */
   terms: TermFigures[];
-  /** Whole-number percents, printed beside each component label. */
+  /** Whole-number percents, printed on each component's pill. */
   weights?: { ww: number; pt: number; qa: number };
 };
+
+type MeasureKey = 'quarterly' | 'ww' | 'pt' | 'qa';
 
 const COMPONENTS: { key: 'ww' | 'pt' | 'qa'; label: string }[] = [
   { key: 'ww', label: 'Written work' },
   { key: 'pt', label: 'Performance tasks' },
   { key: 'qa', label: 'Exam' },
 ];
+
+/**
+ * Every chart in this panel is pinned to it, and that is deliberate.
+ *
+ * Only one chart is on screen at a time now, so an axis fitted to the series
+ * would be tempting — and wrong. Switching pills would silently change the
+ * scale, and a term grade slipping three points would draw the same collapse as
+ * an exam losing forty.
+ */
+const GRADE_SCALE: [number, number] = [0, 100];
+const GRADE_TICKS = [0, 50, 100];
+
+/**
+ * "Term 1 — AY2026" → "Term 1".
+ *
+ * The label is stored with the year (`'Term ' || n || ' — ' || ay_code`,
+ * migration 012 onward) and the panel only ever shows one academic year, so
+ * repeating it on a chart axis and in a chip is noise. The table keeps the
+ * stored label, where a reader may be copying a figure out.
+ */
+function shortTerm(label: string): string {
+  return label.replace(/\s*—\s*AY\d{4}\s*$/, '');
+}
 
 /**
  * The change into each term from the term immediately before it.
@@ -77,25 +116,31 @@ function toneFor(diff: number | null): string {
   return diff > 0 ? 'text-brand-mint' : 'text-destructive';
 }
 
-function Eyebrow({
-  children,
-  hint,
-}: {
-  children: React.ReactNode;
-  hint?: string;
-}) {
+function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <p className="flex items-center gap-2 whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
       {children}
-      {hint && (
-        <span className="font-sans text-[11px] font-normal normal-case tracking-normal">
-          &middot; {hint}
-        </span>
-      )}
       <span className="h-px flex-1 bg-border" aria-hidden />
     </p>
   );
 }
+
+type Measure = {
+  key: MeasureKey;
+  label: string;
+  /** Printed beside the measure name over the figure, never on the tab. */
+  sub: string;
+  /** Percentages carry one; a weighted term grade does not. */
+  unit: '' | '%';
+  values: (number | null)[];
+  deltas: (number | null)[];
+  marks: (Marks | undefined)[] | null;
+  /** Index of the last term carrying a value, or -1. */
+  latest: number;
+  /** The change into `latest`, or null when there is nothing before it. */
+  change: number | null;
+  fell: boolean;
+};
 
 export function SubjectTermPanel({
   subject,
@@ -103,59 +148,74 @@ export function SubjectTermPanel({
   terms,
   weights,
 }: SubjectTermPanelProps) {
-  const quarterly = terms.map((t) => t.quarterly);
-  const quarterlyDeltas = deltas(quarterly);
-
-  // The last term that actually carries a result — not simply the last column,
-  // which is empty for most of a school year.
-  let latest = -1;
-  for (let i = quarterly.length - 1; i >= 0; i--) {
-    if (quarterly[i] != null) {
-      latest = i;
-      break;
-    }
-  }
-
-  const headline = latest >= 0 ? quarterly[latest] : null;
-  const headlineDelta = latest >= 0 ? quarterlyDeltas[latest] : null;
-  const priorLabel = latest > 0 ? terms[latest - 1]?.label : null;
-
-  // A single point is not a trend. Drawing a chart through one mark invents a
-  // line the data cannot support, so the figure carries it alone.
-  const plottable = terms.filter((t) => t.quarterly != null);
-  const showTrend = plottable.length > 1 && isExaminable;
-
-  const componentRows = COMPONENTS.map((c) => {
-    const values = terms.map((t) => t[c.key]);
-    return {
-      ...c,
-      values,
-      deltas: deltas(values),
-      any: values.some((v) => v != null),
+  const measures = useMemo<Measure[]>(() => {
+    const build = (
+      key: MeasureKey,
+      label: string,
+      sub: string,
+      unit: '' | '%',
+      values: (number | null)[],
+      marks: (Marks | undefined)[] | null
+    ): Measure => {
+      const d = deltas(values);
+      let latest = -1;
+      for (let i = values.length - 1; i >= 0; i--) {
+        if (values[i] != null) {
+          latest = i;
+          break;
+        }
+      }
+      // A band is not a score, so it never carries a points change (KD #104).
+      const change =
+        latest >= 0 && (key !== 'quarterly' || isExaminable)
+          ? (d[latest] ?? null)
+          : null;
+      return {
+        key,
+        label,
+        sub,
+        unit,
+        values,
+        deltas: d,
+        marks,
+        latest,
+        change,
+        fell: change != null && change <= -GRADE_ALERT_THRESHOLD,
+      };
     };
-  }).filter((r) => r.any);
 
-  const weightFor = (key: 'ww' | 'pt' | 'qa'): string | null =>
-    weights ? `${weights[key]}%` : null;
-
-  // A paper that changed size between terms. The percentage stays comparable;
-  // the raw score does not, and reading down the Score column is exactly how
-  // somebody concludes a child collapsed when the paper simply got longer.
-  const totalChanged = (key: 'ww' | 'pt' | 'qa', i: number): boolean => {
-    const now = terms[i]?.marks?.[key]?.max ?? null;
-    if (now == null) return false;
-    for (let j = i - 1; j >= 0; j--) {
-      const before = terms[j]?.marks?.[key]?.max ?? null;
-      if (before != null) return before !== now;
+    const out: Measure[] = [
+      build(
+        'quarterly',
+        'Term grade',
+        isExaminable ? '' : 'letter-graded',
+        '',
+        terms.map((t) => t.quarterly),
+        null
+      ),
+    ];
+    for (const c of COMPONENTS) {
+      const values = terms.map((t) => t[c.key]);
+      if (!values.some((v) => v != null)) continue;
+      out.push(
+        build(
+          c.key,
+          c.label,
+          weights ? `${weights[c.key]}% of the term grade` : '',
+          '%',
+          values,
+          terms.map((t) => t.marks?.[c.key])
+        )
+      );
     }
-    return false;
-  };
+    return out;
+  }, [terms, weights, isExaminable]);
 
-  const anyTotalChanged = componentRows.some((r) =>
-    terms.some((_, i) => totalChanged(r.key, i))
-  );
+  const [selected, setSelected] = useState<MeasureKey>('quarterly');
+  const shown = measures.find((m) => m.key === selected) ?? measures[0];
 
-  if (headline == null && componentRows.length === 0) {
+  // Nothing at all: no term grade and no component carries a figure.
+  if (!shown || measures.every((m) => m.latest < 0)) {
     return (
       <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
         No marks have been entered for {subject} yet.
@@ -163,165 +223,191 @@ export function SubjectTermPanel({
     );
   }
 
+  const isGrade = shown.key === 'quarterly';
+  const latestValue = shown.latest >= 0 ? shown.values[shown.latest] : null;
+  const latestMarks = shown.marks?.[shown.latest];
+  const priorLabel =
+    shown.latest > 0 ? shortTerm(terms[shown.latest - 1]?.label ?? '') : null;
+
+  // A single point is not a trend, and a letter band has no 0–100 position.
+  const points = terms
+    .map((t, i) => ({ x: shortTerm(t.label), y: shown.values[i] }))
+    .filter((p): p is { x: string; y: number } => p.y != null);
+  const showChart = points.length > 1 && (!isGrade || isExaminable);
+
+  // A paper that changed size between terms. The percentage stays comparable;
+  // the raw score does not, and reading down the Score column is exactly how
+  // somebody concludes a child collapsed when the paper simply got longer.
+  const totalChanged = (i: number): boolean => {
+    const now = shown.marks?.[i]?.max ?? null;
+    if (now == null) return false;
+    for (let j = i - 1; j >= 0; j--) {
+      const before = shown.marks?.[j]?.max ?? null;
+      if (before != null) return before !== now;
+    }
+    return false;
+  };
+  const anyTotalChanged = terms.some((_, i) => totalChanged(i));
+
+  const printValue = (v: number | null) => {
+    if (v == null) return null;
+    if (isGrade) return isExaminable ? fmtGrade(v) : numericToLetter(v);
+    return `${fmtGrade(v)}%`;
+  };
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* Two columns at dialog width: the result, and what produced it. One
-          chart stretched the full width is a thin ribbon that says nothing. */}
-      <div className="grid gap-7 md:grid-cols-[minmax(200px,32%)_1fr]">
-        <div>
-          <Eyebrow>Term grade</Eyebrow>
-          <div className="pt-3">
-            <p
+    <Tabs
+      value={shown.key}
+      onValueChange={(v) => setSelected(v as MeasureKey)}
+      className="gap-5"
+    >
+      {/* The app's segmented switcher, not a hand-rolled one — its own comment
+          calls it the variant for "level/view switchers", which is exactly this.
+          Each tab carries its own change, and a fall carries a dot: a control
+          that shows one measure has to say where the problem is without being
+          clicked, or finding it means clicking all four. Same dot the Classroom
+          subject tabs use, so it is one signal across the module. */}
+      {/* Fitted, not stretched. Four tabs spread across 900px leaves each label
+          marooned in the middle of its own cell. */}
+      <TabsList variant="segmented" className="max-w-full flex-wrap">
+        {measures.map((m) => (
+          <TabsTrigger
+            key={m.key}
+            value={m.key}
+            className="group/measure gap-1.5"
+          >
+            {m.fell && (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-destructive group-data-[state=active]/measure:bg-white"
+                aria-label="fell this term"
+              />
+            )}
+            {m.label}
+            <span
               className={cn(
-                'font-serif text-[44px] font-semibold leading-none tabular-nums',
-                headlineDelta != null && headlineDelta <= -GRADE_ALERT_THRESHOLD
-                  ? 'text-destructive'
-                  : 'text-foreground'
+                'font-mono text-[11px] font-semibold tabular-nums',
+                m.fell
+                  ? 'text-destructive group-data-[state=active]/measure:text-white'
+                  : 'text-muted-foreground group-data-[state=active]/measure:text-white/75'
               )}
             >
-              {headline == null
-                ? '—'
-                : isExaminable
-                  ? fmtGrade(headline)
-                  : numericToLetter(headline)}
-            </p>
-            <p className="pt-2">
-              {/* A band never carries a points change. */}
-              {isExaminable && headlineDelta != null && priorLabel ? (
-                <span
-                  className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums',
-                    headlineDelta < 0
-                      ? 'bg-destructive/10 text-destructive'
-                      : headlineDelta > 0
-                        ? 'bg-brand-mint/15 text-brand-mint'
-                        : 'bg-muted text-muted-foreground'
-                  )}
-                >
-                  {signedGrade(headlineDelta)} since {priorLabel}
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                  No earlier term
-                </span>
-              )}
-            </p>
-          </div>
+              {m.change == null ? '—' : signedGrade(m.change)}
+            </span>
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
-          {showTrend && (
-            <div className="pt-3">
-              <TrendChart
-                label="Term grade"
-                variant="compact"
-                height={72}
-                current={plottable.map((t) => ({
-                  x: t.label,
-                  y: t.quarterly as number,
-                }))}
-              />
-            </div>
+      <TabsContent
+        value={shown.key}
+        className="flex flex-col gap-5 data-[state=active]:outline-none"
+      >
+        {/* The chart is the main event now, so the figure column gives ground
+            to it — at 28% the plot was squeezed into the right-hand third. */}
+        {/* One line, then the chart at full width.
+            The figure used to sit in a 22% column beside the chart, and at that
+            width "PERFORMANCE TASKS · 40% of the term grade" wrapped onto three
+            lines — the cramping Mr Ace kept seeing. The heading was also dead
+            weight: the selected tab directly above already names the measure.
+            So the name goes, the rest reads left to right, and the chart takes
+            the whole dialog. */}
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+          <p
+            data-testid="measure-headline"
+            className={cn(
+              'font-serif text-[44px] font-semibold leading-none tabular-nums',
+              shown.fell ? 'text-destructive' : 'text-foreground'
+            )}
+          >
+            {printValue(latestValue) ?? '—'}
+          </p>
+          {latestMarks?.scored != null && latestMarks.max != null && (
+            <p className="font-mono text-sm tabular-nums text-muted-foreground">
+              {fmtGrade(latestMarks.scored)} / {fmtGrade(latestMarks.max)}
+            </p>
+          )}
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums',
+              shown.change == null
+                ? 'bg-muted text-muted-foreground'
+                : shown.change <= -GRADE_ALERT_THRESHOLD
+                  ? 'bg-destructive/10 text-destructive'
+                  : shown.change >= GRADE_ALERT_THRESHOLD
+                    ? 'bg-brand-mint/15 text-brand-mint'
+                    : 'bg-muted text-muted-foreground'
+            )}
+          >
+            {shown.change == null || !priorLabel
+              ? 'No earlier term'
+              : `${signedGrade(shown.change)} since ${priorLabel}`}
+          </span>
+          {shown.sub && (
+            <span className="text-xs text-muted-foreground">{shown.sub}</span>
           )}
         </div>
 
-        {componentRows.length > 0 && (
-          <div>
-            <Eyebrow hint="all on one 0–100 scale">What moved</Eyebrow>
-            {/* ONE SCALE ACROSS ALL THREE, which is the whole point: a term
-                grade can sit still while written work collapses and the exam
-                covers for it. That is invisible in a single line and obvious
-                in three side by side. */}
-            <div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
-              {componentRows.map((r) => {
-                const current = r.values[latest >= 0 ? latest : 0] ?? null;
-                const delta = r.deltas[latest >= 0 ? latest : 0] ?? null;
-                const points = r.values.filter(
-                  (v, i) => v != null && terms[i] != null
-                );
-                return (
-                  <div
-                    key={r.key}
-                    className="flex flex-col gap-1.5 bg-card px-3.5 py-3"
-                  >
-                    <p className="text-[12.5px] font-medium text-foreground">
-                      {r.label}
-                      {weightFor(r.key) && (
-                        <span className="ml-1.5 font-mono text-[9.5px] text-muted-foreground">
-                          {weightFor(r.key)}
-                        </span>
-                      )}
-                    </p>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span
-                        className={cn(
-                          'font-serif text-[23px] font-semibold leading-none tabular-nums',
-                          delta != null && delta <= -GRADE_ALERT_THRESHOLD
-                            ? 'text-destructive'
-                            : 'text-foreground'
-                        )}
-                      >
-                        {current == null ? '—' : `${fmtGrade(current)}%`}
-                      </span>
-                      {delta != null && (
-                        <span
-                          className={cn(
-                            'font-mono text-[11px] font-semibold tabular-nums',
-                            toneFor(delta)
-                          )}
-                        >
-                          {signedGrade(delta)}
-                        </span>
-                      )}
-                    </div>
-                    {points.length > 1 && (
-                      <TrendChart
-                        label={r.label}
-                        variant="compact"
-                        height={38}
-                        yFormat="percent"
-                        current={terms
-                          .map((t, i) => ({ x: t.label, y: r.values[i] }))
-                          .filter(
-                            (pt): pt is { x: string; y: number } => pt.y != null
-                          )}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+        <div>
+          <Eyebrow>Across the year</Eyebrow>
+          {showChart ? (
+            <div className="pt-2">
+              <TrendChart
+                label={shown.label}
+                // Tall enough that the printed values, the plot and the term
+                // labels each get their own band instead of stacking.
+                height={196}
+                domain={GRADE_SCALE}
+                ticks={GRADE_TICKS}
+                showValues
+                yFormat={isGrade ? undefined : 'percent'}
+                tone={shown.fell ? 'fall' : 'default'}
+                current={points}
+              />
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            <p className="mt-3 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+              {isGrade && !isExaminable
+                ? 'This subject is letter-graded, so there is no figure to plot.'
+                : 'One term is a point, not a trend — the figure carries it.'}
+            </p>
+          )}
+        </div>
 
-      {(headline != null || componentRows.length > 0) && (
-        <details className="border-t border-border pt-3">
-          <summary className="cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            The marks behind it
-          </summary>
+        {/* Open, not folded. One measure's marks is two to four rows — the fold
+          was protecting the reader from a twelve-row table that no longer
+          exists, and it cost a click on every student. */}
+        <div>
+          <Eyebrow>The marks behind it</Eyebrow>
 
           <div className="mt-3 overflow-x-auto">
             <table className="w-full border-collapse text-left tabular-nums">
               <caption className="sr-only">
-                {subject} marks, by term and component
+                {subject} — {shown.label}, by term
               </caption>
+              {/* Score and Out of are removed for a term grade rather than filled
+                with dashes, and the rest widen to take the space back. */}
               <colgroup>
-                <col className="w-[40%]" />
-                <col className="w-[15%]" />
-                <col className="w-[15%]" />
-                <col className="w-[15%]" />
-                <col className="w-[15%]" />
+                {(isGrade
+                  ? ['50%', '25%', '25%']
+                  : ['34%', '16%', '16%', '17%', '17%']
+                ).map((w, i) => (
+                  <col key={i} style={{ width: w }} />
+                ))}
               </colgroup>
               <thead>
                 <tr className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   <th scope="col" className="pb-2 text-left">
                     Term
                   </th>
-                  <th scope="col" className="pb-2 text-right">
-                    Score
-                  </th>
-                  <th scope="col" className="pb-2 text-right">
-                    Out of
-                  </th>
+                  {!isGrade && (
+                    <>
+                      <th scope="col" className="pb-2 text-right">
+                        Score
+                      </th>
+                      <th scope="col" className="pb-2 text-right">
+                        Out of
+                      </th>
+                    </>
+                  )}
                   <th scope="col" className="pb-2 text-right">
                     Percentage
                   </th>
@@ -331,120 +417,69 @@ export function SubjectTermPanel({
                 </tr>
               </thead>
               <tbody>
-                {/* The result first, then the parts that produce it. Score and
-                    Out of stay empty: a term grade is a weighted figure out of
-                    100, so inventing a denominator for it would be a lie. */}
-                <tr>
-                  <th
-                    scope="colgroup"
-                    colSpan={5}
-                    className="pb-1 pt-1 text-left font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
-                  >
-                    Term grade
-                  </th>
-                </tr>
-                {terms.map((t, i) => (
-                  <tr key={`quarterly-${t.label}`}>
-                    <th
-                      scope="row"
-                      className="py-1.5 pl-3.5 pr-2 text-left text-[13px] font-normal text-muted-foreground"
-                    >
-                      {t.label}
-                    </th>
-                    <td className="py-1.5 pl-2 text-right font-mono text-[12px] text-muted-foreground/60">
-                      —
-                    </td>
-                    <td className="py-1.5 pl-2 text-right font-mono text-[12px] text-muted-foreground/60">
-                      —
-                    </td>
-                    <td className="py-1.5 pl-2 text-right font-serif text-[15px] font-semibold text-foreground">
-                      {t.quarterly == null ? (
-                        <span className="text-muted-foreground/60">—</span>
-                      ) : isExaminable ? (
-                        fmtGrade(t.quarterly)
-                      ) : (
-                        numericToLetter(t.quarterly)
-                      )}
-                    </td>
-                    <td
-                      className={cn(
-                        'py-1.5 pl-2 text-right font-mono text-[12px] font-semibold',
-                        toneFor(isExaminable ? quarterlyDeltas[i] : null)
-                      )}
-                    >
-                      {!isExaminable || quarterlyDeltas[i] == null
-                        ? '—'
-                        : signedGrade(quarterlyDeltas[i] as number)}
-                    </td>
-                  </tr>
-                ))}
-                {componentRows.map((r) => (
-                  <>
-                    <tr key={`${r.key}-head`}>
+                {terms.map((t, i) => {
+                  const v = shown.values[i];
+                  const d = shown.deltas[i];
+                  const m = shown.marks?.[i];
+                  const changed = totalChanged(i);
+                  return (
+                    <tr key={t.label} className="border-t border-border">
                       <th
-                        scope="colgroup"
-                        colSpan={5}
-                        className="border-t border-border pb-1 pt-4 text-left font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
+                        scope="row"
+                        className="py-2 pr-2 text-left text-[13px] font-normal text-muted-foreground"
                       >
-                        {r.label}
+                        {t.label}
                       </th>
-                    </tr>
-                    {terms.map((t, i) => {
-                      const v = r.values[i];
-                      const d = r.deltas[i];
-                      const m = t.marks?.[r.key];
-                      const changed = totalChanged(r.key, i);
-                      return (
-                        <tr key={`${r.key}-${t.label}`}>
-                          <th
-                            scope="row"
-                            className="py-1.5 pl-3.5 pr-2 text-left text-[13px] font-normal text-muted-foreground"
-                          >
-                            {t.label}
-                          </th>
-                          <td className="py-1.5 pl-2 text-right font-mono text-[12px] text-muted-foreground">
+                      {!isGrade && (
+                        <>
+                          <td className="py-2 pl-2 text-right font-mono text-[12px] text-muted-foreground">
                             {m?.scored == null ? '—' : fmtGrade(m.scored)}
                           </td>
                           <td
                             className={cn(
-                              'py-1.5 pl-2 text-right font-mono text-[12px]',
+                              'py-2 pl-2 text-right font-mono text-[12px]',
                               changed
-                                ? 'font-semibold text-foreground'
+                                ? 'font-semibold text-primary'
                                 : 'text-muted-foreground'
                             )}
                           >
                             {m?.max == null ? '—' : fmtGrade(m.max)}
                             {changed && (
                               <span
-                                className="ml-0.5 text-[9px] text-primary"
+                                className="ml-0.5 text-[9px]"
                                 aria-label="total changed this term"
                               >
                                 &#8593;
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5 pl-2 text-right font-serif text-[15px] font-semibold text-foreground">
-                            {v == null ? (
-                              <span className="text-muted-foreground/60">
-                                —
-                              </span>
-                            ) : (
-                              `${fmtGrade(v)}%`
-                            )}
-                          </td>
-                          <td
-                            className={cn(
-                              'py-1.5 pl-2 text-right font-mono text-[12px] font-semibold',
-                              toneFor(d)
-                            )}
-                          >
-                            {d == null ? '—' : signedGrade(d)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </>
-                ))}
+                        </>
+                      )}
+                      <td
+                        className={cn(
+                          'py-2 pl-2 text-right font-serif text-[15px] font-semibold',
+                          d != null && d <= -GRADE_ALERT_THRESHOLD
+                            ? 'text-destructive'
+                            : 'text-foreground'
+                        )}
+                      >
+                        {printValue(v) ?? (
+                          <span className="text-muted-foreground/60">—</span>
+                        )}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-2 pl-2 text-right font-mono text-[12px] font-semibold',
+                          toneFor(isGrade && !isExaminable ? null : d)
+                        )}
+                      >
+                        {(isGrade && !isExaminable) || d == null
+                          ? '—'
+                          : signedGrade(d)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
@@ -458,17 +493,18 @@ export function SubjectTermPanel({
                 </span>
               )}
               <span>
-                {anyTotalChanged
-                  ? 'The paper changed size that term, so the score is not comparable with the one above it — the percentage is. '
-                  : ''}
-                Marks are counted out of the assessments this student actually
-                sat, so a missed assessment lowers both halves rather than
-                scoring zero.
+                {isGrade
+                  ? 'A term grade is weighted out of 100, so it has no score and no total — those columns are not shown here rather than filled with dashes.'
+                  : `${
+                      anyTotalChanged
+                        ? 'The paper changed size that term, so the score is not comparable with the one above it — the percentage is. '
+                        : ''
+                    }Marks are counted out of the assessments this student actually sat, so a missed assessment lowers both halves rather than scoring zero.`}
               </span>
             </p>
           </div>
-        </details>
-      )}
-    </div>
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }

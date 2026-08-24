@@ -289,6 +289,7 @@ function StudentView({
             subject={shown.subject}
             isExaminable={shown.isExaminable}
             terms={shown.terms}
+            weights={shown.weights}
           />
         </div>
       )}

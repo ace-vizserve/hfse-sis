@@ -41,6 +41,12 @@ export type AtRiskObservation = {
    * way an adviser will read it.
    */
   isExaminable: boolean;
+  /**
+   * Whole percents, printed on the panel's measure pills. Undefined when the
+   * sheet has no config row — the pill then shows the change alone rather than
+   * a guessed weight.
+   */
+  weights?: { ww: number; pt: number; qa: number };
   current: CurrentComponents;
   /** This term's marks per component — what the percentages are percentages of. */
   currentMarks?: Partial<
@@ -79,6 +85,8 @@ export type Marks = { scored: number | null; max: number | null };
 export type SubjectTermHistory = {
   subject: string;
   isExaminable: boolean;
+  /** Whole percents for the measure pills. See `AtRiskObservation.weights`. */
+  weights?: { ww: number; pt: number; qa: number };
   /** Ascending by term. The term being looked at is last. */
   terms: {
     label: string;
@@ -249,6 +257,7 @@ export function rankAtRisk(input: AtRiskInput): AtRiskStudent[] {
     list.push({
       subject: obs.subject,
       isExaminable: obs.isExaminable,
+      weights: obs.weights,
       terms: [
         ...obs.priors.map((p) => ({
           label: p.term_label,

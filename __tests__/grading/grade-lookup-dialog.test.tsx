@@ -193,14 +193,18 @@ describe('the list is the whole class', () => {
   });
 });
 
-/** The marks table sits behind a fold — the charts answer first. */
+/**
+ * The panel shows ONE measure at a time and its marks table is always open.
+ * `measure` picks a tab first; omitting it leaves the default, the term grade.
+ */
 async function openStudentAndMarks(
   user: ReturnType<typeof userEvent.setup>,
-  name: RegExp
+  name: RegExp,
+  measure?: RegExp
 ) {
   await user.click(screen.getByText(name));
-  await user.click(screen.getByText(/the marks behind it/i));
-  return screen.getByRole('table', { name: /marks, by term and component/i });
+  if (measure) await user.click(screen.getByRole('tab', { name: measure }));
+  return screen.getByRole('table', { name: /by term/i });
 }
 
 describe('a student shows their whole year', () => {
@@ -229,26 +233,32 @@ describe('a student shows their whole year', () => {
     expect(within(table).getByText('−8')).toBeInTheDocument();
   });
 
-  it('leaves the term grade without a score or a total', async () => {
+  it('drops Score and Out of entirely on the term grade', async () => {
     // A term grade is weighted out of 100. Giving it a denominator would be
-    // inventing one, so those two cells stay empty on purpose.
+    // inventing one — and printing a dash in two columns on every row reads as
+    // missing data rather than "does not apply", so the columns go instead.
     renderDialog();
     const user = await open();
     const table = await openStudentAndMarks(user, /Bautista/);
-    // Term 2's row, not Term 1's — Term 1 has a third dash under Change,
-    // because there is no earlier term to measure it from.
-    const gradeRow = within(table).getByText('86').closest('tr');
-    expect(gradeRow).not.toBeNull();
-    expect(within(gradeRow as HTMLElement).getAllByText('—')).toHaveLength(2);
+
+    expect(
+      within(table).queryByRole('columnheader', { name: /score/i })
+    ).toBeNull();
+    expect(
+      within(table).queryByRole('columnheader', { name: /out of/i })
+    ).toBeNull();
+    expect(
+      screen.getByText(/weighted out of 100, so it has no score and no total/i)
+    ).toBeInTheDocument();
   });
 
   it('says what a percentage is a percentage of, in its own columns', async () => {
     // "84%" on its own is unreadable next to a sheet full of raw marks, and
     // the paper's total can change between terms — so Score and Out of get
-    // their own columns beside it.
+    // their own columns beside it, on the measures that have them.
     renderDialog();
     const user = await open();
-    const table = await openStudentAndMarks(user, /Bautista/);
+    const table = await openStudentAndMarks(user, /Bautista/, /Written work/);
 
     expect(within(table).getByText('44')).toBeInTheDocument();
     expect(within(table).getByText('42')).toBeInTheDocument();
@@ -260,7 +270,7 @@ describe('a student shows their whole year', () => {
   it('marks a total that changed, because the score stops being comparable', async () => {
     renderDialog();
     const user = await open();
-    const table = await openStudentAndMarks(user, /Bautista/);
+    const table = await openStudentAndMarks(user, /Bautista/, /Written work/);
     // Written work went from 50 marks to 60 in Term 3.
     expect(
       within(table).getByLabelText(/total changed this term/i)
@@ -270,11 +280,42 @@ describe('a student shows their whole year', () => {
     ).toBeInTheDocument();
   });
 
+  it('flags on the pills, so a fall is visible before anything is clicked', async () => {
+    // Koh Suat Hoon asked the system to "flag out" students. A control that
+    // shows one measure at a time has to carry the flags itself, or finding the
+    // problem means clicking every pill — the opposite of being flagged.
+    renderDialog();
+    const user = await open();
+    await user.click(screen.getByText(/Bautista/));
+
+    // Term grade fell 8 into Term 3; written work moved −3, inside the
+    // five-point threshold, so it states its figure without a flag.
+    const grade = screen.getByRole('tab', { name: /Term grade/ });
+    const written = screen.getByRole('tab', { name: /Written work/ });
+    expect(within(grade).getByLabelText(/fell this term/i)).toBeInTheDocument();
+    expect(within(written).queryByLabelText(/fell this term/i)).toBeNull();
+    expect(grade).toHaveTextContent('−8');
+    expect(written).toHaveTextContent('−3');
+  });
+
+  it('opens on the term grade', async () => {
+    renderDialog();
+    const user = await open();
+    await user.click(screen.getByText(/Bautista/));
+    expect(screen.getByRole('tab', { name: /Term grade/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+  });
+
   it('has no compare-against picker any more', async () => {
     renderDialog();
     const user = await open();
     await user.click(screen.getByText(/Bautista/));
-    expect(screen.queryByRole('tablist')).toBeNull();
+    // The tablist that remains chooses a MEASURE, not a term to compare
+    // against — every term is on screen at once, which is what removed the
+    // question a picker could not answer honestly.
+    expect(screen.queryByRole('tab', { name: /^Term \d/ })).toBeNull();
     expect(screen.queryByText(/^vs Term/)).toBeNull();
     expect(screen.queryByText(/compared with term/i)).toBeNull();
   });

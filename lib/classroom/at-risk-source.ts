@@ -22,6 +22,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 type SubjectLite = { name: string; is_examinable: boolean };
 
+/**
+ * Stored as decimals (0.40), printed as percents on the panel's measure pills.
+ * One set per subject since migration 080, so they cannot differ by term.
+ */
+type ConfigLite = {
+  ww_weight: number | string;
+  pt_weight: number | string;
+  qa_weight: number | string;
+};
+
 type SheetRow = {
   id: string;
   subject_id: string;
@@ -29,6 +39,7 @@ type SheetRow = {
   pt_totals: (number | null)[] | null;
   qa_total: number | null;
   subject: SubjectLite | SubjectLite[] | null;
+  config: ConfigLite | ConfigLite[] | null;
 };
 
 type EntryRow = {
@@ -91,7 +102,7 @@ export async function loadSectionAtRisk(
     service
       .from('grading_sheets')
       .select(
-        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable)'
+        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable), config:subject_configs(ww_weight, pt_weight, qa_weight)'
       )
       .eq('section_id', sectionId)
       .eq('term_id', termId),
@@ -168,6 +179,24 @@ export async function loadSectionAtRisk(
   const priorsBySheet = new Map(
     sheets.map((s, i) => [s.id, priorsBySubject[i]])
   );
+  // Decimals to whole percents, so the pills read "30%" rather than "0.3".
+  // Dropped entirely when a sheet has no config rather than guessed at — a
+  // wrong weight beside a figure is worse than no weight at all.
+  const weightsBySheet = new Map(
+    sheets.map((s) => {
+      const c = firstOf(s.config);
+      return [
+        s.id,
+        c
+          ? {
+              ww: Math.round(Number(c.ww_weight) * 100),
+              pt: Math.round(Number(c.pt_weight) * 100),
+              qa: Math.round(Number(c.qa_weight) * 100),
+            }
+          : undefined,
+      ] as const;
+    })
+  );
 
   const observations: AtRiskObservation[] = entries.map((e) => ({
     sectionStudentId: e.section_student_id,
@@ -176,6 +205,7 @@ export async function loadSectionAtRisk(
     // a number where a band belongs is a smaller lie than the reverse, which
     // would invent a letter for a real percentage.
     isExaminable: subjectBySheet.get(e.grading_sheet_id)?.is_examinable ?? true,
+    weights: weightsBySheet.get(e.grading_sheet_id),
     current: {
       quarterly: e.quarterly_grade,
       ww: e.ww_ps,
