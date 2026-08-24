@@ -245,6 +245,49 @@ describe('when the details cannot be loaded', () => {
   });
 });
 
+describe('landing on a chosen tab', () => {
+  it('opens on Discipline when the caller says why it was opened', async () => {
+    // The class Discipline list opens this drawer from a filed record. Without
+    // the override it would land on Contacts and the teacher would have to
+    // find the tab they came for — which is what made that list a dead end.
+    stubDrawer(details());
+    renderWithClient(
+      <StudentDetailsSheet
+        sectionId="sec-1"
+        sectionName="P4 Trust"
+        studentNumber="H260127"
+        studentName="Bautista, Joaquin P."
+        indexNumber={2}
+        houseName={null}
+        houseColourToken={null}
+        viewerUserId="user-1"
+        canManageAnyDiscipline={false}
+        initialTab="discipline"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(
+      await screen.findByRole('tab', { name: /discipline/i })
+    ).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('still opens on Medical when nobody says otherwise', async () => {
+    // The override must not become the default — a peanut allergy still wins
+    // for every caller that does not pass a tab.
+    stubDrawer(
+      details({
+        hasMedical: true,
+        medical: { conditions: ['Epilepsy'], notes: [], paracetamol: null },
+      })
+    );
+    renderSheet();
+    await open();
+    expect(
+      await screen.findByRole('tab', { name: /medical/i })
+    ).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
 describe('the name as a trigger', () => {
   it('opens the same drawer from the student name', async () => {
     stubDrawer(details());

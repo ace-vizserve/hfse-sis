@@ -79,6 +79,15 @@ type Props = {
   canManageAnyDiscipline: boolean;
   /** Renders the trigger as the student's name rather than a button. */
   asName?: boolean;
+  /**
+   * Which tab to land on, overriding the "open on what matters" default.
+   *
+   * Set it when the caller already knows why the drawer is being opened — the
+   * class Discipline list passes `discipline`, because a teacher clicking a
+   * filed record wants that record, not a phone number. Left unset everywhere
+   * else, so the medical-first default still governs the roster.
+   */
+  initialTab?: TabKey;
 };
 
 type TabKey = 'medical' | 'learning' | 'contacts' | 'discipline';
@@ -154,11 +163,13 @@ function StudentDetailsBody({
   studentNumber,
   viewerUserId,
   canManageAnyDiscipline,
+  initialTab,
 }: {
   sectionId: string;
   studentNumber: string;
   viewerUserId: string;
   canManageAnyDiscipline: boolean;
+  initialTab?: TabKey;
 }) {
   const { data, isLoading, isError, error } = useQuery<StudentDetails>({
     queryKey: queryKeys.classroomStudentDetails(sectionId, studentNumber),
@@ -216,11 +227,18 @@ function StudentDetailsBody({
   // there is any, then the learning note, otherwise the contacts a teacher
   // came for. Landing on an empty Medical tab for the ~95% of students who
   // have nothing would make the drawer feel broken.
-  const initialTab: TabKey = data?.hasMedical
-    ? 'medical'
-    : data?.hasLearning
-      ? 'learning'
-      : 'contacts';
+  //
+  // Unless the caller already knows why it was opened — clicking a filed
+  // record on the class Discipline list wants that record, not a phone
+  // number. The medical safety strip sits ABOVE the tabs either way, so
+  // landing elsewhere never hides an allergy.
+  const resolvedTab: TabKey =
+    initialTab ??
+    (data?.hasMedical
+      ? 'medical'
+      : data?.hasLearning
+        ? 'learning'
+        : 'contacts');
 
   if (disciplineView.mode !== 'list') {
     return (
@@ -301,7 +319,7 @@ function StudentDetailsBody({
               for compact switchers: sentence case, in a well, quiet enough to
               sit under a serif name without competing with it. */}
           <Tabs
-            defaultValue={initialTab}
+            defaultValue={resolvedTab}
             className="min-h-0 flex-1 gap-0 overflow-hidden px-5 pb-5"
           >
             <TabsList variant="segmented" className="w-full">
@@ -485,6 +503,7 @@ export function StudentDetailsSheet({
   viewerUserId,
   canManageAnyDiscipline,
   asName = false,
+  initialTab,
 }: Props) {
   return (
     <Sheet>
@@ -538,6 +557,7 @@ export function StudentDetailsSheet({
             studentNumber={studentNumber}
             viewerUserId={viewerUserId}
             canManageAnyDiscipline={canManageAnyDiscipline}
+            initialTab={initialTab}
           />
         </div>
       </SheetContent>

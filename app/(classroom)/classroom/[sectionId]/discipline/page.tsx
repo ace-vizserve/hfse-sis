@@ -5,6 +5,7 @@ import {
   FileDisciplineRecordButton,
   type DisciplineFilingStudent,
 } from '@/components/classroom/file-discipline-record-button';
+import { StudentDetailsSheet } from '@/components/classroom/student-details-sheet';
 import { DisciplineTypeChip } from '@/components/discipline/record-type-chip';
 import {
   Table,
@@ -15,9 +16,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
-import { canReadRoster } from '@/lib/classroom/scope';
+import {
+  canManageAnyDisciplineRecord,
+  canReadRoster,
+} from '@/lib/classroom/scope';
 import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import { listDisciplineForSection } from '@/lib/discipline/queries';
+import { listHouses } from '@/lib/sis/houses';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type RosterRow = {
@@ -27,6 +32,7 @@ type RosterRow = {
     last_name: string;
     first_name: string;
     middle_name: string | null;
+    house_id: string | null;
   } | null;
 };
 
@@ -70,7 +76,7 @@ export default async function ClassroomDisciplinePage({
       supabase
         .from('section_students')
         .select(
-          'index_number, student:students(student_number, last_name, first_name, middle_name)'
+          'index_number, student:students(student_number, last_name, first_name, middle_name, house_id)'
         )
         .eq('section_id', sectionId)
         .neq('enrollment_status', 'withdrawn')
@@ -78,6 +84,8 @@ export default async function ClassroomDisciplinePage({
     ]);
 
   const sectionName = (sectionRow as { name: string } | null)?.name ?? null;
+  const houses = await listHouses();
+  const houseById = new Map(houses.map((h) => [h.id, h]));
   const students: DisciplineFilingStudent[] = (
     (rosterRows ?? []) as unknown as RosterRow[]
   )
@@ -93,6 +101,28 @@ export default async function ClassroomDisciplinePage({
         .join(', '),
       indexNumber: r.index_number,
     }));
+
+  // Keyed by student number so a table row can open the same drawer the
+  // Students tab uses. A record whose student has since left the class has no
+  // entry here and stays plain text — the drawer reads a live roster, so
+  // offering it would open onto "not on this class list".
+  const rosterByNumber = new Map(
+    ((rosterRows ?? []) as unknown as RosterRow[])
+      .filter((r) => r.student?.student_number)
+      .map((r) => [
+        r.student!.student_number,
+        {
+          indexNumber: r.index_number,
+          houseName: r.student!.house_id
+            ? (houseById.get(r.student!.house_id)?.name ?? null)
+            : null,
+          houseColourToken: r.student!.house_id
+            ? (houseById.get(r.student!.house_id)?.colourToken ?? null)
+            : null,
+        },
+      ])
+  );
+  const canManageAnyDiscipline = canManageAnyDisciplineRecord(capability);
 
   return (
     <div className="space-y-3">
@@ -149,8 +179,37 @@ export default async function ClassroomDisciplinePage({
                   <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
                     {formatRecordWhen(record.occurredOn, record.occurredAtTime)}
                   </TableCell>
+                  {/* The way IN to a filed record for a teacher. They cannot
+                      open Records at all, so without this the class list is a
+                      dead end — you can see that something was filed and have
+                      no route to what it says. The drawer opens straight on
+                      the Discipline tab. */}
                   <TableCell className="whitespace-nowrap font-medium text-foreground">
-                    {record.studentName ?? '—'}
+                    {record.studentNumber &&
+                    rosterByNumber.has(record.studentNumber) ? (
+                      <StudentDetailsSheet
+                        asName
+                        initialTab="discipline"
+                        sectionId={sectionId}
+                        sectionName={sectionName}
+                        studentNumber={record.studentNumber}
+                        studentName={record.studentName ?? record.studentNumber}
+                        indexNumber={
+                          rosterByNumber.get(record.studentNumber)!.indexNumber
+                        }
+                        houseName={
+                          rosterByNumber.get(record.studentNumber)!.houseName
+                        }
+                        houseColourToken={
+                          rosterByNumber.get(record.studentNumber)!
+                            .houseColourToken
+                        }
+                        viewerUserId={userId}
+                        canManageAnyDiscipline={canManageAnyDiscipline}
+                      />
+                    ) : (
+                      (record.studentName ?? '—')
+                    )}
                   </TableCell>
                   <TableCell>
                     <DisciplineTypeChip type={record.recordType} />

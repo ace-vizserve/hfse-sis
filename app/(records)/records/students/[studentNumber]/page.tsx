@@ -18,6 +18,7 @@ import {
   Mail,
   Phone,
   Pill,
+  School,
   ShieldCheck,
   Shirt,
   Sparkles,
@@ -560,9 +561,17 @@ export default async function RecordsStudentCrossYearPage({
                 <>
                   {' '}
                   Currently in{' '}
-                  <strong>
+                  {/* The way across to the class. Every role that can open
+                      this page (academic_coordinator | school_admin |
+                      superadmin) is also admitted by /classroom, and oversight
+                      resolves a capability for ANY section, so this can never
+                      dead-end. */}
+                  <Link
+                    href={`/classroom/${activePlacement.sectionId}`}
+                    className="font-semibold text-primary underline decoration-hairline-strong underline-offset-4 transition-colors hover:decoration-current"
+                  >
                     {activePlacement.levelCode} {activePlacement.sectionName}
-                  </strong>
+                  </Link>
                   .
                 </>
               )}
@@ -622,6 +631,12 @@ export default async function RecordsStudentCrossYearPage({
             ayCode={currentAyDetail.ayCode}
             studentId={student.studentId}
             studentNumber={studentNumber}
+            sectionId={activePlacement?.sectionId ?? null}
+            sectionLabel={
+              activePlacement
+                ? `${activePlacement.levelCode} ${activePlacement.sectionName}`
+                : null
+            }
           />
         </div>
       )}
@@ -1545,7 +1560,7 @@ function AttendanceSection({
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Quick actions — three cross-module deep links so the admin can jump from
+// Quick actions — cross-module deep links so the admin can jump from
 // "I'm looking at this record" to "I'm editing the enrolment record / chasing
 // docs / browsing the student's audit trail" without navigating manually.
 // The admissions link is the canonical edit surface for post-enrolment
@@ -1557,6 +1572,8 @@ function QuickActionsStrip({
   ayCode,
   studentId,
   studentNumber,
+  sectionId,
+  sectionLabel,
 }: {
   enroleeNumber: string;
   ayCode: string;
@@ -1564,9 +1581,13 @@ function QuickActionsStrip({
   studentId: string;
   /** Stable cross-AY ID per Hard Rule #4 — drives the Attendance per-student link. */
   studentNumber: string;
+  /** The class they are in, or null when they have no active placement. */
+  sectionId: string | null;
+  sectionLabel: string | null;
 }) {
   const actions: Array<{
-    href: string;
+    /** `null` renders a muted, non-clickable tile — see the Classroom entry. */
+    href: string | null;
     label: string;
     sublabel: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -1606,11 +1627,47 @@ function QuickActionsStrip({
       sublabel: 'Daily ledger · quota',
       icon: CalendarCheck,
     },
+    // Sixth, and the one that was missing: across to the class itself. Every
+    // role admitted to this page is also admitted by /classroom, and oversight
+    // resolves a capability for ANY section, so it cannot dead-end.
+    //
+    // A student with no active placement gets the tile anyway, greyed and
+    // unclickable. Dropping it would leave a hole in the grid and say nothing;
+    // this says WHY there is nowhere to go, which is usually the thing the
+    // reader actually needed to know.
+    {
+      href: sectionId ? `/classroom/${sectionId}` : null,
+      label: 'Classroom',
+      sublabel: sectionId
+        ? `Class list · ${sectionLabel ?? 'this class'}`
+        : 'No class assigned',
+      icon: School,
+    },
   ];
   return (
     <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {actions.map((a) => {
         const Icon = a.icon;
+        if (!a.href) {
+          return (
+            <div
+              key={a.label}
+              className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-3"
+            >
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                <Icon className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-serif text-[14px] font-semibold leading-tight tracking-tight text-muted-foreground">
+                  {a.label}
+                </p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  {a.sublabel}
+                </p>
+              </div>
+            </div>
+          );
+        }
         return (
           <Link
             key={a.href}

@@ -31,12 +31,23 @@
       "Bash(tee /dev/stderr)",
       "mcp__claude_ai_Google_Drive__read_file_content",
       "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && sed -n '/SIS_NAV/,/^];/p' lib/nav/*.ts 2>/dev/null | head -80 || grep -rn \"SIS_NAV\" lib/ --include=*.ts -l)",
-      "Bash(tee /tmp/sonnerfiles.txt)"
+      "Bash(tee /tmp/sonnerfiles.txt)",
+      "PowerShell(npx vitest run __tests__/ui/bulk-action-footer.test.tsx __tests__/ui/button.test.tsx 2>&1)",
+      "Bash(sed -n '/create table if not exists public.sections/,/^\\);/p' supabase/migrations/001_initial_schema.sql)",
+      "Bash(sed -n '/create table if not exists public.academic_years/,/^\\);/p' supabase/migrations/001_initial_schema.sql)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && rm -f .next/lock && npm run build 2>&1 | grep -E \"Compiled successfully|✓|error|Error|Failed\" | head -8; echo \"=== BUILD DONE ===\")",
+      "Bash(tee /tmp/csvtables.txt)",
+      "Bash(find . -name \"*lagoon*\" -o -name \"*cupcake*\" 2>/dev/null | grep -v node_modules | head; echo \"---HOME---\"; find \"$HOME/.claude\" -maxdepth 3 -name \"*lagoon*\" -o -maxdepth 3 -name \"*cupcake*\" 2>/dev/null | head)",
+      "Read(//c/Users/Ace/.claude/**)",
+      "Bash(sed -n 471,584p components/grading/grade-lookup-dialog.tsx)",
+      "WebFetch(domain:claude.ai)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",
       "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\app\\(p-files)\\p-files\\[enroleeNumber]",
-      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\docs\\training\\sessions"
+      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\docs\\training\\sessions",
+      "C:\\Users\\Ace\\.claude\\plans"
     ]
   }
 }
