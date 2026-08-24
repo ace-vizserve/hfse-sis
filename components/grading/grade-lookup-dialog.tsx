@@ -26,10 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  GRADE_ALERT_THRESHOLD,
-  type AlertMetric,
-} from '@/lib/markbook/alert-threshold';
+import { type AlertMetric } from '@/lib/markbook/alert-threshold';
 // One copy of how a grade figure is written down — see the file header there.
 import {
   fmtGrade as fmt,
@@ -241,7 +238,7 @@ export function GradeLookupDialog({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[860px] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[860px] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle className="font-serif text-xl font-semibold tracking-tight">
             {/* Mirrors attendance's "Attendance lookup" / "Attendance
