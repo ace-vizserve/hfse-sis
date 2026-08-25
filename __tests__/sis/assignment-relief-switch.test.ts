@@ -161,7 +161,13 @@ describe('putting someone on cover', () => {
     const res = await patch({ relief_teacher_user_id: TEACHER_B });
 
     expect(res.status).toBe(200);
-    expect(updateCalls).toEqual([{ relief_teacher_user_id: TEACHER_B }]);
+    expect(updateCalls).toEqual([
+      {
+        relief_teacher_user_id: TEACHER_B,
+        relief_started_on: null,
+        relief_ended_on: null,
+      },
+    ]);
   });
 
   it('gates on staff.manage_relief, not staff.edit_assignments', async () => {
@@ -224,7 +230,13 @@ describe('taking someone off cover', () => {
     const res = await patch({ relief_teacher_user_id: null });
 
     expect(res.status).toBe(200);
-    expect(updateCalls).toEqual([{ relief_teacher_user_id: null }]);
+    expect(updateCalls).toEqual([
+      {
+        relief_teacher_user_id: null,
+        relief_started_on: null,
+        relief_ended_on: null,
+      },
+    ]);
   });
 
   it('rejects a body that omits the key entirely', async () => {
@@ -277,6 +289,117 @@ describe('what survives the change', () => {
     expect(new Set(modules)).toEqual(
       new Set(['markbook', 'evaluation', 'attendance'])
     );
+  });
+});
+
+describe('the cover window (migration 123)', () => {
+  it('writes both dates when they are given', async () => {
+    const res = await patch({
+      relief_teacher_user_id: TEACHER_B,
+      relief_started_on: '2026-09-01',
+      relief_ended_on: '2026-09-05',
+    });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls).toEqual([
+      {
+        relief_teacher_user_id: TEACHER_B,
+        relief_started_on: '2026-09-01',
+        relief_ended_on: '2026-09-05',
+      },
+    ]);
+  });
+
+  it('keeps the one-step flow working when the dates are omitted', async () => {
+    // Every caller written before 123 sends only the teacher, and must still
+    // mean "cover this class from now until I say otherwise".
+    const res = await patch({ relief_teacher_user_id: TEACHER_B });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0]).toMatchObject({
+      relief_started_on: null,
+      relief_ended_on: null,
+    });
+  });
+
+  it('accepts an open-ended cover — a start with no end', async () => {
+    const res = await patch({
+      relief_teacher_user_id: TEACHER_B,
+      relief_started_on: '2026-09-01',
+      relief_ended_on: null,
+    });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0]).toMatchObject({
+      relief_started_on: '2026-09-01',
+      relief_ended_on: null,
+    });
+  });
+
+  it('rejects an end date before the start date', async () => {
+    const res = await patch({
+      relief_teacher_user_id: TEACHER_B,
+      relief_started_on: '2026-09-05',
+      relief_ended_on: '2026-09-01',
+    });
+
+    expect(res.status).toBe(400);
+    expect(updateCalls).toEqual([]);
+  });
+
+  it('rejects a date that is not yyyy-MM-dd', async () => {
+    const res = await patch({
+      relief_teacher_user_id: TEACHER_B,
+      relief_started_on: '1 Sep 2026',
+    });
+
+    expect(res.status).toBe(400);
+    expect(updateCalls).toEqual([]);
+  });
+
+  it('clearing the teacher wipes the window rather than backdating it', async () => {
+    // Somebody will want to stop a cover today that was booked to run all week.
+    // Leaving the dates behind would strand a window on a class nobody covers.
+    const res = await patch({ relief_teacher_user_id: null });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0]).toMatchObject({
+      relief_teacher_user_id: null,
+      relief_started_on: null,
+      relief_ended_on: null,
+    });
+  });
+
+  it('refuses dates sent alongside a null teacher', async () => {
+    // Nothing is covering, so a window would mean nothing. Rejecting it is
+    // louder than silently dropping it.
+    const res = await patch({
+      relief_teacher_user_id: null,
+      relief_started_on: '2026-09-01',
+    });
+
+    expect(res.status).toBe(400);
+    expect(updateCalls).toEqual([]);
+  });
+
+  it('records the window in the audit context', async () => {
+    // The row keeps nothing once cover is cleared, so the audit log is the only
+    // place a finished cover's dates survive.
+    await patch({
+      relief_teacher_user_id: TEACHER_B,
+      relief_started_on: '2026-09-01',
+      relief_ended_on: '2026-09-05',
+    });
+
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    const context = logActionMock.mock.calls[0][0].context as Record<
+      string,
+      unknown
+    >;
+    expect(context).toMatchObject({
+      relief_started_on: '2026-09-01',
+      relief_ended_on: '2026-09-05',
+    });
   });
 });
 

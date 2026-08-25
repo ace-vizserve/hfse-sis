@@ -32,6 +32,15 @@ import { join, relative, sep } from 'node:path';
 //              or an unstaffed section would look staffed and publish
 //   crud       manages assignment/relief rows themselves; not an access answer
 //   plumbing   shared helper whose own callers carry the classification
+//   monitoring ⚠ reads cover in order to SHOW it — including cover that has not
+//              started yet (migration 123) — and never to decide anything. This
+//              is the one category that must never reach a permission check: a
+//              row here may be a class the reader can open nothing of today. It
+//              differs from `name` in the opposite direction to `act`: `name`
+//              must never show relief, `monitoring` exists precisely to show it,
+//              with its status attached. If a file here ever feeds a scope
+//              resolver or an isSubjectTeacher check, it is misfiled, and the
+//              bug is a substitute getting a class a week early.
 
 type Category =
   | 'act'
@@ -39,9 +48,14 @@ type Category =
   | 'name'
   | 'coverage'
   | 'crud'
-  | 'plumbing';
+  | 'plumbing'
+  | 'monitoring';
 
 const CLASSIFIED: Record<string, Category[]> = {
+  // ── monitoring ──────────────────────────────────────────────────────────
+  'lib/relief/upcoming.ts': ['monitoring'],
+  'lib/relief/cover-board.ts': ['monitoring'],
+
   // ── plumbing ────────────────────────────────────────────────────────────
   'lib/auth/teacher-assignments.ts': ['plumbing'],
   'lib/classroom/queries.ts': ['plumbing'],
@@ -138,6 +152,7 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/(sis)/sis/page.tsx': ['coverage'],
 
   // ── crud ────────────────────────────────────────────────────────────────
+  'app/api/relief/book/route.ts': ['crud'],
   'app/api/teacher-assignments/route.ts': ['crud'],
   // Also the cover switch — PATCH sets and clears relief_teacher_user_id.
   'app/api/teacher-assignments/[id]/route.ts': ['crud'],

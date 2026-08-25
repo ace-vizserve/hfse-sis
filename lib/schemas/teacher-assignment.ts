@@ -98,17 +98,103 @@ const requiredId = (message: string) =>
  * makes "end the cover" explicit rather than something an empty body could do
  * by accident.
  *
- * No reason, no notes, no dates. Cover is on or off (migration 117); the audit
- * log records who changed it and when.
+ * No reason and no notes — the audit log records who changed it and when.
+ *
+ * DATES ARE OPTIONAL, and both nulls are meaningful (migration 123):
+ *   start null → live from whenever it was set (the original one-step flow);
+ *   end   null → open-ended, "until she is back".
+ * Omitting the keys entirely is also fine, which is what keeps every caller
+ * written before 123 working unchanged.
  */
-export const AssignmentReliefSchema = z.object({
-  relief_teacher_user_id: z
-    .string({ error: 'Choose a teacher to cover this class.' })
-    .uuid('Choose a teacher to cover this class.')
-    .nullable(),
-});
+const optionalReliefDate = z
+  .string()
+  .trim()
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || /^\d{4}-\d{2}-\d{2}$/.test(s), {
+    message: 'Use YYYY-MM-DD',
+  })
+  .nullable()
+  .optional();
+
+export const AssignmentReliefSchema = z
+  .object({
+    relief_teacher_user_id: z
+      .string({ error: 'Choose a teacher to cover this class.' })
+      .uuid('Choose a teacher to cover this class.')
+      .nullable(),
+    relief_started_on: optionalReliefDate,
+    relief_ended_on: optionalReliefDate,
+  })
+  .superRefine((val, ctx) => {
+    // Mirrors `teacher_assignments_relief_dates_ordered` (migration 123). Said
+    // here too so the answer arrives as a sentence rather than a constraint
+    // name, and before anything is written.
+    if (
+      val.relief_started_on &&
+      val.relief_ended_on &&
+      val.relief_ended_on < val.relief_started_on
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['relief_ended_on'],
+        message: 'The last day cannot be before the first day.',
+      });
+    }
+
+    // Ending a cover clears it outright. Leaving a window behind on a class
+    // nobody is covering would sit in the table waiting to mean something.
+    if (
+      val.relief_teacher_user_id === null &&
+      (val.relief_started_on || val.relief_ended_on)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['relief_teacher_user_id'],
+        message: 'Removing the relief teacher clears its dates too.',
+      });
+    }
+  });
 
 export type AssignmentRelief = z.infer<typeof AssignmentReliefSchema>;
+
+/**
+ * One substitute across EVERY class a teacher holds — the Cover page's booking
+ * form (POST /api/relief/book).
+ *
+ * Deliberately does not take a list of classes. The caller names the absent
+ * teacher and the route works out which classes that means, so the page cannot
+ * send a stale set after somebody edited the timetable in another tab.
+ */
+export const ReliefBookingSchema = z
+  .object({
+    covered_teacher_user_id: z
+      .string({ error: 'Choose the teacher who is away.' })
+      .uuid('Choose the teacher who is away.'),
+    // Nullable for the same reason the per-class PATCH is: `null` ENDS the
+    // cover on every class that teacher holds. "She is back early" is one
+    // decision about one absence, so it should not be N trips through N rows.
+    relief_teacher_user_id: z
+      .string({ error: 'Choose a teacher to cover.' })
+      .uuid('Choose a teacher to cover.')
+      .nullable(),
+    relief_started_on: optionalReliefDate,
+    relief_ended_on: optionalReliefDate,
+  })
+  .superRefine((val, ctx) => {
+    if (
+      val.relief_started_on &&
+      val.relief_ended_on &&
+      val.relief_ended_on < val.relief_started_on
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['relief_ended_on'],
+        message: 'The last day cannot be before the first day.',
+      });
+    }
+  });
+
+export type ReliefBooking = z.infer<typeof ReliefBookingSchema>;
 
 /**
  * One teacher against one class — the shape both the single and the bulk body

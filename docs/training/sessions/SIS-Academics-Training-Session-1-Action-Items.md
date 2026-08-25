@@ -2341,6 +2341,26 @@ monitoring without being prompted — that is the academic head corroborating th
    teacher seeing every cover in the school is not the same feature as a teacher
    seeing the classes they are covering. Unresolved.
 
+**✅ BOTH RIDERS SETTLED 2026-08-24 (Mr Ace), and relief cover shipped — KD #191.**
+
+- **Rider 2 was answered by SPLITTING it, which is what "two different features"
+  was pointing at all along.** The school-wide board is **SIS Admin only**
+  (`/sis/admin/cover`, `staff.manage_relief`) — no teacher sees every cover in
+  the school. The teacher's own half is a **"You're covering"** panel on home,
+  the Classroom index and the Markbook and Attendance section lists. So her
+  "teachers' dashboard will contain the relief monitoring" is answered without a
+  teachers' dashboard existing.
+- **Rider 1 — the second job — is NOT built, deliberately.** Lesson topics stay
+  out and SOW remains removed. ⚠ **But the reason her ask needed relief first is
+  now visible in the code:** cover booked for next week used to be invisible to
+  the substitute until the morning it started, so there was nothing for a lesson
+  plan to attach to. **That panel is the hook.** If SOW is ever revived as a link
+  per class/subject/term, it hangs there.
+- ⚠ **What this does NOT settle: whether what shipped is what she meant.** She
+  asked for relief monitoring inside a teachers' dashboard; what exists is an
+  administrator's page plus a teacher's own list. **Show her both before treating
+  her ask as closed** — alongside Classroom, per the note above.
+
 ⚠ **Scope note.** "Lesson planning, scheme of work and teaching and delivery
 matters" is a **module**, not a feature. Nothing here is scoped, costed or
 approved. Do not re-derive a SOW model from this message.

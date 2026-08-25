@@ -22,6 +22,10 @@ import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 export type CoverSummary = {
   reliefTeacherId: string;
   reliefTeacherName: string;
+  /** First day of the cover; null means it started when it was set. */
+  startedOn: string | null;
+  /** Last day, inclusive; null means open-ended. */
+  endedOn: string | null;
 };
 
 export type TeacherClassRow = {
@@ -46,6 +50,9 @@ export type TeacherDetail = {
     assignmentId: string;
     label: string;
     coveredTeacherName: string;
+    /** ⚠ A row here may not be live yet — check the window before saying so. */
+    startedOn: string | null;
+    endedOn: string | null;
   }>;
 };
 
@@ -88,6 +95,7 @@ export async function loadTeacherDetail(
     .from('teacher_assignments')
     .select(
       `id, role, subject_id, relief_teacher_user_id,
+       relief_started_on, relief_ended_on,
        section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
        subject:subjects(id, name)`
     )
@@ -99,6 +107,8 @@ export async function loadTeacherDetail(
     role: 'form_adviser' | 'subject_teacher';
     subject_id: string | null;
     relief_teacher_user_id: string | null;
+    relief_started_on: string | null;
+    relief_ended_on: string | null;
     section:
       | { id: string; name: string; level: LevelLite | LevelLite[] | null }
       | Array<{
@@ -132,6 +142,8 @@ export async function loadTeacherDetail(
             reliefTeacherId: a.relief_teacher_user_id,
             reliefTeacherName:
               nameById.get(a.relief_teacher_user_id) ?? 'Unknown teacher',
+            startedOn: a.relief_started_on,
+            endedOn: a.relief_ended_on,
           }
         : null,
     };
@@ -151,6 +163,7 @@ export async function loadTeacherDetail(
     .from('teacher_assignments')
     .select(
       `id, teacher_user_id, role,
+       relief_started_on, relief_ended_on,
        section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
        subject:subjects(id, name)`
     )
@@ -175,6 +188,8 @@ export async function loadTeacherDetail(
               : `${subject?.name ?? '—'} · ${where}`,
           coveredTeacherName:
             nameById.get(a.teacher_user_id) ?? 'Unknown teacher',
+          startedOn: a.relief_started_on,
+          endedOn: a.relief_ended_on,
         },
       ];
     }

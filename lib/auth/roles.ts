@@ -647,6 +647,24 @@ const SIS_NAV: NavSection[] = [
           },
         ],
       },
+      {
+        // Sits beside Staff because it is the same subject seen the other way
+        // round: Staff answers "what does this teacher hold", Cover answers
+        // "who is standing in, and what runs out this week".
+        //
+        // Capability-gated rather than role-listed, matching the write it
+        // fronts — the academic coordinator holds staff.edit_assignments but
+        // deliberately NOT staff.manage_relief (see lib/auth/capabilities.ts),
+        // so she staffs the year without deciding who stands in.
+        href: '/sis/admin/cover',
+        label: 'Cover',
+        // BOTH, and the pair has to agree — nav visibility is role-driven while
+        // the page and the write gate on the capability. Declaring only the
+        // capability let the academic coordinator see a link the proxy blocks,
+        // which __tests__/auth/nav-route-consistency-all-modules.test.ts caught.
+        requiresRoles: ['school_admin', 'superadmin'],
+        requiresCapability: 'staff.manage_relief',
+      },
     ],
   },
   {
@@ -935,6 +953,13 @@ export const ROUTE_ACCESS: Array<{
     // inline guard (app/(sis)/sis/admin/staff/page.tsx).
     prefix: '/sis/admin/staff',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
+  {
+    // Arranging cover is `staff.manage_relief`, which only school_admin and
+    // superadmin hold. Narrower than the staff directory next door on purpose:
+    // deciding who may act on a class is not the same as editing the timetable.
+    prefix: '/sis/admin/cover',
+    allowed: ['school_admin', 'superadmin'],
   },
   {
     // Discount codes are operationally owned by admissions (they assign codes

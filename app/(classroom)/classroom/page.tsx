@@ -12,6 +12,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
+import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
@@ -42,6 +44,12 @@ export default async function ClassroomListPage() {
       ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
       : [];
   const scope = resolveClassroomScope(role, assignments);
+
+  // Cover this teacher is booked to take but cannot open yet (migration 123).
+  // Caller's client on purpose: the row-read policy is deliberately unwindowed
+  // so this needs no service-role escalation.
+  const upcomingCover =
+    role === 'teacher' ? await loadUpcomingCoverForUser(supabase, userId) : [];
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -151,6 +159,10 @@ export default async function ClassroomListPage() {
           </Badge>
         )}
       </header>
+
+      {/* Cover booked for this teacher that has not started. Not a link and
+          never the word "covering" — see components/relief/upcoming-cover.tsx. */}
+      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
 
       <div className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">

@@ -18,8 +18,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { sgToday } from '@/lib/dates';
+
 const ASSIGNMENT_COLUMNS =
-  'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id';
+  'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on';
 
 export type AssignmentRow = {
   id: string;
@@ -27,9 +29,40 @@ export type AssignmentRow = {
   section_id: string;
   subject_id: string | null;
   role: 'form_adviser' | 'subject_teacher';
-  /** Who is covering this class right now, or null when nobody is. */
+  /** Who is covering this class, or null when nobody is. */
   relief_teacher_user_id?: string | null;
+  /** First day the cover applies. Null = live from whenever it was set. */
+  relief_started_on?: string | null;
+  /** Last day the cover applies, inclusive. Null = open-ended. */
+  relief_ended_on?: string | null;
 };
+
+/**
+ * Does a cover window include today?
+ *
+ * ⚠ THIS IS ONE HALF OF A PAIR. The other half is `public.relief_is_live` in
+ * migration 123, and the two MUST agree. Migration 115 exists only because a
+ * date window in SQL and the same window in the app disagreed, so a teacher
+ * could act in one layer and not the other.
+ *
+ * The pair is pinned by `__tests__/auth/relief-window-parity.test.ts`, which
+ * checks this truth table AND that every relief test in the SQL calls the
+ * shared function rather than inlining the comparison. If you change the rule
+ * here, change it there in the same commit.
+ *
+ * Both bounds are inclusive, and null means unbounded in that direction:
+ * null start = live from whenever it was set (every pre-123 row), null end =
+ * open-ended, "until she is back".
+ */
+export function isReliefLive(
+  startedOn: string | null | undefined,
+  endedOn: string | null | undefined,
+  today: string = sgToday()
+): boolean {
+  if (startedOn && startedOn > today) return false;
+  if (endedOn && endedOn < today) return false;
+  return true;
+}
 
 /** How a teacher came by an assignment: they hold it, or they are covering it. */
 export type AssignmentVia = 'substantive' | 'relief';
@@ -56,10 +89,17 @@ export async function loadAssignmentsForUser(
  * Every assignment this user may act on: the ones they hold, plus the ones they
  * are covering for an absent colleague.
  *
- * Cover is a switch, not a period — `relief_teacher_user_id` is set while
- * somebody is covering and cleared when they stop (migration 117). Clearing it
- * is what takes the access away; there is nothing else to revoke and no date
- * window for this and the database to disagree about.
+ * Cover CARRIES A DATE WINDOW since migration 123 — `relief_started_on` /
+ * `relief_ended_on`, either or both null. A cover whose start has not arrived
+ * grants nothing yet; one whose end has passed grants nothing any more.
+ * Clearing `relief_teacher_user_id` still ends a cover immediately.
+ *
+ * ⚠ THE WINDOW IS APPLIED HERE AND NOT LEFT TO RLS, and that is deliberate.
+ * Five callers pass the SERVICE client, which bypasses RLS outright
+ * (lib/classroom/queries.ts, lib/attendance/adviser-dashboard-queries.ts,
+ * app/api/attendance/daily/route.ts, app/api/attendance/[sectionId]/export/route.ts,
+ * app/(classroom)/classroom/page.tsx). Rely on the policy alone and all five
+ * would hand a substitute access to a class they are not covering yet.
  *
  * Relief-derived rows carry the COVERED assignment's section, subject and role —
  * that is what access turns on — but `teacher_user_id` is set to the caller, so
@@ -83,17 +123,34 @@ export async function loadEffectiveAssignmentsForUser(
 
   // A teacher can hold one class and cover another, so decide row by row rather
   // than assuming the two sets are disjoint. Holding it wins: if you are
-  // somehow both, you are the teacher, not the substitute.
-  return ((data ?? []) as unknown as AssignmentRow[]).map((a) =>
-    a.teacher_user_id === userId
-      ? { ...a, via: 'substantive' as const }
-      : {
-          ...a,
-          teacher_user_id: userId,
-          covered_teacher_user_id: a.teacher_user_id,
-          via: 'relief' as const,
-        }
-  );
+  // somehow both, you are the teacher, not the substitute — and holding has no
+  // window, so a lapsed cover on your own class never costs you access to it.
+  //
+  // The window is filtered here rather than in the query above: expressing it
+  // in PostgREST needs an `or(and(or(…),or(…)))` nested three deep, and the row
+  // count per teacher is tiny.
+  const today = sgToday();
+
+  // The generic is load-bearing: without it the return type is inferred from
+  // the first branch alone and the relief branch then fails to assign.
+  return (
+    (data ?? []) as unknown as AssignmentRow[]
+  ).flatMap<EffectiveAssignmentRow>((a) => {
+    if (a.teacher_user_id === userId) {
+      return [{ ...a, via: 'substantive' as const }];
+    }
+    if (!isReliefLive(a.relief_started_on, a.relief_ended_on, today)) {
+      return [];
+    }
+    return [
+      {
+        ...a,
+        teacher_user_id: userId,
+        covered_teacher_user_id: a.teacher_user_id,
+        via: 'relief' as const,
+      },
+    ];
+  });
 }
 
 // True if the user is the subject teacher for (section, subject) — whether they

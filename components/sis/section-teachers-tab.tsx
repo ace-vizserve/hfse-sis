@@ -82,8 +82,12 @@ type Assignment = {
   section_id: string;
   subject_id: string | null;
   role: 'form_adviser' | 'subject_teacher';
-  /** Who is standing in on this class right now, or null when nobody is. */
+  /** Who is standing in on this class, or null when nobody is. */
   relief_teacher_user_id: string | null;
+  /** First day of the cover; null means it started when it was set. */
+  relief_started_on: string | null;
+  /** Last day of the cover, inclusive; null means open-ended. */
+  relief_ended_on: string | null;
 };
 
 // Teachers tab on /sis/sections/[id]. Moved from
@@ -348,6 +352,9 @@ export function TeacherAssignmentsPanel({
                   id: t.id,
                   name: t.display_name,
                 }))}
+                reliefTeacherId={formAdviser.relief_teacher_user_id}
+                reliefStartedOn={formAdviser.relief_started_on}
+                reliefEndedOn={formAdviser.relief_ended_on}
                 canManage={canManageRelief}
                 onChanged={load}
               />
@@ -453,6 +460,9 @@ export function TeacherAssignmentsPanel({
                         id: x.id,
                         name: x.display_name,
                       }))}
+                      reliefTeacherId={a.relief_teacher_user_id}
+                      reliefStartedOn={a.relief_started_on}
+                      reliefEndedOn={a.relief_ended_on}
                       canManage={canManageRelief}
                       onChanged={load}
                     />

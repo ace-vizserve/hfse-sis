@@ -22,6 +22,8 @@ function staff(over: Partial<SectionStaff> = {}): SectionStaff {
     adviserId: 'user-tan',
     adviserCoveringName: null,
     adviserCoveringId: null,
+    adviserScheduledCoveringName: null,
+    adviserScheduledCoverFrom: null,
     subjects: [
       {
         subjectId: 'sub-1',
@@ -31,6 +33,8 @@ function staff(over: Partial<SectionStaff> = {}): SectionStaff {
         teacherId: 'user-fernandez',
         coveringName: null,
         coveringId: null,
+        scheduledCoveringName: null,
+        scheduledCoverFrom: null,
       },
     ],
     noSubjectsConfigured: false,
@@ -60,6 +64,8 @@ describe('the name of record survives a cover', () => {
           teacherId: 'user-fernandez',
           coveringName: 'Jenny Wong',
           coveringId: 'user-wong',
+          scheduledCoveringName: null,
+          scheduledCoverFrom: null,
         },
       ],
     });
@@ -82,6 +88,58 @@ describe('the name of record survives a cover', () => {
   });
 });
 
+describe('a cover that has not started yet', () => {
+  // ⚠ The whole point of migration 123's display rule. A booked substitute has
+  // NO access until their first day, so the panel must not say "covering" — a
+  // coordinator reading it would go to the wrong person today.
+  it('says when they start, never that they are covering', () => {
+    renderPanel({
+      subjects: [
+        {
+          subjectId: 'sub-1',
+          code: 'MATH',
+          name: 'Mathematics',
+          teacherName: 'R. Fernandez',
+          teacherId: 'user-fernandez',
+          coveringName: null,
+          coveringId: null,
+          scheduledCoveringName: 'Jenny Wong',
+          scheduledCoverFrom: '2026-09-03',
+        },
+      ],
+    });
+
+    const line = screen.getByText(/R\. Fernandez/).textContent ?? '';
+    expect(line).toMatch(/Jenny Wong covers from 3 Sep/);
+    expect(line).not.toMatch(/Jenny Wong covering/);
+  });
+
+  it('does the same for the form adviser', () => {
+    renderPanel({
+      adviserName: 'Marrie Tan',
+      adviserCoveringName: null,
+      adviserScheduledCoveringName: 'Jenny Wong',
+      adviserScheduledCoverFrom: '2026-09-03',
+    });
+
+    const line = screen.getByText(/Marrie Tan/).textContent ?? '';
+    expect(line).toMatch(/Jenny Wong covers from 3 Sep/);
+    expect(line).not.toMatch(/covering/);
+  });
+
+  it('keeps the holder as the name of record either way', () => {
+    renderPanel({
+      adviserName: 'Marrie Tan',
+      adviserScheduledCoveringName: 'Jenny Wong',
+      adviserScheduledCoverFrom: '2026-09-03',
+    });
+    // Holder first, exactly as with a live cover.
+    expect(screen.getByText(/Marrie Tan/).textContent).toMatch(
+      /^Marrie Tan.*Jenny Wong/
+    );
+  });
+});
+
 describe('what is missing shows where it is missing', () => {
   it('names the subject nobody teaches, on the subject’s own line', () => {
     renderPanel({
@@ -94,6 +152,8 @@ describe('what is missing shows where it is missing', () => {
           teacherId: null,
           coveringName: null,
           coveringId: null,
+          scheduledCoveringName: null,
+          scheduledCoverFrom: null,
         },
       ],
     });
@@ -117,6 +177,8 @@ describe('what is missing shows where it is missing', () => {
           teacherId: 'user-fernandez',
           coveringName: null,
           coveringId: null,
+          scheduledCoveringName: null,
+          scheduledCoverFrom: null,
         },
         {
           subjectId: 'b',
@@ -126,6 +188,8 @@ describe('what is missing shows where it is missing', () => {
           teacherId: null,
           coveringName: null,
           coveringId: null,
+          scheduledCoveringName: null,
+          scheduledCoverFrom: null,
         },
       ],
     });
@@ -174,6 +238,8 @@ describe('opening a teacher', () => {
             teacherId: 'user-fernandez',
             coveringName: 'Jenny Wong',
             coveringId: 'user-wong',
+            scheduledCoveringName: null,
+            scheduledCoverFrom: null,
           },
         ],
       },

@@ -169,7 +169,7 @@ export default async function SisSectionDetailPage({
     supabase
       .from('teacher_assignments')
       .select(
-        'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id'
+        'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on'
       )
       .eq('section_id', id),
     // Terms for this AY — used to compute termStarted (see hasTermStarted in
@@ -296,6 +296,8 @@ export default async function SisSectionDetailPage({
     subject_id: string | null;
     role: 'form_adviser' | 'subject_teacher';
     relief_teacher_user_id: string | null;
+    relief_started_on: string | null;
+    relief_ended_on: string | null;
   };
   const initialAssignments = (rawAssignments ?? []) as AssignmentRow[];
 

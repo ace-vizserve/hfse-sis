@@ -2,6 +2,7 @@ import 'server-only';
 
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { createServiceClient } from '@/lib/supabase/service';
+import { reliefStatus } from '@/lib/relief/display';
 
 // Who runs this class — the form adviser, the subject teachers, and anyone
 // covering. Mr Ace, 2026-08-21: "there is no trace of who teaches who/FCA etc
@@ -35,6 +36,14 @@ export type SectionStaffSubject = {
   /** Who is covering right now, or null. Never replaces `teacherName`. */
   coveringName: string | null;
   coveringId: string | null;
+  /**
+   * Cover that is BOOKED but not yet running (migration 123). Kept apart from
+   * `coveringName` on purpose: this panel answers "who runs this class", and a
+   * substitute who starts next week does not, yet. Naming them in the same
+   * breath would tell a reader somebody has the class when they have nothing.
+   */
+  scheduledCoveringName: string | null;
+  scheduledCoverFrom: string | null;
 };
 
 export type SectionStaff = {
@@ -42,6 +51,8 @@ export type SectionStaff = {
   adviserId: string | null;
   adviserCoveringName: string | null;
   adviserCoveringId: string | null;
+  adviserScheduledCoveringName: string | null;
+  adviserScheduledCoverFrom: string | null;
   subjects: SectionStaffSubject[];
   /** True when the class has no `section_subjects` rows at all. */
   noSubjectsConfigured: boolean;
@@ -52,6 +63,8 @@ type AssignmentRow = {
   subject_id: string | null;
   role: 'form_adviser' | 'subject_teacher';
   relief_teacher_user_id: string | null;
+  relief_started_on: string | null;
+  relief_ended_on: string | null;
 };
 
 type SubjectRow = {
@@ -75,7 +88,9 @@ export async function getSectionStaff(
   const [assignmentsRes, subjectsRes, names] = await Promise.all([
     service
       .from('teacher_assignments')
-      .select('teacher_user_id, subject_id, role, relief_teacher_user_id')
+      .select(
+        'teacher_user_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on'
+      )
       .eq('section_id', sectionId),
     // Which subjects this class takes. `section_subjects` IS the membership
     // test — migration 079 made subjects per-section rather than purely
@@ -118,6 +133,31 @@ export async function getSectionStaff(
     // still attributable, and a blank is not.
     id ? (names.get(id) ?? id) : null;
 
+  // ⚠ A relief id on the row is NOT the same as somebody covering today.
+  // Since migration 123 the row carries a window, so every read here has to
+  // ask which side of it we are on. Splitting it into these four one-liners
+  // keeps the question in one place rather than repeated at both call sites.
+  const liveCoverName = (a: AssignmentRow | null): string | null =>
+    a?.relief_teacher_user_id &&
+    reliefStatus(a.relief_started_on, a.relief_ended_on) === 'active'
+      ? nameOf(a.relief_teacher_user_id)
+      : null;
+
+  const liveCoverId = (a: AssignmentRow | null): string | null =>
+    a?.relief_teacher_user_id &&
+    reliefStatus(a.relief_started_on, a.relief_ended_on) === 'active'
+      ? a.relief_teacher_user_id
+      : null;
+
+  const scheduledCoverName = (a: AssignmentRow | null): string | null =>
+    a?.relief_teacher_user_id &&
+    reliefStatus(a.relief_started_on, a.relief_ended_on) === 'scheduled'
+      ? nameOf(a.relief_teacher_user_id)
+      : null;
+
+  const scheduledCoverFrom = (a: AssignmentRow | null): string | null =>
+    scheduledCoverName(a) ? (a?.relief_started_on ?? null) : null;
+
   const assignments = (assignmentsRes.data ?? []) as unknown as AssignmentRow[];
 
   const adviser = assignments.find((a) => a.role === 'form_adviser') ?? null;
@@ -144,8 +184,10 @@ export async function getSectionStaff(
         name: s?.name ?? 'Untitled subject',
         teacherName: nameOf(held?.teacher_user_id),
         teacherId: held?.teacher_user_id ?? null,
-        coveringName: nameOf(held?.relief_teacher_user_id),
-        coveringId: held?.relief_teacher_user_id ?? null,
+        coveringName: liveCoverName(held),
+        coveringId: liveCoverId(held),
+        scheduledCoveringName: scheduledCoverName(held),
+        scheduledCoverFrom: scheduledCoverFrom(held),
       };
     })
     .filter((s): s is SectionStaffSubject => s !== null)
@@ -154,8 +196,10 @@ export async function getSectionStaff(
   return {
     adviserName: nameOf(adviser?.teacher_user_id),
     adviserId: adviser?.teacher_user_id ?? null,
-    adviserCoveringName: nameOf(adviser?.relief_teacher_user_id),
-    adviserCoveringId: adviser?.relief_teacher_user_id ?? null,
+    adviserCoveringName: liveCoverName(adviser),
+    adviserCoveringId: liveCoverId(adviser),
+    adviserScheduledCoveringName: scheduledCoverName(adviser),
+    adviserScheduledCoverFrom: scheduledCoverFrom(adviser),
     subjects,
     // Distinct from "every subject is unassigned": a class nobody has given
     // subjects to yet is a different problem, with a different fix, from a

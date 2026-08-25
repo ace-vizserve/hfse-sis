@@ -1,8 +1,14 @@
-import { BookOpen, RefreshCw, UserCheck } from 'lucide-react';
+import { BookOpen, CalendarClock, RefreshCw, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { AssignmentReliefControl } from '@/components/sis/assignment-relief-control';
+import {
+  coverBadgeClass,
+  formatCoverDate,
+  formatCoverWindow,
+  reliefStatus,
+} from '@/lib/relief/display';
 import { SisEmptyState } from '@/components/sis/empty-state';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -171,12 +177,24 @@ export default async function TeacherClassesPage({
                       For {c.coveredTeacherName}
                     </p>
                   </div>
+                  {/* ⚠ "Covering" is a claim about today, and since migration
+                      123 a row here can be next week's. The badge reports the
+                      window rather than the row's existence — otherwise this
+                      teacher reads their own page as though they already have a
+                      class they cannot open. */}
                   <Badge
                     variant="outline"
-                    className="h-6 border-brand-amber bg-brand-amber-light text-ink"
+                    className={`h-6 ${coverBadgeClass(reliefStatus(c.startedOn, c.endedOn))}`}
                   >
-                    <RefreshCw className="size-3" />
-                    Covering
+                    {reliefStatus(c.startedOn, c.endedOn) === 'scheduled' ? (
+                      <CalendarClock className="size-3" />
+                    ) : (
+                      <RefreshCw className="size-3" />
+                    )}
+                    {reliefStatus(c.startedOn, c.endedOn) === 'scheduled'
+                      ? `From ${formatCoverDate(c.startedOn)}`
+                      : (formatCoverWindow(c.startedOn, c.endedOn) ??
+                        'Covering')}
                   </Badge>
                 </div>
               ))}
@@ -227,6 +245,9 @@ function ClassRow({
         coveredTeacherId={teacherId}
         coveredTeacherName={teacherName}
         reliefTeacherName={row.cover?.reliefTeacherName ?? null}
+        reliefTeacherId={row.cover?.reliefTeacherId ?? null}
+        reliefStartedOn={row.cover?.startedOn ?? null}
+        reliefEndedOn={row.cover?.endedOn ?? null}
         teacherOptions={reliefOptions}
         canManage={canManageRelief}
       />

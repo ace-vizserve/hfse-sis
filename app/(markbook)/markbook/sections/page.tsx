@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
+import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
+import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
@@ -36,6 +38,14 @@ export default async function SectionsListPage() {
   const supabase = await createClient();
   const sessionUser = await getSessionUser();
   const role = sessionUser?.role ?? null;
+
+  // Cover booked for this teacher that has not started yet (migration 123).
+  // Caller's client on purpose: the row-read policy is deliberately unwindowed,
+  // so seeing your own booking needs no service-role escalation.
+  const upcomingCover =
+    role === 'teacher' && sessionUser
+      ? await loadUpcomingCoverForUser(supabase, sessionUser.id)
+      : [];
   const canManage =
     role === 'academic_coordinator' ||
     role === 'school_admin' ||
@@ -217,6 +227,10 @@ export default async function SectionsListPage() {
           )}
         </div>
       </header>
+
+      {/* Cover booked for this teacher that has not started. Not a link and
+          never the word "covering" — see components/relief/upcoming-cover.tsx. */}
+      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
 
       {/* Stats */}
       <div className="@container/main">

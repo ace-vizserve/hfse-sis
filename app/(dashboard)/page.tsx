@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation';
 import { Sunrise, Sun, Moon } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
-import { getSessionUser } from '@/lib/supabase/server';
+import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
+import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
@@ -108,12 +110,28 @@ export default async function Home() {
       getUpcomingCalendarEvents(ay.ay_code, 2, 14),
     ]);
 
+  // Cover this teacher is booked to take but cannot open yet (migration 123).
+  // ⚠ Read with the CALLER'S client on purpose — the row-read policy is
+  // deliberately unwindowed, so a teacher can see their own booking without
+  // anything here reaching for the service client. Teachers only: nobody else
+  // is ever the substitute.
+  const upcomingCover =
+    role === 'teacher'
+      ? await loadUpcomingCoverForUser(await createClient(), userId)
+      : [];
+
   const todos = reportCardGaps ? [...baseTodos, reportCardGaps] : baseTodos;
 
   return (
     <PageShell>
       <Header name={displayName} quickActions={quickActions} />
-      <div className="mt-8 mb-6 flex flex-col gap-3 lg:flex-row lg:items-stretch">
+      <UpcomingCoverPanel covers={upcomingCover} className="mt-8" />
+      {/* The panel renders nothing when there is no cover booked, which is the
+          ordinary case — so the gap below the header has to come from here
+          instead, or every teacher without cover gets a tighter page. */}
+      <div
+        className={`${upcomingCover.length > 0 ? 'mt-6' : 'mt-8'} mb-6 flex flex-col gap-3 lg:flex-row lg:items-stretch`}
+      >
         <TodoPanel title={todoTitle} items={todos} />
         <ComingUpPanel events={events} />
       </div>

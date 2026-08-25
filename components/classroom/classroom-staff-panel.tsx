@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { SectionStaff } from '@/lib/classroom/staff';
+import { formatCoverDate } from '@/lib/relief/display';
 
 // Who runs this class. A directory, not a control panel — assigning happens in
 // section setup, and this links there for the one role that can open it rather
@@ -66,12 +67,17 @@ function TeacherName({
   id,
   covering,
   coveringId,
+  scheduledCovering,
+  scheduledFrom,
   canManage,
 }: {
   name: string;
   id: string | null;
   covering: string | null;
   coveringId: string | null;
+  /** Booked to cover, but not yet — they have no access to this class today. */
+  scheduledCovering?: string | null;
+  scheduledFrom?: string | null;
   canManage: boolean;
 }) {
   return (
@@ -82,6 +88,18 @@ function TeacherName({
           {' · '}
           <Person name={covering} id={coveringId} canManage={canManage} />
           {' covering'}
+        </span>
+      )}
+      {/* ⚠ Deliberately NOT the word "covering". This panel answers "who runs
+          this class", and somebody who starts next week does not run it yet —
+          reading their name as cover would send a coordinator to the wrong
+          person today. `from` is the whole distinction, so it is never
+          dropped. */}
+      {!covering && scheduledCovering && (
+        <span className="text-muted-foreground">
+          {' · '}
+          {scheduledCovering} covers from{' '}
+          {formatCoverDate(scheduledFrom) || 'a later date'}
         </span>
       )}
     </span>
@@ -136,6 +154,8 @@ export function ClassroomStaffPanel({
                 id={staff.adviserId}
                 covering={staff.adviserCoveringName}
                 coveringId={staff.adviserCoveringId}
+                scheduledCovering={staff.adviserScheduledCoveringName}
+                scheduledFrom={staff.adviserScheduledCoverFrom}
                 canManage={canManage}
               />
             ) : (
@@ -178,6 +198,8 @@ export function ClassroomStaffPanel({
                   name={s.teacherName}
                   id={s.teacherId}
                   covering={s.coveringName}
+                  scheduledCovering={s.scheduledCoveringName}
+                  scheduledFrom={s.scheduledCoverFrom}
                   coveringId={s.coveringId}
                   canManage={canManage}
                 />

@@ -65,11 +65,20 @@ async function sectionYearIsUnderway(
 //
 // Body: { relief_teacher_user_id: "<uuid>" } to put someone on cover, or
 //       { relief_teacher_user_id: null }     to take them off.
+//       Optionally relief_started_on / relief_ended_on (yyyy-MM-dd or null).
 //
-// Cover is a switch, not a booking (migration 117). There is no start date, no
-// end date and no history table: setting the column grants the substitute the
-// same access as the teacher, clearing it takes that access away, and the
-// audit log is where a finished cover stays readable.
+// Cover CARRIES A DATE WINDOW since migration 123, but there is still no
+// history table: the window lives on the assignment row itself, and the audit
+// log is where a finished cover stays readable.
+//
+// Both dates are optional and both nulls mean something — start null is "live
+// from now", end null is "until she is back" — so the original one-step flow
+// (pick a name, save) is unchanged and callers written before 123 keep working.
+//
+// ⚠ CLEARING THE TEACHER ENDS COVER IMMEDIATELY and wipes the window with it.
+// It does not backdate an end date. Somebody will want to stop a cover today
+// that was booked to run all week, and that must not leave a window behind on a
+// class nobody is covering.
 //
 // Capability is `staff.manage_relief` — school admin and above, deliberately
 // narrower than the `staff.edit_assignments` the DELETE below uses. Arranging
@@ -97,6 +106,14 @@ export async function PATCH(
     );
   }
   const reliefTeacherId = parsed.data.relief_teacher_user_id;
+  // Ending cover clears the window too — the schema already rejects dates sent
+  // alongside a null teacher, so this only normalises the omitted case.
+  const startedOn = reliefTeacherId
+    ? (parsed.data.relief_started_on ?? null)
+    : null;
+  const endedOn = reliefTeacherId
+    ? (parsed.data.relief_ended_on ?? null)
+    : null;
 
   const service = createServiceClient();
 
@@ -157,7 +174,11 @@ export async function PATCH(
 
   const { error } = await service
     .from('teacher_assignments')
-    .update({ relief_teacher_user_id: reliefTeacherId })
+    .update({
+      relief_teacher_user_id: reliefTeacherId,
+      relief_started_on: startedOn,
+      relief_ended_on: endedOn,
+    })
     .eq('id', id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -171,7 +192,13 @@ export async function PATCH(
       : 'assignment.relief.end',
     entityType: 'teacher_assignment',
     entityId: id,
-    context: await buildReliefAuditContext(service, existing, reliefTeacherId),
+    // The dates ride in the audit context so a finished cover stays readable
+    // with the window it actually ran for — the row itself keeps nothing once
+    // the cover is cleared.
+    context: await buildReliefAuditContext(service, existing, reliefTeacherId, {
+      relief_started_on: startedOn,
+      relief_ended_on: endedOn,
+    }),
   });
 
   // Cover changes who may act on the section, so the three teaching modules'
@@ -183,6 +210,8 @@ export async function PATCH(
   return NextResponse.json({
     ok: true,
     relief_teacher_user_id: reliefTeacherId,
+    relief_started_on: startedOn,
+    relief_ended_on: endedOn,
   });
 }
 
