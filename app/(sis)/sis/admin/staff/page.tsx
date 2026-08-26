@@ -2,8 +2,10 @@ import { AlertTriangle, CheckCircle2, UserCheck, Users2 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { StaffDirectoryChrome } from '@/components/sis/staff-directory-chrome';
 import { StaffTable } from '@/components/sis/staff-table';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
@@ -12,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
 import { loadStaffAssignments } from '@/lib/sis/staff';
@@ -25,7 +28,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 export default async function StaffAssignmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; ay?: string }>;
 }) {
   // Accounts used to live here as `?view=accounts`. That URL was linkable and
   // may be bookmarked, so it keeps working.
@@ -36,13 +39,24 @@ export default async function StaffAssignmentsPage({
   if (!sessionUser?.role) redirect('/sis');
 
   const supabase = await createClient();
-  const { data: ayRow } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .eq('is_current', true)
-    .single();
-  const ayCode = (ayRow as { ay_code: string } | null)?.ay_code;
-  if (!ayCode) redirect('/sis');
+
+  // Assignments are per academic year (a row reaches a year through its
+  // section), so the page is too. `?ay=` is validated against the years that
+  // actually exist before it is honoured — an unknown or absent value falls
+  // back to the current year, which is what a bare /sis/admin/staff means.
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const currentAyCode = currentAy?.ay_code;
+  if (!currentAyCode) redirect('/sis');
+
+  const ayCode =
+    params.ay && ayCodes.includes(params.ay) ? params.ay : currentAyCode;
+
+  // A finished year is a record, not a worksheet. A year still ahead stays
+  // editable — staffing next year before it starts is the normal way to do it.
+  const viewOnly = ayCode < currentAyCode;
 
   const [rows, coverage, teacherList] = await Promise.all([
     loadStaffAssignments(ayCode),
@@ -58,7 +72,7 @@ export default async function StaffAssignmentsPage({
   const teachingCount = teacherList.length;
 
   return (
-    <StaffDirectoryChrome role={sessionUser.role}>
+    <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
       {/* "Sections missing FCA" leads — it is the one actionable metric of the
           three (Serial Position / Pareto). */}
       <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:shadow-xs sm:grid-cols-3">
@@ -87,7 +101,11 @@ export default async function StaffAssignmentsPage({
             {sectionsMissingFca > 0 && (
               <CardDescription>
                 <Link
-                  href="/sis/sections"
+                  href={
+                    ayCode === currentAyCode
+                      ? '/sis/sections'
+                      : `/sis/sections?ay=${ayCode}`
+                  }
                   className="text-xs font-medium text-primary underline-offset-4 hover:underline"
                 >
                   See which classes
@@ -164,9 +182,28 @@ export default async function StaffAssignmentsPage({
               Teaching assignments
             </span>
           </CardTitle>
+          {/* The year is SCOPE, not a table filter — it changes which rows
+              exist rather than which of them show. It sits on the title row so
+              it reads as "this card is showing AY2026", and so the filter row
+              below is nothing but filters. */}
+          <CardAction className="flex items-center gap-2 self-center">
+            {viewOnly && (
+              <Badge
+                variant="outline"
+                className="h-8 border-brand-indigo-soft bg-accent px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-indigo-deep"
+              >
+                View only
+              </Badge>
+            )}
+            <AySwitcher
+              current={ayCode}
+              options={ayCodes}
+              className="h-9 w-[128px]"
+            />
+          </CardAction>
         </CardHeader>
         <CardContent>
-          <StaffTable rows={rows} ayCode={ayCode} />
+          <StaffTable rows={rows} ayCode={ayCode} viewOnly={viewOnly} />
         </CardContent>
       </Card>
     </StaffDirectoryChrome>

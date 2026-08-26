@@ -209,6 +209,16 @@ export type DataTableProps<TRow> = {
   meScope?: MeScopeConfig<TRow>;
 
   toolbarLeading?: ReactNode;
+  /**
+   * Extra FILTER controls, rendered at the end of the left-hand cluster with
+   * the search box and the facets.
+   *
+   * Distinct from `toolbarTrailing`, which lands in the right-hand group
+   * alongside Export CSV and Columns. Those are actions; a control that
+   * changes which rows are shown belongs with the other things that do, or the
+   * reader has to learn that one filter lives somewhere else.
+   */
+  toolbarFilters?: ReactNode;
   toolbarTrailing?: ReactNode;
 
   initialSort?: SortingState;

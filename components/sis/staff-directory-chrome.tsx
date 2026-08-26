@@ -1,6 +1,7 @@
 import { PageTabNav } from '@/components/sis/page-tab-nav';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
+import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getStaffCount, getTeacherList } from '@/lib/auth/staff-list';
@@ -13,15 +14,38 @@ import type { Role } from '@/lib/auth/roles';
 // detail page inherited a header above its own and a switcher showing two tabs
 // with neither selected — its URL is neither of them. Chrome that belongs to
 // two specific pages belongs in those pages.
+//
+// ─── Which year ──────────────────────────────────────────────────────────────
+//
+// Teaching assignments are per academic year and always have been: an
+// assignment row points at a section, and a section belongs to exactly one
+// year. What was missing was any way to LOOK at another one — every staffing
+// page selected `is_current` and offered no alternative, so AY2025's staffing
+// existed and nothing displayed it.
+//
+// The `?ay=` param and this switcher are the same pattern ~29 other pages use
+// (Admissions, Records, the four Insights pages). Nothing below it changed:
+// `loadStaffAssignments` and `getTeacherDetail` already took a year.
 export async function StaffDirectoryChrome({
   role,
+  ayCode,
   children,
 }: {
   role: Role;
+  /**
+   * The year being viewed — not necessarily the current one.
+   *
+   * The picker itself lives in each table's toolbar, beside the data it
+   * scopes. The header still has to NAME the year, though: a header describing
+   * one year above a table showing another is the exact confusion this whole
+   * change exists to remove.
+   */
+  ayCode: string;
   children: React.ReactNode;
 }) {
   const capabilities = await getCapabilitiesForRole(role);
   const canSeeAccounts = can(capabilities, 'staff.view_accounts');
+  const currentAy = await getCurrentAcademicYear();
 
   // Both are free: they share the single 5-minute-cached listUsers() call
   // underlying every helper in lib/auth/staff-list.ts.
@@ -31,10 +55,24 @@ export async function StaffDirectoryChrome({
   ]);
   const teachingCount = teacherList.length;
 
+  // Plain words, not a date comparison the reader has to do themselves. String
+  // comparison on `ay_code` is safe and is what the rest of the codebase uses.
+  const currentCode = currentAy?.ay_code ?? ayCode;
+  const whichYear =
+    ayCode === currentCode
+      ? 'This year'
+      : ayCode < currentCode
+        ? 'Earlier year'
+        : 'A year ahead';
+
+  // Omitted on the current year so the everyday URL stays clean and
+  // bookmarkable as `/sis/admin/staff`.
+  const ayQuery = ayCode === currentCode ? '' : `?ay=${ayCode}`;
+
   return (
     <>
       <SisPageHeader
-        group="This year"
+        group={`${whichYear} · ${ayCode}`}
         title="Staff."
         description="Everyone who works in the school — their accounts, roles, and what they teach."
         chips={
@@ -55,12 +93,16 @@ export async function StaffDirectoryChrome({
           <PageTabNav
             tabs={[
               {
-                href: '/sis/admin/staff',
+                // Carry the year across the switch, or changing tab silently
+                // drops you back into the current one. PageTabNav matches on
+                // the path alone, so the query string does not affect which
+                // tab reads as selected.
+                href: `/sis/admin/staff${ayQuery}`,
                 label: 'Teaching assignments',
                 count: teachingCount,
               },
               {
-                href: '/sis/admin/staff/accounts',
+                href: `/sis/admin/staff/accounts${ayQuery}`,
                 label: 'Accounts',
                 // staffCount, not the loaded account list. It excludes disabled
                 // accounts, so it can read one or two lower than the Accounts

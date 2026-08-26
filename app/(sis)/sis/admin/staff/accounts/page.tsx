@@ -1,6 +1,7 @@
 import { UserCog, Users2 } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { StaffAccountsClient } from '@/components/sis/staff-accounts-client';
 import {
   Card,
@@ -10,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { loadStaffAssignments } from '@/lib/sis/staff';
@@ -24,7 +26,12 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // lived in the page that rendered both cuts, so hiding the tab was enough.
 // A route can be typed, so hiding the link is not: without this check anyone
 // who may open Staff at all could read the account directory.
-export default async function StaffAccountsPage() {
+export default async function StaffAccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const params = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser?.role) redirect('/login');
 
@@ -41,13 +48,19 @@ export default async function StaffAccountsPage() {
   const canManageAccounts = sessionUser.role === 'superadmin';
 
   const supabase = await createClient();
-  const { data: ayRow } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .eq('is_current', true)
-    .single();
-  const ayCode = (ayRow as { ay_code: string } | null)?.ay_code;
-  if (!ayCode) redirect('/sis');
+
+  // Accounts themselves are not per-year, but the assignment chips on each row
+  // are — so this tab honours `?ay=` too, or switching tabs would quietly show
+  // one year's people against another year's teaching.
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const currentAyCode = currentAy?.ay_code;
+  if (!currentAyCode) redirect('/sis');
+
+  const ayCode =
+    params.ay && ayCodes.includes(params.ay) ? params.ay : currentAyCode;
 
   const [accounts, accountAssignments] = await Promise.all([
     listStaffUsers(),
@@ -57,12 +70,15 @@ export default async function StaffAccountsPage() {
   const assignmentsByUserId = Object.fromEntries(
     accountAssignments.map((r) => [
       r.userId,
-      { fcaSection: r.fcaSection, subjectAssignments: r.subjectAssignments },
+      {
+        adviserSections: r.adviserSections,
+        subjectAssignments: r.subjectAssignments,
+      },
     ])
   );
 
   return (
-    <StaffDirectoryChrome role={sessionUser.role}>
+    <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {computeStaffFamilies(accounts).map((family) => (
           <Card key={family.key} data-slot="card" className="gap-0 py-0">
@@ -110,6 +126,16 @@ export default async function StaffAccountsPage() {
               Directory
             </span>
           </CardTitle>
+          {/* Same slot as the Teaching assignments tab, so the control does
+              not move when you switch tabs. Accounts are not per-year, but the
+              assignment chips on each row are. */}
+          <CardAction className="self-center">
+            <AySwitcher
+              current={ayCode}
+              options={ayCodes}
+              className="h-9 w-[128px]"
+            />
+          </CardAction>
         </CardHeader>
         <CardContent>
           <StaffAccountsClient

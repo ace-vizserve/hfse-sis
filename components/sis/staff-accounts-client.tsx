@@ -23,7 +23,8 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AssignmentChips,
   StaffAvatar,
-  type AssignmentChipFca,
+  assignmentSummaryText,
+  type AssignmentChipAdviser,
   type AssignmentChipSubject,
 } from '@/components/sis/staff-visuals';
 import {
@@ -71,7 +72,7 @@ import { TABLE_COPY } from '@/lib/copy/data-table';
 import type { AdminUserRow } from '@/lib/sis/users/queries';
 
 type AssignmentSummary = {
-  fcaSection: AssignmentChipFca;
+  adviserSections: AssignmentChipAdviser[];
   subjectAssignments: AssignmentChipSubject[];
 };
 
@@ -142,14 +143,8 @@ function buildColumns(
       accessorFn: (row) => {
         const a = assignmentsByUserId[row.id];
         if (row.role !== 'teacher') return '';
-        if (!a || (!a.fcaSection && a.subjectAssignments.length === 0))
-          return 'No assignments';
-        const parts: string[] = [];
-        if (a.fcaSection) parts.push(`FCA: ${a.fcaSection.name}`);
-        for (const s of a.subjectAssignments) {
-          parts.push(`${s.subjectCode}: ${s.sectionName}`);
-        }
-        return parts.join('; ');
+        if (!a) return 'No assignments';
+        return assignmentSummaryText(a.adviserSections, a.subjectAssignments);
       },
       header: 'Assignments',
       cell: ({ row }) => {
@@ -159,7 +154,7 @@ function buildColumns(
         const a = assignmentsByUserId[row.original.id];
         return (
           <AssignmentChips
-            fcaSection={a?.fcaSection ?? null}
+            adviserSections={a?.adviserSections ?? []}
             subjectAssignments={a?.subjectAssignments ?? []}
           />
         );

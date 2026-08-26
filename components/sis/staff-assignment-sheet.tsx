@@ -9,7 +9,10 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { AssignmentRemovalDialog } from '@/components/sis/assignment-removal-dialog';
-import type { AssignmentChangeReason } from '@/lib/schemas/teacher-assignment';
+import {
+  type AssignmentChangeReason,
+  type AssignmentRole,
+} from '@/lib/schemas/teacher-assignment';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -38,6 +41,7 @@ type FcaAssignment = {
   id: string;
   sectionId: string;
   sectionName: string;
+  role: AssignmentRole;
 };
 
 type SubjectAssignment = {
@@ -47,6 +51,7 @@ type SubjectAssignment = {
   subjectName: string;
   sectionId: string;
   sectionName: string;
+  role: AssignmentRole;
 };
 
 type SheetData = {
@@ -54,6 +59,10 @@ type SheetData = {
   subjectAssignments: SubjectAssignment[];
   allSections: Section[];
   allSubjects: Subject[];
+  /** Sections that already have an adviser of record. */
+  sectionsWithAdviser: string[];
+  /** `sectionId|subjectId` keys that already have a teacher of record. */
+  subjectsWithTeacher: string[];
   /** Has this AY's first term begun? If so, a removal has to say why. */
   termStarted: boolean;
 };
@@ -69,6 +78,8 @@ type PendingRemoval = {
   kind: 'subject' | 'fca';
   assignmentId: string;
   label: string;
+  /** Removing a co role leaves the class staffed; the warning differs. */
+  isCoRole: boolean;
 };
 
 export type StaffSheetTeacher = {
@@ -78,6 +89,30 @@ export type StaffSheetTeacher = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// What pressing + would actually create.
+//
+// HFSE shares a form class between two advisers and a subject between two
+// teachers on different days (migration 124), so "that post is taken" is not an
+// error here — it decides which role the new row gets. Deriving it keeps a
+// decision out of the admin's way, but the sheet still says in words what it is
+// about to do: adviser of record and co-adviser are not the same job, and only
+// one of them reaches the report card.
+function roleForNewAdviser(data: SheetData, sectionId: string): AssignmentRole {
+  return data.sectionsWithAdviser.includes(sectionId)
+    ? 'co_adviser'
+    : 'form_adviser';
+}
+
+function roleForNewSubject(
+  data: SheetData,
+  sectionId: string,
+  subjectId: string
+): AssignmentRole {
+  return data.subjectsWithTeacher.includes(`${sectionId}|${subjectId}`)
+    ? 'co_teacher'
+    : 'subject_teacher';
+}
 
 function groupByLevel(sections: Section[]): Record<string, Section[]> {
   return sections.reduce<Record<string, Section[]>>((acc, s) => {
@@ -153,25 +188,35 @@ export function StaffAssignmentSheet({
   // Splitting it into add and remove also retires a fragile delete-then-create
   // sequence whose second half could fail after the first had succeeded.
   const addFcaMutation = useMutation({
-    mutationFn: (sectionId: string) =>
+    mutationFn: ({
+      sectionId,
+      role,
+    }: {
+      sectionId: string;
+      role: AssignmentRole;
+    }) =>
       apiFetch<{ assignment?: { id: string } }>(
         '/api/teacher-assignments',
         jsonInit('POST', {
           teacher_user_id: teacher!.userId,
           section_id: sectionId,
-          role: 'form_adviser',
+          role,
         })
       ),
   });
 
   async function addFca(sectionId: string) {
-    const section = data?.allSections.find((s) => s.id === sectionId);
+    if (!data) return;
+    const section = data.allSections.find((s) => s.id === sectionId);
+    const role = roleForNewAdviser(data, sectionId);
     setMutating(true);
-    await run(() => addFcaMutation.mutateAsync(sectionId), {
+    await run(() => addFcaMutation.mutateAsync({ sectionId, role }), {
       pending: 'Adding form class…',
-      success: 'Form class added',
-      // The POST route turns the unique-index violation into "This section
-      // already has a form adviser. Remove the existing one first."
+      success:
+        role === 'co_adviser' ? 'Added as co-adviser' : 'Form class added',
+      // The POST route turns a unique-index violation into a sentence naming
+      // the way out. It can still fire: someone else may claim the post between
+      // this sheet loading and the button being pressed.
       error: (err: unknown) => apiErrorField(err) ?? 'Failed to add form class',
       onResolved: (json) => {
         setData((d) =>
@@ -184,8 +229,15 @@ export function StaffAssignmentSheet({
                     id: json.assignment!.id,
                     sectionId,
                     sectionName: section?.name ?? '',
+                    role,
                   },
                 ].sort((x, y) => x.sectionName.localeCompare(y.sectionName)),
+                // The post is filled now, so a second add against the same
+                // class must offer co-adviser rather than repeat itself.
+                sectionsWithAdviser:
+                  role === 'form_adviser'
+                    ? [...d.sectionsWithAdviser, sectionId]
+                    : d.sectionsWithAdviser,
               }
             : d
         );
@@ -247,6 +299,7 @@ export function StaffAssignmentSheet({
       kind: 'fca',
       assignmentId,
       label: assignment?.sectionName ?? 'this form class',
+      isCoRole: assignment?.role === 'co_adviser',
     });
   }
 
@@ -308,18 +361,19 @@ export function StaffAssignmentSheet({
       label: assignment
         ? `${assignment.subjectName} · ${assignment.sectionName}`
         : 'this subject',
+      isCoRole: assignment?.role === 'co_teacher',
     });
   }
 
   const addSubjectMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (role: AssignmentRole) =>
       apiFetch<{ assignment?: { id: string } }>(
         '/api/teacher-assignments',
         jsonInit('POST', {
           teacher_user_id: teacher!.userId,
           section_id: newSectionId,
           subject_id: newSubjectId,
-          role: 'subject_teacher',
+          role,
         })
       ),
   });
@@ -330,11 +384,15 @@ export function StaffAssignmentSheet({
     const sectionId = newSectionId;
     const subject = data.allSubjects.find((s) => s.id === subjectId);
     const section = data.allSections.find((s) => s.id === sectionId);
+    const role = roleForNewSubject(data, sectionId, subjectId);
 
     setMutating(true);
-    await run(() => addSubjectMutation.mutateAsync(), {
+    await run(() => addSubjectMutation.mutateAsync(role), {
       pending: 'Adding subject assignment…',
-      success: 'Subject assignment added',
+      success:
+        role === 'co_teacher'
+          ? 'Added as co-teacher'
+          : 'Subject assignment added',
       error: (err: unknown) => apiErrorField(err) ?? 'Failed to add subject',
       onResolved: (json) => {
         setData((d) =>
@@ -350,8 +408,13 @@ export function StaffAssignmentSheet({
                     subjectName: subject?.name ?? '',
                     sectionId,
                     sectionName: section?.name ?? '',
+                    role,
                   },
                 ],
+                subjectsWithTeacher:
+                  role === 'subject_teacher'
+                    ? [...d.subjectsWithTeacher, `${sectionId}|${subjectId}`]
+                    : d.subjectsWithTeacher,
               }
             : d
         );
@@ -407,7 +470,14 @@ export function StaffAssignmentSheet({
                   key={a.id}
                   className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                 >
-                  <span className="text-sm font-medium">{a.sectionName}</span>
+                  <span className="min-w-0 text-sm font-medium">
+                    {a.sectionName}
+                    {a.role === 'co_adviser' && (
+                      <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Co-adviser
+                      </span>
+                    )}
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -464,6 +534,22 @@ export function StaffAssignmentSheet({
                   <Plus className="size-4" />
                 </Button>
               </div>
+
+              {/* Says what + will do BEFORE it is pressed. Sharing a form class
+                  is normal here, but which of the two advisers is the one of
+                  record decides whose name prints on the report card — so it
+                  is not something to discover afterwards from a toast. */}
+              {newFcaSectionId &&
+                roleForNewAdviser(data, newFcaSectionId) === 'co_adviser' && (
+                  <p className="text-xs text-muted-foreground">
+                    This class already has an adviser.{' '}
+                    <span className="font-medium text-foreground">
+                      {teacher?.name ?? 'This teacher'}
+                    </span>{' '}
+                    will be added as a co-adviser and will not be the name on
+                    the report card.
+                  </p>
+                )}
             </section>
 
             <Separator />
@@ -492,6 +578,11 @@ export function StaffAssignmentSheet({
                       </span>
                       <span className="mx-1.5 text-muted-foreground">·</span>
                       {a.sectionName}
+                      {a.role === 'co_teacher' && (
+                        <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Co-teacher
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -561,6 +652,19 @@ export function StaffAssignmentSheet({
                   )}
                 </Button>
               </div>
+
+              {newSubjectId &&
+                newSectionId &&
+                roleForNewSubject(data, newSectionId, newSubjectId) ===
+                  'co_teacher' && (
+                  <p className="text-xs text-muted-foreground">
+                    Someone already teaches this subject in this class.{' '}
+                    <span className="font-medium text-foreground">
+                      {teacher?.name ?? 'This teacher'}
+                    </span>{' '}
+                    will be added as a co-teacher, sharing the same mark sheet.
+                  </p>
+                )}
             </section>
           </div>
         )}
@@ -578,11 +682,21 @@ export function StaffAssignmentSheet({
             : 'Remove this subject?'
         }
         description={
+          // A co role leaving does NOT strip the class — the adviser or teacher
+          // of record is still there. Saying "nobody will be able to write the
+          // report card comments" in that case would be plainly false, and it
+          // is the sentence most likely to stop someone doing a correct thing.
           pendingRemoval?.kind === 'fca'
-            ? `${pendingRemoval.label} will have no form class adviser until someone is assigned, so nobody will be able to write its report card comments.`
-            : `${teacher?.name ?? 'This teacher'} will lose access to ${
-                pendingRemoval?.label ?? 'this subject'
-              }. Their marks stay on the class.`
+            ? pendingRemoval.isCoRole
+              ? `${teacher?.name ?? 'This teacher'} will stop advising ${pendingRemoval.label}. The class keeps its form class adviser.`
+              : `${pendingRemoval.label} will have no form class adviser until someone is assigned, so nobody will be able to write its report card comments.`
+            : pendingRemoval?.isCoRole
+              ? `${teacher?.name ?? 'This teacher'} will lose access to ${
+                  pendingRemoval?.label ?? 'this subject'
+                }. The class keeps its subject teacher, and the marks stay.`
+              : `${teacher?.name ?? 'This teacher'} will lose access to ${
+                  pendingRemoval?.label ?? 'this subject'
+                }. Their marks stay on the class.`
         }
         confirmLabel="Remove"
         busy={mutating}

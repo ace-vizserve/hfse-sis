@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireCapability } from '@/lib/auth/require-capability';
+import {
+  type AssignmentRole,
+  isAdviserRole,
+  isSubjectRole,
+} from '@/lib/schemas/teacher-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 import { hasTermStarted } from '@/lib/sis/current-term';
 import { sgToday } from '@/lib/dates';
@@ -15,7 +20,7 @@ type RawAssignment = {
   id: string;
   section_id: string;
   subject_id: string | null;
-  role: string;
+  role: AssignmentRole;
   subjects:
     | { code: string; name: string }
     | { code: string; name: string }[]
@@ -103,6 +108,45 @@ export async function GET(request: NextRequest) {
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
 
+  // Which posts are already filled — across EVERY teacher, not just this one.
+  //
+  // The sheet needs this to know whether adding a class makes someone the
+  // adviser of record or a co-adviser (migration 124). Without it the sheet
+  // would have to guess, and guessing wrong means the server refuses the write
+  // on a partial unique index and the admin sees a constraint error instead of
+  // a class being shared, which is a normal thing at HFSE.
+  const { data: takenRows } = await service
+    .from('teacher_assignments')
+    .select('section_id, subject_id, role')
+    .in(
+      'section_id',
+      sectionIds.length > 0
+        ? sectionIds
+        : ['00000000-0000-0000-0000-000000000000']
+    );
+
+  const taken = (takenRows ?? []) as Array<{
+    section_id: string;
+    subject_id: string | null;
+    role: AssignmentRole;
+  }>;
+
+  // Only the PRIMARY roles fill a post. A section that has nothing but a
+  // co-adviser still needs an adviser of record, and saying otherwise here
+  // would let a class look staffed while report-card publishing refuses it.
+  const sectionsWithAdviser = [
+    ...new Set(
+      taken.filter((t) => t.role === 'form_adviser').map((t) => t.section_id)
+    ),
+  ];
+  const subjectsWithTeacher = [
+    ...new Set(
+      taken
+        .filter((t) => t.role === 'subject_teacher' && t.subject_id)
+        .map((t) => `${t.section_id}|${t.subject_id}`)
+    ),
+  ];
+
   // ALL of them, not the first.
   //
   // `teacher_assignments_form_adviser_unique` is on `(section_id)` alone
@@ -112,19 +156,20 @@ export async function GET(request: NextRequest) {
   // and, worse, the drawer's change flow deleted the id it happened to be
   // holding, stranding the other.
   const fcaAssignments = assignments
-    .filter((a) => a.role === 'form_adviser')
+    .filter((a) => isAdviserRole(a.role))
     .map((a) => {
       const sec = Array.isArray(a.sections) ? a.sections[0] : a.sections;
       return {
         id: a.id,
         sectionId: a.section_id,
         sectionName: sec?.name ?? '',
+        role: a.role,
       };
     })
     .sort((x, y) => x.sectionName.localeCompare(y.sectionName));
 
   const subjectAssignments = assignments
-    .filter((a) => a.role === 'subject_teacher')
+    .filter((a) => isSubjectRole(a.role))
     .map((a) => {
       const sub = Array.isArray(a.subjects) ? a.subjects[0] : a.subjects;
       const sec = Array.isArray(a.sections) ? a.sections[0] : a.sections;
@@ -135,6 +180,7 @@ export async function GET(request: NextRequest) {
         subjectName: sub?.name ?? '',
         sectionId: a.section_id,
         sectionName: sec?.name ?? '',
+        role: a.role,
       };
     });
 
@@ -143,6 +189,8 @@ export async function GET(request: NextRequest) {
     subjectAssignments,
     allSections,
     allSubjects,
+    sectionsWithAdviser,
+    subjectsWithTeacher,
     termStarted,
   });
 }

@@ -5,6 +5,10 @@ import { cache } from 'react';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
+import {
+  type AssignmentRole,
+  isAdviserRole,
+} from '@/lib/schemas/teacher-assignment';
 
 // Everything the teacher page needs, for one teacher in one academic year.
 //
@@ -33,7 +37,14 @@ export type TeacherClassRow = {
   sectionId: string;
   sectionName: string;
   levelLabel: string;
-  role: 'form_adviser' | 'subject_teacher';
+  /**
+   * All four roles (migration 124), not two.
+   *
+   * ⚠ This was typed `'form_adviser' | 'subject_teacher'` while the query
+   * below selected every role — so a co-teacher's own classes were a type lie
+   * at runtime and vanished from the page and its stat cards.
+   */
+  role: AssignmentRole;
   subjectId: string | null;
   subjectName: string | null;
   /** Set while someone is standing in on this class; null when nobody is. */
@@ -104,7 +115,7 @@ export async function loadTeacherDetail(
 
   type AssignmentRaw = {
     id: string;
-    role: 'form_adviser' | 'subject_teacher';
+    role: AssignmentRole;
     subject_id: string | null;
     relief_teacher_user_id: string | null;
     relief_started_on: string | null;
@@ -150,10 +161,23 @@ export async function loadTeacherDetail(
   });
 
   // Form class first, then subjects alphabetically — the order the school
-  // thinks in, and the order the mockup shows.
+  // thinks in, and the order the mockup shows. Within each family the teacher
+  // of record comes before anyone sharing the class, so a shared subject reads
+  // as one group rather than two scattered rows (same rule as the section
+  // Teachers tab).
+  const ROLE_RANK: Record<AssignmentRole, number> = {
+    form_adviser: 0,
+    co_adviser: 1,
+    subject_teacher: 2,
+    co_teacher: 3,
+  };
   classes.sort((x, y) => {
-    if (x.role !== y.role) return x.role === 'form_adviser' ? -1 : 1;
-    return (x.subjectName ?? '').localeCompare(y.subjectName ?? '');
+    const xAdviser = isAdviserRole(x.role);
+    const yAdviser = isAdviserRole(y.role);
+    if (xAdviser !== yAdviser) return xAdviser ? -1 : 1;
+    const bySubject = (x.subjectName ?? '').localeCompare(y.subjectName ?? '');
+    if (bySubject !== 0) return bySubject;
+    return ROLE_RANK[x.role] - ROLE_RANK[y.role];
   });
 
   // The other direction: classes this teacher is covering for a colleague.
@@ -182,10 +206,11 @@ export async function loadTeacherDetail(
       return [
         {
           assignmentId: a.id,
-          label:
-            a.role === 'form_adviser'
-              ? where
-              : `${subject?.name ?? '—'} · ${where}`,
+          // Adviser roles carry no subject (the role/subject CHECK enforces
+          // it), so naming one would print "— · P4 Diligence".
+          label: isAdviserRole(a.role)
+            ? where
+            : `${subject?.name ?? '—'} · ${where}`,
           coveredTeacherName:
             nameById.get(a.teacher_user_id) ?? 'Unknown teacher',
           startedOn: a.relief_started_on,

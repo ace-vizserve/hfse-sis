@@ -2,6 +2,7 @@ import { BookOpen, CalendarClock, RefreshCw, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { AssignmentReliefControl } from '@/components/sis/assignment-relief-control';
 import {
   coverBadgeClass,
@@ -10,17 +11,26 @@ import {
   reliefStatus,
 } from '@/lib/relief/display';
 import { SisEmptyState } from '@/components/sis/empty-state';
+import { SisPageHeader } from '@/components/sis/sis-page-header';
+import { TeacherAssignmentEditorButton } from '@/components/sis/teacher-assignment-editor-button';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getTeacherList } from '@/lib/auth/staff-list';
+import {
+  ASSIGNMENT_ROLE_LABELS,
+  isAdviserRole,
+  isSubjectRole,
+} from '@/lib/schemas/teacher-assignment';
 import { getTeacherDetail } from '@/lib/sis/teacher-detail';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -34,21 +44,32 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // Session, role and staff.read are guarded by the layout.
 export default async function TeacherClassesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ teacherId: string }>;
+  searchParams: Promise<{ ay?: string }>;
 }) {
   const { teacherId } = await params;
+  const query = await searchParams;
 
   const supabase = await createClient();
-  const { data: ayRow } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .eq('is_current', true)
-    .single();
-  const ayCode = (ayRow as { ay_code: string } | null)?.ay_code;
-  if (!ayCode) redirect('/sis');
 
-  // Deduped with the layout's call — one round trip between them.
+  // Same `?ay=` contract as the staff list this page is reached from, so
+  // clicking a teacher while looking at AY2025 keeps you in AY2025.
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const currentAyCode = currentAy?.ay_code;
+  if (!currentAyCode) redirect('/sis');
+
+  const ayCode =
+    query.ay && ayCodes.includes(query.ay) ? query.ay : currentAyCode;
+
+  // A finished year is a record, not a worksheet. A year still ahead stays
+  // editable — staffing next year before it starts is the normal way to do it.
+  const viewOnly = ayCode < currentAyCode;
+
   const [teacher, allTeachers, capabilities] = await Promise.all([
     getTeacherDetail(teacherId, ayCode),
     getTeacherList(),
@@ -60,16 +81,155 @@ export default async function TeacherClassesPage({
 
   // Arranging cover is narrower than editing assignments: the academic
   // coordinator staffs the year, a school admin decides who stands in.
-  const canManageRelief = can(capabilities, 'staff.manage_relief');
+  //
+  // Both are off in a closed year. Cover is a fact about a term that has
+  // already run (KD #184) — booking a substitute into last April answers no
+  // question anyone has.
+  const canManageRelief = !viewOnly && can(capabilities, 'staff.manage_relief');
+  const canEditAssignments =
+    !viewOnly && can(capabilities, 'staff.edit_assignments');
   const reliefOptions = allTeachers.map((t) => ({ id: t.id, name: t.name }));
 
-  const formClasses = teacher.classes.filter((c) => c.role === 'form_adviser');
-  const subjectClasses = teacher.classes.filter(
-    (c) => c.role === 'subject_teacher'
-  );
+  // Both role families (migration 124). A co-adviser or co-teacher really does
+  // hold the class, so dropping them here left a co-teacher's own page empty.
+  const formClasses = teacher.classes.filter((c) => isAdviserRole(c.role));
+  const subjectClasses = teacher.classes.filter((c) => isSubjectRole(c.role));
+  const coveredCount = teacher.classes.filter((c) => c.cover !== null).length;
+
+  const whichYear =
+    ayCode === currentAyCode
+      ? 'This year'
+      : ayCode < currentAyCode
+        ? 'Earlier year'
+        : 'A year ahead';
 
   return (
     <div className="space-y-4">
+      <SisPageHeader
+        group={`Staff · ${whichYear} · ${ayCode}`}
+        title={teacher.name}
+        description={teacher.email ?? 'No email address on record.'}
+        backHref={
+          ayCode === currentAyCode
+            ? '/sis/admin/staff'
+            : `/sis/admin/staff?ay=${ayCode}`
+        }
+        backLabel="Staff"
+        chips={
+          <div className="flex flex-wrap items-center gap-2">
+            {teacher.coveringForOthers.length > 0 && (
+              <Badge
+                variant="outline"
+                className="h-7 border-brand-amber bg-brand-amber-light px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink"
+              >
+                <RefreshCw className="mr-1.5 size-3" />
+                Covering {teacher.coveringForOthers.length} for others
+              </Badge>
+            )}
+            {viewOnly && (
+              <Badge
+                variant="outline"
+                className="h-7 border-brand-indigo-soft bg-accent px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-indigo-deep"
+              >
+                View only
+              </Badge>
+            )}
+            <div className="w-[150px]">
+              <AySwitcher current={ayCode} options={ayCodes} />
+            </div>
+          </div>
+        }
+        actions={
+          // Hidden outright in a closed year rather than disabled — a greyed
+          // button asks the reader to work out why, and the "View only" badge
+          // beside it already answers that once, in words.
+          viewOnly ? undefined : (
+            <TeacherAssignmentEditorButton
+              teacher={{
+                userId: teacher.userId,
+                name: teacher.name,
+                email: teacher.email ?? '',
+              }}
+              ayCode={ayCode}
+              canEdit={canEditAssignments}
+            />
+          )
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:shadow-xs sm:grid-cols-3">
+        <Card
+          data-slot="card"
+          className="bg-gradient-to-t from-primary/5 to-card"
+        >
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Form classes
+            </CardDescription>
+            <CardTitle className="font-serif text-3xl tabular-nums text-foreground">
+              {formClasses.length}
+            </CardTitle>
+            <CardAction>
+              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <UserCheck className="size-4" />
+              </div>
+            </CardAction>
+          </CardHeader>
+        </Card>
+
+        <Card
+          data-slot="card"
+          className="bg-gradient-to-t from-primary/5 to-card"
+        >
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Subject classes
+            </CardDescription>
+            <CardTitle className="font-serif text-3xl tabular-nums text-foreground">
+              {subjectClasses.length}
+            </CardTitle>
+            <CardAction>
+              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                <BookOpen className="size-4" />
+              </div>
+            </CardAction>
+          </CardHeader>
+        </Card>
+
+        {/* Amber only when it is true. A permanently amber tile reading zero
+            teaches the eye to ignore the colour. */}
+        <Card
+          data-slot="card"
+          className={
+            coveredCount > 0
+              ? 'border-brand-amber/30 bg-gradient-to-r from-brand-amber/10 to-card'
+              : 'bg-gradient-to-t from-primary/5 to-card'
+          }
+        >
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Being covered
+            </CardDescription>
+            <CardTitle
+              className={`font-serif text-3xl tabular-nums ${coveredCount > 0 ? 'text-brand-amber' : 'text-foreground'}`}
+            >
+              {coveredCount}
+            </CardTitle>
+            <CardAction>
+              <div
+                className={`flex size-9 items-center justify-center rounded-xl ${
+                  coveredCount > 0
+                    ? 'bg-gradient-to-br from-brand-amber to-brand-amber/70 text-ink shadow-brand-tile-amber'
+                    : 'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+                }`}
+              >
+                <RefreshCw className="size-4" />
+              </div>
+            </CardAction>
+          </CardHeader>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -88,7 +248,7 @@ export default async function TeacherClassesPage({
           {formClasses.length === 0 ? (
             <SisEmptyState
               icon={UserCheck}
-              title="No form class this year"
+              title={`No form class in ${ayCode}`}
               body={`${teacher.name} teaches subjects but does not run a form class, so there are no report card comments or write-ups for them to do.`}
             />
           ) : (
@@ -127,8 +287,12 @@ export default async function TeacherClassesPage({
           {subjectClasses.length === 0 ? (
             <SisEmptyState
               icon={BookOpen}
-              title="No subject classes this year"
-              body={`Nobody has assigned ${teacher.name} a subject yet. Add one from the class's own Teachers tab.`}
+              title={`No subject classes in ${ayCode}`}
+              body={
+                viewOnly
+                  ? `${teacher.name} was not assigned a subject in ${ayCode}.`
+                  : `Nobody has assigned ${teacher.name} a subject yet. Add one from the class's own Teachers tab.`
+              }
             />
           ) : (
             <div className="divide-y divide-border">
@@ -230,12 +394,18 @@ function ClassRow({
           href={`/sis/sections/${row.sectionId}?tab=teachers`}
           className="text-sm font-semibold text-foreground underline-offset-4 hover:underline"
         >
-          {row.role === 'form_adviser'
+          {isAdviserRole(row.role)
             ? row.sectionName
             : `${row.subjectName ?? '—'} · ${row.sectionName}`}
         </Link>
+        {/* A shared class says so in words. The teacher of record and the
+            person sharing it look identical otherwise, and which one you are
+            decides whose name reaches the report card. */}
         <p className="text-xs text-muted-foreground">
-          {row.role === 'form_adviser' ? 'Form class' : row.levelLabel}
+          {isAdviserRole(row.role) ? 'Form class' : row.levelLabel}
+          {row.role === 'co_adviser' || row.role === 'co_teacher'
+            ? ` · ${ASSIGNMENT_ROLE_LABELS[row.role]}`
+            : ''}
         </p>
       </div>
       {/* Names both people when cover is on. "Being covered" alone would leave

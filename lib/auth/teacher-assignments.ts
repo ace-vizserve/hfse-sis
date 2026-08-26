@@ -19,7 +19,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sgToday } from '@/lib/dates';
-import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
+import {
+  type AssignmentRole,
+  isSubjectRole,
+} from '@/lib/schemas/teacher-assignment';
 
 const ASSIGNMENT_COLUMNS =
   'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on';
@@ -154,8 +157,13 @@ export async function loadEffectiveAssignmentsForUser(
   });
 }
 
-// True if the user is the subject teacher for (section, subject) — whether they
-// hold the slot or are covering it.
+// True if the user teaches (section, subject) — whether they hold the slot, are
+// covering it, or are the co-teacher of it.
+//
+// ⚠ `isSubjectRole`, NOT `role === 'subject_teacher'`. Since migration 124 a
+// sheet can have a co-teacher, and `is_teacher_for_sheet` in SQL already grants
+// them. Comparing the literal here made the database say yes and the app say
+// no — the sheet was reachable but absent from the caller's list.
 export function isSubjectTeacher(
   assignments: Array<AssignmentRow | EffectiveAssignmentRow>,
   sectionId: string,
@@ -163,7 +171,7 @@ export function isSubjectTeacher(
 ): boolean {
   return assignments.some(
     (a) =>
-      a.role === 'subject_teacher' &&
+      isSubjectRole(a.role) &&
       a.section_id === sectionId &&
       a.subject_id === subjectId
   );
@@ -171,11 +179,12 @@ export function isSubjectTeacher(
 
 // Pairs of (section_id, subject_id) the user is allowed to see as a subject
 // teacher. Used to filter the grading sheet list for non-manager roles.
+// Co-teachers included, for the reason given on `isSubjectTeacher` above.
 export function subjectTeacherPairs(
   assignments: Array<AssignmentRow | EffectiveAssignmentRow>
 ): Array<{ section_id: string; subject_id: string }> {
   return assignments
-    .filter((a) => a.role === 'subject_teacher' && a.subject_id != null)
+    .filter((a) => isSubjectRole(a.role) && a.subject_id != null)
     .map((a) => ({
       section_id: a.section_id,
       subject_id: a.subject_id as string,

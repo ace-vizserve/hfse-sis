@@ -14,6 +14,7 @@ import {
   type GradeBand,
 } from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
+import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -334,6 +335,12 @@ async function loadEntryRowsUncached(
   // teacher_assignments — used to attribute "enteredBy" for entries on this
   // sheet (subject_teacher mapping). We'll take the first match per
   // (section_id, subject_id).
+  //
+  // ⚠ OWNER ONLY, and deliberately so — unlike the name map further down. This
+  // wants ONE name per sheet, and `grade_entries` carries no per-teacher
+  // attribution (KD #192), so once a sheet has a co-teacher any
+  // assignment-derived answer is a guess. The teacher of record is the least
+  // wrong guess; `audit_log` is where who-actually-typed-it lives.
   const { data: assignmentsData } = await service
     .from('teacher_assignments')
     .select('teacher_user_id, section_id, subject_id, role')
@@ -560,7 +567,10 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
           .from('teacher_assignments')
           .select('section_id, subject_id, teacher_user_id')
           .in('section_id', sectionIds)
-          .eq('role', 'subject_teacher')
+          // Owner AND co-teacher: this feeds buildSubjectTeacherNameMap, whose
+          // whole point is showing both names when HFSE shares a subject
+          // across days of the week. `.eq('role', 'subject_teacher')` shows one.
+          .in('role', [...SUBJECT_ROLES])
           .then((r) => (r.data ?? []) as SubjectTeacherAssignmentRow[])
       : Promise.resolve([] as SubjectTeacherAssignmentRow[]),
     getStaffDisplayNameById(),

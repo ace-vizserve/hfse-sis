@@ -15,9 +15,16 @@ import {
 export function AySwitcher({
   current,
   options,
+  className = 'w-full',
 }: {
   current: string;
   options: readonly string[];
+  /**
+   * Trigger sizing. Defaults to the full-width page-header shape every
+   * existing caller relies on; a toolbar passes its own so the control lines
+   * up with the h-8 search box and filter buttons beside it.
+   */
+  className?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,7 +56,7 @@ export function AySwitcher({
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="w-full">
+      <SelectTrigger className={className}>
         <div className="flex items-center gap-2">
           {pending ? (
             <Loader2 className="size-4 animate-spin text-muted-foreground" />

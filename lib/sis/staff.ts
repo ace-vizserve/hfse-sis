@@ -1,7 +1,22 @@
 import { unstable_cache } from 'next/cache';
 
 import { getTeacherList } from '@/lib/auth/staff-list';
+import {
+  type AssignmentRole,
+  isAdviserRole,
+  isSubjectRole,
+} from '@/lib/schemas/teacher-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
+
+/** A class this teacher advises — as the adviser of record, or alongside one. */
+export type StaffAdviserAssignment = {
+  assignmentId: string;
+  sectionId: string;
+  sectionName: string;
+  levelCode: string;
+  /** `form_adviser` (the name on the report card) or `co_adviser`. */
+  role: AssignmentRole;
+};
 
 export type StaffSubjectAssignment = {
   assignmentId: string;
@@ -11,6 +26,8 @@ export type StaffSubjectAssignment = {
   sectionId: string;
   sectionName: string;
   levelCode: string;
+  /** `subject_teacher` (owns the grading sheet) or `co_teacher`. */
+  role: AssignmentRole;
 };
 
 export type StaffRow = {
@@ -18,7 +35,17 @@ export type StaffRow = {
   email: string;
   name: string;
   disabled: boolean;
-  fcaSection: { id: string; name: string; levelCode: string } | null;
+  /**
+   * Every class this teacher advises, not just one.
+   *
+   * ⚠ AN ARRAY, because the unique index is one adviser PER SECTION — it says
+   * nothing about how many sections one person may advise, and HFSE staff do
+   * hold more than one. This was a single value resolved with `.find()`, which
+   * silently showed the first and hid the rest; KD #185 records that same
+   * `.find()` shape causing a real bug in the staff drawer, where it deleted
+   * whichever assignment id it happened to land on.
+   */
+  adviserSections: StaffAdviserAssignment[];
   subjectAssignments: StaffSubjectAssignment[];
   /** Classes of THEIRS that somebody else is standing in on today. */
   coveredCount: number;
@@ -79,7 +106,7 @@ async function loadStaffAssignmentsUncached(
       email: t.email,
       name: t.name,
       disabled: t.disabled,
-      fcaSection: null,
+      adviserSections: [],
       // No sections in this year means no assignments, so no cover either.
       coveredCount: 0,
       coveringCount: 0,
@@ -120,11 +147,29 @@ async function loadStaffAssignmentsUncached(
   return teachers.map((teacher) => {
     const mine = assignments.filter((a) => a.teacher_user_id === teacher.id);
 
-    const fcaRow = mine.find((a) => a.role === 'form_adviser');
-    const fcaSec = fcaRow ? sectionMeta.get(fcaRow.section_id) : undefined;
+    // Both role families, primary and co (migration 124). A co-adviser or
+    // co-teacher is substantive staff — the person really does teach the class —
+    // so leaving them off their own row would misreport what they hold. Whether
+    // a co-adviser makes a SECTION count as staffed is a separate question, and
+    // the answer there is no; see getSectionStaffingCoverage in lib/sis/dashboard.ts.
+    const adviserSections: StaffAdviserAssignment[] = mine
+      .filter((a) => isAdviserRole(a.role))
+      .flatMap((a) => {
+        const sec = sectionMeta.get(a.section_id);
+        if (!sec) return [];
+        return [
+          {
+            assignmentId: a.id,
+            sectionId: a.section_id,
+            sectionName: sec.name,
+            levelCode: sec.levelCode,
+            role: a.role as AssignmentRole,
+          },
+        ];
+      });
 
     const subjectAssignments: StaffSubjectAssignment[] = mine
-      .filter((a) => a.role === 'subject_teacher')
+      .filter((a) => isSubjectRole(a.role))
       .map((a) => {
         const sec = sectionMeta.get(a.section_id);
         const sub = Array.isArray(a.subjects) ? a.subjects[0] : a.subjects;
@@ -136,6 +181,7 @@ async function loadStaffAssignmentsUncached(
           sectionId: a.section_id,
           sectionName: sec?.name ?? '',
           levelCode: sec?.levelCode ?? '',
+          role: a.role as AssignmentRole,
         };
       });
 
@@ -144,9 +190,7 @@ async function loadStaffAssignmentsUncached(
       email: teacher.email,
       name: teacher.name,
       disabled: teacher.disabled,
-      fcaSection: fcaSec
-        ? { id: fcaSec.id, name: fcaSec.name, levelCode: fcaSec.levelCode }
-        : null,
+      adviserSections,
       subjectAssignments,
       coveredCount: coveredByTeacher.get(teacher.id) ?? 0,
       coveringCount: coveringByTeacher.get(teacher.id) ?? 0,

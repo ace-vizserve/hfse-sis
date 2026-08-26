@@ -123,6 +123,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     statusTabs,
     meScope,
     toolbarLeading,
+    toolbarFilters,
     toolbarTrailing,
     initialSort = [],
     initialColumnVisibility = {},
@@ -587,6 +588,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
             </Popover>
           );
         })}
+        {toolbarFilters}
         <div className="ml-auto flex items-center gap-2">
           {toolbarTrailing}
           {csv && (

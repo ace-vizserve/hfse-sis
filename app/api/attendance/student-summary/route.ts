@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import { presentOnlyCount } from '@/lib/attendance/queries';
 import {
   currentTermMonthsFromRaw,
@@ -80,8 +81,10 @@ export async function GET(req: NextRequest) {
       service,
       auth.user.id
     );
+    // isAdviserRole — a co-adviser advises the class too (migration 124), and
+    // `is_adviser_for_section` in SQL already says so.
     const advises = assignments.some(
-      (a) => a.role === 'form_adviser' && a.section_id === sectionId
+      (a) => isAdviserRole(a.role) && a.section_id === sectionId
     );
     if (!advises) {
       return NextResponse.json(

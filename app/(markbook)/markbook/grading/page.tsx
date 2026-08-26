@@ -13,6 +13,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -134,15 +135,16 @@ export default async function GradingListPage({
         rows.filter((r) => r.via === 'relief')
       )
     : [];
+  // Both role families. This decides what lands under "My sheets", which is a
+  // question about who may work on a sheet — and migration 124's
+  // `is_teacher_for_sheet` / `is_adviser_for_section` both admit the co roles.
   const coveredSectionSubject = new Set(
     coveredSlots
-      .filter((a) => a.role === 'subject_teacher' && a.subject_id)
+      .filter((a) => isSubjectRole(a.role) && a.subject_id)
       .map((a) => `${a.section_id}|${a.subject_id}`)
   );
   const coveredAdviserSections = new Set(
-    coveredSlots
-      .filter((a) => a.role === 'form_adviser')
-      .map((a) => a.section_id)
+    coveredSlots.filter((a) => isAdviserRole(a.role)).map((a) => a.section_id)
   );
 
   // Sheets are scoped to the current AY via `section.academic_year_id`

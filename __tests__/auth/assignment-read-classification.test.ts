@@ -32,6 +32,16 @@ import { join, relative, sep } from 'node:path';
 //              or an unstaffed section would look staffed and publish
 //   crud       manages assignment/relief rows themselves; not an access answer
 //   plumbing   shared helper whose own callers carry the classification
+// CO ROLES (migration 124) CUT ACROSS ALL OF THIS, in one direction only.
+// `is_adviser_for_section` and `is_teacher_for_sheet` in SQL both admit
+// `co_adviser` / `co_teacher`, so anything answering ACT must admit them too —
+// comparing `role === 'form_adviser'` there refuses access the database grants,
+// which is how a co-teacher ended up locked out of a sheet SQL had already
+// opened. Anything answering NAME or COVERAGE must NOT: a report card prints
+// one adviser, a grading sheet has one owner, and a section holding nothing but
+// a co-adviser still needs an adviser of record or publishing refuses it
+// (Mr Ace, 2026-08-27). Both halves are asserted at the bottom of this file.
+//
 //   monitoring ⚠ reads cover in order to SHOW it — including cover that has not
 //              started yet (migration 123) — and never to decide anything. This
 //              is the one category that must never reach a permission check: a
@@ -307,6 +317,77 @@ describe('the name-of-record boundary', () => {
         source(file),
         `${file} gates write-ups or report card comments and must not see relief`
       ).not.toMatch(/loadEffectiveAssignmentsForUser/);
+    }
+  });
+});
+
+describe('the co-role boundary', () => {
+  // Migration 124 lets HFSE share a form class between two advisers and a
+  // subject between two teachers on different days. A co role carries exactly
+  // the access its primary does, and none of its name-of-record standing.
+
+  const actFiles = Object.entries(CLASSIFIED)
+    .filter(([, c]) => c.includes('act'))
+    .map(([f]) => f);
+
+  const coverageFiles = Object.entries(CLASSIFIED)
+    .filter(([, c]) => c.includes('coverage'))
+    .map(([f]) => f);
+
+  // Narrow on purpose: a role LITERAL is fine in a label map
+  // (lib/account/sections.ts turns a role into words). What is not fine is
+  // testing the literal while SELECTING FROM a collection of assignments,
+  // because that is the shape that decides who gets in.
+  const LITERAL_ROLE_FILTER =
+    /\.(filter|some|find)\([^)]*role === '(form_adviser|subject_teacher)'/;
+
+  it('no act-category file selects assignments by a role literal', () => {
+    for (const file of actFiles) {
+      expect(
+        stripComments(source(file)),
+        `${file} decides who may act. Use isAdviserRole / isSubjectRole — a ` +
+          `literal here refuses a co-adviser or co-teacher the access ` +
+          `is_adviser_for_section and is_teacher_for_sheet already grant them.`
+      ).not.toMatch(LITERAL_ROLE_FILTER);
+    }
+  });
+
+  it('coverage checks still count only the adviser of record', () => {
+    // The inverse, and it has to be asserted or the next sweep "fixes" it.
+    // Nothing stops a co_adviser row existing without a form_adviser row — the
+    // unique index only forbids a SECOND form adviser — so if a co-adviser
+    // satisfied these, a section would read as staffed and then fail at
+    // publish time, which is the worst possible moment to find out.
+    // Stated as "must not widen" rather than "must name the literal": some of
+    // these resolve coverage through a helper (loadFormAdvisersBySection) and
+    // never spell the role themselves. Reaching for isAdviserRole is the
+    // specific mistake worth catching.
+    for (const file of coverageFiles) {
+      expect(
+        stripComments(source(file)),
+        `${file} answers "is the post filled" — only the adviser of record ` +
+          `fills it. A section holding nothing but a co-adviser would read ` +
+          `as staffed and then fail at publish time.`
+      ).not.toMatch(/isAdviserRole/);
+    }
+  });
+
+  it('the subject-teacher name map admits co-teachers at every caller', () => {
+    // buildSubjectTeacherNameMap exists to show BOTH names when a subject is
+    // shared. Migration 118 made one owner per (section, subject) a unique
+    // index, so the second teacher is a co_teacher row — a caller filtering
+    // `.eq('role', 'subject_teacher')` gets the owner alone and the function's
+    // whole reason for existing quietly stops working.
+    const callers = [
+      'lib/markbook/drill.ts',
+      'app/(markbook)/markbook/grading/[id]/page.tsx',
+    ];
+    for (const file of callers) {
+      const text = stripComments(source(file));
+      expect(
+        text,
+        `${file} feeds buildSubjectTeacherNameMap and must select both roles`
+      ).toMatch(/SUBJECT_ROLES/);
     }
   });
 });

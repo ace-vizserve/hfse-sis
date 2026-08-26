@@ -15,6 +15,8 @@ import {
   AssignmentCreateSchema,
   type AssignmentBulkCreate,
   type AssignmentCreate,
+  type AssignmentRole,
+  isAdviserRole,
 } from '@/lib/schemas/teacher-assignment';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -34,7 +36,7 @@ type CreatedAssignment = {
   teacher_user_id: string;
   section_id: string;
   subject_id: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
 };
 
 type LevelLite = { code: string | null; label: string | null };
@@ -302,7 +304,11 @@ export async function POST(request: NextRequest) {
       rows.map((r) => ({
         teacher_user_id: r.teacher_user_id,
         section_id: r.section_id,
-        subject_id: r.role === 'form_adviser' ? null : (r.subject_id ?? null),
+        // isAdviserRole, not the literal — `co_adviser` also carries no
+        // subject, and the role/subject CHECK constraint rejects one that
+        // does. The zod schema already refuses such a body, so this is the
+        // second of two guards rather than the only one.
+        subject_id: isAdviserRole(r.role) ? null : (r.subject_id ?? null),
         role: r.role,
       }))
     )

@@ -2,6 +2,7 @@ import { type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -68,8 +69,11 @@ export async function GET(
     const assignments = session?.id
       ? await loadEffectiveAssignmentsForUser(service, session.id)
       : [];
+    // isAdviserRole — a co-adviser advises the class too (migration 124). The
+    // adviser NAME printed on the workbook is resolved separately below and
+    // stays the adviser of record, which is the point of the note above.
     const advises = assignments.some(
-      (a) => a.role === 'form_adviser' && a.section_id === sectionId
+      (a) => isAdviserRole(a.role) && a.section_id === sectionId
     );
     if (!advises) {
       return new Response('You are not the form adviser for this class.', {

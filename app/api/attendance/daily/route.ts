@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import { logActions } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
@@ -77,7 +78,10 @@ async function assertAdviserForSections(
   }
   const advisedSectionIds = new Set(
     assignments
-      .filter((a) => a.role === 'form_adviser')
+      // isAdviserRole, not the literal: migration 124's `is_adviser_for_section`
+      // admits a co-adviser, so comparing the literal here would refuse a
+      // co-adviser the register the database already lets them write.
+      .filter((a) => isAdviserRole(a.role))
       .map((a) => a.section_id)
   );
   const uncovered = sectionIds.filter((s) => !advisedSectionIds.has(s));

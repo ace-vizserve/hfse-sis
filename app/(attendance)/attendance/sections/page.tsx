@@ -5,6 +5,7 @@ import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -113,7 +114,8 @@ export default async function AttendanceSectionsListPage() {
       session.id
     );
     const advisedIds = assignments
-      .filter((a) => a.role === 'form_adviser')
+      // isAdviserRole — a co-adviser's classes belong in their list too.
+      .filter((a) => isAdviserRole(a.role))
       .map((a) => a.section_id);
     const { data: thisYear } = advisedIds.length
       ? await service

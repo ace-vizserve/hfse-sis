@@ -28,6 +28,7 @@ import {
   loadEffectiveAssignmentsForUser,
   isSubjectTeacher,
 } from '@/lib/auth/teacher-assignments';
+import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -217,7 +218,9 @@ export default async function GradingSheetPage({
           const { data } = await createServiceClient()
             .from('teacher_assignments')
             .select('section_id, subject_id, teacher_user_id')
-            .eq('role', 'subject_teacher')
+            // Owner AND co-teacher — the header names every teacher of this
+            // subject, which is why it joins them with a comma.
+            .in('role', [...SUBJECT_ROLES])
             .eq('section_id', sectionForSeed.id)
             .eq('subject_id', subjectEarly.id);
           return (data ?? []) as SubjectTeacherAssignmentRow[];
