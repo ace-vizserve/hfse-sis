@@ -3,6 +3,7 @@ import 'server-only';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { createServiceClient } from '@/lib/supabase/service';
 import { reliefStatus } from '@/lib/relief/display';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // Who runs this class — the form adviser, the subject teachers, and anyone
 // covering. Mr Ace, 2026-08-21: "there is no trace of who teaches who/FCA etc
@@ -61,7 +62,7 @@ export type SectionStaff = {
 type AssignmentRow = {
   teacher_user_id: string;
   subject_id: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   relief_teacher_user_id: string | null;
   relief_started_on: string | null;
   relief_ended_on: string | null;

@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sgToday } from '@/lib/dates';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 const ASSIGNMENT_COLUMNS =
   'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on';
@@ -28,7 +29,7 @@ export type AssignmentRow = {
   teacher_user_id: string;
   section_id: string;
   subject_id: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   /** Who is covering this class, or null when nobody is. */
   relief_teacher_user_id?: string | null;
   /** First day the cover applies. Null = live from whenever it was set. */

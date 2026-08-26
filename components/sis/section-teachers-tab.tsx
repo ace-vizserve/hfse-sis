@@ -20,6 +20,10 @@ import { StaffAvatar } from '@/components/sis/staff-visuals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { AssignmentChangeReason } from '@/lib/schemas/teacher-assignment';
 import { Badge } from '@/components/ui/badge';
+import {
+  isSubjectRole,
+  type AssignmentRole,
+} from '@/lib/schemas/teacher-assignment';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -81,7 +85,7 @@ type Assignment = {
   teacher_user_id: string;
   section_id: string;
   subject_id: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   /** Who is standing in on this class, or null when nobody is. */
   relief_teacher_user_id: string | null;
   /** First day of the cover; null means it started when it was set. */
@@ -116,9 +120,7 @@ export function TeacherAssignmentsPanel({
     useState<Assignment[]>(initialAssignments);
   const [loading, setLoading] = useState(false);
 
-  const [role, setRole] = useState<'form_adviser' | 'subject_teacher'>(
-    'subject_teacher'
-  );
+  const [role, setRole] = useState<AssignmentRole>('subject_teacher');
   const [teacherId, setTeacherId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
@@ -159,7 +161,7 @@ export function TeacherAssignmentsPanel({
     mutationFn: (vars: {
       teacher_user_id: string;
       subject_id: string | null;
-      role: 'form_adviser' | 'subject_teacher';
+      role: AssignmentRole;
     }) =>
       apiFetch(
         '/api/teacher-assignments',
@@ -200,7 +202,7 @@ export function TeacherAssignmentsPanel({
       toast.error('Choose a teacher first.');
       return;
     }
-    if (role === 'subject_teacher' && !subjectId) {
+    if (isSubjectRole(role) && !subjectId) {
       toast.error('Choose which subject they teach.');
       return;
     }
@@ -209,7 +211,7 @@ export function TeacherAssignmentsPanel({
     // a subject, so it would otherwise drift from what was actually sent.
     const vars = {
       teacher_user_id: teacherId,
-      subject_id: role === 'subject_teacher' ? subjectId : null,
+      subject_id: isSubjectRole(role) ? subjectId : null,
       role,
     };
     const who =
@@ -266,6 +268,7 @@ export function TeacherAssignmentsPanel({
   );
 
   const formAdviser = assignments.find((a) => a.role === 'form_adviser');
+  const coAdvisers = assignments.filter((a) => a.role === 'co_adviser');
 
   // Both "one per class" rules, applied to what the dialog offers rather than
   // left for the save to refuse. A dropdown that lists a subject already taken
@@ -275,13 +278,28 @@ export function TeacherAssignmentsPanel({
       .filter((a) => a.role === 'subject_teacher' && a.subject_id)
       .map((a) => a.subject_id as string)
   );
+  // A subject already staffed is closed to a second OWNER but open to a
+  // co-teacher, so the two roles offer opposite halves of the same list.
   const openSubjects = levelSubjects.filter((s) => !takenSubjectIds.has(s.id));
+  const staffedSubjects = levelSubjects.filter((s) =>
+    takenSubjectIds.has(s.id)
+  );
+  // The subject box follows the role: an owner picks from what is free, a
+  // co-teacher picks from what is already staffed — there is no sheet to share
+  // otherwise.
+  const pickableSubjects =
+    role === 'co_teacher' ? staffedSubjects : openSubjects;
+
+  // Co-teachers sit with the sheet they share rather than in a list of their
+  // own — sorted by subject, owner first, so a shared subject reads as one
+  // group instead of two entries that happen to have the same name.
   const subjectTeachers = assignments
-    .filter((a) => a.role === 'subject_teacher')
+    .filter((a) => isSubjectRole(a.role))
     .sort((a, b) => {
       const sa = subjectsById.get(a.subject_id ?? '')?.name ?? '';
       const sb = subjectsById.get(b.subject_id ?? '')?.name ?? '';
-      return sa.localeCompare(sb);
+      if (sa !== sb) return sa.localeCompare(sb);
+      return a.role === 'subject_teacher' ? -1 : 1;
     });
 
   return (
@@ -379,6 +397,68 @@ export function TeacherAssignmentsPanel({
               </p>
             </div>
           )}
+
+          {/* Co-advisers sit under the adviser of record, not beside them.
+              Sec 4 Excellence really is taught by two people, but only one
+              name prints on the report card and the order says which. */}
+          {coAdvisers.length > 0 && (
+            <ul className="mt-2 space-y-2">
+              {coAdvisers.map((a) => {
+                const t = teachersById.get(a.teacher_user_id);
+                return (
+                  <li
+                    key={a.id}
+                    className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3"
+                  >
+                    <StaffAvatar name={t?.display_name ?? ''} size={9} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground">
+                          {t?.display_name ?? '(unknown user)'}
+                        </span>
+                        <Badge variant="secondary" className="h-6">
+                          Co-adviser
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {t?.email ?? a.teacher_user_id}
+                      </div>
+                    </div>
+                    <AssignmentReliefControl
+                      assignmentId={a.id}
+                      coveredTeacherId={a.teacher_user_id}
+                      coveredTeacherName={t?.display_name ?? 'this teacher'}
+                      reliefTeacherName={
+                        a.relief_teacher_user_id
+                          ? (teachersById.get(a.relief_teacher_user_id)
+                              ?.display_name ?? 'Someone')
+                          : null
+                      }
+                      teacherOptions={teachers.map((x) => ({
+                        id: x.id,
+                        name: x.display_name,
+                      }))}
+                      reliefTeacherId={a.relief_teacher_user_id}
+                      reliefStartedOn={a.relief_started_on}
+                      reliefEndedOn={a.relief_ended_on}
+                      canManage={canManageRelief}
+                      onChanged={load}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setPendingRemoveId(a.id)}
+                      disabled={busy}
+                      aria-label={`Remove ${t?.display_name ?? 'co-adviser'}`}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
@@ -440,6 +520,11 @@ export function TeacherAssignmentsPanel({
                         </span>
                         {s && (
                           <ExaminableBadge isExaminable={s.is_examinable} />
+                        )}
+                        {a.role === 'co_teacher' && (
+                          <Badge variant="secondary" className="h-6">
+                            Co-teacher
+                          </Badge>
                         )}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
@@ -517,9 +602,7 @@ export function TeacherAssignmentsPanel({
               <FieldLabel htmlFor="ta-role">Role</FieldLabel>
               <Select
                 value={role}
-                onValueChange={(v) =>
-                  setRole(v as 'form_adviser' | 'subject_teacher')
-                }
+                onValueChange={(v) => setRole(v as AssignmentRole)}
               >
                 <SelectTrigger id="ta-role">
                   <SelectValue />
@@ -528,10 +611,18 @@ export function TeacherAssignmentsPanel({
                   <SelectItem value="subject_teacher">
                     Subject teacher
                   </SelectItem>
+                  {/* A second teacher on a subject is a co-teacher, so this
+                      only appears once there is a sheet to share. */}
+                  {staffedSubjects.length > 0 && (
+                    <SelectItem value="co_teacher">Co-teacher</SelectItem>
+                  )}
                   {/* A class has one adviser. Once it has one, the only way to
                       change who it is, is to take the current one off — which
-                      is a decision with a reason attached, not a dropdown. */}
-                  {!formAdviser && (
+                      is a decision with a reason attached, not a dropdown.
+                      A second person alongside them is a co-adviser. */}
+                  {formAdviser ? (
+                    <SelectItem value="co_adviser">Co-adviser</SelectItem>
+                  ) : (
                     <SelectItem value="form_adviser">
                       Form class adviser
                     </SelectItem>
@@ -559,19 +650,19 @@ export function TeacherAssignmentsPanel({
             </Field>
             <Field>
               <FieldLabel htmlFor="ta-subject">Subject</FieldLabel>
-              {role === 'subject_teacher' ? (
+              {isSubjectRole(role) ? (
                 <Select value={subjectId} onValueChange={setSubjectId}>
                   <SelectTrigger id="ta-subject">
                     <SelectValue
                       placeholder={
-                        openSubjects.length === 0
+                        pickableSubjects.length === 0
                           ? 'Every subject already has a teacher'
                           : '— pick a subject —'
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {openSubjects.map((s) => (
+                    {pickableSubjects.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="inline-flex items-center gap-2">
                           <span>{s.name}</span>
@@ -609,7 +700,7 @@ export function TeacherAssignmentsPanel({
             <Button
               onClick={createAssignment}
               disabled={
-                busy || !teacherId || (role === 'subject_teacher' && !subjectId)
+                busy || !teacherId || (isSubjectRole(role) && !subjectId)
               }
             >
               {busy ? (

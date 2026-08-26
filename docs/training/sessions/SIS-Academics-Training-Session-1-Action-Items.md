@@ -347,9 +347,29 @@ revoke), **KD #176** (subject config is a ceiling, not a broadcast).
   FCA.** Christina showed Mr Ace how her own child's school SIS does it and he
   took it — _"this is the best way since parents are the ones who initially have
   the doc."_ Full design in _Answers received_. **This supersedes the FCA-uploads
-  spec** and un-parks the version she raised herself on 2026-08-12. **Blocked on
-  one answer** Mr Ace is getting from her: what approval actually _does_ — write
-  the register, or only tell the adviser.
+  spec** and un-parks the version she raised herself on 2026-08-12.
+
+  ⚠ **The approval CHAIN is answered; the approval BEHAVIOUR is not, and the
+  chain arriving must not be read as closing this item.** Restated 2026-08-25:
+  _"Form Class Adviser then Officer in Charge (Primary or Secondary)"_, sequential,
+  which is what was already recorded. **Two things are still unknown, and the
+  first is the blocker:**
+  1. **What approval actually _does_.** Does the Officer in Charge approving
+     **write the register** — turn that day's `A` into `EX` — or does it only
+     tell the adviser, who still marks it themselves? This decides whether the
+     parent portal writes into attendance or merely raises a request, and it
+     cannot be assumed either way. Everything else about the form can be
+     designed without it.
+  2. **Who the Officer in Charge is.** "OIC" exists nowhere in this system — not
+     a role, not a capability, not a column — and it now gates two unrelated
+     flows, since it is also the middle station of the pre-issuance grade-change
+     chain. Needed: a name per school half, and whether it is a standing
+     position or named per case.
+
+  Two smaller ones worth folding into the same ask rather than sending twice:
+  **what a rejection does** to a mark already entered, and whether a declaration
+  filed **after** the absence (the MC arrives Monday for Friday) is the same
+  flow — that is the common case, not the exception.
 
   ⚠ **"Ms Tin" is Christina — Tin is her nickname** (Mr Ace, 2026-08-18,
   correcting this file's first write-up, which called them two people and
@@ -646,10 +666,16 @@ discipline` made the student name a link, and teachers cannot open Records, so
   **Still genuinely missing:** Ms Jasmine and Ms Li (no email, so no legal name —
   they use `jasmine.hfhse@gmail.com` and `liqun0815@gmail.com`), **P4 Trust's
   adviser, whose cell just says "New Teacher"** — never asked, it was not one of
-  the four — and the **English relief teacher** for Sec 1 Discipline 2 / Sec 3
-  Consistency, which is with Ms Marrie. Mr Ace has also asked for the current-AY
-  list, since this file is dated 29 June and still carries AY2024/AY2025 rows near
-  the bottom.
+  the four. Mr Ace has also asked for the current-AY list, since this file is
+  dated 29 June and still carries AY2024/AY2025 rows near the bottom.
+
+  ~~the **English relief teacher** for Sec 1 Discipline 2 / Sec 3 Consistency,
+  which is with Ms Marrie~~ — **two secondary relief part-time teachers arrived
+  2026-08-25**, verbatim in _Answers received_: **Mr Chong Jun Hien** (Science
+  and Global Perspectives) and **Ms Fong Mei Yin Elaine** (English). Ms Fong
+  matches the English gap on subject and school half, ⚠ **but the message names
+  no classes**, so which sections she covers is still unconfirmed. Neither has an
+  account yet.
 
 - **Mr Hanafi (house)** — **closed 2026-08-11, nothing outstanding.** He answered on
   2026-08-06 and sent both sheets. The follow-up about unmatched names was
@@ -720,10 +746,17 @@ discipline` made the student name a link, and teachers cannot open Records, so
   login): admins can already write any section's attendance, but the audit log
   has no on-behalf-of concept and advisers cannot read it.
 
-- **Wynne** — the Transcript of Records template. The data layer is complete and
-  cross-AY on `studentNumber`; the template is the whole blocker. She asked for
-  it directly at 1:00:57 and **offered the template herself** in the same
-  exchange, so this is a reminder, not a cold request.
+- **Wynne** — **half answered 2026-08-25.** The message sent 2026-08-21 carried
+  two asks and one has come back.
+  1. ~~**The additional P-Files document types.**~~ **Arrived 2026-08-25** — see
+     _Answers received_. Eight genuinely new slots, and it closes the admin
+     session's #5 and #11 together. ⚠ **The relay does not name the sender**, so
+     it is filed against her because hers was the only outstanding ask for it;
+     confirm before quoting her.
+  2. **The Transcript of Records template — still outstanding.** The data layer
+     is complete and cross-AY on `studentNumber`; the template is the whole
+     blocker. She asked for it directly at 1:00:57 and **offered the template
+     herself** in the same exchange, so this is a reminder, not a cold request.
 
 ### To correct with the team
 
@@ -1292,9 +1325,13 @@ cannot address subject config at all. She was told wrong in the session.
 
 ✅ **Sent, and it carried one more item than the draft below.** Mr Ace asked for
 the **Transcript of Records template** as written, **plus the additional list of
-documents to track for student P-Files**. Awaiting both. The P-Files half is new
-— it did not come from this session and is not one of the eleven action items;
-it will change `DOCUMENT_SLOTS` if she names slots the system does not hold.
+documents to track for student P-Files**. The P-Files half is new — it did not
+come from this session and is not one of the eleven action items; it will change
+`DOCUMENT_SLOTS` if she names slots the system does not hold.
+
+✅ **The P-Files half came back 2026-08-25 — and it does name slots we do not
+hold, eight of them.** Verbatim and cross-checked in _Answers received_ → _The
+P-Files document list_. ⚠ **The Transcript of Records half is still outstanding.**
 
 **Only one send now remains outstanding: Koh** (a notification plus the
 exam-total correction — it asks her nothing).
@@ -2364,6 +2401,127 @@ monitoring without being prompted — that is the academic head corroborating th
 ⚠ **Scope note.** "Lesson planning, scheme of work and teaching and delivery
 matters" is a **module**, not a feature. Nothing here is scoped, costed or
 approved. Do not re-derive a SOW model from this message.
+
+### The P-Files document list · 2026-08-25
+
+**This is the reply to the second half of the Wynne message** (sent 2026-08-21),
+which asked for "the additional list of documents to track for student P-Files".
+⚠ **Attribution is not recorded.** It reached this file relayed by Mr Ace and the
+relay does not name the sender; the only outstanding ask for exactly this list
+was Wynne's, which is why it is filed against her row in §B of the admin file.
+**Do not cite it as her words until that is confirmed.** Wording unaltered; the
+only change is a bullet marker per line, because markdown would otherwise run
+the two lists together into a paragraph:
+
+> For the P-files , here are the documents needed:
+>
+> New Students:
+> Additional:
+>
+> - Last School Recommendation and Good Moral
+> - Assessment Result and Interview
+> - Form-12
+> - Signed Student Contract
+> - New Student Checksheet
+> - Student P-files Checklist
+> - Pre-Counselling Acknowledgement Form
+> - Conditional Enrolment (if applicable)
+> - Late Enrolment Form (if applicable)
+>
+> For Current Student:
+>
+> - Latest Copy of the Student Valid Pass and Parent's or Guardian Valid Pass
+>   (if previous copy are expired)
+> - Latest Copy of the Student Passport and Parent's or Guardian Passports (if
+>   previous copy are expired)
+> - Latest Copy of Student's Medical Report if there's new medical condition to
+>   declare
+> - Form 12
+> - Signed Student Contract
+
+**It closes two admin-session items at once.** §A #11 ("add recommendation form
+from previous school to required docs") is the first line of her new-student
+list, so it is not a separate chase — it arrived inside the answer to #5. And #5
+itself ("allow adding document types like the student contract") now has its
+list; **Signed Student Contract was the literal example in the ask**, and it is
+here.
+
+**Cross-checked against `DOCUMENT_SLOTS` on 2026-08-25** — 13 slots today
+(`lib/p-files/document-config.ts:48`), each one a column pair or triple
+(`{key}`, `{key}Status`, plus `{key}Expiry` for the eight expiring ones) on
+`ay{YY}_enrolment_documents`.
+
+**Five of the fourteen lines are already held, and are not new slots:**
+
+- **Form 12** is `form12`. It appears on **both** her lists, so it is one slot
+  she expects to see refreshed, not two documents.
+- **The whole "For Current Student" pass/passport half** — "latest copy… if
+  previous copy are expired" — is the **existing renewal lifecycle** over the
+  eight expiring slots (KD #63/#64), which already models expiry, renewal and
+  revisions. It is not four new documents; it is her describing behaviour the
+  system has.
+- **"Latest medical report if there's new medical condition to declare"** maps to
+  `medical` plus the revisions model (KD #34). ⚠ One thing to settle rather than
+  assume: `medical` is **non-expiring** today, so "latest" means a new revision
+  on the same slot. That is a decision, not a reading of her words.
+- **Signed Student Contract** repeats across both lists — same slot, filed once
+  for a new student and re-signed as a current one.
+
+**Eight are genuinely new**, all on the new-student list: Last School
+Recommendation and Good Moral · Assessment Result and Interview · Signed Student
+Contract · New Student Checksheet · Student P-Files Checklist · Pre-Counselling
+Acknowledgement Form · Conditional Enrolment (if applicable) · Late Enrolment
+Form (if applicable).
+
+⚠ **Two things to put in front of Mr Ace before any migration is written.**
+
+1. **The two "(if applicable)" slots do not fit the conditional mechanism we
+   have.** `DocumentSlot.conditional` means "required when this column is
+   **non-null** in `enrolment_applications`" — that is how the father and
+   guardian slots work, keyed on `fatherEmail` / `guardianEmail`. But
+   **Conditional Enrolment** is a _value_ test (`applicationStatus` being
+   `Enrolled (Conditional)`) and **Late Enrolment Form** keys off the
+   late-enrollee flag. So either the field widens to a predicate, or those two
+   ship unconditional and the office ignores them where they do not apply.
+2. **Eight slots is roughly 16–24 new columns on every AY-prefixed
+   `enrolment_documents` table** — the frozen admissions DDL
+   (`docs/context/10a-parent-portal-ddl.md`), which the parent portal also
+   writes. ⚠ **This is what makes #5 two different features, not one.** "Add
+   these eight" is a migration. "Allow adding document types" — a type the
+   office defines later, without us — is a rows-not-columns redesign of the same
+   table. Her list is answerable by the first; the wording of the ask is the
+   second. **Pick deliberately and say what it forecloses.**
+
+**Still owed from the same message: the Transcript of Records template.** That
+half has not arrived.
+
+### The secondary relief part-time teachers · 2026-08-25
+
+⚠ **Attribution is not recorded** — relayed by Mr Ace without a named sender.
+The teaching-deployment thread is Mr Hanafi's, which is the likely source, but
+this file does not guess. Verbatim:
+
+> Good morning Mr. Ace. For the Secondary Relief Part Time Teachers, please see
+> below:
+>
+> - Mr. Chong Jun Hien (Science and Global Perspectives) - jun.chong@hfse.edu.sg
+> - Ms. Fong Mei Yin Elaine (English) - elaine.fong@hfse.edu.sg
+
+**Ms Fong is almost certainly the missing English relief teacher** named in the
+deployment gaps below — the one for Sec 1 Discipline 2 / Sec 3 Consistency that
+was said to be "with Ms Marrie". Subject and school half both match. ⚠ **The
+classes are still not stated**, so which sections she covers is unconfirmed; do
+not book an assignment off this inference alone.
+
+**Mr Chong is new information** — Science and Global Perspectives was not one of
+the known gaps.
+
+**Neither can hold an assignment yet: neither has an account.** No migration can
+create one, and teacher provisioning is parked pending training. Once
+provisioned, each gets a teacher assignment carrying the KD #191 cover window.
+This would be the **first real relief data** — AY2026 holds three assignments
+across two test accounts today — so it doubles as the bulk-booking rehearsal
+that has been waiting on the deployment file.
 
 ---
 

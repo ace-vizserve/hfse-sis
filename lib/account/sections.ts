@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 export type TeacherSectionRow = { sectionName: string; roleTag: string };
 
 type RawRow = {
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   section: { id: string; name: string } | { id: string; name: string }[] | null;
   subject: { id: string; name: string } | { id: string; name: string }[] | null;
 };
@@ -40,8 +41,7 @@ export async function getTeacherSections(
     const subject = one(row.subject);
     return {
       sectionName: section?.name ?? '—',
-      roleTag:
-        row.role === 'form_adviser' ? 'Form adviser' : (subject?.name ?? '—'),
+      roleTag: roleTagFor(row.role, subject?.name ?? null),
     };
   });
 
@@ -61,8 +61,7 @@ async function loadActiveCoverRows(
     if (!a) return [];
     const section = one(a.section);
     const subject = one(a.subject);
-    const what =
-      a.role === 'form_adviser' ? 'Form adviser' : (subject?.name ?? '—');
+    const what = roleTagFor(a.role, subject?.name ?? null);
     return [
       {
         sectionName: section?.name ?? '—',
@@ -70,4 +69,15 @@ async function loadActiveCoverRows(
       },
     ];
   });
+}
+
+// What a teacher sees beside a class in their own list: advisers get the role,
+// subject teachers get the subject. A co role has to say so — without it a
+// co-adviser reads as "—" (no subject to fall back on) and a co-teacher is
+// indistinguishable from the teacher who actually owns the sheet.
+function roleTagFor(role: AssignmentRole, subjectName: string | null): string {
+  if (role === 'form_adviser') return 'Form adviser';
+  if (role === 'co_adviser') return 'Co-adviser';
+  const subject = subjectName ?? '—';
+  return role === 'co_teacher' ? `${subject} — co-teacher` : subject;
 }

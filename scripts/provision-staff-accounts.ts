@@ -163,6 +163,173 @@ const ROSTER: RosterEntry[] = [
     role: 'p_file_officer',
     group: 'P-Files Officer',
   },
+
+  // ── Teachers ───────────────────────────────────────────────────────────
+  //
+  // Added 2026-08-26, from the `Teachers List` sheet of
+  // "Teachers Deployment_Updated 29 Jun 26_Teacherscopy (1).xlsx" (26 names,
+  // 24 with school addresses). Until these exist, importing that workbook's
+  // ~147 assignments resolves almost nothing: a dry run matched 20 of 23
+  // classes and still had to skip 90 rows for "no account".
+  //
+  // ⚠ SIX OF THE 26 ARE DELIBERATELY ABSENT: Koh Suat Hoon, Marrie Aines
+  // Juni, Melissa Balantac, Hermilita Mendoza, Chandana Dileep and Muhammad
+  // Hanafi Bin Rubaai already hold `school_admin`. This script skips an
+  // existing account rather than resetting it, so listing them again would
+  // change nothing — but it would read as though they were being demoted to
+  // `teacher`, which they are not. They teach AND hold their admin role;
+  // teaching assignments are rows in `teacher_assignments`, not a role.
+  //
+  // ⚠ Mr Hanafi was briefly listed here as a `teacher` on the reasoning that
+  // the workbook shows him teaching PE across Sec 1–4 plus primary STAR. The
+  // preview caught it: he ALREADY has an account holding `school_admin`, so
+  // the entry only produced a MISMATCH warning on every run. It also settles a
+  // question raised at the time — booking cover needs `staff.manage_relief`,
+  // which `teacher` does not carry and `school_admin` does, so the cover board
+  // is already his.
+  //
+  // ⚠ TWO CANNOT BE PROVISIONED AT ALL: Ms Jasmine Zhou Qi and Ms Li Qun have
+  // no address on the roster, so there is nothing to create an account from
+  // and no way to recover their legal name (the school convention encodes it
+  // as firstname.lastname). They teach Mother Tongue and appear in the
+  // timetable; their assignments simply cannot be imported until Mr Hanafi
+  // supplies addresses. A third, "Ms Khim", heads a YoungStarters column in
+  // the workbook and is on no roster at all.
+
+  // Primary.
+  {
+    fullName: 'Kristel Ivy Conado',
+    email: 'kristel.conado@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Zuraidah Zainal',
+    email: 'zuraidah.zainal@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Jenny Wong',
+    email: 'jenny.wong@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Low Wai Chung',
+    email: 'waichung.low@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Shafika Binti Jasni',
+    email: 'shafika.jasni@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Parmithaa Devan Reddy',
+    email: 'parmithaa.reddy@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Karen Grace Ledbetter',
+    email: 'karengrace.ledbetter@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Arlene Raralio',
+    email: 'arlene.raralio@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Yu Jing Lim',
+    email: 'jing.lim@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    fullName: 'Lakshmi Radhika Putrevu',
+    email: 'radhika.putrevu@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+  {
+    // ⚠ The roster spells the nickname "Mr Jospeh" in the timetable sheets.
+    // The name here is the legal one, from his address.
+    fullName: 'Joseph Ong Poh Chye',
+    email: 'joseph.ong@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Primary',
+  },
+
+  // Secondary.
+  {
+    // Appears throughout the timetable as "Ms Carl" — a middle name, not a
+    // surname, which is why the nickname never resolved by inspection.
+    fullName: 'Christine Carl Sarmiento',
+    email: 'christine.sarmiento@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    fullName: 'Medelyn Ruth Azucena',
+    email: 'medelyn.azucena@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    fullName: 'Chong Jun Hien',
+    email: 'jun.chong@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    fullName: 'Jocelyn Saguid',
+    email: 'jocelyn.saguid@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    // "Ms Elaine" in the workbook. ⚠ NOT the same person as Fong Mei Yin
+    // Elaine below — two Elaines now teach here, which is why every nickname
+    // in the importer carries its reasoning.
+    fullName: 'May Ling Elaine Wee',
+    email: 'elaine.wee@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    fullName: 'Natividad Laguyo',
+    email: 'natividad.laguyo@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+  {
+    fullName: 'Sharon Anne Menezes',
+    email: 'sharonanne.menezes@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
+
+  // Relief, part-time. Two were named on 2026-08-25; only one is new here.
+  // ⚠ Mr Chong Jun Hien was named in that same message but is NOT new — he is
+  // already on the workbook's `Teachers List` and sits under Secondary above,
+  // teaching Science and Global Perspectives, which is exactly what the
+  // message said he covers.
+  {
+    // ⚠ Almost certainly the "Relief Teacher" column in the workbook
+    // (Final Update_New C27 — Sec 3 English and Sec 1D2 English). The subject
+    // and school half both match, but the workbook names no classes for her,
+    // so the assignment itself is still unconfirmed.
+    fullName: 'Fong Mei Yin Elaine',
+    email: 'elaine.fong@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Relief',
+  },
 ];
 
 const OUTPUT_DIR = resolve(import.meta.dirname, 'provision-output');

@@ -4,6 +4,7 @@ import type {
 } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
 import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
+import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 
 // Which modules the switcher should hide from a teacher whose ASSIGNMENTS make
 // them dead ends.
@@ -78,9 +79,9 @@ export function hiddenModulesForTeacher(
   // away — so Attendance must appear for them and Evaluation must not.
   const isCover = (a: AssignmentRow | EffectiveAssignmentRow) =>
     'via' in a && a.via === 'relief';
-  const advises = assignments.some((a) => a.role === 'form_adviser');
+  const advises = assignments.some((a) => isAdviserRole(a.role));
   const advisesSubstantively = assignments.some(
-    (a) => a.role === 'form_adviser' && !isCover(a)
+    (a) => isAdviserRole(a.role) && !isCover(a)
   );
 
   // Derived from ADVISER_ONLY_MODULES rather than naming the two modules
@@ -153,11 +154,11 @@ export function teachingProfileFor(
   const isCover = (a: AssignmentRow | EffectiveAssignmentRow) =>
     'via' in a && a.via === 'relief';
   return {
-    advises: assignments.some((a) => a.role === 'form_adviser'),
+    advises: assignments.some((a) => isAdviserRole(a.role)),
     advisesSubstantively: assignments.some(
-      (a) => a.role === 'form_adviser' && !isCover(a)
+      (a) => isAdviserRole(a.role) && !isCover(a)
     ),
-    teachesSubject: assignments.some((a) => a.role === 'subject_teacher'),
+    teachesSubject: assignments.some((a) => isSubjectRole(a.role)),
   };
 }
 

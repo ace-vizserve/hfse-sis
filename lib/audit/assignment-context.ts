@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // Audit context for teacher-assignment create/remove entries.
 //
@@ -17,7 +18,7 @@ export type AssignmentAuditRow = {
   teacher_user_id: string;
   section_id: string;
   subject_id: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
 };
 
 type LevelLite = { code: string | null; label: string | null };

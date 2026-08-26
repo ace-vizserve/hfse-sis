@@ -309,6 +309,8 @@ What the column cannot express, and why that is fine: scheduled cover ("starts M
 
 **Fixed in passing, pre-existing:** a teacher may advise several sections — the unique index is on `(section_id)` alone — but the staff drawer `.find()`-ed the first adviser row and its change path deleted whichever id it held, stranding the other class with no adviser and nothing on screen saying so.
 
+⚠ **AMENDED BY KD #192 (2026-08-26) — read that before acting on this one.** Everything above stands: one OWNER per sheet, one adviser per class, both still enforced by the same two indexes. What changed is that the second teacher now has somewhere to exist. 118's "abort rather than de-duplicate" was right for the reason given, but it left only two outcomes — discard a teacher, or refuse the import — and HFSE's real timetable needs a third.
+
 ### KD #191
 
 **Relief cover carries a start and an end date** (2026-08-24; migration 123). `teacher_assignments` gains `relief_started_on` / `relief_ended_on`, both nullable. Mr Ace, 2026-08-20: _"with start and end date added its automatic assignment and revoking of access."_ Most cover is planned leave, so it is arranged once when the leave is granted and then activates and expires itself — a bare toggle needed a human present on both days to remember, per class.
@@ -334,3 +336,19 @@ What the column cannot express, and why that is fine: scheduled cover ("starts M
 **Why it happened before Hanafi's deployment:** AY2026 held 3 teacher assignments, two of them test accounts, so nothing real depended on the old shape. After 26 teachers and ~147 assignments the same change would have touched live data and live habits.
 
 ⚠ **The SOW tie is real and is recorded, not acted on.** Christina asked for relief monitoring and lesson plans in one breath on 2026-08-21 — relief is her stated _reason_ for a teachers' dashboard, not a neighbour of it. SOW was built and deleted twice (KD #108/#110, migrations 058–066) and nothing of it survives in the schema. Mr Ace, 2026-08-24: keep it separate for now. **The "you're covering" panel is the hook a lesson-plan link would hang on later**, which is why it exists at all rather than being deferred with the rest.
+
+### KD #192
+
+**Co-advisers and co-teachers** (2026-08-26; migration 124). `teacher_assignments.role` gains `co_adviser` and `co_teacher` beside `form_adviser` and `subject_teacher`. **KD #185's two rules are untouched** — one `form_adviser` per section, one `subject_teacher` per (section, subject), same two unique indexes — because a report card prints one adviser and a grading sheet has one owner (KD #158). The co roles sit outside those indexes by construction, so **no backfill**: every existing row keeps its role and its meaning.
+
+**Why now.** Mr Hanafi's AY2026 deployment workbook shares a subject between two teachers in four places and a form class in one: Sec 3 and Sec 4 Humanities (Ms Elaine / Ms Carl), P2 Humility and P4 Diligence STAR (Ms Jing / Mr Hanafi), and Sec 4 Excellence's adviser line, which reads _"Ms Med & Ms Elaine"_. ⚠ **The workbook is not wrong and this is not a data-quality problem** — a subject split across days of the week is ordinary timetabling, and all three of the workbook's views (class-major, teacher-major, per-teacher) agree on every case. What could not express it was our schema, so importing the deployment meant discarding a teacher who really does stand in front of that class.
+
+**An array of teacher ids was considered and rejected.** Three things break. `relief_teacher_user_id` and the cover dates (KD #191) are **per row**, so an array has nowhere to record "Ms Carl covers Ms Elaine next week" and would need a parallel array that drifts out of step. Every RLS helper matches a **row**, so arrays mean rewriting the one layer where a mistake shows a teacher another class's marks. And an array does not answer the question 118 was written for — whose name is on the sheet — it only moves it somewhere less visible.
+
+**Access: a co role gets exactly what its primary gets.** `is_adviser_for_section` and `is_teacher_for_sheet` widen to `role in (...)`; `is_teacher_for_section` needed no change because it never read `role`. The relief arm and its window are unchanged on every arm — a co-teacher's cover is windowed like anyone's. `teacher_assignments_scoped_read` is deliberately not re-created: it tests the two user-id columns and never `role`, so the new rows are already covered, and its un-windowed arm stays as KD #191 explains.
+
+⚠ **The accepted cost: two people can now edit one grading sheet, and `grade_entries` carries no per-teacher attribution.** `audit_log` holds the actor so who-did-what is recoverable, but the sheet itself will not show it. Named here rather than discovered later.
+
+**Enforced in three places, matching 118's pattern:** two new partial indexes, a pre-flight check in the bulk schema, and the Assign dialog. Each index spans the primary **and** its co role — `(teacher_user_id, section_id, subject_id) where role in ('subject_teacher','co_teacher')` — so one index does two jobs: it stops a co-teacher being added twice, and stops somebody being both the owner and a co-teacher of the same sheet, which would otherwise insert happily.
+
+**The dialog offers only what will be accepted**, which is 118's principle carried forward. Once a class has an adviser the adviser option becomes **Co-adviser** rather than disappearing; **Co-teacher** appears only once some subject has an owner to share with; and the subject box flips to the opposite list — an owner picks from what is free, a co-teacher from what is already staffed. Error messages now name the way out (_"make the second a co-teacher"_) instead of only refusing.

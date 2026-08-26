@@ -23,6 +23,7 @@ import type {
   AssignmentRow,
   EffectiveAssignmentRow,
 } from '@/lib/auth/teacher-assignments';
+import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 
 /** What a user may do in a given class. */
 export type ClassroomCapability =
@@ -118,9 +119,11 @@ export function resolveClassroomScope(
       : [capabilityBySection, substantiveCapabilityBySection];
 
     for (const map of targets) {
-      if (a.role === 'form_adviser') {
+      // Co roles carry the same classroom capability as their primary
+      // (migration 124) — a co-adviser advises, a co-teacher teaches.
+      if (isAdviserRole(a.role)) {
         map[a.section_id] = 'adviser';
-      } else if (a.role === 'subject_teacher') {
+      } else if (isSubjectRole(a.role)) {
         // Never downgrade an adviser to subject, regardless of row order.
         map[a.section_id] ??= 'subject';
       }

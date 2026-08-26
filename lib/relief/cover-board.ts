@@ -3,6 +3,7 @@ import 'server-only';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { reliefStatus, type ReliefStatus } from '@/lib/relief/display';
 import { createServiceClient } from '@/lib/supabase/service';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // Every cover in the school, grouped the way it was actually arranged.
 //
@@ -58,7 +59,7 @@ type Raw = {
   id: string;
   teacher_user_id: string;
   relief_teacher_user_id: string;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   relief_started_on: string | null;
   relief_ended_on: string | null;
   section: { id: string; name: string; level: { code: string | null } | null };

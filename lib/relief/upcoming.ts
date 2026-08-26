@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { reliefStatus } from '@/lib/relief/display';
+import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // "What am I booked to cover?" — the substitute's own heads-up.
 //
@@ -34,7 +35,7 @@ export type UpcomingCover = {
   sectionName: string;
   /** Null for a form-class cover; the subject's name otherwise. */
   subjectName: string | null;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   /** First day they may act. Never null on a row returned here. */
   startedOn: string;
   endedOn: string | null;
@@ -42,7 +43,7 @@ export type UpcomingCover = {
 
 type Raw = {
   id: string;
-  role: 'form_adviser' | 'subject_teacher';
+  role: AssignmentRole;
   relief_started_on: string | null;
   relief_ended_on: string | null;
   section:

@@ -38,14 +38,46 @@ export const ASSIGNMENT_CHANGE_REASON_LABELS: Record<
 
 export const ASSIGNMENT_CHANGE_NOTES_MAX = 200;
 
-// Plain-English names for the two assignment roles. The raw values are database
+/**
+ * The four assignment roles (migration 124).
+ *
+ * A class has ONE form adviser and a grading sheet has ONE subject teacher —
+ * those are the names that print on the report card and own the sheet, and
+ * both are still enforced by a unique index. The `co_` roles exist because
+ * HFSE genuinely shares a subject between two teachers across different days
+ * (Sec 3 and Sec 4 Humanities, P2 and P4 STAR) and shares Sec 4's form class
+ * between two advisers. A co role carries the SAME access as its primary.
+ */
+export type AssignmentRole =
+  | 'form_adviser'
+  | 'co_adviser'
+  | 'subject_teacher'
+  | 'co_teacher';
+
+export const ASSIGNMENT_ROLE_VALUES = [
+  'form_adviser',
+  'co_adviser',
+  'subject_teacher',
+  'co_teacher',
+] as const;
+
+/** Roles that advise a whole class and therefore carry NO subject. */
+export const ADVISER_ROLES = ['form_adviser', 'co_adviser'] as const;
+/** Roles attached to one subject's grading sheet. */
+export const SUBJECT_ROLES = ['subject_teacher', 'co_teacher'] as const;
+
+export const isAdviserRole = (r: string): boolean =>
+  (ADVISER_ROLES as readonly string[]).includes(r);
+export const isSubjectRole = (r: string): boolean =>
+  (SUBJECT_ROLES as readonly string[]).includes(r);
+
+// Plain-English names for the assignment roles. The raw values are database
 // words; nothing a school admin reads should show them.
-export const ASSIGNMENT_ROLE_LABELS: Record<
-  'form_adviser' | 'subject_teacher',
-  string
-> = {
+export const ASSIGNMENT_ROLE_LABELS: Record<AssignmentRole, string> = {
   form_adviser: 'Form class adviser',
+  co_adviser: 'Co-adviser',
   subject_teacher: 'Subject teacher',
+  co_teacher: 'Co-teacher',
 };
 
 // Body of DELETE /api/teacher-assignments/[id]. Every field is optional here;
@@ -216,9 +248,9 @@ const AssignmentRowShape = z.object(
       .string({ error: 'Choose a subject for this class.' })
       .uuid('Choose a subject for this class.')
       .nullish(),
-    role: z.enum(['form_adviser', 'subject_teacher'], {
+    role: z.enum(ASSIGNMENT_ROLE_VALUES, {
       message:
-        'Choose whether this is the form class adviser or a subject teacher.',
+        'Choose whether this is the form class adviser, a co-adviser, the subject teacher or a co-teacher.',
     }),
   },
   // The fields above all carry their own wording, but the OBJECT did not — so a
@@ -234,15 +266,15 @@ const AssignmentRowShape = z.object(
 // batch is exactly the kind of gap a bulk save is supposed to close.
 const withRoleShapeRules = (schema: typeof AssignmentRowShape) =>
   schema.superRefine((row, ctx) => {
-    if (row.role === 'form_adviser' && row.subject_id) {
+    if (isAdviserRole(row.role) && row.subject_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['subject_id'],
         message:
-          'A form class adviser covers the whole class, so leave the subject blank.',
+          'An adviser covers the whole class, so leave the subject blank.',
       });
     }
-    if (row.role === 'subject_teacher' && !row.subject_id) {
+    if (isSubjectRole(row.role) && !row.subject_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['subject_id'],
@@ -306,21 +338,59 @@ export const AssignmentBulkCreateSchema = z
     // does not say which two lines clashed.
     const advisedSections = new Set<string>();
     const subjectSlots = new Set<string>();
+    // Mirrors migration 124's two person-once indexes. A co role is allowed
+    // any number of times per class, but a given PERSON only once — and never
+    // as both the primary and the co of the same class or sheet.
+    const personPerSection = new Set<string>();
+    const personPerSheet = new Set<string>();
 
     for (const row of data.assignments) {
-      if (row.role === 'form_adviser') {
+      if (isAdviserRole(row.role)) {
+        const person = `${row.teacher_user_id}|${row.section_id}`;
+        if (personPerSection.has(person)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['assignments'],
+            message:
+              'The same teacher is listed twice as an adviser of the same class.',
+          });
+          return;
+        }
+        personPerSection.add(person);
+
+        // Only the PRIMARY adviser is limited to one per class. Co-advisers
+        // are why this rule needed splitting: Sec 4 Excellence really does
+        // have two people in front of the class.
+        if (row.role === 'co_adviser') continue;
+
         if (advisedSections.has(row.section_id)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['assignments'],
             message:
-              'Two form class advisers are listed for the same class. A class can have only one.',
+              'Two form class advisers are listed for the same class. A class can have only one — make the second a co-adviser.',
           });
           return;
         }
         advisedSections.add(row.section_id);
         continue;
       }
+
+      const onSheet = `${row.teacher_user_id}|${row.section_id}|${row.subject_id}`;
+      if (personPerSheet.has(onSheet)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['assignments'],
+          message:
+            'The same teacher is listed twice for the same subject in the same class.',
+        });
+        return;
+      }
+      personPerSheet.add(onSheet);
+
+      // Co-teachers share the sheet with its owner, so they are exempt from
+      // the one-per-slot rule below — that rule is about who OWNS the sheet.
+      if (row.role === 'co_teacher') continue;
 
       // Keyed on the CLASS and SUBJECT, not on the teacher. One subject in one
       // class has one teacher — the exact counterpart of the adviser rule
@@ -336,7 +406,7 @@ export const AssignmentBulkCreateSchema = z
           code: z.ZodIssueCode.custom,
           path: ['assignments'],
           message:
-            'Two teachers are listed for the same subject in the same class. A subject can have only one.',
+            'Two teachers are listed for the same subject in the same class. A subject can have only one — make the second a co-teacher.',
         });
         return;
       }
