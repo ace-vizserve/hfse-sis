@@ -649,7 +649,7 @@ discipline` made the student name a link, and teachers cannot open Records, so
   for the report cards") he echoed back rather than answering — **and it turned
   out to be largely unnecessary.**
 
-  **`Teachers Deployment_Updated 29 Jun 26_Teacherscopy.xlsx` (repo root) already
+  **`Teachers Deployment_Updated 29 Jun 26_Teacherscopy (1).xlsx` (repo root) already
   holds nearly everything.** Its `Teachers List` sheet carries **26 teachers, 24
   with `@hfse.edu.sg` addresses**, and **the email encodes the legal name** —
   `firstname.lastname`. So the full names were never blocked on him. They are not
@@ -676,6 +676,14 @@ discipline` made the student name a link, and teachers cannot open Records, so
   matches the English gap on subject and school half, ⚠ **but the message names
   no classes**, so which sections she covers is still unconfirmed. Neither has an
   account yet.
+
+  ⚠ **SUPERSEDED 2026-08-27 — the file has since been imported and the leftovers
+  are now a written message.** 123 assignments across 19 teachers are loaded and
+  18 of 21 classes have their adviser. What the file cannot settle is seven
+  items, drafted as _To Hanafi — the AY2026 deployment_ below. **Two of the gaps
+  once recorded here were never his to answer** — Sec 1 Discipline 1's missing
+  subjects and Sec 1 Discipline 2's silence were our own parser bug (KD #194),
+  fixed and re-imported. **Do not fold them back into a message to him.**
 
 - **Mr Hanafi (house)** — **closed 2026-08-11, nothing outstanding.** He answered on
   2026-08-06 and sent both sheets. The follow-up about unmatched names was
@@ -1051,6 +1059,111 @@ it only ever prints `none`.
 > so nobody loads the wrong one later.
 >
 > Thank you po.
+
+### To Hanafi — the AY2026 deployment · NOT SENT, written 2026-08-27
+
+**Written after the import, not before it** — which is the point. 123 of his
+assignments are loaded and every question below is a leftover the file itself
+cannot settle, so none of them asks him to describe a system or to decide
+something already built. Each names the cell it came from.
+
+⚠ **Do not ask whether Sec 1 Discipline 2 is running.** An earlier version of
+this block did, and it was wrong: it has a full five-day timetable, its own
+adviser (Ms J), and **16 students, 14 of them active**. What is genuinely
+unresolved is the _Cambridge_ timetable sitting beside it, which is question 1.
+
+⚠ **P1 Respect was dropped from this list on 2026-08-27.** CLAUDE.md called it
+"a live section the file never names"; it holds **2 students, 0 active**, so it
+is an empty leftover and there is nothing to ask him. Checked, not assumed.
+
+**Two things deliberately not asked.** Whether the AY2024/AY2025 rows near the
+bottom of the file should be removed — his file, his housekeeping, and we read
+past them correctly. And anything about how cover or co-teaching is _recorded_ —
+that is ours to decide and he has no view of it.
+
+⚠ **CUT FROM SEVEN TO SIX on 2026-08-27, and the cut is the useful part.** Mr
+Ace asked whether these were really the gaps. They were not — they came from the
+generator's **skip list, which only reports rows it REFUSED TO WRITE** and is
+silent about a sheet that simply ends up with nobody. Measuring the real thing
+(every AY2026 grading sheet against its assignments) gave **125 sheets, 99
+staffed, 26 with no teacher**, and reclassified the list:
+
+| Unstaffed sheets                      | Cause                             | His?         |
+| ------------------------------------- | --------------------------------- | ------------ |
+| S1 Discipline 2 × 8                   | Cambridge collision               | **yes — Q1** |
+| Mandarin × 4                          | Ms Jasmine / Ms Li, no email      | **yes — Q4** |
+| SS × 2 (S3, S4)                       | Humanities shared                 | **yes — Q3** |
+| MAPEH × 2 (P2 Humility, P4 Diligence) | STAR shared                       | **yes — Q3** |
+| P5 Commitment FIL + MANDARIN          | ambiguous "Mother Tongue"         | **yes — Q5** |
+| S3 Consistency English                | "Relief Teacher"                  | **yes — Q6** |
+| PE × 3 (S2 I2, S3, S4)                | **our own subject-mapping bug**   | no           |
+| P1 Obedience Christian Living         | stray sheet, only one in the year | no           |
+| P1 Respect × 3                        | dead section, 0 active students   | no           |
+
+**What that removed from the message: the whole of the old question 7.** P4
+Trust is staffed and correct (`radhika.putrevu@` is on it now), and P2
+Gentleness / Gratitude match no live section, so neither costs a sheet. They
+were in the draft because they were **true**, not because the build needed them
+— which is exactly the accretion this file has recorded twice before. ⚠ **Being
+true is not the test.** Six remain and every one of them costs real mark sheets.
+
+**Also learned, and not his problem:** PE lives in the catalogue under two codes
+(`PEH` for the Global classes, `PESTD` for the Standard ones), his file writes
+one phrase for all of them, and our importer mapped every class to `PEH`. Fixed
+in the generator; see KD #194.
+
+> Hi Mr Hanafi,
+>
+> Thank you for the deployment file — it has done almost all of the work. The
+> teaching assignments for this year are now loaded into the system: **123 of
+> them across 19 teachers**, and 18 of our 21 classes now have their form class
+> adviser recorded, which was the piece that was holding up report cards.
+>
+> Six things I could not work out from the file on my own. I have deliberately
+> left each one blank rather than guess, because a wrong teacher on a class is
+> worse than a missing one.
+>
+> 1. **Secondary One Discipline 2 — is "Cambridge" a separate class?** Your file
+>    has two timetables for it. One is headed _SECONDARY ONE DISCIPLINE 2
+>    STANDARD_, with Ms J as adviser and a full five-day timetable. The other is
+>    headed _SECONDARY 1D2 (Cambridge)_, with Ms Carl as adviser and **no teacher
+>    named in any of its eight subject cells**. Our system has one Secondary One
+>    Discipline 2. Are these one class taught two ways, or two separate classes?
+>    ⚠ **Until I know, that whole class has no teachers recorded** — I did not
+>    want to pick one timetable over the other by accident.
+> 2. **Secondary Four Excellence names two form class advisers** — the cell reads
+>    _"Ms Med & Ms Elaine"_. The report card prints one adviser's name, so I need
+>    to know whose it should be. (The other one is not lost — I can record her
+>    alongside, with exactly the same access to the class.)
+> 3. **Four subjects are shared between two teachers**, which I take to be
+>    ordinary timetabling rather than a mistake — all three views in your file
+>    agree on every one of them. But a mark sheet has one owner, so for each of
+>    these, **who should the marks belong to?** The other teacher gets the same
+>    access to the class either way.
+>
+>    | Class             | Subject    | Shared between                            |
+>    | ----------------- | ---------- | ----------------------------------------- |
+>    | P2 Humility       | STAR       | Ms Jing (Mon–Wed, Fri) / Mr Hanafi (Thu)  |
+>    | P4 Diligence      | STAR       | Ms Jing (Thu) / Mr Hanafi (Fri)           |
+>    | Sec 3 Consistency | Humanities | Ms Elaine (Tue, Fri) / Ms Carl (Tue, Wed) |
+>    | Sec 4 Excellence  | Humanities | Ms Elaine (Wed, Thu) / Ms Carl (Thu, Fri) |
+>
+> 4. **Ms Jasmine Zhou Qi and Ms Li Qun have no school email address** on the
+>    Teachers List — the file gives personal Gmail addresses for both. The system
+>    can only give an account to a school address, so until they have one **their
+>    four Mother Tongue classes have no teacher recorded**: P1 Patience, P2
+>    Honesty, P3 Courtesy and P4 Diligence. Can the school issue them
+>    `@hfse.edu.sg` addresses?
+> 5. **P5 Commitment's cell says only "Mother Tongue"**, and that class has both
+>    Mandarin and Filipino running. Which of the two is that slot, and who
+>    teaches it?
+> 6. **Secondary Three Consistency's English cell says "Relief Teacher".** Is
+>    that Ms Fong Mei Yin Elaine, who was named to me as the English relief
+>    teacher on 25 August? And does she cover any other classes?
+>    Nothing here is urgent except the first two, which are the ones stopping
+>    report cards for those classes.
+>
+> Thank you.
 
 ### To Christina — 1 of 5 · student details for teachers
 

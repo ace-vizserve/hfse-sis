@@ -257,19 +257,36 @@ export function parseClassMajorSheet(
   const unparsed: UnparsedCell[] = [];
   const classes: string[] = [];
 
-  headerRows.forEach((hr, bandIdx) => {
-    // Stop above the next band's TITLE line, not its header line.
-    const endRow =
-      bandIdx + 1 < headerRows.length
-        ? headerRows[bandIdx + 1] - 2
-        : rows.length - 1;
-
+  headerRows.forEach((hr) => {
     const startCols: number[] = [];
     rows[hr].forEach((c, ci) => {
       if (norm(c).toLowerCase() === 'start time') startCols.push(ci);
     });
 
     for (const sc of startCols) {
+      // ⚠ A BAND ENDS WHERE THE NEXT BAND *IN ITS OWN COLUMNS* BEGINS — not at
+      // the next header row anywhere on the sheet.
+      //
+      // This cost the entire Secondary One timetable. `Secondary_New` puts the
+      // Sec 1 pair's header on row 3 (Start Time at columns 2 and 11), and a
+      // THIRD timetable — "SECONDARY 1D2 (Cambridge)" — three rows lower at
+      // column 20, so its header lands on row 6. Ending every row-3 band two
+      // rows above row 6 left them one row long: the Assembly row, and nothing
+      // else. Both classes kept their adviser and lost every lesson, and
+      // nothing reported it, because a band with no rows is not an error.
+      //
+      // Matching on the SAME start column is exact rather than approximate:
+      // stacked bands repeat their columns (rows 3 and 16 both start at 2 and
+      // 11), while a side-by-side band never shares one.
+      const nextInThisColumn = headerRows.find(
+        (other) =>
+          other > hr &&
+          norm((rows[other] ?? [])[sc]).toLowerCase() === 'start time'
+      );
+      // Stop above the next band's TITLE line, not its header line.
+      const endRow =
+        nextInThisColumn !== undefined ? nextInThisColumn - 2 : rows.length - 1;
+
       // The title sits in the row(s) above, at or just right of the band start.
       let classRaw = '';
       for (let up = hr - 1; up >= Math.max(0, hr - 3) && !classRaw; up--) {

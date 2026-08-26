@@ -226,6 +226,31 @@ const SUBJECT_MAP: Record<string, string | null> = {
 const MOTHER_TONGUE_CANDIDATES = ['MT', 'FIL', 'MANDARIN'];
 
 /**
+ * ⚠ ONE SUBJECT THE CATALOGUE HOLDS UNDER TWO CODES, BECAUSE THE TWO CURRICULA
+ * NAME IT DIFFERENTLY. Found 2026-08-27 by auditing sheets-without-a-teacher,
+ * NOT by anything the generator reported — it wrote all five PE rows happily.
+ *
+ * `PEH` ("Physical Education and Health") is the Global/Cambridge subject and
+ * carried every secondary class in AY2025. `PESTD` ("Physical Education") was
+ * created 2026-07-16 with the rest of the AY2026 curriculum, and the STANDARD
+ * classes moved to it — S1 Discipline 2, S2 Integrity 2, S3, S4 — while the
+ * Global ones stayed on `PEH`. Both are PE. The split is the school's and is
+ * deliberate; nothing here should try to collapse it.
+ *
+ * The workbook cannot express that, and should not have to: Mr Hanafi teaches
+ * PE to the whole secondary school and writes "Physical Education and Health"
+ * in every cell. A flat name→code map therefore lands every class on `PEH`,
+ * which is right for two classes and wrong for three — and wrong SILENTLY,
+ * because the row inserts cleanly against a subject the class does not run
+ * while the mark sheet it should have claimed reads unstaffed.
+ *
+ * So the same principle as bare "Mother Tongue" applies, and for the same
+ * reason: WHICH of these a class takes is a property of the SECTION, and the
+ * school already answered it by creating that section's sheets. Ask the data.
+ */
+const EQUIVALENT_SUBJECT_CODES: string[][] = [['PEH', 'PESTD']];
+
+/**
  * The two teachers the workbook writes with no title at all, so
  * `splitSubjectTeacher` may use its dash form for them and only them.
  * "Mother Tongue (Mandarin) - Jasmine" is the shape.
@@ -475,10 +500,18 @@ async function main() {
     (subjects ?? []).map((s: { id: string; code: string }) => [s.id, s.code])
   );
   const languagesBySection = new Map<string, Set<string>>();
+  // Every subject code each section actually holds a sheet for. This is the
+  // section's real curriculum, and it is what `EQUIVALENT_SUBJECT_CODES` is
+  // checked against below.
+  const sheetCodesBySection = new Map<string, Set<string>>();
   for (const row of sheets ?? []) {
     const r = row as unknown as { section_id: string; subject_id: string };
     const code = subjectCodeById.get(r.subject_id);
-    if (!code || !MOTHER_TONGUE_CANDIDATES.includes(code)) continue;
+    if (!code) continue;
+    const all = sheetCodesBySection.get(r.section_id) ?? new Set<string>();
+    all.add(code);
+    sheetCodesBySection.set(r.section_id, all);
+    if (!MOTHER_TONGUE_CANDIDATES.includes(code)) continue;
     const set = languagesBySection.get(r.section_id) ?? new Set<string>();
     set.add(code);
     languagesBySection.set(r.section_id, set);
@@ -603,8 +636,11 @@ async function main() {
     role: string;
     why: string;
   };
-  const rows: Row[] = [];
+  let rows: Row[] = [];
   const skipped: string[] = [];
+  // Rows written against a different subject code than the cell's text mapped
+  // to. Reported rather than silent — a re-pointed subject is still a decision.
+  const repointed: string[] = [];
 
   const resolveTeacher = (raw: string): string | null => {
     const entry = NICKNAME_MAP[stripTitle(raw)];
@@ -669,6 +705,35 @@ async function main() {
         continue;
       }
     }
+    // ⚠ The class may take this subject under the OTHER curriculum's code —
+    // see EQUIVALENT_SUBJECT_CODES. Only re-point when the section genuinely
+    // does not hold the mapped code, so nothing that already matches moves.
+    const held = sheetCodesBySection.get(sec.id);
+    if (held && !held.has(resolvedCode)) {
+      const family = EQUIVALENT_SUBJECT_CODES.find((f) =>
+        f.includes(resolvedCode)
+      );
+      const alternatives = (family ?? []).filter(
+        (c) => c !== resolvedCode && held.has(c)
+      );
+      if (alternatives.length === 1) {
+        repointed.push(
+          `${cls} — ${group[0].subjectRaw}: ${resolvedCode} → ${alternatives[0]} ` +
+            `(this class runs ${alternatives[0]}, not ${resolvedCode})`
+        );
+        resolvedCode = alternatives[0];
+      } else if (alternatives.length > 1) {
+        skipped.push(
+          `${cls} — ${group[0].subjectRaw}: section holds ${alternatives.join(
+            ' and '
+          )} — cannot tell which one this cell means`
+        );
+        continue;
+      }
+      // No family, or the family has nothing here either: leave it alone. A
+      // subject taught but never graded (PMPD) has no sheet anywhere and is
+      // still a true assignment.
+    }
     const subject = subjectByCode.get(resolvedCode);
     if (!subject) {
       skipped.push(
@@ -700,6 +765,48 @@ async function main() {
     });
   }
 
+  // ── 7b. One row per sheet ──────────────────────────────────────────────
+  //
+  // ⚠ THE SHARED-SUBJECT CHECK ABOVE GROUPS BY THE RAW CELL TEXT, so it misses
+  // a subject the workbook spells two ways. `Secondary_New` writes both "Arts
+  // and Design" and "Art and Design" for Sec 1 Discipline 1, and `Primary_New`
+  // writes "STAR" and "STAR (Sports, Talent, Arts and Rhythm) [PE]" for P6
+  // Grit. Each pair is one subject taught by one person, but they arrive as two
+  // groups and leave as two rows for the same sheet — which
+  // `teacher_assignments_person_once_per_sheet` (migration 124) rejects, taking
+  // the whole insert down with it.
+  //
+  // Regrouping on the RESOLVED subject id also catches the more dangerous
+  // version: two DIFFERENT teachers under two spellings, which the raw grouping
+  // reads as two unshared subjects. That is a shared sheet, and it gets the
+  // same treatment as any other — dropped, and reported for a human.
+  const bySheet = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (r.role !== 'subject_teacher') continue;
+    const key = `${r.sectionId}|${r.subjectId}`;
+    bySheet.set(key, [...(bySheet.get(key) ?? []), r]);
+  }
+  const dropped = new Set<(typeof rows)[number]>();
+  for (const [, group] of bySheet) {
+    if (group.length < 2) continue;
+    const teachers = new Set(group.map((g) => g.teacherId));
+    if (teachers.size === 1) {
+      // Same person, two spellings. Keep the first, drop the rest silently —
+      // there is no decision here for anyone to make.
+      for (const r of group.slice(1)) dropped.add(r);
+    } else {
+      for (const r of group) dropped.add(r);
+      skipped.push(
+        `${group[0].why.split(' — ')[0]} — one subject spelled more than one ` +
+          `way and shared: ${group.map((g) => g.why).join(' | ')} — name the ` +
+          `teacher of record`
+      );
+    }
+  }
+  if (dropped.size > 0) {
+    rows = rows.filter((r) => !dropped.has(r));
+  }
+
   console.log('\n═══ WRITABLE ═══');
   console.log(
     `  ${rows.length} rows  ` +
@@ -708,6 +815,13 @@ async function main() {
   );
   console.log(`  ${skipped.length} skipped:`);
   for (const sk of skipped) console.log(`    ${sk}`);
+  if (repointed.length > 0) {
+    console.log(
+      `\n  ${repointed.length} written against the class's OWN code for the ` +
+        `subject:`
+    );
+    for (const rp of repointed) console.log(`    ${rp}`);
+  }
 
   // ── 8. SQL ─────────────────────────────────────────────────────────────
   //
