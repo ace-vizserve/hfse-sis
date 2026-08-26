@@ -1114,10 +1114,10 @@ in the generator; see KD #194.
 
 > Hi Mr Hanafi,
 >
-> Thank you for the deployment file — it has done almost all of the work. The
-> teaching assignments for this year are now loaded into the system: **123 of
-> them across 19 teachers**, and 18 of our 21 classes now have their form class
-> adviser recorded, which was the piece that was holding up report cards.
+> Thank you for the deployment file — it has done almost all of the work. This
+> year's teaching assignments are now loaded into the system, and **every class
+> but two has its form class adviser recorded**, which was the piece holding up
+> report cards. The two are the first two questions below.
 >
 > Six things I could not work out from the file on my own. I have deliberately
 > left each one blank rather than guess, because a wrong teacher on a class is
@@ -1160,8 +1160,10 @@ in the generator; see KD #194.
 > 6. **Secondary Three Consistency's English cell says "Relief Teacher".** Is
 >    that Ms Fong Mei Yin Elaine, who was named to me as the English relief
 >    teacher on 25 August? And does she cover any other classes?
->    Nothing here is urgent except the first two, which are the ones stopping
->    report cards for those classes.
+>
+> Nothing here is urgent except the first two — those are the ones stopping
+> report cards for Secondary One Discipline 2 and Secondary Four Excellence.
+> The rest only mean a mark sheet is waiting for a name.
 >
 > Thank you.
 
