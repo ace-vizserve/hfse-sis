@@ -1,0 +1,1822 @@
+<title>Approval Activity Panel</title>
+
+<style>
+  /* ─────────────────────────────────────────────────────────────
+     PALETTE
+     The component frames use the HFSE Aurora Vault tokens verbatim,
+     copied from app/globals.css. They are NOT theme-aware: these are
+     plates of the app's light theme, the way a printed sheet of
+     mockups is. The page chrome around them is theme-aware.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    /* App tokens — do not change, these mirror globals.css */
+    --app-bg: #ffffff;
+    --app-muted: #f8fafc;
+    --app-ink: #0f172a;
+    --app-ink-2: #334155;
+    --app-ink-3: #475569;
+    --app-ink-4: #64748b;
+    --app-ink-5: #94a3b8;
+    --app-hairline: #e2e8f0;
+    --app-hairline-strong: #cbd5e1;
+    --app-indigo: #4f46e5;
+    --app-indigo-deep: #4338ca;
+    --app-indigo-soft: #818cf8;
+    --app-navy: #0b1120;
+    --app-accent: #eef2ff;
+    --app-mint: #34d399;
+    --app-destructive: oklch(0.6368 0.2078 25.3313);
+    --app-radius-md: 4px;
+    --app-radius-lg: 6px;
+    --app-radius-xl: 10px;
+
+    /* Page chrome — light. A neutral biased slightly toward the
+       project's indigo, so it reads as chosen rather than inherited. */
+    --page: #eef0f6;
+    --page-panel: #ffffff;
+    --page-ink: #171b2c;
+    --page-ink-soft: #5b6076;
+    --page-rule: #d9dde8;
+    --page-accent: #4f46e5;
+    --page-code: #f3f4fa;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --page: #0b1120;
+      --page-panel: #121a2e;
+      --page-ink: #e8ecf7;
+      --page-ink-soft: #96a0bd;
+      --page-rule: #24304c;
+      --page-accent: #a5b0ff;
+      --page-code: #16203a;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --page: #0b1120;
+    --page-panel: #121a2e;
+    --page-ink: #e8ecf7;
+    --page-ink-soft: #96a0bd;
+    --page-rule: #24304c;
+    --page-accent: #a5b0ff;
+    --page-code: #16203a;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     TYPE
+     The three project roles. Webfonts can't be fetched here (the
+     artifact blocks external hosts), so each role falls back through
+     a stack that keeps its character: serif stays serif, mono stays
+     mono. The built screens use Source Serif 4 / Inter / JetBrains.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    --sans:
+      Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+      sans-serif;
+    --serif:
+      'Source Serif 4', 'Source Serif Pro', 'Iowan Old Style', Georgia,
+      'Times New Roman', serif;
+    --mono:
+      'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, ui-monospace,
+      monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--page-ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ── page header ─────────────────────────────────────────── */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--page-ink-soft);
+    margin: 0;
+  }
+
+  .pagehead {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 68ch;
+  }
+
+  .pagehead h1 {
+    font-family: var(--serif);
+    font-size: clamp(32px, 5vw, 42px);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .lede {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--page-ink-soft);
+  }
+
+  .lede b {
+    color: var(--page-ink);
+    font-weight: 600;
+  }
+
+  /* ── plates ──────────────────────────────────────────────── */
+  .plate {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .platehead {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--page-rule);
+    flex-wrap: wrap;
+  }
+
+  .platehead .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--page-accent);
+    white-space: nowrap;
+  }
+
+  .platehead h2 {
+    font-family: var(--serif);
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  .platehead .sub {
+    margin: 0;
+    font-size: 14px;
+    color: var(--page-ink-soft);
+    flex-basis: 100%;
+  }
+
+  .stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    align-items: flex-start;
+  }
+
+  .notes {
+    flex: 1 1 300px;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .note h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+  }
+
+  .note p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--page-ink-soft);
+  }
+
+  .note code,
+  .inlinecode {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--page-code);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--page-ink);
+  }
+
+  /* ═════════════════════════════════════════════════════════════
+     THE APP SURFACES
+     Everything below renders in app tokens only.
+     ═════════════════════════════════════════════════════════════ */
+  .device {
+    background: var(--app-bg);
+    color: var(--app-ink);
+    font-family: var(--sans);
+    border: 1px solid var(--app-hairline);
+    border-radius: var(--app-radius-xl);
+    box-shadow:
+      0 18px 44px -18px rgb(15 23 42 / 0.32),
+      0 2px 6px -2px rgb(15 23 42 / 0.14);
+    overflow: hidden;
+  }
+
+  .sheet {
+    width: 480px;
+    max-width: 100%;
+    height: 748px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ⚠ This flex column is the point: SheetContent is a plain block
+     with h-full, so the real component must pass `flex flex-col`
+     itself or this body will not scroll. */
+
+  .sheethead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--app-hairline);
+  }
+
+  .sheethead .titles {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sheethead h3 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--app-ink);
+  }
+
+  .sheethead p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--app-ink-4);
+  }
+
+  .xbtn {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--app-radius-md);
+    color: var(--app-ink-4);
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .xbtn:hover {
+    background: var(--app-accent);
+    color: var(--app-ink);
+  }
+
+  /* ── pinned waiting block ────────────────────────────────── */
+  .waiting {
+    border-bottom: 1px solid var(--app-hairline);
+    background: color-mix(in srgb, var(--app-accent) 55%, #fff);
+  }
+
+  .waitinghead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 20px 9px;
+  }
+
+  .microlabel {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--app-indigo-deep);
+  }
+
+  .countpill {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--app-indigo);
+    color: #fff;
+  }
+
+  .waitinglist {
+    list-style: none;
+    margin: 0;
+    padding: 0 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .waitingrow {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 11px;
+    border-radius: var(--app-radius-lg);
+    background: var(--app-bg);
+    border: 1px solid color-mix(in srgb, var(--app-indigo-soft) 45%, #fff);
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .waitingrow:hover {
+    border-color: var(--app-indigo-soft);
+    box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  }
+
+  .waitingrow .grow {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .waitingrow .l1 {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: var(--app-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .waitingrow .l2 {
+    margin: 1px 0 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--app-ink-4);
+  }
+
+  .chev {
+    color: var(--app-ink-5);
+    flex-shrink: 0;
+  }
+
+  /* ── tabs ────────────────────────────────────────────────── */
+  .tabsbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--app-hairline);
+  }
+
+  .tabslist {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    background: var(--app-muted);
+    border: 1px solid var(--app-hairline);
+    border-radius: var(--app-radius-lg);
+    width: 100%;
+  }
+
+  .tab {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 8px;
+    border-radius: var(--app-radius-md);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--app-ink-4);
+    background: none;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+
+  .tab[aria-selected='true'] {
+    background: var(--app-bg);
+    color: var(--app-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.08);
+  }
+
+  .tab .n {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-ink-5);
+  }
+
+  .tab[aria-selected='true'] .n {
+    color: var(--app-indigo);
+  }
+
+  /* ── the log ─────────────────────────────────────────────── */
+  .log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .daylabel {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 9px 20px 7px;
+    background: color-mix(in srgb, var(--app-muted) 92%, transparent);
+    backdrop-filter: blur(4px);
+    border-bottom: 1px solid var(--app-hairline);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--app-ink-4);
+  }
+
+  .events {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .event {
+    display: flex;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--app-hairline);
+    cursor: pointer;
+  }
+
+  .event:hover {
+    background: var(--app-accent);
+  }
+
+  .avatar {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(
+      to bottom right,
+      var(--app-indigo),
+      var(--app-navy)
+    );
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.18),
+      0 2px 5px -1px rgb(79 70 229 / 0.42);
+  }
+
+  /* The one place colour is spent in the log. Three tones only —
+     the same three §9.3 gives every status badge in the product. */
+  .avatar .dot {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 17px;
+    height: 17px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--app-bg);
+  }
+
+  .avatar[data-state='went-through'] .dot {
+    background: var(--app-mint);
+    color: #05321f;
+  }
+
+  .avatar[data-state='turned-down'] .dot {
+    background: var(--app-destructive);
+    color: #fff;
+  }
+
+  .avatar[data-state='started'] .dot {
+    background: var(--app-indigo);
+    color: #fff;
+  }
+
+  .eventbody {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .eventtext {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--app-ink-3);
+  }
+
+  .eventtext b {
+    font-weight: 600;
+    color: var(--app-ink);
+  }
+
+  .eventmeta {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--app-ink-5);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .eventmeta .sep {
+    color: var(--app-hairline-strong);
+  }
+
+  .payload {
+    margin: 2px 0 0;
+    padding: 9px 11px;
+    border-radius: var(--app-radius-lg);
+    background: var(--app-accent);
+    border: 1px solid color-mix(in srgb, var(--app-indigo-soft) 32%, #fff);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--app-ink-2);
+  }
+
+  .payload.outcome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 550;
+  }
+
+  .payload.outcome svg {
+    flex-shrink: 0;
+    color: var(--app-indigo-deep);
+  }
+
+  .payload .quotemark {
+    color: var(--app-ink-5);
+  }
+
+  .loadmore {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .ghostbtn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--app-ink-4);
+    background: none;
+    border: none;
+    padding: 7px 14px;
+    border-radius: var(--app-radius-md);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ghostbtn:hover {
+    background: var(--app-accent);
+    color: var(--app-ink);
+  }
+
+  .trustbar {
+    padding: 10px 20px;
+    border-top: 1px solid var(--app-hairline);
+    background: var(--app-muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--app-ink-5);
+    text-align: center;
+  }
+
+  /* ── empty state ─────────────────────────────────────────── */
+  .empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px 32px;
+    text-align: center;
+  }
+
+  .empty .tile {
+    width: 46px;
+    height: 46px;
+    border-radius: var(--app-radius-xl);
+    display: grid;
+    place-items: center;
+    background: var(--app-muted);
+    border: 1px solid var(--app-hairline);
+    color: var(--app-ink-5);
+  }
+
+  .empty h4 {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+    margin: 4px 0 0;
+    color: var(--app-ink);
+  }
+
+  .empty p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--app-ink-4);
+    max-width: 30ch;
+  }
+
+  /* ── history dialog ──────────────────────────────────────── */
+  .dialog {
+    width: 560px;
+    max-width: 100%;
+  }
+
+  .dialoghead {
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--app-hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .dialoghead h3 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .dialoghead p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--app-ink-4);
+  }
+
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 20px 22px 6px;
+  }
+
+  .step {
+    position: relative;
+    padding: 0 0 22px 34px;
+  }
+
+  /* The spine. It exists here and NOT in the log, because here the
+     rows genuinely are one ordered ladder — order is the content. */
+  .step::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 20px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--app-hairline);
+  }
+
+  .step:last-child::before {
+    display: none;
+  }
+
+  .step > .node {
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 21px;
+    height: 21px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--app-bg);
+  }
+
+  .step[data-state='went-through'] > .node {
+    background: var(--app-mint);
+    color: #05321f;
+  }
+
+  .step[data-state='turned-down'] > .node {
+    background: var(--app-destructive);
+    color: #fff;
+  }
+
+  .step[data-state='started'] > .node {
+    background: var(--app-indigo);
+    color: #fff;
+  }
+
+  /* A step the ladder never reached. Hollow, not pending — a
+     rejection stops the ladder and later steps stay 'waiting'
+     in the table forever. */
+  .step[data-state='never-reached'] > .node {
+    background: var(--app-bg);
+    border: 2px dashed var(--app-hairline-strong);
+  }
+
+  .step[data-state='never-reached'] .steptitle,
+  .step[data-state='never-reached'] .stepmeta {
+    color: var(--app-ink-5);
+  }
+
+  .step[data-state='never-reached']::before {
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--app-hairline) 0 4px,
+      transparent 4px 8px
+    );
+  }
+
+  .steptitle {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--app-ink-3);
+  }
+
+  .steptitle b {
+    font-weight: 600;
+    color: var(--app-ink);
+  }
+
+  .stepmeta {
+    margin: 3px 0 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--app-ink-5);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step .payload {
+    margin-top: 7px;
+  }
+
+  .dialogfoot {
+    padding: 14px 22px;
+    border-top: 1px solid var(--app-hairline);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: var(--app-muted);
+  }
+
+  .dialogfoot .note {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--app-ink-5);
+  }
+
+  .outlinebtn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: var(--app-radius-md);
+    border: 1px solid var(--app-hairline);
+    background: var(--app-bg);
+    color: var(--app-ink-2);
+    cursor: pointer;
+  }
+
+  .outlinebtn:hover {
+    background: var(--app-accent);
+    border-color: var(--app-indigo-soft);
+    color: var(--app-indigo-deep);
+  }
+
+  /* ── icon swap plate ─────────────────────────────────────── */
+  .swap {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
+
+  .headerbit {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--app-bg);
+    border: 1px solid var(--app-hairline);
+    border-radius: var(--app-radius-xl);
+    box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  }
+
+  .iconbtn {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--app-radius-md);
+    color: var(--app-ink-4);
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+  }
+
+  .iconbtn:hover {
+    border-color: var(--app-hairline);
+    background: var(--app-accent);
+    color: var(--app-ink);
+  }
+
+  .badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--app-destructive);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    display: grid;
+    place-items: center;
+  }
+
+  .swaplabel {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--page-ink-soft);
+    margin: 6px 0 0;
+    text-align: center;
+  }
+
+  .arrow {
+    color: var(--page-ink-soft);
+  }
+
+  /* ── check list ──────────────────────────────────────────── */
+  .asks {
+    background: var(--page-panel);
+    border: 1px solid var(--page-rule);
+    border-radius: 12px;
+    padding: 26px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .asks h2 {
+    font-family: var(--serif);
+    font-size: 23px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .asks ol {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    counter-reset: ask;
+  }
+
+  .asks li {
+    display: flex;
+    gap: 13px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--page-ink-soft);
+  }
+
+  .asks li::before {
+    counter-increment: ask;
+    content: counter(ask);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--page-accent);
+    border: 1px solid var(--page-rule);
+    border-radius: 999px;
+    width: 23px;
+    height: 23px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .asks li b {
+    color: var(--page-ink);
+    font-weight: 600;
+  }
+
+  .foot {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--page-ink-soft);
+    text-align: center;
+    padding-top: 8px;
+  }
+
+  :where(a, button, [tabindex]):focus-visible {
+    outline: 2px solid var(--page-accent);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 900px) {
+    .stage {
+      gap: 26px;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <header class="pagehead">
+    <p class="eyebrow">HFSE SIS · Design review · 28 Aug 2026</p>
+    <h1>Approval activity</h1>
+    <p class="lede">
+      An activity log for the approvals you are part of. Two surfaces: the
+      header <b>panel</b>, which replaces today's small notification popover,
+      and a <b>View history</b> dialog on a single request. Both are drawn here
+      in the real design tokens at real size. Student names are illustrative;
+      everything else — the steps, the wording, the two flows — is what the
+      system actually holds.
+    </p>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PLATE A — THE PANEL
+       ══════════════════════════════════════════════════════════ -->
+  <section class="plate">
+    <div class="platehead">
+      <span class="tag">Plate A</span>
+      <h2>The panel</h2>
+      <p class="sub">
+        Opens from the right when you click the activity icon in the header.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="device sheet">
+        <div class="sheethead">
+          <div class="titles">
+            <h3>Activity</h3>
+            <p>Approvals you are part of</p>
+          </div>
+          <button class="xbtn" type="button" aria-label="Close">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- pinned -->
+        <div class="waiting">
+          <div class="waitinghead">
+            <span class="microlabel">Waiting for you</span>
+            <span class="countpill">3</span>
+          </div>
+          <ul class="waitinglist">
+            <li>
+              <a class="waitingrow" href="#">
+                <span class="avatar" data-state="started" aria-hidden="true"
+                  >AM
+                  <span class="dot">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    >
+                      <path d="M5 12h14M12 5v14" />
+                    </svg>
+                  </span>
+                </span>
+                <span class="grow">
+                  <p class="l1">Amelia Ng — travel, 3 Sep</p>
+                  <p class="l2">Form class adviser · P4 Trust</p>
+                </span>
+                <svg
+                  class="chev"
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a class="waitingrow" href="#">
+                <span class="avatar" data-state="started" aria-hidden="true"
+                  >JF
+                  <span class="dot">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    >
+                      <path d="M5 12h14M12 5v14" />
+                    </svg>
+                  </span>
+                </span>
+                <span class="grow">
+                  <p class="l1">Jonah Fernandes — absence, 24–26 Aug</p>
+                  <p class="l2">Form class adviser · P4 Trust</p>
+                </span>
+                <svg
+                  class="chev"
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a class="waitingrow" href="#">
+                <span class="avatar" data-state="started" aria-hidden="true"
+                  >SB
+                  <span class="dot">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    >
+                      <path d="M5 12h14M12 5v14" />
+                    </svg>
+                  </span>
+                </span>
+                <span class="grow">
+                  <p class="l1">Samira Bakhtiari — Written Work 3</p>
+                  <p class="l2">Mark change · P4 Trust Mathematics</p>
+                </span>
+                <svg
+                  class="chev"
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- tabs -->
+        <div class="tabsbar">
+          <div class="tabslist" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" type="button">
+              General <span class="n">12</span>
+            </button>
+            <button class="tab" role="tab" aria-selected="false" type="button">
+              Mark changes <span class="n">4</span>
+            </button>
+            <button class="tab" role="tab" aria-selected="false" type="button">
+              Declarations <span class="n">8</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- log -->
+        <div class="log">
+          <p class="daylabel">Today</p>
+          <ul class="events">
+            <li class="event">
+              <span class="avatar" data-state="went-through" aria-hidden="true"
+                >AG
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>Ace Guevarra</b> approved the officer in charge step for
+                  <b>Amelia Ng</b>, travel 3 Sep.
+                </p>
+                <p class="eventmeta">
+                  10:01 <span class="sep">·</span> Attendance declaration
+                </p>
+                <p class="payload outcome">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M8 2v4M16 2v4M3 10h18" />
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <path d="m9 16 2 2 4-4" />
+                  </svg>
+                  1 day marked as excused on the register
+                </p>
+              </div>
+            </li>
+
+            <li class="event">
+              <span class="avatar" data-state="went-through" aria-hidden="true"
+                >RP
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>Radhika Putrevu</b> approved the form class adviser step
+                  for <b>Amelia Ng</b>, travel 3 Sep.
+                </p>
+                <p class="eventmeta">
+                  09:40 <span class="sep">·</span> Attendance declaration
+                </p>
+                <p class="payload">
+                  <span class="quotemark">“</span>Family already has the
+                  flights. Work has been sent home.<span class="quotemark"
+                    >”</span
+                  >
+                </p>
+              </div>
+            </li>
+
+            <li class="event">
+              <span class="avatar" data-state="started" aria-hidden="true"
+                >AN
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                  >
+                    <path d="M5 12h14M12 5v14" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>A parent</b> filed travel for <b>Amelia Ng</b>, 3 Sep.
+                </p>
+                <p class="eventmeta">
+                  08:12 <span class="sep">·</span> Attendance declaration
+                </p>
+                <p class="payload outcome">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M17.8 19.2 16 11l3.5-3.5a2.1 2.1 0 0 0-3-3L13 8 4.8 6.2a.5.5 0 0 0-.5.8l3.4 4.5-2.3 2.3-2-.6a.5.5 0 0 0-.5.8L5 17l2 2 2.2-1.4a.5.5 0 0 0 .8-.5l-.6-2 2.3-2.3 4.5 3.4a.5.5 0 0 0 .8-.5Z"
+                    />
+                  </svg>
+                  Manila, Philippines
+                </p>
+              </div>
+            </li>
+          </ul>
+
+          <p class="daylabel">Yesterday</p>
+          <ul class="events">
+            <li class="event">
+              <span class="avatar" data-state="turned-down" aria-hidden="true"
+                >EW
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3.4"
+                    stroke-linecap="round"
+                  >
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>Elaine Wee</b> turned down the officer in charge step for
+                  <b>Idris Rahman</b>, absence 20–21 Aug.
+                </p>
+                <p class="eventmeta">
+                  16:22 <span class="sep">·</span> Attendance declaration
+                </p>
+                <p class="payload">
+                  <span class="quotemark">“</span>Please re-send with the
+                  medical certificate attached.<span class="quotemark">”</span>
+                </p>
+              </div>
+            </li>
+
+            <li class="event">
+              <span class="avatar" data-state="went-through" aria-hidden="true"
+                >LM
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>Lhen Mendoza</b> applied your mark change for
+                  <b>Samira Bakhtiari</b> to the sheet.
+                </p>
+                <p class="eventmeta">
+                  11:05 <span class="sep">·</span> Mark change
+                </p>
+                <p class="payload outcome">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                    />
+                    <path d="M14 2v5h5" />
+                    <path d="m9 15 2 2 4-4" />
+                  </svg>
+                  Written Work 3 · 18 → 21
+                </p>
+              </div>
+            </li>
+
+            <li class="event">
+              <span class="avatar" data-state="started" aria-hidden="true"
+                >RP
+                <span class="dot">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                  >
+                    <path d="M5 12h14M12 5v14" />
+                  </svg>
+                </span>
+              </span>
+              <div class="eventbody">
+                <p class="eventtext">
+                  <b>You</b> asked to change Written Work 3 for
+                  <b>Samira Bakhtiari</b>.
+                </p>
+                <p class="eventmeta">
+                  08:47 <span class="sep">·</span> Mark change
+                </p>
+              </div>
+            </li>
+          </ul>
+
+          <div class="loadmore">
+            <button class="ghostbtn" type="button">
+              Show older activity
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <p class="trustbar">Showing only approvals you are part of</p>
+      </div>
+
+      <div class="notes">
+        <div class="note">
+          <h3>The number still means one thing</h3>
+          <p>
+            Three items are waiting on you, so the icon shows 3 and the pinned
+            block holds exactly those three. Everything below is history — it
+            never touches the count.
+          </p>
+        </div>
+        <div class="note">
+          <h3>Pinned sits above the tabs, not inside General</h3>
+          <p>
+            What you owe someone doesn't change depending on which tab you're
+            reading, so it stays put. This is one step further than we discussed
+            — say if you'd rather it lived inside General.
+          </p>
+        </div>
+        <div class="note">
+          <h3>Colour is spent in exactly one place</h3>
+          <p>
+            The small mark on each circle, in the same three tones every status
+            badge in the SIS already uses: mint for went through, red for turned
+            down, indigo for newly filed. The circle itself stays the standard
+            gradient, so the log stays scannable without becoming a fruit salad.
+          </p>
+        </div>
+        <div class="note">
+          <h3>No spine in the log</h3>
+          <p>
+            A connecting line would say these events belong to one sequence.
+            They don't — three different children's filings interleave here. The
+            line appears in Plate B, where the order genuinely is the content.
+          </p>
+        </div>
+        <div class="note">
+          <h3>"Show older activity" is a real button</h3>
+          <p>
+            It also fires on scroll, but a keyboard user has to be able to reach
+            it, and an infinite list with no control reads as broken when it
+            stalls.
+          </p>
+        </div>
+        <div class="note">
+          <h3>Wording</h3>
+          <p>
+            The tab says <b>Mark changes</b>, not "grade change requests" — it's
+            the phrase the register and the sheets already use with teachers.
+            Say the word if you'd rather it matched the page title.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PLATE B — VIEW HISTORY
+       ══════════════════════════════════════════════════════════ -->
+  <section class="plate">
+    <div class="platehead">
+      <span class="tag">Plate B</span>
+      <h2>View history</h2>
+      <p class="sub">
+        One approval, end to end. Opens from a row on the declarations page and
+        the mark-changes page.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="device dialog">
+        <div class="dialoghead">
+          <h3>Idris Rahman — absence, 20–21 Aug</h3>
+          <p>Filed 19 Aug · P4 Trust · turned down</p>
+        </div>
+        <ol class="timeline">
+          <li class="step" data-state="started">
+            <span class="node" aria-hidden="true">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+              >
+                <path d="M5 12h14M12 5v14" />
+              </svg>
+            </span>
+            <p class="steptitle"><b>A parent</b> filed the absence.</p>
+            <p class="stepmeta">19 Aug · 21:04</p>
+            <p class="payload">
+              <span class="quotemark">“</span>Idris has a fever. Bringing him to
+              the clinic in the morning.<span class="quotemark">”</span>
+            </p>
+          </li>
+
+          <li class="step" data-state="went-through">
+            <span class="node" aria-hidden="true">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </span>
+            <p class="steptitle">
+              <b>Radhika Putrevu</b> approved, as form class adviser.
+            </p>
+            <p class="stepmeta">20 Aug · 07:55</p>
+          </li>
+
+          <li class="step" data-state="turned-down">
+            <span class="node" aria-hidden="true">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3.4"
+                stroke-linecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </span>
+            <p class="steptitle">
+              <b>Elaine Wee</b> turned it down, as officer in charge.
+            </p>
+            <p class="stepmeta">27 Aug · 16:22</p>
+            <p class="payload">
+              <span class="quotemark">“</span>Please re-send with the medical
+              certificate attached.<span class="quotemark">”</span>
+            </p>
+          </li>
+
+          <li class="step" data-state="never-reached">
+            <span class="node" aria-hidden="true"></span>
+            <p class="steptitle">Register update — never reached.</p>
+            <p class="stepmeta">Stopped when the filing was turned down</p>
+          </li>
+        </ol>
+        <div class="dialogfoot">
+          <span class="note">Nothing was written to the register</span>
+          <button class="outlinebtn" type="button">Open the filing</button>
+        </div>
+      </div>
+
+      <div class="notes">
+        <div class="note">
+          <h3>The spine earns its place here</h3>
+          <p>
+            These four rows are one ladder in order, so the line carries real
+            information: where it started, where it stopped.
+          </p>
+        </div>
+        <div class="note">
+          <h3>A turned-down filing needs the fourth row</h3>
+          <p>
+            A rejection stops the ladder, and in the database the later steps
+            sit at "waiting" forever. Drawn as pending they'd read as still
+            coming. Drawn hollow with a dashed line, they read as what they are
+            — never reached.
+          </p>
+        </div>
+        <div class="note">
+          <h3>Oldest first, unlike the panel</h3>
+          <p>Here you're reading a story rather than checking what's new.</p>
+        </div>
+        <div class="note">
+          <h3>The footer states the outcome plainly</h3>
+          <p>
+            Whether the register was touched is the question people actually
+            open this for. It shouldn't need inferring from the rows.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PLATE C — EMPTY + ICON
+       ══════════════════════════════════════════════════════════ -->
+  <section class="plate">
+    <div class="platehead">
+      <span class="tag">Plate C</span>
+      <h2>The icon, and the empty panel</h2>
+      <p class="sub">
+        What most staff see most days: nothing waiting, and a quiet log.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="device sheet" style="height: 400px">
+        <div class="sheethead">
+          <div class="titles">
+            <h3>Activity</h3>
+            <p>Approvals you are part of</p>
+          </div>
+          <button class="xbtn" type="button" aria-label="Close">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="tabsbar">
+          <div class="tabslist" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" type="button">
+              General
+            </button>
+            <button class="tab" role="tab" aria-selected="false" type="button">
+              Mark changes
+            </button>
+            <button class="tab" role="tab" aria-selected="false" type="button">
+              Declarations
+            </button>
+          </div>
+        </div>
+        <div class="empty">
+          <span class="tile" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"
+              />
+            </svg>
+          </span>
+          <h4>Nothing yet.</h4>
+          <p>
+            Approvals you're part of will appear here as they move — filed,
+            approved, turned down.
+          </p>
+        </div>
+        <p class="trustbar">Showing only approvals you are part of</p>
+      </div>
+
+      <div class="notes">
+        <div class="swap">
+          <div>
+            <div class="headerbit">
+              <button class="iconbtn" type="button" aria-label="Notifications">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                  <path
+                    d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"
+                  />
+                </svg>
+                <span class="badge">3</span>
+              </button>
+            </div>
+            <p class="swaplabel">Today</p>
+          </div>
+
+          <svg
+            class="arrow"
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+
+          <div>
+            <div class="headerbit">
+              <button class="iconbtn" type="button" aria-label="Activity">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"
+                  />
+                </svg>
+                <span class="badge">3</span>
+              </button>
+            </div>
+            <p class="swaplabel">Proposed</p>
+          </div>
+        </div>
+
+        <div class="note">
+          <h3>The badge doesn't move</h3>
+          <p>
+            Same position, same red, same meaning — only the glyph changes. If
+            people have learned where their count lives, it stays there.
+          </p>
+        </div>
+        <div class="note">
+          <h3>An empty panel is not a broken one</h3>
+          <p>
+            Most staff are on very few approvals. The empty state says what
+            would appear here, so a quiet panel reads as quiet rather than
+            failed.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       WHAT I NEED FROM YOU
+       ══════════════════════════════════════════════════════════ -->
+  <section class="asks">
+    <h2>Four things to look at</h2>
+    <ol>
+      <li>
+        <span
+          ><b>The pinned block above the tabs.</b> I moved it out of General so
+          it's always visible. If you'd rather it sat inside the General tab as
+          we said, that's a one-line change.</span
+        >
+      </li>
+      <li>
+        <span
+          ><b>"Mark changes" as the tab label.</b> The pages call it change
+          requests. Teachers call it a mark change. I've used the teachers'
+          words — tell me if the page title should win instead.</span
+        >
+      </li>
+      <li>
+        <span
+          ><b>Whether the log is too chatty.</b> Every step of every approval
+          you're on produces a row, so a busy adviser could see six rows for one
+          child's filing. The alternative is one row per approval that updates
+          in place — less faithful to "every action appears", but shorter.</span
+        >
+      </li>
+      <li>
+        <span
+          ><b>The outcome line.</b> "1 day marked as excused on the register" is
+          the thing no screen says today. Check the wording is what you'd want a
+          teacher to read.</span
+        >
+      </li>
+    </ol>
+  </section>
+
+  <p class="foot">Mockup only · No code written · HFSE SIS design tokens</p>
+</div>
