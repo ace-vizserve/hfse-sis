@@ -11,6 +11,7 @@ import {
 } from '@/lib/schemas/approval-flows';
 import { APPROVAL_OUTCOME_MESSAGES } from '@/lib/approvals/state-machine';
 import { DECLARATION_SUBJECT_TYPE } from '@/lib/declarations/approval';
+import { writeRegisterForDeclaration } from '@/lib/declarations/register';
 
 // POST /api/approvals/[requestId]/decide — approve or turn down one step.
 //
@@ -164,6 +165,9 @@ export async function POST(
   // has said yes and the next has not, which to the parent is still "with the
   // school", because it is.
   let declarationRow: DeclarationForAudit | null = null;
+  let registerDaysWritten: number | null = null;
+  let registerDaysSkipped: number | null = null;
+  let registerWriteError: string | null = null;
 
   if (subject.subject_type === DECLARATION_SUBJECT_TYPE) {
     const { data: declaration } = await service
@@ -198,6 +202,47 @@ export async function POST(
             outcome: result.outcome,
           },
           { status: 500 }
+        );
+      }
+    }
+
+    // ── Phase 3: the last approval marks the register ────────────────────
+    //
+    // Mr Ace, 2026-08-27: "the attendance sheet is not showing that the filed
+    // student has been excused based on the approval details." Every school
+    // day of an approved absence becomes EX / 'mc'. Absence only — travel
+    // waits for the vacation count in Phase 4.
+    //
+    // ⚠ THIS CAN FAIL WITHOUT UN-DOING THE APPROVAL. The decision is already
+    // committed in Postgres and two people have made it; throwing here would
+    // report a landed decision as an error and invite the approver to click
+    // again, which `approval_advance` would then refuse as already-decided.
+    // So the failure is recorded on the filing, shown to staff, repairable by
+    // script — and the response still says the approval succeeded.
+    if (result.outcome === 'completed') {
+      try {
+        const write = await writeRegisterForDeclaration(
+          service,
+          subject.subject_id,
+          auth.user.id
+        );
+        if (write.ok) {
+          registerDaysWritten = write.written;
+          registerDaysSkipped = write.skipped;
+        } else {
+          registerWriteError = write.error;
+          console.error(
+            '[approvals] register write failed:',
+            subject.subject_id,
+            write.error
+          );
+        }
+      } catch (e) {
+        registerWriteError = e instanceof Error ? e.message : String(e);
+        console.error(
+          '[approvals] register write threw:',
+          subject.subject_id,
+          registerWriteError
         );
       }
     }
@@ -242,12 +287,26 @@ export async function POST(
       // Presence only, for both notes. See above.
       note_present: trimmedNote != null,
       parent_note_present: declarationRow?.parent_note != null,
+      // How many register days the approval actually marked. A COUNT, not the
+      // dates — the dates are on the filing, and the log is read by every
+      // registrar-and-above user. Null when nothing was attempted (a
+      // rejection, an intermediate stage, or a travel filing).
+      register_days_written: registerDaysWritten,
+      register_days_skipped: registerDaysSkipped,
+      register_write_failed: registerWriteError != null,
     },
   });
 
   // The queue, the Attendance index panel and the drill cards all read this.
+  //
+  // ⚠ BOTH MODULES, not just attendance. The marks this approval just wrote
+  // are read by the permanent record and the Academic Summary as well, and
+  // busting one tag leaves the other showing an absence that has since been
+  // excused.
   try {
-    invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+    const ayCode = await requireCurrentAyCode(service);
+    invalidateDrillTags('attendance', ayCode);
+    invalidateDrillTags('records', ayCode);
   } catch (e) {
     // A missing current AY should not swallow a decision that already landed.
     console.error(
@@ -259,8 +318,37 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     outcome: result.outcome,
-    message: APPROVAL_OUTCOME_MESSAGES[result.outcome],
+    // "Approved." on its own is now an understatement — the approval also
+    // marked the register, and the person who clicked should be told what
+    // landed on the sheet rather than having to go and look.
+    message: decisionMessage(
+      result.outcome,
+      registerDaysWritten,
+      registerWriteError
+    ),
     requestStatus: result.request_status,
     nextStageOrder: result.next_stage_order,
+    registerDaysWritten,
+    registerWriteFailed: registerWriteError != null,
   });
+}
+
+/** What the approver reads after clicking. Plain sentences, no jargon. */
+function decisionMessage(
+  outcome: ApprovalOutcome,
+  daysWritten: number | null,
+  writeError: string | null
+): string {
+  const base = APPROVAL_OUTCOME_MESSAGES[outcome];
+  if (outcome !== 'completed') return base;
+  if (writeError) {
+    return 'Approved. The attendance sheet could not be updated yet — tell an administrator.';
+  }
+  if (daysWritten == null) return base;
+  if (daysWritten === 0) {
+    // Filed across a weekend or a school holiday only. Not an error, and
+    // saying "0 days" would read like one.
+    return 'Approved. No school days fall inside those dates, so the attendance sheet is unchanged.';
+  }
+  return `Approved. ${daysWritten} ${daysWritten === 1 ? 'day' : 'days'} marked as excused on the attendance sheet.`;
 }

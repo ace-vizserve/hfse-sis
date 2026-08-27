@@ -465,4 +465,8 @@ The six items the workbook genuinely cannot settle are now written as a drafted,
 
 **Seeded by `scripts/seed-declaration-approval-steps.ts`, not a migration**, and it resolves people **by email, never by uuid** — which is what makes it safe to commit. It is idempotent and refuses outright to name a role-less account, because `auth.users` is shared with ~500 parent rows and one of those would make a parent the approver of their own child's absence.
 
-**Ancillary:** `scripts/verify-approval-migrations.ts` (read-only, and it includes the **anon-key** call that migration 103 taught us to make) and `scripts/repair-declaration-approvals.ts` (finds declarations with no ladder, and status drift). **Not built:** the register write on final approval (Phase 3), travel and the vacation count (Phase 4), and any notification to the parent.
+**Ancillary:** `scripts/verify-approval-migrations.ts` (read-only, and it includes the **anon-key** call that migration 103 taught us to make) and `scripts/repair-declaration-approvals.ts` (finds declarations with no ladder, status drift, and — since KD #197 — approved absences whose register was never marked).
+
+✅ **THE FIRST CONSUMER OF `completed` NOW DOES SOMETHING — KD #197.** The decide route's `completed` branch used to flip a status and stop; it now marks the class register. ⚠ **The engine still holds no key back to its consumer** and that is unchanged — the route knows the subject type and calls into `lib/declarations/`, so a second flow can land without attendance learning about it. ⚠ **A failure there is caught and never re-raised**: two people have already decided, the decision is committed, and throwing would report it as an error and invite a second click that `approval_advance` would refuse as already-decided.
+
+**Not built:** travel and the vacation count (Phase 4), and any notification to the parent.

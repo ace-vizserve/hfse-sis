@@ -82,7 +82,13 @@ import type {
 } from '@/lib/attendance/calendar';
 import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
-import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
+import {
+  CellMarkPalette,
+  type CellFiling as WideGridCellFiling,
+} from '@/components/attendance/cell-mark-popover';
+// Re-exported so the page can build the map without reaching past the grid
+// into the popover it happens to render.
+export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-popover';
 import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
 import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
 import { statusCellWash } from '@/components/attendance/status-wash';
@@ -187,6 +193,7 @@ export function AttendanceWideGrid({
   canEditBusCare,
   canEditAcademics,
   canEditAdmin,
+  filingsByCell,
 }: {
   sectionId: string;
   termId: string;
@@ -198,6 +205,14 @@ export function AttendanceWideGrid({
   canEditBusCare: boolean;
   canEditAcademics: boolean;
   canEditAdmin: boolean;
+  /**
+   * `enrolmentId|yyyy-MM-dd` → the approved parent filing covering that day.
+   *
+   * Loaded for the whole term server-side rather than fetched per cell: the
+   * marking popover has to open instantly, and a request on click would put a
+   * spinner inside the one control that exists to make marking fast.
+   */
+  filingsByCell?: Record<string, WideGridCellFiling>;
 }) {
   const router = useRouter();
   // Seed cell state map from the latest-per-(date) rows we already fetched.
@@ -1073,6 +1088,11 @@ export function AttendanceWideGrid({
               exReason={activeCellState?.exReason ?? null}
               exNote={activeCellState?.exNote ?? null}
               canWriteNc={canWriteNc}
+              filing={
+                filingsByCell?.[
+                  `${activeCell.enrolmentId}|${activeCell.iso}`
+                ] ?? null
+              }
               vlUsed={activeEnrolment.vlUsedThisTerm}
               vlAllowance={activeEnrolment.vlAllowance}
               compassionateUsed={activeEnrolment.compassionateUsed}

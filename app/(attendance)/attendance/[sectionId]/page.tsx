@@ -8,12 +8,16 @@ import {
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { loadCellFilingsForSection } from '@/lib/declarations/cell-filings';
+import { formatDayRange } from '@/lib/declarations/format';
+import { createServiceClient } from '@/lib/supabase/service';
 import { DailyEntry } from '@/components/attendance/daily-entry';
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
 import SheetContextCard from '@/components/attendance/sheet-context';
 import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
 import {
   AttendanceWideGrid,
+  type WideGridCellFiling,
   type WideGridEnrolment,
 } from '@/components/attendance/wide-grid';
 import { Badge } from '@/components/ui/badge';
@@ -292,6 +296,58 @@ export default async function SectionAttendancePage({
     };
   });
 
+  // Which days a parent filed for, so an excused cell can say WHY (KD #197).
+  //
+  // ⚠ Read here rather than on click. The panel opens over a grid cell and has
+  // to render instantly; a fetch per cell would put a spinner inside a popover
+  // that exists to make marking fast. A section has a handful of filings per
+  // term, so this is one small query for the whole sheet.
+  //
+  // ⚠ SERVICE CLIENT, and it is not optional. `approval_requests` denies
+  // SELECT to `authenticated` outright (migration 126, so no signed-in user
+  // can enumerate who approves what), and 129's policy on the stages admits a
+  // row only to somebody already ON it — an adviser who approved step 1 is not
+  // on the officer's step 2, so the cookie-scoped client would report the
+  // filing as approved by nobody. Everything surfaced here is bounded to this
+  // section, and the reader is already someone who can mark this register.
+  //
+  // A failure must not take the register down with it — the sheet's job is
+  // marking, and the filing is context on top of that.
+  let filingsByCell: Record<string, WideGridCellFiling> = {};
+  if (selectedTerm?.start_date && selectedTerm.end_date) {
+    try {
+      const filings = await loadCellFilingsForSection(createServiceClient(), {
+        sectionId,
+        from: selectedTerm.start_date,
+        to: selectedTerm.end_date,
+      });
+      filingsByCell = Object.fromEntries(
+        filings.flatMap((f) =>
+          f.dates.map((date) => [
+            `${f.sectionStudentId}|${date}`,
+            {
+              dateRange: formatDayRange(f.startDate, f.endDate),
+              hasEvidence: f.hasEvidence,
+              approvedBy: f.approvedBy,
+              // ⚠ `?req=` and the REQUEST id — the same deep link the
+              // notification bell builds. The queue selects it from rows the
+              // reader may already see, so an id they have no business with
+              // matches nothing and the page just opens normally.
+              href: f.requestId
+                ? `/attendance/declarations?req=${f.requestId}`
+                : '/attendance/declarations',
+            },
+          ])
+        )
+      );
+    } catch (e) {
+      console.error(
+        '[attendance] could not load declarations for the sheet:',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   const activeCount = enrolments.filter((e) => !e.withdrawn).length;
   const holidayCount = calendar.filter((c) => c.isHoliday).length;
   const schoolDayCount = calendar.filter((c) => !c.isHoliday).length;
@@ -475,6 +531,7 @@ export default async function SectionAttendancePage({
           events={events}
           initialDaily={daily}
           canWriteNc={canWriteNc}
+          filingsByCell={filingsByCell}
           canEditBusCare={canEditBusCare}
           canEditAcademics={canEditAcademics}
           canEditAdmin={canEditAdmin}

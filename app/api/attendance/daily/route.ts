@@ -10,14 +10,12 @@ import {
   writeDailyBatch,
   type RollupAfterWrite,
 } from '@/lib/attendance/mutations';
+import { createNonSchoolDayChecker } from '@/lib/attendance/school-days';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DailyBulkSchema,
   DailyEntrySchema,
-  isEncodableDayType,
   type DailyEntryInput,
-  type Audience,
-  type DayType,
 } from '@/lib/schemas/attendance';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
@@ -246,58 +244,17 @@ export async function PATCH(request: NextRequest) {
     levelTypeByEnrolment.set(enrolmentId, levelTypeForAudienceLookup(code));
   }
 
-  // Cache write-gate lookups per (termId, date, levelType) to avoid N round-
-  // trips on bulk. Audience precedence: a row with audience=$levelType beats
-  // the audience='all' row for the same date. Preschool sections (levelType
-  // null) only consider 'all' rows.
-  // Gate: encodable when day_type IN ('school_day','hbl'); blocked otherwise.
-  // When the term has NO calendar rows (legacy/unconfigured mode) we don't
-  // block — same behaviour as pre-migration-019.
-  const blockCache = new Map<string, boolean>();
-  async function isNonSchoolDay(
-    termId: string,
-    date: string,
-    levelType: 'primary' | 'secondary' | null
-  ): Promise<boolean> {
-    const key = `${termId}|${date}|${levelType ?? 'all'}`;
-    if (blockCache.has(key)) return blockCache.get(key)!;
-
-    const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
-    const { data } = await service
-      .from('school_calendar')
-      .select('day_type, audience, hbl_overlay')
-      .eq('term_id', termId)
-      .eq('date', date)
-      .in('audience', audiences);
-    if (!data || data.length === 0) {
-      // Date not listed for any audience this section sees. If the term has
-      // any rows at all, treat as non-school (implicit holiday); otherwise
-      // legacy mode (no block).
-      const { count } = await service
-        .from('school_calendar')
-        .select('*', { count: 'exact', head: true })
-        .eq('term_id', termId);
-      const isBlocked = (count ?? 0) > 0;
-      blockCache.set(key, isBlocked);
-      return isBlocked;
-    }
-    // Audience precedence — prefer the level-specific row over 'all'.
-    const rows = data as Array<{
-      day_type: DayType;
-      audience: Audience;
-      hbl_overlay: boolean;
-    }>;
-    const specific = rows.find((r) => r.audience === levelType);
-    const chosen = specific ?? rows[0];
-    // school_holiday+hbl_overlay=true is encodable — teachers deliver HBL
-    // while the day is a school closure for students (migration 051).
-    const isBlocked = !isEncodableDayType(
-      chosen.day_type,
-      chosen.hbl_overlay ?? false
-    );
-    blockCache.set(key, isBlocked);
-    return isBlocked;
-  }
+  // Write-gate: encodable when day_type IN ('school_day','hbl'); blocked
+  // otherwise; a term with NO calendar rows blocks nothing (legacy mode, same
+  // behaviour as pre-migration-019).
+  //
+  // The rule used to be a closure right here. It now lives in
+  // `lib/attendance/school-days.ts` because the approved absence declaration
+  // has to ask the same question of a date RANGE, and two copies of a calendar
+  // rule is how the register and the sheet start disagreeing. Behaviour here
+  // is unchanged — the checker caches per (term, date, level) exactly as this
+  // did.
+  const isNonSchoolDay = createNonSchoolDayChecker(service);
 
   // ── Validate EVERY entry before writing ANY of them ──────────────────────
   // This loop used to validate and write one entry at a time, so a rejection

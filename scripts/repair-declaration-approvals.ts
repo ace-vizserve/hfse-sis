@@ -29,8 +29,23 @@
 // the filing. Stamping the half first is what stops the fix breaking the very
 // requests it is meant to route correctly.
 //
-// READ-ONLY BY DEFAULT. Pass `--apply` to open the missing requests and
-// re-project the drifted statuses. Nothing is ever deleted.
+// ⚠ AND IT MARKS THE REGISTER FOR APPROVED ABSENCES THAT NEVER GOT MARKED.
+// Phase 3 made the final approval write EX marks onto the attendance sheet.
+// Two kinds of filing carry an `approved` status with no marks behind it:
+// anything approved BEFORE Phase 3 shipped, and anything whose write failed
+// (the decide route deliberately keeps the approval and records the failure
+// rather than losing a decision two people already made). Both look identical
+// from the outside — an approved absence whose days are still blank on the
+// register — and both are fixed the same way.
+//
+// ⚠ Re-running a write that already succeeded is HARMLESS but not free:
+// `attendance_daily` is append-only, so it supersedes each day with an
+// identical mark. That is why the search keys on a missing
+// `register_written_at` rather than re-marking everything approved.
+//
+// READ-ONLY BY DEFAULT. Pass `--apply` to open the missing requests,
+// re-project the drifted statuses and mark the unmarked registers. Nothing is
+// ever deleted.
 //
 // Run:
 //   npx tsx --env-file=.env.local scripts/repair-declaration-approvals.ts
@@ -45,6 +60,7 @@ import {
   DECLARATION_SUBJECT_TYPE,
   loadLevelTypesBySection,
 } from '../lib/declarations/approval';
+import { writeRegisterForDeclaration } from '../lib/declarations/register';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -54,7 +70,7 @@ async function main() {
   const { data: declarationRows, error } = await service
     .from('student_declarations')
     .select(
-      'id, section_id, status, filed_by, filed_by_email, start_date, end_date, created_at'
+      'id, section_id, status, declaration_type, filed_by, filed_by_email, start_date, end_date, created_at, register_written_at, register_write_error'
     )
     .order('created_at', { ascending: true });
   if (error) throw new Error(error.message);
@@ -63,11 +79,14 @@ async function main() {
     id: string;
     section_id: string;
     status: string;
+    declaration_type: string;
     filed_by: string | null;
     filed_by_email: string;
     start_date: string;
     end_date: string;
     created_at: string;
+    register_written_at: string | null;
+    register_write_error: string | null;
   }>;
 
   if (declarations.length === 0) {
@@ -133,11 +152,38 @@ async function main() {
     }
   }
 
+  // Approved absences whose days never landed on the attendance sheet.
+  //
+  // ⚠ Travel is excluded on purpose, not overlooked: it does not mark the
+  // register at all until Phase 4 brings the vacation count with it, so every
+  // approved travel filing has a null stamp and listing them here would report
+  // a permanent, growing backlog of work that does not exist.
+  const unmarked = declarations.filter(
+    (d) =>
+      d.status === 'approved' &&
+      d.declaration_type === 'absence' &&
+      d.register_written_at == null
+  );
+
   console.log(`Declarations: ${declarations.length}`);
   console.log(`  on the ladder:      ${requestBySubject.size}`);
   console.log(`  waiting, no ladder: ${missing.length}`);
   console.log(`  status drifted:     ${drifted.length}`);
   console.log(`  no school half yet: ${unstamped.length}`);
+  console.log(`  register unmarked:  ${unmarked.length}`);
+
+  if (unmarked.length > 0) {
+    console.log(
+      '\nApproved, but the attendance sheet was never marked. The child shows\n' +
+        'as absent (or blank) on days the school has already excused:'
+    );
+    for (const d of unmarked) {
+      const why = d.register_write_error
+        ? `failed: ${d.register_write_error}`
+        : 'never attempted';
+      console.log(`  ${d.id}  ${d.start_date} → ${d.end_date}  (${why})`);
+    }
+  }
 
   if (unstamped.length > 0) {
     console.log(
@@ -172,7 +218,12 @@ async function main() {
   }
 
   if (!APPLY) {
-    if (missing.length > 0 || drifted.length > 0 || unstamped.length > 0) {
+    if (
+      missing.length > 0 ||
+      drifted.length > 0 ||
+      unstamped.length > 0 ||
+      unmarked.length > 0
+    ) {
       console.log(
         '\nRe-run with --apply to fix these. Nothing has been changed.'
       );
@@ -286,9 +337,32 @@ async function main() {
     }
   }
 
+  // ── Mark the registers that never got marked ────────────────────────────
+  //
+  // ⚠ NO ACTOR. `recorded_by` goes in as null, and that is honest: nobody
+  // clicked anything. A repair run is the school's own correction, not a
+  // person's decision, and stamping whoever happened to run the script would
+  // put a name on the register that never touched it.
+  let marked = 0;
+  let markDays = 0;
+  for (const d of unmarked) {
+    const result = await writeRegisterForDeclaration(service, d.id, null);
+    if (!result.ok) {
+      console.error(`  could not mark ${d.id}: ${result.error}`);
+      continue;
+    }
+    marked += 1;
+    markDays += result.written;
+  }
+
   console.log(
     `\nOpened ${opened} request(s); re-projected ${reprojected} status(es).`
   );
+  if (marked > 0) {
+    console.log(
+      `Marked ${markDays} day(s) as excused across ${marked} filing(s).`
+    );
+  }
   if (stamped > 0) {
     console.log(`Recorded the school half on ${stamped} waiting step(s).`);
   }

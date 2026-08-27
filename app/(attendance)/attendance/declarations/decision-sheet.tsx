@@ -1,7 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ExternalLink, FileText, Link2, Users, X } from 'lucide-react';
+import {
+  CalendarCheck,
+  Check,
+  ExternalLink,
+  FileText,
+  Link2,
+  TriangleAlert,
+  Users,
+  X,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -19,7 +28,11 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
 import { cn } from '@/lib/utils';
 import type { DeclarationQueueRow } from './declarations-data-table';
-import { formatDayRange, formatDecidedAt, formatFiledAt } from './format';
+import {
+  formatDayRange,
+  formatDecidedAt,
+  formatFiledAt,
+} from '@/lib/declarations/format';
 
 // Everything the parent sent, and the decision.
 //
@@ -295,6 +308,9 @@ function DecisionPanel({
           </ol>
         </section>
 
+        {/* ── What it did to the attendance sheet ──────────────────── */}
+        <RegisterOutcome d={d} />
+
         {/* ── The note ─────────────────────────────────────────────── */}
         {row.canDecide && (
           <Field>
@@ -347,6 +363,88 @@ function DecisionPanel({
         )}
       </SheetFooter>
     </SheetContent>
+  );
+}
+
+/**
+ * What the final approval did to the attendance sheet (Phase 3).
+ *
+ * Deliberately the SAME block shape as "Also on this form" above — an icon,
+ * a sentence, a line of detail — with only the colour family swapped per the
+ * design system's §9.3 severity recipes. A new visual device here would be
+ * noise: this is the last line of a story the step rail above already tells,
+ * not a headline of its own.
+ *
+ * Renders nothing until there is something to report, which is why a travel
+ * filing and an in-progress absence both show no block at all rather than an
+ * empty state saying "not yet".
+ */
+function RegisterOutcome({ d }: { d: DeclarationQueueRow['detail'] }) {
+  if (d.status !== 'approved') return null;
+  // Travel does not mark the register until Phase 4 brings the vacation
+  // count with it. Saying nothing is right — there is nothing to report.
+  if (d.declarationType !== 'absence') return null;
+
+  const failed = d.registerWriteError != null;
+  const days = d.registerDaysWritten ?? 0;
+  const marked = !failed && d.registerWrittenAt != null;
+
+  // Approved, absence, no stamp and no recorded error: the write has not been
+  // attempted yet (approved before this shipped). The repair script picks
+  // these up, and the reader needs to know the sheet is not marked.
+  const pending = !failed && !marked;
+
+  const tone = failed || pending ? 'blocked' : 'done';
+
+  return (
+    <section className="space-y-3">
+      <SectionLabel>The attendance sheet</SectionLabel>
+      <div
+        className={cn(
+          'flex items-start gap-3 rounded-lg border p-4',
+          tone === 'done'
+            ? 'border-brand-mint bg-brand-mint/20'
+            : 'border-destructive/40 bg-destructive/5'
+        )}
+      >
+        {tone === 'done' ? (
+          <CalendarCheck
+            className="mt-0.5 size-4 shrink-0 text-ink"
+            aria-hidden
+          />
+        ) : (
+          <TriangleAlert
+            className="mt-0.5 size-4 shrink-0 text-destructive"
+            aria-hidden
+          />
+        )}
+        <div className="space-y-1 text-[14px]">
+          <p
+            className={cn(
+              'font-medium',
+              tone === 'done' ? 'text-ink' : 'text-destructive'
+            )}
+          >
+            {failed
+              ? 'The register was not marked'
+              : pending
+                ? 'The register has not been marked yet'
+                : days === 0
+                  ? 'No school days to mark'
+                  : `${days} ${days === 1 ? 'day' : 'days'} marked as excused`}
+          </p>
+          <p className="text-[13px] text-muted-foreground">
+            {failed
+              ? 'The approval stands — only the register is behind. Tell an administrator; the days can be marked without anyone approving this again.'
+              : pending
+                ? 'This was approved before the register was marked automatically. Tell an administrator so the days can be added.'
+                : days === 0
+                  ? 'Every date the parent gave falls on a weekend, a holiday, or outside the school year, so nothing on the register changed.'
+                  : 'The register shows these days as excused, reason “MC / Excuse leave”. Weekends and holidays inside the dates were left alone.'}
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 

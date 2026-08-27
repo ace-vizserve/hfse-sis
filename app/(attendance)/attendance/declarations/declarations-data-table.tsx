@@ -11,7 +11,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StaffDeclarationView } from '@/lib/declarations/staff';
 import type { DeclarationType } from '@/lib/schemas/declarations';
 import { DeclarationDecisionSheet } from './decision-sheet';
-import { formatDayRange, formatFiledAt } from './format';
+import { formatDayRange, formatFiledAt } from '@/lib/declarations/format';
 
 // The queue itself.
 //
@@ -25,35 +25,6 @@ import { formatDayRange, formatFiledAt } from './format';
 // is the single most useful thing on the row — it separates "yours to decide"
 // from "already past you" from "not yet". Elsewhere in this codebase numbered
 // markers would be ornament; here they are the data.
-
-// One figure in the strip above the table. Mono eyebrow + serif number is the
-// §7.1 pairing the rest of the app uses for a labelled count; `tabular-nums`
-// keeps the row from shifting as the numbers change.
-function CountItem({
-  label,
-  value,
-  emphasis = false,
-}: {
-  label: string;
-  value: number;
-  emphasis?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <dd
-        className={
-          'font-serif text-[20px] leading-none font-semibold tabular-nums ' +
-          (emphasis && value > 0 ? 'text-brand-indigo-deep' : 'text-foreground')
-        }
-      >
-        {value.toLocaleString('en-SG')}
-      </dd>
-      <dt className="font-mono text-[10px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-        {label}
-      </dt>
-    </div>
-  );
-}
 
 export type DeclarationQueueRow = {
   id: string;
@@ -317,18 +288,18 @@ export function DeclarationsQueueTable({
 
   return (
     <>
-      {/* What this page holds, before you touch a filter. The tab strip says
-          which slice you are looking at; this says how big the whole thing is.
-          Hidden when there is nothing at all — a row of zeroes above an empty
-          state says the same thing twice. */}
-      {rows.length > 0 && (
-        <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-muted/30 px-5 py-3">
-          <CountItem label="Waiting for you" value={counts.forYou} emphasis />
-          <CountItem label="Waiting in total" value={counts.waiting} />
-          <CountItem label="Approved" value={counts.approved} />
-          <CountItem label="Not approved" value={counts.rejected} />
-        </dl>
-      )}
+      {/* ⚠ THE COUNT STRIP IS GONE, and it went in two steps because only the
+          second one was obvious.
+          It read "Waiting for you · Waiting in total · Approved · Not
+          approved". The first two were the SAME NUMBERS as the first two tab
+          badges a few inches below — Mr Ace: *"remove the waiting for you
+          waiting in total section its redundant no?"* Trimming it to the
+          outcome split left a full-width bar holding two figures, which he
+          then cut outright: *"just remove this section bro what is that for?"*
+          He was right twice. The Decided tab already says how many filings are
+          settled, and splitting that into approved-versus-not is a question
+          you ask ON that tab, where the rows themselves answer it.
+          `counts` stays — the tabs read it to decide which one opens. */}
 
       <DataTable
         data={rows}
@@ -375,6 +346,13 @@ export function DeclarationsQueueTable({
           body: 'Clear the filters to see everything again.',
         }}
         csv={{ filename: 'declarations' }}
+        // The tab, the search and the filters live in the address bar, so a
+        // queue can be linked to and survives a reload or a back button.
+        // ⚠ This table was the only staff queue that had never opted in —
+        // change requests, the validation queues and the grading tables all
+        // pass this already. Namespaced so the `?filing=` deep link the
+        // attendance sheet builds cannot collide with a facet key.
+        url={{ enabled: true, namespace: 'decl' }}
       />
 
       <DeclarationDecisionSheet

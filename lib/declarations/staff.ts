@@ -81,7 +81,17 @@ export type StaffDeclarationView = {
 
   status: DeclarationStatus;
   statusLabel: string;
+
+  /**
+   * What the final approval did to the attendance sheet (Phase 3).
+   *
+   * `registerWrittenAt` null with an `approved` status means the marks have
+   * not landed — either the write failed (see `registerWriteError`) or this is
+   * a travel filing, which does not mark anything until Phase 4.
+   */
   registerWrittenAt: string | null;
+  registerDaysWritten: number | null;
+  registerWriteError: string | null;
 
   /** The other children on the same submission. Each is decided separately. */
   siblings: DeclarationSibling[];
@@ -108,10 +118,12 @@ type DeclarationRow = {
   filed_by_email: string;
   created_at: string;
   register_written_at: string | null;
+  register_days_written: number | null;
+  register_write_error: string | null;
 };
 
 const DECLARATION_COLUMNS =
-  'id, filing_group_id, declaration_type, student_id, section_id, start_date, end_date, with_medical, evidence_path, evidence_url, destination_country, destination_city, parent_note, status, filed_by_email, created_at, register_written_at';
+  'id, filing_group_id, declaration_type, student_id, section_id, start_date, end_date, with_medical, evidence_path, evidence_url, destination_country, destination_city, parent_note, status, filed_by_email, created_at, register_written_at, register_days_written, register_write_error';
 
 /**
  * Full detail for a set of declaration ids, in the order they were filed.
@@ -271,6 +283,11 @@ export async function loadStaffDeclarations(
       status: row.status,
       statusLabel: DECLARATION_STATUS_LABELS[row.status],
       registerWrittenAt: row.register_written_at,
+      registerDaysWritten: row.register_days_written,
+      // ⚠ Staff see this; parents deliberately do not (`lib/declarations/
+      // parent.ts` withholds it). A parent reading "term lookup failed" learns
+      // nothing they can act on and everything about our internals.
+      registerWriteError: row.register_write_error,
       siblings,
       ladder: ladders.get(row.id) ?? null,
     };
