@@ -5,7 +5,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { loadAdvisedSectionIds } from '@/lib/approvals/resolve';
-import { loadLaddersBySubject } from '@/lib/approvals/inbox';
 import { loadStaffDeclarations } from '@/lib/declarations/staff';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { sgToday } from '@/lib/dates';
@@ -161,17 +160,36 @@ async function loadDeclarationSide(
     arms.push(`section_id.in.(${advisedSectionIds.join(',')})`);
   }
 
+  // ⚠ SOURCE_CAP HERE COUNTS STAGE ROWS, NOT FILINGS. This flow has two
+  // steps, so 400 rows is ~200 filings, not 400.
+  //
+  // ⚠ ORDERED, NOT JUST LIMITED. An unordered `.limit()` returns an arbitrary
+  // 400 rows from Postgres, and that arbitrary set is not stable between
+  // requests — the same query re-run a page later can pick a different 400,
+  // silently dropping or repeating declarations across pages. Ordered newest
+  // filing first (so the cap drops the oldest, not a random slice), with
+  // `request_id` as a tiebreak that cannot itself be ambiguous: two stage
+  // rows can share their request's `created_at` to the tick (they belong to
+  // the same filing), and `request_id` is a UUID, so the pair sorts the same
+  // way every time this runs.
   const { data, error } = await service
     .from('approval_request_stages')
-    .select('request_id, approval_requests!inner(flow, subject_id)')
+    .select('request_id, approval_requests!inner(flow, subject_id, created_at)')
     .eq('approval_requests.flow', DECLARATION_APPROVAL_FLOW)
     .or(arms.join(','))
+    .order('created_at', {
+      referencedTable: 'approval_requests',
+      ascending: false,
+    })
+    .order('request_id', { ascending: false })
     .limit(SOURCE_CAP);
   if (error) throw new Error(error.message);
 
   type Row = {
     request_id: string;
-    approval_requests: { subject_id: string } | Array<{ subject_id: string }>;
+    approval_requests:
+      | { subject_id: string; created_at: string }
+      | Array<{ subject_id: string; created_at: string }>;
   };
 
   const declarationIds = [
@@ -189,19 +207,19 @@ async function loadDeclarationSide(
     return { events: [], waiting: [], truncated: false };
   }
 
+  // ⚠ NOT A SECOND FETCH. `loadStaffDeclarations` already calls
+  // `loadLaddersBySubject` with this same flow, subject type and ids, and
+  // hangs the result on `view.ladder` (lib/declarations/staff.ts). Calling it
+  // again here would be two extra round-trips per page load for a ladder we
+  // already have.
   const views = await loadStaffDeclarations(service, declarationIds);
-  const ladders = await loadLaddersBySubject(service, {
-    flow: DECLARATION_APPROVAL_FLOW,
-    subjectType: 'student_declaration',
-    subjectIds: declarationIds,
-  });
 
   const events: ActivityEvent[] = [];
   const waiting: ActivityWaitingItem[] = [];
   const advised = new Set(advisedSectionIds);
 
   for (const view of views) {
-    const ladder = ladders.get(view.id);
+    const ladder = view.ladder;
     if (!ladder) continue;
 
     const label = `${view.studentName}, ${
@@ -247,6 +265,32 @@ async function loadDeclarationSide(
 
 // ── Mark changes ───────────────────────────────────────────────────────────
 
+/**
+ * The `.or()` predicate that scopes `grade_change_requests` to one person —
+ * the leak guard the module header warns about.
+ *
+ * ⚠ THE FOURTH ARM IS GATED ON `role === 'school_admin'`, and that gate is
+ * not an inconsistency to "clean up" by adding it for everyone. A row from
+ * before migration 013 has BOTH approver columns null — nobody to match — so
+ * an unconditional `and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+ * arm would let every teacher read every legacy pending mark change in the
+ * school. `getSidebarChangeRequestPreview`
+ * (`lib/change-requests/sidebar-counts.ts`) applies this exact arm only for
+ * `school_admin`; mirrored here so the feed and the bell agree on who a
+ * legacy row is visible to.
+ */
+function markChangeScopeArms(scope: ActivityScope): string[] {
+  const arms = [
+    `requested_by.eq.${scope.userId}`,
+    `primary_approver_id.eq.${scope.userId}`,
+    `secondary_approver_id.eq.${scope.userId}`,
+  ];
+  if (scope.role === 'school_admin') {
+    arms.push('and(primary_approver_id.is.null,secondary_approver_id.is.null)');
+  }
+  return arms;
+}
+
 async function loadMarkChangeSide(
   service: SupabaseClient,
   scope: ActivityScope,
@@ -260,6 +304,8 @@ async function loadMarkChangeSide(
   // `lib/change-requests/labels.ts`'s `fetchLabels` already uses to resolve a
   // student label for the same table; a shorter guessed join fails silently
   // (an empty embed, not an error) rather than loudly.
+  const arms = markChangeScopeArms(scope);
+
   const { data, error } = await service
     .from('grade_change_requests')
     .select(
@@ -274,9 +320,7 @@ async function loadMarkChangeSide(
          )
        )`
     )
-    .or(
-      `requested_by.eq.${scope.userId},primary_approver_id.eq.${scope.userId},secondary_approver_id.eq.${scope.userId}`
-    )
+    .or(arms.join(','))
     .order('requested_at', { ascending: false })
     .limit(SOURCE_CAP);
   if (error) throw new Error(error.message);
