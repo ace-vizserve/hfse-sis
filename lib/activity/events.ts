@@ -73,6 +73,34 @@ function personName(
   return email ?? 'Someone';
 }
 
+/**
+ * How an actor is named TO THIS READER.
+ *
+ * ⚠ "You", never the reader's own name. A log that describes your own
+ * approvals in the third person reads as if it were about somebody else, and
+ * the reader has to recognise their own name in a list before they can tell
+ * which rows were their doing.
+ *
+ * ⚠ THE INITIALS STAY THE PERSON'S REAL ONES. The avatar is an identity, not a
+ * label — swapping it to "Y" when the reader happens to be the actor would
+ * make the same person's circle change shape depending on who is looking.
+ */
+function actorFor(
+  id: string | null,
+  email: string | null,
+  viewerId: string,
+  nameById: ReadonlyMap<string, string>
+): { actorLabel: string; actorInitials: string } {
+  const name = personName(id, email, nameById);
+  // An empty viewerId means "nobody in particular is reading" — never match it
+  // against a null actor id, which would label an unknown person "You".
+  const isViewer = id != null && viewerId !== '' && id === viewerId;
+  return {
+    actorLabel: isViewer ? 'You' : name,
+    actorInitials: initialsFromName(name),
+  };
+}
+
 // ── Declarations ───────────────────────────────────────────────────────────
 
 export type DeclarationEventInput = {
@@ -80,6 +108,8 @@ export type DeclarationEventInput = {
   /** "Amelia Ng, travel 3 Sep" — built by the caller, which has the student. */
   subjectLabel: string;
   nameById: ReadonlyMap<string, string>;
+  /** Who is reading. Their own actions are named "You", never their name. */
+  viewerId: string;
   registerWrittenAt: string | null;
   registerDaysWritten: number | null;
   registerWriteError: string | null;
@@ -88,7 +118,7 @@ export type DeclarationEventInput = {
 export function buildDeclarationEvents(
   input: DeclarationEventInput
 ): ActivityEvent[] {
-  const { ladder, subjectLabel, nameById } = input;
+  const { ladder, subjectLabel, nameById, viewerId } = input;
   const href = `/attendance/declarations?req=${ladder.requestId}`;
   const events: ActivityEvent[] = [];
 
@@ -139,10 +169,7 @@ export function buildDeclarationEvents(
       requestId: ladder.requestId,
       at: stage.decidedAt as string,
       tone: stage.status === 'approved' ? 'went-through' : 'turned-down',
-      actorLabel: personName(stage.decidedBy, stage.decidedByEmail, nameById),
-      actorInitials: initialsFromName(
-        personName(stage.decidedBy, stage.decidedByEmail, nameById)
-      ),
+      ...actorFor(stage.decidedBy, stage.decidedByEmail, viewerId, nameById),
       predicate: `${
         stage.status === 'approved' ? 'approved' : 'turned down'
       } the ${stage.label.toLocaleLowerCase()} step for ${subjectLabel}.`,
@@ -270,26 +297,17 @@ export function buildGradeChangeEvents(
   const field = markChangeFieldLabel(input.fieldChanged, input.slotIndex);
   const events: ActivityEvent[] = [];
 
-  const askedBy =
-    input.requestedById === input.viewerId
-      ? 'You'
-      : personName(input.requestedById, input.requestedByEmail, input.nameById);
-
   events.push({
     id: `grade_change:${input.id}:requested`,
     flow: 'grade_change',
     requestId: input.id,
     at: input.requestedAt,
     tone: 'started',
-    actorLabel: askedBy,
-    actorInitials: initialsFromName(
-      askedBy === 'You'
-        ? personName(
-            input.requestedById,
-            input.requestedByEmail,
-            input.nameById
-          )
-        : askedBy
+    ...actorFor(
+      input.requestedById,
+      input.requestedByEmail,
+      input.viewerId,
+      input.nameById
     ),
     predicate: `asked to change ${field} for ${input.studentLabel}.`,
     details: null,
@@ -298,19 +316,18 @@ export function buildGradeChangeEvents(
 
   if (input.reviewedAt) {
     const turnedDown = input.status === 'rejected';
-    const reviewer = personName(
-      input.reviewedById,
-      input.reviewedByEmail,
-      input.nameById
-    );
     events.push({
       id: `grade_change:${input.id}:reviewed`,
       flow: 'grade_change',
       requestId: input.id,
       at: input.reviewedAt,
       tone: turnedDown ? 'turned-down' : 'went-through',
-      actorLabel: reviewer,
-      actorInitials: initialsFromName(reviewer),
+      ...actorFor(
+        input.reviewedById,
+        input.reviewedByEmail,
+        input.viewerId,
+        input.nameById
+      ),
       predicate: `${turnedDown ? 'turned down' : 'approved'} the mark change for ${input.studentLabel}.`,
       details: input.decisionNote
         ? [{ kind: 'note', text: input.decisionNote }]
@@ -331,11 +348,6 @@ export function buildGradeChangeEvents(
   // untouched at `'approved'`. So the tone here branches on the decision
   // itself, not on the mere presence of a timestamp.
   if (input.secondaryReviewedAt) {
-    const cosigner = personName(
-      input.secondaryReviewedById,
-      input.secondaryReviewedByEmail,
-      input.nameById
-    );
     const declined = input.secondaryDecision === 'rejected';
     events.push({
       id: `grade_change:${input.id}:reviewed:secondary`,
@@ -343,8 +355,12 @@ export function buildGradeChangeEvents(
       requestId: input.id,
       at: input.secondaryReviewedAt,
       tone: declined ? 'turned-down' : 'went-through',
-      actorLabel: cosigner,
-      actorInitials: initialsFromName(cosigner),
+      ...actorFor(
+        input.secondaryReviewedById,
+        input.secondaryReviewedByEmail,
+        input.viewerId,
+        input.nameById
+      ),
       predicate: declined
         ? `turned down the mark change for ${input.studentLabel}.`
         : `co-signed the mark change for ${input.studentLabel}.`,
@@ -354,15 +370,13 @@ export function buildGradeChangeEvents(
   }
 
   if (input.appliedAt) {
-    const applier = personName(input.appliedById, null, input.nameById);
     events.push({
       id: `grade_change:${input.id}:applied`,
       flow: 'grade_change',
       requestId: input.id,
       at: input.appliedAt,
       tone: 'went-through',
-      actorLabel: applier,
-      actorInitials: initialsFromName(applier),
+      ...actorFor(input.appliedById, null, input.viewerId, input.nameById),
       predicate: `applied the mark change for ${input.studentLabel} to the sheet.`,
       details: [
         {

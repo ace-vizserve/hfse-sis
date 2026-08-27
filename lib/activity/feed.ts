@@ -245,6 +245,7 @@ async function loadDeclarationSide(
         ladder,
         subjectLabel: label,
         nameById,
+        viewerId: scope.userId,
         registerWrittenAt: view.registerWrittenAt,
         registerDaysWritten: view.registerDaysWritten,
         registerWriteError: view.registerWriteError,

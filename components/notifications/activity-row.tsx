@@ -2,8 +2,13 @@
 
 import Link from 'next/link';
 
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { ActivityEvent, ActivityTone } from '@/lib/activity/events';
+import type {
+  ActivityEvent,
+  ActivityFlow,
+  ActivityTone,
+} from '@/lib/activity/events';
 
 /**
  * One row of the activity log.
@@ -18,6 +23,23 @@ const TONE_DOT: Record<ActivityTone, string> = {
   'went-through': 'bg-brand-mint text-ink',
   'turned-down': 'bg-destructive text-destructive-foreground',
   started: 'bg-primary text-primary-foreground',
+};
+
+/**
+ * Which flow a row came from, said in the words the tabs use.
+ *
+ * ⚠ DELIBERATELY NOT COLOURED, and this is the whole design of the row. The
+ * coloured mark on the avatar already means one thing — what HAPPENED
+ * (approved / turned down / newly filed), in the three §9.3 tones. Flow is a
+ * category, not a severity, so giving it a second colour would put two colour
+ * systems in one row and the reader would have to learn which is which. A
+ * neutral chip separates "what kind of thing is this" from "how did it go"
+ * without competing (09-design-system.md §9: colour carries meaning, never
+ * decoration).
+ */
+const FLOW_LABEL: Record<ActivityFlow, string> = {
+  grade_change: 'Mark change',
+  student_declaration: 'Declaration',
 };
 
 export function ActivityRow({
@@ -52,8 +74,16 @@ export function ActivityRow({
             <b className="font-semibold text-foreground">{event.actorLabel}</b>{' '}
             {event.predicate}
           </span>
-          <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-ink-5">
-            {relativeTime(event.at)}
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="h-5 rounded-md px-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4"
+            >
+              {FLOW_LABEL[event.flow]}
+            </Badge>
+            <span className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-ink-5">
+              {relativeTime(event.at)}
+            </span>
           </span>
           {event.details?.map((detail, i) => (
             <span

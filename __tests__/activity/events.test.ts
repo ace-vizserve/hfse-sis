@@ -80,6 +80,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: '2026-08-27T02:01:20.000Z',
       registerDaysWritten: 1,
       registerWriteError: null,
@@ -98,6 +99,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: null,
@@ -113,6 +115,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: null,
@@ -131,6 +134,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: '2026-08-27T02:01:20.000Z',
       registerDaysWritten: 1,
       registerWriteError: null,
@@ -148,6 +152,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Jonah Fernandes, absence 24–26 Aug',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: '2026-08-27T02:01:20.000Z',
       registerDaysWritten: 3,
       registerWriteError: null,
@@ -165,6 +170,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: 'term not found',
@@ -227,6 +233,7 @@ describe('buildDeclarationEvents', () => {
       ladder: rejected,
       subjectLabel: 'Idris Rahman, absence 20–21 Aug',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: null,
@@ -260,6 +267,7 @@ describe('buildDeclarationEvents', () => {
       ladder: rejected,
       subjectLabel: 'Idris Rahman, absence 20–21 Aug',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: '2026-08-27T02:01:20.000Z',
       registerDaysWritten: 2,
       registerWriteError: null,
@@ -273,6 +281,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: null,
@@ -293,6 +302,7 @@ describe('buildDeclarationEvents', () => {
       ladder: ladder(),
       subjectLabel: 'Amelia Ng, travel 3 Sep',
       nameById: NAMES,
+      viewerId: '',
       registerWrittenAt: null,
       registerDaysWritten: null,
       registerWriteError: null,
@@ -351,31 +361,36 @@ describe('markChangeHistorySubtitle', () => {
   });
 });
 
+// Module scope so the "You" cases further down can reuse it. Every value here
+// is one the database actually permits — `field_changed` is one of the five in
+// 009_change_requests.sql's CHECK, and `slotIndex` is 0-based as stored.
+const gradeChangeBase = {
+  id: 'gcr-1',
+  fieldChanged: 'ww_scores',
+  slotIndex: 3,
+  currentValue: '18',
+  proposedValue: '21',
+  studentLabel: 'Samira Bakhtiari',
+  requestedById: 'u-teacher',
+  requestedByEmail: 'grace.lim@hfse.edu.sg',
+  requestedAt: '2026-08-27T00:47:00.000Z',
+  status: 'applied',
+  reviewedById: 'u-officer',
+  reviewedByEmail: 'elaine.wee@hfse.edu.sg',
+  reviewedAt: '2026-08-27T02:00:00.000Z',
+  decisionNote: null,
+  secondaryReviewedById: null,
+  secondaryReviewedByEmail: null,
+  secondaryReviewedAt: null,
+  secondaryDecision: null,
+  appliedById: 'u-registrar',
+  appliedAt: '2026-08-27T03:05:00.000Z',
+  nameById: NAMES,
+  href: '/markbook/change-requests?req=gcr-1',
+};
+
 describe('buildGradeChangeEvents', () => {
-  const base = {
-    id: 'gcr-1',
-    fieldChanged: 'ww_scores',
-    slotIndex: 3,
-    currentValue: '18',
-    proposedValue: '21',
-    studentLabel: 'Samira Bakhtiari',
-    requestedById: 'u-teacher',
-    requestedByEmail: 'grace.lim@hfse.edu.sg',
-    requestedAt: '2026-08-27T00:47:00.000Z',
-    status: 'applied',
-    reviewedById: 'u-officer',
-    reviewedByEmail: 'elaine.wee@hfse.edu.sg',
-    reviewedAt: '2026-08-27T02:00:00.000Z',
-    decisionNote: null,
-    secondaryReviewedById: null,
-    secondaryReviewedByEmail: null,
-    secondaryReviewedAt: null,
-    secondaryDecision: null,
-    appliedById: 'u-registrar',
-    appliedAt: '2026-08-27T03:05:00.000Z',
-    nameById: NAMES,
-    href: '/markbook/change-requests?req=gcr-1',
-  };
+  const base = gradeChangeBase;
 
   it('says "You" when the viewer is the one who asked', () => {
     const [asked] = buildGradeChangeEvents({ ...base, viewerId: 'u-teacher' });
@@ -494,6 +509,76 @@ describe('buildGradeChangeEvents', () => {
     expect(events.some((e) => e.id.endsWith(':reviewed:secondary'))).toBe(
       false
     );
+  });
+});
+
+// Reading your own approval described in the third person makes a log feel as
+// though it were about somebody else — you have to spot your own name in a
+// list before you can tell which rows were your doing.
+describe('the reader is named "You", never by their own name', () => {
+  it('names the reader on a declaration step they decided', () => {
+    const events = buildDeclarationEvents({
+      ladder: ladder(),
+      subjectLabel: 'Amelia Ng, travel 3 Sep',
+      nameById: NAMES,
+      viewerId: 'u-officer',
+      registerWrittenAt: null,
+      registerDaysWritten: null,
+      registerWriteError: null,
+    });
+
+    const mine = events.find((e) => e.id.endsWith(':step:2'));
+    const theirs = events.find((e) => e.id.endsWith(':step:1'));
+
+    expect(mine?.actorLabel).toBe('You');
+    expect(theirs?.actorLabel).toBe('Radhika Putrevu');
+  });
+
+  // The avatar is an identity, not a label. If it changed to "Y" for whoever
+  // happened to be reading, the same person's circle would differ between two
+  // people looking at the same row.
+  it('keeps the real initials on the reader’s own row', () => {
+    const [, , mine] = buildDeclarationEvents({
+      ladder: ladder(),
+      subjectLabel: 'Amelia Ng, travel 3 Sep',
+      nameById: NAMES,
+      viewerId: 'u-officer',
+      registerWrittenAt: null,
+      registerDaysWritten: null,
+      registerWriteError: null,
+    });
+
+    expect(mine.actorLabel).toBe('You');
+    expect(mine.actorInitials).toBe('EW');
+  });
+
+  it('names nobody "You" when there is no reader', () => {
+    const events = buildDeclarationEvents({
+      ladder: ladder(),
+      subjectLabel: 'Amelia Ng, travel 3 Sep',
+      nameById: NAMES,
+      viewerId: '',
+      registerWrittenAt: null,
+      registerDaysWritten: null,
+      registerWriteError: null,
+    });
+
+    expect(events.some((e) => e.actorLabel === 'You')).toBe(false);
+  });
+
+  it('names the reader on every mark-change action, not only the one they asked for', () => {
+    const reviewed = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-officer',
+    }).find((e) => e.id.endsWith(':reviewed'));
+
+    const applied = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-registrar',
+    }).find((e) => e.id.endsWith(':applied'));
+
+    expect(reviewed?.actorLabel).toBe('You');
+    expect(applied?.actorLabel).toBe('You');
   });
 });
 
