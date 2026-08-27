@@ -1167,6 +1167,65 @@ in the generator; see KD #194.
 >
 > Thank you.
 
+### To the office — the Term 4 dates · NOT SENT, written 2026-08-27
+
+🔴 **This one is time-critical and nothing else on the list is.** AY2026 has
+term rows for 1, 2 and 3 only. **Term 3 ends Friday 4 September**, and after
+that date no term owns a single day — so from 7 September **attendance cannot
+be marked anywhere in the school**, and a parent filing an absence for those
+dates is either refused or silently expands to zero days. Nothing on any
+screen explains why.
+
+⚠ **Most of the answer is already in the school's own calendar, which is why
+this asks for one date rather than four.** `AY 2026 Calendar.png` gives **Start
+of Term 4 = Monday 14 September**, term break 7–11 September, and the yearend
+school holiday running 24–30 November. What it never states is where Term 4
+**ends** — it can only be inferred from the holiday starting the day after.
+Mr Ace's call, 2026-08-27: **ask, do not infer.** So the message states what we
+already have and asks only for the missing piece.
+
+⚠ **Do not ask them to list the Term 4 holidays from scratch.** They are on the
+same poster (2 Oct Children's Day, 8–9 Nov Deepavali, 23 Oct Term 4 Marking
+Day, 6 Nov Awards Deliberation Day). Reading them back for confirmation is one
+line; asking them to compile a list is homework, and this file has recorded
+twice what happens when a message grows.
+
+**What we do with the answer, so nobody has to ask twice:** re-run Create AY
+for AY2026 on `/sis/ay-setup/manage` (idempotent — it inserts only the missing
+term row and copies nothing else), set the dates, then seed the calendar and
+mark the closures. ⚠ **The seeding is not optional tidying**: a term with dates
+but no calendar rows blocks nothing at all, so weekends would become markable.
+
+> Good afternoon,
+>
+> One quick thing about the school calendar, and it is time-sensitive.
+>
+> The system currently has Term 4 missing for this academic year — Terms 1, 2
+> and 3 are set up, Term 3 ends on Friday 4 September, and there is nothing
+> after it. From Monday 7 September onwards teachers will not be able to mark
+> attendance at all, and parents filing an absence or travel declaration for
+> those dates will be turned away.
+>
+> From the AY2026 calendar I have Term 4 starting on **Monday 14 September**,
+> after the 7–11 September term break. What the calendar does not say is when
+> Term 4 **ends**. The yearend school holiday begins on 24 November, so I
+> assume the last day of term is either **Friday 20 November** or **Monday 23
+> November** — could you confirm which?
+>
+> And could you confirm these are the non-school days inside Term 4, which I
+> have taken from the same calendar:
+>
+> - 2 October — Children's Day
+> - 23 October — Term 4 Marking Day
+> - 6 November — Awards Deliberation Day
+> - 8 and 9 November — Deepavali and the day in lieu
+>
+> If there are others, or if any of the above has moved, please let me know.
+>
+> Once I have the end date I can set Term 4 up straight away.
+>
+> Thank you.
+
 ### To Christina — 1 of 5 · student details for teachers
 
 ⚠ **Rewritten 2026-08-09, because the original was wrong on its central claim,
