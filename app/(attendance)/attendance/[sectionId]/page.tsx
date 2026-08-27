@@ -327,6 +327,7 @@ export default async function SectionAttendancePage({
             `${f.sectionStudentId}|${date}`,
             {
               dateRange: formatDayRange(f.startDate, f.endDate),
+              kind: f.declarationType,
               hasEvidence: f.hasEvidence,
               approvedBy: f.approvedBy,
               // ⚠ `?req=` and the REQUEST id — the same deep link the

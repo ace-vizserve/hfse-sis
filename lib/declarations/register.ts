@@ -58,8 +58,17 @@ const EX_REASON_BY_DECLARATION_TYPE: Record<string, ExReason> = {
  * vacation leave is one TRIP, not one day), because writing `vacation` days
  * while a day-counter was still in place would have made every approved
  * holiday instantly report itself as over quota on six screens.
+ *
+ * ⚠ EXPORTED because a second reader needs the same answer.
+ * `lib/declarations/cell-filings.ts` asks the attendance sheet's version of
+ * this question — "which filings can explain a mark on this day" — and the
+ * answer must be identical, because a kind that writes marks but is missing
+ * from the sheet produces a register the sheet cannot account for and, worse,
+ * an approved day a teacher can overwrite with no warning. That is exactly
+ * what happened to travel: this set gained it and the sheet's own filter did
+ * not.
  */
-const REGISTER_WRITING_TYPES = new Set(['absence', 'travel']);
+export const REGISTER_WRITING_TYPES = new Set(['absence', 'travel']);
 
 export type RegisterWriteResult =
   | { ok: true; written: number; skipped: number; skippedReason: null }

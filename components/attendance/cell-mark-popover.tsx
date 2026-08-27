@@ -1,6 +1,14 @@
 'use client';
 
-import { ArrowUpRight, Check, FileText, TriangleAlert } from 'lucide-react';
+// `Plane` is the same icon the declarations queue puts on a travel row, so one
+// filing wears one symbol wherever a person meets it.
+import {
+  ArrowUpRight,
+  Check,
+  FileText,
+  Plane,
+  TriangleAlert,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { STATUS_SEGMENT_WASH } from '@/components/attendance/status-wash';
@@ -111,7 +119,15 @@ export type CellFiling = {
    * of slip that once shifted the relief cover board by a whole month.
    */
   dateRange: string;
-  /** A certificate was uploaded or a link was given. */
+  /**
+   * Which kind of filing excused the day — an absence, or a family holiday.
+   *
+   * Both write the register (`REGISTER_WRITING_TYPES`), so both belong here.
+   * They differ in one word of copy and one icon: a holiday has no
+   * certificate to have or lack, so the evidence clause is absence-only.
+   */
+  kind: 'absence' | 'travel';
+  /** A certificate was uploaded or a link was given. Absence only. */
   hasEvidence: boolean;
   /** Who gave the final approval. Null if the name could not be resolved. */
   approvedBy: string | null;
@@ -502,6 +518,13 @@ export function CellMarkPalette({
  *     the filing, where the queue does its own scoping.
  */
 function FilingCard({ filing }: { filing: CellFiling }) {
+  const isTravel = filing.kind === 'travel';
+  // ⚠ The kind goes in the BOLD phrase rather than being appended as another
+  // "· travel" clause. It is the first thing read, it keeps the card to one
+  // line, and — the practical reason — it leaves the absence copy exactly as
+  // it shipped and was reviewed, instead of re-opening a string that carries
+  // the school's own words.
+  const Icon = isTravel ? Plane : FileText;
   return (
     <a
       href={filing.href}
@@ -509,17 +532,29 @@ function FilingCard({ filing }: { filing: CellFiling }) {
       rel="noreferrer"
       className="group flex items-center gap-2.5 rounded-xl bg-muted px-3 py-2.5 transition-colors hover:bg-accent"
     >
-      <FileText className="size-4 shrink-0 text-brand-indigo" aria-hidden />
+      <Icon className="size-4 shrink-0 text-brand-indigo" aria-hidden />
       <span className="min-w-0 flex-1 text-[12px] leading-snug text-foreground">
-        <span className="font-semibold">Excused by a parent&apos;s filing</span>
+        <span className="font-semibold">
+          {isTravel
+            ? "Excused by a parent's travel filing"
+            : "Excused by a parent's filing"}
+        </span>
         <span className="text-muted-foreground">
           {' · '}
           {filing.dateRange}
           {/* ⚠ The absence of proof is stated, not left blank. A parent may
               file without a certificate, and a teacher reading only "excused
               by a filing" would assume one exists. Two words, because the
-              panel has to stay readable. */}
-          {filing.hasEvidence ? ' · certificate' : ' · no certificate'}
+              panel has to stay readable.
+
+              ⚠ ABSENCE ONLY. A holiday has no certificate to have or lack —
+              the schema forbids one — so "no certificate" there would invent
+              a missing document nobody ever asked the parent for. */}
+          {isTravel
+            ? ''
+            : filing.hasEvidence
+              ? ' · certificate'
+              : ' · no certificate'}
         </span>
       </span>
       <ArrowUpRight

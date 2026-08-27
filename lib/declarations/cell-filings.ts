@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import { REGISTER_WRITING_TYPES } from '@/lib/declarations/register';
 
 // "Why is this day excused?" — answered on the attendance sheet itself.
 //
@@ -26,11 +27,29 @@ import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 
 export type CellFilingRow = {
   sectionStudentId: string;
+  /**
+   * Which kind of filing excused the day.
+   *
+   * ⚠ Travel used to be excluded from this whole module on the grounds that it
+   * "marks nothing" — true when KD #197 shipped, and false from the moment
+   * KD #199 added `travel` to `REGISTER_WRITING_TYPES` the same day. An
+   * approved holiday writes `EX` / `vacation` exactly as an absence writes
+   * `EX` / `mc`, so leaving it out meant the register carried a mark the sheet
+   * could not explain — and, worse, the override confirmation never fired, so
+   * a teacher could overwrite an approved holiday with no warning at all.
+   */
+  declarationType: 'absence' | 'travel';
   /** Every day of the filed range that falls in the requested window. */
   dates: string[];
   filedBy: string;
   startDate: string;
   endDate: string;
+  /**
+   * ⚠ ABSENCE ONLY. A travel filing has no evidence concept — the schema
+   * forbids it carrying one — so this is always false for travel and must
+   * never be rendered there as "no certificate", which would invent a missing
+   * document nobody was ever asked for.
+   */
   hasEvidence: boolean;
   approvedBy: string | null;
   declarationId: string;
@@ -47,16 +66,18 @@ export type CellFilingRow = {
 };
 
 /**
- * Approved absence filings overlapping [from, to] for one section.
+ * Approved filings overlapping [from, to] for one section — absence AND travel.
  *
  * One query for the filings, one for the ladders that decided them, one to put
  * names on the deciders — whatever the row count. Sections have a handful of
  * these per term, so this is cheap; it is written as a bulk read anyway
  * because the caller is a page that renders a whole term at once.
  *
- * ⚠ Travel is excluded, matching the register write. A travel filing marks
- * nothing until Phase 4, so surfacing it against a day would claim a mark that
- * is not there.
+ * ⚠ THE RULE IS "DID THIS FILING MARK THE REGISTER", and the one place that
+ * answers it is `REGISTER_WRITING_TYPES` in `lib/declarations/register.ts`.
+ * Both kinds are in it. An earlier version of this function filtered to
+ * `absence` because travel wrote nothing yet; that stopped being true within
+ * the same day and the filter outlived the reason for it.
  */
 export async function loadCellFilingsForSection(
   service: SupabaseClient,
@@ -67,10 +88,10 @@ export async function loadCellFilingsForSection(
   const { data, error } = await service
     .from('student_declarations')
     .select(
-      'id, section_student_id, start_date, end_date, evidence_path, evidence_url, filed_by_email'
+      'id, section_student_id, declaration_type, start_date, end_date, evidence_path, evidence_url, filed_by_email'
     )
     .eq('section_id', sectionId)
-    .eq('declaration_type', 'absence')
+    .in('declaration_type', [...REGISTER_WRITING_TYPES])
     .eq('status', 'approved')
     // Overlap, not containment — a filing that starts before the window or
     // ends after it still covers days inside it.
@@ -83,6 +104,7 @@ export async function loadCellFilingsForSection(
   const rows = (data ?? []) as Array<{
     id: string;
     section_student_id: string;
+    declaration_type: 'absence' | 'travel';
     start_date: string;
     end_date: string;
     evidence_path: string | null;
@@ -103,6 +125,7 @@ export async function loadCellFilingsForSection(
     declarationId: row.id,
     requestId: requestByDeclaration.get(row.id) ?? null,
     sectionStudentId: row.section_student_id,
+    declarationType: row.declaration_type,
     dates: datesInWindow(row.start_date, row.end_date, from, to),
     filedBy: row.filed_by_email,
     startDate: row.start_date,

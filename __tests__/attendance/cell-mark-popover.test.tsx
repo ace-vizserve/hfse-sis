@@ -178,9 +178,23 @@ describe('quotas read as what is left, not as a fraction', () => {
 describe('a day a parent filed for', () => {
   const FILING = {
     dateRange: '27–31 Aug 2026',
+    kind: 'absence' as const,
     hasEvidence: true,
     approvedBy: 'Ms Lhen Mendoza',
     href: '/attendance/declarations?filing=abc',
+  };
+
+  // An approved family holiday. It writes `EX` / `vacation` exactly as an
+  // absence writes `EX` / `mc`, so it must reach this panel the same way —
+  // it did not, for a whole day, and the consequence was not cosmetic: with
+  // no filing on the cell the override confirmation never fired at all.
+  const TRAVEL_FILING = {
+    dateRange: '27 Aug – 3 Sep 2026',
+    kind: 'travel' as const,
+    // Always false for travel; the schema forbids a holiday carrying evidence.
+    hasEvidence: false,
+    approvedBy: 'Ms Elaine Wee',
+    href: '/attendance/declarations?req=xyz',
   };
 
   it('says so in one line, and links to the filing', () => {
@@ -295,5 +309,50 @@ describe('a day a parent filed for', () => {
     setup({ status: 'EX', exReason: 'mc' });
     expect(screen.queryByText('A parent filed for this day')).toBeNull();
     expect(screen.getByLabelText('Note for Reyes, Ana on 7 Aug')).toBeTruthy();
+  });
+
+  // ── an approved family holiday ─────────────────────────────────────────
+  //
+  // Travel was excluded from `loadCellFilingsForSection` on the reasoning that
+  // it "marks nothing" — true for a few hours on 2026-08-27, and false from
+  // the moment KD #199 shipped. The filter outlived its reason, and nothing
+  // caught it because every test here filed an absence.
+
+  it('names a holiday as a holiday, and never mentions a certificate', () => {
+    // ⚠ "no certificate" would be a lie of a particular kind: it implies a
+    // document is missing, when a holiday has none to give.
+    setup({ status: 'EX', exReason: 'vacation', filing: TRAVEL_FILING });
+    expect(
+      screen.getByText(/Excused by a parent's travel filing/)
+    ).toBeTruthy();
+    expect(screen.getByText(/27 Aug – 3 Sep 2026/)).toBeTruthy();
+    expect(screen.queryByText(/certificate/)).toBeNull();
+  });
+
+  it('asks before overriding an approved holiday', async () => {
+    // THE REASON THIS FIX MATTERS. Without the filing on the cell the guard
+    // never fires, so a teacher could overwrite a holiday two people approved
+    // with no warning whatsoever.
+    const { onPick, user } = setup({
+      status: 'EX',
+      exReason: 'vacation',
+      filing: TRAVEL_FILING,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Absent' }));
+
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByText(/Ms Elaine Wee approved this day/)).toBeTruthy();
+  });
+
+  it('asks on the keyboard shortcut for a holiday too', async () => {
+    const { onPick, user } = setup({
+      status: 'EX',
+      exReason: 'vacation',
+      filing: TRAVEL_FILING,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Excused' }));
+    await user.keyboard('a');
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByText(/approved this day as excused/)).toBeTruthy();
   });
 });
