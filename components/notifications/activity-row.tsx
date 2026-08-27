@@ -28,15 +28,24 @@ const TONE_DOT: Record<ActivityTone, string> = {
 /**
  * Which flow a row came from, said in the words the tabs use.
  *
- * ⚠ DELIBERATELY NOT COLOURED, and this is the whole design of the row. The
- * coloured mark on the avatar already means one thing — what HAPPENED
- * (approved / turned down / newly filed), in the three §9.3 tones. Flow is a
- * category, not a severity, so giving it a second colour would put two colour
- * systems in one row and the reader would have to learn which is which. A
- * neutral chip separates "what kind of thing is this" from "how did it go"
- * without competing (09-design-system.md §9: colour carries meaning, never
- * decoration).
+ * ⚠ THE HUES ARE CHOSEN TO BE UNMISTAKABLE FOR STATUS, and that constraint is
+ * the whole reason these two and not any others. A row already carries colour
+ * that MEANS something: the mark on the avatar is mint / destructive / primary
+ * for approved / turned down / newly filed (§9.3). A flow chip in any of those
+ * three would read as an outcome — a mint "Declaration" says approved before
+ * the reader has processed the word.
+ *
+ * So flow uses the two Aurora Vault hues that carry no status meaning
+ * anywhere in this product, sky and amber, in the §9.3 recipe shape (tinted
+ * wash + matching border) with the text left at high-contrast ink so a 10px
+ * uppercase label stays legible. Colour still carries meaning here — it is
+ * just answering "what kind of thing is this", not "how did it go".
  */
+const FLOW_STYLE: Record<ActivityFlow, string> = {
+  grade_change: 'border-brand-amber/50 bg-brand-amber/15 text-ink-2',
+  student_declaration: 'border-brand-sky/50 bg-brand-sky/15 text-ink-2',
+};
+
 const FLOW_LABEL: Record<ActivityFlow, string> = {
   grade_change: 'Mark change',
   student_declaration: 'Declaration',
@@ -76,8 +85,11 @@ export function ActivityRow({
           </span>
           <span className="flex flex-wrap items-center gap-2">
             <Badge
-              variant="secondary"
-              className="h-5 rounded-md px-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4"
+              variant="outline"
+              className={cn(
+                'h-5 rounded-md px-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider',
+                FLOW_STYLE[event.flow]
+              )}
             >
               {FLOW_LABEL[event.flow]}
             </Badge>
