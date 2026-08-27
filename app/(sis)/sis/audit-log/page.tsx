@@ -17,6 +17,14 @@ const SIS_AUDIT_ALLOWLIST = [
   // Approver assignments (KD #41)
   'approver.assign',
   'approver.revoke',
+  // Ordered approval steps (migration 126) — configuration, so it belongs on
+  // the structural admin tier. The DECISIONS taken on those steps live on the
+  // module's own log, not here.
+  'approval_stage.create',
+  'approval_stage.update',
+  'approval_stage.delete',
+  'approval_stage.approver.assign',
+  'approval_stage.approver.revoke',
   // Subject catalog (KD #72)
   'subject.create',
   'subject_config.create',

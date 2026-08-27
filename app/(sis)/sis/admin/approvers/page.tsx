@@ -13,13 +13,19 @@ import {
   listEligibleApproverCandidates,
 } from '@/lib/sis/approvers/queries';
 import { getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { loadAllFlowConfigs } from '@/lib/approvals/config';
+import { listStaffUsers } from '@/lib/sis/users/queries';
+import { StagedFlowEditor } from '@/components/sis/staged-flow-editor';
 
 export default async function ApproversPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (sessionUser.role !== 'superadmin') redirect('/sis');
 
-  const [byFlow, candidatesByFlow] = await Promise.all([
+  const service = createServiceClient();
+
+  const [byFlow, candidatesByFlow, stagedFlows, staff] = await Promise.all([
     listAllApproverAssignments(),
     Promise.all(
       APPROVER_FLOWS.map(
@@ -33,6 +39,8 @@ export default async function ApproversPage() {
           Array<{ user_id: string; email: string; role: string }>
         >
     ),
+    loadAllFlowConfigs(service),
+    listStaffUsers(),
   ]);
 
   return (
@@ -98,6 +106,22 @@ export default async function ApproversPage() {
       <ApproverReadinessCards byFlow={byFlow} />
 
       <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
+
+      {/* Ordered flows — a different mechanism from everything above, and the
+          copy on each has to say which one the reader is looking at. Above:
+          a POOL of two, whoever acts first decides. Below: a SEQUENCE, one
+          step at a time. Nothing above this line changed. */}
+      <StagedFlowEditor
+        flows={stagedFlows}
+        staff={staff
+          .filter((u) => !u.disabled)
+          .map((u) => ({
+            userId: u.id,
+            email: u.email,
+            displayName: u.display_name,
+            role: u.role,
+          }))}
+      />
     </PageShell>
   );
 }

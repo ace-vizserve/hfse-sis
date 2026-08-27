@@ -94,4 +94,6 @@ Parent report card: **cumulative earlier-term comments + parents may read the le
 
 **Status labels are the parent's words, not the schema's.** `pending` renders as **"With the school"**: _pending_ reads as _stuck_ to somebody watching a form they filed about a sick child.
 
-**Not built here, deliberately:** approval (KD forthcoming — stages, first-to-act), the register write on final approval, editing or withdrawing a filing, and notifying the parent of the outcome. Handoff brief for the portal's own repo: `docs/handoff/2026-08-27-parent-portal-declarations.md`.
+✅ **Approval landed the same day as KD #196** (migrations 126/127 — ordered stages, first to act carries a stage, a rejection ends it, the steps are configuration). This flow is its first and only user: the child's form class adviser, then an officer in charge. `status` now moves.
+
+**Not built here, deliberately:** approval (**built** — KD #196: stages, first-to-act), the register write on final approval, editing or withdrawing a filing, and notifying the parent of the outcome. Handoff brief for the portal's own repo: `docs/handoff/2026-08-27-parent-portal-declarations.md`.

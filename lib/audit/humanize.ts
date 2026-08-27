@@ -74,6 +74,12 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'discipline.record.file': 'Discipline record filed',
   'discipline.record.update': 'Discipline record updated',
 
+  // Parent-filed declarations. Same privacy rule as the two notes above: the
+  // parent's message and the approver's reason are BOTH kept out of the
+  // context, and only their presence is recorded.
+  'declaration.approve': 'Absence declaration approved',
+  'declaration.reject': 'Absence declaration turned down',
+
   // Students / enrolment
   'student.sync': 'Student synced',
   'student.add': 'Student added',
@@ -193,6 +199,14 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Approvers
   'approver.assign': 'Approver assigned',
   'approver.revoke': 'Approver removed',
+
+  // Ordered approval steps (migration 126) — the configurable kind, as
+  // distinct from the pooled pair above.
+  'approval_stage.create': 'Approval step added',
+  'approval_stage.update': 'Approval step changed',
+  'approval_stage.delete': 'Approval step retired',
+  'approval_stage.approver.assign': 'Person added to an approval step',
+  'approval_stage.approver.revoke': 'Person removed from an approval step',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -364,6 +378,55 @@ function templateSummary(
       if (reason) parts.push(reason);
       const ref = str(ctx.approval_reference);
       if (ref) parts.push(`ref ${ref}`);
+      return joinParts(parts);
+    }
+
+    // Parent-filed declarations ----------------------------------------------
+    //
+    // ⚠ The words are missing on purpose. Neither the parent's note nor the
+    // approver's reason is in `context` at all — see migration 109's rule, kept
+    // by 125 and 126 — so there is nothing to render but the facts of the
+    // decision: whose class, which days, which step, and whether a certificate
+    // was attached (`ex_reason` is already logged the same way by the daily
+    // attendance writer, so this is the existing line, not a new one).
+    case 'declaration.approve':
+    case 'declaration.reject': {
+      const parts: string[] = [];
+      const section = str(ctx.section_name);
+      if (section) parts.push(section);
+      const from = fmtMaybeDate(ctx.start_date);
+      const to = fmtMaybeDate(ctx.end_date);
+      if (from && to) parts.push(from === to ? from : `${from}${ARROW}${to}`);
+      else if (from) parts.push(from);
+      const type = str(ctx.declaration_type);
+      if (type) parts.push(type === 'travel' ? 'travel' : 'absence');
+      if (boolish(ctx.with_medical) === true) parts.push('with certificate');
+      const stage = str(ctx.stage_label);
+      if (stage) parts.push(stage);
+      const outcome = str(ctx.outcome);
+      if (outcome === 'advanced') parts.push('moved to the next step');
+      else if (outcome === 'completed') parts.push('fully approved');
+      if (boolish(ctx.note_present) === true) parts.push('note attached');
+      return joinParts(parts);
+    }
+
+    // Ordered approval steps -------------------------------------------------
+    case 'approval_stage.create':
+    case 'approval_stage.update':
+    case 'approval_stage.delete':
+    case 'approval_stage.approver.assign':
+    case 'approval_stage.approver.revoke': {
+      const parts: string[] = [];
+      const flow = str(ctx.flow_label ?? ctx.flow);
+      if (flow) parts.push(flow);
+      const stage = str(ctx.stage_label);
+      if (stage) parts.push(stage);
+      const person = str(ctx.email ?? ctx.display_name);
+      if (person) parts.push(person);
+      const moved = str(ctx.move);
+      if (moved) parts.push(moved === 'up' ? 'moved earlier' : 'moved later');
+      const renamed = str(ctx.new_label);
+      if (renamed) parts.push(`renamed to ${renamed}`);
       return joinParts(parts);
     }
 

@@ -72,6 +72,13 @@ const CLASSIFIED: Record<string, Category[]> = {
   'lib/classroom/scope.ts': ['plumbing'],
 
   // ── act ─────────────────────────────────────────────────────────────────
+  // Parent-filed declarations (#6, migrations 125-127). ACT in both
+  // directions: it answers "who may DECIDE this absence", and the answer has
+  // to include a substitute, because the class being covered is very often the
+  // reason a child's absence needs deciding this week rather than next. It
+  // reads `ADVISER_ROLES`, so a co-adviser is admitted exactly as SQL's
+  // `is_section_adviser` admits them; nothing here prints a name.
+  'lib/approvals/resolve.ts': ['act'],
   'lib/sidebar/resolve-hidden-modules.ts': ['act'],
   'lib/sidebar/module-visibility.ts': ['act'],
   'lib/attendance/adviser-dashboard-queries.ts': ['act'],

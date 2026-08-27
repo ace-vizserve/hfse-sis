@@ -164,6 +164,22 @@ export const ALL_AUDIT_ACTIONS = [
   // routes and migration 120.
   'discipline.record.file',
   'discipline.record.update',
+  // Parent-filed absence and travel declarations (#6, migration 125) and the
+  // ordered approval that decides them (126/127). The DECISION is logged, never
+  // the words: neither the parent's note nor the approver's reason reaches
+  // audit_log, for the reason migration 109 set out for `ex_note` — the log is
+  // readable by every is_registrar_or_above() user, is append-only, and this
+  // material is medical-adjacent and about a child. Presence only.
+  'declaration.approve',
+  'declaration.reject',
+  // The configuration of an ordered flow: which steps exist, in what order,
+  // and who is on the ones that name people. Distinct from `approver.assign`,
+  // which belongs to the older pooled change-request flow.
+  'approval_stage.create',
+  'approval_stage.update',
+  'approval_stage.delete',
+  'approval_stage.approver.assign',
+  'approval_stage.approver.revoke',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
@@ -212,6 +228,10 @@ export type AuditEntityType =
   | 'evaluation_ptc_feedback'
   | 'classroom_note'
   | 'student_discipline_record'
+  | 'student_declaration'
+  | 'approval_request'
+  | 'approval_stage'
+  | 'approval_stage_approver'
   // The entity is the ROLE whose permissions changed, so entity_id is the role
   // name — not a uuid. entity_id is `text` since migration 043.
   | 'role_permissions';

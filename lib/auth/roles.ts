@@ -311,6 +311,17 @@ const ATTENDANCE_NAV: NavSection[] = [
       // Attendance's own working surface; only the row destination changes.
       { href: '/attendance/sections', label: 'Sections' },
       {
+        // Parent-filed absence and travel declarations awaiting a decision
+        // (#6, migrations 125-127). No `requiresRoles`: the people who act on
+        // these are form class advisers, so the audience is the module's own
+        // audience, and the broad `/attendance` ROUTE_ACCESS row already
+        // admits exactly that set. Adding a longer-prefix row would have
+        // needed to sit ABOVE `/attendance` to have any effect — ROUTE_ACCESS
+        // matches in declaration order, not by prefix length.
+        href: '/attendance/declarations',
+        label: 'Declarations',
+      },
+      {
         href: '/attendance/insights',
         label: 'Insights',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],

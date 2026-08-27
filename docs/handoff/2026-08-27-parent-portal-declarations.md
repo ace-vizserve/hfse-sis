@@ -271,8 +271,11 @@ it, something is retrying in a loop.
 ## Things that are NOT yours to build
 
 - **Approval.** Two people at the school approve each declaration — the child's
-  form class adviser, then an officer in charge. That is SIS-side. Your job ends
-  at showing the status.
+  form class adviser, then an officer in charge, in that order. That is
+  SIS-side and it is now built. Your job still ends at showing the status.
+  ⚠ **A declaration stays `pending` until BOTH have approved.** One approval
+  does not change anything you can see, and that is correct: from the parent's
+  side it is still with the school, because it is.
 - **The register.** On final approval the SIS marks those days excused itself.
 - **Editing or withdrawing a filing.** Not built yet on either side. If parents
   need it, say so and it gets added to the SIS first.
@@ -283,8 +286,10 @@ it, something is retrying in a loop.
 
 Worth knowing so you do not design around a guess:
 
-1. Nobody currently holds the "officer in charge" post, so approvals may sit at
-   the first stage until the school names someone.
+1. ~~Nobody holds the "officer in charge" post.~~ **Answered 2026-08-27** —
+   two people share it and either can approve. Both steps are live, so a
+   declaration can now go all the way through. A parent may still see "With the
+   school" for a while: do not add copy promising a timeframe.
 2. Whether an approved absence should affect the child's attendance percentage.
    Today it does not — an excused day counts as present.
 

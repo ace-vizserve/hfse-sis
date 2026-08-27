@@ -15,6 +15,7 @@ import {
   loadFilableStudents,
   type LinkedStudent,
 } from '@/lib/declarations/parent';
+import { openDeclarationApprovals } from '@/lib/declarations/approval';
 
 // Student Absence and Travel Declaration — the parent's own endpoints.
 //
@@ -247,7 +248,7 @@ export async function POST(request: Request) {
   const { data: inserted, error } = await service
     .from('student_declarations')
     .insert(rows)
-    .select('id, student_id, status');
+    .select('id, student_id, section_id, status');
 
   if (error) {
     // ⚠ A duplicate is SUCCESS, not an error. `student_declarations_no_duplicate_filing`
@@ -279,6 +280,48 @@ export async function POST(request: Request) {
     );
   }
 
+  // ── Put each filing onto the approval ladder ─────────────────────────────
+  //
+  // ⚠ A DECLARATION WITH NO LADDER IS THE WORST FAILURE THIS FEATURE HAS,
+  // because every screen looks fine: the parent sees "With the school", and no
+  // staff queue anywhere shows it, forever. So a real failure here takes the
+  // rows back out and asks the parent to try again — they will, and nothing is
+  // stranded. A merely UNCONFIGURED flow is different and does not roll back;
+  // see lib/declarations/approval.ts for why the parent must not pay for that.
+  const insertedRows = (inserted ?? []) as unknown as Array<{
+    id: string;
+    student_id: string;
+    section_id: string;
+    status: string;
+  }>;
+
+  try {
+    const ladders = await openDeclarationApprovals(
+      service,
+      insertedRows.map((r) => ({ id: r.id, sectionId: r.section_id })),
+      { id: auth.userId, email: auth.email }
+    );
+    if (ladders.unconfigured > 0) {
+      console.warn(
+        `[declarations] ${ladders.unconfigured} filing(s) stored with no approval steps configured — nobody can act on them until /sis/admin/approvers is set up.`
+      );
+    }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    console.error('[declarations] approval ladder failed:', reason);
+    await service
+      .from('student_declarations')
+      .delete()
+      .in(
+        'id',
+        insertedRows.map((r) => r.id)
+      );
+    return NextResponse.json(
+      { error: 'Could not save that. Please try again.' },
+      { status: 500, headers: cors }
+    );
+  }
+
   // ⚠ NOTHING IS AUDIT-LOGGED WITH THE NOTE IN IT. The parent's message is
   // medical-adjacent and about a child; `audit_log` is readable by every
   // is_registrar_or_above() user and can never be edited or deleted. Same rule
@@ -289,8 +332,7 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       filingGroupId,
-      declarations: (inserted ?? []).map((r) => {
-        const row = r as { id: string; student_id: string; status: string };
+      declarations: insertedRows.map((row) => {
         const student = byStudentId.get(row.student_id);
         return {
           id: row.id,

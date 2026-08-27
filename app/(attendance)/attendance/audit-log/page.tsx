@@ -40,6 +40,11 @@ export const ATTENDANCE_AUDIT_ACTIONS = [
   'attendance.event.create',
   'attendance.event.update',
   'attendance.event.delete',
+  // Parent-filed absence and travel declarations (#6). The decision belongs
+  // here rather than on a SIS page because the people who take it are form
+  // class advisers, and this is their module's log.
+  'declaration.approve',
+  'declaration.reject',
 ] as const satisfies readonly string[];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

@@ -8,6 +8,9 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdviserAttendanceDashboard } from '@/components/attendance/adviser-dashboard';
+import { DeclarationsWaitingPanel } from '@/components/attendance/declarations-waiting-panel';
+import { countInboxActionable } from '@/lib/approvals/inbox';
+import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
 import {
   loadAdviserAttendanceDashboard,
   type AdviserDashboard,
@@ -48,6 +51,7 @@ import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import type { Role } from '@/lib/auth/roles';
 
 // Resolves the adviser's own dashboard, or null when they advise nothing.
 //
@@ -90,6 +94,32 @@ async function loadAdviserDashboardForTeacher(
   });
 }
 
+/**
+ * Declarations waiting on this person.
+ *
+ * ⚠ Never throws. This is one panel on a dashboard; a failure here must not
+ * take the whole page down with it, and zero is the honest fallback — the
+ * queue at /attendance/declarations is the authority either way.
+ */
+async function countDeclarationsWaiting(
+  userId: string,
+  role: Role | null
+): Promise<number> {
+  try {
+    return await countInboxActionable(createServiceClient(), {
+      flow: DECLARATION_APPROVAL_FLOW,
+      userId,
+      role,
+    });
+  } catch (e) {
+    console.error(
+      '[attendance] declarations count failed:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return 0;
+  }
+}
+
 export default async function AttendanceDashboard({
   searchParams,
 }: {
@@ -107,11 +137,20 @@ export default async function AttendanceDashboard({
   // advises nothing (a subject teacher has no attendance work at all — RLS
   // gates `attendance_records` on `is_adviser_for_section`), and those keep the
   // old redirect.
+  // How many parent-filed declarations are waiting for THIS person to decide.
+  // Rendered as a panel rather than on the notification bell — see
+  // components/attendance/declarations-waiting-panel.tsx for why.
+  const declarationsWaiting = await countDeclarationsWaiting(
+    session.id,
+    session.role
+  );
+
   if (session.role === 'teacher') {
     const teacherView = await loadAdviserDashboardForTeacher(session.id);
     if (!teacherView) redirect('/attendance/sections');
     return (
       <PageShell>
+        <DeclarationsWaitingPanel count={declarationsWaiting} />
         <AdviserAttendanceDashboard data={teacherView} />
       </PageShell>
     );
@@ -276,6 +315,8 @@ export default async function AttendanceDashboard({
           </Button>
         }
       />
+
+      <DeclarationsWaitingPanel count={declarationsWaiting} />
 
       {/* Operational top-of-fold per KD #57 — registrar's first question is
           "what needs action right now?" (sections still unmarked, students

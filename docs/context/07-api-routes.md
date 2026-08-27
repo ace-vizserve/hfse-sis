@@ -248,3 +248,19 @@ The only parent-facing surface. Consumed cross-origin by the external admissions
 | `/api/parent/v2/declarations/evidence` | POST   | same, multipart                        | Upload a medical certificate into `parent-portal/declarations/<parent user id>/`. Returns the object path to send with the filing                                 |
 
 Tokens are verified via `service.auth.getUser(token)`; CORS allowlist in `lib/cors.ts` (`ADMISSIONS_PORTAL_ORIGIN`); IP + per-user rate limiting via `lib/rate-limit.ts`.
+
+⚠ **`POST /api/parent/v2/declarations` also opens the approval ladder** (KD #196). If that write fails the just-inserted rows are DELETED and the parent gets a 500 — a declaration with no ladder is invisible to every staff queue while the parent reads "With the school" forever. A flow with no steps configured is the one exception: the filing stands, and `scripts/repair-declaration-approvals.ts --apply` opens its request once the steps exist.
+
+## Ordered approvals (KD #196)
+
+| Route                                          | Method | Auth                     | Description                                                                                                                                               |
+| ---------------------------------------------- | ------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/approvals/[requestId]/decide`            | POST   | any signed-in staff role | Approve or turn down the request's CURRENT step. ⚠ No capability gate — **the stage pool is the permission**, re-checked inside `approval_advance`'s lock |
+| `/api/sis/admin/approval-stages`               | GET    | `approvers.manage`       | Every staged flow and its steps, in order                                                                                                                 |
+| `/api/sis/admin/approval-stages`               | POST   | `approvers.manage`       | Add a step to the end of a flow                                                                                                                           |
+| `/api/sis/admin/approval-stages/[id]`          | PATCH  | `approvers.manage`       | Rename a step, or move it up / down                                                                                                                       |
+| `/api/sis/admin/approval-stages/[id]`          | DELETE | `approvers.manage`       | Retire a step. ⚠ DEACTIVATES rather than deletes — a finished approval must stay explainable                                                              |
+| `/api/sis/admin/approval-stage-approvers`      | POST   | `approvers.manage`       | Put somebody on a NAMED step. Candidates are ANY staff account, wider than the grade-change picker                                                        |
+| `/api/sis/admin/approval-stage-approvers/[id]` | DELETE | `approvers.manage`       | Take somebody off a step. Forward-only: requests already in flight keep their frozen pool                                                                 |
+
+⚠ **`decide` answers 409, not 500, when somebody else got there first.** With several people on one step, being second is the normal case; the body carries a plain sentence meant to be shown as-is.

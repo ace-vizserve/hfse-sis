@@ -1,6 +1,9 @@
 import { School, Users } from 'lucide-react';
 
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
+import { DeclarationsWaitingPanel } from '@/components/attendance/declarations-waiting-panel';
+import { countInboxActionable } from '@/lib/approvals/inbox';
+import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -48,6 +51,25 @@ export default async function AttendanceSectionsListPage() {
     isTeacherOnly && session
       ? await loadUpcomingCoverForUser(supabase, session.id)
       : [];
+
+  // Declarations waiting on this person. Never throws — one panel must not be
+  // able to take the section picker down with it, and zero is honest: the
+  // queue at /attendance/declarations is the authority either way.
+  let declarationsWaiting = 0;
+  if (session) {
+    try {
+      declarationsWaiting = await countInboxActionable(createServiceClient(), {
+        flow: DECLARATION_APPROVAL_FLOW,
+        userId: session.id,
+        role: session.role,
+      });
+    } catch (e) {
+      console.error(
+        '[attendance] declarations count failed:',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -238,6 +260,12 @@ export default async function AttendanceSectionsListPage() {
       {/* Cover booked for this teacher that has not started. Not a link and
           never the word "covering" — see components/relief/upcoming-cover.tsx. */}
       <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
+
+      {/* Also mounted here, and not only on the module index: a teacher who
+          advises nothing is REDIRECTED to this page, and a named approver on a
+          teacher account (an officer in charge, say) is exactly that person —
+          they would otherwise never see the panel at all. */}
+      <DeclarationsWaitingPanel count={declarationsWaiting} className="mt-6" />
 
       <div className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
