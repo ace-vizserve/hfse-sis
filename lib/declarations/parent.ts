@@ -40,6 +40,15 @@ export type LinkedStudent = {
   displayName: string;
   /** e.g. `P4` — for labelling a child in a picker, never for logic. */
   levelCode: string | null;
+  /**
+   * `primary` / `secondary`, from `levels.level_type`.
+   *
+   * ⚠ THIS ONE IS FOR LOGIC, unlike `levelCode` above. It routes the filing to
+   * the right officer in charge — HFSE has one per half of the school
+   * (migration 128) — so it is read from the school's own column rather than
+   * inferred from a level code.
+   */
+  levelType: 'primary' | 'secondary' | 'preschool' | null;
   /** e.g. `Diligence`. Two children can share a first name; nobody shares a class as well. */
   sectionName: string | null;
 };
@@ -79,7 +88,7 @@ export async function loadFilableStudents(
   const { data: enrolments, error: enrolErr } = await service
     .from('section_students')
     .select(
-      'id, student_id, section_id, enrollment_status, sections!inner(id, name, academic_year_id, levels(code), academic_years!inner(is_current))'
+      'id, student_id, section_id, enrollment_status, sections!inner(id, name, academic_year_id, levels(code, level_type), academic_years!inner(is_current))'
     )
     .in('student_id', studentIds)
     .neq('enrollment_status', 'withdrawn')
@@ -113,7 +122,10 @@ export async function loadFilableStudents(
     type SectionShape = {
       academic_year_id: string;
       name: string | null;
-      levels: { code: string } | { code: string }[] | null;
+      levels:
+        | { code: string; level_type: string }
+        | { code: string; level_type: string }[]
+        | null;
     };
     const r = row as unknown as {
       id: string;
@@ -139,6 +151,8 @@ export async function loadFilableStudents(
       academicYearId: section.academic_year_id,
       displayName: student.name,
       levelCode: level?.code ?? null,
+      levelType:
+        (level?.level_type as LinkedStudent['levelType'] | undefined) ?? null,
       sectionName: section.name ?? null,
     });
   }

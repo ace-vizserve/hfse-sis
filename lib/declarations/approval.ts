@@ -15,7 +15,10 @@ import {
   openApprovalRequest,
   type OpenApprovalRequestResult,
 } from '@/lib/approvals/materialise';
-import type { StagedApprovalFlow } from '@/lib/schemas/approval-flows';
+import type {
+  ApproverLevelScope,
+  StagedApprovalFlow,
+} from '@/lib/schemas/approval-flows';
 
 /**
  * The declaration flow's two constants, and the one call that puts a filing
@@ -37,7 +40,54 @@ export const DECLARATION_SUBJECT_TYPE = 'student_declaration';
 export type DeclarationForApproval = {
   id: string;
   sectionId: string;
+  /**
+   * Which half of the school the child is in.
+   *
+   * ⚠ Load-bearing since migration 128: HFSE's officer in charge is TWO posts,
+   * one per half, and this is what routes the filing to the right one. A null
+   * here narrows the step to approvers who cover every child rather than
+   * guessing a half.
+   */
+  levelType: ApproverLevelScope | null;
 };
+
+/**
+ * `section_id` → which half of the school it belongs to.
+ *
+ * Read from `levels.level_type` rather than derived from a level CODE. The
+ * column is the school's own answer and already carries preschool; a code map
+ * is a second copy of it that can drift.
+ */
+export async function loadLevelTypesBySection(
+  service: SupabaseClient,
+  sectionIds: string[]
+): Promise<Map<string, ApproverLevelScope | null>> {
+  const out = new Map<string, ApproverLevelScope | null>();
+  const ids = [...new Set(sectionIds.filter(Boolean))];
+  if (ids.length === 0) return out;
+
+  const { data, error } = await service
+    .from('sections')
+    .select('id, levels(level_type)')
+    .in('id', ids);
+  if (error) throw new Error(error.message);
+
+  type Row = {
+    id: string;
+    levels:
+      | { level_type: ApproverLevelScope }
+      | { level_type: ApproverLevelScope }[]
+      | null;
+  };
+  for (const row of (data ?? []) as unknown as Row[]) {
+    // PostgREST returns an embedded to-one as an object or a single-element
+    // array depending on how it infers the relationship; both shapes appear in
+    // this codebase, so normalise rather than assume.
+    const level = Array.isArray(row.levels) ? row.levels[0] : row.levels;
+    out.set(row.id, level?.level_type ?? null);
+  }
+  return out;
+}
 
 export type OpenDeclarationApprovalsResult = {
   opened: number;
@@ -80,6 +130,7 @@ export async function openDeclarationApprovals(
         subjectType: DECLARATION_SUBJECT_TYPE,
         subjectId: declaration.id,
         sectionId: declaration.sectionId,
+        levelType: declaration.levelType,
         filedBy: filedBy.id,
         filedByEmail: filedBy.email,
       }

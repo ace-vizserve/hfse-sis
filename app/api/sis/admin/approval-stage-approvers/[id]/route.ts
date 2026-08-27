@@ -7,10 +7,22 @@ import { removeStageApprover } from '@/lib/approvals/config';
 
 // DELETE /api/sis/admin/approval-stage-approvers/[id] — take somebody off a step.
 //
-// ⚠ FORWARD-ONLY, like migration 013's rule for the older flow. Removing
-// somebody here does not pull them out of requests already in flight: those
-// carry their own frozen copy of the pool, so a decision somebody is part-way
-// through stays theirs to finish.
+// ⚠ THIS REACHES REQUESTS ALREADY WAITING, and an earlier version of this
+// comment said the opposite. It described the removal as forward-only, on the
+// reasoning that a frozen pool leaves "a decision somebody is part-way through
+// theirs to finish". That reasoning does not survive contact with the two
+// cases it covers:
+//
+//   - a stage somebody has ALREADY decided is untouched either way, because
+//     `repointWaitingStages` only rewrites undecided rows. The record of who
+//     could decide something stays part of the record of the decision.
+//   - a stage still waiting is one where NOBODY has acted, so there is no
+//     decision in flight to protect — and leaving the removed person on it is
+//     the failure, not the safeguard. If they left the school, that request
+//     now waits on somebody who will never open it.
+//
+// Mr Ace, 2026-08-27: the approvers are not a static list. Taking somebody off
+// a step takes them off the requests that are still waiting for them.
 
 export async function DELETE(
   _request: Request,
@@ -37,10 +49,16 @@ export async function DELETE(
       action: 'approval_stage.approver.revoke',
       entityType: 'approval_stage_approver',
       entityId: id,
-      context: { stage_id: removed.stageId, user_id: removed.userId },
+      context: {
+        stage_id: removed.stageId,
+        user_id: removed.userId,
+        applies_to_level_type: removed.appliesToLevelType,
+        // How many requests still waiting were moved off them.
+        repointed_waiting: removed.repointed,
+      },
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, repointed: removed.repointed });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[approval-stages] revoke failed:', reason);

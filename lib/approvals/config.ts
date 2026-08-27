@@ -3,9 +3,11 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { listStaffUsers } from '@/lib/sis/users/queries';
+import { repointWaitingStages } from '@/lib/approvals/materialise';
 import {
   STAGED_APPROVAL_FLOWS,
   type ApprovalResolver,
+  type ApproverLevelScope,
   type StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
 import type {
@@ -64,7 +66,7 @@ export async function loadFlowConfig(
 
   const { data: approverRows, error: approverErr } = await service
     .from('approval_stage_approvers')
-    .select('id, stage_id, user_id, created_at')
+    .select('id, stage_id, user_id, applies_to_level_type, created_at')
     .in(
       'stage_id',
       stages.map((s) => s.id)
@@ -80,6 +82,7 @@ export async function loadFlowConfig(
     id: string;
     stage_id: string;
     user_id: string;
+    applies_to_level_type: ApproverLevelScope | null;
   }>) {
     const user = byId.get(row.user_id);
     const list = byStage.get(row.stage_id) ?? [];
@@ -92,6 +95,7 @@ export async function loadFlowConfig(
       displayName: user?.display_name ?? '(account removed)',
       role: user?.role ?? null,
       disabled: user?.disabled ?? false,
+      appliesToLevelType: row.applies_to_level_type ?? null,
     });
     byStage.set(row.stage_id, list);
   }
@@ -117,7 +121,71 @@ export async function loadAllFlowConfigs(
   );
 }
 
-/** Any staff account not already on this step. */
+/**
+ * The halves of the school that actually have classes this year.
+ *
+ * Two jobs, both on the approvers screen: it decides which options the
+ * "who can they approve for" picker offers, and it is what lets the readiness
+ * check tell "nobody covers Secondary" apart from "this school has no
+ * secondary".
+ *
+ * ⚠ Read from SECTIONS IN THE CURRENT YEAR, not from the `levels` table.
+ * `levels` is a catalogue shared across every academic year and carries
+ * preschool rows that HFSE has never opened a class for, so offering its
+ * contents would put a Preschool option on the screen of a school with no
+ * preschool children.
+ */
+export async function listLevelTypesInUse(
+  service: SupabaseClient
+): Promise<ApproverLevelScope[]> {
+  const { data: ay, error: ayErr } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('is_current', true)
+    .maybeSingle();
+  if (ayErr) throw new Error(ayErr.message);
+  const ayId = (ay as { id: string } | null)?.id;
+  if (!ayId) return [];
+
+  const { data, error } = await service
+    .from('sections')
+    .select('levels!inner(level_type)')
+    .eq('academic_year_id', ayId);
+  if (error) throw new Error(error.message);
+
+  const seen = new Set<ApproverLevelScope>();
+  for (const row of (data ?? []) as unknown as Array<{
+    levels:
+      | { level_type: ApproverLevelScope }
+      | { level_type: ApproverLevelScope }[]
+      | null;
+  }>) {
+    // PostgREST returns an embedded to-one as an object or a single-element
+    // array depending on how it infers the relationship; both shapes appear
+    // in this codebase, so normalise rather than assume.
+    const level = Array.isArray(row.levels) ? row.levels[0] : row.levels;
+    if (level?.level_type) seen.add(level.level_type);
+  }
+
+  // Stable, school-order rather than whatever the rows arrived in.
+  return (['preschool', 'primary', 'secondary'] as const).filter((t) =>
+    seen.has(t)
+  );
+}
+
+/**
+ * Any staff account that could still be added to this step, with the halves
+ * they already hold on it.
+ *
+ * ⚠ A PERSON ALREADY ON THE STEP IS NOT EXCLUDED OUTRIGHT, and that changed
+ * with migration 128. The officer in charge is one post per half of the
+ * school, so somebody can legitimately hold the step for Primary and later be
+ * asked to cover Secondary too. Filtering them out entirely — which is what
+ * this did before — would make that impossible to configure.
+ *
+ * Somebody who already covers EVERY child is excluded, because there is
+ * nothing further to give them.
+ */
 export async function listStagedApproverCandidates(
   service: SupabaseClient,
   stageId: string
@@ -127,28 +195,36 @@ export async function listStagedApproverCandidates(
     email: string;
     display_name: string;
     role: string | null;
+    /** Halves already held on this step. `null` means "every child". */
+    already_holds: Array<ApproverLevelScope | null>;
   }>
 > {
   const { data, error } = await service
     .from('approval_stage_approvers')
-    .select('user_id')
+    .select('user_id, applies_to_level_type')
     .eq('stage_id', stageId);
   if (error) throw new Error(error.message);
 
-  const taken = new Set(
-    ((data ?? []) as unknown as Array<{ user_id: string }>).map(
-      (r) => r.user_id
-    )
-  );
+  const held = new Map<string, Array<ApproverLevelScope | null>>();
+  for (const row of (data ?? []) as unknown as Array<{
+    user_id: string;
+    applies_to_level_type: ApproverLevelScope | null;
+  }>) {
+    const list = held.get(row.user_id) ?? [];
+    list.push(row.applies_to_level_type ?? null);
+    held.set(row.user_id, list);
+  }
 
   const staff = await listStaffUsers();
   return staff
-    .filter((u) => !u.disabled && !taken.has(u.id))
+    .filter((u) => !u.disabled)
+    .filter((u) => !(held.get(u.id) ?? []).includes(null))
     .map((u) => ({
       user_id: u.id,
       email: u.email,
       display_name: u.display_name,
       role: u.role,
+      already_holds: held.get(u.id) ?? [],
     }))
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
@@ -309,14 +385,21 @@ export async function deactivateStage(
 
 export async function assignStageApprover(
   service: SupabaseClient,
-  input: { stageId: string; userId: string; createdBy: string | null }
-): Promise<{ alreadyAssigned: boolean; id: string | null }> {
+  input: {
+    stageId: string;
+    userId: string;
+    /** `null` = approves for every child. */
+    appliesToLevelType?: ApproverLevelScope | null;
+    createdBy: string | null;
+  }
+): Promise<{ alreadyAssigned: boolean; id: string | null; repointed: number }> {
   const { data, error } = await service
     .from('approval_stage_approvers')
     .insert({
       stage_id: input.stageId,
       resolver: 'named',
       user_id: input.userId,
+      applies_to_level_type: input.appliesToLevelType ?? null,
       created_by: input.createdBy,
     })
     .select('id')
@@ -325,7 +408,8 @@ export async function assignStageApprover(
   if (error) {
     // Already there. Idempotent success, the same call the existing approver
     // route makes for the same reason: a double-click is not a failure.
-    if (error.code === '23505') return { alreadyAssigned: true, id: null };
+    if (error.code === '23505')
+      return { alreadyAssigned: true, id: null, repointed: 0 };
     // The composite FK refuses a person on a derived step. Say what that means.
     if (error.code === '23503') {
       throw new Error(
@@ -334,19 +418,28 @@ export async function assignStageApprover(
     }
     throw new Error(error.message);
   }
+
+  const repointed = await repointWaitingStages(service, input.stageId);
+
   return {
     alreadyAssigned: false,
     id: (data as unknown as { id: string }).id,
+    repointed,
   };
 }
 
 export async function removeStageApprover(
   service: SupabaseClient,
   approverId: string
-): Promise<{ stageId: string; userId: string } | null> {
+): Promise<{
+  stageId: string;
+  userId: string;
+  appliesToLevelType: ApproverLevelScope | null;
+  repointed: number;
+} | null> {
   const { data: existing, error: readErr } = await service
     .from('approval_stage_approvers')
-    .select('id, stage_id, user_id')
+    .select('id, stage_id, user_id, applies_to_level_type')
     .eq('id', approverId)
     .maybeSingle();
   if (readErr) throw new Error(readErr.message);
@@ -358,6 +451,24 @@ export async function removeStageApprover(
     .eq('id', approverId);
   if (error) throw new Error(error.message);
 
-  const row = existing as unknown as { stage_id: string; user_id: string };
-  return { stageId: row.stage_id, userId: row.user_id };
+  const row = existing as unknown as {
+    stage_id: string;
+    user_id: string;
+    applies_to_level_type: ApproverLevelScope | null;
+  };
+
+  const repointed = await repointWaitingStages(service, row.stage_id);
+
+  return {
+    stageId: row.stage_id,
+    userId: row.user_id,
+    appliesToLevelType: row.applies_to_level_type ?? null,
+    repointed,
+  };
 }
+
+// `repointWaitingStages` lives in `materialise.ts` — building a pool and
+// rebuilding one are the same rule, and a plain node script (the repair
+// script) has to reach it, which it could not do through this `server-only`
+// module.
+export { repointWaitingStages } from '@/lib/approvals/materialise';

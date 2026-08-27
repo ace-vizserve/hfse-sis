@@ -298,7 +298,14 @@ export async function POST(request: Request) {
   try {
     const ladders = await openDeclarationApprovals(
       service,
-      insertedRows.map((r) => ({ id: r.id, sectionId: r.section_id })),
+      // ⚠ The child's half of the school comes from the resolved student, not
+      // from the request — it is what picks the right officer in charge, and
+      // `resolved` is the only student data here that has been authorised.
+      insertedRows.map((r) => ({
+        id: r.id,
+        sectionId: r.section_id,
+        levelType: byStudentId.get(r.student_id)?.levelType ?? null,
+      })),
       { id: auth.userId, email: auth.email }
     );
     if (ladders.unconfigured > 0) {

@@ -59,6 +59,41 @@ export const APPROVAL_RESOLVER_DESCRIPTIONS: Record<ApprovalResolver, string> =
       'Worked out automatically for each child — whoever advises their class at the time, including a co-adviser and anyone covering the class that week. Nobody has to keep a list up to date.',
   };
 
+// ── Which half of the school a named approver covers ────────────────────────
+//
+// ⚠ THE SCHOOL'S "PRIMARY OR SECONDARY" IS THE YEAR CATEGORY, NOT A
+// FIRST-AND-SECOND APPROVER. Ms Lhen is the officer in charge OF PRIMARY, Ms
+// Elaine of SECONDARY, and a child gets exactly one of them. Reading it the
+// other way — which is what shipped for a few hours on 2026-08-27 — let each
+// of them decide the other half's children. See migration 128.
+//
+// Matches `levels.level_type`. Only primary and secondary are live at HFSE.
+
+export const APPROVER_LEVEL_SCOPES = [
+  'primary',
+  'secondary',
+  'preschool',
+] as const;
+export type ApproverLevelScope = (typeof APPROVER_LEVEL_SCOPES)[number];
+
+/** `null` is the default and means every child, whichever half they are in. */
+export const APPROVER_LEVEL_SCOPE_LABELS: Record<ApproverLevelScope, string> = {
+  primary: 'Primary only',
+  secondary: 'Secondary only',
+  preschool: 'Preschool only',
+};
+
+export const APPROVER_LEVEL_SCOPE_ANY_LABEL = 'Every child';
+
+/** How a scope reads on a chip next to somebody's name. */
+export function approverScopeLabel(
+  scope: ApproverLevelScope | null | undefined
+): string {
+  return scope
+    ? APPROVER_LEVEL_SCOPE_LABELS[scope]
+    : APPROVER_LEVEL_SCOPE_ANY_LABEL;
+}
+
 // ── Stage status, as the school reads it ────────────────────────────────────
 
 export const APPROVAL_STAGE_STATUS_VALUES = [
@@ -159,6 +194,12 @@ export type UpdateApprovalStageInput = z.infer<
 export const AssignStageApproverSchema = z.object({
   stage_id: z.string().uuid('Pick a step.'),
   user_id: z.string().uuid('Pick a person.'),
+  /**
+   * Omit, or send null, for somebody who approves for every child. Send a
+   * school half when the post is split — which is how HFSE's officer in charge
+   * actually works.
+   */
+  applies_to_level_type: z.enum(APPROVER_LEVEL_SCOPES).nullish(),
 });
 export type AssignStageApproverInput = z.infer<
   typeof AssignStageApproverSchema

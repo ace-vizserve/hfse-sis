@@ -14,7 +14,10 @@ import {
 } from '@/lib/sis/approvers/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { loadAllFlowConfigs } from '@/lib/approvals/config';
+import {
+  listLevelTypesInUse,
+  loadAllFlowConfigs,
+} from '@/lib/approvals/config';
 import { listStaffUsers } from '@/lib/sis/users/queries';
 import { StagedFlowEditor } from '@/components/sis/staged-flow-editor';
 
@@ -25,23 +28,25 @@ export default async function ApproversPage() {
 
   const service = createServiceClient();
 
-  const [byFlow, candidatesByFlow, stagedFlows, staff] = await Promise.all([
-    listAllApproverAssignments(),
-    Promise.all(
-      APPROVER_FLOWS.map(
-        async (flow) =>
-          [flow, await listEligibleApproverCandidates(flow)] as const
-      )
-    ).then(
-      (entries) =>
-        Object.fromEntries(entries) as Record<
-          ApproverFlow,
-          Array<{ user_id: string; email: string; role: string }>
-        >
-    ),
-    loadAllFlowConfigs(service),
-    listStaffUsers(),
-  ]);
+  const [byFlow, candidatesByFlow, stagedFlows, staff, levelTypesInUse] =
+    await Promise.all([
+      listAllApproverAssignments(),
+      Promise.all(
+        APPROVER_FLOWS.map(
+          async (flow) =>
+            [flow, await listEligibleApproverCandidates(flow)] as const
+        )
+      ).then(
+        (entries) =>
+          Object.fromEntries(entries) as Record<
+            ApproverFlow,
+            Array<{ user_id: string; email: string; role: string }>
+          >
+      ),
+      loadAllFlowConfigs(service),
+      listStaffUsers(),
+      listLevelTypesInUse(service),
+    ]);
 
   return (
     <PageShell>
@@ -121,6 +126,7 @@ export default async function ApproversPage() {
             displayName: u.display_name,
             role: u.role,
           }))}
+        levelTypesInUse={levelTypesInUse}
       />
     </PageShell>
   );

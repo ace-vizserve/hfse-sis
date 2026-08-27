@@ -61,9 +61,12 @@ import {
   APPROVAL_RESOLVER_DESCRIPTIONS,
   APPROVAL_RESOLVER_LABELS,
   APPROVAL_STAGE_LABEL_MAX,
+  APPROVER_LEVEL_SCOPE_ANY_LABEL,
+  APPROVER_LEVEL_SCOPE_LABELS,
   STAGED_FLOW_DESCRIPTIONS,
   STAGED_FLOW_LABELS,
   type ApprovalResolver,
+  type ApproverLevelScope,
 } from '@/lib/schemas/approval-flows';
 // ⚠ From `readiness.ts`, NOT `config.ts`. `config.ts` is `server-only`, so a
 // VALUE imported from it into a client component throws at runtime — and
@@ -102,12 +105,44 @@ type StaffOption = {
   role: string | null;
 };
 
+// ── The half-of-the-school tag ─────────────────────────────────────────────
+//
+// ⚠ NOT a §9.3 status badge, and that is deliberate. Those three recipes read
+// severity — mint is healthy, destructive is blocked. "Primary" is neither: it
+// is a fact about the job, not a state of it. Giving Primary and Secondary two
+// different colours would also be colour as decoration (§9: colour carries
+// meaning, never decoration), because neither half is more urgent than the
+// other. So the WORDS carry it, in the mono micro-copy voice §7.1 reserves for
+// exactly this kind of metadata, and the only colour difference is between
+// "limited to one half" and "everybody".
+function ScopeTag({ scope }: { scope: ApproverLevelScope | null }) {
+  return (
+    <span
+      className={
+        'font-mono text-[10px] font-semibold tracking-[0.12em] uppercase ' +
+        (scope ? 'text-brand-indigo-deep' : 'text-muted-foreground')
+      }
+    >
+      {scope
+        ? APPROVER_LEVEL_SCOPE_LABELS[scope].replace(' only', '')
+        : APPROVER_LEVEL_SCOPE_ANY_LABEL}
+    </span>
+  );
+}
+
 export function StagedFlowEditor({
   flows,
   staff,
+  levelTypesInUse = [],
 }: {
   flows: FlowConfig[];
   staff: StaffOption[];
+  /**
+   * The halves of the school that actually have classes this year. Drives the
+   * options offered when adding somebody, so a school with no preschool is
+   * never asked about preschool.
+   */
+  levelTypesInUse?: ApproverLevelScope[];
 }) {
   if (flows.length === 0) return null;
 
@@ -129,14 +164,27 @@ export function StagedFlowEditor({
       </div>
 
       {flows.map((flow) => (
-        <FlowCard key={flow.flow} flow={flow} staff={staff} />
+        <FlowCard
+          key={flow.flow}
+          flow={flow}
+          staff={staff}
+          levelTypesInUse={levelTypesInUse}
+        />
       ))}
     </section>
   );
 }
 
-function FlowCard({ flow, staff }: { flow: FlowConfig; staff: StaffOption[] }) {
-  const readiness = classifyStagedFlowReadiness(flow.stages);
+function FlowCard({
+  flow,
+  staff,
+  levelTypesInUse,
+}: {
+  flow: FlowConfig;
+  staff: StaffOption[];
+  levelTypesInUse: ApproverLevelScope[];
+}) {
+  const readiness = classifyStagedFlowReadiness(flow.stages, levelTypesInUse);
   const [addingStep, setAddingStep] = useState(false);
 
   return (
@@ -193,6 +241,7 @@ function FlowCard({ flow, staff }: { flow: FlowConfig; staff: StaffOption[] }) {
               isFirst={index === 0}
               isLast={index === flow.stages.length - 1}
               staff={staff}
+              levelTypesInUse={levelTypesInUse}
             />
           ))}
         </ul>
@@ -220,23 +269,63 @@ function StageRow({
   isFirst,
   isLast,
   staff,
+  levelTypesInUse,
 }: {
   stage: FlowConfig['stages'][number];
   position: number;
   isFirst: boolean;
   isLast: boolean;
   staff: StaffOption[];
+  levelTypesInUse: ApproverLevelScope[];
 }) {
   const run = useWriteAction();
   const [renaming, setRenaming] = useState(false);
   const [label, setLabel] = useState(stage.label);
   const [retiring, setRetiring] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [chosen, setChosen] = useState<StaffOption | null>(null);
   const [busy, setBusy] = useState(false);
 
   const isNamed = stage.resolver === 'named';
-  const taken = new Set(stage.approvers.map((a) => a.userId));
-  const candidates = staff.filter((s) => !taken.has(s.userId));
+
+  // Halves each person already holds on this step. `null` in the list means
+  // "every child", which leaves nothing further to give them.
+  const heldByUser = new Map<string, Array<ApproverLevelScope | null>>();
+  for (const a of stage.approvers) {
+    const list = heldByUser.get(a.userId) ?? [];
+    list.push(a.appliesToLevelType);
+    heldByUser.set(a.userId, list);
+  }
+
+  // ⚠ Somebody already on the step is NOT filtered out, unless they already
+  // cover every child. The officer in charge is one post per half, so a person
+  // holding Primary can legitimately be asked to cover Secondary too — and the
+  // old "exclude anyone already here" rule made that impossible to configure.
+  const candidates = staff.filter(
+    (s) => !(heldByUser.get(s.userId) ?? []).includes(null)
+  );
+
+  // Only offer halves the school actually runs, and only ones this person does
+  // not already hold. `null` (every child) is always offered.
+  const scopeOptions: Array<ApproverLevelScope | null> = chosen
+    ? [
+        null,
+        ...levelTypesInUse.filter(
+          (t) => !(heldByUser.get(chosen.userId) ?? []).includes(t)
+        ),
+      ]
+    : [];
+
+  // Tags appear on every chip of a step as soon as ONE person is limited to a
+  // half. On a step where nobody is scoped — every other flow in the system —
+  // the chips stay exactly as they were. Within a step that does use scoping,
+  // labelling all of them stops an untagged name reading as "not set up yet".
+  const anyScoped = stage.approvers.some((a) => a.appliesToLevelType !== null);
+
+  function closePicker() {
+    setPickerOpen(false);
+    setChosen(null);
+  }
 
   async function patch(body: Record<string, unknown>, pending: string) {
     setBusy(true);
@@ -279,11 +368,16 @@ function StageRow({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 py-1 pr-1 pl-2.5 text-[13px] text-foreground"
               >
                 {approver.displayName}
+                {anyScoped && <ScopeTag scope={approver.appliesToLevelType} />}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="size-5"
-                  aria-label={`Remove ${approver.displayName} from ${stage.label}`}
+                  aria-label={
+                    approver.appliesToLevelType
+                      ? `Remove ${approver.displayName} from ${stage.label} for ${APPROVER_LEVEL_SCOPE_LABELS[approver.appliesToLevelType].replace(' only', '')}`
+                      : `Remove ${approver.displayName} from ${stage.label}`
+                  }
                   onClick={async () => {
                     setBusy(true);
                     await run(
@@ -311,63 +405,82 @@ function StageRow({
               </span>
             )}
 
-            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+            {/* Two steps, both inside the popover. Choosing a person is a
+                search; choosing the half is a single question with three
+                answers — that stays inline rather than opening a dialog over
+                a popover, which would nest two layers of overlay for one
+                field. */}
+            <Popover
+              open={pickerOpen}
+              onOpenChange={(next) =>
+                next ? setPickerOpen(true) : closePicker()
+              }
+            >
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" disabled={busy}>
                   <UserPlus className="size-3.5" />
                   Add someone
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search staff" />
-                  <CommandList>
-                    <CommandEmpty>
-                      Nobody left to add. Everyone with a staff account is
-                      already on this step.
-                    </CommandEmpty>
-                    {candidates.map((person) => (
-                      <CommandItem
-                        key={person.userId}
-                        value={`${person.displayName} ${person.email}`}
-                        onSelect={async () => {
-                          setPickerOpen(false);
-                          setBusy(true);
-                          await run(
-                            () =>
-                              apiFetch(
-                                '/api/sis/admin/approval-stage-approvers',
-                                {
-                                  method: 'POST',
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                  },
-                                  body: JSON.stringify({
-                                    stage_id: stage.id,
-                                    user_id: person.userId,
-                                  }),
-                                }
-                              ),
-                            {
-                              pending: 'Adding…',
-                              success: `${person.displayName} can now approve this step.`,
-                            }
-                          );
-                          setBusy(false);
-                        }}
-                      >
-                        <span className="flex min-w-0 flex-col">
-                          <span className="truncate text-[14px] text-foreground">
-                            {person.displayName}
+              <PopoverContent className="w-80 p-0" align="start">
+                {chosen === null ? (
+                  <Command>
+                    <CommandInput placeholder="Search staff" />
+                    <CommandList>
+                      <CommandEmpty>
+                        Nobody left to add. Everyone with a staff account
+                        already approves for every child on this step.
+                      </CommandEmpty>
+                      {candidates.map((person) => (
+                        <CommandItem
+                          key={person.userId}
+                          value={`${person.displayName} ${person.email}`}
+                          onSelect={() => setChosen(person)}
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate text-[14px] text-foreground">
+                              {person.displayName}
+                            </span>
+                            <span className="truncate font-mono text-[11px] text-muted-foreground">
+                              {person.email}
+                            </span>
                           </span>
-                          <span className="truncate font-mono text-[11px] text-muted-foreground">
-                            {person.email}
-                          </span>
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                ) : (
+                  <ScopeStep
+                    person={chosen}
+                    stage={stage}
+                    options={scopeOptions}
+                    busy={busy}
+                    onBack={() => setChosen(null)}
+                    onAdd={async (scope) => {
+                      setBusy(true);
+                      await run(
+                        () =>
+                          apiFetch('/api/sis/admin/approval-stage-approvers', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              stage_id: stage.id,
+                              user_id: chosen.userId,
+                              applies_to_level_type: scope,
+                            }),
+                          }),
+                        {
+                          pending: 'Adding…',
+                          success: scope
+                            ? `${chosen.displayName} can now approve this step for ${APPROVER_LEVEL_SCOPE_LABELS[scope].replace(' only', '').toLowerCase()} children.`
+                            : `${chosen.displayName} can now approve this step for every child.`,
+                          onResolved: closePicker,
+                        }
+                      );
+                      setBusy(false);
+                    }}
+                  />
+                )}
               </PopoverContent>
             </Popover>
           </div>
@@ -493,6 +606,106 @@ function StageRow({
         </AlertDialogContent>
       </AlertDialog>
     </li>
+  );
+}
+
+// Step two of the picker: which children this person approves for.
+//
+// ⚠ THE ACCESS SENTENCE IS NOT A NICETY. Being named to a step is itself how
+// somebody gets to read a child's medical certificate — the officer in charge
+// sits on a plain teacher account and the declaration's own read rules admit
+// neither them nor their role. That grant happens here, at this click, and it
+// should not be something a superadmin discovers afterwards.
+function ScopeStep({
+  person,
+  stage,
+  options,
+  busy,
+  onBack,
+  onAdd,
+}: {
+  person: StaffOption;
+  stage: FlowConfig['stages'][number];
+  options: Array<ApproverLevelScope | null>;
+  busy: boolean;
+  onBack: () => void;
+  onAdd: (scope: ApproverLevelScope | null) => void | Promise<void>;
+}) {
+  const [scope, setScope] = useState<string>('any');
+
+  const describe = (option: ApproverLevelScope | null): string => {
+    if (!option) return 'They can approve for any child in the school.';
+    const half = APPROVER_LEVEL_SCOPE_LABELS[option]
+      .replace(' only', '')
+      .toLowerCase();
+    return `They only see filings for children in ${half} classes. Anyone else's go to whoever covers that half.`;
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      <div className="space-y-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[14px] font-medium text-foreground">
+            {person.displayName}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mt-1 -mr-2 h-7 text-[12px]"
+            onClick={onBack}
+          >
+            Change
+          </Button>
+        </div>
+        <p className="truncate font-mono text-[11px] text-muted-foreground">
+          {person.email}
+        </p>
+      </div>
+
+      <Field>
+        <FieldLabel>Which children can they approve for?</FieldLabel>
+        <RadioGroup value={scope} onValueChange={setScope} className="gap-2">
+          {options.map((option) => {
+            const value = option ?? 'any';
+            return (
+              <label
+                key={value}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-2.5 has-[:checked]:border-brand-indigo-soft has-[:checked]:bg-accent"
+              >
+                <RadioGroupItem value={value} className="mt-0.5" />
+                <span className="space-y-0.5">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {option
+                      ? APPROVER_LEVEL_SCOPE_LABELS[option]
+                      : APPROVER_LEVEL_SCOPE_ANY_LABEL}
+                  </span>
+                  <span className="block text-[12px] leading-relaxed text-muted-foreground">
+                    {describe(option)}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+        <FieldDescription>
+          Anyone on “{stage.label}” can open what the parent sent, including a
+          medical certificate.
+        </FieldDescription>
+      </Field>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        loading={busy}
+        loadingText="Adding…"
+        onClick={() =>
+          onAdd(scope === 'any' ? null : (scope as ApproverLevelScope))
+        }
+      >
+        Add to this step
+      </Button>
+    </div>
   );
 }
 

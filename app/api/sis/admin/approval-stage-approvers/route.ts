@@ -30,6 +30,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Pick a person.' }, { status: 400 });
   }
   const { stage_id, user_id } = parsed.data;
+  // `nullish()` lets the field be absent OR explicitly null; both mean the
+  // same thing here — this person approves for every child.
+  const appliesToLevelType = parsed.data.applies_to_level_type ?? null;
 
   const service = createServiceClient();
 
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
     const result = await assignStageApprover(service, {
       stageId: stage_id,
       userId: user_id,
+      appliesToLevelType,
       createdBy: auth.user.id,
     });
 
@@ -78,10 +82,19 @@ export async function POST(request: Request) {
         user_id,
         email: person.email,
         display_name: person.display_name,
+        // Which half of the school they cover — null means every child. Worth
+        // logging: it is the difference between the primary officer and the
+        // secondary one, and getting it wrong is what this whole column fixes.
+        applies_to_level_type: appliesToLevelType,
+        // How many requests already waiting were moved onto them.
+        repointed_waiting: result.repointed,
       },
     });
 
-    return NextResponse.json({ ok: true }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, repointed: result.repointed },
+      { status: 201 }
+    );
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[approval-stages] assign failed:', reason);
