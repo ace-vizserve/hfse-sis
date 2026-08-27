@@ -275,13 +275,42 @@ export async function POST(request: Request) {
     const clashes = await findOverlappingFilings(service, {
       startDate: input.startDate,
       endDate: input.endDate,
+      declarationType: input.declarationType,
       children: resolved.map((s) => ({
         studentId: s.studentId,
         studentName: s.displayName,
       })),
     });
+
+    // ⚠ THE SAME REQUEST AND AN OVERLAPPING ONE GET DIFFERENT ANSWERS, and
+    // collapsing them would undo a decision migration 125 made deliberately.
+    // Re-sending the IDENTICAL filing is a double-tap on a flaky connection:
+    // 125 chose to answer that with the existing filing and a success, because
+    // showing somebody a failure for their own double-tap makes them tap a
+    // third time. Only a genuinely DIFFERENT range is worth interrupting them
+    // for — they asked about dates that are not the ones on record.
+    if (clashes.length > 0 && clashes.every((c) => c.isExactMatch)) {
+      const existing = await listParentDeclarations(service, {
+        students: resolved,
+      });
+      const match = existing.filter(
+        (d) =>
+          d.declarationType === input.declarationType &&
+          d.startDate === input.startDate &&
+          d.endDate === input.endDate
+      );
+      return NextResponse.json(
+        {
+          filingGroupId: match[0]?.filingGroupId ?? null,
+          declarations: match,
+          alreadyFiled: true,
+        },
+        { status: 200, headers: cors }
+      );
+    }
+
     if (clashes.length > 0) {
-      const first = clashes[0];
+      const first = clashes.find((c) => !c.isExactMatch) ?? clashes[0];
       return NextResponse.json(
         {
           error: alreadyFiledMessage(first),

@@ -92,6 +92,20 @@ export type OverlappingFiling = {
   studentName: string;
   startDate: string;
   endDate: string;
+  declarationType: string;
+  /**
+   * True when this is the SAME request, not merely an overlapping one — same
+   * kind, same first and last day.
+   *
+   * ⚠ The two cases must not be answered the same way. Migration 125 decided
+   * that a duplicate is a SUCCESS: "a parent double-tapping submit on a flaky
+   * connection must not file twice", and showing them a failure for their own
+   * double-tap makes them try a third time. An OVERLAPPING filing is a
+   * different thing — they asked for dates that are not the ones on record,
+   * so answering with the existing filing would answer a question they did not
+   * ask.
+   */
+  isExactMatch: boolean;
 };
 
 /**
@@ -123,15 +137,16 @@ export async function findOverlappingFilings(
   args: {
     startDate: string;
     endDate: string;
+    declarationType: string;
     children: Array<{ studentId: string; studentName: string }>;
   }
 ): Promise<OverlappingFiling[]> {
-  const { startDate, endDate, children } = args;
+  const { startDate, endDate, declarationType, children } = args;
   if (children.length === 0) return [];
 
   const { data, error } = await service
     .from('student_declarations')
-    .select('student_id, start_date, end_date')
+    .select('student_id, start_date, end_date, declaration_type')
     .in(
       'student_id',
       children.map((c) => c.studentId)
@@ -149,11 +164,17 @@ export async function findOverlappingFilings(
       student_id: string;
       start_date: string;
       end_date: string;
+      declaration_type: string;
     }>
   ).map((row) => ({
     studentName: nameById.get(row.student_id) ?? 'your child',
     startDate: row.start_date,
     endDate: row.end_date,
+    declarationType: row.declaration_type,
+    isExactMatch:
+      row.declaration_type === declarationType &&
+      row.start_date === startDate &&
+      row.end_date === endDate,
   }));
 }
 

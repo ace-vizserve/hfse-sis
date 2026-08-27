@@ -233,108 +233,107 @@ describe('filingCoversAnySchoolDay', () => {
 describe('findOverlappingFilings', () => {
   const KIDS = [{ studentId: 's1', studentName: 'Ana Reyes' }];
 
+  const filed = (
+    start: string,
+    end: string,
+    status: string,
+    type = 'absence',
+    studentId = 's1'
+  ) => ({
+    student_id: studentId,
+    start_date: start,
+    end_date: end,
+    status,
+    declaration_type: type,
+  });
+
+  const find = (
+    service: unknown,
+    startDate: string,
+    endDate: string,
+    declarationType = 'absence'
+  ) =>
+    findOverlappingFilings(service as never, {
+      startDate,
+      endDate,
+      declarationType,
+      children: KIDS,
+    });
+
   it('finds a filing that overlaps without matching exactly', async () => {
     // The gap the unique index cannot see: 27–31 filed, then 28–29 filed.
     const service = fakeService({
-      declarations: [
-        {
-          student_id: 's1',
-          start_date: '2026-08-27',
-          end_date: '2026-08-31',
-          status: 'pending',
-        },
-      ],
+      declarations: [filed('2026-08-27', '2026-08-31', 'pending')],
     });
-    const found = await findOverlappingFilings(service as never, {
-      startDate: '2026-08-28',
-      endDate: '2026-08-29',
-      children: KIDS,
-    });
+    const found = await find(service, '2026-08-28', '2026-08-29');
     expect(found).toHaveLength(1);
     expect(found[0].studentName).toBe('Ana Reyes');
+    // Different dates, so NOT the same request — the route interrupts rather
+    // than answering with a filing they did not ask about.
+    expect(found[0].isExactMatch).toBe(false);
+  });
+
+  it('marks an identical re-send as the SAME request, not an overlap', async () => {
+    // ⚠ This is the double-tap migration 125 chose to answer with a success.
+    // Losing the distinction would turn a flaky connection into an error and
+    // make the parent tap a third time.
+    const service = fakeService({
+      declarations: [filed('2026-08-27', '2026-08-31', 'pending')],
+    });
+    const found = await find(service, '2026-08-27', '2026-08-31');
+    expect(found[0].isExactMatch).toBe(true);
+  });
+
+  it('does not call the same dates a match when the KIND differs', async () => {
+    // Travel filed, then an absence for the same days. Same dates, different
+    // request — the child cannot be both away travelling and off sick.
+    const service = fakeService({
+      declarations: [filed('2026-08-27', '2026-08-31', 'pending', 'travel')],
+    });
+    const found = await find(service, '2026-08-27', '2026-08-31', 'absence');
+    expect(found).toHaveLength(1);
+    expect(found[0].isExactMatch).toBe(false);
   });
 
   it('finds one the OTHER parent filed', async () => {
     // `filed_by` is in the unique index, so the second parent slips past it.
     // This query never looks at who filed.
     const service = fakeService({
-      declarations: [
-        {
-          student_id: 's1',
-          start_date: '2026-08-27',
-          end_date: '2026-08-27',
-          status: 'pending',
-        },
-      ],
+      declarations: [filed('2026-08-27', '2026-08-27', 'pending')],
     });
-    expect(
-      await findOverlappingFilings(service as never, {
-        startDate: '2026-08-27',
-        endDate: '2026-08-27',
-        children: KIDS,
-      })
-    ).toHaveLength(1);
+    expect(await find(service, '2026-08-27', '2026-08-27')).toHaveLength(1);
   });
 
   it('ignores a rejected filing, so the parent can file again', async () => {
-    // Being turned down is exactly when somebody needs to re-file.
+    // Being turned down is exactly when somebody needs to re-file. Migration
+    // 130 narrows the unique index to match this.
     const service = fakeService({
-      declarations: [
-        {
-          student_id: 's1',
-          start_date: '2026-08-27',
-          end_date: '2026-08-27',
-          status: 'rejected',
-        },
-      ],
+      declarations: [filed('2026-08-27', '2026-08-27', 'rejected')],
     });
-    expect(
-      await findOverlappingFilings(service as never, {
-        startDate: '2026-08-27',
-        endDate: '2026-08-27',
-        children: KIDS,
-      })
-    ).toHaveLength(0);
+    expect(await find(service, '2026-08-27', '2026-08-27')).toHaveLength(0);
+  });
+
+  it('ignores a cancelled filing too', async () => {
+    const service = fakeService({
+      declarations: [filed('2026-08-27', '2026-08-27', 'cancelled')],
+    });
+    expect(await find(service, '2026-08-27', '2026-08-27')).toHaveLength(0);
   });
 
   it('ignores dates that do not overlap', async () => {
     const service = fakeService({
-      declarations: [
-        {
-          student_id: 's1',
-          start_date: '2026-08-01',
-          end_date: '2026-08-02',
-          status: 'approved',
-        },
-      ],
+      declarations: [filed('2026-08-01', '2026-08-02', 'approved')],
     });
-    expect(
-      await findOverlappingFilings(service as never, {
-        startDate: '2026-08-27',
-        endDate: '2026-08-28',
-        children: KIDS,
-      })
-    ).toHaveLength(0);
+    expect(await find(service, '2026-08-27', '2026-08-28')).toHaveLength(0);
   });
 
   it('ignores another family entirely', async () => {
     const service = fakeService({
       declarations: [
-        {
-          student_id: 'someone-else',
-          start_date: '2026-08-27',
-          end_date: '2026-08-27',
-          status: 'pending',
-        },
+        filed('2026-08-27', '2026-08-27', 'pending', 'absence', 'someone-else'),
       ],
     });
-    expect(
-      await findOverlappingFilings(service as never, {
-        startDate: '2026-08-27',
-        endDate: '2026-08-27',
-        children: KIDS,
-      })
-    ).toHaveLength(0);
+    expect(await find(service, '2026-08-27', '2026-08-27')).toHaveLength(0);
   });
 });
 
@@ -344,6 +343,8 @@ describe('alreadyFiledMessage', () => {
     // already filed this" would be wrong as well as unhelpful.
     const msg = alreadyFiledMessage({
       studentName: 'Ana Reyes',
+      declarationType: 'absence',
+      isExactMatch: false,
       startDate: '2026-08-27',
       endDate: '2026-08-31',
     });
@@ -355,6 +356,8 @@ describe('alreadyFiledMessage', () => {
   it('reads as one day rather than a range when it is one day', () => {
     const msg = alreadyFiledMessage({
       studentName: 'Ana Reyes',
+      declarationType: 'absence',
+      isExactMatch: false,
       startDate: '2026-08-27',
       endDate: '2026-08-27',
     });
