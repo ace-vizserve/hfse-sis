@@ -2,11 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
-import {
-  loadActivityPage,
-  type ActivityCursor,
-  type ActivityTab,
-} from '@/lib/activity/feed';
+import { loadActivityPage } from '@/lib/activity/feed';
+import { parseActivityParams } from '@/lib/activity/params';
 
 // GET /api/activity
 //
@@ -21,15 +18,6 @@ import {
 // `useDeclarationCount` stay on their live RLS-scoped browser queries so the
 // number cannot drift from the queue it points at (KD #196).
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
-
-const TABS: ReadonlySet<string> = new Set([
-  'general',
-  'grade_change',
-  'student_declaration',
-]);
-
 export async function GET(request: NextRequest) {
   const auth = await requireRole([
     'teacher',
@@ -39,28 +27,9 @@ export async function GET(request: NextRequest) {
   ]);
   if ('error' in auth) return auth.error;
 
-  const params = request.nextUrl.searchParams;
-
-  const rawTab = params.get('tab') ?? 'general';
-  const tab: ActivityTab = TABS.has(rawTab)
-    ? (rawTab as ActivityTab)
-    : 'general';
-
-  const rawLimit = Number(params.get('limit') ?? DEFAULT_LIMIT);
-  const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0
-      ? Math.min(Math.trunc(rawLimit), MAX_LIMIT)
-      : DEFAULT_LIMIT;
-
-  // The cursor round-trips as "<iso>|<id>" — two fields, one param, no JSON to
-  // parse from a query string.
-  let cursor: ActivityCursor = null;
-  const rawCursor = params.get('cursor');
-  if (rawCursor) {
-    const [at, ...rest] = rawCursor.split('|');
-    const id = rest.join('|');
-    if (at && id) cursor = { at, id };
-  }
+  const { tab, limit, cursor } = parseActivityParams(
+    request.nextUrl.searchParams
+  );
 
   try {
     const page = await loadActivityPage(createServiceClient(), {
