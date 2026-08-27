@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { type ChangeRequestStatus } from '@/lib/markbook/change-request-status';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { MyRequestsTable, type MyRequestRow } from './my-requests-table';
@@ -23,13 +24,17 @@ type RequestRow = {
   reason_category: string;
   justification: string;
   status: ChangeRequestStatus;
+  requested_by: string;
+  requested_by_email: string;
   requested_at: string;
   reviewed_at: string | null;
   reviewed_by_email: string | null;
   decision_note: string | null;
+  applied_by: string | null;
   applied_at: string | null;
   approved_at: string | null;
   rejection_undone_at: string | null;
+  primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
   secondary_reviewed_by_email: string | null;
 };
@@ -75,10 +80,11 @@ export default async function MyRequestsPage() {
     .select(
       `id, grading_sheet_id, grade_entry_id, field_changed, slot_index,
        current_value, proposed_value, reason_category, justification,
-       status, requested_at, reviewed_at, reviewed_by_email, decision_note,
-       applied_at,
+       status, requested_by, requested_by_email,
+       requested_at, reviewed_at, reviewed_by_email, decision_note,
+       applied_by, applied_at,
        approved_at, rejection_undone_at,
-       primary_reviewed_by_email, secondary_reviewed_by_email,
+       primary_reviewed_by, primary_reviewed_by_email, secondary_reviewed_by_email,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(name, academic_year_id),
          subject:subjects(code, name),
@@ -95,7 +101,10 @@ export default async function MyRequestsPage() {
     );
   }
 
-  const { data: rawRows } = await listQuery;
+  const [{ data: rawRows }, staffNames] = await Promise.all([
+    listQuery,
+    getStaffDisplayNameById(),
+  ]);
 
   type RawGradingSheet = {
     section: { name: string; academic_year_id: string } | null;
@@ -116,18 +125,23 @@ export default async function MyRequestsPage() {
       grade_entry_id: r.grade_entry_id,
       field_label: fieldLabel(r.field_changed, r.slot_index),
       field_changed: r.field_changed,
+      slot_index: r.slot_index,
       current_value: r.current_value,
       proposed_value: r.proposed_value,
       reason_category: r.reason_category,
       justification: r.justification,
       status: r.status,
+      requested_by: r.requested_by,
+      requested_by_email: r.requested_by_email,
       requested_at: r.requested_at,
       reviewed_at: r.reviewed_at,
       reviewed_by_email: r.reviewed_by_email,
       decision_note: r.decision_note,
+      applied_by: r.applied_by,
       applied_at: r.applied_at,
       approved_at: r.approved_at,
       rejection_undone_at: r.rejection_undone_at,
+      primary_reviewed_by: r.primary_reviewed_by,
       primary_reviewed_by_email: r.primary_reviewed_by_email,
       secondary_reviewed_by_email: r.secondary_reviewed_by_email,
       sectionName: gs?.section?.name ?? null,
@@ -174,7 +188,11 @@ export default async function MyRequestsPage() {
         <StatCard label="Cancelled" value={counts.cancelled} />
       </div>
 
-      <MyRequestsTable data={tableRows} />
+      <MyRequestsTable
+        data={tableRows}
+        nameEntries={staffNames}
+        viewerId={userId}
+      />
     </PageShell>
   );
 }

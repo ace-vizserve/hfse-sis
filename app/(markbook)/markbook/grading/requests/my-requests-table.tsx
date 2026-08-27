@@ -18,6 +18,11 @@ import {
   CHANGE_REQUEST_STATUS_CONFIG,
   type ChangeRequestStatus,
 } from '@/lib/markbook/change-request-status';
+import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-dialog';
+import {
+  buildGradeChangeEvents,
+  markChangeFieldLabel,
+} from '@/lib/activity/events';
 import { MyRequestsCancelButton } from './my-requests-cancel-button';
 
 export type MyRequestRow = {
@@ -28,20 +33,30 @@ export type MyRequestRow = {
   field_label: string;
   /** Raw field_changed value — used as facet key. */
   field_changed: string;
+  /** Only set for ww_scores/pt_scores — feeds the History dialog's title
+   *  via `markChangeFieldLabel`, which needs it to say "Written Work 2"
+   *  rather than just "Written Work". */
+  slot_index: number | null;
   current_value: string | null;
   proposed_value: string;
   reason_category: string;
   justification: string;
   status: ChangeRequestStatus;
+  requested_by: string;
+  requested_by_email: string;
   requested_at: string;
   reviewed_at: string | null;
   reviewed_by_email: string | null;
   decision_note: string | null;
+  applied_by: string | null;
   applied_at: string | null;
   approved_at: string | null;
   rejection_undone_at: string | null;
   // Per-designee reviewer columns (migration 044). When both are set the
   // request was co-signed; the teacher sees both names in the Reason cell.
+  // `primary_reviewed_by` is the id half — used by the History dialog to
+  // resolve a name via nameById rather than showing the reviewer's email.
+  primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
   secondary_reviewed_by_email: string | null;
   // Context fields populated by the loader join.
@@ -67,192 +82,250 @@ function statusLabel(s: ChangeRequestStatus): string {
   return CHANGE_REQUEST_STATUS_CONFIG[s].label;
 }
 
-const COLUMNS: ColumnDef<MyRequestRow>[] = [
-  {
-    accessorKey: 'requested_at',
-    header: ({ column }) => (
-      <SortableHeader column={column}>Filed</SortableHeader>
-    ),
-    cell: ({ row }) => (
-      <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-        {new Date(row.original.requested_at).toLocaleString('en-SG', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })}
-      </span>
-    ),
-    // Raw ISO timestamp isn't presentable as-is in a CSV — CSV_CONFIG's
-    // "Filed" extra column supplies the same formatting as the on-screen cell.
-    meta: { excludeFromExport: true, label: 'Filed' },
-  },
-  {
-    accessorKey: 'field_changed',
-    header: 'Field',
-    cell: ({ row }) => (
-      <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-        {row.original.field_label}
-      </span>
-    ),
-    // Raw value (e.g. "ww_scores") isn't the friendly label shown on screen
-    // — CSV_CONFIG's "Field" extra exports field_label instead.
-    meta: { excludeFromExport: true },
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
-    },
-  },
-  {
-    accessorKey: 'sectionName',
-    header: ({ column }) => (
-      <SortableHeader column={column}>Section</SortableHeader>
-    ),
-    meta: { label: 'Section' },
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {row.original.sectionName ?? '—'}
-      </span>
-    ),
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
-    },
-  },
-  {
-    accessorKey: 'subjectCode',
-    header: ({ column }) => (
-      <SortableHeader column={column}>Subject</SortableHeader>
-    ),
-    meta: { label: 'Subject' },
-    cell: ({ row }) => (
-      <div>
-        <span className="font-mono text-xs text-foreground">
-          {row.original.subjectCode ?? '—'}
+// The history dialog's subtitle line. No student name is joined onto this
+// row today (see the loader-join TODO above), so section/subject/term —
+// already loaded for the table's own columns — stand in for it; "Mark
+// change" is the last resort when none of the three are known.
+function historySubtitle(r: MyRequestRow): string {
+  return (
+    [r.sectionName, r.subjectCode, r.termLabel].filter(Boolean).join(' · ') ||
+    'Mark change'
+  );
+}
+
+// A function, not a module-level constant, because the "actions" column's
+// History dialog needs `nameById` and `viewerId` — both only known once the
+// component has its props. Built inside a `useMemo` below so identity stays
+// stable across renders that don't change either input.
+function buildColumns(
+  nameById: ReadonlyMap<string, string>,
+  viewerId: string
+): ColumnDef<MyRequestRow>[] {
+  return [
+    {
+      accessorKey: 'requested_at',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Filed</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+          {new Date(row.original.requested_at).toLocaleString('en-SG', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
         </span>
-        {row.original.subjectName && (
-          <div className="text-[11px] text-muted-foreground">
-            {row.original.subjectName}
+      ),
+      // Raw ISO timestamp isn't presentable as-is in a CSV — CSV_CONFIG's
+      // "Filed" extra column supplies the same formatting as the on-screen cell.
+      meta: { excludeFromExport: true, label: 'Filed' },
+    },
+    {
+      accessorKey: 'field_changed',
+      header: 'Field',
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+          {row.original.field_label}
+        </span>
+      ),
+      // Raw value (e.g. "ww_scores") isn't the friendly label shown on screen
+      // — CSV_CONFIG's "Field" extra exports field_label instead.
+      meta: { excludeFromExport: true },
+      filterFn: (row, id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        return Array.isArray(value)
+          ? value.includes(row.getValue(id))
+          : row.getValue(id) === value;
+      },
+    },
+    {
+      accessorKey: 'sectionName',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Section</SortableHeader>
+      ),
+      meta: { label: 'Section' },
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.sectionName ?? '—'}
+        </span>
+      ),
+      filterFn: (row, id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        return Array.isArray(value)
+          ? value.includes(row.getValue(id))
+          : row.getValue(id) === value;
+      },
+    },
+    {
+      accessorKey: 'subjectCode',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Subject</SortableHeader>
+      ),
+      meta: { label: 'Subject' },
+      cell: ({ row }) => (
+        <div>
+          <span className="font-mono text-xs text-foreground">
+            {row.original.subjectCode ?? '—'}
+          </span>
+          {row.original.subjectName && (
+            <div className="text-[11px] text-muted-foreground">
+              {row.original.subjectName}
+            </div>
+          )}
+        </div>
+      ),
+      filterFn: (row, id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        return Array.isArray(value)
+          ? value.includes(row.getValue(id))
+          : row.getValue(id) === value;
+      },
+    },
+    {
+      accessorKey: 'termLabel',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Term</SortableHeader>
+      ),
+      meta: { label: 'Term' },
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {row.original.termLabel ?? '—'}
+        </span>
+      ),
+      filterFn: (row, id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        return Array.isArray(value)
+          ? value.includes(row.getValue(id))
+          : row.getValue(id) === value;
+      },
+    },
+    {
+      id: 'change',
+      header: 'Change',
+      cell: ({ row }) => (
+        <span className="tabular-nums text-sm">
+          {row.original.current_value ?? '(blank)'}{' '}
+          <span className="text-muted-foreground">→</span>{' '}
+          <span className="font-medium">{row.original.proposed_value}</span>
+        </span>
+      ),
+      // Composite cell with no accessor value to export — CSV_CONFIG's
+      // "From"/"To" extras carry the two values as separate columns instead.
+      meta: { excludeFromExport: true },
+    },
+    {
+      accessorKey: 'reason_category',
+      header: 'Reason',
+      cell: ({ row }) => (
+        <div className="text-xs text-muted-foreground">
+          {row.original.reason_category.replace(/_/g, ' ')}
+          {row.original.decision_note && (
+            <div className="mt-0.5 line-clamp-1 text-[11px]">
+              Note: {row.original.decision_note}
+            </div>
+          )}
+          <ReviewerLine row={row.original} />
+        </div>
+      ),
+      // Raw snake_case value isn't presentable — CSV_CONFIG's "Reason" extra
+      // exports the humanized version shown on screen.
+      meta: { excludeFromExport: true },
+    },
+    {
+      id: 'req_status',
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const cfg = CHANGE_REQUEST_STATUS_CONFIG[row.original.status];
+        const Icon = cfg.icon;
+        return (
+          <Badge variant={cfg.variant}>
+            <Icon className="h-3 w-3" />
+            {cfg.label}
+          </Badge>
+        );
+      },
+      // Raw enum value isn't the friendly label — CSV_CONFIG's "Status" extra
+      // exports statusLabel() instead.
+      meta: { excludeFromExport: true },
+      filterFn: (row, id, value) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return true;
+        return Array.isArray(value)
+          ? value.includes(row.getValue(id))
+          : row.getValue(id) === value;
+      },
+    },
+    {
+      id: 'actions',
+      header: '',
+      enableHiding: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        return (
+          <div className="flex items-center justify-end gap-2">
+            <ApprovalHistoryDialog
+              trigger={
+                <Button variant="ghost" size="sm">
+                  History
+                </Button>
+              }
+              title={`A student — ${markChangeFieldLabel(
+                r.field_changed,
+                r.slot_index ?? null
+              )}`}
+              subtitle={historySubtitle(r)}
+              events={buildGradeChangeEvents({
+                id: r.id,
+                fieldChanged: r.field_changed,
+                slotIndex: r.slot_index ?? null,
+                currentValue: r.current_value ?? null,
+                proposedValue: r.proposed_value,
+                studentLabel: 'a student',
+                requestedById: r.requested_by,
+                requestedByEmail: r.requested_by_email,
+                requestedAt: r.requested_at,
+                status: r.status,
+                reviewedById: r.primary_reviewed_by,
+                reviewedByEmail:
+                  r.primary_reviewed_by_email ?? r.reviewed_by_email,
+                reviewedAt: r.reviewed_at,
+                decisionNote: r.decision_note ?? null,
+                appliedById: r.applied_by,
+                appliedAt: r.applied_at,
+                viewerId,
+                nameById,
+                href: `/markbook/grading/requests?req=${r.id}`,
+              })}
+            />
+            {r.status === 'approved' ? (
+              // Approved-but-not-yet-applied: promote the deep-link to a
+              // filled CTA so the teacher can jump straight to the locked
+              // sheet and see the approved change ready to be applied. The
+              // registrar does the actual apply (Hard Rule #5 + #6);
+              // teacher's CTA is labelled "View" to reflect their
+              // read-only role.
+              <Button asChild size="sm" className="h-8">
+                <Link href={`/markbook/grading/${r.grading_sheet_id}`}>
+                  View approved sheet
+                </Link>
+              </Button>
+            ) : (
+              <Link
+                href={`/markbook/grading/${r.grading_sheet_id}`}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-4"
+              >
+                Sheet
+                <ArrowUpRight className="size-3" />
+              </Link>
+            )}
+            {r.status === 'pending' && (
+              <MyRequestsCancelButton requestId={r.id} />
+            )}
           </div>
-        )}
-      </div>
-    ),
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
+        );
+      },
     },
-  },
-  {
-    accessorKey: 'termLabel',
-    header: ({ column }) => (
-      <SortableHeader column={column}>Term</SortableHeader>
-    ),
-    meta: { label: 'Term' },
-    cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground">
-        {row.original.termLabel ?? '—'}
-      </span>
-    ),
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
-    },
-  },
-  {
-    id: 'change',
-    header: 'Change',
-    cell: ({ row }) => (
-      <span className="tabular-nums text-sm">
-        {row.original.current_value ?? '(blank)'}{' '}
-        <span className="text-muted-foreground">→</span>{' '}
-        <span className="font-medium">{row.original.proposed_value}</span>
-      </span>
-    ),
-    // Composite cell with no accessor value to export — CSV_CONFIG's
-    // "From"/"To" extras carry the two values as separate columns instead.
-    meta: { excludeFromExport: true },
-  },
-  {
-    accessorKey: 'reason_category',
-    header: 'Reason',
-    cell: ({ row }) => (
-      <div className="text-xs text-muted-foreground">
-        {row.original.reason_category.replace(/_/g, ' ')}
-        {row.original.decision_note && (
-          <div className="mt-0.5 line-clamp-1 text-[11px]">
-            Note: {row.original.decision_note}
-          </div>
-        )}
-        <ReviewerLine row={row.original} />
-      </div>
-    ),
-    // Raw snake_case value isn't presentable — CSV_CONFIG's "Reason" extra
-    // exports the humanized version shown on screen.
-    meta: { excludeFromExport: true },
-  },
-  {
-    id: 'req_status',
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => {
-      const cfg = CHANGE_REQUEST_STATUS_CONFIG[row.original.status];
-      const Icon = cfg.icon;
-      return (
-        <Badge variant={cfg.variant}>
-          <Icon className="h-3 w-3" />
-          {cfg.label}
-        </Badge>
-      );
-    },
-    // Raw enum value isn't the friendly label — CSV_CONFIG's "Status" extra
-    // exports statusLabel() instead.
-    meta: { excludeFromExport: true },
-    filterFn: (row, id, value) => {
-      if (!value || (Array.isArray(value) && value.length === 0)) return true;
-      return Array.isArray(value)
-        ? value.includes(row.getValue(id))
-        : row.getValue(id) === value;
-    },
-  },
-  {
-    id: 'actions',
-    header: '',
-    enableHiding: false,
-    cell: ({ row }) => (
-      <div className="flex items-center justify-end gap-2">
-        {row.original.status === 'approved' ? (
-          // Approved-but-not-yet-applied: promote the deep-link to a filled
-          // CTA so the teacher can jump straight to the locked sheet and
-          // see the approved change ready to be applied. The registrar
-          // does the actual apply (Hard Rule #5 + #6); teacher's CTA is
-          // labelled "View" to reflect their read-only role.
-          <Button asChild size="sm" className="h-8">
-            <Link href={`/markbook/grading/${row.original.grading_sheet_id}`}>
-              View approved sheet
-            </Link>
-          </Button>
-        ) : (
-          <Link
-            href={`/markbook/grading/${row.original.grading_sheet_id}`}
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-4"
-          >
-            Sheet
-            <ArrowUpRight className="size-3" />
-          </Link>
-        )}
-        {row.original.status === 'pending' && (
-          <MyRequestsCancelButton requestId={row.original.id} />
-        )}
-      </div>
-    ),
-  },
-];
+  ];
+}
 
 const STATUS_TABS: StatusTabConfig<MyRequestRow>[] = [
   {
@@ -365,7 +438,27 @@ function ReviewerLine({ row }: { row: MyRequestRow }) {
   );
 }
 
-export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
+export function MyRequestsTable({
+  data,
+  nameEntries,
+  viewerId,
+}: {
+  data: MyRequestRow[];
+  /** userId → display-name, from `getStaffDisplayNameById()` on the server.
+   *  Resolves the History dialog's actors to real names instead of raw
+   *  emails or uuids. */
+  nameEntries: Array<[string, string]>;
+  /** The signed-in viewer's id. On this page the viewer filed every row
+   *  shown, so the History dialog's first row reads "You asked to
+   *  change …" rather than the teacher's own name. */
+  viewerId: string;
+}) {
+  const nameById = useMemo(() => new Map(nameEntries), [nameEntries]);
+  const columns = useMemo(
+    () => buildColumns(nameById, viewerId),
+    [nameById, viewerId]
+  );
+
   // Status is the status-tab dimension (below) — not duplicated as a facet.
   const facets = useMemo<FacetConfig[]>(
     () => [
@@ -395,7 +488,7 @@ export function MyRequestsTable({ data }: { data: MyRequestRow[] }) {
   return (
     <DataTable<MyRequestRow>
       data={data}
-      columns={COLUMNS}
+      columns={columns}
       getRowId={(row) => row.id}
       searchKeys={['field_label', 'reason_category', 'proposed_value']}
       searchPlaceholder="Search field, reason, value…"

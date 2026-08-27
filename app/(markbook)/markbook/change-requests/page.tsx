@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -75,11 +76,11 @@ export default async function AdminChangeRequestsPage({
     .select(
       `id, grading_sheet_id, grade_entry_id, field_changed, slot_index,
        current_value, proposed_value, reason_category, justification,
-       status, requested_by_email, requested_at,
+       status, requested_by, requested_by_email, requested_at,
        reviewed_by_email, reviewed_at, decision_note,
        applied_by, applied_at,
        primary_approver_id, secondary_approver_id,
-       primary_reviewed_by_email, secondary_reviewed_by_email,
+       primary_reviewed_by, primary_reviewed_by_email, secondary_reviewed_by_email,
        primary_reviewed_at,
        approved_at, rejection_undone_at,
        grading_sheet:grading_sheets!inner(
@@ -101,7 +102,10 @@ export default async function AdminChangeRequestsPage({
     );
   }
 
-  const { data: rawRows } = await query;
+  const [{ data: rawRows }, staffNames] = await Promise.all([
+    query,
+    getStaffDisplayNameById(),
+  ]);
 
   type RawGradingSheet = {
     section: { id: string; name: string; academic_year_id: string } | null;
@@ -203,6 +207,8 @@ export default async function AdminChangeRequestsPage({
             ? actionParam
             : null
         }
+        nameEntries={staffNames}
+        viewerId={sessionUser.id}
       />
     </PageShell>
   );

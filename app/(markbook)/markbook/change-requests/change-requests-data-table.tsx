@@ -42,6 +42,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-dialog';
+import {
+  buildGradeChangeEvents,
+  markChangeFieldLabel,
+} from '@/lib/activity/events';
 import { ChangeRequestDecisionButtons } from './decision-buttons';
 
 // Inline menu-item version of UndoRejectionButton — triggers the same dialog
@@ -133,6 +138,7 @@ export type AdminRequestRow = {
   reason_category: string;
   justification: string;
   status: ChangeRequestStatus;
+  requested_by: string;
   requested_by_email: string;
   requested_at: string;
   reviewed_by_email: string | null;
@@ -143,7 +149,12 @@ export type AdminRequestRow = {
   // Per-designee reviewer columns (migration 044). When BOTH are set the
   // request was co-signed by both designated approvers; when only one is
   // set the request is in the legacy single-reviewer shape. The legacy
-  // reviewed_by_email above stays as the back-compat fallback.
+  // reviewed_by_email above stays as the back-compat fallback. Migration
+  // 044's backfill (Section 2) copies the legacy `reviewed_by` id into
+  // `primary_reviewed_by` for pre-existing rows, so this id is populated
+  // for both legacy and new requests — the history dialog resolves it to
+  // a name via `primary_reviewed_by`, never the (unselected) legacy id.
+  primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
   secondary_reviewed_by_email: string | null;
   // primary_reviewed_at gates the 2-hour undo window for the rejecting
@@ -178,6 +189,17 @@ function fieldLabel(field: string, slot: number | null): string {
     default:
       return field;
   }
+}
+
+// The history dialog's subtitle line. No student name is joined onto this
+// row today (see the loader-join TODO above), so section/subject/term — all
+// already loaded for the table's own columns — stand in for it; "Mark
+// change" is the last resort when none of the three are known.
+function historySubtitle(r: AdminRequestRow): string {
+  return (
+    [r.sectionName, r.subjectCode, r.termLabel].filter(Boolean).join(' · ') ||
+    'Mark change'
+  );
 }
 
 function startOfDay(d: Date): Date {
@@ -316,6 +338,8 @@ export function ChangeRequestsDataTable({
   initialRequestId,
   initialAction,
   ayCode,
+  nameEntries,
+  viewerId,
 }: {
   rows: AdminRequestRow[];
   canDecide: boolean;
@@ -331,7 +355,16 @@ export function ChangeRequestsDataTable({
   initialRequestId?: string | null;
   initialAction?: 'approve' | 'reject' | null;
   ayCode?: string;
+  /** userId → display-name, from `getStaffDisplayNameById()` on the server.
+   *  Resolves the History dialog's actors to real names instead of raw
+   *  emails or uuids. */
+  nameEntries: Array<[string, string]>;
+  /** The signed-in viewer's id — the History dialog reads "You asked to
+   *  change …" on the first row when the viewer is the requester. */
+  viewerId: string;
 }) {
+  const nameById = React.useMemo(() => new Map(nameEntries), [nameEntries]);
+
   const [range, setRange] = React.useState<DateRange | undefined>(undefined);
   const [rangeOpen, setRangeOpen] = React.useState(false);
   const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
@@ -651,6 +684,40 @@ export function ChangeRequestsDataTable({
               id={`change-request-row-${r.id}`}
               className="flex items-center justify-end gap-2"
             >
+              <ApprovalHistoryDialog
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    History
+                  </Button>
+                }
+                title={`A student — ${markChangeFieldLabel(
+                  r.field_changed,
+                  r.slot_index ?? null
+                )}`}
+                subtitle={historySubtitle(r)}
+                events={buildGradeChangeEvents({
+                  id: r.id,
+                  fieldChanged: r.field_changed,
+                  slotIndex: r.slot_index ?? null,
+                  currentValue: r.current_value ?? null,
+                  proposedValue: r.proposed_value,
+                  studentLabel: 'a student',
+                  requestedById: r.requested_by,
+                  requestedByEmail: r.requested_by_email,
+                  requestedAt: r.requested_at,
+                  status: r.status,
+                  reviewedById: r.primary_reviewed_by,
+                  reviewedByEmail:
+                    r.primary_reviewed_by_email ?? r.reviewed_by_email,
+                  reviewedAt: r.reviewed_at,
+                  decisionNote: r.decision_note ?? null,
+                  appliedById: r.applied_by,
+                  appliedAt: r.applied_at,
+                  viewerId,
+                  nameById,
+                  href: `/markbook/change-requests?req=${r.id}`,
+                })}
+              />
               {canDecide && r.status === 'pending' && (
                 <ChangeRequestDecisionButtons
                   requestId={r.id}
@@ -679,7 +746,7 @@ export function ChangeRequestsDataTable({
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canDecide, controlledByRow, actorEmail]
+    [canDecide, controlledByRow, actorEmail, nameById, viewerId]
   );
 
   // Toolbar: date-range picker + sheet ID chip
