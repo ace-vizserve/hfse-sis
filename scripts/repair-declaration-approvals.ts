@@ -152,17 +152,15 @@ async function main() {
     }
   }
 
-  // Approved absences whose days never landed on the attendance sheet.
+  // Approved filings whose days never landed on the attendance sheet.
   //
-  // ⚠ Travel is excluded on purpose, not overlooked: it does not mark the
-  // register at all until Phase 4 brings the vacation count with it, so every
-  // approved travel filing has a null stamp and listing them here would report
-  // a permanent, growing backlog of work that does not exist.
+  // ⚠ Travel is INCLUDED as of Phase 4. It was excluded while travel marked
+  // nothing — listing it then would have reported a permanent, growing
+  // backlog of work that did not exist. Now that an approved trip writes
+  // `EX` / `vacation`, a travel filing with no stamp is a real gap, and the
+  // filings approved before Phase 4 shipped are exactly what this finds.
   const unmarked = declarations.filter(
-    (d) =>
-      d.status === 'approved' &&
-      d.declaration_type === 'absence' &&
-      d.register_written_at == null
+    (d) => d.status === 'approved' && d.register_written_at == null
   );
 
   console.log(`Declarations: ${declarations.length}`);

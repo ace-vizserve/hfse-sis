@@ -410,7 +410,7 @@ export default async function AttendanceStudentDetailPage({
                   {vlUsage.usedThisTerm}
                 </span>
                 <span className="font-mono text-[12px] uppercase tracking-wider text-muted-foreground">
-                  of {vlUsage.allowance} used · {vlPct}%
+                  of {vlUsage.allowance} trips used · {vlPct}%
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -422,10 +422,15 @@ export default async function AttendanceStudentDetailPage({
                   style={{ width: `${Math.min(vlPct, 100)}%` }}
                 />
               </div>
+              {/* ⚠ TRIPS, NOT DAYS. This said "days" and the number behind it
+                  was a day count, so a one-week holiday read as 5 of 1 used.
+                  Vacation leave is one TRIP however long (Mr Ace,
+                  2026-08-27); the word has to change with the number or the
+                  figure silently means something new. */}
               <p className="font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
                 {vlUsage.usedThisTerm > vlUsage.allowance
-                  ? `${vlUsage.usedThisTerm - vlUsage.allowance} day${vlUsage.usedThisTerm - vlUsage.allowance === 1 ? '' : 's'} over`
-                  : `${vlUsage.remainingThisTerm} day${vlUsage.remainingThisTerm === 1 ? '' : 's'} remaining this term`}
+                  ? `${vlUsage.usedThisTerm - vlUsage.allowance} trip${vlUsage.usedThisTerm - vlUsage.allowance === 1 ? '' : 's'} over`
+                  : `${vlUsage.remainingThisTerm} trip${vlUsage.remainingThisTerm === 1 ? '' : 's'} remaining this term`}
               </p>
             </div>
             <VacationAllowanceInline

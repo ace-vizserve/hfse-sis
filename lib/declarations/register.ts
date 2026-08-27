@@ -51,15 +51,15 @@ const EX_REASON_BY_DECLARATION_TYPE: Record<string, ExReason> = {
 };
 
 /**
- * Which kinds write marks today.
+ * Which kinds write marks.
  *
- * ⚠ Travel is deliberately absent. Mr Ace confirmed Phase 3 is absence-only:
- * travel belongs with the per-term vacation allowance (KD #76), which is Phase
- * 4's real work — one allowance is one TRIP, and writing `vacation` days
- * before anything counts them would silently spend a quota nobody is checking.
- * Its reason is already mapped above so Phase 4 is a one-line change here.
+ * ⚠ Travel joined in Phase 4, and the order was deliberate. It waited until
+ * the allowance was actually counted (KD #94, corrected 2026-08-27 — one
+ * vacation leave is one TRIP, not one day), because writing `vacation` days
+ * while a day-counter was still in place would have made every approved
+ * holiday instantly report itself as over quota on six screens.
  */
-const REGISTER_WRITING_TYPES = new Set(['absence']);
+const REGISTER_WRITING_TYPES = new Set(['absence', 'travel']);
 
 export type RegisterWriteResult =
   | { ok: true; written: number; skipped: number; skippedReason: null }

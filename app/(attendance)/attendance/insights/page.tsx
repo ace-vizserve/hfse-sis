@@ -811,7 +811,7 @@ export default async function AttendanceInsightsPage({
                           )
                         }
                         subtitle={r.sectionName}
-                        value={`${r.usedThisTerm} / ${r.allowance} used`}
+                        value={`${r.usedThisTerm} / ${r.allowance} trips`}
                         badge={{ text: 'Over', tone: 'destructive' }}
                       />
                     ))}
@@ -847,7 +847,7 @@ export default async function AttendanceInsightsPage({
                               )
                             }
                             subtitle={r.sectionName}
-                            value={`${r.usedThisTerm} / ${r.allowance} used`}
+                            value={`${r.usedThisTerm} / ${r.allowance} trips`}
                             badge={{ text: 'Approaching', tone: 'amber' }}
                           />
                         ))}

@@ -206,12 +206,12 @@ export async function POST(
       }
     }
 
-    // ── Phase 3: the last approval marks the register ────────────────────
+    // ── The last approval marks the register ─────────────────────────────
     //
     // Mr Ace, 2026-08-27: "the attendance sheet is not showing that the filed
     // student has been excused based on the approval details." Every school
-    // day of an approved absence becomes EX / 'mc'. Absence only — travel
-    // waits for the vacation count in Phase 4.
+    // day of an approved absence becomes EX / 'mc'; every school day of
+    // approved travel becomes EX / 'vacation' (Phase 4).
     //
     // ⚠ THIS CAN FAIL WITHOUT UN-DOING THE APPROVAL. The decision is already
     // committed in Postgres and two people have made it; throwing here would

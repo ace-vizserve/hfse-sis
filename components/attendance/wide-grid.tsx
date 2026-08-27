@@ -86,6 +86,7 @@ import {
   CellMarkPalette,
   type CellFiling as WideGridCellFiling,
 } from '@/components/attendance/cell-mark-popover';
+import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 // Re-exported so the page can build the map without reaching past the grid
 // into the popover it happens to render.
 export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-popover';
@@ -405,15 +406,35 @@ export function AttendanceWideGrid({
       if (!wasAlreadyVacation) {
         const enr = enrolments.find((e) => e.enrolmentId === enrolmentId);
         if (enr) {
-          let vlInTerm = 0;
+          // ⚠ TRIPS, NOT DAYS. This counted one per marked cell, so the
+          // second day of a single holiday fired "over quota" — the warning
+          // cried wolf on exactly the normal case. Vacation leave is one trip
+          // however long (Mr Ace, 2026-08-27), and marking the day BESIDE an
+          // existing vacation day extends that trip rather than starting one.
+          //
+          // Uses the same `countVacationTrips` the server does, so the toast
+          // and the quota card can never disagree.
+          const vacationDates = new Set<string>();
           for (const [key, c] of cells.entries()) {
             if (!key.startsWith(`${enrolmentId}|`)) continue;
-            if (c.status === 'EX' && c.exReason === 'vacation') vlInTerm += 1;
+            if (c.status === 'EX' && c.exReason === 'vacation') {
+              vacationDates.add(key.slice(enrolmentId.length + 1));
+            }
           }
-          const nextCount = vlInTerm + 1;
-          if (nextCount > enr.vlAllowance) {
+          const schoolDays = columns
+            .filter((c) => c.encodable)
+            .map((c) => c.iso);
+          const before = countVacationTrips(schoolDays, vacationDates, false);
+          const after = countVacationTrips(
+            schoolDays,
+            new Set([...vacationDates, date]),
+            false
+          );
+          // Only speak up when this click actually SPENDS an allowance and
+          // takes them past it. Extending a trip changes nothing.
+          if (after > before && after > enr.vlAllowance) {
             toast.warning(
-              `${enr.studentName} has used ${vlInTerm} of ${enr.vlAllowance} vacation leaves this term. Saving anyway — check with the registrar if this needs an exception.`
+              `${enr.studentName} has used ${before} of ${enr.vlAllowance} vacation leaves this term. Saving anyway — check with the registrar if this needs an exception.`
             );
           }
         }

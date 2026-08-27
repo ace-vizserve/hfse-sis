@@ -4,6 +4,8 @@ import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { DAY_TYPE_LABELS } from '@/lib/schemas/attendance';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import { expandSchoolDays } from '@/lib/attendance/school-days';
+import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 
 // Attendance drill primitives — sibling of `lib/markbook/drill.ts`.
 // Attendance is registrar+ only on the dashboard (KD #55), so we don't need
@@ -202,7 +204,16 @@ type StudentLite = {
   vacation_leave_allowance_per_term: number | null;
 };
 type LevelLite = { id: string; code: string };
-type TermLite = { id: string; term_number: number; academic_year_id: string };
+// Dates were added for the vacation-TRIP count: a trip is a run of school
+// days, so the counter needs the term's own window to ask the calendar for
+// them. Same query, two more columns.
+type TermLite = {
+  id: string;
+  term_number: number;
+  academic_year_id: string;
+  start_date: string | null;
+  end_date: string | null;
+};
 
 async function resolveAyContext(ayCode: string) {
   const service = createServiceClient();
@@ -230,7 +241,7 @@ async function resolveAyContext(ayCode: string) {
     service.from('levels').select('id, code'),
     service
       .from('terms')
-      .select('id, term_number, academic_year_id')
+      .select('id, term_number, academic_year_id, start_date, end_date')
       .eq('academic_year_id', ayId),
   ]);
   const sections = (sectionsRes.data ?? []) as SectionLite[];
@@ -578,6 +589,58 @@ function rollupBySection(
 // The quota is attached to the student, so usage is the union across every
 // enrolment row in the AY — mirroring `getCompassionateUsageForSection` /
 // `getVacationLeaveUsageForSection` in lib/attendance/queries.ts.
+/**
+ * Vacation leave per student, counted in TRIPS.
+ *
+ * ⚠ A SIBLING OF `tallyLeaveUsageByStudent`, NOT A FLAG ON IT, because the
+ * two allowances are measured in different units and always were: the
+ * compassionate allowance really is 5 DAYS per year, while a vacation leave
+ * is one TRIP however long (Mr Ace, 2026-08-27: _"who does vacation 1 day
+ * bruh its one trip"_). Sharing one function is what let vacation inherit a
+ * day count and report a five-day holiday as 5 used against an allowance of 1.
+ *
+ * Grouping lives in `lib/attendance/vacation-trips.ts` so this screen and
+ * `getVacationLeaveUsage` cannot disagree about what a trip is.
+ */
+export function tallyVacationTripsByStudent(
+  entries: Array<
+    Pick<
+      AttendanceEntryRow,
+      'studentSectionId' | 'termId' | 'status' | 'exReason' | 'attendanceDate'
+    >
+  >,
+  studentIdBySectionStudentId: Map<string, string>,
+  termId: string,
+  termSchoolDays: string[],
+  carriedInStudentIds: ReadonlySet<string>
+): Map<string, number> {
+  // Dates first, per student — a mid-year transfer must not split one holiday
+  // into two trips, so every enrolment folds into the same set.
+  const datesByStudent = new Map<string, Set<string>>();
+  for (const e of entries) {
+    if (e.termId !== termId) continue;
+    if (e.status !== 'EX' || e.exReason !== 'vacation') continue;
+    const studentId = studentIdBySectionStudentId.get(e.studentSectionId);
+    if (!studentId) continue;
+    const dates = datesByStudent.get(studentId) ?? new Set<string>();
+    dates.add(e.attendanceDate);
+    datesByStudent.set(studentId, dates);
+  }
+
+  const usage = new Map<string, number>();
+  for (const [studentId, dates] of datesByStudent.entries()) {
+    usage.set(
+      studentId,
+      countVacationTrips(
+        termSchoolDays,
+        dates,
+        carriedInStudentIds.has(studentId)
+      )
+    );
+  }
+  return usage;
+}
+
 export function tallyLeaveUsageByStudent(
   entries: Array<
     Pick<
@@ -753,11 +816,55 @@ async function rollupVacationLeave(
   const studentIdBySsId = new Map<string, string>();
   for (const ss of ctx.sectionStudents)
     studentIdBySsId.set(ss.id, ss.student_id);
-  const usage = tallyLeaveUsageByStudent(
+
+  // ⚠ TRIPS, NOT DAYS — see `tallyVacationTripsByStudent`. The term's school
+  // days are what a trip is allowed to span, and the day before the term is
+  // what decides whether a holiday that carried over already spent its
+  // allowance in the term it started in.
+  // An undated term has no school days, so it has no trips to count — the
+  // same shape `expandSchoolDays` would return anyway, reached without a
+  // pointless round trip. AY2026 has exactly this problem waiting: its Term 4
+  // row does not exist yet.
+  if (!term.start_date || !term.end_date) return [];
+
+  const service = createServiceClient();
+  const termSchoolDays = (
+    await expandSchoolDays(service, {
+      startDate: term.start_date,
+      endDate: term.end_date,
+      academicYearId: ctx.ayId,
+      levelType: null,
+    })
+  ).map((d) => d.date);
+
+  const priorTerm = ctx.terms.find(
+    (t) => t.term_number === term.term_number - 1
+  );
+  const carriedIn = new Set<string>();
+  if (priorTerm?.start_date && priorTerm.end_date) {
+    const priorDays = await expandSchoolDays(service, {
+      startDate: priorTerm.start_date,
+      endDate: priorTerm.end_date,
+      academicYearId: ctx.ayId,
+      levelType: null,
+    });
+    const lastPriorDay = priorDays.at(-1)?.date ?? null;
+    if (lastPriorDay) {
+      for (const e of entries) {
+        if (e.attendanceDate !== lastPriorDay) continue;
+        if (e.status !== 'EX' || e.exReason !== 'vacation') continue;
+        const studentId = studentIdBySsId.get(e.studentSectionId);
+        if (studentId) carriedIn.add(studentId);
+      }
+    }
+  }
+
+  const usage = tallyVacationTripsByStudent(
     entries,
     studentIdBySsId,
-    'vacation',
-    termId
+    termId,
+    termSchoolDays,
+    carriedIn
   );
 
   const sectionById = new Map<string, SectionLite>();

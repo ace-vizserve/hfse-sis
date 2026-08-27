@@ -16,6 +16,7 @@ import {
   DECLARATION_APPROVAL_FLOW,
   DECLARATION_SUBJECT_TYPE,
 } from '@/lib/declarations/approval';
+import { getVacationLeaveUsage } from '@/lib/attendance/queries';
 
 /**
  * The school's side of a parent's declaration.
@@ -93,6 +94,15 @@ export type StaffDeclarationView = {
   registerDaysWritten: number | null;
   registerWriteError: string | null;
 
+  /**
+   * Travel only — the child's vacation allowance for the term this trip
+   * starts in, and how much of it they have already spent.
+   *
+   * Null for an absence, and for a trip filed outside every term. `used`
+   * excludes this filing, so `used + 1` is what approving it would make it.
+   */
+  vacationUsage: { used: number; allowance: number } | null;
+
   /** The other children on the same submission. Each is decided separately. */
   siblings: DeclarationSibling[];
 
@@ -106,6 +116,7 @@ type DeclarationRow = {
   declaration_type: DeclarationType;
   student_id: string;
   section_id: string;
+  academic_year_id: string;
   start_date: string;
   end_date: string;
   with_medical: boolean | null;
@@ -123,7 +134,77 @@ type DeclarationRow = {
 };
 
 const DECLARATION_COLUMNS =
-  'id, filing_group_id, declaration_type, student_id, section_id, start_date, end_date, with_medical, evidence_path, evidence_url, destination_country, destination_city, parent_note, status, filed_by_email, created_at, register_written_at, register_days_written, register_write_error';
+  'id, filing_group_id, declaration_type, student_id, section_id, academic_year_id, start_date, end_date, with_medical, evidence_path, evidence_url, destination_country, destination_city, parent_note, status, filed_by_email, created_at, register_written_at, register_days_written, register_write_error';
+
+/**
+ * How much of the child's vacation allowance a TRAVEL filing would spend.
+ *
+ * ⚠ Loaded only for travel rows, and only where the filing's dates land in a
+ * real term. A trip is one vacation leave however long (KD #94 as corrected
+ * 2026-08-27), and the school allows one per term — so the approver needs to
+ * know whether saying yes takes the child past it.
+ *
+ * ⚠ `used` deliberately EXCLUDES this filing. An unapproved trip has written
+ * no marks yet, and the counter reads the register — so "used + 1" is what
+ * this decision would make it, which is exactly the sentence the approver
+ * needs. Approving it writes the marks and the number catches up on its own.
+ */
+async function loadVacationUsageForTravel(
+  service: SupabaseClient,
+  rows: Array<{
+    id: string;
+    declaration_type: DeclarationType;
+    student_id: string;
+    academic_year_id: string;
+    start_date: string;
+  }>
+): Promise<Map<string, { used: number; allowance: number }>> {
+  const out = new Map<string, { used: number; allowance: number }>();
+  const travel = rows.filter((r) => r.declaration_type === 'travel');
+  if (travel.length === 0) return out;
+
+  // The term the trip STARTS in — the same attribution rule the counter uses
+  // for a trip that crosses a boundary (Mr Ace, 2026-08-27).
+  const ayIds = [...new Set(travel.map((r) => r.academic_year_id))];
+  const { data: termRows } = await service
+    .from('terms')
+    .select('id, academic_year_id, start_date, end_date')
+    .in('academic_year_id', ayIds);
+  const terms = (termRows ?? []) as Array<{
+    id: string;
+    academic_year_id: string;
+    start_date: string | null;
+    end_date: string | null;
+  }>;
+
+  // One lookup per (student, term) however many filings share it.
+  const cache = new Map<string, { used: number; allowance: number }>();
+  for (const row of travel) {
+    const term = terms.find(
+      (t) =>
+        t.academic_year_id === row.academic_year_id &&
+        t.start_date &&
+        t.end_date &&
+        t.start_date <= row.start_date &&
+        t.end_date >= row.start_date
+    );
+    if (!term) continue; // Filed for dates outside every term — nothing to say.
+
+    const key = `${row.student_id}|${term.id}`;
+    let usage = cache.get(key);
+    if (!usage) {
+      const resolved = await getVacationLeaveUsage(
+        row.student_id,
+        row.academic_year_id,
+        term.id
+      );
+      usage = { used: resolved.usedThisTerm, allowance: resolved.allowance };
+      cache.set(key, usage);
+    }
+    out.set(row.id, usage);
+  }
+  return out;
+}
 
 /**
  * Full detail for a set of declaration ids, in the order they were filed.
@@ -169,7 +250,7 @@ export async function loadStaffDeclarations(
   const studentIds = [...new Set(groupRows.map((r) => r.student_id))];
   const sectionIds = [...new Set(groupRows.map((r) => r.section_id))];
 
-  const [studentsRes, sectionsRes, ladders] = await Promise.all([
+  const [studentsRes, sectionsRes, ladders, vacationUsage] = await Promise.all([
     service
       .from('students')
       .select('id, student_number, first_name, last_name')
@@ -183,6 +264,7 @@ export async function loadStaffDeclarations(
       subjectType: DECLARATION_SUBJECT_TYPE,
       subjectIds: ids,
     }),
+    loadVacationUsageForTravel(service, rows),
   ]);
 
   if (studentsRes.error) throw new Error(studentsRes.error.message);
@@ -288,6 +370,7 @@ export async function loadStaffDeclarations(
       // parent.ts` withholds it). A parent reading "term lookup failed" learns
       // nothing they can act on and everything about our internals.
       registerWriteError: row.register_write_error,
+      vacationUsage: vacationUsage.get(row.id) ?? null,
       siblings,
       ladder: ladders.get(row.id) ?? null,
     };

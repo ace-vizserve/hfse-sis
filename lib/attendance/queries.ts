@@ -10,6 +10,8 @@ import {
 } from '@/lib/schemas/attendance';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { expandSchoolDays } from '@/lib/attendance/school-days';
+import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 
 // Attendance module — server-side read helpers.
 //
@@ -809,8 +811,26 @@ export async function getVacationLeaveUsage(
     return { allowance, usedThisTerm: 0, remainingThisTerm: allowance, termId };
   }
 
-  // 3. Vacation-tagged rows scoped to this term.
-  const used = await countLatestVacationInTerm(service, ssIds, termId);
+  // 3. Vacation-tagged days, grouped into trips.
+  //
+  // ⚠ A student can hold more than one enrolment in an AY (a mid-year section
+  // transfer), so the dates are UNIONED before grouping. Counting per
+  // enrolment would split one holiday in two if the child moved class in the
+  // middle of it.
+  const [{ schoolDays, priorSchoolDay }, datesByEnrolment] = await Promise.all([
+    loadTermTripContext(service, termId),
+    latestVacationDatesInTerm(service, ssIds, termId),
+  ]);
+  const dates = new Set<string>();
+  for (const set of datesByEnrolment.values()) {
+    for (const d of set) dates.add(d);
+  }
+
+  const carriedIn = priorSchoolDay
+    ? (await wasOnVacation(service, ssIds, priorSchoolDay)).size > 0
+    : false;
+
+  const used = countVacationTrips(schoolDays, dates, carriedIn);
 
   return {
     allowance,
@@ -820,14 +840,23 @@ export async function getVacationLeaveUsage(
   };
 }
 
-// Latest-row-per-(ss, date, period) walk for one term. Shape mirrors
-// `countLatestCompassionate` but with the extra term_id filter.
-async function countLatestVacationInTerm(
+// Latest-row-per-(ss, date, period) walk for one term, returning the DATES
+// each enrolment was on vacation leave.
+//
+// ⚠ It used to return a COUNT, and that count was the bug: a five-day holiday
+// read as 5 used against an allowance of 1. Vacation leave is one TRIP (Mr
+// Ace, 2026-08-27), so the caller groups these dates into runs of school days
+// via `countVacationTrips`. Shape otherwise mirrors `countLatestCompassionate`
+// — which is still a day count, correctly: the compassionate allowance really
+// is 5 DAYS per year (KD #94), not 5 occasions.
+async function latestVacationDatesInTerm(
   service: ReturnType<typeof createServiceClient>,
   sectionStudentIds: string[],
   termId: string
-): Promise<number> {
-  if (sectionStudentIds.length === 0) return 0;
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (sectionStudentIds.length === 0) return out;
+
   const { data } = await service
     .from('attendance_daily')
     .select(
@@ -847,14 +876,120 @@ async function countLatestVacationInTerm(
   };
 
   const seen = new Set<string>();
-  let count = 0;
   for (const r of (data ?? []) as Row[]) {
     const key = `${r.section_student_id}|${r.date}|${r.period_id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (r.status === 'EX' && r.ex_reason === 'vacation') count += 1;
+    if (r.status !== 'EX' || r.ex_reason !== 'vacation') continue;
+    const dates = out.get(r.section_student_id) ?? new Set<string>();
+    dates.add(r.date);
+    out.set(r.section_student_id, dates);
   }
-  return count;
+  return out;
+}
+
+/**
+ * What a term looks like to the trip counter: its school days in order, and
+ * the one school day immediately before it.
+ *
+ * ⚠ The preceding day is the whole term-boundary rule. Nothing between two
+ * terms is a school day — `school_calendar` rows belong to a term — so the
+ * school day before this term IS the previous term's last one. If a student
+ * was on vacation leave then, the trip carries in and is not counted again
+ * here (Mr Ace: count it where it started).
+ */
+async function loadTermTripContext(
+  service: ReturnType<typeof createServiceClient>,
+  termId: string
+): Promise<{ schoolDays: string[]; priorSchoolDay: string | null }> {
+  const { data: termRow } = await service
+    .from('terms')
+    .select('id, term_number, start_date, end_date, academic_year_id')
+    .eq('id', termId)
+    .maybeSingle();
+  const term = termRow as {
+    term_number: number;
+    start_date: string | null;
+    end_date: string | null;
+    academic_year_id: string;
+  } | null;
+  if (!term?.start_date || !term.end_date) {
+    return { schoolDays: [], priorSchoolDay: null };
+  }
+
+  // ⚠ Audience 'all' only, not the section's own half. A quota is a property
+  // of the STUDENT and is reported on cross-section screens (Insights, the
+  // drill) that hold no one level type; resolving per section would make the
+  // same child's allowance read differently depending on which page asked.
+  // A level-specific closure day is rare and would at worst merge two trips
+  // that a primary-only holiday separated — far less wrong than a figure that
+  // disagrees with itself between screens.
+  const schoolDays = (
+    await expandSchoolDays(service, {
+      startDate: term.start_date,
+      endDate: term.end_date,
+      academicYearId: term.academic_year_id,
+      levelType: null,
+    })
+  ).map((d) => d.date);
+
+  const { data: priorRow } = await service
+    .from('terms')
+    .select('start_date, end_date')
+    .eq('academic_year_id', term.academic_year_id)
+    .eq('term_number', term.term_number - 1)
+    .maybeSingle();
+  const prior = priorRow as {
+    start_date: string | null;
+    end_date: string | null;
+  } | null;
+  if (!prior?.start_date || !prior.end_date) {
+    return { schoolDays, priorSchoolDay: null };
+  }
+
+  const priorDays = await expandSchoolDays(service, {
+    startDate: prior.start_date,
+    endDate: prior.end_date,
+    academicYearId: term.academic_year_id,
+    levelType: null,
+  });
+  return {
+    schoolDays,
+    priorSchoolDay: priorDays.at(-1)?.date ?? null,
+  };
+}
+
+/** Was this enrolment on vacation leave on one specific earlier day? */
+async function wasOnVacation(
+  service: ReturnType<typeof createServiceClient>,
+  sectionStudentIds: string[],
+  date: string
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (sectionStudentIds.length === 0) return out;
+
+  const { data } = await service
+    .from('attendance_daily')
+    .select('section_student_id, period_id, status, ex_reason, recorded_at')
+    .in('section_student_id', sectionStudentIds)
+    .eq('date', date)
+    .order('recorded_at', { ascending: false });
+
+  const seen = new Set<string>();
+  for (const r of (data ?? []) as Array<{
+    section_student_id: string;
+    period_id: string | null;
+    status: AttendanceStatus;
+    ex_reason: ExReason | null;
+  }>) {
+    const key = `${r.section_student_id}|${r.period_id ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (r.status === 'EX' && r.ex_reason === 'vacation') {
+      out.add(r.section_student_id);
+    }
+  }
+  return out;
 }
 
 // Batch resolver — three queries regardless of class size, mirroring the
@@ -954,24 +1089,43 @@ export async function getVacationLeaveUsageForSection(
   );
 
   const seen = new Set<string>();
-  const vacationBySsId = new Map<string, number>();
+  const vacationDatesBySsId = new Map<string, Set<string>>();
   for (const r of (daily ?? []) as DailyRow[]) {
     const key = `${r.section_student_id}|${r.date}|${r.period_id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     if (r.status === 'EX' && r.ex_reason === 'vacation') {
-      vacationBySsId.set(
-        r.section_student_id,
-        (vacationBySsId.get(r.section_student_id) ?? 0) + 1
-      );
+      const dates =
+        vacationDatesBySsId.get(r.section_student_id) ?? new Set<string>();
+      dates.add(r.date);
+      vacationDatesBySsId.set(r.section_student_id, dates);
     }
   }
 
+  // ⚠ TRIPS, NOT DAYS. The term's school days and the day before it are the
+  // same for everybody here, so they are resolved ONCE and reused across the
+  // class — the per-student part is only which of those days they were away.
+  const { schoolDays, priorSchoolDay } = await loadTermTripContext(
+    service,
+    termId
+  );
+  const carriedInEnrolments = priorSchoolDay
+    ? await wasOnVacation(service, allAyEnrolmentIds, priorSchoolDay)
+    : new Set<string>();
+
   const usedByStudent = new Map<string, number>();
   for (const [studentId, ssIds] of ssIdsByStudent.entries()) {
-    let used = 0;
-    for (const ssId of ssIds) used += vacationBySsId.get(ssId) ?? 0;
-    usedByStudent.set(studentId, used);
+    // Union across the student's enrolments — a mid-year transfer must not
+    // split one holiday into two trips.
+    const dates = new Set<string>();
+    for (const ssId of ssIds) {
+      for (const d of vacationDatesBySsId.get(ssId) ?? []) dates.add(d);
+    }
+    const carriedIn = ssIds.some((id) => carriedInEnrolments.has(id));
+    usedByStudent.set(
+      studentId,
+      countVacationTrips(schoolDays, dates, carriedIn)
+    );
   }
 
   for (const [enrolmentId, studentId] of enrolmentToStudent.entries()) {

@@ -156,6 +156,27 @@ function DecisionPanel({
               </Detail>
             )}
 
+            {/* ⚠ The allowance INFORMS the approver; it never blocks anyone.
+                Mr Ace, 2026-08-27: warn the approver, never block the parent.
+                The approval steps exist precisely so a person makes this call,
+                and a family with a real reason for a second trip must be able
+                to ask. `used` excludes this filing, so +1 is what saying yes
+                would make it. */}
+            {isTravel && d.vacationUsage && (
+              <Detail label="Vacation leave">
+                <span
+                  className={cn(
+                    d.vacationUsage.used + 1 > d.vacationUsage.allowance &&
+                      'font-semibold text-brand-amber'
+                  )}
+                >
+                  {d.vacationUsage.used + 1 > d.vacationUsage.allowance
+                    ? `This would be trip ${d.vacationUsage.used + 1} of ${d.vacationUsage.allowance} allowed this term`
+                    : `Trip ${d.vacationUsage.used + 1} of ${d.vacationUsage.allowance} this term`}
+                </span>
+              </Detail>
+            )}
+
             <Detail label="Filed by">{d.filedByEmail}</Detail>
             <Detail label="Filed on">{formatFiledAt(d.filedAt)}</Detail>
           </dl>
@@ -381,9 +402,9 @@ function DecisionPanel({
  */
 function RegisterOutcome({ d }: { d: DeclarationQueueRow['detail'] }) {
   if (d.status !== 'approved') return null;
-  // Travel does not mark the register until Phase 4 brings the vacation
-  // count with it. Saying nothing is right — there is nothing to report.
-  if (d.declarationType !== 'absence') return null;
+  // ⚠ Travel is INCLUDED as of Phase 4 — it marks the register too, with a
+  // different reason. It was excluded while it marked nothing.
+  const isTravel = d.declarationType === 'travel';
 
   const failed = d.registerWriteError != null;
   const days = d.registerDaysWritten ?? 0;
@@ -440,7 +461,9 @@ function RegisterOutcome({ d }: { d: DeclarationQueueRow['detail'] }) {
                 ? 'This was approved before the register was marked automatically. Tell an administrator so the days can be added.'
                 : days === 0
                   ? 'Every date the parent gave falls on a weekend, a holiday, or outside the school year, so nothing on the register changed.'
-                  : 'The register shows these days as excused, reason “MC / Excuse leave”. Weekends and holidays inside the dates were left alone.'}
+                  : isTravel
+                    ? 'The register shows these days as excused, reason “Vacation leave”, and the trip counts against this term’s allowance. Weekends and holidays inside the dates were left alone.'
+                    : 'The register shows these days as excused, reason “MC / Excuse leave”. Weekends and holidays inside the dates were left alone.'}
           </p>
         </div>
       </div>
