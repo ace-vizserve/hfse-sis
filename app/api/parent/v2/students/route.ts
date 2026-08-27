@@ -14,6 +14,18 @@ import { corsHeaders } from '@/lib/cors';
 //
 // CORS: reflects the portal origin from the allowlist with credentials — see
 // lib/cors.ts (shared with the report-card route).
+//
+// ⚠ THIS LIST IS GATED ON PUBLICATION, AND THAT IS NOT A GENERAL "MY CHILDREN"
+// LIST. A child who is enrolled and attending, but whose report card is not
+// published at this moment, is CORRECTLY MISSING from the response — the
+// publication window is the entire point of this endpoint.
+//
+// For anything a parent does ABOUT a child rather than about a report card —
+// absence declarations, and event registration later — use
+// `/api/parent/v2/enrolled-students`, which returns children with a live
+// enrolment and knows nothing about publication. Picking this one there hides a
+// child from their own parent between publications, and it looks like the child
+// simply is not there rather than like a bug.
 
 export async function OPTIONS(request: Request) {
   return new Response(null, {

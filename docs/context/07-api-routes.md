@@ -237,9 +237,14 @@ Role-gated per module, returns JSON or CSV (`?format=csv`, UTF-8 BOM), 60s `unst
 
 The only parent-facing surface. Consumed cross-origin by the external admissions portal SPA — no in-SIS parent pages or cookies (see `key-decisions/parent.md`).
 
-| Route                        | Method | Auth                                   | Description                                                              |
-| ---------------------------- | ------ | -------------------------------------- | ------------------------------------------------------------------------ |
-| `/api/parent/v2/students`    | GET    | `Authorization: Bearer <access_token>` | Parent's linked students + active publication windows                    |
-| `/api/parent/v2/report-card` | GET    | same                                   | Full report-card payload, gated on an active publication window (KD #10) |
+| Route                                  | Method | Auth                                   | Description                                                                                                                                                       |
+| -------------------------------------- | ------ | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/parent/v2/students`              | GET    | `Authorization: Bearer <access_token>` | Parent's linked students + active publication windows                                                                                                             |
+| `/api/parent/v2/report-card`           | GET    | same                                   | Full report-card payload, gated on an active publication window (KD #10)                                                                                          |
+| `/api/parent/v2/levels`                | GET    | same                                   | Level catalogue + next-code progression                                                                                                                           |
+| `/api/parent/v2/enrolled-students`     | GET    | same                                   | Children with a LIVE ENROLMENT this AY. ⚠ Not `/students` — that one is gated on publication and correctly omits an enrolled child between publications (KD #195) |
+| `/api/parent/v2/declarations`          | GET    | same                                   | The parent's own absence/travel filings and their status. Scoped by CHILD, so both parents see the same list                                                      |
+| `/api/parent/v2/declarations`          | POST   | same                                   | File a declaration for one or more children. One row per child. `200` with `alreadyFiled: true` is success, not an error                                          |
+| `/api/parent/v2/declarations/evidence` | POST   | same, multipart                        | Upload a medical certificate into `parent-portal/declarations/<parent user id>/`. Returns the object path to send with the filing                                 |
 
 Tokens are verified via `service.auth.getUser(token)`; CORS allowlist in `lib/cors.ts` (`ADMISSIONS_PORTAL_ORIGIN`); IP + per-user rate limiting via `lib/rate-limit.ts`.
