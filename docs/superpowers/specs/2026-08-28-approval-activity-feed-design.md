@@ -1,7 +1,7 @@
 # Approval activity feed — design
 
 **Date:** 2026-08-28
-**Status:** approved in conversation, not yet planned or built
+**Status:** design APPROVED 2026-08-28 (mockup reviewed and signed off). Not yet planned or built.
 **Asked for by:** Mr Ace, 2026-08-27 and 2026-08-28
 
 ---
@@ -14,8 +14,9 @@ surfaces:
 1. **The panel.** The header bell becomes an activity icon opening a **side
    sheet**. Inside: what is waiting on you, pinned; then a tabbed, newest-first
    log of everything that has happened to any approval you are on.
-2. **View history.** A dialog on the change-requests page and the declarations
-   page showing one approval end to end.
+2. **View history.** One approval end to end, on all three screens that show an
+   approval as a row — a dialog on the two mark-change lists, and a section
+   inside the existing decision sheet on the declarations page (§9.2).
 
 The reference Mr Ace supplied is the shadcn "Activity" panel: an avatar circle,
 the actor's name in bold, their action in muted text, a relative timestamp, and
@@ -73,18 +74,20 @@ queue — is preserved by leaving it alone.
 
 ## 5. Decisions taken
 
-| Decision              | Ruling                                                                                                                                                                |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What the number means | **Work waiting for you** — unchanged. Not unread-activity. Mr Ace considered unread and chose this.                                                                   |
-| Read/unread state     | **None.** No new table, no seen-at column, no dots. Follows from the above.                                                                                           |
-| How far back          | **Everything, newest first, load more as you scroll.** No time cliff.                                                                                                 |
-| Assembly              | **Derive events on read** (approach A). No events table, no backfill.                                                                                                 |
-| Waiting-for-you items | **Pinned at the top** of the General tab, above the chronological log.                                                                                                |
-| Tabs                  | **General / Grade changes / Attendance declarations.** General is everything; the rest filter it. Built from the flow list so a new flow gets a tab without new code. |
-| Grade-change audience | **You asked for it, or you are one of its approvers.** A teacher sees the answer to their own request without going to look.                                          |
-| Oversight             | **The feed is personal, not oversight.** A superadmin's feed shows only what they are personally on. The whole-school view stays on the queue pages.                  |
-| Reply box             | **Not built.** The reference has one; we have decision notes. Deciding from a panel that is not the decision screen is how things get approved by accident.           |
-| Icon                  | Bell replaced by the activity/pulse icon from the reference.                                                                                                          |
+| Decision              | Ruling                                                                                                                                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What the number means | **Work waiting for you** — unchanged. Not unread-activity. Mr Ace considered unread and chose this.                                                                                                                                                                          |
+| Read/unread state     | **None.** No new table, no seen-at column, no dots. Follows from the above.                                                                                                                                                                                                  |
+| How far back          | **Everything, newest first, load more as you scroll.** No time cliff.                                                                                                                                                                                                        |
+| Assembly              | **Derive events on read** (approach A). No events table, no backfill.                                                                                                                                                                                                        |
+| Waiting-for-you items | **Pinned above the tab strip**, not inside General. What you owe someone does not change with the tab you are reading. Moved there during the mockup review and approved as drawn, 2026-08-28.                                                                               |
+| Tabs                  | **General / Mark changes / Declarations.** General is everything; the rest filter it. Built from the flow list so a new flow gets a tab without new code. ⚠ The label is **Mark changes**, the teachers' phrase, not the page title's "change requests" — approved as drawn. |
+| Row granularity       | **One row per step.** Every action on an approval you are on produces its own row, so one filing can yield four. The "one row per approval, updated in place" alternative was drawn as an option and not taken.                                                              |
+| Panel header          | **Titled "Activity" and nothing else** — Mr Ace removed the subtitle. The scope disclosure survives once, in the mono bar at the foot of the sheet.                                                                                                                          |
+| Grade-change audience | **You asked for it, or you are one of its approvers.** A teacher sees the answer to their own request without going to look.                                                                                                                                                 |
+| Oversight             | **The feed is personal, not oversight.** A superadmin's feed shows only what they are personally on. The whole-school view stays on the queue pages.                                                                                                                         |
+| Reply box             | **Not built.** The reference has one; we have decision notes. Deciding from a panel that is not the decision screen is how things get approved by accident.                                                                                                                  |
+| Icon                  | Bell replaced by the activity/pulse icon from the reference.                                                                                                                                                                                                                 |
 
 ### Why approach A, and not an events table
 
@@ -211,9 +214,24 @@ mounted in every page header on every route is a real cost.
 
 ### 9.2 View history
 
-A dialog on the declarations page and the change-requests page, per request.
-Same six event kinds, same wording, filtered to one request and read **oldest
-first** — there you are reading a story, not checking what is new.
+One approval end to end, per request. Same six event kinds, same wording,
+filtered to one request and read **oldest first** — there you are reading a
+story, not checking what is new. A vertical spine connects the steps, which it
+deliberately does **not** do in the panel: here the rows genuinely are one
+ordered ladder, so the line carries information; in the panel, different
+children's filings interleave and a line would claim a sequence that is not
+there.
+
+**Three placements**, one per screen that shows an approval as a row:
+
+| Screen                       | Surface                                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/attendance/declarations`   | **A section inside the existing decision sheet**, not a dialog. ⚠ Never stack a dialog over a sheet — nothing in this app does. Matters most on the **Decided** tab, which today says only approved or turned down. |
+| `/markbook/change-requests`  | A dialog from the row. No sheet exists here to fold into.                                                                                                                                                           |
+| `/markbook/grading/requests` | A dialog from the row. This is "My Requests" — a teacher who asked for a change has **no** screen today that says what happened to it.                                                                              |
+
+These are also where the panel sends you: a row in the panel opens the owning
+page, and this is how the whole story is read once there.
 
 Backed by `loadLadderById` for declarations; the grade-change equivalent reads
 the single row's three timestamps.
