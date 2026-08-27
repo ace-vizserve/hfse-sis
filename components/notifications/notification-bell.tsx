@@ -86,9 +86,13 @@ export function NotificationBell({
         <button
           type="button"
           aria-label={
-            count && count > 0
-              ? `Activity (${count} waiting for you)`
-              : 'Activity'
+            // ⚠ F4 — "pending", not "waiting for you". For a teacher this
+            // count includes requests THEY filed, waiting on somebody else;
+            // for a superadmin it's every pending request in the school.
+            // "Waiting for you" would contradict the panel's own stricter
+            // "Waiting for you" block and send a teacher looking for rows
+            // that aren't there.
+            count && count > 0 ? `Activity (${count} pending)` : 'Activity'
           }
           className="relative flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >

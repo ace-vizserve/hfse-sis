@@ -99,9 +99,13 @@ describe('pageEvents', () => {
  * narrowing into a `.filter()` applied after the fetch, fails a test instead
  * of shipping a leak.
  */
-function makeMarkChangeService(captured: {
-  orClauses: string[];
-}): SupabaseClient {
+function makeMarkChangeService(
+  captured: { orClauses: string[] },
+  // ⚠ Extended for F1: the two original tests only cared what was asked for,
+  // never what came back, so `rows` defaulted to `[]`. F1 needs a real row to
+  // resolve so `page.events[0]`/`page.waiting[0]` exist to assert `href` on.
+  rows: unknown[] = []
+): SupabaseClient {
   return {
     from(table: string) {
       if (table !== 'grade_change_requests') {
@@ -118,15 +122,49 @@ function makeMarkChangeService(captured: {
         captured.orClauses.push(clause);
         return builder;
       };
-      // Awaiting the builder resolves the query with no rows — this test
-      // only cares what was asked for, never what comes back.
       builder.then = (
         resolve: (value: { data: unknown; error: null }) => unknown
-      ) => resolve({ data: [], error: null });
+      ) => resolve({ data: rows, error: null });
       return builder;
     },
   } as unknown as SupabaseClient;
 }
+
+/**
+ * One mark-change row, shaped to survive `loadMarkChangeSide`'s row parsing
+ * (the nested `grade_entry.section_student.student` embed) — reused by F1 and
+ * F2 below. `secondary_approver_id` is set to `'viewer-1'`, the `userId` both
+ * F1 tests pass, so the row lands in `waiting` regardless of which role is
+ * under test — role only ever decides the `href`, never who it's "for".
+ */
+const MARK_CHANGE_ROW = {
+  id: 'gcr-1',
+  field_changed: 'written_work',
+  slot_index: 3,
+  current_value: '18',
+  proposed_value: '21',
+  status: 'pending',
+  requested_by: 'u-teacher',
+  requested_by_email: 'grace.lim@hfse.edu.sg',
+  requested_at: '2026-08-27T00:47:00.000Z',
+  primary_approver_id: null,
+  secondary_approver_id: 'viewer-1',
+  reviewed_by: null,
+  reviewed_by_email: null,
+  reviewed_at: null,
+  decision_note: null,
+  applied_by: null,
+  applied_at: null,
+  grade_entry: {
+    section_student: {
+      student: {
+        first_name: 'Samira',
+        last_name: 'Bakhtiari',
+        student_number: 'STU-099',
+      },
+    },
+  },
+};
 
 describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
   it('a teacher is scoped to their own requested/approver rows, nothing broader', async () => {
@@ -166,5 +204,118 @@ describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
     expect(captured.orClauses[0]).toContain(
       'and(primary_approver_id.is.null,secondary_approver_id.is.null)'
     );
+  });
+});
+
+/**
+ * F1 — fix round 1. `loadMarkChangeSide` (feed.ts:376-379) sends a teacher to
+ * their own list and everyone else to the gated deep-link. Nothing asserted
+ * this before: `events.test.ts` takes `href` as a fixture INPUT to
+ * `buildGradeChangeEvents`, so it would pass unchanged even if `feed.ts`
+ * handed every role the deep-link — and `/markbook/change-requests` is gated
+ * to school_admin | superadmin | academic_coordinator
+ * (app/(markbook)/markbook/change-requests/page.tsx), so a teacher hitting it
+ * gets redirected away from their own row. This regressed once already.
+ */
+describe('loadActivityPage — mark-change href by role', () => {
+  it('sends a teacher to their own list, not the gated deep-link', async () => {
+    const page = await loadActivityPage(
+      makeMarkChangeService({ orClauses: [] }, [MARK_CHANGE_ROW]),
+      {
+        userId: 'viewer-1',
+        role: 'teacher',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+
+    expect(page.events[0]?.href).toBe('/markbook/grading/requests');
+    expect(page.waiting[0]?.href).toBe('/markbook/grading/requests');
+  });
+
+  it('sends every other gate role to the deep-linked queue', async () => {
+    const page = await loadActivityPage(
+      makeMarkChangeService({ orClauses: [] }, [MARK_CHANGE_ROW]),
+      {
+        userId: 'viewer-1',
+        role: 'school_admin',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+
+    expect(page.events[0]?.href).toBe('/markbook/change-requests?req=gcr-1');
+    expect(page.waiting[0]?.href).toBe('/markbook/change-requests?req=gcr-1');
+  });
+});
+
+/**
+ * F2 — fix round 1. `loadActivityPage` (feed.ts:112-138) fetches both sides
+ * with `Promise.allSettled` specifically so one source going down does not
+ * blank the other — an empty panel reads as "nothing waiting", which is a
+ * worse answer than a shorter list. Both pre-existing `loadActivityPage`
+ * tests pass `tab: 'grade_change'`, which short-circuits the declaration side
+ * to an already-resolved empty result (`loadActivityPage`'s `wantDeclarations`
+ * guard) — the rejection branch was never entered and nothing asserted
+ * `partial`. This drives `tab: 'general'`, the only tab that awaits both
+ * sides, and fails the declaration side for real by making its own
+ * `teacher_assignments` query (the one `loadAdvisedSectionIds` runs before
+ * `approval_request_stages` is ever reached) return a Postgres error.
+ */
+function makeGeneralService(markChangeRows: unknown[]): SupabaseClient {
+  return {
+    from(table: string) {
+      if (table === 'grade_change_requests') {
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.order = chain;
+        builder.limit = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: markChangeRows, error: null });
+        return builder;
+      }
+      if (table === 'teacher_assignments') {
+        // This is the failure F2 exercises — loadAdvisedSectionIds's own
+        // query errors, so the whole declaration side rejects before it ever
+        // reaches approval_request_stages.
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.in = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: {
+            data: unknown;
+            error: { message: string };
+          }) => unknown
+        ) =>
+          resolve({
+            data: null,
+            error: { message: 'teacher_assignments unreachable' },
+          });
+        return builder;
+      }
+      throw new Error(`F2 fixture queried an unexpected table: ${table}`);
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe('loadActivityPage — one source fails, the other survives', () => {
+  it('reports partial and still returns the mark-change side', async () => {
+    const page = await loadActivityPage(makeGeneralService([MARK_CHANGE_ROW]), {
+      userId: 'viewer-1',
+      role: 'school_admin',
+      tab: 'general',
+      cursor: null,
+      limit: 20,
+    });
+
+    expect(page.partial).toBe(true);
+    expect(page.events.length).toBeGreaterThan(0);
   });
 });

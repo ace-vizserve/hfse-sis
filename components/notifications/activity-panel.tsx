@@ -62,6 +62,11 @@ export function ActivityPanel({ onNavigate }: { onNavigate: () => void }) {
   // The waiting list is the same on every page; take the first.
   const waiting = pages[0]?.waiting ?? [];
   const partial = pages.some((p) => p.partial);
+  // ⚠ F5 — computed since Task 3, plumbed onto `Page`, and never rendered
+  // until now. A source hitting SOURCE_CAP makes its tail unreachable, and
+  // `nextCursor` eventually reads `null` — indistinguishable from "you have
+  // reached the end" without this line.
+  const truncated = pages.some((p) => p.truncated);
 
   return (
     // ⚠ This wrapper is what makes the log scroll. SheetContent is a plain
@@ -126,6 +131,16 @@ export function ActivityPanel({ onNavigate }: { onNavigate: () => void }) {
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-16 w-full" />
           </div>
+        ) : query.isError ? (
+          // ⚠ F3 — the route swallows a server-side failure into a 200 with
+          // `partial: true`, but an expired session, a 401, or a dropped
+          // network makes `apiFetch` itself throw, which the empty-state
+          // branch below would silently read as "nothing has happened".
+          <div className="flex flex-col items-center justify-center gap-2 px-10 py-14 text-center">
+            <p className="text-[14.5px] leading-relaxed text-muted-foreground">
+              Some activity couldn&apos;t be loaded right now.
+            </p>
+          </div>
         ) : events.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3.5 px-10 py-14 text-center">
             <span className="flex size-14 items-center justify-center rounded-2xl border border-border bg-muted text-ink-5">
@@ -165,13 +180,22 @@ export function ActivityPanel({ onNavigate }: { onNavigate: () => void }) {
             )}
           </>
         )}
-
-        {partial && (
-          <p className="border-t border-border px-6 py-3 text-center text-[13px] text-muted-foreground">
-            Some activity couldn&apos;t be loaded. This list may be short.
-          </p>
-        )}
       </div>
+
+      {/* ⚠ F5 — deliberately OUTSIDE the overflow-y-auto container above. A
+          long list used to push these below the fold, where the person they
+          most need to reach — someone scrolled deep into a truncated or
+          partial log — would never see them. */}
+      {partial && (
+        <p className="border-t border-border px-6 py-3 text-center text-[13px] text-muted-foreground">
+          Some activity couldn&apos;t be loaded. This list may be short.
+        </p>
+      )}
+      {truncated && (
+        <p className="border-t border-border px-6 py-3 text-center text-[13px] text-muted-foreground">
+          Only the most recent activity is available here.
+        </p>
+      )}
 
       <p className="border-t border-border bg-muted px-6 py-4 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-5">
         Showing only approvals you are part of
