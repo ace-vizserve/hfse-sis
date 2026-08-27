@@ -22,6 +22,7 @@ import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-d
 import {
   buildGradeChangeEvents,
   markChangeFieldLabel,
+  markChangeHistorySubtitle,
 } from '@/lib/activity/events';
 import { MyRequestsCancelButton } from './my-requests-cancel-button';
 
@@ -58,7 +59,18 @@ export type MyRequestRow = {
   // resolve a name via nameById rather than showing the reviewer's email.
   primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
+  // Co-sign trail (migration 044) — `secondary_reviewed_by_email` alone
+  // already fed `ReviewerLine`'s "Co-signed by A and B"; the id + timestamp
+  // are new here so the History dialog can emit the co-sign as its own
+  // event instead of showing only the first signature.
+  secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
+  secondary_reviewed_at: string | null;
+  // The child this mark change is about — resolved server-side via a left
+  // embed through grade_entries → section_students → students (never
+  // `!inner`: a student the join can't resolve must still show up in the
+  // queue, just with the 'a student' fallback baked in at the source).
+  studentLabel: string;
   // Context fields populated by the loader join.
   sectionName?: string | null;
   subjectCode?: string | null;
@@ -66,31 +78,8 @@ export type MyRequestRow = {
   termLabel?: string | null;
 };
 
-// TODO(loader-join): surface section/subject/term/student per spec §5.8
-// so the identifier link can deep-link to the student or grading sheet.
-// Deferred until the loader join lands.
-
-const FIELD_LABELS: Record<string, string> = {
-  ww_scores: 'Written work',
-  pt_scores: 'Performance task',
-  qa_score: 'Quarterly assessment',
-  letter_grade: 'Letter grade',
-  is_na: 'N/A flag',
-};
-
 function statusLabel(s: ChangeRequestStatus): string {
   return CHANGE_REQUEST_STATUS_CONFIG[s].label;
-}
-
-// The history dialog's subtitle line. No student name is joined onto this
-// row today (see the loader-join TODO above), so section/subject/term —
-// already loaded for the table's own columns — stand in for it; "Mark
-// change" is the last resort when none of the three are known.
-function historySubtitle(r: MyRequestRow): string {
-  return (
-    [r.sectionName, r.subjectCode, r.termLabel].filter(Boolean).join(' · ') ||
-    'Mark change'
-  );
 }
 
 // A function, not a module-level constant, because the "actions" column's
@@ -268,18 +257,18 @@ function buildColumns(
                   History
                 </Button>
               }
-              title={`A student — ${markChangeFieldLabel(
+              title={`${r.studentLabel} — ${markChangeFieldLabel(
                 r.field_changed,
                 r.slot_index ?? null
               )}`}
-              subtitle={historySubtitle(r)}
+              subtitle={markChangeHistorySubtitle(r)}
               events={buildGradeChangeEvents({
                 id: r.id,
                 fieldChanged: r.field_changed,
                 slotIndex: r.slot_index ?? null,
                 currentValue: r.current_value ?? null,
                 proposedValue: r.proposed_value,
-                studentLabel: 'a student',
+                studentLabel: r.studentLabel,
                 requestedById: r.requested_by,
                 requestedByEmail: r.requested_by_email,
                 requestedAt: r.requested_at,
@@ -289,6 +278,9 @@ function buildColumns(
                   r.primary_reviewed_by_email ?? r.reviewed_by_email,
                 reviewedAt: r.reviewed_at,
                 decisionNote: r.decision_note ?? null,
+                secondaryReviewedById: r.secondary_reviewed_by,
+                secondaryReviewedByEmail: r.secondary_reviewed_by_email,
+                secondaryReviewedAt: r.secondary_reviewed_at,
                 appliedById: r.applied_by,
                 appliedAt: r.applied_at,
                 viewerId,

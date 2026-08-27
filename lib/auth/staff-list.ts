@@ -243,6 +243,32 @@ export async function getStaffCount(): Promise<number> {
 }
 
 /**
+ * Narrows a userId → display-name entry list down to only the ids a page
+ * actually resolves.
+ *
+ * `getStaffDisplayNameById()` returns EVERY auth user with an email —
+ * `loadAllStaffUncached` above applies no role filter — which on this
+ * school's account mix is roughly 1,039 rows, almost all parent portal
+ * accounts (the shared `auth.users` table, KD #11). A `'use client'` table
+ * that threads the full map into a component prop ships that whole roster
+ * — name or email of every parent in the school — across the wire for a
+ * lookup that only ever needs a handful of ids per row. This fixes the two
+ * Markbook mark-change history dialogs (`__tests__` names it as F2), which
+ * called `getStaffDisplayNameById()` unfiltered before this existed.
+ *
+ * Pure — takes the already-fetched entries and already-loaded rows, no I/O
+ * of its own — so the narrowing is testable without mocking `listUsers`.
+ */
+export function narrowStaffNamesToRows<T>(
+  entries: Array<[string, string]>,
+  rows: readonly T[],
+  pickIds: (row: T) => Array<string | null | undefined>
+): Array<[string, string]> {
+  const needed = new Set(rows.flatMap(pickIds).filter((v): v is string => !!v));
+  return entries.filter(([id]) => needed.has(id));
+}
+
+/**
  * How many active accounts hold each role — the "N people" figure on the role
  * permission cards, which is what makes an edit's reach concrete before you
  * make it.

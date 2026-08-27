@@ -77,6 +77,7 @@ import {
   getStaffCount,
   getStaffDisplayEntries,
   getStaffDisplayNameById,
+  narrowStaffNamesToRows,
 } from '@/lib/auth/staff-list';
 
 describe('getStaffDisplayNameById', () => {
@@ -103,5 +104,73 @@ describe('getStaffCount', () => {
     // (excluded), 2 parents with role:null (excluded — the exact bug this
     // guards: parents sharing auth.users must never count as "staff").
     await expect(getStaffCount()).resolves.toBe(3);
+  });
+});
+
+describe('narrowStaffNamesToRows', () => {
+  // Fix round 1, F2: getStaffDisplayNameById() returns every auth user with
+  // an email — on the real school, ~1,039 rows, almost all parent portal
+  // accounts — and both mark-change History dialogs were shipping that
+  // whole map into a 'use client' table prop for a lookup that only ever
+  // needs a handful of ids per row. This is the narrowing that closes it.
+  const entries: Array<[string, string]> = [
+    ['user-1', 'Maria T.'],
+    ['user-2', 'daniel.l@hfse.edu.sg'],
+    ['user-3', 'Admin Person'],
+    ['parent-1', 'Some Parent'],
+    ['parent-2', 'parent2@gmail.com'],
+  ];
+
+  it('keeps only the ids the rows actually reference', () => {
+    const rows = [{ requestedBy: 'user-1', reviewedBy: 'user-3' }];
+
+    const narrowed = narrowStaffNamesToRows(entries, rows, (r) => [
+      r.requestedBy,
+      r.reviewedBy,
+    ]);
+
+    expect(new Set(narrowed.map(([id]) => id))).toEqual(
+      new Set(['user-1', 'user-3'])
+    );
+  });
+
+  it('drops every id no row references — the actual leak this closes', () => {
+    // Neither parent id is picked by any row, mirroring the real shape:
+    // getStaffDisplayNameById() returns the whole auth.users table, most of
+    // it parent portal accounts that never appear in a requested_by /
+    // reviewed_by / applied_by column.
+    const rows = [{ requestedBy: 'user-1', reviewedBy: null }];
+
+    const narrowed = narrowStaffNamesToRows(entries, rows, (r) => [
+      r.requestedBy,
+      r.reviewedBy,
+    ]);
+
+    expect(narrowed.map(([id]) => id)).toEqual(['user-1']);
+    expect(narrowed.some(([id]) => id.startsWith('parent-'))).toBe(false);
+  });
+
+  it('drops null/undefined picks instead of matching an empty id', () => {
+    const rows = [
+      { requestedBy: 'user-2', reviewedBy: null },
+      { requestedBy: 'user-2', reviewedBy: undefined },
+    ];
+
+    const narrowed = narrowStaffNamesToRows(entries, rows, (r) => [
+      r.requestedBy,
+      r.reviewedBy,
+    ]);
+
+    expect(narrowed.map(([id]) => id)).toEqual(['user-2']);
+  });
+
+  it('returns nothing when no rows are supplied', () => {
+    const narrowed = narrowStaffNamesToRows(
+      entries,
+      [] as Array<{ requestedBy: string }>,
+      (r) => [r.requestedBy]
+    );
+
+    expect(narrowed).toEqual([]);
   });
 });

@@ -4,6 +4,8 @@ import {
   buildDeclarationEvents,
   buildGradeChangeEvents,
   initialsFromName,
+  markChangeFieldLabel,
+  markChangeHistorySubtitle,
   sortEventsNewestFirst,
 } from '@/lib/activity/events';
 import type { ActivityEvent } from '@/lib/activity/events';
@@ -299,10 +301,59 @@ describe('buildDeclarationEvents', () => {
   });
 });
 
+describe('markChangeFieldLabel', () => {
+  // Fix round 1, F1: `field_changed` is constrained to exactly these five
+  // values (009_change_requests.sql:31-33) — the ONLY strings that can ever
+  // reach this function from a real row. `slotIndex` is 0-based
+  // (009_change_requests.sql:67) and the constraint's own slot-shape check
+  // means ww_scores/pt_scores always carry a slot and the other three never
+  // do, which this table mirrors.
+  it.each([
+    ['ww_scores', 0, 'Written work 1'],
+    ['ww_scores', 3, 'Written work 4'],
+    ['pt_scores', 2, 'Performance task 3'],
+    ['qa_score', null, 'Quarterly assessment'],
+    ['letter_grade', null, 'Letter grade'],
+    ['is_na', null, 'N/A flag'],
+  ] as const)('%s + slot %s → %s', (fieldChanged, slotIndex, expected) => {
+    expect(markChangeFieldLabel(fieldChanged, slotIndex)).toBe(expected);
+  });
+
+  // Not a value the check constraint permits — this is the fallback that
+  // stands in for an unrecognised key, never the primary path.
+  it('falls back to a naive title-case split for an unrecognised key', () => {
+    expect(markChangeFieldLabel('some_future_field', null)).toBe(
+      'Some Future Field'
+    );
+  });
+});
+
+describe('markChangeHistorySubtitle', () => {
+  it('joins section, subject and term', () => {
+    expect(
+      markChangeHistorySubtitle({
+        sectionName: 'Grade 5 Diligence',
+        subjectCode: 'MATH5',
+        termLabel: 'Term 2',
+      })
+    ).toBe('Grade 5 Diligence · MATH5 · Term 2');
+  });
+
+  it('falls back to "Mark change" when none of the three are known', () => {
+    expect(
+      markChangeHistorySubtitle({
+        sectionName: null,
+        subjectCode: null,
+        termLabel: null,
+      })
+    ).toBe('Mark change');
+  });
+});
+
 describe('buildGradeChangeEvents', () => {
   const base = {
     id: 'gcr-1',
-    fieldChanged: 'written_work',
+    fieldChanged: 'ww_scores',
     slotIndex: 3,
     currentValue: '18',
     proposedValue: '21',
@@ -315,6 +366,9 @@ describe('buildGradeChangeEvents', () => {
     reviewedByEmail: 'elaine.wee@hfse.edu.sg',
     reviewedAt: '2026-08-27T02:00:00.000Z',
     decisionNote: null,
+    secondaryReviewedById: null,
+    secondaryReviewedByEmail: null,
+    secondaryReviewedAt: null,
     appliedById: 'u-registrar',
     appliedAt: '2026-08-27T03:05:00.000Z',
     nameById: NAMES,
@@ -326,7 +380,7 @@ describe('buildGradeChangeEvents', () => {
 
     expect(asked.actorLabel).toBe('You');
     expect(asked.predicate).toBe(
-      'asked to change Written Work 3 for Samira Bakhtiari.'
+      'asked to change Written work 4 for Samira Bakhtiari.'
     );
   });
 
@@ -345,7 +399,7 @@ describe('buildGradeChangeEvents', () => {
       'grade_change:gcr-1:applied',
     ]);
     expect(events.at(-1)?.details).toEqual([
-      { kind: 'outcome', text: 'Written Work 3 · 18 → 21' },
+      { kind: 'outcome', text: 'Written work 4 · 18 → 21' },
     ]);
   });
 
@@ -378,6 +432,41 @@ describe('buildGradeChangeEvents', () => {
     expect(events.at(-1)?.details).toEqual([
       { kind: 'note', text: 'The original mark is correct.' },
     ]);
+  });
+
+  // Fix round 1, F4: a co-signed approval (migration 044) was showing only
+  // the first signature — ReviewerLine renders "Co-signed by A and B" three
+  // lines away in the same row, and the dialog built to be the audit record
+  // must not show less than that.
+  it('emits a co-sign event between the primary review and the apply', () => {
+    const events = buildGradeChangeEvents({
+      ...base,
+      viewerId: 'u-officer',
+      secondaryReviewedById: 'u-registrar',
+      secondaryReviewedByEmail: 'lhen.mendoza@hfse.edu.sg',
+      secondaryReviewedAt: '2026-08-27T02:30:00.000Z',
+    });
+
+    expect(events.map((e) => e.id)).toEqual([
+      'grade_change:gcr-1:requested',
+      'grade_change:gcr-1:reviewed',
+      'grade_change:gcr-1:reviewed:secondary',
+      'grade_change:gcr-1:applied',
+    ]);
+    const cosign = events[2];
+    expect(cosign.tone).toBe('went-through');
+    expect(cosign.actorLabel).toBe('Lhen Mendoza');
+    expect(cosign.predicate).toBe(
+      'co-signed the mark change for Samira Bakhtiari.'
+    );
+  });
+
+  it('emits no co-sign event when nobody has co-signed', () => {
+    const events = buildGradeChangeEvents({ ...base, viewerId: 'u-officer' });
+
+    expect(events.some((e) => e.id.endsWith(':reviewed:secondary'))).toBe(
+      false
+    );
   });
 });
 

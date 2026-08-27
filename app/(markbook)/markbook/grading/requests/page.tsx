@@ -8,7 +8,10 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { type ChangeRequestStatus } from '@/lib/markbook/change-request-status';
-import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import {
+  getStaffDisplayNameById,
+  narrowStaffNamesToRows,
+} from '@/lib/auth/staff-list';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { MyRequestsTable, type MyRequestRow } from './my-requests-table';
@@ -36,7 +39,9 @@ type RequestRow = {
   rejection_undone_at: string | null;
   primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
+  secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
+  secondary_reviewed_at: string | null;
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -84,11 +89,17 @@ export default async function MyRequestsPage() {
        requested_at, reviewed_at, reviewed_by_email, decision_note,
        applied_by, applied_at,
        approved_at, rejection_undone_at,
-       primary_reviewed_by, primary_reviewed_by_email, secondary_reviewed_by_email,
+       primary_reviewed_by, primary_reviewed_by_email,
+       secondary_reviewed_by, secondary_reviewed_by_email, secondary_reviewed_at,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(name, academic_year_id),
          subject:subjects(code, name),
          term:terms(label)
+       ),
+       grade_entry:grade_entries(
+         section_student:section_students(
+           student:students(first_name, last_name)
+         )
        )`
     )
     .eq('requested_by', userId)
@@ -101,24 +112,33 @@ export default async function MyRequestsPage() {
     );
   }
 
-  const [{ data: rawRows }, staffNames] = await Promise.all([
-    listQuery,
-    getStaffDisplayNameById(),
-  ]);
+  const { data: rawRows } = await listQuery;
 
   type RawGradingSheet = {
     section: { name: string; academic_year_id: string } | null;
     subject: { code: string; name: string } | null;
     term: { label: string } | null;
   };
+  // Left embed (never `!inner`) — a student the join can't resolve must
+  // still show up in the list, just with the 'a student' fallback.
+  type RawStudent = { first_name: string | null; last_name: string | null };
+  type RawGradeEntry = {
+    section_student: { student: RawStudent | null } | null;
+  };
   const rawList = (rawRows ?? []) as unknown as (RequestRow & {
     grading_sheet?: RawGradingSheet;
+    grade_entry?: RawGradeEntry;
   })[];
 
   // Map server rows → MyRequestRow (derive field_label on the server so
   // it's available as a stable string for faceting + CSV export).
   const tableRows: MyRequestRow[] = rawList.map((r) => {
     const gs = r.grading_sheet;
+    const student = r.grade_entry?.section_student?.student;
+    const studentLabel =
+      student && (student.first_name || student.last_name)
+        ? `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim()
+        : 'a student';
     return {
       id: r.id,
       grading_sheet_id: r.grading_sheet_id,
@@ -143,13 +163,27 @@ export default async function MyRequestsPage() {
       rejection_undone_at: r.rejection_undone_at,
       primary_reviewed_by: r.primary_reviewed_by,
       primary_reviewed_by_email: r.primary_reviewed_by_email,
+      secondary_reviewed_by: r.secondary_reviewed_by,
       secondary_reviewed_by_email: r.secondary_reviewed_by_email,
+      secondary_reviewed_at: r.secondary_reviewed_at,
+      studentLabel,
       sectionName: gs?.section?.name ?? null,
       subjectCode: gs?.subject?.code ?? null,
       subjectName: gs?.subject?.name ?? null,
       termLabel: gs?.term?.label ?? null,
     };
   });
+
+  const staffNames = narrowStaffNamesToRows(
+    await getStaffDisplayNameById(),
+    tableRows,
+    (r) => [
+      r.requested_by,
+      r.primary_reviewed_by,
+      r.secondary_reviewed_by,
+      r.applied_by,
+    ]
+  );
 
   const counts = rawList.reduce(
     (acc, r) => {

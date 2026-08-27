@@ -394,6 +394,13 @@ async function loadMarkChangeSide(
         reviewedByEmail: row.reviewed_by_email,
         reviewedAt: row.reviewed_at,
         decisionNote: row.decision_note,
+        // This feed doesn't select secondary_reviewed_* at all (pre-existing;
+        // out of scope for fix round 1's F4, which is the two mark-change
+        // tables, not the activity panel) — nulls here reproduce exactly the
+        // no-co-sign-event behaviour this feed already had.
+        secondaryReviewedById: null,
+        secondaryReviewedByEmail: null,
+        secondaryReviewedAt: null,
         appliedById: row.applied_by,
         appliedAt: row.applied_at,
         viewerId: scope.userId,

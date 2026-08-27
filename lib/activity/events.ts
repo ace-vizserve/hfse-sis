@@ -181,6 +181,11 @@ export type GradeChangeEventInput = {
   reviewedByEmail: string | null;
   reviewedAt: string | null;
   decisionNote: string | null;
+  /** Co-sign trail (migration 044). Null unless a second designated
+   *  approver has also reviewed — see `buildGradeChangeEvents` below. */
+  secondaryReviewedById: string | null;
+  secondaryReviewedByEmail: string | null;
+  secondaryReviewedAt: string | null;
   appliedById: string | null;
   appliedAt: string | null;
   /** Who is reading. Decides whether the first row says "You". */
@@ -189,17 +194,65 @@ export type GradeChangeEventInput = {
   href: string;
 };
 
-/** "written_work" + slot 3 → "Written Work 3". */
+/**
+ * Human copy for the five values `field_changed` is constrained to
+ * (`009_change_requests.sql:31-33`). Shared by the dialog title, the
+ * predicate text below, and — until this fix — nobody, because it sat
+ * unused as a dead constant in `my-requests-table.tsx`.
+ *
+ * ⚠ Do not add a key here without checking that CHECK constraint first: an
+ * unrecognised key falls through to a naive split-and-titlecase in
+ * `markChangeFieldLabel`, which reads as a raw column name ("Ww Scores")
+ * rather than English — a safety net, not a design.
+ */
+export const FIELD_CHANGE_LABELS: Record<string, string> = {
+  ww_scores: 'Written work',
+  pt_scores: 'Performance task',
+  qa_score: 'Quarterly assessment',
+  letter_grade: 'Letter grade',
+  is_na: 'N/A flag',
+};
+
+/**
+ * "ww_scores" + slot 2 (0-based) → "Written work 3".
+ *
+ * ⚠ `slotIndex` is 0-based (`009_change_requests.sql:67`) — the +1 here is
+ * load-bearing. The table cell beside this dialog (`fieldLabel` in both
+ * `change-requests-data-table.tsx` and `grading/requests/page.tsx`) already
+ * does the same +1 to print "W2"; this must never drift from that.
+ */
 export function markChangeFieldLabel(
   fieldChanged: string,
   slotIndex: number | null
 ): string {
-  const words = fieldChanged
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w[0]?.toUpperCase() + w.slice(1))
-    .join(' ');
-  return slotIndex == null ? words : `${words} ${slotIndex}`;
+  const label =
+    FIELD_CHANGE_LABELS[fieldChanged] ??
+    fieldChanged
+      .split('_')
+      .filter(Boolean)
+      .map((w) => w[0]?.toUpperCase() + w.slice(1))
+      .join(' ');
+  return slotIndex == null ? label : `${label} ${slotIndex + 1}`;
+}
+
+/**
+ * The history dialog's subtitle line — shared by both mark-change tables
+ * (Task 5 duplicated this verbatim; hoisted here per fix round 1). No
+ * student name reaches either table's own columns (that's what the title
+ * carries, via a real join as of this fix round), so section/subject/term
+ * — already loaded for the tables' own columns — stand in for context;
+ * "Mark change" is the last resort when none of the three are known.
+ */
+export function markChangeHistorySubtitle(row: {
+  sectionName?: string | null;
+  subjectCode?: string | null;
+  termLabel?: string | null;
+}): string {
+  return (
+    [row.sectionName, row.subjectCode, row.termLabel]
+      .filter(Boolean)
+      .join(' · ') || 'Mark change'
+  );
 }
 
 export function buildGradeChangeEvents(
@@ -253,6 +306,33 @@ export function buildGradeChangeEvents(
       details: input.decisionNote
         ? [{ kind: 'note', text: input.decisionNote }]
         : null,
+      href: input.href,
+    });
+  }
+
+  // A co-sign (migration 044): a second designated approver reviewed after
+  // the first. `ReviewerLine` on both tables already renders "Co-signed by
+  // A and B" from the same two columns three lines away in the same row —
+  // the dialog built to be the audit record must not show less than that.
+  // Always 'went-through': the only path that reaches `secondary_reviewed_*`
+  // at all is a co-sign onto an already-approved request (`decide.ts`
+  // blocks a secondary review once the primary has rejected).
+  if (input.secondaryReviewedAt) {
+    const cosigner = personName(
+      input.secondaryReviewedById,
+      input.secondaryReviewedByEmail,
+      input.nameById
+    );
+    events.push({
+      id: `grade_change:${input.id}:reviewed:secondary`,
+      flow: 'grade_change',
+      requestId: input.id,
+      at: input.secondaryReviewedAt,
+      tone: 'went-through',
+      actorLabel: cosigner,
+      actorInitials: initialsFromName(cosigner),
+      predicate: `co-signed the mark change for ${input.studentLabel}.`,
+      details: null,
       href: input.href,
     });
   }

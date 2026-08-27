@@ -2,7 +2,10 @@ import { redirect } from 'next/navigation';
 
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import {
+  getStaffDisplayNameById,
+  narrowStaffNamesToRows,
+} from '@/lib/auth/staff-list';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -80,13 +83,19 @@ export default async function AdminChangeRequestsPage({
        reviewed_by_email, reviewed_at, decision_note,
        applied_by, applied_at,
        primary_approver_id, secondary_approver_id,
-       primary_reviewed_by, primary_reviewed_by_email, secondary_reviewed_by_email,
+       primary_reviewed_by, primary_reviewed_by_email,
+       secondary_reviewed_by, secondary_reviewed_by_email, secondary_reviewed_at,
        primary_reviewed_at,
        approved_at, rejection_undone_at,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(id, name, academic_year_id),
          subject:subjects(code, name),
          term:terms(label)
+       ),
+       grade_entry:grade_entries(
+         section_student:section_students(
+           student:students(first_name, last_name)
+         )
        )`
     )
     .order('requested_at', { ascending: false })
@@ -102,24 +111,37 @@ export default async function AdminChangeRequestsPage({
     );
   }
 
-  const [{ data: rawRows }, staffNames] = await Promise.all([
-    query,
-    getStaffDisplayNameById(),
-  ]);
+  const { data: rawRows } = await query;
 
   type RawGradingSheet = {
     section: { id: string; name: string; academic_year_id: string } | null;
     subject: { code: string; name: string } | null;
     term: { label: string } | null;
   };
+  // Left embed (never `!inner`) — a student the join can't resolve must
+  // still show up in the queue, just with the 'a student' fallback.
+  type RawStudent = { first_name: string | null; last_name: string | null };
+  type RawGradeEntry = {
+    section_student: { student: RawStudent | null } | null;
+  };
   type RawRequestRow = Omit<
     AdminRequestRow,
-    'sectionId' | 'sectionName' | 'subjectCode' | 'subjectName' | 'termLabel'
-  > & { grading_sheet?: RawGradingSheet };
+    | 'sectionId'
+    | 'sectionName'
+    | 'subjectCode'
+    | 'subjectName'
+    | 'termLabel'
+    | 'studentLabel'
+  > & { grading_sheet?: RawGradingSheet; grade_entry?: RawGradeEntry };
   const rows: AdminRequestRow[] = (
     (rawRows ?? []) as unknown as RawRequestRow[]
   ).map((r) => {
     const gs = r.grading_sheet;
+    const student = r.grade_entry?.section_student?.student;
+    const studentLabel =
+      student && (student.first_name || student.last_name)
+        ? `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim()
+        : 'a student';
     return {
       ...r,
       sectionId: gs?.section?.id ?? null,
@@ -127,8 +149,20 @@ export default async function AdminChangeRequestsPage({
       subjectCode: gs?.subject?.code ?? null,
       subjectName: gs?.subject?.name ?? null,
       termLabel: gs?.term?.label ?? null,
+      studentLabel,
     };
   });
+
+  const staffNames = narrowStaffNamesToRows(
+    await getStaffDisplayNameById(),
+    rows,
+    (r) => [
+      r.requested_by,
+      r.primary_reviewed_by,
+      r.secondary_reviewed_by,
+      r.applied_by,
+    ]
+  );
 
   const counts: Record<ChangeRequestStatus, number> = {
     pending: 0,

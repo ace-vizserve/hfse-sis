@@ -46,6 +46,7 @@ import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-d
 import {
   buildGradeChangeEvents,
   markChangeFieldLabel,
+  markChangeHistorySubtitle,
 } from '@/lib/activity/events';
 import { ChangeRequestDecisionButtons } from './decision-buttons';
 
@@ -156,13 +157,24 @@ export type AdminRequestRow = {
   // a name via `primary_reviewed_by`, never the (unselected) legacy id.
   primary_reviewed_by: string | null;
   primary_reviewed_by_email: string | null;
+  // Co-sign trail (migration 044) — `secondary_reviewed_by_email` alone
+  // already fed `ReviewerLine`'s "Co-signed by A and B"; the id + timestamp
+  // are new here so the History dialog can emit the co-sign as its own
+  // event instead of showing only the first signature.
+  secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
+  secondary_reviewed_at: string | null;
   // primary_reviewed_at gates the 2-hour undo window for the rejecting
   // approver; approved_at + rejection_undone_at are the post-decision
   // signals (aging chip on the admin Status cell, audit-trail badge).
   primary_reviewed_at: string | null;
   approved_at: string | null;
   rejection_undone_at: string | null;
+  // The child this mark change is about — resolved server-side via a left
+  // embed through grade_entries → section_students → students (never
+  // `!inner`: a student the join can't resolve must still show up in the
+  // queue, just with the 'a student' fallback baked in at the source).
+  studentLabel: string;
   // Context fields populated by the loader join (section/subject/term).
   sectionId?: string | null;
   sectionName?: string | null;
@@ -170,9 +182,6 @@ export type AdminRequestRow = {
   subjectName?: string | null;
   termLabel?: string | null;
 };
-
-// TODO(loader-join): surface section/subject/term/student per spec §5.2 + §7
-// when the change-requests-loader-join-expansion ticket lands.
 
 function fieldLabel(field: string, slot: number | null): string {
   switch (field) {
@@ -189,17 +198,6 @@ function fieldLabel(field: string, slot: number | null): string {
     default:
       return field;
   }
-}
-
-// The history dialog's subtitle line. No student name is joined onto this
-// row today (see the loader-join TODO above), so section/subject/term — all
-// already loaded for the table's own columns — stand in for it; "Mark
-// change" is the last resort when none of the three are known.
-function historySubtitle(r: AdminRequestRow): string {
-  return (
-    [r.sectionName, r.subjectCode, r.termLabel].filter(Boolean).join(' · ') ||
-    'Mark change'
-  );
 }
 
 function startOfDay(d: Date): Date {
@@ -690,18 +688,18 @@ export function ChangeRequestsDataTable({
                     History
                   </Button>
                 }
-                title={`A student — ${markChangeFieldLabel(
+                title={`${r.studentLabel} — ${markChangeFieldLabel(
                   r.field_changed,
                   r.slot_index ?? null
                 )}`}
-                subtitle={historySubtitle(r)}
+                subtitle={markChangeHistorySubtitle(r)}
                 events={buildGradeChangeEvents({
                   id: r.id,
                   fieldChanged: r.field_changed,
                   slotIndex: r.slot_index ?? null,
                   currentValue: r.current_value ?? null,
                   proposedValue: r.proposed_value,
-                  studentLabel: 'a student',
+                  studentLabel: r.studentLabel,
                   requestedById: r.requested_by,
                   requestedByEmail: r.requested_by_email,
                   requestedAt: r.requested_at,
@@ -711,6 +709,9 @@ export function ChangeRequestsDataTable({
                     r.primary_reviewed_by_email ?? r.reviewed_by_email,
                   reviewedAt: r.reviewed_at,
                   decisionNote: r.decision_note ?? null,
+                  secondaryReviewedById: r.secondary_reviewed_by,
+                  secondaryReviewedByEmail: r.secondary_reviewed_by_email,
+                  secondaryReviewedAt: r.secondary_reviewed_at,
                   appliedById: r.applied_by,
                   appliedAt: r.applied_at,
                   viewerId,
