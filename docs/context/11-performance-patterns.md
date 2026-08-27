@@ -164,4 +164,16 @@ Each was on the original list; each stopped making sense once the code was read.
 
 ### Still open
 
-**14 write routes invalidate nothing.** A missing `revalidateTag` only bites when the surface reads through a cached loader, but caching here is pervasive (`lib/sis/` alone has 15 cached read modules), so the default expectation is that it does. `change-requests/act` is the one to look at first: it is the email approve/reject route, so the person acting never sees the queue — but everyone else's change-request list and notification bell go stale until the 60-second TTL expires.
+**~~14 write routes invalidate nothing.~~ REDONE 2026-08-27, and the old claim was wrong in three separate ways.** It now lives in `__tests__/cache/write-route-invalidation.test.ts` rather than in prose, because that is the only form of this list that cannot rot: every write route must either bust a tag or appear on an exemption list **with the reason it is safe**, and an entry that has since gained a bust or been deleted fails the build.
+
+🔴 **`change-requests/act` was the headline example and it had invalidated since 2026-06-05.** It delegates to `lib/change-requests/decide.ts`, which calls `invalidateDrillTags('markbook', …)` — the audit had grepped route files only, so a bust one module down was invisible to it. Same for `change-requests/[id]`.
+
+🔴 **The "60-second TTL" on the queue and bell does not exist.** The change-request queue page reads the service client directly with no `unstable_cache`; `getSidebarChangeRequestCount` says in its own header that it is deliberately uncached; the bell's preview sets `staleTime: 0`; and the badge is a realtime subscription. The only real window is the 30s client Router Cache (`next.config.ts`), which `revalidateTag` cannot touch at all.
+
+🔴 **Six of the fourteen are `410 Gone` tombstones** (the PTC/checklist routes, KD #114 / #110). They write nothing.
+
+**What was actually fixed:** the subject catalogue POST and PATCH, the level-offerings PUT, and the subject resync POST — all four write behind cached markbook or SIS readiness loaders, and the two sibling routes beside them had been busting correctly all along.
+
+🔴 **And a defect nobody had recorded: `lib/markbook/overview-data.ts` tagged its cache entry `markbook:${academicYearId}` — a uuid — while every invalidator passes an `ay_code`.** `markbook:AY2026` never matched `markbook:<uuid>`, so that entry **was never busted by anything** and only ever expired on its TTL. It was the only AY-scoped tag in the codebase built from an id. Now pinned by a test that fails on any tag template interpolating something ending in `Id`.
+
+**Genuinely still open, and named in the test rather than hidden:** `grading-sheets/[id]/labels`, `sections/[id]/schedule`, and `sis/admin/users/[id]` — the last being a real asymmetry, since the sibling POST busts `teacher-emails` and the PATCH/DELETE does not.

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectLevelOfferingToggleSchema } from '@/lib/schemas/subject-config';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -127,6 +128,19 @@ export async function PUT(request: NextRequest) {
         offered,
       },
     });
+
+  // ⚠ TWO MODULES, because `subject_level_offerings` is read by cached loaders
+  // in both: `lib/markbook/masterfile.ts` (`markbook-drill:${ay}`) and
+  // `lib/sis/readiness.ts` (`sis:${ay}`). Busting only one leaves the AY
+  // readiness pill claiming a subject is still offered after somebody has
+  // detached it — the half-stale case that is worse than fully stale, because
+  // two screens then disagree.
+  //
+  // The AY code comes from the row this route already looked up, not from the
+  // current year: a superadmin can toggle offerings for a FUTURE year, and
+  // busting today's tags would miss the year they actually changed.
+  invalidateDrillTags('markbook', ay.ay_code);
+  invalidateDrillTags('records', ay.ay_code);
 
   return NextResponse.json({
     ok: true,

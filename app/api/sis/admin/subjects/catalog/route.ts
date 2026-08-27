@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectCreateSchema } from '@/lib/schemas/subject';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -84,6 +86,17 @@ export async function POST(request: NextRequest) {
       report_label: row.report_label,
     },
   });
+
+  // The catalogue is read through `unstable_cache` two modules down —
+  // `lib/markbook/overview-data.ts` (`markbook:${ay}`) and
+  // `lib/markbook/drill.ts` — so a subject added here stays invisible to the
+  // dashboards that list subjects until the entry expires on its own. Same
+  // call the two sibling routes in this folder already make.
+  //
+  // ⚠ The catalogue itself is AY-INDEPENDENT — a subject is not owned by a
+  // year — but every cached READER is keyed by one, so the current year is
+  // what has to be busted.
+  invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 
   return NextResponse.json({ ok: true, ...row });
 }

@@ -405,7 +405,19 @@ export function getOverviewData(
     ['markbook', 'overview-data', ayCode, academicYearId],
     {
       revalidate: CACHE_TTL_SECONDS,
-      tags: ['markbook', `markbook:${academicYearId}`],
+      // ⚠ KEYED ON THE AY CODE, NOT THE UUID, AND THAT IS THE WHOLE POINT.
+      // This tag read `markbook:${academicYearId}` until 2026-08-27 — the only
+      // AY-scoped tag in the codebase built from a uuid. Every invalidator
+      // passes an ay_code (`invalidateDrillTags(module, ayCode)` in
+      // `lib/cache/invalidate-drill-tags.ts`), so `markbook:AY2026` never
+      // matched `markbook:<uuid>` and THIS ENTRY WAS NEVER BUSTED BY ANYTHING.
+      // It only ever expired on its own TTL, which is why the Markbook
+      // overview could sit on figures a grade change had already superseded.
+      //
+      // The bare `'markbook'` tag saved it from being unreachable, not from
+      // being wrong: nothing busts that either, since the helper only emits
+      // the AY-scoped pair.
+      tags: ['markbook', `markbook:${ayCode}`],
     }
   )();
 }

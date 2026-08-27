@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
 import { recomputeSyncedSheets } from '@/lib/grading/sync-config-sheets';
 
@@ -33,15 +34,23 @@ export async function POST(
   const { configId } = await params;
   const service = createServiceClient();
 
+  // `academic_years!inner(ay_code)` because the cache tags are keyed by CODE,
+  // never by uuid — see `lib/cache/invalidate-drill-tags.ts`. Fetching it here
+  // costs nothing extra and saves a second round trip below.
   const { data: config, error: loadErr } = await service
     .from('subject_configs')
-    .select('id, academic_year_id, subject_id')
+    .select('id, academic_year_id, subject_id, academic_years!inner(ay_code)')
     .eq('id', configId)
     .maybeSingle();
   if (loadErr)
     return NextResponse.json({ error: loadErr.message }, { status: 500 });
   if (!config)
     return NextResponse.json({ error: 'config not found' }, { status: 404 });
+
+  const ayRel = (config as { academic_years?: { ay_code?: string } | null })
+    .academic_years;
+  const ayCode =
+    (Array.isArray(ayRel) ? ayRel[0]?.ay_code : ayRel?.ay_code) ?? '';
 
   const { data: syncResult, error: syncErr } = await service.rpc(
     'sync_grading_sheets_from_config',
@@ -85,6 +94,16 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  // This route rewrites grading sheets and recomputes grade entries, which is
+  // exactly what the markbook dashboards and drills read through
+  // `unstable_cache`. The PATCH route next door already busts these; the
+  // repair path that does the same work did not, so a resync fixed the data
+  // and left every dashboard reporting the figures it had just corrected.
+  //
+  // ⚠ Placed AFTER the failure branch above on purpose: if the sync errored,
+  // the sheets are still wrong and there is nothing correct to publish.
+  invalidateDrillTags('markbook', ayCode);
 
   return NextResponse.json({
     ok: true,

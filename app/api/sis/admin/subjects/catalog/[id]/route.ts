@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectCatalogUpdateSchema } from '@/lib/schemas/subject';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -112,6 +114,12 @@ export async function PATCH(
       },
     },
   });
+
+  // Changing whether a subject is examinable, or how it is graded, changes
+  // what the markbook dashboards and drills SHOW — and both read the catalogue
+  // through `unstable_cache` (`markbook:${ay}` / `markbook-drill:${ay}`). Same
+  // call the two sibling routes in this folder already make.
+  invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 
   return NextResponse.json({
     ok: true,
