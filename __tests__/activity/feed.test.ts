@@ -11,6 +11,72 @@ vi.mock('@/lib/auth/staff-list', () => ({
   getStaffDisplayNameById: () => Promise.resolve([]),
 }));
 
+// F2 — `loadDeclarationSide` hangs its ladder detail on `loadStaffDeclarations`
+// (lib/declarations/staff.ts), which itself fans out into students/sections/
+// terms/vacation-usage queries that have nothing to do with what F2 tests.
+// Stubbed to one fixed, pending-on-the-viewer filing so the "waiting is
+// identical across tabs" test below only has to shape the two queries that
+// actually decide scope: `teacher_assignments` and `approval_request_stages`.
+vi.mock('@/lib/declarations/staff', () => ({
+  loadStaffDeclarations: () =>
+    Promise.resolve([
+      {
+        id: 'dec-1',
+        filingGroupId: 'group-1',
+        declarationType: 'travel',
+        studentId: 'student-1',
+        studentNumber: 'STU-001',
+        studentName: 'Amelia Ng',
+        sectionId: 'sec-a',
+        className: 'P2 Diligence',
+        levelCode: 'P2',
+        startDate: '2026-09-03',
+        endDate: '2026-09-03',
+        dayCount: 1,
+        withMedical: null,
+        evidenceUrl: null,
+        evidenceLinkUrl: null,
+        destinationCountry: 'Malaysia',
+        destinationCity: null,
+        parentNote: null,
+        filedByEmail: 'parent@example.com',
+        filedAt: '2026-08-27T00:00:00.000Z',
+        status: 'pending',
+        statusLabel: 'Pending',
+        registerWrittenAt: null,
+        registerDaysWritten: null,
+        registerWriteError: null,
+        vacationUsage: null,
+        siblings: [],
+        ladder: {
+          requestId: 'dec-1',
+          flow: 'student_declaration',
+          subjectType: 'student_declaration',
+          subjectId: 'dec-1',
+          status: 'pending',
+          currentStageOrder: 1,
+          filedByEmail: 'parent@example.com',
+          filedAt: '2026-08-27T00:00:00.000Z',
+          decidedAt: null,
+          stages: [
+            {
+              stageOrder: 1,
+              label: 'Form class adviser',
+              resolver: 'form_adviser',
+              status: 'pending',
+              sectionId: 'sec-a',
+              approverPool: [],
+              decidedBy: null,
+              decidedByEmail: null,
+              decidedAt: null,
+              decisionNote: null,
+            },
+          ],
+        },
+      },
+    ]),
+}));
+
 function ev(id: string, at: string): ActivityEvent {
   return {
     id,
@@ -87,6 +153,144 @@ describe('pageEvents', () => {
   it('caps each source well above anything this school produces', () => {
     expect(SOURCE_CAP).toBeGreaterThanOrEqual(400);
   });
+
+  // F5 — the cursor comparison shares `compareStringsAsc` with
+  // `sortEventsNewestFirst` (events.ts) precisely so this can't drift back to
+  // `localeCompare`. PostgREST's trimmed-zero-fraction timestamps
+  // (`'...:00+00:00'` vs `'...:00.5+00:00'`) are exactly the shape that
+  // inverts under locale-aware comparison.
+  it('pages a mixed-precision pair in the right order', () => {
+    const bare = ev('bare', '2026-08-27T02:00:00+00:00');
+    const fractional = ev('fractional', '2026-08-27T02:00:00.5+00:00');
+
+    const page = pageEvents([bare, fractional], null, 10);
+
+    expect(page.events.map((e) => e.id)).toEqual(['fractional', 'bare']);
+  });
+});
+
+/**
+ * F3. `loadDeclarationSide` runs on the SERVICE client, so migration 129's
+ * RLS is bypassed entirely and the `.or()` built here is the only thing
+ * standing between one adviser and every other section's filings — exactly
+ * as load-bearing as the mark-change leak guard just below, which already had
+ * a query-shape test. This is that same shape of test for the declaration
+ * side: a fake Supabase client whose `.or()` records what it was asked, and a
+ * `teacher_assignments` fixture shaped like
+ * `__tests__/approvals/inbox-scope.test.ts:160`'s relief-cover cases so a
+ * co-adviser and a LIVE relief cover both widen the `section_id.in.(...)`
+ * arm while a booked-but-not-yet-live cover does not.
+ */
+function makeDeclarationScopeService(
+  captured: { orClauses: string[] },
+  assignments: unknown[]
+): SupabaseClient {
+  return {
+    from(table: string) {
+      if (table === 'teacher_assignments') {
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.in = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: assignments, error: null });
+        return builder;
+      }
+      if (table === 'approval_request_stages') {
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.eq = chain;
+        builder.order = chain;
+        builder.limit = chain;
+        builder.or = (clause: string) => {
+          captured.orClauses.push(clause);
+          return builder;
+        };
+        // No filings need to actually resolve for this test — it only
+        // asserts the query's SHAPE, mirroring the mark-change leak-guard
+        // tests below. An empty result also skips `loadStaffDeclarations`
+        // entirely (`loadDeclarationSide` short-circuits when
+        // `declarationIds.length === 0`), so no further table needs a stub.
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: [], error: null });
+        return builder;
+      }
+      if (table === 'grade_change_requests') {
+        // F2 made `loadActivityPage` always fetch both sides regardless of
+        // `tab`, so a declaration-only test must still answer this query.
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.order = chain;
+        builder.limit = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: [], error: null });
+        return builder;
+      }
+      throw new Error(
+        `F3 declaration-scope fixture queried an unexpected table: ${table}`
+      );
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe('loadActivityPage — declaration scope, the leak guard (F3)', () => {
+  const TODAY = '2026-09-10';
+  const SECTION_CO = 'aaaaaaaa-0000-0000-0000-0000000000c0';
+  const SECTION_LIVE = 'bbbbbbbb-0000-0000-0000-00000000011e';
+  const SECTION_BOOKED = 'cccccccc-0000-0000-0000-00000000b00c';
+
+  it('carries the approver-pool arm and widens the section arm for a co-adviser and a live relief cover, but not a booked-but-not-live one', async () => {
+    const userId = 'adviser-1';
+    const captured = { orClauses: [] as string[] };
+    const assignments = [
+      // A co-adviser holds the role directly — no relief window at all.
+      {
+        section_id: SECTION_CO,
+        teacher_user_id: userId,
+        relief_teacher_user_id: null,
+        relief_started_on: null,
+        relief_ended_on: null,
+      },
+      // Covering right now: TODAY falls inside the window.
+      {
+        section_id: SECTION_LIVE,
+        teacher_user_id: 'someone-else-1',
+        relief_teacher_user_id: userId,
+        relief_started_on: '2026-09-07',
+        relief_ended_on: '2026-09-11',
+      },
+      // Booked for a future week — TODAY is before the window starts.
+      {
+        section_id: SECTION_BOOKED,
+        teacher_user_id: 'someone-else-2',
+        relief_teacher_user_id: userId,
+        relief_started_on: '2026-09-20',
+        relief_ended_on: '2026-09-25',
+      },
+    ];
+
+    await loadActivityPage(makeDeclarationScopeService(captured, assignments), {
+      userId,
+      role: 'teacher',
+      tab: 'student_declaration',
+      cursor: null,
+      limit: 20,
+      today: TODAY,
+    });
+
+    expect(captured.orClauses).toHaveLength(1);
+    const clause = captured.orClauses[0];
+    expect(clause).toContain(`approver_pool.cs.{${userId}}`);
+    expect(clause).toContain(`section_id.in.(${SECTION_CO},${SECTION_LIVE})`);
+    expect(clause).not.toContain(SECTION_BOOKED);
+  });
 });
 
 /**
@@ -139,7 +343,11 @@ function makeMarkChangeService(
  */
 const MARK_CHANGE_ROW = {
   id: 'gcr-1',
-  field_changed: 'written_work',
+  // ⚠ F6 — `field_changed` is constrained to exactly five values
+  // (009_change_requests.sql:31-33); 'written_work' is not one of them and
+  // could never appear in a real row. `ww_scores` + a non-null `slot_index`
+  // is the shape the same migration's slot-shape check requires.
+  field_changed: 'ww_scores',
   slot_index: 3,
   current_value: '18',
   proposed_value: '21',
@@ -184,10 +392,16 @@ describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
     expect(clause).toContain('requested_by.eq.teacher-1');
     expect(clause).toContain('primary_approver_id.eq.teacher-1');
     expect(clause).toContain('secondary_approver_id.eq.teacher-1');
+    // F4 — whoever applied a change sees their own action, every role.
+    expect(clause).toContain('applied_by.eq.teacher-1');
     // ⚠ The legacy-null arm is gated to school_admin (next test). An
     // unconditional version here would hand a teacher every pending mark
     // change from before migration 013 had approver columns at all.
     expect(clause).not.toContain('is.null');
+    // F4 — the coordinator arm is gated to academic_coordinator (see below).
+    // A teacher must never get the whole school's approved queue just
+    // because it happens to share the `status.eq.approved` shape.
+    expect(clause).not.toContain('status.eq.approved');
   });
 
   it('a school_admin additionally admits legacy rows with no approver assigned', async () => {
@@ -204,6 +418,47 @@ describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
     expect(captured.orClauses[0]).toContain(
       'and(primary_approver_id.is.null,secondary_approver_id.is.null)'
     );
+  });
+});
+
+/**
+ * F4. `getSidebarChangeRequestCount` (sidebar-counts.ts:50-51) counts, for
+ * `academic_coordinator`, every `status='approved'` row — the requests they
+ * must apply — with no tie to requester or approver at all. Before this fix
+ * `markChangeScopeArms` had no arm for that at all, so a coordinator was
+ * requester of nothing and approver of nothing: their badge read the true
+ * count while their panel said "Nothing yet" underneath it. This pins the
+ * mirrored arm, that it is gated to the one role, and that the coordinator
+ * also sees their own `applied_by` action (the one event only they produce).
+ */
+describe('loadActivityPage — academic coordinator scope (F4)', () => {
+  it('mirrors the sidebar badge: every approved row, no approver tie', async () => {
+    const captured = { orClauses: [] as string[] };
+    await loadActivityPage(makeMarkChangeService(captured), {
+      userId: 'coordinator-1',
+      role: 'academic_coordinator',
+      tab: 'grade_change',
+      cursor: null,
+      limit: 20,
+    });
+
+    expect(captured.orClauses).toHaveLength(1);
+    const clause = captured.orClauses[0];
+    expect(clause).toContain('status.eq.approved');
+    expect(clause).toContain('applied_by.eq.coordinator-1');
+  });
+
+  it('a teacher does not get the coordinator arm', async () => {
+    const captured = { orClauses: [] as string[] };
+    await loadActivityPage(makeMarkChangeService(captured), {
+      userId: 'teacher-2',
+      role: 'teacher',
+      tab: 'grade_change',
+      cursor: null,
+      limit: 20,
+    });
+
+    expect(captured.orClauses[0]).not.toContain('status.eq.approved');
   });
 });
 
@@ -317,5 +572,123 @@ describe('loadActivityPage — one source fails, the other survives', () => {
 
     expect(page.partial).toBe(true);
     expect(page.events.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Final fix wave, F2. Spec §5: "Pinned above the tab strip, not inside
+ * General. What you owe someone does not change with the tab you are
+ * reading." Before this fix, `loadActivityPage` gated BOTH the fetch and the
+ * `waiting` list behind the same `wantDeclarations`/`wantMarkChanges` switch
+ * as `events` — so an adviser with a filing waiting who tapped the "Mark
+ * changes" tab saw their pinned to-do list disappear while the badge beside
+ * it kept reading the true count. This drives one viewer who has a pending
+ * mark change AND a pending declaration, across all three tabs, and asserts
+ * `waiting` never changes — only `events` may.
+ */
+function makeWaitingAcrossTabsService(userId: string): SupabaseClient {
+  return {
+    from(table: string) {
+      if (table === 'grade_change_requests') {
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.order = chain;
+        builder.limit = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: [MARK_CHANGE_ROW], error: null });
+        return builder;
+      }
+      if (table === 'teacher_assignments') {
+        // Makes the viewer the form adviser of 'sec-a' — the section the
+        // mocked declaration ladder's pending stage names — so the
+        // declaration also lands in `waiting`.
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.in = chain;
+        builder.or = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) =>
+          resolve({
+            data: [
+              {
+                section_id: 'sec-a',
+                teacher_user_id: userId,
+                relief_teacher_user_id: null,
+                relief_started_on: null,
+                relief_ended_on: null,
+              },
+            ],
+            error: null,
+          });
+        return builder;
+      }
+      if (table === 'approval_request_stages') {
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        builder.select = chain;
+        builder.eq = chain;
+        builder.or = chain;
+        builder.order = chain;
+        builder.limit = chain;
+        builder.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) =>
+          resolve({
+            data: [
+              {
+                request_id: 'dec-1',
+                approval_requests: {
+                  subject_id: 'dec-1',
+                  created_at: '2026-08-27T00:00:00.000Z',
+                },
+              },
+            ],
+            error: null,
+          });
+        return builder;
+      }
+      throw new Error(
+        `waiting-across-tabs fixture queried an unexpected table: ${table}`
+      );
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe('loadActivityPage — waiting is pinned above the tab strip (F2)', () => {
+  it('is identical for general, grade_change and student_declaration', async () => {
+    const userId = 'viewer-1'; // matches MARK_CHANGE_ROW's secondary_approver_id
+    const load = (tab: 'general' | 'grade_change' | 'student_declaration') =>
+      loadActivityPage(makeWaitingAcrossTabsService(userId), {
+        userId,
+        role: 'school_admin',
+        tab,
+        cursor: null,
+        limit: 20,
+      });
+
+    const [general, markChangeTab, declarationTab] = await Promise.all([
+      load('general'),
+      load('grade_change'),
+      load('student_declaration'),
+    ]);
+
+    // Both sources contributed — this would be 1, not 2, if either the mark
+    // change or the declaration side had been silently skipped.
+    expect(general.waiting).toHaveLength(2);
+    expect(markChangeTab.waiting).toEqual(general.waiting);
+    expect(declarationTab.waiting).toEqual(general.waiting);
+
+    // The events list, unlike waiting, DOES follow the tab.
+    expect(markChangeTab.events.every((e) => e.flow === 'grade_change')).toBe(
+      true
+    );
+    expect(
+      declarationTab.events.every((e) => e.flow === 'student_declaration')
+    ).toBe(true);
   });
 });

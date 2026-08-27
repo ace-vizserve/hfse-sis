@@ -11,7 +11,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import type { ActivityEvent, ActivityTone } from '@/lib/activity/events';
+import {
+  compareStringsAsc,
+  type ActivityEvent,
+  type ActivityTone,
+} from '@/lib/activity/events';
 
 /**
  * One approval, end to end.
@@ -44,7 +48,7 @@ export function ApprovalHistoryDialog({
   events: ActivityEvent[];
   footnote?: string;
 }) {
-  const ordered = [...events].sort((a, b) => a.at.localeCompare(b.at));
+  const ordered = [...events].sort((a, b) => compareStringsAsc(a.at, b.at));
 
   return (
     <Dialog>

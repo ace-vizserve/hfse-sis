@@ -164,6 +164,11 @@ export type AdminRequestRow = {
   secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
   secondary_reviewed_at: string | null;
+  // ⚠ F1 — what the second reviewer decided. Distinct from `status`: a
+  // secondary DECLINE after a primary APPROVE leaves `status` at 'approved'
+  // (`decide.ts`), so the History dialog must read this column, not status,
+  // to tell a co-sign from a co-decline.
+  secondary_decision: 'approved' | 'rejected' | null;
   // primary_reviewed_at gates the 2-hour undo window for the rejecting
   // approver; approved_at + rejection_undone_at are the post-decision
   // signals (aging chip on the admin Status cell, audit-trail badge).
@@ -712,6 +717,7 @@ export function ChangeRequestsDataTable({
                   secondaryReviewedById: r.secondary_reviewed_by,
                   secondaryReviewedByEmail: r.secondary_reviewed_by_email,
                   secondaryReviewedAt: r.secondary_reviewed_at,
+                  secondaryDecision: r.secondary_decision,
                   appliedById: r.applied_by,
                   appliedAt: r.applied_at,
                   viewerId,
@@ -746,7 +752,6 @@ export function ChangeRequestsDataTable({
         enableHiding: false,
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [canDecide, controlledByRow, actorEmail, nameById, viewerId]
   );
 

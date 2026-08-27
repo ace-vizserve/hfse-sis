@@ -66,6 +66,11 @@ export type MyRequestRow = {
   secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
   secondary_reviewed_at: string | null;
+  // ⚠ F1 — what the second reviewer decided. Distinct from `status`: a
+  // secondary DECLINE after a primary APPROVE leaves `status` at 'approved'
+  // (`decide.ts`), so the History dialog must read this column, not status,
+  // to tell a co-sign from a co-decline.
+  secondary_decision: 'approved' | 'rejected' | null;
   // The child this mark change is about — resolved server-side via a left
   // embed through grade_entries → section_students → students (never
   // `!inner`: a student the join can't resolve must still show up in the
@@ -281,11 +286,15 @@ function buildColumns(
                 secondaryReviewedById: r.secondary_reviewed_by,
                 secondaryReviewedByEmail: r.secondary_reviewed_by_email,
                 secondaryReviewedAt: r.secondary_reviewed_at,
+                secondaryDecision: r.secondary_decision,
                 appliedById: r.applied_by,
                 appliedAt: r.applied_at,
                 viewerId,
                 nameById,
-                href: `/markbook/grading/requests?req=${r.id}`,
+                // ⚠ F8 — this page reads no `searchParams`, so a `?req=` here
+                // is a deep link to nowhere. The panel's own teacher href
+                // (feed.ts) already omits it for the same reason.
+                href: '/markbook/grading/requests',
               })}
             />
             {r.status === 'approved' ? (

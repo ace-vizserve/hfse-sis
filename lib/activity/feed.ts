@@ -12,6 +12,7 @@ import {
   buildDeclarationEvents,
   buildGradeChangeEvents,
   sortEventsNewestFirst,
+  compareStringsAsc,
   initialsFromName,
   markChangeFieldLabel,
   type ActivityEvent,
@@ -72,8 +73,8 @@ export function pageEvents(
   const start = cursor
     ? sorted.findIndex(
         (e) =>
-          e.at.localeCompare(cursor.at) < 0 ||
-          (e.at === cursor.at && e.id.localeCompare(cursor.id) > 0)
+          compareStringsAsc(e.at, cursor.at) < 0 ||
+          (e.at === cursor.at && compareStringsAsc(e.id, cursor.id) > 0)
       )
     : 0;
 
@@ -104,18 +105,18 @@ export async function loadActivityPage(
 ): Promise<ActivityPage> {
   const nameById = new Map(await getStaffDisplayNameById());
 
-  const wantDeclarations =
-    scope.tab === 'general' || scope.tab === 'student_declaration';
-  const wantMarkChanges =
-    scope.tab === 'general' || scope.tab === 'grade_change';
-
+  // ⚠ F2 — BOTH SOURCES ARE ALWAYS FETCHED, ONE FETCH EACH, REGARDLESS OF
+  // `tab`. Spec §5 pins "Waiting for you" above the tab strip precisely
+  // because what you owe someone does not change with the tab you are
+  // reading — a person reading the Mark changes tab still owes a declaration
+  // a decision. The previous code skipped a source's query entirely when its
+  // tab wasn't selected, which silently dropped that source's `waiting`
+  // items too (the badge kept counting them; the pinned block did not show
+  // them). Only the EVENTS list below is filtered to the tab, and it is
+  // filtered from this one fetch — never a second query per tab.
   const [declarations, markChanges] = await Promise.allSettled([
-    wantDeclarations
-      ? loadDeclarationSide(service, scope, nameById)
-      : Promise.resolve({ events: [], waiting: [], truncated: false }),
-    wantMarkChanges
-      ? loadMarkChangeSide(service, scope, nameById)
-      : Promise.resolve({ events: [], waiting: [], truncated: false }),
+    loadDeclarationSide(service, scope, nameById),
+    loadMarkChangeSide(service, scope, nameById),
   ]);
 
   const parts = [declarations, markChanges];
@@ -130,9 +131,22 @@ export async function loadActivityPage(
   }
 
   const ok = parts.flatMap((p) => (p.status === 'fulfilled' ? [p.value] : []));
-  const all = ok.flatMap((p) => p.events);
+  // `waiting` is never filtered by tab — see the warning above.
   const waiting = ok.flatMap((p) => p.waiting);
   const truncated = ok.some((p) => p.truncated);
+
+  // Events, unlike `waiting`, DO follow the selected tab.
+  const wantDeclarations =
+    scope.tab === 'general' || scope.tab === 'student_declaration';
+  const wantMarkChanges =
+    scope.tab === 'general' || scope.tab === 'grade_change';
+  const all = ok
+    .flatMap((p) => p.events)
+    .filter(
+      (e) =>
+        (e.flow === 'student_declaration' && wantDeclarations) ||
+        (e.flow === 'grade_change' && wantMarkChanges)
+    );
 
   const { events, nextCursor } = pageEvents(all, scope.cursor, scope.limit);
   return { events, nextCursor, waiting, partial, truncated };
@@ -278,15 +292,35 @@ async function loadDeclarationSide(
  * (`lib/change-requests/sidebar-counts.ts`) applies this exact arm only for
  * `school_admin`; mirrored here so the feed and the bell agree on who a
  * legacy row is visible to.
+ *
+ * ⚠ THE `academic_coordinator` ARM IS GATED THE SAME WAY, AND FOR THE SAME
+ * REASON — DO NOT WIDEN IT TO EVERY ROLE. A coordinator is the person who
+ * APPLIES an approved change request; they are neither its requester nor its
+ * designated approver, so without this arm they are on none of the other
+ * three and the panel reads "Nothing yet" under a badge
+ * (`getSidebarChangeRequestCount`, sidebar-counts.ts:50-51) that already
+ * counts every `status='approved'` row for this role. The arm below mirrors
+ * that predicate EXACTLY — `status.eq.approved`, no approver tie at all — so
+ * the feed and the badge agree. Adding it for every role would hand a
+ * teacher the whole school's approved queue.
  */
 function markChangeScopeArms(scope: ActivityScope): string[] {
   const arms = [
     `requested_by.eq.${scope.userId}`,
     `primary_approver_id.eq.${scope.userId}`,
     `secondary_approver_id.eq.${scope.userId}`,
+    // Whoever performed the apply sees their own action — every role, not
+    // gated. This is also what the coordinator arm below needs: applying is
+    // the coordinator's own act, and it must show up even where the
+    // status.eq.approved arm would have already caught it once applied moves
+    // status to 'applied'.
+    `applied_by.eq.${scope.userId}`,
   ];
   if (scope.role === 'school_admin') {
     arms.push('and(primary_approver_id.is.null,secondary_approver_id.is.null)');
+  }
+  if (scope.role === 'academic_coordinator') {
+    arms.push('status.eq.approved');
   }
   return arms;
 }
@@ -401,6 +435,7 @@ async function loadMarkChangeSide(
         secondaryReviewedById: null,
         secondaryReviewedByEmail: null,
         secondaryReviewedAt: null,
+        secondaryDecision: null,
         appliedById: row.applied_by,
         appliedAt: row.applied_at,
         viewerId: scope.userId,

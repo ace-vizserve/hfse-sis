@@ -42,6 +42,7 @@ type RequestRow = {
   secondary_reviewed_by: string | null;
   secondary_reviewed_by_email: string | null;
   secondary_reviewed_at: string | null;
+  secondary_decision: 'approved' | 'rejected' | null;
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -91,6 +92,7 @@ export default async function MyRequestsPage() {
        approved_at, rejection_undone_at,
        primary_reviewed_by, primary_reviewed_by_email,
        secondary_reviewed_by, secondary_reviewed_by_email, secondary_reviewed_at,
+       secondary_decision,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(name, academic_year_id),
          subject:subjects(code, name),
@@ -166,6 +168,7 @@ export default async function MyRequestsPage() {
       secondary_reviewed_by: r.secondary_reviewed_by,
       secondary_reviewed_by_email: r.secondary_reviewed_by_email,
       secondary_reviewed_at: r.secondary_reviewed_at,
+      secondary_decision: r.secondary_decision,
       studentLabel,
       sectionName: gs?.section?.name ?? null,
       subjectCode: gs?.subject?.code ?? null,

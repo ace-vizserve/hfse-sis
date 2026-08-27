@@ -85,6 +85,7 @@ export default async function AdminChangeRequestsPage({
        primary_approver_id, secondary_approver_id,
        primary_reviewed_by, primary_reviewed_by_email,
        secondary_reviewed_by, secondary_reviewed_by_email, secondary_reviewed_at,
+       secondary_decision,
        primary_reviewed_at,
        approved_at, rejection_undone_at,
        grading_sheet:grading_sheets!inner(

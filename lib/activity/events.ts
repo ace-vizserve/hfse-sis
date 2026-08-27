@@ -186,6 +186,15 @@ export type GradeChangeEventInput = {
   secondaryReviewedById: string | null;
   secondaryReviewedByEmail: string | null;
   secondaryReviewedAt: string | null;
+  /**
+   * What the second reviewer decided — `'approved'` or `'rejected'`, or null
+   * before anyone has co-signed. ⚠ A second reviewer CAN decline: `decide.ts`
+   * (:196-202) only blocks a secondary review once the request is already
+   * `rejected` — it does nothing to stop a secondary DECLINE after a primary
+   * APPROVE. Reading `secondaryReviewedAt` alone as "co-signed" therefore
+   * renders a turned-down co-review as a green check.
+   */
+  secondaryDecision: 'approved' | 'rejected' | null;
   appliedById: string | null;
   appliedAt: string | null;
   /** Who is reading. Decides whether the first row says "You". */
@@ -314,24 +323,31 @@ export function buildGradeChangeEvents(
   // the first. `ReviewerLine` on both tables already renders "Co-signed by
   // A and B" from the same two columns three lines away in the same row —
   // the dialog built to be the audit record must not show less than that.
-  // Always 'went-through': the only path that reaches `secondary_reviewed_*`
-  // at all is a co-sign onto an already-approved request (`decide.ts`
-  // blocks a secondary review once the primary has rejected).
+  //
+  // ⚠ THE SECOND REVIEWER CAN DECLINE. `decide.ts` (:196-202) blocks a
+  // secondary review only once the request is already `status='rejected'`
+  // — a secondary reviewer who declines AFTER the primary approved is fully
+  // legal, writes `secondary_decision='rejected'`, and leaves `status`
+  // untouched at `'approved'`. So the tone here branches on the decision
+  // itself, not on the mere presence of a timestamp.
   if (input.secondaryReviewedAt) {
     const cosigner = personName(
       input.secondaryReviewedById,
       input.secondaryReviewedByEmail,
       input.nameById
     );
+    const declined = input.secondaryDecision === 'rejected';
     events.push({
       id: `grade_change:${input.id}:reviewed:secondary`,
       flow: 'grade_change',
       requestId: input.id,
       at: input.secondaryReviewedAt,
-      tone: 'went-through',
+      tone: declined ? 'turned-down' : 'went-through',
       actorLabel: cosigner,
       actorInitials: initialsFromName(cosigner),
-      predicate: `co-signed the mark change for ${input.studentLabel}.`,
+      predicate: declined
+        ? `turned down the mark change for ${input.studentLabel}.`
+        : `co-signed the mark change for ${input.studentLabel}.`,
       details: null,
       href: input.href,
     });
@@ -367,11 +383,29 @@ export function buildGradeChangeEvents(
  * ⚠ The tiebreak is not cosmetic. Two events can share a timestamp to the
  * millisecond, and an unstable order across pages duplicates or drops rows at
  * the cursor boundary.
+ *
+ * ⚠ PLAIN BYTE COMPARISON, NEVER `localeCompare`. PostgREST emits ISO
+ * timestamps with a trimmed fractional part — Postgres drops a zero fraction
+ * — so two `at` values that are byte-comparable as
+ * `'2026-08-27T02:00:00+00:00'` vs `'2026-08-27T02:00:00.5+00:00'` reach here
+ * with different lengths. `localeCompare` treats the shorter string as
+ * "greater" under its locale-aware collation and inverts the order; `<`/`>`
+ * on strings does not.
  */
 export function sortEventsNewestFirst<T extends { at: string; id: string }>(
   events: T[]
 ): T[] {
   return [...events].sort(
-    (a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id)
+    (a, b) => compareStringsAsc(b.at, a.at) || compareStringsAsc(a.id, b.id)
   );
+}
+
+/**
+ * Plain byte comparison for ISO timestamps (and ids). Exported so
+ * `lib/activity/feed.ts`'s cursor comparison and the History dialog's
+ * oldest-first sort use the exact same rule as the sort above — see the
+ * warning on `sortEventsNewestFirst`.
+ */
+export function compareStringsAsc(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }

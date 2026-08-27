@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDeclarationEvents,
   buildGradeChangeEvents,
+  compareStringsAsc,
   initialsFromName,
   markChangeFieldLabel,
   markChangeHistorySubtitle,
@@ -369,6 +370,7 @@ describe('buildGradeChangeEvents', () => {
     secondaryReviewedById: null,
     secondaryReviewedByEmail: null,
     secondaryReviewedAt: null,
+    secondaryDecision: null,
     appliedById: 'u-registrar',
     appliedAt: '2026-08-27T03:05:00.000Z',
     nameById: NAMES,
@@ -445,6 +447,7 @@ describe('buildGradeChangeEvents', () => {
       secondaryReviewedById: 'u-registrar',
       secondaryReviewedByEmail: 'lhen.mendoza@hfse.edu.sg',
       secondaryReviewedAt: '2026-08-27T02:30:00.000Z',
+      secondaryDecision: 'approved',
     });
 
     expect(events.map((e) => e.id)).toEqual([
@@ -458,6 +461,30 @@ describe('buildGradeChangeEvents', () => {
     expect(cosign.actorLabel).toBe('Lhen Mendoza');
     expect(cosign.predicate).toBe(
       'co-signed the mark change for Samira Bakhtiari.'
+    );
+  });
+
+  // Final fix wave, F1: `decide.ts` (:196-202) blocks a secondary review only
+  // once the request is already rejected — a secondary reviewer who DECLINES
+  // after the primary APPROVED is fully legal, writes
+  // `secondary_decision='rejected'`, and leaves `status` at 'approved'. Before
+  // this fix the co-sign branch was unconditionally 'went-through', so a
+  // Gary-approves / Nina-declines pair rendered as a mint check reading
+  // "co-signed".
+  it('marks a secondary DECLINE as turned down, not co-signed', () => {
+    const events = buildGradeChangeEvents({
+      ...base,
+      viewerId: 'u-officer',
+      secondaryReviewedById: 'u-registrar',
+      secondaryReviewedByEmail: 'lhen.mendoza@hfse.edu.sg',
+      secondaryReviewedAt: '2026-08-27T02:30:00.000Z',
+      secondaryDecision: 'rejected',
+    });
+
+    const cosign = events.find((e) => e.id.endsWith(':reviewed:secondary'));
+    expect(cosign?.tone).toBe('turned-down');
+    expect(cosign?.predicate).toBe(
+      'turned down the mark change for Samira Bakhtiari.'
     );
   });
 
@@ -493,5 +520,40 @@ describe('sortEventsNewestFirst', () => {
     ]);
 
     expect(sorted.map((e) => e.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  // F5 — measured, not theoretical: PostgREST trims a zero fractional second,
+  // so the two ends of a genuine tie can arrive with different lengths.
+  // `'...:00+00:00'.localeCompare('...:00.5+00:00')` returns `1` (the SHORTER
+  // string reads as "greater" under locale-aware collation), which inverts
+  // the newest-first order; byte comparison (`<`/`>`) returns `-1`, correctly.
+  it('orders a mixed-precision pair correctly, where localeCompare inverts it', () => {
+    const mk = (id: string, t: string): ActivityEvent => ({
+      id,
+      flow: 'student_declaration',
+      requestId: id,
+      at: t,
+      tone: 'started',
+      actorLabel: 'Someone',
+      actorInitials: '—',
+      predicate: 'did something.',
+      details: null,
+      href: '/attendance/declarations',
+    });
+    const bare = '2026-08-27T02:00:00+00:00';
+    const fractional = '2026-08-27T02:00:00.5+00:00';
+
+    // The bug this guards, stated directly: localeCompare disagrees with
+    // byte order on exactly this pair.
+    expect(bare.localeCompare(fractional)).toBe(1);
+    expect(compareStringsAsc(bare, fractional)).toBe(-1);
+
+    const sorted = sortEventsNewestFirst([
+      mk('bare', bare),
+      mk('fractional', fractional),
+    ]);
+
+    // `fractional` is the later instant, so it must sort first (newest-first).
+    expect(sorted.map((e) => e.id)).toEqual(['fractional', 'bare']);
   });
 });
