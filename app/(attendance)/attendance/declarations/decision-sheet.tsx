@@ -249,10 +249,19 @@ function DecisionPanel({
         {/* ── The steps ────────────────────────────────────────────── */}
         <section className="space-y-3">
           <SectionLabel>Where this has got to</SectionLabel>
+          {/* ⚠ A rejection ENDS the ladder — every later step keeps status
+              'waiting' in the table forever. Rendered the same as a step that
+              is still coming, they read as "not yet" when the truth is
+              "never". */}
           <ol className="space-y-0">
             {(d.ladder?.stages ?? []).map((stage, index, all) => {
               const decided =
                 stage.status === 'approved' || stage.status === 'rejected';
+              const rejectedAt = all.find((s) => s.status === 'rejected');
+              const neverReached =
+                rejectedAt != null &&
+                stage.stageOrder > rejectedAt.stageOrder &&
+                !decided;
               const people = row.peopleByStageOrder[stage.stageOrder];
               return (
                 <li key={stage.stageOrder} className="flex gap-3">
@@ -268,7 +277,9 @@ function DecisionPanel({
                         stage.status === 'pending' &&
                           'bg-accent text-accent-foreground',
                         stage.status === 'waiting' &&
-                          'bg-muted text-muted-foreground'
+                          'bg-muted text-muted-foreground',
+                        neverReached &&
+                          'border border-dashed border-hairline-strong bg-card text-ink-5'
                       )}
                     >
                       {stage.status === 'approved' ? (
@@ -303,6 +314,11 @@ function DecisionPanel({
                       <p className="text-[13px] text-muted-foreground">
                         Whoever advises the class, including anyone covering it
                         this week.
+                      </p>
+                    ) : neverReached ? (
+                      <p className="text-[13px] text-muted-foreground">
+                        Never reached — the filing was turned down before this
+                        step.
                       </p>
                     ) : people ? (
                       <p className="text-[13px] text-muted-foreground">
