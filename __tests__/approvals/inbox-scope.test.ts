@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { listInboxStages } from '@/lib/approvals/inbox';
+import { listDecidedStages, listInboxStages } from '@/lib/approvals/inbox';
 
 /**
  * Who sees what in the declarations queue.
@@ -269,5 +269,281 @@ describe('listInboxStages — relief cover', () => {
       }
     );
     expect(row.canDecide).toBe(false);
+  });
+});
+
+/**
+ * What already happened.
+ *
+ * ⚠ THE GAP THIS CLOSES: a filing used to vanish the moment it was decided.
+ * The queue filtered to pending at the source, so an adviser who approved
+ * something was never told whether the officer agreed, and there was nowhere
+ * at all to look up a finished one.
+ */
+describe('listDecidedStages', () => {
+  type AnyStage = Record<string, unknown>;
+
+  const ladder = (
+    requestStatus: 'approved' | 'rejected',
+    stages: Array<{
+      order: number;
+      label: string;
+      status: string;
+      decidedBy?: string;
+      pool?: string[];
+      section?: string | null;
+    }>
+  ): AnyStage[] =>
+    stages.map((s) => ({
+      id: `stage-${s.order}`,
+      request_id: 'request-1',
+      stage_order: s.order,
+      label: s.label,
+      resolver: s.pool ? 'named' : 'form_adviser',
+      approver_pool: s.pool ?? [],
+      section_id: s.section === undefined ? SECTION_A : s.section,
+      status: s.status,
+      decided_by: s.decidedBy ?? null,
+      decided_by_email: s.decidedBy ? `${s.decidedBy}@hfse.edu.sg` : null,
+      decided_at: s.decidedBy ? '2026-09-05T02:00:00Z' : null,
+      approval_requests: {
+        subject_type: 'student_declaration',
+        subject_id: 'declaration-1',
+        status: requestStatus,
+        filed_by_email: 'parent@example.com',
+        created_at: '2026-09-01T00:00:00Z',
+      },
+    }));
+
+  const service = (
+    stages: AnyStage[],
+    captured: { orClauses: string[] } = { orClauses: [] }
+  ) =>
+    makeService({
+      assignments: [
+        {
+          section_id: SECTION_A,
+          teacher_user_id: ADVISER,
+          relief_teacher_user_id: null,
+          relief_started_on: null,
+          relief_ended_on: null,
+        },
+      ],
+      stages: stages as never,
+      captured,
+    });
+
+  it('represents a turned-down filing by the step that turned it down', async () => {
+    // ⚠ NOT the last step, and this fixture is built so the two differ. A
+    // rejection stops the ladder, so every step after it stays `waiting`
+    // forever — take the last row and a rejected filing reports as "not
+    // started", naming nobody. The adviser rejects at step 1 here precisely
+    // so that "last step" would give the wrong answer and fail this test.
+    const rows = await listDecidedStages(
+      service(
+        ladder('rejected', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'rejected',
+            decidedBy: ADVISER,
+          },
+          {
+            order: 2,
+            label: 'Officer in charge',
+            status: 'waiting',
+            pool: [OIC],
+            section: null,
+          },
+          {
+            order: 3,
+            label: 'Principal',
+            status: 'waiting',
+            pool: [OIC],
+            section: null,
+          },
+        ])
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('Form class adviser');
+    expect(rows[0].decidedBy).toBe(ADVISER);
+    expect(rows[0].requestStatus).toBe('rejected');
+  });
+
+  it('tells the adviser their approval was overturned, though they are not on that step', async () => {
+    // The reason this is a separate function rather than a flag on the inbox
+    // query: step 2 names neither the adviser nor their class, so scoping the
+    // history the way the queue is scoped would hide the outcome from exactly
+    // the person who acted on it.
+    const rows = await listDecidedStages(
+      service(
+        ladder('rejected', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+          {
+            order: 2,
+            label: 'Officer in charge',
+            status: 'rejected',
+            decidedBy: OIC,
+            pool: [OIC],
+            section: null,
+          },
+        ])
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].subjectId).toBe('declaration-1');
+  });
+
+  it('represents an approved filing by the approval that finished it', async () => {
+    const rows = await listDecidedStages(
+      service(
+        ladder('approved', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+          {
+            order: 2,
+            label: 'Officer in charge',
+            status: 'approved',
+            decidedBy: OIC,
+            pool: [OIC],
+            section: null,
+          },
+        ])
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows[0].label).toBe('Officer in charge');
+    expect(rows[0].decidedBy).toBe(OIC);
+  });
+
+  it('returns one row per filing, never one per step', async () => {
+    const rows = await listDecidedStages(
+      service(
+        ladder('approved', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+          {
+            order: 2,
+            label: 'Officer in charge',
+            status: 'approved',
+            decidedBy: OIC,
+            pool: [OIC],
+            section: null,
+          },
+        ])
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('never offers a finished filing as actionable', async () => {
+    // An Approve button on something already decided is the worst outcome
+    // here — it would 409 at best and re-decide at worst.
+    const rows = await listDecidedStages(
+      service(
+        ladder('approved', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+        ])
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows.every((r) => r.canDecide === false)).toBe(true);
+  });
+
+  it('scopes a teacher by pool AND by the classes they advise', async () => {
+    const captured = { orClauses: [] as string[] };
+    await listDecidedStages(
+      service(
+        ladder('approved', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+        ]),
+        captured
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: ADVISER,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(captured.orClauses).toHaveLength(1);
+    expect(captured.orClauses[0]).toContain(`approver_pool.cs.{${ADVISER}}`);
+    expect(captured.orClauses[0]).toContain(SECTION_A);
+  });
+
+  it('applies no ownership filter for an oversight role', async () => {
+    const captured = { orClauses: [] as string[] };
+    await listDecidedStages(
+      service(
+        ladder('approved', [
+          {
+            order: 1,
+            label: 'Form class adviser',
+            status: 'approved',
+            decidedBy: ADVISER,
+          },
+        ]),
+        captured
+      ),
+      {
+        flow: 'attendance.student_declaration',
+        userId: 'coordinator-1',
+        role: 'academic_coordinator',
+        today: TODAY,
+      }
+    );
+    expect(captured.orClauses).toEqual([]);
   });
 });

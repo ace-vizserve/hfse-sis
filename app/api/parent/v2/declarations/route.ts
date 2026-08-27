@@ -295,6 +295,13 @@ export async function POST(request: Request) {
     status: string;
   }>;
 
+  // ⚠ DECLARED HERE, ABOVE THE LADDER, AND NOT FURTHER DOWN. It used to sit
+  // just before the response, and the ladder block below read it from inside a
+  // `.map()` callback — which TypeScript cannot flag, because it cannot prove
+  // when a closure runs, so `tsc` passed and every filing 500'd at runtime with
+  // "Cannot access 'byStudentId' before initialization".
+  const byStudentId = new Map(resolved.map((s) => [s.studentId, s]));
+
   try {
     const ladders = await openDeclarationApprovals(
       service,
@@ -335,7 +342,6 @@ export async function POST(request: Request) {
   // migration 109 set for attendance `ex_note`. The audit row for a filing is
   // written by the approval flow, and carries `note_present` only.
 
-  const byStudentId = new Map(resolved.map((s) => [s.studentId, s]));
   return NextResponse.json(
     {
       filingGroupId,

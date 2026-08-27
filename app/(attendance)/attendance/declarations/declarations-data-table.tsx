@@ -26,6 +26,35 @@ import { formatDayRange, formatFiledAt } from './format';
 // from "already past you" from "not yet". Elsewhere in this codebase numbered
 // markers would be ornament; here they are the data.
 
+// One figure in the strip above the table. Mono eyebrow + serif number is the
+// §7.1 pairing the rest of the app uses for a labelled count; `tabular-nums`
+// keeps the row from shifting as the numbers change.
+function CountItem({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: number;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <dd
+        className={
+          'font-serif text-[20px] leading-none font-semibold tabular-nums ' +
+          (emphasis && value > 0 ? 'text-brand-indigo-deep' : 'text-foreground')
+        }
+      >
+        {value.toLocaleString('en-SG')}
+      </dd>
+      <dt className="font-mono text-[10px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+        {label}
+      </dt>
+    </div>
+  );
+}
+
 export type DeclarationQueueRow = {
   id: string;
   requestId: string;
@@ -42,6 +71,17 @@ export type DeclarationQueueRow = {
   stageCount: number;
   waitingOn: 'you' | 'someone else';
   canDecide: boolean;
+  /**
+   * How the whole filing ended. `pending` while it is still moving.
+   *
+   * ⚠ NOT the same as the step's own status. A turned-down filing's LAST step
+   * may read `waiting` forever — the request stopped before reaching it — so
+   * reading the step would call a rejected filing "not started".
+   */
+  outcome: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  /** Who ended it. Null while it is still moving. */
+  decidedByName: string | null;
+  decidedAt: string | null;
   filedAt: string;
   detail: StaffDeclarationView;
   /** Stage order → the people on it, already resolved to names server-side. */
@@ -52,11 +92,16 @@ export type DeclarationQueueRow = {
 
 export function DeclarationsQueueTable({
   rows,
-  forYou,
+  counts,
   openRequestId,
 }: {
   rows: DeclarationQueueRow[];
-  forYou: number;
+  counts: {
+    forYou: number;
+    waiting: number;
+    approved: number;
+    rejected: number;
+  };
   /**
    * A request to open on arrival, from `?req=` — how the notification bell
    * hands somebody straight to the filing it told them about.
@@ -176,8 +221,51 @@ export function DeclarationsQueueTable({
       accessorKey: 'waitingOn',
       header: 'Yours?',
       meta: { label: 'Yours to decide' },
-      cell: ({ row }) =>
-        row.original.canDecide ? (
+      // ⚠ ONE COLUMN, TWO MEANINGS, decided by whether the filing is finished.
+      // A finished row has nothing to be "yours to decide" about; what somebody
+      // wants from it is how it ended and who ended it. Splitting these into
+      // two columns would leave each one blank half the time.
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.outcome === 'approved') {
+          return (
+            <div className="min-w-0">
+              <Badge className="h-6 border-brand-mint bg-brand-mint/30 text-ink">
+                Approved
+              </Badge>
+              {r.decidedByName && (
+                <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                  by {r.decidedByName}
+                </p>
+              )}
+            </div>
+          );
+        }
+        if (r.outcome === 'cancelled') {
+          // Nothing produces this today — no screen withdraws a filing. It is
+          // in the status list, so it is rendered rather than silently falling
+          // through to "With someone else", which would be a lie.
+          return (
+            <Badge variant="secondary" className="h-6">
+              Withdrawn
+            </Badge>
+          );
+        }
+        if (r.outcome === 'rejected') {
+          return (
+            <div className="min-w-0">
+              <Badge className="h-6 border-destructive/40 bg-destructive/10 text-destructive">
+                Not approved
+              </Badge>
+              {r.decidedByName && (
+                <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                  by {r.decidedByName}
+                </p>
+              )}
+            </div>
+          );
+        }
+        return r.canDecide ? (
           // §9.3 healthy recipe — this is the row you can move forward.
           <Badge className="h-6 border-brand-mint bg-brand-mint/30 text-ink">
             Yours to decide
@@ -186,7 +274,8 @@ export function DeclarationsQueueTable({
           <Badge variant="secondary" className="h-6">
             With someone else
           </Badge>
-        ),
+        );
+      },
     },
     {
       accessorKey: 'filedAt',
@@ -215,7 +304,11 @@ export function DeclarationsQueueTable({
             size="sm"
             onClick={() => setOpenRow(row.original)}
           >
-            {row.original.canDecide ? 'Read and decide' : 'Read'}
+            {row.original.canDecide
+              ? 'Read and decide'
+              : row.original.outcome === 'pending'
+                ? 'Read'
+                : 'View history'}
           </Button>
         </div>
       ),
@@ -224,6 +317,19 @@ export function DeclarationsQueueTable({
 
   return (
     <>
+      {/* What this page holds, before you touch a filter. The tab strip says
+          which slice you are looking at; this says how big the whole thing is.
+          Hidden when there is nothing at all — a row of zeroes above an empty
+          state says the same thing twice. */}
+      {rows.length > 0 && (
+        <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-muted/30 px-5 py-3">
+          <CountItem label="Waiting for you" value={counts.forYou} emphasis />
+          <CountItem label="Waiting in total" value={counts.waiting} />
+          <CountItem label="Approved" value={counts.approved} />
+          <CountItem label="Not approved" value={counts.rejected} />
+        </dl>
+      )}
+
       <DataTable
         data={rows}
         columns={columns}
@@ -235,13 +341,23 @@ export function DeclarationsQueueTable({
             value: 'yours',
             label: 'Yours to decide',
             predicate: (row) => row.canDecide,
-            isDefault: forYou > 0,
+            isDefault: counts.forYou > 0,
           },
           {
-            value: 'all',
+            value: 'waiting',
             label: 'Everything waiting',
-            predicate: () => true,
-            isDefault: forYou === 0,
+            predicate: (row) => row.outcome === 'pending',
+            isDefault: counts.forYou === 0 && counts.waiting > 0,
+          },
+          {
+            // ⚠ The history tab, and the reason it exists: before this, a
+            // filing vanished the moment it was decided and there was nowhere
+            // to see what had happened to it. An adviser who approved
+            // something was never told whether the officer agreed.
+            value: 'decided',
+            label: 'Decided',
+            predicate: (row) => row.outcome !== 'pending',
+            isDefault: counts.forYou === 0 && counts.waiting === 0,
           },
         ]}
         facets={[
@@ -251,12 +367,12 @@ export function DeclarationsQueueTable({
         initialSort={[{ id: 'filedAt', desc: false }]}
         emptyState={{
           icon: Inbox,
-          title: 'Nothing waiting',
-          body: 'When a parent tells the school a child will be away, it will appear here for you to approve.',
+          title: 'Nothing here yet',
+          body: 'When a parent tells the school a child will be away, it will appear here for you to approve — and it stays on the Decided tab once it has been settled.',
         }}
         emptyFilteredState={{
           title: 'Nothing matches that',
-          body: 'Clear the filters to see everything waiting.',
+          body: 'Clear the filters to see everything again.',
         }}
         csv={{ filename: 'declarations' }}
       />

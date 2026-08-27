@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
-import { listInboxStages } from '@/lib/approvals/inbox';
+import { listDecidedStages, listInboxStages } from '@/lib/approvals/inbox';
 import { loadStaffDeclarations } from '@/lib/declarations/staff';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
 import { PageShell } from '@/components/ui/page-shell';
@@ -58,22 +58,37 @@ export default async function DeclarationsQueuePage({
   // ⚠ ONE scope helper, not a predicate written out here. See
   // lib/approvals/inbox.ts — the other flow's predicate is copy-pasted into six
   // files and three of them already disagree.
-  const stages = await listInboxStages(service, {
+  // ⚠ TWO READS, NOT ONE WIDENED READ. "What is waiting for me" and "what
+  // happened to the things I was part of" are genuinely different questions —
+  // see `listDecidedStages` for the rejection case that makes a single scoped
+  // query give the wrong answer to the second one.
+  const scope = {
     flow: DECLARATION_APPROVAL_FLOW,
     userId: sessionUser.id,
     role,
-  });
+  };
+  const [stages, decided] = await Promise.all([
+    listInboxStages(service, scope),
+    listDecidedStages(service, scope),
+  ]);
+  const allStages = [...stages, ...decided];
 
   const [declarations, staffNames] = await Promise.all([
     loadStaffDeclarations(
       service,
-      stages.map((s) => s.subjectId)
+      allStages.map((s) => s.subjectId)
     ),
     getStaffDisplayNameById(),
   ]);
 
   const nameById = new Map(staffNames);
-  const stageBySubject = new Map(stages.map((s) => [s.subjectId, s]));
+  // ⚠ Waiting wins over decided if a subject somehow appears in both. It
+  // cannot today — a request is pending or finished, never both — but if it
+  // ever did, showing the actionable row is the safe way to be wrong.
+  const stageBySubject = new Map([
+    ...decided.map((s) => [s.subjectId, s] as const),
+    ...stages.map((s) => [s.subjectId, s] as const),
+  ]);
 
   const rows: DeclarationQueueRow[] = declarations
     .map((declaration) => {
@@ -96,6 +111,17 @@ export default async function DeclarationsQueuePage({
         stageCount: ladder?.stages.length ?? stage.stageOrder,
         waitingOn: stage.canDecide ? 'you' : 'someone else',
         canDecide: stage.canDecide,
+        // How it ended — 'pending' while it is still moving. This is what the
+        // history tab reads, and what stops a finished filing being offered
+        // an Approve button.
+        outcome: stage.requestStatus,
+        // Resolved to a person on the server, like the pools above — a uuid on
+        // screen tells nobody anything. Falls back to the email captured at
+        // decision time if the account has since been removed.
+        decidedByName: stage.decidedBy
+          ? (nameById.get(stage.decidedBy) ?? stage.decidedByEmail ?? 'Someone')
+          : null,
+        decidedAt: stage.decidedAt,
         filedAt: declaration.filedAt,
         detail: declaration,
         // Resolve the frozen uuids to people once, on the server. A pool of
@@ -123,6 +149,12 @@ export default async function DeclarationsQueuePage({
     .filter((r): r is DeclarationQueueRow => r !== null);
 
   const forYou = rows.filter((r) => r.canDecide).length;
+  const counts = {
+    forYou,
+    waiting: rows.filter((r) => r.outcome === 'pending').length,
+    approved: rows.filter((r) => r.outcome === 'approved').length,
+    rejected: rows.filter((r) => r.outcome === 'rejected').length,
+  };
 
   return (
     <PageShell>
@@ -145,7 +177,7 @@ export default async function DeclarationsQueuePage({
           from `rows`, which is already scoped to what this person may see. A
           request id they have no business with simply matches nothing and the
           page opens as normal. */}
-      <DeclarationsQueueTable rows={rows} forYou={forYou} openRequestId={req} />
+      <DeclarationsQueueTable rows={rows} counts={counts} openRequestId={req} />
     </PageShell>
   );
 }

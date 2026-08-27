@@ -51,6 +51,13 @@ export type InboxStage = {
   sectionId: string | null;
   approverPool: string[];
   /**
+   * Who ended it, and when. Null while it is still moving — a stage waiting on
+   * somebody has nobody to name yet.
+   */
+  decidedBy: string | null;
+  decidedByEmail: string | null;
+  decidedAt: string | null;
+  /**
    * Whether THIS viewer may decide it, as opposed to merely see it.
    *
    * ⚠ The two are different and the difference shapes the screen. An academic
@@ -161,6 +168,10 @@ export async function listInboxStages(
       status: row.status,
       sectionId: row.section_id,
       approverPool: pool,
+      // A pending stage is by definition undecided.
+      decidedBy: null,
+      decidedByEmail: null,
+      decidedAt: null,
       canDecide,
     };
   });
@@ -173,6 +184,153 @@ export async function countInboxActionable(
 ): Promise<number> {
   const rows = await listInboxStages(service, scope);
   return rows.filter((r) => r.canDecide).length;
+}
+
+// ── What already happened ──────────────────────────────────────────────────
+
+/**
+ * Requests on this flow that have FINISHED — approved, or turned down.
+ *
+ * ⚠ A SIBLING OF `listInboxStages`, NOT A FLAG ON IT, and the reason is the
+ * rejection case. That function scopes a person to the stages that name them,
+ * which is right for "what is waiting for me". It is wrong for history: if an
+ * adviser approves step 1 and the officer turns the filing down at step 2, the
+ * adviser is in NEITHER step 2's pool nor its section, so a flag on the same
+ * query would hide the outcome from the one person who most needs it. Right
+ * now nothing tells an adviser what happened to something they approved.
+ *
+ * So involvement is judged across the WHOLE ladder — you were on any step of
+ * it — and the row returned represents the request's OUTCOME.
+ *
+ * ⚠ THE COUNTS MUST NOT COME THROUGH HERE. The sidebar badge, the "Waiting for
+ * you" panel and the notification bell all mean "there is work for you"; a
+ * number that included last term's approvals would be a to-do list that never
+ * reaches zero. Those keep calling `countInboxActionable`.
+ */
+export async function listDecidedStages(
+  service: SupabaseClient,
+  scope: InboxScope
+): Promise<InboxStage[]> {
+  const today = scope.today ?? sgToday();
+  const isOversight = scope.role != null && OVERSIGHT_ROLES.has(scope.role);
+
+  const advisedSectionIds = await loadAdvisedSectionIds(
+    service,
+    scope.userId,
+    today
+  );
+
+  // ── Which finished requests was this person part of? ─────────────────────
+  let involvement = service
+    .from('approval_request_stages')
+    .select('request_id, approval_requests!inner(flow, status)')
+    .eq('approval_requests.flow', scope.flow)
+    .in('approval_requests.status', ['approved', 'rejected']);
+
+  if (!isOversight) {
+    // Any step that names them, whatever that step's own outcome — this is the
+    // whole point of the function.
+    const arms = [`approver_pool.cs.{${scope.userId}}`];
+    if (advisedSectionIds.length > 0) {
+      arms.push(`section_id.in.(${advisedSectionIds.join(',')})`);
+    }
+    involvement = involvement.or(arms.join(','));
+  }
+
+  const { data: involvedRows, error: involvedErr } = await involvement;
+  if (involvedErr) throw new Error(involvedErr.message);
+
+  const requestIds = [
+    ...new Set(
+      ((involvedRows ?? []) as unknown as Array<{ request_id: string }>).map(
+        (r) => r.request_id
+      )
+    ),
+  ];
+  if (requestIds.length === 0) return [];
+
+  // ── The whole ladder for those requests, so the outcome can be found ─────
+  const { data, error } = await service
+    .from('approval_request_stages')
+    .select(
+      `id, request_id, stage_order, label, resolver, approver_pool, section_id, status,
+       decided_by, decided_by_email, decided_at,
+       approval_requests!inner(id, flow, subject_type, subject_id, status, filed_by_email, created_at)`
+    )
+    .in('request_id', requestIds)
+    .order('stage_order', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  type EmbeddedRequest = {
+    subject_type: string;
+    subject_id: string;
+    status: ApprovalRequestStatus;
+    filed_by_email: string;
+    created_at: string;
+  };
+  type Row = {
+    id: string;
+    request_id: string;
+    stage_order: number;
+    label: string;
+    resolver: ApprovalResolver;
+    approver_pool: string[] | null;
+    section_id: string | null;
+    status: ApprovalStageStatus;
+    decided_by: string | null;
+    decided_by_email: string | null;
+    decided_at: string | null;
+    approval_requests: EmbeddedRequest | EmbeddedRequest[];
+  };
+
+  const byRequest = new Map<string, Row[]>();
+  for (const row of (data ?? []) as unknown as Row[]) {
+    const list = byRequest.get(row.request_id) ?? [];
+    list.push(row);
+    byRequest.set(row.request_id, list);
+  }
+
+  const out: InboxStage[] = [];
+  for (const [, stages] of byRequest) {
+    const first = stages[0];
+    const req = Array.isArray(first.approval_requests)
+      ? first.approval_requests[0]
+      : first.approval_requests;
+    if (!req) continue;
+
+    // ⚠ ONE ROW PER REQUEST, representing HOW IT ENDED. A turned-down filing is
+    // represented by the step that turned it down — that is the step carrying
+    // the name and the reason somebody will want. An approved one is
+    // represented by its LAST approval, which is the moment it became final.
+    const representative =
+      req.status === 'rejected'
+        ? stages.find((s) => s.status === 'rejected')
+        : [...stages].reverse().find((s) => s.status === 'approved');
+    const stage = representative ?? stages[stages.length - 1];
+
+    out.push({
+      requestId: stage.request_id,
+      subjectType: req.subject_type,
+      subjectId: req.subject_id,
+      requestStatus: req.status,
+      filedByEmail: req.filed_by_email,
+      filedAt: req.created_at,
+      stageId: stage.id,
+      stageOrder: stage.stage_order,
+      label: stage.label,
+      resolver: stage.resolver,
+      status: stage.status,
+      sectionId: stage.section_id,
+      approverPool: stage.approver_pool ?? [],
+      decidedBy: stage.decided_by,
+      decidedByEmail: stage.decided_by_email,
+      decidedAt: stage.decided_at,
+      // Nothing here is actionable — it is already decided. Saying otherwise
+      // would put an Approve button on a finished filing.
+      canDecide: false,
+    });
+  }
+  return out;
 }
 
 // ── Reading a whole ladder, for display ────────────────────────────────────
