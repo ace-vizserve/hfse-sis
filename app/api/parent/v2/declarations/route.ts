@@ -16,6 +16,12 @@ import {
   type LinkedStudent,
 } from '@/lib/declarations/parent';
 import { openDeclarationApprovals } from '@/lib/declarations/approval';
+import {
+  alreadyFiledMessage,
+  filingCoversAnySchoolDay,
+  findOverlappingFilings,
+  NO_SCHOOL_DAY_MESSAGE,
+} from '@/lib/declarations/filing-window';
 
 // Student Absence and Travel Declaration — the parent's own endpoints.
 //
@@ -213,6 +219,85 @@ export async function POST(request: Request) {
   }
 
   const service = createServiceClient();
+
+  // ── Is the school even open on those dates? ──────────────────────────────
+  //
+  // The schema checks the dates against each other and against today; only the
+  // calendar knows the school is shut. A filing covering ONLY closed days
+  // marks nothing and approves nothing, so it is refused here rather than
+  // travelling through two approvers to prove it.
+  //
+  // ⚠ Refused only when NO selected child has a school day in the range —
+  // never merely because the range contains one. See `filingCoversAnySchoolDay`.
+  //
+  // ⚠ A calendar failure must not become a refusal. If this lookup throws, the
+  // parent is let through: a filing on a closed day is a small mess somebody
+  // can see and fix, while turning a parent away over our own outage is a wall
+  // they cannot get past and will not understand.
+  try {
+    const opensSomeDay = await filingCoversAnySchoolDay(service, {
+      startDate: input.startDate,
+      endDate: input.endDate,
+      children: resolved.map((s) => ({
+        academicYearId: s.academicYearId,
+        levelType: s.levelType,
+      })),
+    });
+    if (!opensSomeDay) {
+      return NextResponse.json(
+        { error: NO_SCHOOL_DAY_MESSAGE },
+        { status: 400, headers: cors }
+      );
+    }
+  } catch (e) {
+    console.error(
+      '[declarations] school-day check failed; letting the filing through:',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  // ── Have these days already been filed for? ──────────────────────────────
+  //
+  // The unique index catches ONE parent re-submitting the exact same dates and
+  // the route below turns that into a success. It cannot catch the OTHER
+  // parent filing the same absence, nor an overlapping range — see
+  // `findOverlappingFilings`. Both produce two approval ladders and two
+  // register writes for one illness.
+  //
+  // ⚠ Told, not silently merged. The parent asked for dates that are not the
+  // same as the ones on record, so answering with the existing filing would be
+  // answering a different question; and a filing they cannot see the outcome
+  // of is the failure shape this whole feature exists to avoid.
+  //
+  // ⚠ Same posture as above on failure: a lookup that throws must not turn
+  // into a refusal.
+  try {
+    const clashes = await findOverlappingFilings(service, {
+      startDate: input.startDate,
+      endDate: input.endDate,
+      children: resolved.map((s) => ({
+        studentId: s.studentId,
+        studentName: s.displayName,
+      })),
+    });
+    if (clashes.length > 0) {
+      const first = clashes[0];
+      return NextResponse.json(
+        {
+          error: alreadyFiledMessage(first),
+          alreadyFiled: true,
+          overlapping: clashes,
+        },
+        { status: 409, headers: cors }
+      );
+    }
+  } catch (e) {
+    console.error(
+      '[declarations] duplicate check failed; letting the filing through:',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
   const filingGroupId = randomUUID();
   const now = new Date().toISOString();
 
