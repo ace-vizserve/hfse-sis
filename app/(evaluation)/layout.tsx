@@ -15,6 +15,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -49,11 +50,10 @@ export default async function EvaluationLayout({
   );
 
   const service = createServiceClient();
-  const changeRequestCount = await getSidebarChangeRequestCount(
-    service,
-    role,
-    id
-  );
+  const [changeRequestCount, declarationCount] = await Promise.all([
+    getSidebarChangeRequestCount(service, role, id),
+    getDeclarationWaitingCount(service, role, id),
+  ]);
 
   // Hide switcher tiles this teacher can never use (subject-teacher-only
   // users have no Attendance or Evaluation work). No-op for every other role.
@@ -80,6 +80,7 @@ export default async function EvaluationLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

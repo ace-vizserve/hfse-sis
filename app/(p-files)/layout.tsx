@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
@@ -59,6 +60,10 @@ export default async function PFilesLayout({
       ? await getSidebarChangeRequestCount(service, role, id)
       : null;
 
+  // Not gated on role: being an approver is decided by being ON a step, not by
+  // holding a role, so the count answers that itself and returns 0 otherwise.
+  const declarationCount = await getDeclarationWaitingCount(service, role, id);
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <ModuleSidebar
@@ -80,6 +85,7 @@ export default async function PFilesLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

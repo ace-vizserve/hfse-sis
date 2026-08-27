@@ -6,12 +6,19 @@ import { useRouter } from 'next/navigation';
 import type { Role, SidebarBadgeKey, SidebarBadges } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/client';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
+import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
 
 // Generalized realtime sidebar badge hook, returning merged live counts for
 // the badges present in `initial`.
 //
-// Supersedes the older markbook-only `useRealtimeBadgeCount` hook. Two
-// badges are wired today, each following a different pattern:
+// Supersedes the older markbook-only `useRealtimeBadgeCount` hook. Three
+// badges are wired today, following two patterns:
+//
+//   - `declarations` delegates to `useDeclarationCount`, the same shape as
+//     `changeRequests` below but with NO per-role scope SQL of its own: RLS
+//     (migration 129) admits only the steps the reader can act on, so the
+//     scope lives in one place instead of being restated in the browser.
+//
 //   - `changeRequests` delegates entirely to the extracted
 //     `useChangeRequestCount` hook (lib/sidebar/use-change-request-count.ts)
 //     — pulled out of this file so both this sidebar badge AND the header
@@ -82,6 +89,20 @@ export function useRealtimeBadges(
         : { ...prev, changeRequests: liveChangeRequestCount }
     );
   }, [liveChangeRequestCount]);
+
+  const liveDeclarationCount = useDeclarationCount(
+    userId,
+    initial.declarations ?? null
+  );
+
+  useEffect(() => {
+    if (liveDeclarationCount == null) return;
+    setBadges((prev) =>
+      prev.declarations === liveDeclarationCount
+        ? prev
+        : { ...prev, declarations: liveDeclarationCount }
+    );
+  }, [liveDeclarationCount]);
 
   // pfileAwaitingVerification — SSR-rendered badge; realtime channel fires
   // router.refresh() on document-related audit_log INSERTs so the layout

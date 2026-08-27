@@ -15,8 +15,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
+import type { SidebarBadges } from '@/lib/auth/roles';
 
 export default async function AttendanceLayout({
   children,
@@ -49,11 +51,14 @@ export default async function AttendanceLayout({
   );
 
   const service = createServiceClient();
-  const changeRequestCount = await getSidebarChangeRequestCount(
-    service,
-    role,
-    id
-  );
+  const [changeRequestCount, declarationCount] = await Promise.all([
+    getSidebarChangeRequestCount(service, role, id),
+    getDeclarationWaitingCount(service, role, id),
+  ]);
+
+  // The Declarations nav item carries the same number the bell adds in — how
+  // many are waiting for this person, not how many exist.
+  const sidebarBadges: SidebarBadges = { declarations: declarationCount };
 
   // Hide switcher tiles this teacher can never use (subject-teacher-only
   // users have no Attendance or Evaluation work). No-op for every other role.
@@ -67,6 +72,7 @@ export default async function AttendanceLayout({
         email={email}
         userId={id}
         hiddenModules={hiddenModules}
+        badges={sidebarBadges}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
       />
@@ -80,6 +86,7 @@ export default async function AttendanceLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

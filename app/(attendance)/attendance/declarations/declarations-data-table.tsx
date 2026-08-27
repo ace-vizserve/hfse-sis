@@ -53,11 +53,23 @@ export type DeclarationQueueRow = {
 export function DeclarationsQueueTable({
   rows,
   forYou,
+  openRequestId,
 }: {
   rows: DeclarationQueueRow[];
   forYou: number;
+  /**
+   * A request to open on arrival, from `?req=` — how the notification bell
+   * hands somebody straight to the filing it told them about.
+   *
+   * ⚠ Held as state seeded once, not read on every render. Reading the URL
+   * each time would re-open the sheet the moment the reader closed it, since
+   * the query string is still there.
+   */
+  openRequestId?: string;
 }) {
-  const [openRow, setOpenRow] = useState<DeclarationQueueRow | null>(null);
+  const [openRow, setOpenRow] = useState<DeclarationQueueRow | null>(
+    () => rows.find((r) => r.requestId === openRequestId) ?? null
+  );
 
   const columns: ColumnDef<DeclarationQueueRow>[] = [
     {

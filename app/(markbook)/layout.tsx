@@ -15,6 +15,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -42,9 +43,16 @@ export default async function MarkbookLayout({
   );
 
   const service = createServiceClient();
-  const sidebarBadges: SidebarBadges = {
-    changeRequests: await getSidebarChangeRequestCount(service, role, id),
-  };
+  const [changeRequests, declarationCount] = await Promise.all([
+    getSidebarChangeRequestCount(service, role, id),
+    getDeclarationWaitingCount(service, role, id),
+  ]);
+  // ⚠ `declarations` is NOT put on the badges here. The Declarations nav item
+  // lives in the Attendance sidebar, not this one — Markbook has no row for it
+  // to hang off. The count still reaches the header bell below, which is the
+  // point: an absence waiting for you should tap you on the shoulder wherever
+  // you are in the app.
+  const sidebarBadges: SidebarBadges = { changeRequests };
 
   // Hide switcher tiles this teacher can never use (subject-teacher-only
   // users have no Attendance or Evaluation work). No-op for every other role.
@@ -72,6 +80,7 @@ export default async function MarkbookLayout({
                 role={role}
                 userId={id}
                 initialCount={sidebarBadges.changeRequests ?? null}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

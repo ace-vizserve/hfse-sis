@@ -19,6 +19,7 @@ import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import type { SidebarModule } from '@/lib/sidebar/registry';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -116,6 +117,12 @@ export default async function AdmissionsLayout({
       ? await getSidebarChangeRequestCount(service, role, id)
       : null;
 
+  // ⚠ Not gated on role, unlike the count above. Whether somebody approves a
+  // declaration is decided by whether they are ON a step — a form class adviser
+  // holds a plain `teacher` account and the officer in charge does too — so the
+  // count answers that itself and returns 0 for everybody else.
+  const declarationCount = await getDeclarationWaitingCount(service, role, id);
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <ModuleSidebar
@@ -137,6 +144,7 @@ export default async function AdmissionsLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

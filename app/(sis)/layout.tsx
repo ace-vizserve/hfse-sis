@@ -18,6 +18,7 @@ import { getStaffCount } from '@/lib/auth/staff-list';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSectionsCount } from '@/lib/sis/sidebar-counts';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -103,6 +104,10 @@ export default async function SisLayout({
       ? await getSidebarChangeRequestCount(service, role, id)
       : null;
 
+  // Not gated on role: being an approver is decided by being ON a step, not by
+  // holding a role, so the count answers that itself and returns 0 otherwise.
+  const declarationCount = await getDeclarationWaitingCount(service, role, id);
+
   const sidebarCounts: SidebarCounts = {};
   if (readiness) {
     sidebarCounts.aySetupReadiness = `${readiness.complete}/${readiness.total}`;
@@ -135,6 +140,7 @@ export default async function SisLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

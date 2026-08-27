@@ -1,6 +1,6 @@
 // scripts/verify-approval-migrations.ts
 //
-// Checks that migrations 126 and 127 actually landed, against a live database.
+// Checks that migrations 126 to 129 actually landed, against a live database.
 //
 // STRICTLY READ-ONLY. Every statement below is a SELECT or a deliberately
 // failing call; nothing is written, so it is safe to point at production.
@@ -92,6 +92,91 @@ async function main() {
     wrapper.error
       ? `call failed: ${wrapper.error.message}`
       : `answered ${String(wrapper.data)}`
+  );
+
+  // ── 128 · the school-half columns landed ────────────────────────────────
+  //
+  // Selecting a column that does not exist is a PostgREST error, so asking for
+  // it IS the check. Both columns matter and they fail differently: without
+  // the first, every officer approves every half; without the second, a filing
+  // already waiting can never be re-pointed and stalls forever.
+  const scopeCol = await service
+    .from('approval_stage_approvers')
+    .select('applies_to_level_type')
+    .limit(1);
+  record(
+    '128 · approval_stage_approvers.applies_to_level_type exists',
+    !scopeCol.error,
+    scopeCol.error
+      ? `read failed: ${scopeCol.error.message}`
+      : 'readable — an officer can be limited to one half of the school'
+  );
+
+  const ladderCol = await service
+    .from('approval_request_stages')
+    .select('level_type')
+    .limit(1);
+  record(
+    '128 · approval_request_stages.level_type exists',
+    !ladderCol.error,
+    ladderCol.error
+      ? `read failed: ${ladderCol.error.message}`
+      : 'readable — a waiting request can be re-pointed when the officer changes'
+  );
+
+  // ⚠ AND THE LIVE ROWS, WHICH ARE THE ACTUAL BUG. The columns existing means
+  // nothing on their own: the two officers were seeded UNTAGGED, and until
+  // somebody sets them on /sis/admin/approvers each of them can still approve
+  // the other half of the school's children.
+  const officers = await service
+    .from('approval_stage_approvers')
+    .select(
+      'user_id, applies_to_level_type, approval_stages!inner(flow, label)'
+    )
+    .eq('approval_stages.flow', 'attendance.student_declaration');
+  if (officers.error) {
+    record(
+      '128 · the officers are split by half',
+      false,
+      `could not read the steps: ${officers.error.message}`
+    );
+  } else {
+    const rows = (officers.data ?? []) as unknown as Array<{
+      applies_to_level_type: string | null;
+    }>;
+    const untagged = rows.filter((r) => r.applies_to_level_type === null);
+    const halves = new Set(
+      rows.map((r) => r.applies_to_level_type).filter(Boolean)
+    );
+    record(
+      '128 · the officers are split by half',
+      rows.length > 0 && untagged.length === 0 && halves.size >= 2,
+      rows.length === 0
+        ? 'nobody is named to a named step yet'
+        : untagged.length > 0
+          ? `${untagged.length} approver(s) still cover EVERY child — each can approve the other half's children`
+          : `covers: ${[...halves].join(', ')}`
+    );
+  }
+
+  // ── 129 · the browser can see its own waiting work ──────────────────────
+  //
+  // Service-role cannot prove this — it bypasses RLS. What it CAN prove is
+  // that the policy exists at all, which is the difference between the bell
+  // counting and the bell being permanently zero.
+  const policyProbe = await service
+    .rpc('is_adviser_for_section', { p_section_id: ZERO_UUID })
+    .then(
+      () => ({ ok: true, detail: 'adviser helper still granted' }),
+      (e: unknown) => ({
+        ok: false,
+        detail: e instanceof Error ? e.message : String(e),
+      })
+    );
+  record(
+    '129 · the adviser helper the read policy calls is still callable',
+    policyProbe.ok,
+    policyProbe.detail
   );
 
   // ── 127 · the RPC exists and refuses a request that is not there ────────

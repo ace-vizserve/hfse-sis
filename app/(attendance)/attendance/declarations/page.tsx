@@ -33,7 +33,14 @@ import {
 
 export const metadata = { title: 'Declarations · Attendance' };
 
-export default async function DeclarationsQueuePage() {
+export default async function DeclarationsQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ req?: string }>;
+}) {
+  // `?req=` opens one filing straight away — where the notification bell sends
+  // somebody who clicked the thing it told them about.
+  const { req } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const { role } = sessionUser;
@@ -134,7 +141,11 @@ export default async function DeclarationsQueuePage() {
         </div>
       </header>
 
-      <DeclarationsQueueTable rows={rows} forYou={forYou} />
+      {/* ⚠ `req` is passed through UNVALIDATED on purpose: it only ever selects
+          from `rows`, which is already scoped to what this person may see. A
+          request id they have no business with simply matches nothing and the
+          page opens as normal. */}
+      <DeclarationsQueueTable rows={rows} forYou={forYou} openRequestId={req} />
     </PageShell>
   );
 }

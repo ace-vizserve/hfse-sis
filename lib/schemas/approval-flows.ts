@@ -22,6 +22,19 @@ export const STAGED_APPROVAL_FLOWS = [
 ] as const;
 export type StagedApprovalFlow = (typeof STAGED_APPROVAL_FLOWS)[number];
 
+/**
+ * The absence-and-travel flow, named once.
+ *
+ * ⚠ Lives HERE rather than in `lib/declarations/approval.ts`, which is where
+ * it used to be defined, because the sidebar badge and the notification bell
+ * are client components: importing it from there would pull the whole
+ * materialise/open-a-request module into the browser bundle to read one
+ * string. `lib/declarations/approval.ts` re-exports this, so every existing
+ * importer keeps working and there is still exactly one definition.
+ */
+export const DECLARATION_APPROVAL_FLOW: StagedApprovalFlow =
+  'attendance.student_declaration';
+
 export const STAGED_FLOW_LABELS: Record<StagedApprovalFlow, string> = {
   'attendance.student_declaration':
     'Attendance · Absence and travel declarations',

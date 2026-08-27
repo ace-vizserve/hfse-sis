@@ -13,6 +13,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Role } from '@/lib/auth/roles';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
+import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 
@@ -31,6 +32,29 @@ type PreviewRow = {
   student_label: string | null;
   sheet_label: string | null;
 };
+
+/**
+ * A declaration waiting for this person — the second source the bell carries.
+ *
+ * ⚠ Deliberately NOT reshaped into `PreviewRow`. A grade change is "a field, on
+ * a sheet, for a student"; an absence is "these days, for this child". Forcing
+ * one into the other's shape would put a `field_changed` on a row that has no
+ * field, and the reader would have to work out which kind they were looking at.
+ * Two shapes, one list, each row saying what it is.
+ */
+type DeclarationPreviewRow = {
+  id: string;
+  request_id: string;
+  student_label: string | null;
+  kind: 'absence' | 'travel';
+  start_date: string;
+  end_date: string;
+  filed_at: string;
+};
+
+type MergedRow =
+  | { source: 'change_request'; at: string; row: PreviewRow }
+  | { source: 'declaration'; at: string; row: DeclarationPreviewRow };
 
 function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -54,6 +78,14 @@ function previewRowHref(role: Role, id: string): string {
   return `/markbook/change-requests?req=${id}`;
 }
 
+// A declaration goes to one place for everybody. Unlike the change-request
+// queue above, `/attendance/declarations` is not role-split: the people who act
+// on these are form class advisers, so the module's own audience is the
+// audience, and the page opens the filing named by `?req=`.
+function declarationRowHref(requestId: string): string {
+  return `/attendance/declarations?req=${requestId}`;
+}
+
 // Initials from a "Last, First (STU-001)" student_label — same 2-letter
 // gradient-circle convention as the sidebar profile pill
 // (components/module-sidebar/sidebar-profile.tsx::deriveInitials), adapted
@@ -73,19 +105,42 @@ type NotificationBellProps = {
   role: Role | null;
   userId: string;
   initialCount: number | null;
+  /**
+   * Absence and travel declarations waiting for this person to decide.
+   *
+   * Optional so a layout that has not been taught to seed it keeps working —
+   * it simply contributes nothing rather than throwing.
+   */
+  initialDeclarationCount?: number | null;
 };
 
 // Surfaces the changeRequests realtime signal outside Markbook's own
 // sidebar (KD #41/#88 approvers) — see
 // docs/superpowers/specs/2026-07-28-cross-module-notification-bell-design.md.
 // Mounted in every module layout's header, next to <SidebarTrigger>.
+//
+// ⚠ TWO SOURCES SINCE 2026-08-27, and the bell had been single-source at every
+// layer: one count hook, one preview endpoint, one row destination. Mr Ace:
+// "the whole UI flow is the same as grade change request" — an absence sitting
+// with its approver has to tap them on the shoulder the way a grade change
+// does, or the only way to find out is to go and look.
 export function NotificationBell({
   role,
   userId,
   initialCount,
+  initialDeclarationCount = null,
 }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
-  const count = useChangeRequestCount(role, userId, initialCount);
+  const changeRequestCount = useChangeRequestCount(role, userId, initialCount);
+  const declarationCount = useDeclarationCount(userId, initialDeclarationCount);
+
+  // ⚠ `null` means "not tracked", which is not the same as zero — treating it
+  // as zero would render a confident "0 pending" for somebody whose count
+  // simply never loaded. If neither source is tracked the badge stays hidden.
+  const count =
+    changeRequestCount == null && declarationCount == null
+      ? null
+      : (changeRequestCount ?? 0) + (declarationCount ?? 0);
 
   if (!role || !GATE_ROLES.includes(role)) return null;
 
@@ -147,11 +202,40 @@ function NotificationPreviewPanel({
   const previewQuery = useQuery({
     queryKey: queryKeys.changeRequestPreview(),
     queryFn: async ({ signal }) => {
-      const json = await apiFetch<{ rows: PreviewRow[] }>(
-        '/api/change-requests/preview',
-        { credentials: 'include', signal }
-      );
-      return json.rows;
+      // ⚠ Fetched with `allSettled`, not `all`. Two independent endpoints back
+      // this list, and one being down must not blank the other's rows — an
+      // empty bell reads as "nothing waiting", which is a worse answer than a
+      // shorter list.
+      const [changeRequests, declarations] = await Promise.allSettled([
+        apiFetch<{ rows: PreviewRow[] }>('/api/change-requests/preview', {
+          credentials: 'include',
+          signal,
+        }),
+        apiFetch<{ rows: DeclarationPreviewRow[] }>(
+          '/api/declarations/preview',
+          { credentials: 'include', signal }
+        ),
+      ]);
+
+      const merged: MergedRow[] = [];
+      if (changeRequests.status === 'fulfilled') {
+        for (const row of changeRequests.value.rows) {
+          merged.push({
+            source: 'change_request',
+            at: row.requested_at,
+            row,
+          });
+        }
+      }
+      if (declarations.status === 'fulfilled') {
+        for (const row of declarations.value.rows) {
+          merged.push({ source: 'declaration', at: row.filed_at, row });
+        }
+      }
+      // Newest first, then capped — the same 5 the bell has always shown, now
+      // shared between the two sources rather than 5 of each.
+      merged.sort((a, b) => b.at.localeCompare(a.at));
+      return merged.slice(0, 5);
     },
     // The popover only mounts this panel while open (see the comment above
     // its render site), so this never runs as a wasted background fetch —
@@ -193,28 +277,112 @@ function NotificationPreviewPanel({
 
   return (
     <ul>
-      {rows.map((row) => (
-        <li key={row.id} className="border-b border-border last:border-0">
-          <Link
-            href={previewRowHref(role, row.id)}
-            onClick={onNavigate}
-            className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent"
+      {rows.map((entry) =>
+        entry.source === 'change_request' ? (
+          <li
+            key={`cr-${entry.row.id}`}
+            className="border-b border-border last:border-0"
           >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-xs font-semibold text-white shadow-brand-tile">
-              {deriveInitials(row.student_label)}
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">
-                {row.student_label ?? '(student)'} —{' '}
-                {row.field_changed.replace(/_/g, ' ')}
+            <Link
+              href={previewRowHref(role, entry.row.id)}
+              onClick={onNavigate}
+              className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-xs font-semibold text-white shadow-brand-tile">
+                {deriveInitials(entry.row.student_label)}
               </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                Requested {relativeTime(row.requested_at)}
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  {entry.row.student_label ?? '(student)'} —{' '}
+                  {entry.row.field_changed.replace(/_/g, ' ')}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  Mark change · requested {relativeTime(entry.row.requested_at)}
+                </div>
               </div>
-            </div>
-          </Link>
-        </li>
-      ))}
+            </Link>
+          </li>
+        ) : (
+          <li
+            key={`dec-${entry.row.id}`}
+            className="border-b border-border last:border-0"
+          >
+            <Link
+              href={declarationRowHref(entry.row.request_id)}
+              onClick={onNavigate}
+              className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-xs font-semibold text-white shadow-brand-tile">
+                {deriveInitials(entry.row.student_label)}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  {entry.row.student_label ?? '(student)'} —{' '}
+                  {entry.row.kind === 'travel' ? 'travel' : 'absence'}{' '}
+                  {formatDayRange(entry.row.start_date, entry.row.end_date)}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {/* Says who it came from, because this is the one source on
+                      the bell that a PARENT started rather than a colleague. */}
+                  Filed by a parent · {relativeTime(entry.row.filed_at)}
+                </div>
+              </div>
+            </Link>
+          </li>
+        )
+      )}
     </ul>
   );
+}
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/**
+ * "3 Sep" for a single day, "3–5 Sep" for a run of them.
+ *
+ * ⚠ RETURNS '' RATHER THAN THROWING on anything it does not recognise. This
+ * bell renders in the header of every page in the app, so an exception here
+ * does not cost a date — it takes down whatever the person was looking at.
+ * A row that reads "Grace Tan — absence" with no dates is a poor row; a blank
+ * screen is a broken product.
+ *
+ * ⚠ Parsed as parts, never `new Date(iso)`. These are plain yyyy-MM-dd school
+ * days with no time zone; letting Date interpret them shifts a Singapore
+ * morning back to the previous day for anybody west of it.
+ */
+export function formatDayRange(
+  start: string | null | undefined,
+  end: string | null | undefined
+): string {
+  const part = (iso: string, withMonth: boolean): string | null => {
+    const [, m, d] = iso.split('-');
+    const month = MONTHS[Number(m) - 1];
+    if (!month || !d || Number.isNaN(Number(d))) return null;
+    return withMonth ? `${Number(d)} ${month}` : `${Number(d)}`;
+  };
+
+  if (!start && !end) return '';
+  const from = start ?? end!;
+  const to = end ?? start!;
+
+  if (from === to) return part(from, true) ?? '';
+
+  const sameMonth = from.slice(0, 7) === to.slice(0, 7);
+  const left = part(from, !sameMonth);
+  const right = part(to, true);
+  if (!left || !right) return right ?? left ?? '';
+  return `${left}–${right}`;
 }

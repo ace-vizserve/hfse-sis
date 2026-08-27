@@ -12,6 +12,7 @@ import {
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
 import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
 import {
@@ -61,6 +62,7 @@ export default async function RecordsLayout({
     unmatchedNameCount,
     awaitingSectionsCount,
     changeRequestCount,
+    declarationCount,
   ] = await Promise.all([
     // Current AND upcoming AY — admissions enrol into next year's intake
     // during the early-bird window, and a badge that only counts the live
@@ -69,6 +71,7 @@ export default async function RecordsLayout({
     countUnmatchedLevelLabels(),
     countLevelsAwaitingSections(),
     getSidebarChangeRequestCount(service, role, id),
+    getDeclarationWaitingCount(service, role, id),
   ]);
   // Both halves of "Levels needing attention" — an unrecognized level name and
   // a level with students waiting but no class. The page shows them as two
@@ -101,6 +104,7 @@ export default async function RecordsLayout({
                 role={role}
                 userId={id}
                 initialCount={changeRequestCount}
+                initialDeclarationCount={declarationCount}
               />
             </div>
           </div>

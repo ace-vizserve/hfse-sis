@@ -15,10 +15,8 @@ import {
   openApprovalRequest,
   type OpenApprovalRequestResult,
 } from '@/lib/approvals/materialise';
-import type {
-  ApproverLevelScope,
-  StagedApprovalFlow,
-} from '@/lib/schemas/approval-flows';
+import type { ApproverLevelScope } from '@/lib/schemas/approval-flows';
+import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 
 /**
  * The declaration flow's two constants, and the one call that puts a filing
@@ -32,8 +30,11 @@ import type {
  * one step — and "first to act carries it" would then let one class's adviser
  * decide another class's child.
  */
-export const DECLARATION_APPROVAL_FLOW: StagedApprovalFlow =
-  'attendance.student_declaration';
+// ⚠ Re-exported, not redefined. The flow name moved to
+// `lib/schemas/approval-flows.ts` so the sidebar badge and the notification
+// bell — both client components — can read it without pulling this module
+// into the browser bundle. Every existing importer of this name still works.
+export { DECLARATION_APPROVAL_FLOW };
 
 export const DECLARATION_SUBJECT_TYPE = 'student_declaration';
 

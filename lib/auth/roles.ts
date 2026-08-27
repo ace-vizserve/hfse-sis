@@ -88,6 +88,7 @@ export type NavSection = {
 
 export type SidebarBadgeKey =
   | 'changeRequests'
+  | 'declarations'
   | 'pendingDocValidation'
   | 'unsyncedStudents'
   | 'pfileAwaitingVerification'
@@ -320,6 +321,10 @@ const ATTENDANCE_NAV: NavSection[] = [
         // matches in declaration order, not by prefix length.
         href: '/attendance/declarations',
         label: 'Declarations',
+        // The number is how many are waiting for THIS person to decide, not
+        // how many exist — same rule as the "Waiting for you" panel on the
+        // module index, and the same rule the change-request badge follows.
+        badgeKey: 'declarations',
       },
       {
         href: '/attendance/insights',
