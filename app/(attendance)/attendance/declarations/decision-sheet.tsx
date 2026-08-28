@@ -22,7 +22,12 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from '@/components/ui/field';
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
@@ -83,12 +88,23 @@ function DecisionPanel({
 }) {
   const run = useWriteAction();
   const [note, setNote] = useState('');
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
 
   const d = row.detail;
   const isTravel = d.declarationType === 'travel';
 
   async function decide(action: 'approve' | 'reject') {
+    // ⚠ Checked here as well as in `DecideApprovalSchema`, and neither is
+    // redundant. The server is the rule; this is so the person finds out
+    // before the round trip, next to the box they need to fill, rather than
+    // as a toast that does not say where to look.
+    if (action === 'reject' && note.trim().length === 0) {
+      setNoteError('Say why, so the parent knows what to do next.');
+      document.getElementById('decision-note')?.focus();
+      return;
+    }
+    setNoteError(null);
     setBusy(action);
     await run(
       () =>
@@ -350,22 +366,30 @@ function DecisionPanel({
 
         {/* ── The note ─────────────────────────────────────────────── */}
         {row.canDecide && (
-          <Field>
-            <FieldLabel htmlFor="decision-note">
-              Add a note (optional)
-            </FieldLabel>
+          <Field data-invalid={noteError ? 'true' : undefined}>
+            <FieldLabel htmlFor="decision-note">Add a note</FieldLabel>
             <Textarea
               id="decision-note"
               value={note}
               maxLength={APPROVAL_NOTE_MAX}
               rows={3}
-              placeholder="Anything the next person, or the office, should know."
-              onChange={(e) => setNote(e.target.value)}
+              aria-invalid={noteError ? 'true' : undefined}
+              placeholder="Anything the next person, or the parent, should know."
+              onChange={(e) => {
+                setNote(e.target.value);
+                if (noteError) setNoteError(null);
+              }}
             />
+            {/* ⚠ THE COPY HAS TO NAME BOTH OUTCOMES, because one box now has
+                two audiences. It used to promise "the parent does not see
+                this", which was true of every note ever written under it —
+                nobody had turned a filing down yet — and would have become a
+                broken promise the moment one was. */}
             <FieldDescription>
-              The parent does not see this. It stays on the request for whoever
-              reads it next.
+              If you turn this down, the parent reads this as the reason. If you
+              approve, it stays with the school for whoever picks it up next.
             </FieldDescription>
+            {noteError && <FieldError>{noteError}</FieldError>}
           </Field>
         )}
       </div>

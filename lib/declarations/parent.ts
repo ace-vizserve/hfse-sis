@@ -5,6 +5,9 @@ import {
   type DeclarationStatus,
   type DeclarationType,
 } from '@/lib/schemas/declarations';
+import { loadLaddersBySubject } from '@/lib/approvals/inbox';
+import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
+import { DECLARATION_SUBJECT_TYPE } from '@/lib/declarations/approval';
 
 type Service = ReturnType<typeof createServiceClient>;
 
@@ -167,6 +170,13 @@ export async function loadFilableStudents(
  * failed" learns nothing and worries anyway. A declaration that was approved
  * but not yet encoded still reads "Approved", because from the parent's side it
  * is — the register is the school's problem, and the staff queue surfaces it.
+ *
+ * ⚠ `decisionReason` IS returned, and only on a rejection. Until now "Not
+ * approved" reached the parent with no reason attached anywhere — not here, not
+ * in an email, not in the audit log — so a family asked for a medical
+ * certificate had no way to learn that was the reason they had been turned
+ * down. See `rejectionReasonFor` below for why reading the reason off the
+ * rejecting stage is safe rather than a leak of staff-only text.
  */
 export type ParentDeclarationView = {
   id: string;
@@ -184,8 +194,35 @@ export type ParentDeclarationView = {
   parentNote: string | null;
   status: DeclarationStatus;
   statusLabel: string;
+  /**
+   * Why the school turned it down, in the approver's own words. `null` for
+   * every other status — a pending or approved filing has no reason to give.
+   */
+  decisionReason: string | null;
   filedAt: string;
 };
+
+/**
+ * The reason a filing was turned down, or `null` if it was not.
+ *
+ * ⚠ READ THE STAGE THAT REJECTED, NEVER THE LAST STAGE. A rejection stops the
+ * ladder where it happened (migration 127 leaves later stages `waiting`
+ * forever), so on a two-step flow rejected at step 1, step 2 is still `waiting`
+ * and carries no note at all. `listDecidedStages` documents the same trap from
+ * the staff side.
+ *
+ * ⚠ Exactly one stage can hold `rejected` — `approval_advance` closes the
+ * request in the same statement it rejects the stage, so there is no case where
+ * two reasons compete.
+ */
+export function rejectionReasonFor(
+  ladder: { stages: { status: string; decisionNote: string | null }[] } | null
+): string | null {
+  if (!ladder) return null;
+  const rejected = ladder.stages.find((s) => s.status === 'rejected');
+  const note = rejected?.decisionNote?.trim();
+  return note ? note : null;
+}
 
 export async function listParentDeclarations(
   service: Service,
@@ -215,7 +252,25 @@ export async function listParentDeclarations(
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data ?? []).map((row) => {
+  const rows = data ?? [];
+
+  // The rejection reasons, in ONE round trip for the whole list.
+  //
+  // ⚠ Only fetched when something was actually rejected. The overwhelmingly
+  // common case is a parent with nothing turned down, and a second query on
+  // every status read would be paid by all of them to serve none.
+  const rejectedIds = rows
+    .filter((r) => (r as { status?: string }).status === 'rejected')
+    .map((r) => (r as { id: string }).id);
+  const ladders = rejectedIds.length
+    ? await loadLaddersBySubject(service, {
+        flow: DECLARATION_APPROVAL_FLOW,
+        subjectType: DECLARATION_SUBJECT_TYPE,
+        subjectIds: rejectedIds,
+      })
+    : new Map();
+
+  return rows.map((row) => {
     const r = row as Record<string, unknown>;
     const student = byStudentId.get(r.student_id as string);
     const status = r.status as DeclarationStatus;
@@ -235,6 +290,7 @@ export async function listParentDeclarations(
       parentNote: (r.parent_note as string | null) ?? null,
       status,
       statusLabel: DECLARATION_STATUS_LABELS[status],
+      decisionReason: rejectionReasonFor(ladders.get(r.id as string) ?? null),
       filedAt: r.created_at as string,
     };
   });

@@ -112,4 +112,22 @@ Parent report card: **cumulative earlier-term comments + parents may read the le
 
 ⚠ **Neither check can turn its own failure into a refusal.** If either lookup throws, the filing goes through: a filing on a closed day is a small mess somebody can see and fix, while turning a parent away over our own outage is a wall they cannot get past and will not understand.
 
-**Not built here, deliberately:** editing or withdrawing a filing; notifying the parent of the outcome. Handoff brief for the portal's own repo: `docs/handoff/2026-08-27-parent-portal-declarations.md`.
+**Not built here, deliberately:** editing or withdrawing a filing. ⚠ **"Notifying the parent of the outcome" was half-closed on 2026-08-28 — see KD #201.** Handoff brief for the portal's own repo: `docs/handoff/2026-08-27-parent-portal-declarations.md`.
+
+### KD #201
+
+**A parent who is turned down is told why — and the approver's note is where the reason lives.** 2026-08-28. No migration, no new column.
+
+**The problem.** A rejection stopped the ladder and the parent's portal showed `"Not approved"` and nothing else. The approver could write a note, but it reached nobody: not the status list, not an email, and deliberately not `audit_log` (migration 109's rule, restated by 125 and 126). The commonest real reason — _"please attach the medical certificate and file again"_ — had nowhere to go, so a family was told no with no way to learn what to do next.
+
+**Why the existing note field could be reused rather than a second column added.** ⚠ **The decision sheet promised the approver, in writing, "The parent does not see this."** Exposing that column would have retroactively broken a promise. It cost nothing, because **nobody had relied on it**: measured against production before deciding — 4 declarations, all approved, **0 rejections, and not one note ever written** across 8 stages. The field's meaning was still ours to set.
+
+**The rule.** ⚠ **On a rejection the note has no internal reader by construction.** `approval_advance` closes the request and leaves every later stage `waiting` forever, so there is no "next person" — the parent is its only possible audience. On an approval the note does travel to the next approver, so it stays internal and optional. **One field, two audiences, and the copy names both.** A rejection without a reason is refused: `DecideApprovalSchema` carries a `.refine`, and the sheet checks the same rule locally so the person finds out beside the box rather than as a toast.
+
+**Reading it back.** `ParentDeclarationView.decisionReason` is populated **only** when `status === 'rejected'`. ⚠ **Read the stage that REJECTED, never the last stage** — the last one is a `waiting` row with no note, so `stages.at(-1)` would return null and tell the parent nothing, which is the bug this set out to fix. `rejectionReasonFor` carries that rule and `__tests__/declarations/rejection-reason.test.ts` pins it. The ladder is fetched with the existing `loadLaddersBySubject`, batched over the whole list, and **only when something was actually rejected** — the common case is a parent with nothing turned down, and they should not pay for a second query.
+
+⚠ **`register_write_error` stays withheld.** An approved-but-unencoded filing still reads "Approved" to the parent; the register is the school's problem and the staff queue surfaces it.
+
+**Proven end to end against production**, through the real routes: filing 201, a rejection with no reason **400** with its own sentence, a rejection with a reason 200, and the parent's read-back carrying the approver's exact words while every other status returned `null`.
+
+**Still not built:** any email. The seam is clean (`filed_by_email` is `not null`, `after()` is the established trigger, `renderEmailFrame` is the template), but more outbound mail is blocked on the new subdomain and Resend account. The portal status list remains how a parent finds out — it can now say why.

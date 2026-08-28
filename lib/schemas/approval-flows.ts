@@ -152,17 +152,39 @@ export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
 export const APPROVAL_NOTE_MAX = 300;
 export const APPROVAL_STAGE_LABEL_MAX = 80;
 
-export const DecideApprovalSchema = z.object({
-  action: z.enum(['approve', 'reject']),
-  note: z
-    .string()
-    .trim()
-    .max(
-      APPROVAL_NOTE_MAX,
-      `Keep the note to ${APPROVAL_NOTE_MAX} characters or fewer.`
-    )
-    .optional(),
-});
+/**
+ * ⚠ THE NOTE IS OPTIONAL ON APPROVE AND REQUIRED ON REJECT, and the asymmetry
+ * is the whole point.
+ *
+ * On an approval the note travels to the next approver, so it is a convenience.
+ * On a rejection there IS no next approver — `approval_advance` closes the
+ * request and leaves every later stage `waiting` — so the note's only possible
+ * reader is the person who filed. Until this rule existed, a parent turned down
+ * saw "Not approved" and nothing else: no reason in the portal, none in an
+ * email, and deliberately none in `audit_log`. A rejection with no reason is
+ * the exact failure the requirement exists to prevent, so it is refused here
+ * rather than merely discouraged on screen.
+ *
+ * Enforced in the schema and not in the route so the sheet and the server test
+ * the same rule — `components`-side validation imports this too.
+ */
+export const DecideApprovalSchema = z
+  .object({
+    action: z.enum(['approve', 'reject']),
+    note: z
+      .string()
+      .trim()
+      .max(
+        APPROVAL_NOTE_MAX,
+        `Keep the note to ${APPROVAL_NOTE_MAX} characters or fewer.`
+      )
+      .optional(),
+  })
+  .refine((v) => v.action !== 'reject' || (v.note?.trim().length ?? 0) > 0, {
+    message:
+      'Say why you are turning this down. The parent is shown this as the reason.',
+    path: ['note'],
+  });
 export type DecideApprovalInput = z.infer<typeof DecideApprovalSchema>;
 
 export const CreateApprovalStageSchema = z.object({

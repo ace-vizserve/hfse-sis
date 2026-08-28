@@ -60,8 +60,13 @@ export async function POST(
   const body = await request.json().catch(() => null);
   const parsed = DecideApprovalSchema.safeParse(body);
   if (!parsed.success) {
+    // ⚠ Say WHICH rule failed. A missing rejection reason is a mistake a real
+    // approver makes on a real screen, and "Choose approve or turn down" would
+    // be nonsense advice to somebody who has already chosen. The generic line
+    // stays as the fallback for a genuinely malformed body.
+    const first = parsed.error.issues[0]?.message;
     return NextResponse.json(
-      { error: 'Choose approve or turn down.' },
+      { error: first ?? 'Choose approve or turn down.' },
       { status: 400 }
     );
   }

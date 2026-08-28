@@ -242,7 +242,7 @@ Returns `{ "declarations": [...] }`, newest first, each with:
 `id`, `filingGroupId`, `declarationType`, `studentNumber`, `studentName`,
 `startDate`, `endDate`, `withMedical`, `evidenceUrl`, `hasUpload`,
 `destinationCountry`, `destinationCity`, `parentNote`, `status`, `statusLabel`,
-`filedAt`.
+**`decisionReason`**, `filedAt`.
 
 **Use `statusLabel` for display, not `status`.** The four values are:
 
@@ -255,6 +255,28 @@ Returns `{ "declarations": [...] }`, newest first, each with:
 
 "With the school" rather than "Pending" is deliberate — _pending_ reads as
 _stuck_ to a parent watching a form they filed about a sick child.
+
+### ⚠ `decisionReason` — new 2026-08-28, and please do show it
+
+**`decisionReason` is a string when `status` is `rejected`, and `null` for every
+other status.** It is the school's own words for why the filing was turned down,
+written by the member of staff who turned it down, and it is now **required** on
+their side — a rejection cannot be recorded without one.
+
+**"Not approved" on its own is close to useless to a parent**, which is what
+this fixes: the most common real reason is _"please attach the medical
+certificate and file again"_, and until now there was nowhere for that sentence
+to go. Show it directly under the status on a rejected filing. Do not
+paraphrase, summarise, or wrap it in an apology — it is already written for the
+parent to read.
+
+Assume `null` for anything not rejected and render nothing at all; do not show
+an empty reason block. Reasons are capped at 300 characters, so a single
+paragraph is enough.
+
+⚠ **This is the only staff-written text a parent ever sees.** If you need to
+distinguish it visually from `parentNote` (which the parent wrote themselves),
+label them by author rather than by position.
 
 ⚠ **Both parents see the same list.** It is scoped by child, not by who filed —
 if the mother files, the father sees it too. Do not filter it client-side to the
@@ -280,8 +302,12 @@ it, something is retrying in a loop.
 - **The register.** On final approval the SIS marks those days excused itself.
 - **Editing or withdrawing a filing.** Not built yet on either side. If parents
   need it, say so and it gets added to the SIS first.
-- **Notifying the parent of the outcome.** Not built yet. For now the status list
-  is how they find out, so make it easy to get back to.
+- **Notifying the parent of the outcome.** No email or push, and none planned
+  short-term. The status list is still how a parent finds out, so make it easy
+  to get back to. ⚠ **Half of this changed on 2026-08-28**: a rejected filing
+  now carries **`decisionReason`** — the school's actual reason, in their own
+  words — so the list can finally tell a parent what to do next instead of just
+  saying no. See § "4. The status list".
 
 ## Open questions the school has not answered
 

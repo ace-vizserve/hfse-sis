@@ -30,22 +30,22 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                                              | Where                                                     |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                              | KD #177, migration 109                                    |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                     | KD #178, migrations 110 / 111                             |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                              | Records → Academic tab                                    |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                              | KD #179 (subject) + #182 (adviser)                        |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                              | KD #181 — Classroom drawer                                |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ⚠ **RESHAPED 2026-08-17 — the PARENT files it**     | Her own child's school SIS. Blocked on what approval does |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24** | Five screens. Migrations 120–122. Outcome still nowhere   |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**        | Principal's List is an ACADEMIC honour, not a competition |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                          | Same table as #8 — scoring sheet                          |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                             | "Teachers cannot choose the approvers"                    |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **AEB — 5 members, ALL must approve**             | Unanimous, 2026-08-14. **Ordering settled 2026-08-21**    |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                    | KD #176                                                   |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                         | See _Waiting on the school_                               |
-| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**              | Nothing scoped. See _Answers received_                    |
+| #   | Ask                                                   | Who                                                  | Status                                               | Where                                                                           |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                               | KD #177, migration 109                                                          |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                      | KD #178, migrations 110 / 111                                                   |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                               | Records → Academic tab                                                          |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                               | KD #179 (subject) + #182 (adviser)                                              |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                               | KD #181 — Classroom drawer                                                      |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ⚠ **RESHAPED 2026-08-17 — the PARENT files it**      | Her own child's school SIS. Blocked on what approval does                       |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24**  | Five screens. Migrations 120–122. Outcome still nowhere                         |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**         | Principal's List is an ACADEMIC honour, not a competition                       |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                           | Same table as #8 — scoring sheet                                                |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                              | "Teachers cannot choose the approvers"                                          |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                         |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                     |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**               | Nothing scoped. See _Answers received_                                          |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -619,8 +619,16 @@ discipline` made the student name a link, and teachers cannot open Records, so
      unproduced by any source.**
   2. ~~**The award certificate sample**~~ — **arrived 2026-08-14 from Christina.**
      Satisfied, though not with the file this item expected; see #8 above.
-  3. **New, created by her reply: the "specific AEB approval form".** She named it
-     unprompted. Ask for it the same way the incident report was asked for.
+  3. ~~**New, created by her reply: the "specific AEB approval form".**~~
+     ✅ **ARRIVED 2026-08-27** — `CO.1.1-F01-V02 AEB Approval Form.docx`, written
+     up in _Answers received_. A grid of five names, so the board signs as a
+     body; and ⚠ it turns out **not to be a grade-change form at all**, which
+     reframes #11. **Asking for the artefact beat asking anyone to describe
+     their process — third time that move has worked.**
+  4. **Still hers, and the only thing outstanding: does the AEB membership
+     change?** Sent in the same 2026-08-21 message; the form cannot answer it.
+     It matters because a rotating board means an old approval must keep who was
+     on it **then** (KD #147), not re-render with today's roster.
 
   Earlier and closed: house was fully answered 2026-08-06; the mid-year SOW
   question was answered 2026-08-12 (rare, and applies to the current year —
@@ -1495,6 +1503,79 @@ cannot address subject config at all. She was told wrong in the session.
 >
 > Thank you.
 
+### To Christina — the book list, the subject names, and two open questions · NOT SENT, written 2026-08-28
+
+**Why this is one message and not two.** Mr Ace confirmed on 2026-08-28 that the
+admin session's **"Tin" is Christina** — so the admin file's #3 (the book list)
+and #4 (the approved subject names) are hers, not a separate person's, and they
+join the two things already outstanding on her own thread. Four asks, one send.
+Sending two messages to the same person in the same week is how a list grows.
+
+**Every ask is anchored to something she said**, which is this file's rule:
+#3 and #4 are hers from the admin recording (48:44, 50:36/52:16); the
+five-station chain is her own 2026-08-12 reply; the outcome question comes from
+her 18:20 ask to see "whether the student received a warning letter or
+suspension".
+
+⚠ **The STAR wording is a genuine conflict, not a request for confirmation.**
+The admin session recorded "Sports, Talent, Arts, and **Research**"; Mr Hanafi's
+deployment workbook writes "Sports, Talent, Arts and **Rhythm**" throughout
+(`scripts/backfill/gen-teacher-assignments.ts:199,773`). Two school documents
+disagree and only she can say which is approved. **Ask it as a conflict** —
+asking her to "confirm the name" invites a yes to whichever version we quote.
+
+⚠ **The outcome question is the fourth ask on this subject and it must not
+widen.** Mr Ace already knows the shape — _"suspension is the last anyways like
+any other rule there are strikes before suspension"_ — and the system already
+shows the strikes. **Ask what gets written down when one happens and on what
+form. Do not ask whether they suspend students**, and do not propose a
+`record_type` for it; that is ours to decide once she answers.
+
+**Not asked, and why not:** showing her Classroom before scoping SOW. It is the
+right next move on her teachers'-dashboard ask, but it is a **demonstration, not
+a question** — it belongs in a call, not in a list of things she has to answer.
+Also not asked: who records an award (decided by Mr Ace 2026-08-12), who the AEB
+members are (resolved 2026-08-12), and whether the five-station chain belongs in
+the SIS (she answered that in the room at 50:57).
+
+> Hi Ms Christina,
+>
+> Four things, and two of them are quick.
+>
+> **1. The book and supplies list.** During the admin session you mentioned
+> tracking which books and materials each student has been issued, because there
+> have been disputes about it before. I can build that, but I need the list of
+> what is issued per level first. Whatever form it is already in is fine.
+>
+> **2. The subject names, and one conflict.** I want to get the approved subject
+> names into the system exactly as they should appear. There is one I cannot
+> resolve on my own — I have the full name of STAR written two different ways in
+> two school documents:
+>
+> - Sports, Talent, Arts, and **Research**
+> - Sports, Talent, Arts and **Rhythm**
+>
+> Could you tell me which is the approved wording? And if there are any other
+> subject names that should read differently from what is in the system now,
+> please send those too.
+>
+> **3. The approval steps before a report book is issued.** You mentioned a
+> sequence — subject monitor, then subject head, then the officer in charge,
+> then the Assistant Principal, then the Principal. I want to check I have that
+> right before building it, because during the training you also mentioned two
+> approvers for a grade change. Are those two different situations, and is the
+> five-step sequence the one that applies before a report book is issued?
+>
+> **4. Where a disciplinary outcome is written down.** In the training you asked
+> to be able to see whether a student had received a warning letter or a
+> suspension. The incident report form you kindly sent records the incident and
+> the counselling referral, but there is no field on it for the outcome. So when
+> a student is given a warning letter or a suspension, what gets written down,
+> and on which form? If it is recorded somewhere other than that form, a blank
+> copy would help.
+>
+> Thank you po!
+
 ### To Wynne · SENT 2026-08-21
 
 ✅ **Sent, and it carried one more item than the draft below.** Mr Ace asked for
@@ -1526,9 +1607,18 @@ answer, not Wynne's.
 >
 > Thank you.
 
-### To Chandana — the AEB approval form · SENT 2026-08-21
+### To Chandana — the AEB approval form · SENT 2026-08-21 · ✅ HALF ANSWERED
 
-**Sent by Mr Ace, in his own words.** Awaiting reply.
+✅ **The form arrived 2026-08-27** and is written up in _Answers received_ →
+_Chandana — the AEB approval form_. **The anchor question is answered: a grid of
+five names, so the board signs as a body.** It also reframes #11 — the form is
+not about grade changes.
+
+⚠ **One half is still outstanding: does the AEB membership change?** The form
+cannot answer it. If a reminder goes out, ask only that — do not re-ask for the
+form or for the members' names.
+
+**Sent by Mr Ace, in his own words.**
 
 > hi ms. chandana,
 >
@@ -2696,6 +2786,68 @@ provisioned, each gets a teacher assignment carrying the KD #191 cover window.
 This would be the **first real relief data** — AY2026 holds three assignments
 across two test accounts today — so it doubles as the bulk-booking rehearsal
 that has been waiting on the deployment file.
+
+### Chandana — the AEB approval form · arrived 2026-08-27, read 2026-08-28
+
+⚠ **The file had been sitting untracked at the repo root for a day before
+anybody opened it** — `CO.1.1-F01-V02 AEB Approval Form.docx`. The Status table
+and every note still said "awaiting Chandana's reply". **It answers the
+2026-08-21 message.**
+
+**What the form contains, in order:**
+
+1. **REQUEST DETAILS** — Requestor · Date · Department · **Nature of request** ·
+   a free-text description box.
+2. **ACADEMIC AND EXAMINATION BOARD REVIEW** — Date · Decision · Implementation
+   date (if applicable) · Remarks. **One decision line for the whole board.**
+3. **BOARD RESOLUTION** — free text.
+4. **APPROVED BY (AEB MEMBERS)** — five names with signature spaces.
+5. **IMPLEMENTATION AND EFFECTIVITY CHECKLIST (to be done by the requestor)** —
+   information cascading, update of records/policy, pull out of old document,
+   and an **Effectivity Check Report for months 1 through 6**.
+
+**The sample she sent** (student details left in, not removed): Requestor
+**Radhika**, 18/08/2026, Department **Academics**, Nature of request
+**"Retest"** — _"Olrick and Luke from P6 Grit did not meet the requirements for
+PT1 (Composition). Both students were unable to complete the composition and
+therefore received 0 marks."_
+
+**What it settles — the anchor question, answered exactly as designed:**
+
+- ✅ **A GRID OF FIVE NAMES, NOT NUMBERED BLOCKS.** The 2026-08-21 message set
+  this test explicitly: _"signature blocks numbered down the page mean
+  sequential; a grid of five names means parallel."_ It is a grid. **The board
+  signs as a body and the order is not part of the form.**
+- ✅ **The roster is confirmed** and matches what was resolved on 2026-08-12:
+  Cacananta Ninalyn Sulit, Gary Cacananta, Villamor Norma Bardos, Labrador
+  Christina Bacolor, Chandana Letha Dileep. **Do not re-ask who the members
+  are.**
+- ✅ **It is versioned**, like the incident report (`C4.6.1-F02`) — hence
+  `CO.1.1-F01-**V02**`.
+- ⚠ **Each member's approval is NOT recorded separately.** There is one Date and
+  one Decision for the whole review, and five signatures under it. So the form
+  captures _that all five agreed_, not _when each one did_.
+
+⚠ **AND IT REFRAMES #11, WHICH IS THE BIGGER FINDING.** #11 is filed as
+_"second approval route keyed on publication"_ — i.e. a post-issuance grade
+change. **This is not a grade-change form.** "Nature of request" is open-ended
+and the one real sample is a **retest**. With a Board Resolution and a six-month
+effectivity report, it is a **policy-and-exception instrument for the academic
+board**, of which a post-publication grade change would be one kind of request
+among many. **Anything scoped from #11's current wording would be scoped too
+narrowly.** Do not build on this until the shape is agreed with Mr Ace.
+
+**Still outstanding from that same message: does the AEB membership change?**
+The form cannot answer it. Five names are printed into the template rather than
+written in by hand, which is weak evidence the roster is stable and versioned
+with the document — but it is inference, not her answer, and it matters because
+a rotating board means an old approval must keep who was on it **then**
+(KD #147).
+
+⚠ **Compatible with Mr Ace's 2026-08-21 sequential ruling, so do not reopen
+that.** Five sequential steps of one person each _is_ unanimity; the form simply
+says the order is not something the school tracks. What the form removes is any
+need to _discover_ an order — there isn't one.
 
 ---
 
