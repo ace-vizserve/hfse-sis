@@ -480,4 +480,26 @@ The six items the workbook genuinely cannot settle are now written as a drafted,
 
 ✅ **THE FIRST CONSUMER OF `completed` NOW DOES SOMETHING — KD #197.** The decide route's `completed` branch used to flip a status and stop; it now marks the class register. ⚠ **The engine still holds no key back to its consumer** and that is unchanged — the route knows the subject type and calls into `lib/declarations/`, so a second flow can land without attendance learning about it. ⚠ **A failure there is caught and never re-raised**: two people have already decided, the decision is committed, and throwing would report it as an error and invite a second click that `approval_advance` would refuse as already-decided.
 
-**Not built:** travel and the vacation count (Phase 4), and any notification to the parent.
+**Not built:** any notification to the parent. ⚠ Travel and the vacation count were listed here as unbuilt and are **not** — they shipped as Phase 4 (KD #199, trips rather than days).
+
+---
+
+### KD #200
+
+**The activity panel — an activity log for the approvals you are part of** (2026-08-28; **no migration**). Mr Ace asked for the header bell to become a Facebook-style activity list in a side sheet, plus a View history timeline, and supplied the shadcn Activity panel as the reference.
+
+**What shipped.** `lib/activity/events.ts` (pure event derivation), `lib/activity/feed.ts` (server scoping, merge, paging), `GET /api/activity`, `components/notifications/activity-{panel,row}.tsx`, and `components/approvals/approval-history-dialog.tsx` on both mark-change screens.
+
+**Three findings from reading the database made this smaller than it looked.** Migration 131's policy already says _who should be told_ — you may read an approval if you are on any of its steps — which is the requested audience exactly. `approval_request_stages` already stores every decision, so the history needed no new column. And `StaffDeclarationView.ladder` already carried the ladder, so the declarations page needed nothing: **its decision sheet has rendered the full timeline since it shipped**, and only the never-reached case was wrong.
+
+**Derived on read, not an events table**, and the deciding reason was that **the log is full on day one** — an events table starts empty, every filing already on record invisible until something new happens, and backfilling means reconstructing what the derivation does anyway. It also avoids a rule every future flow must remember to obey, which is the class of bug the cache-invalidation audit found.
+
+⚠ **THE TWO FLOWS ARE GUARDED COMPLETELY DIFFERENTLY, AND THIS DRIVES THE WHOLE ARCHITECTURE.** Declarations are RLS-scoped to their ladder (129/131). `grade_change_requests` is readable by **any authenticated account holding a role** (009) — narrowing has only ever lived in the API layer. So the feed is **served, never read direct from the browser**, and `loadMarkChangeSide`'s `.or(...)` is the only thing between one teacher and the whole school's mark changes. It must stay in the query; a post-fetch `.filter()` looks identical and is a leak. Pinned by a query-shape test.
+
+⚠ **OVERSIGHT WAS THE BUG, AND THE FIX WAS TO STOP HAVING A SECOND OPINION.** It shipped scoped to personal involvement for **every** role, including superadmin — so Mr Ace's `/markbook/change-requests` listed rows while the panel beside it said nothing had happened, and the same held for declarations. Both halves now use the one `OVERSIGHT_ROLES` set exported from `lib/approvals/inbox.ts` that the queue pages already share. ⚠ **The widening is the LOG only — "Waiting for you" stays per-person**, pinned by a test. ⚠ **Two per-role arms were deleted as dead code** (a `school_admin` legacy-rows arm, an `academic_coordinator` approved-rows arm); both existed only to patch the missing oversight rule. **Do not reintroduce per-role exceptions in `markChangeScopeArms`** — widening belongs in the shared `isOversight` branch.
+
+**Design decisions worth not re-litigating.** The number on the icon still means **work waiting for you**, not unread — Mr Ace considered unread and chose this, so there is no read state and no new table. Colour is spent twice and means two different things: the **mark on the avatar** is the three §9.3 status tones, and the **flow chip** is amber (mark change) / sky (declaration), the two hues carrying no status meaning anywhere in the product. Both are **crafted gradients with tile shadows, never flat discs** (§7.4). The reader's own actions read **"You"** while the avatar keeps their real initials — the avatar is an identity, not a label. Both surfaces read **newest-first**; the dialog shipped oldest-first and Mr Ace reversed it, because the question people open it to ask is where something has got to.
+
+⚠ **A rejection stops the ladder and later steps stay `waiting` forever.** Nothing may emit an event for them, and the declarations timeline renders them dashed and hollow as _"Never reached"_ rather than as still coming.
+
+**Defects this feature's own review caught, all of which had shipped-looking green tests:** a join to `grade_entries.student` that does not exist (it is `section_student_id`); `getStaffDisplayNameById()` returning ~1,039 accounts — almost all parent portal logins — into two client components' props; `markChangeFieldLabel` rendering the raw column name as _"Ww Scores 0"_ with an off-by-one slot; and a test pinning a `field_changed` value the CHECK constraint forbids, which is what hid the last one.
