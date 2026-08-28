@@ -27,8 +27,12 @@ import type {
  * mint mark means the same thing and looks the same in both places.
  */
 const TONE_DOT: Record<ActivityTone, string> = {
+  // ⚠ White on mint, not ink. Mr Ace's call, 2026-08-28, and it has precedent
+  // in the design system itself: `Badge variant="success"` is `text-white` on
+  // this exact gradient. It reads because the glyph is a stroked check, not
+  // text — don't reuse this pairing for words.
   'went-through':
-    'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
+    'bg-gradient-to-br from-brand-mint to-brand-sky text-white shadow-brand-tile-mint',
   'turned-down':
     'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
   started:

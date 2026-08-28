@@ -41,8 +41,10 @@ import {
  * appearance everywhere in the product.
  */
 const NODE: Record<ActivityTone, string> = {
+  // ⚠ White on mint, not ink — same call and same precedent as the panel's
+  // mark (`Badge variant="success"`). Fine for a stroked glyph, not for words.
   'went-through':
-    'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
+    'bg-gradient-to-br from-brand-mint to-brand-sky text-white shadow-brand-tile-mint',
   'turned-down':
     'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
   started:
