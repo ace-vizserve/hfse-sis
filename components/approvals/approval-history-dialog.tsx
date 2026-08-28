@@ -25,14 +25,28 @@ import {
  * panel, different people's approvals interleave and a line would claim a
  * sequence that is not there.
  *
- * ⚠ OLDEST FIRST, unlike the panel — here you are reading a story rather than
- * checking what is new.
+ * ⚠ NEWEST FIRST, the same way round as the panel — Mr Ace, 2026-08-28: "the
+ * latest [action] should be on top". This reverses the order it shipped with.
+ * The original argument was that a single request reads as a story and stories
+ * start at the beginning; the answer is that the question people open this to
+ * ask is "where has it got to", and that answer should not be at the bottom of
+ * a list they have to scroll. It also means the two surfaces now agree, so
+ * nobody has to re-orient between the panel and this dialog.
+ *
  */
 
+/**
+ * ⚠ CRAFTED, NEVER FLAT (§7.4). Same three recipes as the activity panel's
+ * marks and as `components/attendance/daily-entry.tsx`, so one meaning has one
+ * appearance everywhere in the product.
+ */
 const NODE: Record<ActivityTone, string> = {
-  'went-through': 'bg-brand-mint text-ink',
-  'turned-down': 'bg-destructive text-destructive-foreground',
-  started: 'bg-primary text-primary-foreground',
+  'went-through':
+    'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
+  'turned-down':
+    'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
+  started:
+    'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile',
 };
 
 export function ApprovalHistoryDialog({
@@ -48,7 +62,7 @@ export function ApprovalHistoryDialog({
   events: ActivityEvent[];
   footnote?: string;
 }) {
-  const ordered = [...events].sort((a, b) => compareStringsAsc(a.at, b.at));
+  const ordered = [...events].sort((a, b) => compareStringsAsc(b.at, a.at));
 
   return (
     <Dialog>

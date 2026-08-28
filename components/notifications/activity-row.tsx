@@ -19,10 +19,20 @@ import type {
  * fruit salad. Do not colour the circle by flow.
  */
 
+/**
+ * ⚠ CRAFTED, NEVER FLAT (§7.4). A solid disc of colour is the one thing this
+ * design system says an icon tile must not be — the house voice is a diagonal
+ * gradient closing on a darker stop, with the matching tile shadow. These are
+ * the same three recipes `components/attendance/daily-entry.tsx` uses, so a
+ * mint mark means the same thing and looks the same in both places.
+ */
 const TONE_DOT: Record<ActivityTone, string> = {
-  'went-through': 'bg-brand-mint text-ink',
-  'turned-down': 'bg-destructive text-destructive-foreground',
-  started: 'bg-primary text-primary-foreground',
+  'went-through':
+    'bg-gradient-to-br from-brand-mint to-brand-sky text-ink shadow-brand-tile-mint',
+  'turned-down':
+    'bg-gradient-to-br from-destructive to-destructive/80 text-white shadow-brand-tile-destructive',
+  started:
+    'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile',
 };
 
 /**
@@ -42,8 +52,8 @@ const TONE_DOT: Record<ActivityTone, string> = {
  * just answering "what kind of thing is this", not "how did it go".
  */
 const FLOW_STYLE: Record<ActivityFlow, string> = {
-  grade_change: 'border-brand-amber/50 bg-brand-amber/15 text-ink-2',
-  student_declaration: 'border-brand-sky/50 bg-brand-sky/15 text-ink-2',
+  grade_change: 'from-brand-amber to-brand-amber/80',
+  student_declaration: 'from-chart-4 to-chart-2',
 };
 
 const FLOW_LABEL: Record<ActivityFlow, string> = {
@@ -85,9 +95,8 @@ export function ActivityRow({
           </span>
           <span className="flex flex-wrap items-center gap-2">
             <Badge
-              variant="outline"
               className={cn(
-                'h-5 rounded-md px-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider',
+                'h-5 px-1.5 text-[10px] tracking-wider',
                 FLOW_STYLE[event.flow]
               )}
             >
