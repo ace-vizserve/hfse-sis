@@ -29,8 +29,14 @@ import { loadAdvisedSectionIds } from '@/lib/approvals/resolve';
  * So: one function, and every caller takes what it returns.
  */
 
-/** Roles that see the whole school's queue rather than only their own classes. */
-const OVERSIGHT_ROLES: ReadonlySet<Role> = new Set<Role>([
+/**
+ * Roles that see the whole school's queue rather than only their own classes.
+ *
+ * ⚠ ONE DEFINITION, and the activity feed imports it rather than restating it.
+ * A feed that hid what the queue page shows is the same badge-versus-panel
+ * disagreement this file's header was written about.
+ */
+export const OVERSIGHT_ROLES: ReadonlySet<Role> = new Set<Role>([
   'academic_coordinator',
   'school_admin',
   'superadmin',

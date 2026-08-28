@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { loadAdvisedSectionIds } from '@/lib/approvals/resolve';
+import { OVERSIGHT_ROLES } from '@/lib/approvals/inbox';
 import { loadStaffDeclarations } from '@/lib/declarations/staff';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { sgToday } from '@/lib/dates';
@@ -174,6 +175,18 @@ async function loadDeclarationSide(
     arms.push(`section_id.in.(${advisedSectionIds.join(',')})`);
   }
 
+  // ⚠ AN OVERSIGHT ROLE SEES THE WHOLE SCHOOL, exactly as it does on the queue
+  // page this log sits beside (`listInboxStages`). The feed shipped scoped to
+  // personal involvement only, and the result was a superadmin whose
+  // `/attendance/declarations` was full while their panel said nothing had
+  // happened. Every other surface in this product treats these three roles as
+  // seeing everything; a log that alone did not is read as broken.
+  //
+  // ⚠ THIS WIDENS THE LOG, NEVER THE PINNED LIST. "Waiting for you" is built
+  // further down from `canDecide`-shaped checks against this same person, so
+  // an oversight reader still owes exactly what they owed before.
+  const isOversight = scope.role != null && OVERSIGHT_ROLES.has(scope.role);
+
   // ⚠ SOURCE_CAP HERE COUNTS STAGE ROWS, NOT FILINGS. This flow has two
   // steps, so 400 rows is ~200 filings, not 400.
   //
@@ -186,11 +199,14 @@ async function loadDeclarationSide(
   // rows can share their request's `created_at` to the tick (they belong to
   // the same filing), and `request_id` is a UUID, so the pair sorts the same
   // way every time this runs.
-  const { data, error } = await service
+  let stageQuery = service
     .from('approval_request_stages')
     .select('request_id, approval_requests!inner(flow, subject_id, created_at)')
-    .eq('approval_requests.flow', DECLARATION_APPROVAL_FLOW)
-    .or(arms.join(','))
+    .eq('approval_requests.flow', DECLARATION_APPROVAL_FLOW);
+
+  if (!isOversight) stageQuery = stageQuery.or(arms.join(','));
+
+  const { data, error } = await stageQuery
     .order('created_at', {
       referencedTable: 'approval_requests',
       ascending: false,
@@ -317,12 +333,15 @@ function markChangeScopeArms(scope: ActivityScope): string[] {
     // status to 'applied'.
     `applied_by.eq.${scope.userId}`,
   ];
-  if (scope.role === 'school_admin') {
-    arms.push('and(primary_approver_id.is.null,secondary_approver_id.is.null)');
-  }
-  if (scope.role === 'academic_coordinator') {
-    arms.push('status.eq.approved');
-  }
+  // ⚠ NO ROLE-SPECIFIC ARMS LIVE HERE ANY MORE, and they must not come back.
+  // This builder used to carry two: a `school_admin` arm admitting legacy rows
+  // with no approver assigned, and an `academic_coordinator` arm admitting
+  // every approved row. Both existed only to patch the fact that the feed
+  // ignored oversight — and both roles are now oversight roles, which skip
+  // these arms entirely, so the arms were unreachable. Anything that needs to
+  // widen by role belongs in the `isOversight` branch at the call site, where
+  // there is one rule shared with the queue pages, not a growing list of
+  // per-role exceptions that can silently disagree with them.
   return arms;
 }
 
@@ -339,12 +358,18 @@ async function loadMarkChangeSide(
   // `lib/change-requests/labels.ts`'s `fetchLabels` already uses to resolve a
   // student label for the same table; a shorter guessed join fails silently
   // (an empty embed, not an error) rather than loudly.
+  // ⚠ An oversight role reads the whole school here too, for the same reason
+  // the declaration side does: `/markbook/change-requests` already shows them
+  // every row, and a log beside it that showed fewer reads as broken. The
+  // personal arms below are what everyone else gets, and they remain the only
+  // guard for those roles — `grade_change_requests` is readable under RLS by
+  // any account holding a role, so this branch is the one place the widening
+  // is allowed to happen, and it must stay keyed on the SESSION role.
+  const isOversight = scope.role != null && OVERSIGHT_ROLES.has(scope.role);
   const arms = markChangeScopeArms(scope);
 
-  const { data, error } = await service
-    .from('grade_change_requests')
-    .select(
-      `id, field_changed, slot_index, current_value, proposed_value, status,
+  let query = service.from('grade_change_requests').select(
+    `id, field_changed, slot_index, current_value, proposed_value, status,
        requested_by, requested_by_email, requested_at,
        primary_approver_id, secondary_approver_id,
        reviewed_by, reviewed_by_email, reviewed_at, decision_note,
@@ -354,8 +379,11 @@ async function loadMarkChangeSide(
            student:students!inner(first_name, last_name, student_number)
          )
        )`
-    )
-    .or(arms.join(','))
+  );
+
+  if (!isOversight) query = query.or(arms.join(','));
+
+  const { data, error } = await query
     .order('requested_at', { ascending: false })
     .limit(SOURCE_CAP);
   if (error) throw new Error(error.message);

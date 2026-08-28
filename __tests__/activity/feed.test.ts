@@ -404,51 +404,55 @@ describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
     expect(clause).not.toContain('status.eq.approved');
   });
 
-  it('a school_admin additionally admits legacy rows with no approver assigned', async () => {
-    const captured = { orClauses: [] as string[] };
-    await loadActivityPage(makeMarkChangeService(captured), {
-      userId: 'admin-1',
-      role: 'school_admin',
-      tab: 'grade_change',
-      cursor: null,
-      limit: 20,
-    });
+  // An oversight role reads the whole school, exactly as it does on the queue
+  // page. The proof is the ABSENCE of a scoping `.or()` — not a wider one.
+  it.each(['school_admin', 'academic_coordinator', 'superadmin'] as const)(
+    'issues no scoping filter at all for %s, who sees the whole school',
+    async (role) => {
+      const captured = { orClauses: [] as string[] };
+      await loadActivityPage(makeMarkChangeService(captured), {
+        userId: 'oversight-1',
+        role,
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      });
 
-    expect(captured.orClauses).toHaveLength(1);
-    expect(captured.orClauses[0]).toContain(
-      'and(primary_approver_id.is.null,secondary_approver_id.is.null)'
-    );
-  });
+      expect(captured.orClauses).toHaveLength(0);
+    }
+  );
 });
 
 /**
- * F4. `getSidebarChangeRequestCount` (sidebar-counts.ts:50-51) counts, for
- * `academic_coordinator`, every `status='approved'` row — the requests they
- * must apply — with no tie to requester or approver at all. Before this fix
- * `markChangeScopeArms` had no arm for that at all, so a coordinator was
- * requester of nothing and approver of nothing: their badge read the true
- * count while their panel said "Nothing yet" underneath it. This pins the
- * mirrored arm, that it is gated to the one role, and that the coordinator
- * also sees their own `applied_by` action (the one event only they produce).
+ * The feed shipped scoped to personal involvement for EVERY role, and the
+ * result was a superadmin whose `/markbook/change-requests` listed rows while
+ * the panel beside it said nothing had happened — the same complaint for
+ * declarations, where an oversight reader saw only the filings they happened
+ * to sit on. Every other surface in this product treats these three roles as
+ * seeing everything.
+ *
+ * ⚠ THE WIDENING IS THE LOG ONLY. "Waiting for you" is built from
+ * `canDecide`-shaped checks against this same person further down, so an
+ * oversight reader still owes exactly what they owed before. That is the
+ * property these two tests exist to hold apart.
  */
-describe('loadActivityPage — academic coordinator scope (F4)', () => {
-  it('mirrors the sidebar badge: every approved row, no approver tie', async () => {
+describe('loadActivityPage — oversight widens the log, never the to-do list', () => {
+  it('does not put another person’s pending work in an oversight reader’s waiting list', async () => {
     const captured = { orClauses: [] as string[] };
-    await loadActivityPage(makeMarkChangeService(captured), {
-      userId: 'coordinator-1',
-      role: 'academic_coordinator',
+    const page = await loadActivityPage(makeMarkChangeService(captured), {
+      userId: 'oversight-1',
+      role: 'superadmin',
       tab: 'grade_change',
       cursor: null,
       limit: 20,
     });
 
-    expect(captured.orClauses).toHaveLength(1);
-    const clause = captured.orClauses[0];
-    expect(clause).toContain('status.eq.approved');
-    expect(clause).toContain('applied_by.eq.coordinator-1');
+    // The fixture's row names somebody else as approver, so it is somebody
+    // else's job — visible in the log, absent from what this reader owes.
+    expect(page.waiting).toHaveLength(0);
   });
 
-  it('a teacher does not get the coordinator arm', async () => {
+  it('still scopes a teacher to their own involvement', async () => {
     const captured = { orClauses: [] as string[] };
     await loadActivityPage(makeMarkChangeService(captured), {
       userId: 'teacher-2',
@@ -458,7 +462,12 @@ describe('loadActivityPage — academic coordinator scope (F4)', () => {
       limit: 20,
     });
 
-    expect(captured.orClauses[0]).not.toContain('status.eq.approved');
+    expect(captured.orClauses).toHaveLength(1);
+    const clause = captured.orClauses[0];
+    expect(clause).toContain('requested_by.eq.teacher-2');
+    expect(clause).toContain('applied_by.eq.teacher-2');
+    expect(clause).not.toContain('status.eq.approved');
+    expect(clause).not.toContain('is.null');
   });
 });
 
