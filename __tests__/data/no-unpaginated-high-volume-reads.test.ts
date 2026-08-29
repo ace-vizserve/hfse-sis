@@ -23,6 +23,15 @@
  * THE ALLOWLIST CARRIES ITS MEASUREMENT. Every entry names the real worst-case
  * row count and the date it was counted. An entry without one is not allowed:
  * "probably fine" is precisely the reasoning this test replaces.
+ *
+ * WHAT THE WALK COVERS, AND WHY IT WIDENED (2026-08-30). It used to walk `lib`
+ * and `app/api` only. A server component is not an API route but reads the
+ * database exactly like one, and the gap was not theoretical: walking the whole
+ * of `app` surfaced `markbook/grading/page.tsx`, whose chunked-but-unpaged
+ * `grade_entries` read was returning 1,029 rows against the 1,000-row cap in
+ * production — silently short on every render. It is fixed rather than
+ * allowlisted; the walk now covers `lib` and all of `app` so the next one
+ * cannot hide in a page file.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -112,6 +121,16 @@ const ALLOWED: Record<string, { rows: number; measured: string; why: string }> =
       measured: '2026-08-10',
       why: "one section's roster x one subject x <=3 prior terms",
     },
+    // Surfaced by widening the walk to all of `app` (2026-08-30). This is the
+    // page form of the two `.eq('grading_sheet_id', id)` entries above and
+    // carries the same bound, measured rather than inherited: across all 260
+    // AY2026 sheets the worst holds 33 entries and the median 17, against a
+    // Hard Rule #5 ceiling of 50 students per sheet.
+    'app/(markbook)/markbook/grading/[id]/page.tsx': {
+      rows: 33,
+      measured: '2026-08-30',
+      why: 'one sheet by id — worst sheet in AY2026 holds 33 entries, and Hard Rule #5 caps a sheet at 50 students',
+    },
 
     // ── dashboards ────────────────────────────────────────────────────────
     'lib/attendance/dashboard.ts': {
@@ -183,13 +202,17 @@ function unpagedTables(source: string): string[] {
   return [...hits];
 }
 
-const OFFENDERS = walk(join(REPO_ROOT, 'lib'))
-  .concat(walk(join(REPO_ROOT, 'app', 'api')))
-  .map((file) => ({
-    file: relative(file),
-    tables: unpagedTables(readFileSync(file, 'utf8')),
-  }))
-  .filter((r) => r.tables.length > 0);
+// `app` subsumes `app/api`, so it is walked once, not twice — concatenating
+// both would double every API-route offender and make the allowlist's
+// stale-entry check meaningless.
+const SCANNED = walk(join(REPO_ROOT, 'lib')).concat(
+  walk(join(REPO_ROOT, 'app'))
+);
+
+const OFFENDERS = SCANNED.map((file) => ({
+  file: relative(file),
+  tables: unpagedTables(readFileSync(file, 'utf8')),
+})).filter((r) => r.tables.length > 0);
 
 describe('every high-volume read either pages or has a measured bound', () => {
   it('has no unpaginated read that is not on the allowlist', () => {
@@ -233,10 +256,20 @@ describe('every high-volume read either pages or has a measured bound', () => {
 
 describe('the scan is really looking at something', () => {
   it('walked a plausible number of files', () => {
-    const count =
-      walk(join(REPO_ROOT, 'lib')).length +
-      walk(join(REPO_ROOT, 'app', 'api')).length;
-    expect(count).toBeGreaterThanOrEqual(150);
+    // lib (324) + all of app (345) on 2026-08-30. The floor is deliberately
+    // well under that: it is here to catch a walk that silently stops finding
+    // files, not to pin a file count that changes every sprint.
+    expect(SCANNED.length).toBeGreaterThanOrEqual(400);
+  });
+
+  it('reaches page files, not just lib and API routes', () => {
+    // The specific gap that let a live truncation sit unseen. If the walk ever
+    // narrows back to `app/api`, this fails and says why.
+    expect(
+      SCANNED.some((f) =>
+        relative(f).startsWith('app/(markbook)/markbook/grading/')
+      )
+    ).toBe(true);
   });
 
   it('sees the reads that were fixed as paging now', () => {

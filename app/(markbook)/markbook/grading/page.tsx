@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
@@ -195,11 +196,18 @@ export default async function GradingListPage({
   // page uses for its Graded stat. `isExaminable` is read off each sheet's
   // own subject (already loaded above) rather than embedded per-entry.
   //
-  // Chunked .in() filter — keeps the URL under PostgREST's 8 KB cap and
-  // sidesteps the 1000-row response cap. 50 sheet IDs per chunk × ~80
-  // entries per sheet = ~4000 rows per request, still under cap because
-  // grade_entries rows are skinny. At HFSE scale (10+ sections × ~40 sheets)
-  // a single .in() with all ids was hitting 400 Bad Request from the embed.
+  // TWO SEPARATE CEILINGS, and this code used to answer only one of them.
+  // Chunking the `.in()` filter keeps the request URL under the gateway's
+  // ~14.3 KB cap (lib/supabase/paginate.ts measured the exact figure). It does
+  // nothing at all about PostgREST's 1,000-row RESPONSE cap, which is a row
+  // count and not a byte budget — so the comment that used to sit here,
+  // "~4000 rows per request, still under cap because grade_entries rows are
+  // skinny", was reasoning about the wrong limit and the page was silently
+  // short. Measured in production 2026-08-30: AY2026 has 260 sheets, and the
+  // first chunk of 50 returned 1,029 rows against the 1,000 cap — so 29 entries
+  // were being dropped, with no error, every time this page rendered, and the
+  // Graded percentage on those sheets read low. Now chunked AND paged, the same
+  // pairing lib/markbook/dashboard.ts uses over this identical shape.
   type GradedEntry = {
     grading_sheet_id: string;
     quarterly_grade: number | null;
@@ -210,30 +218,40 @@ export default async function GradingListPage({
       | { enrollment_status: string }[]
       | null;
   };
-  const gradedEntries: GradedEntry[] = [];
+  // 50 sheet uuids is ~1.9 KB of filter, a quarter of the safe URL budget, so
+  // the chunk size is left exactly as it was — the defect was never the chunk
+  // width. The catch stays INSIDE the chunk so one failing chunk costs only its
+  // own sheets' Graded figures, which is what the previous `continue` did.
   const CHUNK = 50;
-  const sheetChunks: string[][] = [];
-  for (let i = 0; i < sheetIds.length; i += CHUNK) {
-    sheetChunks.push(sheetIds.slice(i, i + CHUNK));
-  }
-  const chunkResults = await Promise.all(
-    sheetChunks.map((slice) =>
-      supabase
-        .from('grade_entries')
-        .select(
-          `grading_sheet_id, quarterly_grade, letter_grade, is_na,
-           section_student:section_students(enrollment_status)`
-        )
-        .in('grading_sheet_id', slice)
-    )
+  const gradedEntries: GradedEntry[] = await fetchInChunks<GradedEntry>(
+    sheetIds,
+    async (slice) => {
+      try {
+        return await fetchAllPages<GradedEntry>((from, to) =>
+          supabase
+            .from('grade_entries')
+            .select(
+              `grading_sheet_id, quarterly_grade, letter_grade, is_na,
+               section_student:section_students(enrollment_status)`
+            )
+            .in('grading_sheet_id', slice)
+            // Offset paging over an unordered result set is not stable —
+            // Postgres is free to hand back a different physical order per
+            // request, which lets a row appear on two pages or on none. The
+            // primary key is the cheapest deterministic sort available.
+            .order('id')
+            .range(from, to)
+        );
+      } catch (err) {
+        console.error(
+          '[grading list] entries fetch failed:',
+          err instanceof Error ? err.message : err
+        );
+        return [];
+      }
+    },
+    CHUNK
   );
-  for (const { data, error } of chunkResults) {
-    if (error) {
-      console.error('[grading list] entries fetch failed:', error.message);
-      continue;
-    }
-    gradedEntries.push(...((data ?? []) as GradedEntry[]));
-  }
 
   // Group entries by sheet id so each sheet runs the literal per-sheet
   // gradedPct block against its own rows.
