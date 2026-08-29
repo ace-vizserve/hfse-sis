@@ -694,13 +694,17 @@ describe('budget: recomputeSheetEntries (25 entries, all changed)', () => {
 // ─────────────────────────────────────────────────────────────────────────
 // 5. logActions — 30 rows
 // ─────────────────────────────────────────────────────────────────────────
-// Measured 2026-08-29. lib/audit/log-action.ts::logActions already fans its
-// rows out via Promise.all — this confirms that shape numerically rather
-// than by reading the source, and gives a real "N inserts, 1 wave" number to
-// compare a future bulk-audit surface against.
+// Measured 2026-08-29. lib/audit/log-action.ts::logActions fanned its rows out
+// via Promise.all — 30 round trips in one wave. Re-measured 2026-08-29 after
+// phase 5 item 1: 30/1 -> 1/1, one array insert. The wave count never moved
+// because the fan-out was already parallel; the round trips are the whole win,
+// and they scale — 200 on a teacher-assignment bulk create, ~125 on a year lock.
+// The per-row shape survives as the fallback when the batch is rejected
+// (__tests__/audit/log-actions-batch.test.ts), so a bad row still costs only
+// itself.
 
 describe('budget: logActions (30 rows)', () => {
-  it('measured 2026-08-29: roundTrips=30, waves=1 (Promise.all fan-out)', async () => {
+  it('measured 2026-08-29: roundTrips=1, waves=1 (one array insert)', async () => {
     const { logActions } = await import('@/lib/audit/log-action');
     const rows = Array.from({ length: 30 }, (_, i) => ({
       action: 'attendance.daily.update' as const,
@@ -718,7 +722,7 @@ describe('budget: logActions (30 rows)', () => {
         ),
       { audit_log: [] }
     );
-    expect(roundTrips).toBe(30);
+    expect(roundTrips).toBe(1);
     expect(waves).toBe(1);
   });
 });
