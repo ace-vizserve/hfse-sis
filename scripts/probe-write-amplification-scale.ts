@@ -126,7 +126,7 @@ async function main() {
   console.log('\n-- p-files --');
   line(
     'freshen fan-out is a code constant (EXPIRING_SLOTS x 2)',
-    'see lib/p-files/document-slots.ts'
+    'see lib/p-files/document-config.ts — 8 slots carry an expiryCol, so 16'
   );
 
   // ── AY2025 backfill scale (item 7) ────────────────────────────────────────
