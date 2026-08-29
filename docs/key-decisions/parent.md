@@ -131,3 +131,15 @@ Parent report card: **cumulative earlier-term comments + parents may read the le
 **Proven end to end against production**, through the real routes: filing 201, a rejection with no reason **400** with its own sentence, a rejection with a reason 200, and the parent's read-back carrying the approver's exact words while every other status returned `null`.
 
 **Still not built:** any email. The seam is clean (`filed_by_email` is `not null`, `after()` is the established trigger, `renderEmailFrame` is the template), but more outbound mail is blocked on the new subdomain and Resend account. The portal status list remains how a parent finds out — it can now say why.
+
+✅ **Browser-proven 2026-08-29** — Mr Ace turned filings down through the SIS and the reason reaches `GET /api/parent/v2/declarations` as `decisionReason`. ⚠ **The parent not seeing it yet is EXPECTED**: the portal is the other team's app and does not render the field. Do not treat that as a defect on this side.
+
+🔴 **OPEN AND NOT FIXED — the exact-match success discards a certificate (found 2026-08-29).**
+
+Reproduced against production: a parent files for a date their child already has an **approved** absence on, and the route returns **200 with the OLD filing**. Nothing is written and the `evidenceUrl` / `evidencePath` they just attached is thrown away. No queue entry appears, because the existing filing is already decided and therefore waits on nobody.
+
+**The cause is a rule doing its job outside the case it was written for.** `findOverlappingFilings` counts a clash against `['pending','approved']` (`lib/declarations/filing-window.ts:154`), and the exact-date branch (`app/api/parent/v2/declarations/route.ts:292-308`) answers it as a **double-tap**. ⚠ **That answer is right for what it was designed for** — a re-submit seconds apart on a flaky connection loses nothing, and showing somebody a failure for their own double-tap makes them tap a third time. It is wrong days later, when the parent is doing something genuinely new: supplying the medical certificate the school asked for.
+
+**Proposed, awaiting Mr Ace:** keep 200 for an exact match on a **pending** filing; return **409** with a plain sentence when the existing one is already **decided**. ⚠ **The deeper question is the school's, not ours** — when a parent obtains the MC _after_ an absence is approved, may they attach it to the existing filing, or is that "contact the office"? Note the register already reads `EX` / `mc` regardless of the certificate (KD #197), so this is about **evidence**, not about the mark.
+
+⚠ **The trap only fires when a filing for those exact dates already exists.** A filing for a different child, or different dates, lands normally — which is why one of Mr Ace's attempts worked and the others silently did not.
