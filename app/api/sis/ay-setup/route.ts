@@ -101,6 +101,9 @@ export async function POST(request: Request) {
   }
 
   revalidateTag(`sis:${ayCode}`, 'max');
+  // `create_academic_year` writes this AY's term rows, which `loadTerms`
+  // (lib/dashboard/windows.ts) caches globally.
+  revalidateTag('dashboard-windows', 'max');
 
   return NextResponse.json({ ok: true, alreadyExisted, summary });
 }
@@ -266,6 +269,9 @@ export async function DELETE(request: Request) {
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');
+  // `delete_academic_year` removes this AY's term rows, which `loadTerms`
+  // (lib/dashboard/windows.ts) caches globally.
+  revalidateTag('dashboard-windows', 'max');
 
   return NextResponse.json({ ok: true, summary });
 }

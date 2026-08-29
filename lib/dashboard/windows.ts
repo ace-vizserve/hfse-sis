@@ -68,6 +68,20 @@ const loadTerms = unstable_cache(
   loadTermsUncached,
   ['dashboard', 'windows', 'terms'],
   {
+    // Term dates are configuration: stale windows are a visibly wrong answer,
+    // not just an old number, so this tag is emitted rather than left to the
+    // TTL. Three write paths touch `terms` and all three emit it — the term
+    // PATCH (gated on its dates actually moving), and the AY setup POST /
+    // DELETE, whose RPCs create and remove the term rows.
+    //
+    // Three other routes touch terms and deliberately do NOT emit it:
+    //   - evaluation/virtue-theme — writes `terms.virtue_theme`, which the
+    //     query below does not select.
+    //   - sis/ay-setup/seed-calendar — reads terms, writes `school_calendar`.
+    //   - sis/ay-setup PATCH — flips `academic_years.is_current`, not
+    //     `terms.is_current`. Nothing in `app/` ever writes `terms.is_current`;
+    //     it is stamped by `create_academic_year` in SQL.
+    // Don't close a perceived gap by shotgunning the tag onto those three.
     revalidate: 300,
     tags: ['dashboard-windows'],
   }
