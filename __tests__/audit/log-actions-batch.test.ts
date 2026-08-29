@@ -8,9 +8,13 @@
  * insert is the easy half. The hard half is that an array insert is
  * ALL-OR-NOTHING — one row PostgREST rejects discards the other 199 — whereas
  * the per-row shape lost only the bad row. A silently incomplete audit trail
- * is worse than a slow one, so the batch writer falls back to per-row on ANY
- * insert error, and that fallback is pinned here rather than left as a branch
- * nothing exercises.
+ * is worse than a slow one, so a REJECTED batch is retried row by row, and that
+ * fallback is pinned here rather than left as a branch nothing exercises.
+ *
+ * ⚠ The fallback is NARROW on purpose, and the narrowing is the second thing
+ * this file pins. It runs on a returned `error` — the statement ran, failed,
+ * and committed nothing — and NOT on a throw, which is a transport failure that
+ * may have arrived after the commit. See the pair of tests near the bottom.
  *
  * Hard Rule #6: audit rows are append-only. Nothing here may turn an append
  * into an overwrite, so both paths assert the verb is `insert`.
@@ -167,7 +171,36 @@ describe('logActions — batched audit writes', () => {
     consoleError.mockRestore();
   });
 
-  it('falls back when the batch insert throws rather than returning an error', async () => {
+  // ── The two failure paths are NOT the same failure ────────────────────────
+  //
+  // A returned `error` is the server's own answer: the statement ran and
+  // failed, so nothing committed and a per-row retry can only repair.
+  //
+  // A THROW is a transport failure — a dead socket, an aborted fetch, a gateway
+  // timeout — and any of those can arrive AFTER the insert committed. Retrying
+  // then writes every row a second time into a table that is append-only by
+  // Hard Rule #6 and has no unique constraint to stop it: a class register
+  // submit's ~30 marks twice in the log and twice in the Activity panel.
+  //
+  // These two tests exist to keep that distinction from being "tidied" back
+  // into one branch.
+
+  it('retries per-row on a RETURNED error — nothing committed, so nothing can duplicate', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const { client, calls } = recordingClient({
+      failFirstInsert: 'invalid input value for enum audit_action',
+    });
+
+    await logActions(client, ACTOR, rows(30));
+
+    // 1 rejected batch + 30 single-row retries.
+    expect(calls).toHaveLength(31);
+    consoleError.mockRestore();
+  });
+
+  it('does NOT retry when the batch insert THROWS — the rows may already have landed', async () => {
     const consoleError = vi
       .spyOn(console, 'error')
       .mockImplementation(() => {});
@@ -178,6 +211,9 @@ describe('logActions — batched audit writes', () => {
         return {
           insert(payload: unknown) {
             insertCount += 1;
+            // A socket that dies after the server committed looks exactly like
+            // one that died before it. The caller cannot tell, so it must not
+            // guess.
             if (insertCount === 1) throw new Error('socket hang up');
             singles.push(payload);
             return Promise.resolve({ data: null, error: null });
@@ -186,9 +222,38 @@ describe('logActions — batched audit writes', () => {
       },
     } as unknown as SupabaseClient;
 
-    await logActions(client, ACTOR, rows(5));
+    await logActions(client, ACTOR, rows(30));
 
-    expect(singles).toHaveLength(5);
+    // The batch was attempted once and NOT re-sent. Were this to fall back,
+    // insertCount would be 31 and 30 duplicate rows would be in flight.
+    expect(insertCount).toBe(1);
+    expect(singles).toHaveLength(0);
+
+    // The ambiguity is stated out loud, not swallowed — this is the only
+    // record that the rows might be missing.
+    const logged = consoleError.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/THREW/);
+    expect(logged).toMatch(/may or may not have landed/);
+    expect(logged).toMatch(/NOT retrying/);
+
+    consoleError.mockRestore();
+  });
+
+  it('still never throws on the ambiguous path', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const client = {
+      from() {
+        return {
+          insert() {
+            throw new Error('ECONNRESET');
+          },
+        };
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(logActions(client, ACTOR, rows(3))).resolves.toBeUndefined();
     consoleError.mockRestore();
   });
 
