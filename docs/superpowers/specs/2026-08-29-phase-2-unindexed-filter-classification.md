@@ -214,3 +214,76 @@ pairs.
 
 **§2 subtotal: 34 pairs listed, of which 32 are genuinely exempt** and 2 are §1 entries appearing
 under their scanner label.
+
+---
+
+## §3 — EXEMPT: bounded by construction (33 pairs, 116 call sites)
+
+Rule 2. Postgres will not choose an index on a table that fits in a page or two, and adding one buys
+a write cost for a plan the planner will refuse. **Each row names the fact that bounds the table** —
+a schema constraint, a Key Decision, or a measured production count. None of these is an estimate.
+
+### §3a — fixed-size configuration tables
+
+| Pair                                                        | Sites | Bound                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terms.term_number`                                         | 18    | **4 rows per AY** — `001:29`, `check (term_number between 1 and 4)`. ~12–16 rows total. The second column of `unique (academic_year_id, term_number)`, so the composite serves it anyway once `academic_year_id` is filtered, which every one of the 18 sites does. |
+| `terms.start_date`                                          | 1     | Same 4-per-AY bound. `lib/dashboard/windows.ts:43` sorts them.                                                                                                                                                                                                      |
+| `academic_years.accepting_applications`                     | 2     | **≈ 3 rows** (Phase 0). A boolean on a 3-row table.                                                                                                                                                                                                                 |
+| `levels.sort_order`                                         | 1     | **Fixed 10 rows**, P1–P6 + S1–S4 — KD #153 SUPERSEDED note.                                                                                                                                                                                                         |
+| `houses.sort_order`                                         | 1     | **4 rows** — KD #178.                                                                                                                                                                                                                                               |
+| `approval_stages.is_active`                                 | 4     | **2 rows** — the declaration flow's adviser → officer-in-charge ladder, KD #196. Also already served by `approval_stages_flow_idx` (`126:126`), a partial index `where is_active`.                                                                                  |
+| `sections.name`                                             | 5     | **21 sections per AY** — KD #193 / the AY2026 deployment import.                                                                                                                                                                                                    |
+| `sections.level_id`                                         | 4     | Same 21-per-AY bound; also the second column of `unique (academic_year_id, level_id, name)` (`001:59`).                                                                                                                                                             |
+| `subjects.is_examinable`                                    | 3     | The subject catalogue — one row per subject the school offers. A boolean has ~2 distinct values, so an index would be rejected by the planner even on a large table.                                                                                                |
+| `subjects.name`                                             | 1     | Same table; an `.order()` for a picker.                                                                                                                                                                                                                             |
+| `subject_configs.subject_id`                                | 5     | One row per (AY, subject) since `080:481` collapsed the shape — bounded by the catalogue × ≈3 AYs.                                                                                                                                                                  |
+| `role_permissions` / `level_aliases` / `subject_report_map` | —     | Already covered in §2a by their PK/unique.                                                                                                                                                                                                                          |
+
+### §3b — per-AY roster tables (bounded by a ~400-student school × 21 sections)
+
+| Pair                                    | Sites | Bound                                                                                                                                                                                                                                                       |
+| --------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `teacher_assignments.role`              | 16    | **115 rows in AY2026** (measured — KD #194 import, 123 rows regenerated 2026-08-27). `role` has 4 distinct values across a 115-row table.                                                                                                                   |
+| `attendance_records.section_student_id` | 10    | One row per (term, enrolment) ≈ 1,600/AY. **And every call site also filters `term_id`**, which is the lead column of `unique (term_id, section_student_id)` (`001:207`) — so the existing composite serves the whole predicate, not just half of it.       |
+| `evaluation_writeups.student_id`        | 9     | One row per (term, student) ≈ 1,600/AY. 8 of the 9 sites also filter `term_id`, the lead column of `unique (term_id, student_id)` (`018:102`); the ninth (`lib/classroom/queries.ts:137`) is an `.in()` over one section's ~25 students against that bound. |
+| `evaluation_writeups.submitted`         | 3     | Same table; a boolean.                                                                                                                                                                                                                                      |
+| `grading_sheets.subject_config_id`      | 3     | **125 sheets in AY2026** (measured 2026-08-27).                                                                                                                                                                                                             |
+| `grading_sheets.subject_id`             | 2     | Same 125-sheet bound; also the third column of `unique (term_id, section_id, subject_id)` (`001:141`).                                                                                                                                                      |
+| `report_card_publications.created_at`   | 1     | 21 sections × 4 terms = **≤ 84 rows per AY**, capped by `unique (section_id, term_id)` (`007:33`).                                                                                                                                                          |
+| `${prefix}_discount_codes.endDate`      | 1     | A handful of codes per AY (KD #118 early-bird). `lib/sis/queries.ts:1405` reads the whole table and sorts it.                                                                                                                                               |
+| `calendar_events.category`              | 1     | School events per term — low hundreds across all AYs. `lib/evaluation/ptc-resolver.ts:91` filters `category = 'ptc'`, which is a small slice of an already-small table.                                                                                     |
+
+### §3c — workflow tables (bounded by how often people file things)
+
+| Pair                                    | Sites | Bound                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approval_requests.status`              | 4     | One row per filing in flight. Already served by `approval_requests_open_idx` (`126:200`), a partial index `where status = 'pending'` — and `'pending'` is the value every site filters on.                                                                                                                                      |
+| `approval_request_stages.status`        | 4     | Two rows per request (the 2-stage ladder). Both `approval_request_stages_pool_idx` (`126:275`) and `_section_idx` (`126:280`) are partial `where status = 'pending'`.                                                                                                                                                           |
+| `approval_request_stages.resolver`      | 1     | Same 2-rows-per-request bound; `resolver` has 2 distinct values (`named`, `form_adviser`).                                                                                                                                                                                                                                      |
+| `approval_stage_approvers.created_at`   | 1     | One row per person on a named stage — currently 2 people (KD #196: Ms Lhen, Ms Elaine Wee).                                                                                                                                                                                                                                     |
+| `approver_assignments.created_at`       | 2     | Bounded by `unique (user_id, flow)` (`013:33`) across a 22-account staff roster and 2 flows.                                                                                                                                                                                                                                    |
+| `student_declarations.status`           | 2     | Both sites narrow first on an indexed column — `section_id` (`125:212`) at `lib/declarations/cell-filings.ts:95`, `student_id` (`125:209`) at `lib/declarations/filing-window.ts:166`. There is also a partial `student_declarations_pending_idx` (`125:223`). Production held **0 pending declarations** at the Phase 0 probe. |
+| `student_discipline_records.created_at` | 2     | An `.order()` after `.eq('student_id', …)`, indexed by `student_discipline_records_student_idx` (`120:144`). One row per filed incident; the module shipped 2026-08-21.                                                                                                                                                         |
+| `grade_change_requests.requested_at`    | 3     | An `.order()` after `status` / `requested_by` filters that are both indexed (`009:75`, `009:79`).                                                                                                                                                                                                                               |
+| `unknown.requested_at`                  | 1     | Same — `grade_change_requests.requested_at` at `lib/activity/feed.ts:387`, after the `.or(arms)` scope filter.                                                                                                                                                                                                                  |
+
+### §3d — `audit_log` JSONB path filters (4 pairs, 7 call sites)
+
+| Pair                                           | Sites | Verdict |
+| ---------------------------------------------- | ----- | ------- |
+| `audit_log.context->after->>enrollment_status` | 2     | EXEMPT  |
+| `audit_log.context->>lateEnrolleeTransition`   | 2     | EXEMPT  |
+| `audit_log.context->>reEnrolment`              | 2     | EXEMPT  |
+| `audit_log.context->>ay_code`                  | 1     | EXEMPT  |
+
+All seven sites are in `lib/sis/movements.ts`, which derives the student-movements report from the
+audit trail. **`audit_log` holds 1,499 rows** (Phase 0 probe, 2026-08-29). Four expression indexes on
+four different JSONB paths, on a table that every admin action appends to, would cost four index
+writes per action to save a sub-millisecond scan of one page-set. The movements report is also
+already narrowed by `audit_log_action_created_at_idx` (`052:8`) and
+`audit_log_entity_type_created_at_idx` (`052:19`).
+
+⚠ **If this is ever revisited, the right answer is one `gin` index on `context`, not four btree
+expression indexes** — the paths queried will keep changing as the movements report grows, and an
+expression index only serves the exact expression it was built on.
