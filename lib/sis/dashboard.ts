@@ -1083,7 +1083,7 @@ export function getAuditActivityByModule(
       input.cmpFrom ?? '',
       input.cmpTo ?? '',
     ],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1326,7 +1326,7 @@ export function getAuditDailyTrend(
       input.cmpFrom ?? '',
       input.cmpTo ?? '',
     ],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1377,7 +1377,7 @@ export function getGradeChangePipeline(
   return unstable_cache(
     loadGradeChangePipelineUncached,
     ['sis', 'grade-change-pipeline', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1415,7 +1415,7 @@ export function getTopAuditActions(
   return unstable_cache(
     loadTopAuditActionsUncached,
     ['sis', 'top-audit-actions', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1462,7 +1462,7 @@ export function getAuthEventCounts(
   return unstable_cache(
     loadAuthEventCountsUncached,
     ['sis', 'auth-event-counts', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
