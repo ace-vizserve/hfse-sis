@@ -435,14 +435,21 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
   // Waves are unchanged, and that is the expected shape: the duplicate sat in
   // the same `Promise.all` as its own superset, so it never added depth. The
   // per-section fan-out this surface exists to size is untouched.
-  // Re-measured 2026-08-29 after phase 4: 42/21 -> 42/15. The roster counts,
+  // Re-measured 2026-08-29 after phase 4 item 2: 42/15 -> 42/11. The vacation
+  // quota is the deepest thing this surface asks for, and most of that depth
+  // was calendar work that never depended on the class: `loadTermTripContext`
+  // now runs alongside the class's daily read instead of after it, and its own
+  // two calendar expansions (this term's window, the previous term's last
+  // school day) run as a pair instead of end to end.
+  //
+  // Re-measured 2026-08-29 after phase 4 item 1: 42/21 -> 42/15. The roster counts,
   // the per-section fan-out and the quota scan are three independent groups
   // that ran one after another — and the quota scan ran last only because it
   // was `await`ed inside the returned object literal, which evaluates its
   // properties in source order. Inside the quota scan the compassionate and
   // vacation reads were serial for the same object-literal reason. Nothing
   // was dropped: `roundTrips` is unchanged.
-  it('measured 2026-08-29: roundTrips=42, waves=15', async () => {
+  it('measured 2026-08-29: roundTrips=42, waves=11', async () => {
     const { loadAdviserAttendanceDashboard } =
       await import('@/lib/attendance/adviser-dashboard-queries');
     const { roundTrips, waves } = await measureViaServiceMock(
@@ -461,7 +468,7 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
     // sections (rather than per-section Promise.all groups run one after
     // another) is the shape a later phase should be aiming at here.
     expect(roundTrips).toBe(42);
-    expect(waves).toBe(15);
+    expect(waves).toBe(11);
   });
 });
 

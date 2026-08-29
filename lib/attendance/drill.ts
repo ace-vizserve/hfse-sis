@@ -828,34 +828,40 @@ async function rollupVacationLeave(
   if (!term.start_date || !term.end_date) return [];
 
   const service = createServiceClient();
-  const termSchoolDays = (
-    await expandSchoolDays(service, {
+  const priorTerm = ctx.terms.find(
+    (t) => t.term_number === term.term_number - 1
+  );
+
+  // Both windows come off `term` and `ctx.terms`, which are already in memory
+  // — neither expansion reads anything the other produces, and each is a
+  // three-query calendar walk. Same pair, same reasoning, as
+  // `loadTermTripContext` in lib/attendance/queries.ts.
+  const [termSchoolDayRows, priorDays] = await Promise.all([
+    expandSchoolDays(service, {
       startDate: term.start_date,
       endDate: term.end_date,
       academicYearId: ctx.ayId,
       levelType: null,
-    })
-  ).map((d) => d.date);
+    }),
+    priorTerm?.start_date && priorTerm.end_date
+      ? expandSchoolDays(service, {
+          startDate: priorTerm.start_date,
+          endDate: priorTerm.end_date,
+          academicYearId: ctx.ayId,
+          levelType: null,
+        })
+      : Promise.resolve(null),
+  ]);
+  const termSchoolDays = termSchoolDayRows.map((d) => d.date);
 
-  const priorTerm = ctx.terms.find(
-    (t) => t.term_number === term.term_number - 1
-  );
   const carriedIn = new Set<string>();
-  if (priorTerm?.start_date && priorTerm.end_date) {
-    const priorDays = await expandSchoolDays(service, {
-      startDate: priorTerm.start_date,
-      endDate: priorTerm.end_date,
-      academicYearId: ctx.ayId,
-      levelType: null,
-    });
-    const lastPriorDay = priorDays.at(-1)?.date ?? null;
-    if (lastPriorDay) {
-      for (const e of entries) {
-        if (e.attendanceDate !== lastPriorDay) continue;
-        if (e.status !== 'EX' || e.exReason !== 'vacation') continue;
-        const studentId = studentIdBySsId.get(e.studentSectionId);
-        if (studentId) carriedIn.add(studentId);
-      }
+  const lastPriorDay = priorDays?.at(-1)?.date ?? null;
+  if (lastPriorDay) {
+    for (const e of entries) {
+      if (e.attendanceDate !== lastPriorDay) continue;
+      if (e.status !== 'EX' || e.exReason !== 'vacation') continue;
+      const studentId = studentIdBySsId.get(e.studentSectionId);
+      if (studentId) carriedIn.add(studentId);
     }
   }
 

@@ -958,39 +958,43 @@ async function loadTermTripContext(
   // A level-specific closure day is rare and would at worst merge two trips
   // that a primary-only holiday separated — far less wrong than a figure that
   // disagrees with itself between screens.
-  const schoolDays = (
-    await expandSchoolDays(service, {
+  // TWO INDEPENDENT WALKS OFF THE SAME TERM ROW. This term's window and the
+  // previous term's last school day are both derived from `term` alone —
+  // neither reads anything the other produces — but they ran end to end, so a
+  // three-query calendar expansion waited for another three-query calendar
+  // expansion for no reason. Run as a pair, the depth is the longer arm (the
+  // prior one: look the term up, then expand it) instead of their sum.
+  const [schoolDayRows, priorSchoolDay] = await Promise.all([
+    expandSchoolDays(service, {
       startDate: term.start_date,
       endDate: term.end_date,
       academicYearId: term.academic_year_id,
       levelType: null,
-    })
-  ).map((d) => d.date);
+    }),
+    (async () => {
+      const { data: priorRow } = await service
+        .from('terms')
+        .select('start_date, end_date')
+        .eq('academic_year_id', term.academic_year_id)
+        .eq('term_number', term.term_number - 1)
+        .maybeSingle();
+      const prior = priorRow as {
+        start_date: string | null;
+        end_date: string | null;
+      } | null;
+      if (!prior?.start_date || !prior.end_date) return null;
 
-  const { data: priorRow } = await service
-    .from('terms')
-    .select('start_date, end_date')
-    .eq('academic_year_id', term.academic_year_id)
-    .eq('term_number', term.term_number - 1)
-    .maybeSingle();
-  const prior = priorRow as {
-    start_date: string | null;
-    end_date: string | null;
-  } | null;
-  if (!prior?.start_date || !prior.end_date) {
-    return { schoolDays, priorSchoolDay: null };
-  }
+      const priorDays = await expandSchoolDays(service, {
+        startDate: prior.start_date,
+        endDate: prior.end_date,
+        academicYearId: term.academic_year_id,
+        levelType: null,
+      });
+      return priorDays.at(-1)?.date ?? null;
+    })(),
+  ]);
 
-  const priorDays = await expandSchoolDays(service, {
-    startDate: prior.start_date,
-    endDate: prior.end_date,
-    academicYearId: term.academic_year_id,
-    levelType: null,
-  });
-  return {
-    schoolDays,
-    priorSchoolDay: priorDays.at(-1)?.date ?? null,
-  };
+  return { schoolDays: schoolDayRows.map((d) => d.date), priorSchoolDay };
 }
 
 /** Was this enrolment on vacation leave on one specific earlier day? */
@@ -1110,17 +1114,35 @@ export async function getVacationLeaveUsageForSection(
 
   // PAGINATED for the same reason as its compassionate sibling above: the
   // worst (section x term) measured 1,610 rows on 2026-08-10, over the cap.
-  const daily = await fetchAllPages<DailyRow>((from, to) =>
-    service
-      .from('attendance_daily')
-      .select(
-        'section_student_id, date, period_id, status, ex_reason, recorded_at'
-      )
-      .in('section_student_id', allAyEnrolmentIds)
-      .eq('term_id', termId)
-      .order('recorded_at', { ascending: false })
-      .range(from, to)
-  );
+  //
+  // ⚠ TRIPS, NOT DAYS. The term's school days and the day before it are the
+  // same for everybody here, so they are resolved ONCE and reused across the
+  // class — the per-student part is only which of those days they were away.
+  //
+  // `loadTermTripContext` takes the term id and nothing else, so it never
+  // needed to wait for this class's marks; it ran after them anyway, and it
+  // is by far the deeper of the two (a term row, then two calendar expansions).
+  // Its single-student sibling `getVacationLeaveUsage` above has always paired
+  // it with its own daily read in one `Promise.all` — this is the batch
+  // version catching up with it.
+  //
+  // Started HERE and not earlier on purpose: the three guards above return
+  // without ever needing a trip context, so hoisting this any higher would
+  // trade one wave for a handful of wasted calendar reads on an empty class.
+  const [daily, { schoolDays, priorSchoolDay }] = await Promise.all([
+    fetchAllPages<DailyRow>((from, to) =>
+      service
+        .from('attendance_daily')
+        .select(
+          'section_student_id, date, period_id, status, ex_reason, recorded_at'
+        )
+        .in('section_student_id', allAyEnrolmentIds)
+        .eq('term_id', termId)
+        .order('recorded_at', { ascending: false })
+        .range(from, to)
+    ),
+    loadTermTripContext(service, termId),
+  ]);
 
   const seen = new Set<string>();
   const vacationDatesBySsId = new Map<string, Set<string>>();
@@ -1136,13 +1158,6 @@ export async function getVacationLeaveUsageForSection(
     }
   }
 
-  // ⚠ TRIPS, NOT DAYS. The term's school days and the day before it are the
-  // same for everybody here, so they are resolved ONCE and reused across the
-  // class — the per-student part is only which of those days they were away.
-  const { schoolDays, priorSchoolDay } = await loadTermTripContext(
-    service,
-    termId
-  );
   const carriedInEnrolments = priorSchoolDay
     ? await wasOnVacation(service, allAyEnrolmentIds, priorSchoolDay)
     : new Set<string>();
