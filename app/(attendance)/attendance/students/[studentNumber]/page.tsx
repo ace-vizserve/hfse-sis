@@ -64,13 +64,36 @@ export default async function AttendanceStudentDetailPage({
 
   const service = createServiceClient();
 
-  const { data: student } = await service
-    .from('students')
-    .select(
-      'id, student_number, last_name, first_name, middle_name, urgent_compassionate_allowance, vacation_leave_allowance_per_term'
-    )
-    .eq('student_number', studentNumber)
-    .maybeSingle();
+  // ── WAVE 1: the two facts everything else is keyed on ─────────────────
+  // The student row and the current academic year are independent of each
+  // other — the page read them four steps apart. Nothing between them used
+  // either one.
+  //
+  // ⚠ THIS FIRES THE AY READ ACROSS A 404. `notFound()` below discards the
+  // whole render when the student number does not resolve, so on that path the
+  // `academic_years` read (a one-row lookup on an indexed flag) is wasted.
+  // Stated rather than left implicit: it is one cheap query on the rarest
+  // path, against one fewer serial round trip on every real load.
+  const [{ data: student }, { data: currentAy }, schoolConfig] =
+    await Promise.all([
+      service
+        .from('students')
+        .select(
+          'id, student_number, last_name, first_name, middle_name, urgent_compassionate_allowance, vacation_leave_allowance_per_term'
+        )
+        .eq('student_number', studentNumber)
+        .maybeSingle(),
+      // Resolve current AY id (for quota usage) + the matching admissions
+      // enroleeNumber (for the allowance PATCH route, which keys by
+      // enroleeNumber per KD #4 — studentNumber is the cross-AY anchor, but
+      // admissions writes use the per-AY key).
+      service
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('is_current', true)
+        .maybeSingle(),
+      getSchoolConfig(),
+    ]);
   if (!student) notFound();
   const studentRow = student as {
     id: string;
@@ -82,8 +105,6 @@ export default async function AttendanceStudentDetailPage({
     vacation_leave_allowance_per_term: number | null;
   };
 
-  const schoolConfig = await getSchoolConfig();
-
   const fullName =
     [studentRow.last_name, studentRow.first_name, studentRow.middle_name]
       .filter(Boolean)
@@ -94,69 +115,98 @@ export default async function AttendanceStudentDetailPage({
     studentRow.vacation_leave_allowance_per_term ??
     schoolConfig.defaultVlAllowancePerTerm;
 
-  // Resolve current AY id (for quota usage) + the matching admissions
-  // enroleeNumber (for the allowance PATCH route, which keys by
-  // enroleeNumber per KD #4 — studentNumber is the cross-AY anchor, but
-  // admissions writes use the per-AY key).
-  const { data: currentAy } = await service
-    .from('academic_years')
-    .select('id, ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
   const ayCode = currentAy ? (currentAy as { ay_code: string }).ay_code : null;
   const ayId = currentAy ? (currentAy as { id: string }).id : null;
 
-  let enroleeNumber: string | null = null;
-  if (ayCode) {
-    const admissions = createAdmissionsClient();
-    const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
-    const { data: appRow } = await admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber')
-      .eq('studentNumber', studentRow.student_number)
-      .maybeSingle();
-    enroleeNumber =
-      (appRow as { enroleeNumber: string | null } | null)?.enroleeNumber ??
-      null;
+  // ── WAVE 2: four questions of (student, AY), none of the other's business ─
+  // The admissions enrolee number, the compassionate quota, which term is
+  // current and which section the child sits in were four consecutive
+  // `await`s. Each needs the student id and/or the AY id and nothing more.
+  type SsRow = {
+    section_id: string;
+    sections:
+      | { id: string; name: string }
+      | Array<{ id: string; name: string }>;
+  };
+  const [enroleeNumber, usage, currentTerm, ssRows] = await Promise.all([
+    ayCode
+      ? (async () => {
+          const admissions = createAdmissionsClient();
+          const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
+          const { data: appRow } = await admissions
+            .from(`${prefix}_enrolment_applications`)
+            .select('enroleeNumber')
+            .eq('studentNumber', studentRow.student_number)
+            .maybeSingle();
+          return (
+            (appRow as { enroleeNumber: string | null } | null)
+              ?.enroleeNumber ?? null
+          );
+        })()
+      : Promise.resolve(null),
+    // Quota usage for the rich quota card. AY-wide compassionate `EX`
+    // entries against the student's allowance — drives the progress bar
+    // visualization + the at-risk badge tone.
+    ayId
+      ? getCompassionateUsage(studentRow.id, ayId)
+      : Promise.resolve({ allowance, used: 0, remaining: allowance }),
+    // Resolve current term in this AY for the per-term VL quota lookup
+    // (KD #94 — VL is per-term, no carry-forward). The T1 fallback below IS
+    // a genuine dependency and stays serial: it is only asked when no term
+    // carries the current flag, which the first read is what tells us.
+    ayId
+      ? (async (): Promise<{ id: string; label: string } | null> => {
+          const { data: termRow } = await service
+            .from('terms')
+            .select('id, label')
+            .eq('academic_year_id', ayId)
+            .eq('is_current', true)
+            .maybeSingle();
+          if (termRow) return termRow as { id: string; label: string };
+          // Fall back to T1 if no term is flagged current (early-AY state).
+          const { data: t1 } = await service
+            .from('terms')
+            .select('id, label, term_number')
+            .eq('academic_year_id', ayId)
+            .order('term_number', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          return t1 ? (t1 as { id: string; label: string }) : null;
+        })()
+      : Promise.resolve(null),
+    // Resolve the student's active section in the current AY so the hero
+    // copy can link to the actual daily writer at /attendance/{sectionId}
+    // instead of a placeholder. Withdrawn rows excluded; if the student is
+    // in multiple active sections (rare edge case) we link to the first.
+    ayId
+      ? service
+          .from('section_students')
+          .select('section_id, sections!inner(id, name, academic_year_id)')
+          .eq('student_id', studentRow.id)
+          .eq('sections.academic_year_id', ayId)
+          .in('enrollment_status', ['active', 'late_enrollee'])
+          .then(({ data }) => data as SsRow[] | null)
+      : Promise.resolve(null),
+  ]);
+
+  const currentTermId = currentTerm?.id ?? null;
+  const currentTermLabel = currentTerm?.label ?? null;
+
+  let activeSectionId: string | null = null;
+  let activeSectionName: string | null = null;
+  const firstSs = ssRows?.[0];
+  if (firstSs) {
+    activeSectionId = firstSs.section_id;
+    const sec = Array.isArray(firstSs.sections)
+      ? firstSs.sections[0]
+      : firstSs.sections;
+    activeSectionName = sec?.name ?? null;
   }
 
-  // Quota usage for the rich quota card. AY-wide compassionate `EX`
-  // entries against the student's allowance — drives the progress bar
-  // visualization + the at-risk badge tone.
-  const usage = ayId
-    ? await getCompassionateUsage(studentRow.id, ayId)
-    : { allowance, used: 0, remaining: allowance };
-
-  // Resolve current term in this AY for the per-term VL quota lookup
-  // (KD #94 — VL is per-term, no carry-forward).
-  let currentTermId: string | null = null;
-  let currentTermLabel: string | null = null;
-  if (ayId) {
-    const { data: termRow } = await service
-      .from('terms')
-      .select('id, label')
-      .eq('academic_year_id', ayId)
-      .eq('is_current', true)
-      .maybeSingle();
-    if (termRow) {
-      currentTermId = (termRow as { id: string }).id;
-      currentTermLabel = (termRow as { label: string }).label;
-    } else {
-      // Fall back to T1 if no term is flagged current (early-AY state).
-      const { data: t1 } = await service
-        .from('terms')
-        .select('id, label, term_number')
-        .eq('academic_year_id', ayId)
-        .order('term_number', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (t1) {
-        currentTermId = (t1 as { id: string }).id;
-        currentTermLabel = (t1 as { label: string }).label;
-      }
-    }
-  }
-
+  // ── WAVE 3: the only genuinely dependent read on this page ─────────────
+  // The vacation quota is per-term, so it cannot be asked until the term
+  // resolver above has answered. Left serial for that reason, not by
+  // oversight.
   const vlUsage =
     ayId && currentTermId
       ? await getVacationLeaveUsage(studentRow.id, ayId, currentTermId)
@@ -166,35 +216,6 @@ export default async function AttendanceStudentDetailPage({
           remainingThisTerm: vlEffectiveAllowance,
           termId: '',
         };
-
-  // Resolve the student's active section in the current AY so the hero
-  // copy can link to the actual daily writer at /attendance/{sectionId}
-  // instead of a placeholder. Withdrawn rows excluded; if the student is
-  // in multiple active sections (rare edge case) we link to the first.
-  let activeSectionId: string | null = null;
-  let activeSectionName: string | null = null;
-  if (ayId) {
-    const { data: ssRows } = await service
-      .from('section_students')
-      .select('section_id, sections!inner(id, name, academic_year_id)')
-      .eq('student_id', studentRow.id)
-      .eq('sections.academic_year_id', ayId)
-      .in('enrollment_status', ['active', 'late_enrollee']);
-    type SsRow = {
-      section_id: string;
-      sections:
-        | { id: string; name: string }
-        | Array<{ id: string; name: string }>;
-    };
-    const first = (ssRows as SsRow[] | null)?.[0];
-    if (first) {
-      activeSectionId = first.section_id;
-      const sec = Array.isArray(first.sections)
-        ? first.sections[0]
-        : first.sections;
-      activeSectionName = sec?.name ?? null;
-    }
-  }
 
   const quotaPct =
     usage.allowance > 0 ? Math.round((usage.used / usage.allowance) * 100) : 0;

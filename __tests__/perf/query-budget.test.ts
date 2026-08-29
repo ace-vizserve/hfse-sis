@@ -134,6 +134,15 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => currentCountingClient,
 }));
 
+// The admissions project is a SECOND Supabase client (KD #17) but the same
+// PostgREST surface, so it returns the same counting client — a cross-project
+// read still costs a round trip and still occupies a wave, which is the only
+// property this file measures. Used by the attendance student-detail surface
+// below, which resolves an enroleeNumber out of the AY-prefixed tables.
+vi.mock('@/lib/supabase/admissions', () => ({
+  createAdmissionsClient: () => currentCountingClient,
+}));
+
 const requireCapabilityMock = vi.fn((_capability?: string) =>
   Promise.resolve({
     user: { id: 'admin-1', email: 'admin@hfse.test' },
@@ -767,5 +776,178 @@ describe('budget: relief bulk book (10 assignments)', () => {
     expect((result as Response).status).toBe(200);
     expect(roundTrips).toBe(13);
     expect(waves).toBe(13);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 7. The attendance student-detail page — data-loading approximation
+// ─────────────────────────────────────────────────────────────────────────
+// Added 2026-08-29 (phase 4). Same shape-3 reproduction as the classroom page
+// above and for the same reason: `app/(attendance)/attendance/students/
+// [studentNumber]/page.tsx` is a React Server Component, and no test in this
+// repo imports a `page.tsx` and calls it as a plain function. The loader below
+// reproduces the page's own sequence of reads using the REAL exported loaders
+// it calls, so the fan-out is genuine; only the JSX and the role gate above it
+// are stood in for. Stated as an approximation, not hidden as the page itself.
+
+describe('budget: attendance student detail — data loading', () => {
+  const STUDENT_NUMBER = 'SN-001';
+  const STUDENT_ID = 'stu-1';
+  const AY_ID = 'ay-1';
+  const AY_CODE = 'AY2026';
+  const TERM_ID = 'term-1';
+
+  function fixtures(): Fixtures {
+    return {
+      students: [
+        {
+          id: STUDENT_ID,
+          student_number: STUDENT_NUMBER,
+          last_name: 'Dela Cruz',
+          first_name: 'Juan',
+          middle_name: null,
+          urgent_compassionate_allowance: null,
+          vacation_leave_allowance_per_term: null,
+        },
+      ],
+      academic_years: [{ id: AY_ID, ay_code: AY_CODE }],
+      ay2026_enrolment_applications: [{ enroleeNumber: 'E-001' }],
+      section_students: [
+        {
+          id: 'ss-1',
+          section_id: 'sec-1',
+          student_id: STUDENT_ID,
+          enrollment_status: 'active',
+          sections: {
+            id: 'sec-1',
+            name: 'P1 Obedience',
+            academic_year_id: AY_ID,
+          },
+        },
+      ],
+      terms: [
+        {
+          id: TERM_ID,
+          label: 'Term 2',
+          term_number: 2,
+          academic_year_id: AY_ID,
+          start_date: '2026-08-01',
+          end_date: '2026-08-31',
+        },
+      ],
+      attendance_daily: [],
+      school_calendar: [],
+    };
+  }
+
+  /**
+   * Mirrors the page after phase 4: one wave for the student row + the current
+   * AY, one wave for the four (student, AY)-keyed reads, then the vacation
+   * quota — which genuinely cannot start until the term resolver has answered.
+   */
+  async function runStudentDetailLoader(
+    client: CountingSupabase,
+    fns: {
+      getCompassionateUsage: typeof import('@/lib/attendance/queries').getCompassionateUsage;
+      getVacationLeaveUsage: typeof import('@/lib/attendance/queries').getVacationLeaveUsage;
+      createAdmissionsClient: () => CountingSupabase;
+    }
+  ) {
+    const { getCompassionateUsage, getVacationLeaveUsage } = fns;
+    const service = client as unknown as SupabaseClient;
+
+    const [{ data: student }, { data: currentAy }] = await Promise.all([
+      service
+        .from('students')
+        .select(
+          'id, student_number, last_name, first_name, middle_name, urgent_compassionate_allowance, vacation_leave_allowance_per_term'
+        )
+        .eq('student_number', STUDENT_NUMBER)
+        .maybeSingle(),
+      service
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('is_current', true)
+        .maybeSingle(),
+    ]);
+    const studentRow = student as { id: string; student_number: string };
+    const ayCode = (currentAy as { ay_code: string }).ay_code;
+    const ayId = (currentAy as { id: string }).id;
+
+    const [enroleeNumber, usage, currentTerm, ssRows] = await Promise.all([
+      (async () => {
+        const admissions =
+          fns.createAdmissionsClient() as unknown as SupabaseClient;
+        const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
+        const { data } = await admissions
+          .from(`${prefix}_enrolment_applications`)
+          .select('enroleeNumber')
+          .eq('studentNumber', studentRow.student_number)
+          .maybeSingle();
+        return (
+          (data as { enroleeNumber: string | null } | null)?.enroleeNumber ??
+          null
+        );
+      })(),
+      getCompassionateUsage(studentRow.id, ayId),
+      (async () => {
+        const { data: termRow } = await service
+          .from('terms')
+          .select('id, label')
+          .eq('academic_year_id', ayId)
+          .eq('is_current', true)
+          .maybeSingle();
+        if (termRow) return termRow as { id: string; label: string };
+        const { data: t1 } = await service
+          .from('terms')
+          .select('id, label, term_number')
+          .eq('academic_year_id', ayId)
+          .order('term_number', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        return t1 ? (t1 as { id: string; label: string }) : null;
+      })(),
+      service
+        .from('section_students')
+        .select('section_id, sections!inner(id, name, academic_year_id)')
+        .eq('student_id', studentRow.id)
+        .eq('sections.academic_year_id', ayId)
+        .in('enrollment_status', ['active', 'late_enrollee'])
+        .then(({ data }) => data),
+    ]);
+
+    const vlUsage = currentTerm
+      ? await getVacationLeaveUsage(studentRow.id, ayId, currentTerm.id)
+      : null;
+
+    return { enroleeNumber, usage, currentTerm, ssRows, vlUsage };
+  }
+
+  // Measured 2026-08-29, phase 4. Before the fix this page issued the same 20
+  // reads across 16 waves: the student row, the current AY, the admissions
+  // enrolee lookup, the compassionate quota, the term resolver, the vacation
+  // quota and the active-section lookup, each `await`ed one after the last,
+  // even though only the vacation quota depends on any of the others. 20/12
+  // after — the residual 12 is almost entirely `getVacationLeaveUsage`'s own
+  // internal depth, which is a separate (and already reduced) concern.
+  it('measured 2026-08-29: roundTrips=20, waves=12', async () => {
+    // Resolved under REAL timers before the measured section — see the note on
+    // runClassroomSectionPageLoader for why.
+    const { getCompassionateUsage, getVacationLeaveUsage } =
+      await import('@/lib/attendance/queries');
+
+    const { roundTrips, waves } = await measureViaServiceMock(
+      function run() {
+        return runStudentDetailLoader(currentCountingClient!, {
+          getCompassionateUsage,
+          getVacationLeaveUsage,
+          createAdmissionsClient: () => currentCountingClient!,
+        });
+      },
+      fixtures(),
+      { maxWaves: 100 }
+    );
+    expect(roundTrips).toBe(20);
+    expect(waves).toBe(12);
   });
 });
