@@ -428,7 +428,14 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
     };
   }
 
-  it('measured 2026-08-29: roundTrips=46, waves=21', async () => {
+  // Re-measured 2026-08-29 after phase 3 item 3: 46/21 → 42/21. `todayMarks`
+  // was a second `getDailyForSection` over a window the `allMarks` read
+  // already contained, and each of those costs a roster read plus a paginated
+  // daily read — so deleting it saves TWO round trips per section, four here.
+  // Waves are unchanged, and that is the expected shape: the duplicate sat in
+  // the same `Promise.all` as its own superset, so it never added depth. The
+  // per-section fan-out this surface exists to size is untouched.
+  it('measured 2026-08-29: roundTrips=42, waves=21', async () => {
     const { loadAdviserAttendanceDashboard } =
       await import('@/lib/attendance/adviser-dashboard-queries');
     const { roundTrips, waves } = await measureViaServiceMock(
@@ -442,11 +449,11 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
       fixtures(),
       { maxWaves: 100 }
     );
-    // 46 round trips / 21 waves for 2 sections — the per-section fan-out this
+    // 42 round trips / 21 waves for 2 sections — the per-section fan-out this
     // surface exists to size. A fix that batches the per-section reads across
     // sections (rather than per-section Promise.all groups run one after
     // another) is the shape a later phase should be aiming at here.
-    expect(roundTrips).toBe(46);
+    expect(roundTrips).toBe(42);
     expect(waves).toBe(21);
   });
 });

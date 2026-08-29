@@ -162,12 +162,27 @@ export async function loadAdviserAttendanceDashboard(opts: {
   const perSection = await Promise.all(
     sections.map(async (s) => {
       const levelType = levelTypeForAudienceLookup(s.levelCode);
-      const [todayMarks, allMarks, encodable, summary] = await Promise.all([
-        getDailyForSection(s.id, termId, { fromDate: today, toDate: today }),
+      // ONE DAILY READ PER CLASS, NOT TWO. This asked `getDailyForSection`
+      // for `{ fromDate: today, toDate: today }` AND `{ toDate: today }` — the
+      // second window contains the first, so the narrow read re-fetched rows
+      // the wide one already had, at a roster read plus a paginated daily read
+      // per class, every load.
+      //
+      // The filter below is exact, not approximate: `getDailyForSection`
+      // dedupes to the latest row per `student|date|period`, and because that
+      // key CONTAINS the date, earlier days cannot displace a winner on today
+      // — not even a backdated correction entered after today's marks. Order
+      // survives too, since `recorded_at desc` is applied across the whole set
+      // and filtering preserves relative order. Pinned by
+      // __tests__/attendance/adviser-dashboard-today-subset.test.ts, which was
+      // run green against the two-fetch version first and includes the case
+      // where today's marks only appear on the wide read's SECOND page.
+      const [allMarks, encodable, summary] = await Promise.all([
         getDailyForSection(s.id, termId, { toDate: today }),
         getEncodableDatesForTerm(termId, levelType),
         getSectionAttendanceSummary(s.id, termId),
       ]);
+      const todayMarks = allMarks.filter((m) => m.date === today);
 
       const isSchoolDayHere = encodable.includes(today);
       const tally = tallyToday(todayMarks);
