@@ -286,23 +286,23 @@ describe('budget: buildReportCard (one student)', () => {
         is_na: false,
         annual_letter_grade: null,
       })),
-      // Two selects against the same table, differentiated by the select
-      // string — the exact trick build-report-card.test.ts documents.
-      attendance_records: (state) => {
-        const sel =
-          (state.calls.find((c) => c.method === 'select')?.args[0] as
-            | string
-            | undefined) ?? '';
-        return sel.includes('school_days')
-          ? { data: [{ term_id: 't1', school_days: 75 }] }
-          : { data: [{ term_id: 't1', days_present: 70, days_late: 2 }] };
-      },
+      // ONE select against this table since the two identically-filtered
+      // reads were merged (phase 3, item 1) — whole rows, matching the
+      // merged projection `term_id, days_present, days_late, school_days`.
+      attendance_records: [
+        { term_id: 't1', days_present: 70, days_late: 2, school_days: 75 },
+      ],
       evaluation_writeups: [],
       teacher_assignments: [],
     };
   }
 
-  it('measured 2026-08-29: roundTrips=12, waves=12', async () => {
+  // Re-measured 2026-08-29 after phase 3 item 1: 12/12 → 11/11. The two
+  // `attendance_records` reads carried byte-identical filters and differed
+  // only in projection, so `school_days` now rides on the first read and the
+  // fallback map is derived from those same rows — one round trip fewer, and
+  // one wave fewer because the deleted read sat on its own tick.
+  it('measured 2026-08-29: roundTrips=11, waves=11', async () => {
     const { buildReportCard } =
       await import('@/lib/report-card/build-report-card');
     const { roundTrips, waves } = await measureQueries(
@@ -313,9 +313,9 @@ describe('budget: buildReportCard (one student)', () => {
     // Every recorded query resolves on its own tick here (waves == round
     // trips) — none of this fixture's queries reference an earlier result,
     // so nothing forced them to overlap into a real Promise.all. That is
-    // itself the finding: a fully-serial 12-deep chain for ONE student.
-    expect(roundTrips).toBe(12);
-    expect(waves).toBe(12);
+    // itself the finding: a fully-serial 11-deep chain for ONE student.
+    expect(roundTrips).toBe(11);
+    expect(waves).toBe(11);
   });
 });
 

@@ -565,9 +565,17 @@ export async function buildReportCard(
   // — i.e., the number of teaching days in the term per the school
   // calendar) regardless of whether attendance has been entered yet. We
   // override school_days below with the school_calendar count.
+  //
+  // ONE READ, TWO MAPS. `school_days` rides along on this projection rather
+  // than being fetched again further down: the fallback read that used to sit
+  // below the calendar block carried byte-identical filters, so it returned
+  // the same rows and only a narrower column list. Merging is a projection
+  // change, not a scope change. Pinned by the subset-equivalence test in
+  // __tests__/report-card/build-report-card.test.ts, which was run green
+  // against the two-read version first.
   const { data: attendanceRaw } = await supabase
     .from('attendance_records')
-    .select('term_id, days_present, days_late')
+    .select('term_id, days_present, days_late, school_days')
     .in('section_student_id', allEnrolmentIds)
     .in(
       'term_id',
@@ -578,12 +586,14 @@ export async function buildReportCard(
     term_id: string;
     days_present: number | null;
     days_late: number | null;
+    school_days: number | null;
   };
+  const attendanceRows = (attendanceRaw ?? []) as AttendanceRow[];
   const studentDaysByTerm = new Map<
     string,
     { days_present: number | null; days_late: number | null }
   >();
-  for (const r of (attendanceRaw ?? []) as AttendanceRow[]) {
+  for (const r of attendanceRows) {
     const cur = studentDaysByTerm.get(r.term_id);
     // Sum nullables — null + null = null, null + N = N.
     const sumNullable = (a: number | null, b: number | null) =>
@@ -625,20 +635,10 @@ export async function buildReportCard(
 
   // Fallback recorded-days count per term — needed only when the calendar
   // helper returns 0 for a term (legacy / unconfigured). Matches the
-  // pre-fix behavior of reading `attendance_records.school_days`.
-  const { data: recordedSchoolDaysRaw } = await supabase
-    .from('attendance_records')
-    .select('term_id, school_days')
-    .in('section_student_id', allEnrolmentIds)
-    .in(
-      'term_id',
-      termList.map((t) => t.id)
-    );
+  // pre-fix behavior of reading `attendance_records.school_days`; the rows
+  // come from the single read above rather than a second identical one.
   const recordedSchoolDaysByTerm = new Map<string, number>();
-  for (const r of (recordedSchoolDaysRaw ?? []) as Array<{
-    term_id: string;
-    school_days: number | null;
-  }>) {
+  for (const r of attendanceRows) {
     recordedSchoolDaysByTerm.set(
       r.term_id,
       (recordedSchoolDaysByTerm.get(r.term_id) ?? 0) + (r.school_days ?? 0)
