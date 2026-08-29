@@ -474,19 +474,23 @@ describe('a lone bare cache tag is one some write actually emits', () => {
 
     // ── found by THIS guard on its first run, and named rather than hidden ─
     // The Phase 1 brief enumerated ten loaders. It missed these two, which
-    // carry four more lone bare tags between them — which is the point of
-    // writing the check as a scanner rather than as a list.
+    // carried four lone bare tags between them — which is the point of writing
+    // the check as a scanner rather than as a list. Both were triaged on
+    // 2026-08-29: getSystemHealth was FIXED (see the note where its two
+    // entries used to be, below), and getActivityByActor is exempt.
     'lib/sis/dashboard.ts|loadActorActivity|sis-dashboard':
-      'OPEN — getActivityByActor, a FOURTH audit_log feed the ten-loader ' +
-      'enumeration missed (it reads audit_log via loadActorActivity in ' +
-      'lib/sis/drill.ts). The audit_log reasoning above applies to it ' +
-      'unchanged, so its 60s TTL is very likely the right answer; it is ' +
-      'named here rather than fixed silently because it was found by this ' +
-      'guard on 2026-08-29 and has not been triaged with the other three.',
+      'getActivityByActor — a FOURTH audit_log feed, alongside the three ' +
+      'above. Triaged 2026-08-29 and exempt for their reason exactly: it ' +
+      'reads audit_log via loadActorActivity (lib/sis/drill.ts) and nothing ' +
+      'else, that table has no AY column to scope a real tag to, and every ' +
+      'write in the app appends a row to it — so a working tag would bust ' +
+      'this on essentially every request. The 60s TTL is the freshness ' +
+      'contract. A decision, not an oversight; same reason at the site.',
     'lib/sis/dashboard.ts|loadActorActivity|audit-log':
-      'OPEN — the second tag on that same getActivityByActor call. Nothing ' +
-      'emits `audit-log` either, and every write appends an audit row, so ' +
-      'emitting it would bust the entry on nearly every request.',
+      'The second tag on that same getActivityByActor call, settled with it ' +
+      'on 2026-08-29. This is the tag that most looks like it ought to ' +
+      'exist for this table and most must not: emitting `audit-log` would ' +
+      'name the busiest write path in the app. Left unemitted on purpose.',
     // `lib/sis/health.ts|loadSystemHealthUncached` held two OPEN entries here
     // and now holds none: getSystemHealth was the one of the four found by
     // this guard that could go MEANINGFULLY stale, so it was fixed rather than

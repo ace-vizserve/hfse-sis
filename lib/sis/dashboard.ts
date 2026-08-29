@@ -1262,6 +1262,19 @@ export async function getActivityByActor(range?: {
     range?.from ?? 'all',
     range?.to ?? 'all',
   ];
+  // Both tags below are inert, and that is a decision (2026-08-29), not an
+  // oversight. This is the FOURTH `audit_log` feed — `loadActorActivity`
+  // (lib/sis/drill.ts) reads that table and nothing else — so the reasoning on
+  // `loadRecentSisActivity` and `loadStructuralChangeFeedCached` above applies
+  // here unchanged: `audit_log` has no AY column, so there is no AY to scope a
+  // real tag to, and because every write in the app appends an audit row, a
+  // working tag would bust this on essentially every request and turn the
+  // cache into pure overhead. The 60s TTL is the freshness contract.
+  //
+  // 'audit-log' looks like the tag that ought to exist for exactly this table.
+  // It is the one that must NOT: it would name the busiest write path in the
+  // app. Nothing emits it, deliberately. Exempted with this reason in the
+  // bare-tag guard in __tests__/cache/write-route-invalidation.test.ts.
   return unstable_cache(() => loadActorActivity(range), key, {
     revalidate: 60,
     tags: ['sis-dashboard', 'audit-log'],
