@@ -273,7 +273,7 @@ Full classification: **`docs/superpowers/specs/2026-08-29-phase-2-unindexed-filt
 
 ### ⚠ Two migrations are written and NOT APPLIED
 
-Both are on the branch, neither has been run against production, and applying production DDL is not this pass's to do. **They share no object and can land in either order, or independently.**
+Both are on the branch, neither has been run against production, and applying production DDL is not this pass's to do. **They share no object and can land in either order, or independently.** ⚠ **That is independence from EACH OTHER, and only one of them is independent of the CODE: 133 must be applied BEFORE this branch deploys, 132 need not be.** See 133's paragraph below.
 
 **`132_ay_enrolment_indexes.sql`** — five non-unique btree indexes per AY (`_enrolment_applications("enroleeNumber")`, `("studentNumber")`, `_enrolment_status("enroleeNumber")`, `("applicationStatus")`, `_enrolment_documents("enroleeNumber")`), delivered as an idempotent `attach_enrolment_indexes(slug)` helper + a backfill + **one `perform` line** added to `create_ay_admissions_tables`. **15 indexes after backfill** (5 × 3 AYs). Its three acceptance queries:
 
@@ -298,6 +298,10 @@ select public.create_ay_admissions_tables('ay2027'); -- still succeeds
 🔴 **A `Seq Scan` after applying 132 is the EXPECTED result, not a failure**, and expecting otherwise would produce a false alarm. At 822 rows the table fits in a handful of heap pages and the planner correctly keeps choosing a sequential scan. **Query 2 is the honest proof** — and it also proves the camelCase double-quoting held, because unquoted identifiers fold to lowercase and would have built the index on a column that never matches.
 
 **`133_audit_actor_emails.sql`** — a `stable`, **SECURITY INVOKER** `audit_actor_emails(p_actions text[])` returning distinct actor emails, so a dropdown of nine names stops being derived by reading the log. Invoker, not definer: migration 006's `audit_log_registrar_read` policy still decides what the caller may see, which is exactly why it can carry `grant execute … to authenticated`. ⚠ **That grant is load-bearing** — migration 114 revoked this same class of grant on a policy helper and blanked every teacher's Teachers tab until 116 put it back, and the caller here is a server component on the user's cookie client. Until it is applied, `lib/audit/actor-emails.ts` logs which page lost its actor list rather than failing the page.
+
+🔴 **Deploy ordering — 133 must be applied BEFORE this branch deploys.** All three Actor dropdowns now call `audit_actor_emails` and nothing else, so the same rule KD #153 states for migration 078 applies here: code calls the new object, therefore the migration lands first. **Deploy before applying and all three filters render with no options — a regression on the two that were previously accurate** (attendance and evaluation both listed their actors correctly; only markbook was short a name, per the table in 133's header). 132 carries no such constraint: nothing in the code names an index, so it can be applied whenever.
+
+**There is deliberately NO fallback, and re-adding one would undo this pass.** The degrade is an empty list, and it was chosen over a fallback because it is **visible** (an empty `<Select>` is not a silent wrong answer), **logged by page naming the migration file** (`loadAuditActorEmails` prints "has migration 133*audit_actor_emails.sql been applied?"), **harmless** (the dropdown is a \_filter* — an actor missing from it cannot be picked, but every one of their rows still appears in the log, and no page fails to render), and **self-healing** the moment the migration is applied, with no cache to bust and no redeploy. A fallback would trade all four for the `.limit(200)` projection this very pass measured wrong on production data. **Do not add one; do not restore the limit query.**
 
 ### Examined and deliberately NOT done — with the number that would justify revisiting
 
@@ -350,7 +354,7 @@ Every one of these was written from reasoning rather than from reading, and seve
 
 ### Still open
 
-- **Applying 132 and 133.** Both written, neither run. 132's three acceptance queries are above.
+- **Applying 132 and 133.** Both written, neither run. 132's three acceptance queries are above. 🔴 **133 is a deploy BLOCKER and 132 is not** — three Actor dropdowns call its RPC and have no fallback, so shipping this branch before applying it empties all three filters. Ordering and the reasoning for having no fallback are in 133's paragraph above and in the migration's own header.
 - **`grade_audit_log`'s row count.** The one number this pass never took, and the first thing the next sweep should measure.
 - **`/attendance/sections` has no harness guard** — its fix is real, but its evidence is a scanner delta rather than a wave count.
 - **The three write routes §12 names** (`grading-sheets/[id]/labels`, `sections/[id]/schedule`, `sis/admin/users/[id]`) were not part of this pass and remain as §12 left them.

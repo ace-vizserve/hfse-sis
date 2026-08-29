@@ -70,9 +70,43 @@
 -- regardless -- a grant with no purpose is a grant somebody has to explain
 -- later.
 --
+-- DEPLOY ORDERING -- THIS MIGRATION MUST BE APPLIED BEFORE THE CODE SHIPS
+--
+-- All three Actor dropdowns now call this function and nothing else --
+-- `lib/audit/actor-emails.ts` has no second path, by decision. So: code calls
+-- `audit_actor_emails`, therefore 133 must be applied before deploy. Deploy
+-- first and every one of the three filters renders with no options, which is a
+-- REGRESSION on the two that were accurate before this change (attendance and
+-- evaluation both listed their actors correctly; only markbook was short a
+-- name). Treat this the same way KD #153 treats migration 078: not a nicety,
+-- an ordering requirement.
+--
+-- WHY THERE IS NO FALLBACK, WHICH IS ALSO A DECISION
+--
+-- The degrade is a deliberately empty list, and it stays that way:
+--
+--   * It is VISIBLE. An empty <Select> is not a silent wrong answer -- the
+--     shape of failure this whole pass exists to remove.
+--   * It is LOGGED, by page, naming this file. `loadAuditActorEmails` prints
+--     "has migration 133_audit_actor_emails.sql been applied?" so the first
+--     person to look knows the answer without reading any source.
+--   * It is HARMLESS. The dropdown is a FILTER. An actor missing from it
+--     cannot be picked; every one of their rows still appears in the log. No
+--     record is hidden and no page fails to render.
+--   * It SELF-HEALS the instant this file is applied. There is no cache to
+--     bust, no data to backfill, no code to redeploy.
+--
+-- A fallback would trade all four of those for the `.limit(200)` projection
+-- this migration was written to delete -- a query measured wrong on production
+-- data (see the table above). A fallback that is wrong is worse than a gap that
+-- is obvious, because the wrong one never tells anybody it happened. DO NOT
+-- ADD ONE, and do not restore the limit query.
+--
 -- STANDS ALONE. 132_ay_enrolment_indexes.sql is also written and not yet
 -- applied; this migration shares no object with it, touches none of the AY
--- tables, and can be applied before it, after it, or without it.
+-- tables, and can be applied before it, after it, or without it. That is
+-- independence between the two MIGRATIONS -- it says nothing about the
+-- ordering above, which is between this migration and the CODE.
 --
 -- Idempotent -- safe to re-run.
 
