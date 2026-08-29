@@ -53,118 +53,148 @@ type Params = {
  */
 export async function getThisTermStats(params: Params): Promise<StatRow[]> {
   const { role, userId, ayCode, supabase, service } = params;
-  const rows: StatRow[] = [];
 
-  const push = async (fn: () => Promise<StatRow | null>) => {
-    try {
-      const row = await fn();
-      if (row) rows.push(row);
-    } catch {
-      // Omit on failure — see doc comment above.
-    }
+  /**
+   * Run every row's loader AT ONCE and keep the survivors in the order they
+   * were listed, not the order they answered.
+   *
+   * This used to be `await push(...)` per row, which serialised loaders that
+   * have nothing to do with each other — a teacher's section count, write-up
+   * backlog and open-sheet count are three unrelated reads, and the account
+   * page waited for each in turn. Nothing here reads another's result.
+   *
+   * ⚠ ORDER IS PART OF THE OUTPUT. These become the "This term" rows in the
+   * order the array gives them, so the filter below preserves index order
+   * rather than collecting as each promise settles.
+   *
+   * A branch that throws is omitted, not shown as a false "0" — unchanged, and
+   * still per-row, so one failing loader never blanks its neighbours.
+   */
+  const settle = async (
+    loaders: Array<() => Promise<StatRow | null>>
+  ): Promise<StatRow[]> => {
+    const settled = await Promise.all(
+      loaders.map(async (fn) => {
+        try {
+          return await fn();
+        } catch {
+          // Omit on failure — see doc comment above.
+          return null;
+        }
+      })
+    );
+    return settled.filter((row): row is StatRow => row !== null);
   };
 
   if (role === 'teacher') {
-    await push(async () => {
-      const sections = await getTeacherSections(supabase, userId);
-      return { label: 'Sections', value: sections.length };
-    });
-    await push(async () => {
-      const p = await getEvaluationTeacherPriority({
-        ayCode,
-        teacherUserId: userId,
-      });
-      return {
-        label: 'Write-ups still needed',
-        value: p.headline.value,
-        tone: 'warning',
-      };
-    });
-    await push(async () => {
-      const p = await getMarkbookTeacherPriority({
-        ayCode,
-        teacherUserId: userId,
-      });
-      return { label: 'Open grading sheets', value: p.headline.value };
-    });
-    return rows;
+    return settle([
+      async () => {
+        const sections = await getTeacherSections(supabase, userId);
+        return { label: 'Sections', value: sections.length };
+      },
+      async () => {
+        const p = await getEvaluationTeacherPriority({
+          ayCode,
+          teacherUserId: userId,
+        });
+        return {
+          label: 'Write-ups still needed',
+          value: p.headline.value,
+          tone: 'warning',
+        };
+      },
+      async () => {
+        const p = await getMarkbookTeacherPriority({
+          ayCode,
+          teacherUserId: userId,
+        });
+        return { label: 'Open grading sheets', value: p.headline.value };
+      },
+    ]);
   }
 
   if (role === 'academic_coordinator') {
-    await push(async () => {
-      const today = sgToday();
-      const kpis = await getMarkbookKpisRange({
-        ayCode,
-        from: today,
-        to: today,
-        cmpFrom: null,
-        cmpTo: null,
-      });
-      return {
-        label: 'Change requests pending',
-        value: kpis.current.changeRequestsPending,
-        tone: 'warning',
-      };
-    });
-    return rows;
+    return settle([
+      async () => {
+        const today = sgToday();
+        const kpis = await getMarkbookKpisRange({
+          ayCode,
+          from: today,
+          to: today,
+          cmpFrom: null,
+          cmpTo: null,
+        });
+        return {
+          label: 'Change requests pending',
+          value: kpis.current.changeRequestsPending,
+          tone: 'warning',
+        };
+      },
+    ]);
   }
 
   if (role === 'school_admin') {
-    await push(async () => {
-      const count = await getSidebarChangeRequestCount(service, role, userId);
-      return { label: 'Awaiting your review', value: count, tone: 'warning' };
-    });
-    return rows;
+    return settle([
+      async () => {
+        const count = await getSidebarChangeRequestCount(service, role, userId);
+        return { label: 'Awaiting your review', value: count, tone: 'warning' };
+      },
+    ]);
   }
 
   if (role === 'superadmin') {
-    await push(async () => {
-      const count = await getStaffCount();
-      return { label: 'Active staff accounts', value: count };
-    });
+    const rows = await settle([
+      async () => {
+        const count = await getStaffCount();
+        return { label: 'Active staff accounts', value: count };
+      },
+    ]);
+    // Not a loader: it is already in hand, and it belongs below the count.
     rows.push({ label: 'Current AY', value: ayCode, tone: 'default' });
     return rows;
   }
 
   if (role === 'p_file_officer') {
-    await push(async () => {
-      const today = sgToday();
-      const kpis = await getPFilesKpisRange({
-        ayCode,
-        from: today,
-        to: today,
-        cmpFrom: null,
-        cmpTo: null,
-      });
-      return {
-        label: 'Expiring within 30 days',
-        value: kpis.current.expiringSoon30,
-        tone: 'warning',
-      };
-    });
-    await push(async () => {
-      const expiring = await getExpiringDocuments(ayCode, 60, 10_000);
-      const overdue = expiring.filter((r) => r.daysUntilExpiry < 0);
-      return {
-        label: 'Already expired',
-        value: overdue.length,
-        tone: 'warning',
-      };
-    });
-    return rows;
+    return settle([
+      async () => {
+        const today = sgToday();
+        const kpis = await getPFilesKpisRange({
+          ayCode,
+          from: today,
+          to: today,
+          cmpFrom: null,
+          cmpTo: null,
+        });
+        return {
+          label: 'Expiring within 30 days',
+          value: kpis.current.expiringSoon30,
+          tone: 'warning',
+        };
+      },
+      async () => {
+        const expiring = await getExpiringDocuments(ayCode, 60, 10_000);
+        const overdue = expiring.filter((r) => r.daysUntilExpiry < 0);
+        return {
+          label: 'Already expired',
+          value: overdue.length,
+          tone: 'warning',
+        };
+      },
+    ]);
   }
 
   if (role === 'admissions') {
-    await push(async () => {
-      const outdated = await getOutdatedApplications(ayCode);
-      return {
-        label: 'Applications needing follow-up',
-        value: outdated.length,
-        tone: 'warning',
-      };
-    });
-    return rows;
+    return settle([
+      async () => {
+        const outdated = await getOutdatedApplications(ayCode);
+        return {
+          label: 'Applications needing follow-up',
+          value: outdated.length,
+          tone: 'warning',
+        };
+      },
+    ]);
   }
 
-  return rows;
+  return [];
 }
