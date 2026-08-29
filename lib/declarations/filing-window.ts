@@ -97,15 +97,27 @@ export type OverlappingFiling = {
    * True when this is the SAME request, not merely an overlapping one — same
    * kind, same first and last day.
    *
-   * ⚠ The two cases must not be answered the same way. Migration 125 decided
-   * that a duplicate is a SUCCESS: "a parent double-tapping submit on a flaky
-   * connection must not file twice", and showing them a failure for their own
-   * double-tap makes them try a third time. An OVERLAPPING filing is a
-   * different thing — they asked for dates that are not the ones on record,
-   * so answering with the existing filing would answer a question they did not
-   * ask.
+   * ⚠ THIS NO LONGER DECIDES SUCCESS-VS-FAILURE, and that changed on
+   * 2026-08-29. Migration 125 answered an exact re-send with a SUCCESS so a
+   * parent double-tapping submit on a flaky connection could not file twice.
+   * Mr Ace: _"its pending for approval already, refiling for the same date and
+   * it succeeds is confusing"_ — a success for something you did not file
+   * reads as a new filing that then never appears. The genuine double-tap is
+   * two requests in flight AT ONCE, and that race is still answered with a
+   * success by the unique index's `23505` branch in the route, which is where
+   * it belongs. A sequential re-send is a person, and a person gets told.
    */
   isExactMatch: boolean;
+  /**
+   * Where the existing filing got to.
+   *
+   * ⚠ Only ever `pending` or `approved` — `findOverlappingFilings` does not
+   * count a `rejected` or `cancelled` filing at all, because being turned down
+   * is precisely when somebody needs to file again. The two live states are
+   * worded differently to the parent: one is still with the school, the other
+   * is settled and re-filing it achieves nothing.
+   */
+  status: string;
 };
 
 /**
@@ -146,7 +158,7 @@ export async function findOverlappingFilings(
 
   const { data, error } = await service
     .from('student_declarations')
-    .select('student_id, start_date, end_date, declaration_type')
+    .select('student_id, start_date, end_date, declaration_type, status')
     .in(
       'student_id',
       children.map((c) => c.studentId)
@@ -165,12 +177,14 @@ export async function findOverlappingFilings(
       start_date: string;
       end_date: string;
       declaration_type: string;
+      status: string;
     }>
   ).map((row) => ({
     studentName: nameById.get(row.student_id) ?? 'your child',
     startDate: row.start_date,
     endDate: row.end_date,
     declarationType: row.declaration_type,
+    status: row.status,
     isExactMatch:
       row.declaration_type === declarationType &&
       row.start_date === startDate &&
@@ -197,11 +211,21 @@ export const NO_SCHOOL_DAY_MESSAGE =
  * would be wrong as well as unhelpful. The wording avoids saying who filed it:
  * the route knows, but reading one parent's action back to the other is not
  * this message's job.
+ *
+ * ⚠ THE TWO LIVE STATES READ DIFFERENTLY ON PURPOSE. A parent who re-files
+ * something still awaiting a decision needs to know it is in and nothing is
+ * wrong; a parent who re-files something the school has already approved needs
+ * to know the matter is closed and that the way to change it is to ring the
+ * office, not to file a third time. Answering both with one sentence is what
+ * made the old behaviour confusing.
  */
 export function alreadyFiledMessage(existing: OverlappingFiling): string {
   const range =
     existing.startDate === existing.endDate
       ? existing.startDate
       : `${existing.startDate} to ${existing.endDate}`;
-  return `${existing.studentName} has already been filed for on ${range}. Check the status list — if the dates need changing, contact the school office.`;
+  if (existing.status === 'approved') {
+    return `${existing.studentName} has already been approved as away on ${range}. If that needs to change, please contact the school office.`;
+  }
+  return `${existing.studentName} has already been filed for on ${range}, and the school has not decided it yet. If the dates need changing, please contact the school office.`;
 }

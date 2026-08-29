@@ -4,6 +4,7 @@ import {
   alreadyFiledMessage,
   filingCoversAnySchoolDay,
   findOverlappingFilings,
+  type OverlappingFiling,
 } from '@/lib/declarations/filing-window';
 
 // Two things the filing route now refuses, both spotted by Mr Ace after Phase
@@ -320,6 +321,18 @@ describe('findOverlappingFilings', () => {
     expect(await find(service, '2026-08-27', '2026-08-27')).toHaveLength(0);
   });
 
+  it('reports the status, so the route can tell pending from approved', async () => {
+    // Mr Ace, 2026-08-29: re-filing dates that are already approved and being
+    // told it worked "is confusing". The route cannot word that differently
+    // from a filing still awaiting a decision unless the status comes back
+    // with the clash.
+    const service = fakeService({
+      declarations: [filed('2026-08-27', '2026-08-27', 'approved')],
+    });
+    const found = await find(service, '2026-08-27', '2026-08-27');
+    expect(found[0].status).toBe('approved');
+  });
+
   it('ignores dates that do not overlap', async () => {
     const service = fakeService({
       declarations: [filed('2026-08-01', '2026-08-02', 'approved')],
@@ -338,30 +351,46 @@ describe('findOverlappingFilings', () => {
 });
 
 describe('alreadyFiledMessage', () => {
+  const clash = (over: Partial<OverlappingFiling> = {}): OverlappingFiling => ({
+    studentName: 'Ana Reyes',
+    declarationType: 'absence',
+    isExactMatch: false,
+    status: 'pending',
+    startDate: '2026-08-27',
+    endDate: '2026-08-31',
+    ...over,
+  });
+
   it('names the child and the dates on record', () => {
     // The commonest cause is the OTHER parent having filed, so "you have
     // already filed this" would be wrong as well as unhelpful.
-    const msg = alreadyFiledMessage({
-      studentName: 'Ana Reyes',
-      declarationType: 'absence',
-      isExactMatch: false,
-      startDate: '2026-08-27',
-      endDate: '2026-08-31',
-    });
+    const msg = alreadyFiledMessage(clash());
     expect(msg).toContain('Ana Reyes');
     expect(msg).toContain('2026-08-27 to 2026-08-31');
     expect(msg).not.toContain('you have already filed');
   });
 
   it('reads as one day rather than a range when it is one day', () => {
-    const msg = alreadyFiledMessage({
-      studentName: 'Ana Reyes',
-      declarationType: 'absence',
-      isExactMatch: false,
-      startDate: '2026-08-27',
-      endDate: '2026-08-27',
-    });
-    expect(msg).toContain('on 2026-08-27.');
+    const msg = alreadyFiledMessage(
+      clash({ startDate: '2026-08-27', endDate: '2026-08-27' })
+    );
+    expect(msg).toContain('on 2026-08-27');
     expect(msg).not.toContain(' to ');
+  });
+
+  it('says the school has not decided yet when the filing is still pending', () => {
+    // The parent needs to know it is IN, not that something went wrong —
+    // otherwise they file a third time.
+    const msg = alreadyFiledMessage(clash({ status: 'pending' }));
+    expect(msg).toContain('not decided');
+    expect(msg).not.toContain('approved');
+  });
+
+  it('says it is already approved when the school has decided', () => {
+    // Mr Ace, 2026-08-29: an approved absence must not be re-filed, and the
+    // parent must be told which of the two states they are in.
+    const msg = alreadyFiledMessage(clash({ status: 'approved' }));
+    expect(msg).toContain('already been approved');
+    expect(msg).toContain('school office');
   });
 });

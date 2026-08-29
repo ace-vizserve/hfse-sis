@@ -282,38 +282,29 @@ export async function POST(request: Request) {
       })),
     });
 
-    // ⚠ THE SAME REQUEST AND AN OVERLAPPING ONE GET DIFFERENT ANSWERS, and
-    // collapsing them would undo a decision migration 125 made deliberately.
-    // Re-sending the IDENTICAL filing is a double-tap on a flaky connection:
-    // 125 chose to answer that with the existing filing and a success, because
-    // showing somebody a failure for their own double-tap makes them tap a
-    // third time. Only a genuinely DIFFERENT range is worth interrupting them
-    // for — they asked about dates that are not the ones on record.
-    if (clashes.length > 0 && clashes.every((c) => c.isExactMatch)) {
-      const existing = await listParentDeclarations(service, {
-        students: resolved,
-      });
-      const match = existing.filter(
-        (d) =>
-          d.declarationType === input.declarationType &&
-          d.startDate === input.startDate &&
-          d.endDate === input.endDate
-      );
-      return NextResponse.json(
-        {
-          filingGroupId: match[0]?.filingGroupId ?? null,
-          declarations: match,
-          alreadyFiled: true,
-        },
-        { status: 200, headers: cors }
-      );
-    }
-
+    // ⚠ AN EXACT RE-SEND USED TO ANSWER 200 AND THAT WAS THE BUG (2026-08-29).
+    // Migration 125 made that choice for a real reason — a parent double-tapping
+    // submit on a flaky connection must not file twice, and showing them a
+    // failure for their own double-tap makes them tap a third time. But it
+    // answered a person days later the same way it answered a stuck button:
+    // Mr Ace re-filed 3 Sep from the portal, was told it worked, and nothing
+    // appeared in the SIS. His words — _"its pending for approval already,
+    // refiling for the same date and it succeeds is confusing"_.
+    //
+    // The genuine double-tap is two requests IN FLIGHT AT ONCE. Neither sees
+    // the other here, they race to the insert, and the unique index's `23505`
+    // branch below still answers that one with a success. That is the case 125
+    // was protecting, and it keeps its protection. A re-send that arrives after
+    // the first one has landed is a person, and a person is told where it got
+    // to — still with the school, or already approved and settled.
+    //
+    // ⚠ `rejected` and `cancelled` never reach here at all: `findOverlappingFilings`
+    // does not count them, so a parent the school turned down can file again,
+    // which is the whole point of migration 130.
     if (clashes.length > 0) {
-      const first = clashes.find((c) => !c.isExactMatch) ?? clashes[0];
       return NextResponse.json(
         {
-          error: alreadyFiledMessage(first),
+          error: alreadyFiledMessage(clashes[0]),
           alreadyFiled: true,
           overlapping: clashes,
         },

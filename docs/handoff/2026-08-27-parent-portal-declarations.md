@@ -225,9 +225,58 @@ are worded for parents on purpose, and the SIS team maintains them.
 **`403`** — a child not on this account, or an attachment that cannot be matched
 to this parent.
 
-⚠ **`200` with `"alreadyFiled": true` is SUCCESS, not an error.** If a parent
-double-taps submit on a bad connection the server returns the filing that
-already exists rather than creating a second one. Show the confirmation screen.
+**`409`** — these dates are already spoken for. ⚠ **Changed 2026-08-29; if you
+built against the old note here, this is the one thing to re-do.**
+
+```json
+{
+  "error": "Ana Reyes has already been approved as away on 2026-09-16 to 2026-09-18. If that needs to change, please contact the school office.",
+  "alreadyFiled": true,
+  "overlapping": [
+    {
+      "studentName": "Ana Reyes",
+      "declarationType": "absence",
+      "startDate": "2026-09-16",
+      "endDate": "2026-09-18",
+      "status": "approved",
+      "isExactMatch": true
+    }
+  ]
+}
+```
+
+Show `error` as-is; it is already worded for a parent and says which of the two
+states they are in:
+
+- `status: "pending"` — _"…has already been filed for on …, and the school has
+  not decided it yet."_
+- `status: "approved"` — _"…has already been approved as away on …. If that
+  needs to change, please contact the school office."_
+
+`overlapping` lists every clash found, which matters when a submission covers
+siblings — `error` names only the first. `isExactMatch` tells you whether the
+clash is these exact dates or merely overlaps them (27–31 on record, 28–29
+filed); you do not have to act on it, it is there so a support ticket can be
+read.
+
+⚠ **A `rejected` or `cancelled` filing never causes a `409`.** Being turned down
+is precisely when a parent needs to file again, so the same dates can be
+re-filed freely and a fresh filing is created. This is the path a parent takes
+when the school asks them for the certificate.
+
+**Previously** this endpoint answered an exact re-send with `200` and
+`"alreadyFiled": true`, and the note here told you to show the confirmation
+screen. That was wrong for the common case and is gone: a parent re-filing dates
+that are already with the school was told their filing had worked, and then
+could not find it anywhere. Mr Ace, 2026-08-29 — _"its pending for approval
+already, refiling for the same date and it succeeds is confusing"_.
+
+⚠ **The genuine double-tap is still protected and still returns `200`.** Two
+requests in flight at the same instant race to the insert; the loser is answered
+with `200`, `"alreadyFiled": true` and the existing `declarations` array, exactly
+as before. So **`200` still means success — show the confirmation screen** — and
+`409` now means stop and show the message. The difference is invisible from your
+side and needs no special handling beyond honouring the status code.
 
 ### 4. The status list
 
