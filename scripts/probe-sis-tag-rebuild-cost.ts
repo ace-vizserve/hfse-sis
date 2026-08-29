@@ -27,7 +27,15 @@
 // this process and is thrown away; production's cache is untouched.
 //
 // Run:
-//   npx tsx --env-file=.env.local scripts/probe-sis-tag-rebuild-cost.ts
+//   npx tsx --conditions=react-server --env-file=.env.local scripts/probe-sis-tag-rebuild-cost.ts
+//
+// ⚠ `--conditions=react-server` IS REQUIRED, and without it this dies on
+// `import 'server-only'` with "This module cannot be imported from a Client
+// Component module" — the first thing it reaches is `lib/dashboard/ay-id.ts`.
+// This is the first script in the repo to import a `server-only` module, so
+// there was no precedent to copy. The flag is not a workaround: the
+// `server-only` package's own `exports` map sends the `react-server` condition
+// to its `empty.js`, which is exactly what Next does in a server build.
 //
 // Exit code is always 0 — this reports, it does not gate a build.
 
