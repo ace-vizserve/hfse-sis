@@ -103,6 +103,31 @@ sub-millisecond. The "missing indexes are the single biggest win" framing was **
 | `_enrolment_status`                | `"applicationStatus"` | 12 + 3 unresolved                                                                             | The enrolment gate — `.in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])` is on the hot path of P-Files, the document-chase queue, and the SIS drills. |
 | `_enrolment_documents`             | `"enroleeNumber"`     | 15                                                                                            | The document-completeness matrix reads this table per enrolee.                                                                                                       |
 
+### The thirteen scanner labels these five collapse from
+
+Listed verbatim so that a future re-run of the sweep can be grep-matched against this document
+line-for-line. The table name is built at runtime from a template literal, and four files spell it
+four different ways; a fifth group of call sites assembles the query across statements, so the name
+does not resolve at all.
+
+| Scanner label                                               | Sites | Real target                                                                                                                                   |
+| ----------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `${prefix}_enrolment_applications.enroleeNumber`            | 25    | `_enrolment_applications ("enroleeNumber")`                                                                                                   |
+| `unknown.enroleeNumber`                                     | 33    | `_enrolment_applications` / `_status` / `_documents` `("enroleeNumber")` — `lib/sis/drill.ts`, `lib/sis/process.ts`, `lib/p-files/queries.ts` |
+| `ay${year}_enrolment_applications.enroleeNumber`            | 2     | `_enrolment_applications ("enroleeNumber")`                                                                                                   |
+| `${prefix}_enrolment_status.enroleeNumber`                  | 13    | `_enrolment_status ("enroleeNumber")`                                                                                                         |
+| `ay${year}_enrolment_status.enroleeNumber`                  | 1     | `_enrolment_status ("enroleeNumber")`                                                                                                         |
+| `${rePrefix}_enrolment_status.enroleeNumber`                | 1     | `_enrolment_status ("enroleeNumber")`                                                                                                         |
+| `${prefix}_enrolment_documents.enroleeNumber`               | 15    | `_enrolment_documents ("enroleeNumber")`                                                                                                      |
+| `${prefix}_enrolment_status.applicationStatus`              | 12    | `_enrolment_status ("applicationStatus")`                                                                                                     |
+| `unknown.applicationStatus`                                 | 3     | `_enrolment_status ("applicationStatus")`                                                                                                     |
+| `${prefix}_enrolment_applications.studentNumber`            | 1     | `_enrolment_applications ("studentNumber")`                                                                                                   |
+| `${prefixFor(ayCode)}_enrolment_applications.studentNumber` | 1     | `_enrolment_applications ("studentNumber")`                                                                                                   |
+| `ay${year}_enrolment_applications.studentNumber`            | 1     | `_enrolment_applications ("studentNumber")`                                                                                                   |
+| `unknown.studentNumber`                                     | 2     | `_enrolment_applications ("studentNumber")`                                                                                                   |
+
+**13 labels, 110 call sites, 5 index statements per AY.**
+
 ### Proposed DDL
 
 ⚠ **Column names are camelCase and MUST be double-quoted.** Unquoted, Postgres folds them to
