@@ -21,7 +21,7 @@
  *     that RECORDS the filters applied, so a query missing one fails the test
  *     that reads the recording rather than just the fixture data.
  *
- * TWO NUMBERS, NOT ONE.
+ * THREE NUMBERS, NOT TWO.
  *   - `roundTrips` — how many terminal resolutions happened, full stop. Cheap,
  *     familiar, and blind to shape: it cannot tell a serial waterfall of 10
  *     awaits from a single `Promise.all([...10])`, both report 10.
@@ -35,6 +35,20 @@
  *     the maximum SERIAL depth, independent of how many queries fired at each
  *     depth. `withCountingClock` / `measureQueries` below are what actually
  *     drive the fake clock forward so those ticks happen; see their headers.
+ *   - `pendingAtEnd` (via `CountingSupabase.startedCount` minus
+ *     `recordings.length`, surfaced on `MeasureResult`) — queries that were
+ *     STARTED (a chain was actually `await`ed/`.then()`'d, scheduling its
+ *     `setTimeout`) but never resolved before the measured function's own
+ *     promise settled and `withCountingClock` stopped advancing the clock.
+ *     This is the classic fire-and-forget-in-a-`.forEach()`/`.map()` shape:
+ *     the outer function returns without ever collecting that inner promise,
+ *     so its query is real but invisible to `roundTrips`/`waves`. Reporting
+ *     it as `pendingAtEnd` rather than silently dropping it matters because
+ *     every other instrument in this pass deliberately OVER-reports — an
+ *     under-count here would be the one instrument pointing the wrong way,
+ *     and it is exactly the shape `scripts/audit/row-at-a-time-writes.ts`
+ *     hunts for statically, so the two disagreeing with no warning would be
+ *     worse than either being wrong alone.
  *
  * WHAT THIS IS NOT. It does not validate PostgREST semantics (error shapes on
  * `.single()` with 0/2 rows, RLS, etc.) — that is not its job. Its only job is
@@ -146,6 +160,14 @@ export interface CountingSupabase {
   rpc(name: string, args?: unknown): Chain;
   /** Every terminal resolution so far, in resolution order. */
   recordings: Recording[];
+  /**
+   * How many chains have actually been started (awaited / `.then()`'d) so
+   * far, resolved or not. `startedCount - recordings.length` is the number
+   * still pending — a query that fired but never settled before measurement
+   * ended, e.g. a fire-and-forget call inside a `.forEach()`/`.map()`. Always
+   * `>= recordings.length`.
+   */
+  readonly startedCount: number;
 }
 
 // ── The fake client ──────────────────────────────────────────────────────────
@@ -212,7 +234,8 @@ function makeChain(
   state: ChainState,
   fixtures: Fixtures,
   recordings: Recording[],
-  seqRef: { n: number }
+  seqRef: { n: number },
+  startedRef: { n: number }
 ): Chain {
   const chain = {} as Chain;
 
@@ -285,6 +308,13 @@ function makeChain(
       error: unknown;
       count: number | null;
     }>((resolve) => {
+      // Counted the instant the chain is actually consumed (awaited or
+      // `.then()`'d) — this is "started", independent of whether the
+      // `setTimeout` below ever gets the chance to fire. A query built but
+      // never awaited at all never reaches this line, matching real
+      // postgrest-js: a thenable that nobody calls `.then()` on never issues
+      // its request either.
+      startedRef.n++;
       const startTick = Date.now();
       setTimeout(() => {
         const endTick = Date.now();
@@ -330,6 +360,7 @@ export function createCountingClient(
 ): CountingSupabase {
   const recordings: Recording[] = [];
   const seqRef = { n: 0 };
+  const startedRef = { n: 0 };
 
   return {
     from(table: string): Chain {
@@ -339,7 +370,7 @@ export function createCountingClient(
         verb: 'select',
         single: 'none',
       };
-      return makeChain(state, fixtures, recordings, seqRef);
+      return makeChain(state, fixtures, recordings, seqRef, startedRef);
     },
     rpc(name: string, args?: unknown): Chain {
       const state: ChainState = {
@@ -351,9 +382,12 @@ export function createCountingClient(
         verb: 'rpc',
         single: 'none',
       };
-      return makeChain(state, fixtures, recordings, seqRef);
+      return makeChain(state, fixtures, recordings, seqRef, startedRef);
     },
     recordings,
+    get startedCount() {
+      return startedRef.n;
+    },
   };
 }
 
@@ -479,6 +513,14 @@ export interface MeasureResult<T> {
   waves: number;
   recordings: Recording[];
   duplicates: DuplicateGroup[];
+  /**
+   * Queries that were started (awaited/`.then()`'d) but had not resolved by
+   * the time the measured function's own promise settled — see the
+   * "THREE NUMBERS, NOT TWO" section at the top of this file. Zero is the
+   * healthy/expected value; a nonzero count means a query fired somewhere
+   * that nothing in the measured call graph actually waited on.
+   */
+  pendingAtEnd: number;
 }
 
 /**
@@ -501,5 +543,6 @@ export async function measureQueries<T>(
     waves,
     recordings: client.recordings,
     duplicates: findDuplicateQueries(client.recordings),
+    pendingAtEnd: client.startedCount - client.recordings.length,
   };
 }

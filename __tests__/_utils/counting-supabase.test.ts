@@ -298,6 +298,56 @@ describe('withCountingClock surfaces a stuck query rather than hanging', () => {
   });
 });
 
+describe('pendingAtEnd surfaces a fire-and-forget query instead of dropping it', () => {
+  it('a query started inside a .forEach() but never awaited by the caller is counted as pending, not silently invisible', async () => {
+    // The exact shape the header warns about: `.forEach()` fires off a
+    // sequential 3-deep chain per item via `.then()` (never collected into
+    // the outer function's own await/return), while the measured function
+    // itself resolves immediately with no awaits of its own. Because that
+    // background chain is 3 waves deep, at least its 2nd and 3rd queries
+    // cannot possibly have resolved by the time the outer promise settles —
+    // regardless of exactly how the very first tick races against the outer
+    // promise's own microtask resolution.
+    const { roundTrips, waves, pendingAtEnd } = await measureQueries(
+      async (client) => {
+        ['a', 'b', 'c'].forEach((table) => {
+          client
+            .from(table)
+            .select('*')
+            .then(() => {
+              client
+                .from(`${table}-2`)
+                .select('*')
+                .then(() => {
+                  client
+                    .from(`${table}-3`)
+                    .select('*')
+                    .then(() => {});
+                });
+            });
+        });
+        return 'outer function resolves without waiting for any of the above';
+      }
+    );
+
+    // Before the fix: these forgotten queries vanished entirely — they never
+    // appear in `roundTrips`, never in `waves`, and there was no field on the
+    // result that could ever say "3 queries somewhere never finished."
+    expect(pendingAtEnd).toBeGreaterThan(0);
+    // Whatever mix of the 9 possible queries (3 tables × 3-deep chain)
+    // happened to land on the very first tick, the total accounted for
+    // (resolved + still-pending) must never lose any that were genuinely
+    // started — that is the whole point of the fix.
+    expect(roundTrips + pendingAtEnd).toBeLessThanOrEqual(9);
+    expect(roundTrips + pendingAtEnd).toBeGreaterThan(0);
+    // waves stays a measure of what the CALLER actually waited on, not what
+    // fired in the background — the outer function awaited nothing, so it
+    // settles inside the very first simulated wave regardless of how deep
+    // the forgotten chain runs.
+    expect(waves).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('createCountingClient can be used directly, without measureQueries', () => {
   it('exposes .recordings live as queries resolve', async () => {
     const client: CountingSupabase = createCountingClient({ a: [{ id: 1 }] });
