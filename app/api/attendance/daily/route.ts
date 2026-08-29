@@ -208,27 +208,40 @@ export async function PATCH(request: NextRequest) {
   // array-vs-object ambiguity on `!inner` joins. The first step is the single
   // enrolment read above; only the sections read remains here.
   const sectionIds = Array.from(new Set(sectionIdByEnrolment.values()));
-  // `name` rides along for the audit context — this query is already being
-  // made for the day-type lookup, so the class name costs no extra round trip.
+  // `name` rides along for the audit context, and `academic_years(ay_code)`
+  // for the cache invalidation at the end of this handler — this query is
+  // already being made for the day-type lookup, so both cost no extra round
+  // trip. The AY code used to come from `requireCurrentAyCode(service)`, a
+  // separate read paid on EVERY PATCH, and the grid PATCHes one cell at a time.
   const { data: sectionRows } = sectionIds.length
     ? await service
         .from('sections')
-        .select('id, name, levels(code)')
+        .select('id, name, levels(code), academic_years(ay_code)')
         .in('id', sectionIds)
     : { data: [] };
   // `sections.levels` is typed as `{ code: string } | { code: string }[] | null`
-  // depending on Supabase's join inference; normalise to a single code.
+  // depending on Supabase's join inference; normalise to a single code. Same
+  // for `academic_years`.
   type RawSectionRow = {
     id: string;
     name: string;
     levels: { code: string } | { code: string }[] | null;
+    academic_years: { ay_code: string } | { ay_code: string }[] | null;
   };
   const levelCodeBySection = new Map<string, string | null>();
   const sectionNameById = new Map<string, string>();
+  // Every academic year this submit actually touched. Normally one — a submit
+  // covers one class — but the schema does not forbid a bulk PATCH spanning
+  // sections, so this is a set rather than a single value.
+  const ayCodesTouched = new Set<string>();
   for (const row of (sectionRows ?? []) as RawSectionRow[]) {
     const lvl = Array.isArray(row.levels) ? row.levels[0] : row.levels;
     levelCodeBySection.set(row.id, lvl?.code ?? null);
     sectionNameById.set(row.id, row.name);
+    const ay = Array.isArray(row.academic_years)
+      ? row.academic_years[0]
+      : row.academic_years;
+    if (ay?.ay_code) ayCodesTouched.add(ay.ay_code);
   }
 
   // Prior status per (enrolment, date), for the before -> after rendering in
@@ -407,7 +420,23 @@ export async function PATCH(request: NextRequest) {
       { id: auth.user.id, email: auth.user.email ?? null },
       auditRows
     );
-    invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+
+    // ⚠ A DELIBERATE SEMANTIC CHANGE, not a refactor. This used to invalidate
+    // whatever year is CURRENT (`requireCurrentAyCode(service)`, its own round
+    // trip on every PATCH, and the grid PATCHes one cell at a time). It now
+    // invalidates THE SECTION'S OWN year, read for free off the sections query
+    // above. For a mark inside the current year the two agree; for a
+    // back-dated correction in a year that is no longer current they do not,
+    // and the section's year is the right answer — the old code busted a year
+    // nothing had changed and left the stale one cached.
+    //
+    // The fallback exists because over-invalidating a cache is harmless and
+    // under-invalidating is not: if the sections read somehow came back
+    // without an AY, fall back to the current year rather than skip the bust.
+    const ayCodes = ayCodesTouched.size
+      ? [...ayCodesTouched]
+      : [await requireCurrentAyCode(service)];
+    for (const ayCode of ayCodes) invalidateDrillTags('attendance', ayCode);
   }
 
   return NextResponse.json({ ok: true, count: results.length, results });

@@ -8,11 +8,15 @@
 // workbook's sheets one at a time, and for each calls `writeDailyBulk`
 // (lib/attendance/mutations.ts) — which inserts every daily row in ONE batch,
 // then calls `recompute_attendance_rollup` once per unique
-// (term, section_student), strictly sequentially. The comment on that loop
-// argues against UNBOUNDED parallelism ("1,500+ ... overwhelms the pool"),
-// which stays true; it does not argue against a bounded wave, and
-// `writeDailyBatch` in the same file proves the bounded form is safe. So the
-// only open question is whether the serial cost is worth changing.
+// (term, section_student). Those RPCs ran STRICTLY SEQUENTIALLY when this
+// script was written; the answer it gave (~34.5 s of rollup latency for one
+// workbook) is what moved them to bounded waves of four. The comment on that
+// loop argued against UNBOUNDED parallelism ("1,500+ ... overwhelms the pool"),
+// which stays true and is why the waves are capped.
+//
+// It is kept, and stays useful, because it re-measures: the pair counts grow
+// with the roll, and `PROPOSED_WAVE` below can be re-pointed at whatever bound
+// is being considered.
 //
 // STRICTLY READ-ONLY. `recompute_attendance_rollup` is a WRITE (it upserts
 // attendance_records), so this script does not call it. Instead it times the
