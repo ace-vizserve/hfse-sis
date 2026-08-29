@@ -142,3 +142,75 @@ one.
 3. ⚠ **The slug is `ay{YYYY}` — four digits since migration 026.** The plan and the perf doc still
    say `ay26`, and `025`'s own `pg_tables` walk still matches the 2-digit form. Copying that walk
    verbatim matches **zero** tables and reports success.
+
+---
+
+## §2 — EXEMPT: an index already exists (34 pairs, 218 call sites)
+
+**These are false positives.** The column is indexed; the scanner could not see it. No action, ever.
+
+### §2a — indexed by an inline `primary key` / `unique` constraint (Rule 1) — 17 pairs
+
+A composite constraint's **lead** column is indexed. Where the filter is equality on the lead column
+and the `.order()` is on the second, the same index serves both.
+
+| Pair                                 | Sites  | The constraint that already indexes it                                                                                                                                                           |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `academic_years.ay_code`             | **67** | `001:17` — `ay_code text not null unique`. The single biggest "finding" in the sweep is a false positive.                                                                                        |
+| `terms.academic_year_id`             | **50** | `001:35` — `unique (academic_year_id, term_number)`, lead column.                                                                                                                                |
+| `students.student_number`            | 16     | `001:64` — `student_number text not null unique`. Hard Rule #4's key was never unindexed.                                                                                                        |
+| `grade_entries.grading_sheet_id`     | 15     | `001:163` — `unique (grading_sheet_id, section_student_id)`, lead column; re-declared as the named constraint `grade_entries_sheet_student_uniq` in `035:17`. The brief's hypothesis, confirmed. |
+| `subject_configs.academic_year_id`   | 12     | `001:118` — `unique (academic_year_id, subject_id, level_id)`, lead column. Also `080:481` — `subject_configs_academic_year_id_subject_id_key unique (academic_year_id, subject_id)`.            |
+| `section_students.index_number`      | 6      | `001:88` — `unique (section_id, index_number)`. All 6 sites are `.order('index_number')` **after** `.eq('section_id', …)`, which is precisely what that composite serves.                        |
+| `attendance_records.term_id`         | 5      | `001:207` — `unique (term_id, section_student_id)`, lead column.                                                                                                                                 |
+| `subjects.code`                      | 3      | `001:101` — `unique (code)`.                                                                                                                                                                     |
+| `levels.code`                        | 2      | `001:41` — `code text not null unique`.                                                                                                                                                          |
+| `subject_level_offerings.subject_id` | 2      | `080:127` — `unique (subject_id, level_id, academic_year_id)`, lead column.                                                                                                                      |
+| `classroom_notes.section_id`         | 2      | `094:49` — `unique (section_id, teacher_user_id)`, lead column.                                                                                                                                  |
+| `evaluation_terms.term_id`           | 1      | `018:52` — `term_id uuid not null unique`.                                                                                                                                                       |
+| `approver_assignments.user_id`       | 1      | `013:33` — `unique (user_id, flow)`, lead column.                                                                                                                                                |
+| `role_permissions.role`              | 1      | `101:40` — `primary key (role, capability)`, lead column.                                                                                                                                        |
+| `subject_report_map.subject_id`      | 1      | `080:211` — `unique (subject_id, report_subject_id)`, lead column.                                                                                                                               |
+| `level_aliases.raw_label`            | 1      | `088:29` — `constraint level_aliases_raw_label_unique unique (raw_label)`.                                                                                                                       |
+| `grading_sheet.term_id`              | 1      | Alias for `grading_sheets`; `001:141` — `unique (term_id, section_id, subject_id)`, lead column.                                                                                                 |
+
+### §2b — dotted PostgREST filters reported under the SELECT alias (Rule 1b) — 6 pairs
+
+The scanner splits a dotted filter on its first `.` and treats the left-hand side as a table name.
+In every one of these it is an **alias** from the select clause.
+
+| Pair as reported                           | Sites | Really is                                                                  | Index                                                                                          |
+| ------------------------------------------ | ----- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `section.academic_year_id`                 | 13    | `sections.academic_year_id` via `section:sections!inner(academic_year_id)` | `sections_academic_year_id_idx` — `040:18`                                                     |
+| `grading_sheet.section.academic_year_id`   | 8     | same                                                                       | same                                                                                           |
+| `academic_year.ay_code`                    | 3     | `academic_years.ay_code` via `academic_year:academic_years!inner(ay_code)` | `001:17` unique                                                                                |
+| `grading_sheets.sections.academic_year_id` | 1     | `sections.academic_year_id`                                                | `040:18`                                                                                       |
+| `terms.academic_years.ay_code`             | 1     | `academic_years.ay_code`                                                   | `001:17` unique                                                                                |
+| `sections.academic_years.is_current`       | 1     | `academic_years.is_current`                                                | `academic_years_single_current` — `095:47`, a unique partial index; and the table holds 3 rows |
+
+### §2c — the table could not be resolved, but the real table's column is indexed — 11 pairs
+
+The scanner reports `unknown.<column>` when a query builder is assembled across statements
+(`let q = supabase.from(…); if (x) q = q.eq(…)`). Resolved by hand.
+
+| Pair as reported            | Sites | Real table.column                                                                                                                                                                                                                            | Index                                                                                                                                                       |
+| --------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unknown.status`            | 14    | `grade_change_requests.status` — `lib/change-requests/sidebar-counts.ts` ×8, `lib/sidebar/use-change-request-count.ts` ×4, `app/api/change-requests/route.ts:74`, `lib/change-requests/decide.ts:337`                                        | `grade_change_requests_status_idx` — `009:79`; also `grade_change_requests_sheet_status_idx` — `009:73`                                                     |
+| `unknown.requested_by`      | 4     | `grade_change_requests.requested_by`                                                                                                                                                                                                         | `grade_change_requests_requested_by_idx` — `009:75`                                                                                                         |
+| `unknown.term_id`           | 4     | `attendance_daily.term_id` (`lib/attendance/queries.ts:221`), `school_calendar.term_id` (`:503`, `:505`), `grading_sheets.term_id` (`app/api/grading-sheets/route.ts:40`)                                                                    | `attendance_daily_student_date_idx` `014:65` leads on the `section_student_id` already filtered; `school_calendar_term_date_idx` `015:55`; `001:141` unique |
+| `unknown.section_id`        | 3     | `section_students.section_id` (`lib/sis/placement-completion.ts:106`), `report_card_publications.section_id` (`app/api/report-card-publications/route.ts:30`), `teacher_assignments.section_id` (`app/api/teacher-assignments/route.ts:176`) | `001:88` unique lead; `007:33` unique lead + `report_card_publications_active_idx` `007:37`; teacher_assignments is 115 rows — see §3                       |
+| `unknown.applicationStatus` | 3     | `ay{YYYY}_enrolment_status."applicationStatus"` — `lib/p-files/drill.ts:218`, `lib/sis/document-chase-queue.ts:86,92`                                                                                                                        | **Not exempt — folded into §1.** Listed here only so the bucket reconciles.                                                                                 |
+| `unknown.studentNumber`     | 2     | `ay{YYYY}_enrolment_applications."studentNumber"` — `lib/sis/drill.ts:300`, `lib/supabase/admissions.ts:196`                                                                                                                                 | **Not exempt — folded into §1.**                                                                                                                            |
+| `unknown.grading_sheet_id`  | 2     | `grade_change_requests.grading_sheet_id` (`app/api/change-requests/route.ts:77`) and `grade_audit_log.grading_sheet_id` (`app/api/audit-log/route.ts:27`)                                                                                    | `grade_change_requests_sheet_status_idx` `009:73` lead. The `grade_audit_log` half is unindexed — see §4.                                                   |
+| `unknown.academic_year_id`  | 1     | `student_discipline_records.academic_year_id` — `lib/discipline/queries.ts:252`                                                                                                                                                              | `student_discipline_records_ay_idx` — `120:150`                                                                                                             |
+| `unknown.occurred_on`       | 1     | `student_discipline_records.occurred_on` — `lib/discipline/queries.ts:255`, an `.order()` after `.eq('student_id', …)`                                                                                                                       | `student_discipline_records_student_idx` — `120:144` bounds the scan before the sort                                                                        |
+| `unknown.request_id`        | 1     | `approval_request_stages.request_id` — `lib/activity/feed.ts:214`                                                                                                                                                                            | `approval_request_stages_request_idx` — `126:284`                                                                                                           |
+| `unknown.teacher_user_id`   | 1     | `teacher_assignments.teacher_user_id` — `app/api/teacher-assignments/route.ts:178`                                                                                                                                                           | `teacher_assignments_by_user` — `003:41`                                                                                                                    |
+
+⚠ **Two rows in §2c (`unknown.applicationStatus`, `unknown.studentNumber`) are NOT exempt** — they
+resolve to the AY admissions tables and are covered by §1's DDL. They are shown here because that is
+where the scanner filed them, and leaving them out would make the bucket look like it lost two
+pairs.
+
+**§2 subtotal: 34 pairs listed, of which 32 are genuinely exempt** and 2 are §1 entries appearing
+under their scanner label.
