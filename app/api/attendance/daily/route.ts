@@ -38,42 +38,40 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 // Audit: logs `attendance.daily.update` for today/future dates,
 // `attendance.daily.correct` for past dates.
 
-async function assertAdviserForSections(
-  service: ReturnType<typeof createServiceClient>,
-  userId: string,
+/**
+ * The teacher section gate, over enrolments the CALLER has already resolved.
+ *
+ * It used to run its own `section_students` read, identical to the one the
+ * level-type/audit block ran a few lines later — same table, same columns, same
+ * ids, differing only in that this one did not dedupe, which `.in()` does not
+ * care about. The read is hoisted; the gate now receives its result.
+ *
+ * ⚠ IT STILL FAILS CLOSED, AND THAT IS WHY THE ERROR IS PASSED IN RATHER THAN
+ * SWALLOWED BY THE CALLER. A lookup that fails must refuse, and an empty result
+ * must refuse — "no section ids came back" is not "no section to object to".
+ * Both are asserted in __tests__/attendance/daily-enrolment-read-gate.test.ts,
+ * which was run green on all four refusal cases BEFORE the read was hoisted.
+ */
+function assertAdviserForSections(
+  assignments: Array<{ section_id: string; role: string }>,
+  enrolment: {
+    error: string | null;
+    sectionIdByEnrolment: Map<string, string>;
+  },
   sectionStudentIds: string[]
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): { ok: true } | { ok: false; reason: string } {
   if (sectionStudentIds.length === 0) return { ok: true };
 
-  const { data: enrolments, error: enrErr } = await service
-    .from('section_students')
-    .select('id, section_id')
-    .in('id', sectionStudentIds);
-  if (enrErr) {
-    return { ok: false, reason: `enrolment lookup failed: ${enrErr.message}` };
+  if (enrolment.error) {
+    return { ok: false, reason: `enrolment lookup failed: ${enrolment.error}` };
   }
   const sectionIds = Array.from(
-    new Set((enrolments ?? []).map((e) => e.section_id as string))
+    new Set(enrolment.sectionIdByEnrolment.values())
   );
   if (sectionIds.length === 0) {
     return { ok: false, reason: 'unknown section_student_id(s)' };
   }
 
-  // Held OR covered. Taking the register is precisely the work a substitute is
-  // brought in for, so a class they are covering must pass this gate — while
-  // the regular adviser stays the name of record on the section everywhere it
-  // is displayed.
-  let assignments;
-  try {
-    assignments = await loadEffectiveAssignmentsForUser(service, userId);
-  } catch (err) {
-    return {
-      ok: false,
-      reason: `teacher_assignments lookup failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    };
-  }
   const advisedSectionIds = new Set(
     assignments
       // isAdviserRole, not the literal: migration 124's `is_adviser_for_section`
@@ -138,11 +136,56 @@ export async function PATCH(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Teacher section gate — ALL touched sections must be ones they adviseform-.
+  // ONE `section_students` READ FOR THE WHOLE REQUEST. It resolves two things
+  // that used to fetch it separately: the teacher gate below, and the
+  // section-name / level-type maps the audit context and the day-type lookup
+  // need. Both asked for the same columns over the same ids.
+  //
+  // ⚠ THE ERROR IS CARRIED, NOT DISCARDED — the gate has to be able to refuse
+  // on a failed lookup. For non-teachers the behaviour is unchanged: a failed
+  // read leaves the maps empty and the request proceeds exactly as it did when
+  // this query ignored its own error.
+  const studentIds = Array.from(
+    new Set(entries.map((e) => e.sectionStudentId))
+  );
+  const { data: enrolmentRows, error: enrolmentErr } = await service
+    .from('section_students')
+    .select('id, section_id')
+    .in('id', studentIds);
+  const sectionIdByEnrolment = new Map<string, string>(
+    ((enrolmentRows ?? []) as Array<{ id: string; section_id: string }>).map(
+      (r) => [r.id, r.section_id]
+    )
+  );
+
+  // Teacher section gate — ALL touched sections must be ones they form-advise.
   if (auth.role === 'teacher') {
-    const check = await assertAdviserForSections(
-      service,
-      auth.user.id,
+    // Held OR covered. Taking the register is precisely the work a substitute
+    // is brought in for, so a class they are covering must pass this gate —
+    // while the regular adviser stays the name of record on the section
+    // everywhere it is displayed.
+    let assignments;
+    try {
+      assignments = await loadEffectiveAssignmentsForUser(
+        service,
+        auth.user.id
+      );
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: `teacher_assignments lookup failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+        { status: 403 }
+      );
+    }
+    const check = assertAdviserForSections(
+      assignments,
+      {
+        error: enrolmentErr?.message ?? null,
+        sectionIdByEnrolment,
+      },
       entries.map((e) => e.sectionStudentId)
     );
     if (!check.ok) {
@@ -159,22 +202,11 @@ export async function PATCH(request: NextRequest) {
     rollup: RollupAfterWrite;
   }> = [];
 
-  // Resolve each entry's section level type once so the day-type lookup
-  // can pick the right audience scope (KD #50 audience-precedence rule,
-  // migration 037). Two-step fetch — flatter than a nested join, and
-  // avoids the Supabase-typed array-vs-object ambiguity on `!inner` joins.
-  const studentIds = Array.from(
-    new Set(entries.map((e) => e.sectionStudentId))
-  );
-  const { data: enrolmentRows } = await service
-    .from('section_students')
-    .select('id, section_id')
-    .in('id', studentIds);
-  const sectionIdByEnrolment = new Map<string, string>(
-    ((enrolmentRows ?? []) as Array<{ id: string; section_id: string }>).map(
-      (r) => [r.id, r.section_id]
-    )
-  );
+  // Each entry's section level type, so the day-type lookup can pick the right
+  // audience scope (KD #50 audience-precedence rule, migration 037). Two-step
+  // resolution — flatter than a nested join, and avoids the Supabase-typed
+  // array-vs-object ambiguity on `!inner` joins. The first step is the single
+  // enrolment read above; only the sections read remains here.
   const sectionIds = Array.from(new Set(sectionIdByEnrolment.values()));
   // `name` rides along for the audit context — this query is already being
   // made for the day-type lookup, so the class name costs no extra round trip.
