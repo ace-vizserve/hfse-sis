@@ -10,6 +10,7 @@ import {
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import {
   Card,
   CardAction,
@@ -104,27 +105,22 @@ export default async function AttendanceAuditLogPage({
   if (fromFilter) q = q.gte('created_at', fromFilter);
   if (toFilter) q = q.lte('created_at', `${toFilter}T23:59:59.999Z`);
 
-  const [{ data: rows, count, error }, staffEntries, actorEmailsResult] =
+  const [{ data: rows, count, error }, staffEntries, actorOptions] =
     await Promise.all([
       q.order('created_at', { ascending: false }).range(rangeFrom, rangeTo),
       getStaffDisplayEntries(),
-      // Fetch distinct actor emails for the dropdown (scoped to allowlist)
-      supabase
-        .from('audit_log')
-        .select('actor_email')
-        .in('action', ATTENDANCE_AUDIT_ACTIONS)
-        .order('actor_email')
-        .limit(200),
+      // Distinct actors for the dropdown, scoped to this module's allowlist.
+      //
+      // This used to select the actor_email COLUMN with `.limit(200)` and
+      // de-duplicate in JS, which bounds ROWS and not actors. Measured in
+      // production 2026-08-30 this module had 138 rows across 8 actors and the
+      // dropdown did list all 8 — so unlike the markbook sibling, nothing was
+      // missing here. It changes anyway: the read was right about today's row
+      // count, which is the reasoning
+      // __tests__/data/no-unpaginated-high-volume-reads.test.ts exists to stop
+      // trusting. The DISTINCT now happens in the database (migration 133).
+      loadAuditActorEmails(supabase, ATTENDANCE_AUDIT_ACTIONS, 'attendance'),
     ]);
-
-  // Dedupe actor emails
-  const actorOptions = Array.from(
-    new Set(
-      (actorEmailsResult.data ?? [])
-        .map((r: { actor_email: string }) => r.actor_email)
-        .filter(Boolean)
-    )
-  ).sort();
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
