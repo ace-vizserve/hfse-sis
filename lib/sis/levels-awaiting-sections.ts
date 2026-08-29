@@ -148,32 +148,48 @@ async function loadLevelsAwaitingSectionsUncached(
   const waiting: WaitingAtLevel[] = [];
   const sectionLevelIdsByAy: Record<string, string[]> = {};
 
-  for (const ayCode of ayCodes) {
-    const prefix = prefixFor(ayCode);
+  // ONE WAVE PER STEP, ACROSS EVERY YEAR IN SCOPE. Nothing one year reads is
+  // produced by another, so the years go out together. The two steps WITHIN a
+  // year stay serial and genuinely are: the sections read is scoped by the AY
+  // id the first step resolves.
+  //
+  // ⚠ THE FETCH IS PARALLEL; THE FOLD BELOW IS STILL IN `ayCodes` ORDER,
+  // because `waiting` is appended to and the caller renders it in that order.
+  const perAy = await Promise.all(
+    ayCodes.map(async (ayCode) => {
+      const prefix = prefixFor(ayCode);
 
-    const { data: ayRow, error: ayErr } = await service
-      .from('academic_years')
-      .select('id')
-      .eq('ay_code', ayCode)
-      .maybeSingle();
-    if (ayErr || !ayRow) continue; // AY not provisioned in the operational schema yet
+      const { data: ayRow, error: ayErr } = await service
+        .from('academic_years')
+        .select('id')
+        .eq('ay_code', ayCode)
+        .maybeSingle();
+      // AY not provisioned in the operational schema yet.
+      if (ayErr || !ayRow) return null;
 
-    const ayId = (ayRow as { id: string }).id;
+      const ayId = (ayRow as { id: string }).id;
 
-    const [appsRes, statusRes, sectionsRes] = await Promise.all([
-      admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select('enroleeNumber, levelApplied'),
-      admissions
-        .from(`${prefix}_enrolment_status`)
-        .select('enroleeNumber, classSection, applicationStatus')
-        .in('applicationStatus', [...ENROLLED_STATUSES]),
-      service
-        .from('sections')
-        .select('level_id')
-        .not('level_id', 'is', null)
-        .eq('academic_year_id', ayId),
-    ]);
+      const [appsRes, statusRes, sectionsRes] = await Promise.all([
+        admissions
+          .from(`${prefix}_enrolment_applications`)
+          .select('enroleeNumber, levelApplied'),
+        admissions
+          .from(`${prefix}_enrolment_status`)
+          .select('enroleeNumber, classSection, applicationStatus')
+          .in('applicationStatus', [...ENROLLED_STATUSES]),
+        service
+          .from('sections')
+          .select('level_id')
+          .not('level_id', 'is', null)
+          .eq('academic_year_id', ayId),
+      ]);
+      return { ayCode, appsRes, statusRes, sectionsRes };
+    })
+  );
+
+  for (const entry of perAy) {
+    if (!entry) continue;
+    const { ayCode, appsRes, statusRes, sectionsRes } = entry;
 
     if (appsRes.error || statusRes.error || sectionsRes.error) {
       console.warn(
