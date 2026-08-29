@@ -287,3 +287,90 @@ already narrowed by `audit_log_action_created_at_idx` (`052:8`) and
 ⚠ **If this is ever revisited, the right answer is one `gin` index on `context`, not four btree
 expression indexes** — the paths queried will keep changing as the movements report grows, and an
 expression index only serves the exact expression it was built on.
+
+---
+
+## §4 — EXEMPT: other (8 pairs, 13 call sites)
+
+These are neither "already indexed on that column" nor "too small". Each has its own reason.
+
+### §4a — `attendance_daily`: a partial index already built for exactly this query (2 pairs)
+
+| Pair                         | Sites | Verdict |
+| ---------------------------- | ----- | ------- |
+| `attendance_daily.status`    | 1     | EXEMPT  |
+| `attendance_daily.ex_reason` | 1     | EXEMPT  |
+
+**This is the one genuinely large table in the sweep — 102,510 rows** (Phase 0 probe) — so it is the
+one place a missing index would actually matter. It does not have one.
+
+Both hits are the same statement, `lib/attendance/drill.ts:771-772`:
+
+```
+.in('section_student_id', ssIds.slice(...))   // chunks of <= 100
+.eq('status', 'EX')
+.eq('ex_reason', 'compassionate')
+```
+
+`attendance_daily_compassionate_idx` (`015:204`) is
+`(section_student_id, recorded_at desc) where ex_reason = 'compassionate'` — **a partial index whose
+predicate is literally this query's `ex_reason` filter, led by the column this query narrows on
+first.** Migration 015's own comment says it was built for the compassionate-quota counter, which is
+what this loader is. The residual `.eq('status','EX')` is free: `ex_reason` is only ever non-null
+when `status = 'EX'`, enforced by `attendance_daily_ex_reason_requires_ex_chk` (`015:197`).
+
+⚠ **Do not propose anything on `attendance_daily`.** Migrations 014, 015 and 048 between them cover
+the daily grid (`term_id, section_student_id, date desc`), the per-student history
+(`section_student_id, date desc, recorded_at desc`), the import/audit path (`recorded_at desc`), the
+compassionate quota, and the vacation quota (`048:102`, partial `where ex_reason = 'vacation'`).
+Every read this app makes of that table lands on one of them.
+
+### §4b — the query reads the whole table, so an index cannot avoid the scan (4 pairs)
+
+| Pair                                          | Sites | Verdict |
+| --------------------------------------------- | ----- | ------- |
+| `${prefix}_enrolment_applications.created_at` | 2     | EXEMPT  |
+| `unknown.lastName`                            | 1     | EXEMPT  |
+| `unknown.firstName`                           | 1     | EXEMPT  |
+| `unknown.created_at`                          | 3     | EXEMPT  |
+
+`lib/sis/queries.ts:137-141` and `lib/admissions/priority.ts:88` are the admissions list read. It
+selects `LIST_APP_COLUMNS` from `${prefix}_enrolment_applications` **with no `where` clause at all**
+and walks every page with `fetchAllPages` — by design, because the list is the whole intake. An index
+on the `order by` column cannot remove a scan that is the point of the query; it could only replace
+an in-memory sort of **822 rows** (the largest AY table) with an ordered read, and that sort is
+sub-millisecond.
+
+⚠ **This is deliberately excluded from §1 even though it sits on the same tables.** §1 indexes the
+columns that _narrow_ a read. These three only order one. Adding them would be write cost for
+nothing, and would make the §1 migration look better-evidenced than it is.
+
+The third `unknown.created_at` site is `lib/activity/feed.ts:210` — an `.order()` on
+`approval_requests` through `referencedTable`, already served by `approval_requests_open_idx`
+(`126:200`, `(flow, created_at desc) where status = 'pending'`) and bounded per §3c. The remaining
+one is `lib/discipline/queries.ts:256`, already answered in §2c.
+
+### §4c — `grade_audit_log`: unindexed, and the only entry carrying a re-measure trigger (2 pairs)
+
+| Pair                         | Sites | Verdict                                                                    |
+| ---------------------------- | ----- | -------------------------------------------------------------------------- |
+| `grade_audit_log.changed_at` | 2     | EXEMPT — **with a stated trigger to revisit**                              |
+| `unknown.grade_entry_id`     | 1     | EXEMPT (`grade_audit_log.grade_entry_id`, `app/api/audit-log/route.ts:28`) |
+
+`grade_audit_log` carries **no index of any kind beyond its `id` primary key** — `001:167` declares
+no unique constraint, and no later migration adds one. `app/api/audit-log/route.ts:25` orders it
+`changed_at desc` with `limit 500` and only _optionally_ narrows by `sheet_id` / `entry_id`; the
+export route (`:77`) does the same. (The `grading_sheet_id` half of `unknown.grading_sheet_id` in
+§2c is this same table and this same verdict.)
+
+It is exempt because the table is bounded by grade-entry **edit** volume, and AY2026 holds
+**4,636 grade entries in total** (`scripts/audit-grade-recompute-drift.ts`, measured). A `limit 500`
+top-N sort over a table of that order is sub-millisecond.
+
+⚠ **This is the only exemption in this document that rests on an inference rather than a count.**
+`grade_audit_log`'s own row count was not in the Phase 0 probe, and unlike every other table here it
+is append-only with no per-AY ceiling — a locked sheet reopened and re-edited appends rows without
+adding entries. **Re-measure it on the next sweep.** The trigger: if it exceeds ~50,000 rows, add
+`create index … on public.grade_audit_log (changed_at desc)` and
+`… (grading_sheet_id, changed_at desc)`. Until someone has counted it, proposing those would be
+guessing — and a false "missing index" finding is worse than none.
