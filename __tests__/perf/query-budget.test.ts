@@ -526,38 +526,44 @@ describe('budget: classroom section page — data loading', () => {
 
     const supabase = client as unknown as SupabaseClient;
 
-    const [{ count: activeCount }, staff] = await Promise.all([
+    // ONE Promise.all, mirroring the page after phase 4. Every entry is a
+    // function of the section id, the term id and the capability flags, so
+    // nothing here waits on anything else here.
+    const [
+      { count: activeCount },
+      staff,
+      { data: sheets },
+      attendanceSummary,
+      writeupProgress,
+      readiness,
+      atRisk,
+    ] = await Promise.all([
       supabase
         .from('section_students')
         .select('id', { count: 'exact', head: true })
         .eq('section_id', SECTION_ID)
         .neq('enrollment_status', 'withdrawn'),
       getSectionStaff(SECTION_ID),
+      supabase
+        .from('grading_sheets')
+        .select('id, is_locked')
+        .eq('section_id', SECTION_ID)
+        .eq('term_id', TERM_ID),
+      getSectionAttendanceSummary(SECTION_ID, TERM_ID),
+      getWriteupProgressByTerm(TERM_ID, [SECTION_ID]).then(
+        (bySection) => bySection[SECTION_ID] ?? null
+      ),
+      getClassroomHealth(SECTION_ID, TERM_ID, AY_CODE),
+      // `selectAtRiskStudents` (called next in the real page, KD #160) is a
+      // pure in-memory function over `rollups`/`roster` — it issues no query
+      // of its own, so it is intentionally not reproduced here; including it
+      // would add risk for zero effect on roundTrips/waves.
+      Promise.all([
+        getRollupForSection(SECTION_ID, TERM_ID),
+        getSectionRoster(SECTION_ID, TERM_ID),
+      ]),
     ]);
-
-    const { data: sheets } = await supabase
-      .from('grading_sheets')
-      .select('id, is_locked')
-      .eq('section_id', SECTION_ID)
-      .eq('term_id', TERM_ID);
-
-    const attendanceSummary = await getSectionAttendanceSummary(
-      SECTION_ID,
-      TERM_ID
-    );
-    const writeupProgress = (
-      await getWriteupProgressByTerm(TERM_ID, [SECTION_ID])
-    )[SECTION_ID];
-    const readiness = await getClassroomHealth(SECTION_ID, TERM_ID, AY_CODE);
-
-    // `selectAtRiskStudents` (called next in the real page, KD #160) is a
-    // pure in-memory function over `rollups`/`roster` — it issues no query of
-    // its own, so it is intentionally not reproduced here; including it would
-    // add risk for zero effect on roundTrips/waves.
-    const [rollups, roster] = await Promise.all([
-      getRollupForSection(SECTION_ID, TERM_ID),
-      getSectionRoster(SECTION_ID, TERM_ID),
-    ]);
+    const [rollups, roster] = atRisk;
 
     return {
       activeCount,
@@ -571,7 +577,14 @@ describe('budget: classroom section page — data loading', () => {
     };
   }
 
-  it('measured 2026-08-29: roundTrips=11, waves=8', async () => {
+  // Re-measured 2026-08-29 after phase 4: 11/8 -> 11/2. Every read on this
+  // page is a function of `sectionId`, `selectedTermId`, `ayCode` and the two
+  // capability flags — none of them consumes another's result — but they were
+  // issued one `await` after another. One `Promise.all` leaves the depth at
+  // whichever single loader is deepest, which is the roster-then-rows pair
+  // inside `getRollupForSection` / `getWriteupProgressByTerm`: two.
+  // `roundTrips` is unchanged, which is the proof nothing was dropped.
+  it('measured 2026-08-29: roundTrips=11, waves=2', async () => {
     // Resolved under REAL timers, before the measured section starts — see
     // the note on runClassroomSectionPageLoader for why.
     const { getSectionStaff } = await import('@/lib/classroom/staff');
@@ -597,7 +610,7 @@ describe('budget: classroom section page — data loading', () => {
       { maxWaves: 100 }
     );
     expect(roundTrips).toBe(11);
-    expect(waves).toBe(8);
+    expect(waves).toBe(2);
   });
 });
 

@@ -95,29 +95,6 @@ export default async function ClassroomOverviewPage({
   const selectedTerm = terms.find((t) => t.id === selectedTermId) ?? null;
   const isT4 = selectedTerm?.term_number === 4;
 
-  // Who runs the class is a section-wide fact, not a per-term one, so it is
-  // fetched alongside the roster count rather than behind the term resolver.
-  const [{ count: activeCount }, staff] = await Promise.all([
-    supabase
-      .from('section_students')
-      .select('id', { count: 'exact', head: true })
-      .eq('section_id', sectionId)
-      .neq('enrollment_status', 'withdrawn'),
-    getSectionStaff(sectionId),
-  ]);
-
-  let sheetsCount = 0;
-  let lockedCount = 0;
-  if (selectedTermId) {
-    const { data: sheets } = await supabase
-      .from('grading_sheets')
-      .select('id, is_locked')
-      .eq('section_id', sectionId)
-      .eq('term_id', selectedTermId);
-    sheetsCount = sheets?.length ?? 0;
-    lockedCount = (sheets ?? []).filter((s) => s.is_locked).length;
-  }
-
   // Attendance is work a substitute does, so it takes the effective capability.
   // Write-ups are the adviser's own and stay with them while they are away, so
   // that panel takes the substantive one. These two used to be the same
@@ -125,28 +102,86 @@ export default async function ClassroomOverviewPage({
   const showAttendance = canReadAttendance(capability);
   const showWriteups = canReadWriteups(substantiveCapability);
 
-  const attendanceSummary =
+  // ── ONE WAVE FOR THE WHOLE PAGE ───────────────────────────────────────
+  // Every read below is a function of `sectionId`, `selectedTermId`, `ayCode`
+  // and the two capability flags — all resolved above, none of them produced
+  // by another read in this group. They were nonetheless issued one `await`
+  // after another, so the page's data-fetch was eight round trips DEEP for
+  // what is two levels of genuine dependency (each loader's own internal
+  // roster-then-rows pair). Measured 2026-08-29: 11 round trips / 8 waves
+  // before, 11 / 2 after — the same queries, at the depth they actually need.
+  //
+  // A skipped branch resolves to `null` rather than being omitted, so the
+  // destructure below stays positional and the gates stay readable as gates.
+  const [
+    rosterCountRes,
+    staff,
+    sheetsRes,
+    attendanceSummary,
+    writeupProgress,
+    readiness,
+    atRisk,
+  ] = await Promise.all([
+    supabase
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('section_id', sectionId)
+      .neq('enrollment_status', 'withdrawn'),
+    // Who runs the class is a section-wide fact, not a per-term one, so it
+    // does not wait on the term resolver.
+    getSectionStaff(sectionId),
+    selectedTermId
+      ? supabase
+          .from('grading_sheets')
+          .select('id, is_locked')
+          .eq('section_id', sectionId)
+          .eq('term_id', selectedTermId)
+      : Promise.resolve({
+          data: null as Array<{ id: string; is_locked: boolean }> | null,
+        }),
     showAttendance && selectedTermId
-      ? await getSectionAttendanceSummary(sectionId, selectedTermId)
-      : null;
-
-  // KD #120/#126 submitted+non-empty predicate is baked into this loader
-  // already — see lib/evaluation/queries.ts::getWriteupProgressByTerm.
-  const writeupProgress =
+      ? getSectionAttendanceSummary(sectionId, selectedTermId)
+      : Promise.resolve(null),
+    // KD #120/#126 submitted+non-empty predicate is baked into this loader
+    // already — see lib/evaluation/queries.ts::getWriteupProgressByTerm.
     showWriteups && selectedTermId && !isT4
-      ? (await getWriteupProgressByTerm(selectedTermId, [sectionId]))[sectionId]
-      : null;
+      ? getWriteupProgressByTerm(selectedTermId, [sectionId]).then(
+          (bySection) => bySection[sectionId] ?? null
+        )
+      : Promise.resolve(null),
+    // ── Health (Phase 5) ────────────────────────────────────────────────
+    // computePublishReadiness — cached, see lib/classroom/health.ts. No term
+    // resolvable, or no ay_code (shouldn't happen but guards the cache-tag
+    // shape) → skip the strip entirely rather than render a hollow one.
+    selectedTermId && ayCode
+      ? getClassroomHealth(sectionId, selectedTermId, ayCode)
+      : Promise.resolve(null),
+    // Students at risk — attendance-percentage view, distinct from the
+    // "Attendance" completeness row below. `null` = not asked for; an empty
+    // rollup list is a different answer and is handled after the await.
+    //
+    // ⚠ This calls `getRollupForSection` for the SAME (section, term) that
+    // `getSectionAttendanceSummary` above resolves internally. That is
+    // deliberate and it is not a second round trip in the app: the loader is
+    // `React.cache()`-wrapped (lib/attendance/queries.ts) and both calls now
+    // land in the same render, so the second one joins the first one's
+    // promise instead of issuing a query. Under the counting harness there is
+    // no React dispatcher, so it still measures as two — which is why the
+    // budget's `roundTrips` stays at 11.
+    showAttendance && selectedTermId
+      ? Promise.all([
+          getRollupForSection(sectionId, selectedTermId),
+          getSectionRoster(sectionId, selectedTermId),
+        ])
+      : Promise.resolve(null),
+  ]);
+
+  const activeCount = rosterCountRes.count;
+  const sheets = sheetsRes.data;
+  const sheetsCount = sheets?.length ?? 0;
+  const lockedCount = (sheets ?? []).filter((s) => s.is_locked).length;
 
   const termQuery = selectedTermId ? `?term_id=${selectedTermId}` : '';
-
-  // ── Health (Phase 5) ──────────────────────────────────────────────────
-  // computePublishReadiness — cached, see lib/classroom/health.ts. No term
-  // resolvable, or no ay_code (shouldn't happen but guards the cache-tag
-  // shape) → skip the strip entirely rather than render a hollow one.
-  const readiness =
-    selectedTermId && ayCode
-      ? await getClassroomHealth(sectionId, selectedTermId, ayCode)
-      : null;
 
   const healthRows: ClassroomHealthRow[] = [];
   if (readiness) {
@@ -264,11 +299,8 @@ export default async function ClassroomOverviewPage({
   // yet this term (hidden entirely by <ClassroomAtRiskPanel>, never shown
   // as a fabricated "0 at risk").
   let atRiskStudents: AtRiskStudent[] | null = null;
-  if (showAttendance && selectedTermId) {
-    const [rollups, roster] = await Promise.all([
-      getRollupForSection(sectionId, selectedTermId),
-      getSectionRoster(sectionId, selectedTermId),
-    ]);
+  if (atRisk) {
+    const [rollups, roster] = atRisk;
     if (rollups.length > 0) {
       atRiskStudents = selectAtRiskStudents(
         rollups.map((r) => ({
