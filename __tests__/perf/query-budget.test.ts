@@ -1,6 +1,7 @@
 /**
- * Baseline query/write budgets for six real surfaces, measured with the
- * counting harness (`__tests__/_utils/counting-supabase.ts`).
+ * Baseline query/write budgets for seven real surfaces, measured with the
+ * counting harness (`__tests__/_utils/counting-supabase.ts`). Six were seeded
+ * in phase 0; the attendance student-detail surface (§7) was added in phase 4.
  *
  * WHY THIS EXISTS. The project owner's standing rule for this whole pass is
  * "measure, don't estimate" — a prior audit raised six HIGH findings and half
@@ -35,8 +36,9 @@
  *      for a hand-rolled fake; here the fake is the shared counting client so
  *      roundTrips/waves come out the other end.
  *
- *   3. THE CLASSROOM SECTION PAGE — `app/(classroom)/classroom/[sectionId]/page.tsx`
- *      is a React Server Component (icons, shadcn primitives, `next/navigation`).
+ *   3. TWO PAGES — `app/(classroom)/classroom/[sectionId]/page.tsx` and
+ *      `app/(attendance)/attendance/students/[studentNumber]/page.tsx`. Both
+ *      are React Server Components (icons, shadcn primitives, `next/navigation`).
  *      No test in this repo imports a `page.tsx` and calls it as a plain
  *      function, and inventing that pattern for one baseline number is a
  *      bigger risk than the number is worth. Instead `runClassroomSectionPageLoader`

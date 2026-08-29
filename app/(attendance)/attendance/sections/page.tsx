@@ -45,37 +45,39 @@ export default async function AttendanceSectionsListPage() {
 
   const supabase = await createClient();
 
-  // Cover booked for this teacher that has not started yet (migration 123).
-  // Caller's client on purpose: the row-read policy is deliberately unwindowed.
-  const upcomingCover =
+  // ── WAVE 1: the two panels and the year, none of which knows the others ──
+  // The upcoming-cover panel and the declarations badge are keyed on the
+  // session alone, and the current academic year on nothing at all. They were
+  // three consecutive `await`s.
+  const [upcomingCover, declarationsWaiting, { data: ay }] = await Promise.all([
+    // Cover booked for this teacher that has not started yet (migration 123).
+    // Caller's client on purpose: the row-read policy is deliberately
+    // unwindowed.
     isTeacherOnly && session
-      ? await loadUpcomingCoverForUser(supabase, session.id)
-      : [];
-
-  // Declarations waiting on this person. Never throws — one panel must not be
-  // able to take the section picker down with it, and zero is honest: the
-  // queue at /attendance/declarations is the authority either way.
-  let declarationsWaiting = 0;
-  if (session) {
-    try {
-      declarationsWaiting = await countInboxActionable(createServiceClient(), {
-        flow: DECLARATION_APPROVAL_FLOW,
-        userId: session.id,
-        role: session.role,
-      });
-    } catch (e) {
-      console.error(
-        '[attendance] declarations count failed:',
-        e instanceof Error ? e.message : String(e)
-      );
-    }
-  }
-
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+      ? loadUpcomingCoverForUser(supabase, session.id)
+      : Promise.resolve([]),
+    // Declarations waiting on this person. Never throws — one panel must not
+    // be able to take the section picker down with it, and zero is honest: the
+    // queue at /attendance/declarations is the authority either way.
+    session
+      ? countInboxActionable(createServiceClient(), {
+          flow: DECLARATION_APPROVAL_FLOW,
+          userId: session.id,
+          role: session.role,
+        }).catch((e) => {
+          console.error(
+            '[attendance] declarations count failed:',
+            e instanceof Error ? e.message : String(e)
+          );
+          return 0;
+        })
+      : Promise.resolve(0),
+    supabase
+      .from('academic_years')
+      .select('id, ay_code, label')
+      .eq('is_current', true)
+      .single(),
+  ]);
 
   // Scope by academic_year_id — terms.is_current can be true across
   // multiple AYs (the wipe-AY2026/27 script preserved terms rows along
@@ -83,21 +85,6 @@ export default async function AttendanceSectionsListPage() {
   // AY's term). Pair with today's-date fallback so the badge stays
   // honest even if no term has is_current set.
   const today = sgToday();
-  const { data: currentTerm } = ay
-    ? await supabase
-        .from('terms')
-        .select('id, label, start_date, end_date, is_current')
-        .eq('academic_year_id', ay.id)
-        .order('term_number', { ascending: true })
-    : {
-        data: [] as Array<{
-          id: string;
-          label: string;
-          start_date: string | null;
-          end_date: string | null;
-          is_current: boolean;
-        }>,
-      };
   type TermRow = {
     id: string;
     label: string;
@@ -105,6 +92,70 @@ export default async function AttendanceSectionsListPage() {
     end_date: string | null;
     is_current: boolean;
   };
+  // ── WAVE 2: three questions of the academic year ──────────────────────
+  // The term list, the teacher's advised-section scope and the section list
+  // are all keyed on `ay` and on nothing produced by each other. The scope
+  // arm is two deep INTERNALLY (assignments, then narrow them to this year)
+  // and that pair is a real dependency, left as it is.
+  //
+  // ── Form-adviser scoping (PRESERVED) ────────────────────────────────────
+  // Teachers see only sections where they have a form_adviser assignment.
+  // Registrar+ see all sections in the current AY.
+  const [{ data: currentTerm }, allowedSectionIds, { data: sections }] =
+    await Promise.all([
+      ay
+        ? supabase
+            .from('terms')
+            .select('id, label, start_date, end_date, is_current')
+            .eq('academic_year_id', ay.id)
+            .order('term_number', { ascending: true })
+        : Promise.resolve({ data: [] as TermRow[] }),
+      isTeacherOnly && session?.id && ay
+        ? (async (): Promise<Set<string> | null> => {
+            // Held OR covered — a substitute needs the class they are taking
+            // the register for to appear in this list at all.
+            //
+            // The shared loader has no AY filter, so the AY narrowing the old
+            // inline query did with `sections.academic_year_id` is applied
+            // here instead. It matters: without it a prior year's adviser row
+            // would put a section on this list that the current-AY query
+            // beside it never returns, and the count and the table would
+            // disagree.
+            const service = createServiceClient();
+            const assignments = await loadEffectiveAssignmentsForUser(
+              service,
+              session.id
+            );
+            const advisedIds = assignments
+              // isAdviserRole — a co-adviser's classes belong in their list too.
+              .filter((a) => isAdviserRole(a.role))
+              .map((a) => a.section_id);
+            const { data: thisYear } = advisedIds.length
+              ? await service
+                  .from('sections')
+                  .select('id')
+                  .eq('academic_year_id', ay.id)
+                  .in('id', advisedIds)
+              : { data: [] };
+            return new Set(
+              ((thisYear ?? []) as Array<{ id: string }>).map((s) => s.id)
+            );
+          })()
+        : Promise.resolve(null),
+      ay
+        ? supabase
+            .from('sections')
+            .select('id, name, level:levels(id, code, label, level_type)')
+            .eq('academic_year_id', ay.id)
+        : Promise.resolve({
+            data: [] as Array<{
+              id: string;
+              name: string;
+              level: LevelLite | LevelLite[] | null;
+            }>,
+          }),
+    ]);
+
   const termRows = (currentTerm ?? []) as TermRow[];
   const activeTerm =
     termRows.find(
@@ -117,67 +168,6 @@ export default async function AttendanceSectionsListPage() {
     termRows.find((t) => t.is_current) ??
     null;
 
-  // ── Form-adviser scoping (PRESERVED) ──────────────────────────────────────
-  // Teachers see only sections where they have a form_adviser assignment.
-  // Registrar+ see all sections in the current AY.
-  let allowedSectionIds: Set<string> | null = null;
-  if (isTeacherOnly && session?.id && ay) {
-    // Held OR covered — a substitute needs the class they are taking the
-    // register for to appear in this list at all.
-    //
-    // The shared loader has no AY filter, so the AY narrowing the old inline
-    // query did with `sections.academic_year_id` is applied here instead. It
-    // matters: without it a prior year's adviser row would put a section on
-    // this list that the current-AY query below never returns, and the count
-    // and the table would disagree.
-    const service = createServiceClient();
-    const assignments = await loadEffectiveAssignmentsForUser(
-      service,
-      session.id
-    );
-    const advisedIds = assignments
-      // isAdviserRole — a co-adviser's classes belong in their list too.
-      .filter((a) => isAdviserRole(a.role))
-      .map((a) => a.section_id);
-    const { data: thisYear } = advisedIds.length
-      ? await service
-          .from('sections')
-          .select('id')
-          .eq('academic_year_id', ay.id)
-          .in('id', advisedIds)
-      : { data: [] };
-    allowedSectionIds = new Set(
-      ((thisYear ?? []) as Array<{ id: string }>).map((s) => s.id)
-    );
-  }
-
-  const { data: sections } = ay
-    ? await supabase
-        .from('sections')
-        .select('id, name, level:levels(id, code, label, level_type)')
-        .eq('academic_year_id', ay.id)
-    : {
-        data: [] as Array<{
-          id: string;
-          name: string;
-          level: LevelLite | LevelLite[] | null;
-        }>,
-      };
-
-  const ids = (sections ?? []).map((s) => s.id);
-  const counts: Record<string, number> = {};
-  if (ids.length > 0) {
-    const { data: enrolments } = await supabase
-      .from('section_students')
-      .select('section_id, enrollment_status')
-      .in('section_id', ids);
-    for (const row of enrolments ?? []) {
-      if (row.enrollment_status !== 'withdrawn') {
-        counts[row.section_id] = (counts[row.section_id] ?? 0) + 1;
-      }
-    }
-  }
-
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
 
@@ -186,15 +176,40 @@ export default async function AttendanceSectionsListPage() {
     (s) => !allowedSectionIds || allowedSectionIds.has(s.id)
   );
 
-  // Load advisers only for registrar+ views (for teachers the adviser is always
-  // themselves — surfacing it would be redundant noise).
-  const adviserMap =
+  // ── WAVE 3: the two per-row lookups ───────────────────────────────────
+  // Roster counts and the adviser names both fall out of the section list and
+  // neither reads the other. `ids` stays the UNFILTERED section list, exactly
+  // as before — the count map is keyed by id and the filter is applied when
+  // the rows are built.
+  const ids = (sections ?? []).map((s) => s.id);
+  const [{ data: enrolments }, adviserMap] = await Promise.all([
+    ids.length > 0
+      ? supabase
+          .from('section_students')
+          .select('section_id, enrollment_status')
+          .in('section_id', ids)
+      : Promise.resolve({
+          data: [] as Array<{
+            section_id: string;
+            enrollment_status: string | null;
+          }>,
+        }),
+    // Load advisers only for registrar+ views (for teachers the adviser is
+    // always themselves — surfacing it would be redundant noise).
     !isTeacherOnly && ay
-      ? await loadFormAdvisersBySection(
+      ? loadFormAdvisersBySection(
           filteredSections.map((s) => s.id),
           ay.ay_code
         )
-      : ({} as Record<string, { userId: string; name: string }>);
+      : Promise.resolve({} as Record<string, { userId: string; name: string }>),
+  ]);
+
+  const counts: Record<string, number> = {};
+  for (const row of enrolments ?? []) {
+    if (row.enrollment_status !== 'withdrawn') {
+      counts[row.section_id] = (counts[row.section_id] ?? 0) + 1;
+    }
+  }
 
   const rows: AttendanceSectionRow[] = filteredSections.map((s) => {
     const lvl = getLevel(s.level as LevelLite | LevelLite[] | null);
