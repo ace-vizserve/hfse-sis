@@ -161,9 +161,13 @@ export default async function MarkbookHome({
     canSeeAdmin
       ? getGradeEntryVelocityRange(rangeInput)
       : Promise.resolve(null),
-    canSeeAdmin && ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
+    canSeeAdmin && ayId
+      ? getGradeDistribution(ayId, ayCode)
+      : Promise.resolve(null),
     canSeeAdmin ? getChangeRequestSummary(ayCode, 30) : Promise.resolve(null),
-    canSeeAdmin && ayId ? getPublicationCoverage(ayId) : Promise.resolve(null),
+    canSeeAdmin && ayId
+      ? getPublicationCoverage(ayId, ayCode)
+      : Promise.resolve(null),
     canSeeAdmin ? getRecentMarkbookActivity(8) : Promise.resolve(null),
     ayId
       ? service

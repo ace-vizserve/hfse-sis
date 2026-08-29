@@ -28,8 +28,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const CACHE_TTL_SECONDS = 60;
 
-function tag(academicYearId: string): string[] {
-  return ['markbook', `markbook:${academicYearId}`];
+// ⚠ Takes an AY CODE, never a uuid — invalidateDrillTags('markbook', ayCode)
+// in lib/cache/invalidate-drill-tags.ts is the only emitter of the
+// AY-scoped member of this pair, and it always emits `markbook:AY2026`
+// shaped strings. Three call sites used to pass a raw academicYearId uuid
+// here (getGradeDistribution, getSheetLockProgressByTerm,
+// getPublicationCoverage) — those panels were never busted by any write and
+// only ever expired on the 60s TTL. Fixed 2026-08-29; see
+// __tests__/cache/ay-tags-are-codes.test.ts.
+function tag(ayCode: string): string[] {
+  return ['markbook', `markbook:${ayCode}`];
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -201,12 +209,13 @@ async function loadGradeDistributionUncached(
 
 export function getGradeDistribution(
   academicYearId: string,
+  ayCode: string,
   termId: string | null = null
 ): Promise<GradeBucket[]> {
   return unstable_cache(
     loadGradeDistributionUncached,
     ['markbook', 'grade-distribution', academicYearId, termId ?? 'current'],
-    { tags: tag(academicYearId), revalidate: CACHE_TTL_SECONDS }
+    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )(academicYearId, termId);
 }
 
@@ -275,13 +284,14 @@ async function loadSheetLockProgressByTermUncached(
 }
 
 export function getSheetLockProgressByTerm(
-  academicYearId: string
+  academicYearId: string,
+  ayCode: string
 ): Promise<TermLockProgress[]> {
   return unstable_cache(
     loadSheetLockProgressByTermUncached,
     ['markbook', 'sheet-lock-progress', academicYearId],
     {
-      tags: tag(academicYearId),
+      tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
     }
   )(academicYearId);
@@ -461,13 +471,14 @@ async function loadPublicationCoverageUncached(
 }
 
 export function getPublicationCoverage(
-  academicYearId: string
+  academicYearId: string,
+  ayCode: string
 ): Promise<TermPubCoverage[]> {
   return unstable_cache(
     loadPublicationCoverageUncached,
     ['markbook', 'publication-coverage', academicYearId],
     {
-      tags: tag(academicYearId),
+      tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
     }
   )(academicYearId);

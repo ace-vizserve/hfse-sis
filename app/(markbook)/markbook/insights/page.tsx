@@ -229,13 +229,13 @@ export default async function MarkbookInsightsPage({
     lockProgress,
     rawLevelPoints,
   ] = await Promise.all([
-    ayId ? getGradeDistribution(ayId) : Promise.resolve(null),
+    ayId ? getGradeDistribution(ayId, selectedAy) : Promise.resolve(null),
     compareAy && compareAyId
-      ? getGradeDistribution(compareAyId)
+      ? getGradeDistribution(compareAyId, compareAy)
       : Promise.resolve(null),
     getSubjectPerformanceTrend(trendCellResults),
     getChangeRequestSummary(selectedAy, 30),
-    ayId ? getSheetLockProgressByTerm(ayId) : Promise.resolve([]),
+    ayId ? getSheetLockProgressByTerm(ayId, selectedAy) : Promise.resolve([]),
     getSubjectLevelTrend(levelTrendCellResults),
   ]);
 
