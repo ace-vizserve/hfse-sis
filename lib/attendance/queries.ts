@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -245,7 +247,39 @@ export async function getDailyForStudent(
 // Rollup — Markbook section summary card + report card fetch
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getRollupForSection(
+/**
+ * Term rollups for one section. REQUEST-MEMOISED with React `cache()`, keyed on
+ * `(sectionId, termId)`.
+ *
+ * WHY. Two pages call this twice with the SAME arguments in one render — the
+ * classroom section page and the attendance section page both take
+ * `getSectionAttendanceSummary(sectionId, termId)` (which calls this) and then
+ * `getRollupForSection(sectionId, termId)` for the at-risk panel. Each call is
+ * two round trips (roster, then rollups), so the second one was four wasted
+ * queries per page load between them.
+ *
+ * WHY THAT IS SAFE — no write path reads through this. Searched: every
+ * `getRollupForSection` and `getSectionAttendanceSummary` occurrence in the
+ * repo, and every write of `attendance_records`. The consumers are three page
+ * renders, one server component (`components/markbook/section-attendance-
+ * summary.tsx`) and `loadAdviserAttendanceDashboard`, which is itself a page
+ * loader — NO route handler calls either function, with any method. The table
+ * is never written by application code at all: every `.from('attendance_records')`
+ * in `app/`, `lib/` and `scripts/` is a `.select()`, and the rows are produced
+ * by the `recompute_attendance_rollup` RPC (migration 014, reworked in 068).
+ * Its two callers are `lib/attendance/mutations.ts` and
+ * `app/api/sections/[id]/students/[enrolmentId]/route.ts`; neither imports
+ * `lib/attendance/queries` at all, so no request can recompute a rollup and
+ * then read a memoised pre-recompute copy of it.
+ *
+ * ⚠ THE BUDGET TEST CANNOT SEE THIS WIN. React `cache()` only memoises where
+ * there is a dispatcher, i.e. inside a Server Component render; under Vitest it
+ * falls through to a plain call every time (measured in
+ * `__tests__/perf/school-config-request-cache.test.ts`). The classroom-page
+ * budget therefore stays at 11/8 — the saving is real in the app and invisible
+ * to the harness, which is a limit of the instrument, not of the fix.
+ */
+export const getRollupForSection = cache(async function getRollupForSection(
   sectionId: string,
   termId: string
 ): Promise<RollupRow[]> {
@@ -281,7 +315,7 @@ export async function getRollupForSection(
   }
 
   return ((data ?? []) as RollupRaw[]).map(normalizeRollup);
-}
+});
 
 // Aggregate view for the Markbook section-detail summary card.
 export type SectionAttendanceSummary = {
