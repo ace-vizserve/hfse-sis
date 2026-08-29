@@ -63,8 +63,12 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'writes classroom_notes. No unstable_cache module reads that table — the ' +
     'Classroom page loads it per request.',
   'app/api/sis/admin/subjects/[configId]/report-map/route.ts':
-    'writes subject_report_map. No cached reader; the report card resolves the ' +
-    'mapping when it renders.',
+    'writes subject_report_map. The table has exactly two readers app-wide and ' +
+    'neither holds a tag: listSubjectReportMap (lib/sis/subjects/queries.ts) is ' +
+    'uncached, and build-report-card.ts reads it through getSubjectReportMap, ' +
+    'which is React cache() — request-scoped, so it is gone before the next ' +
+    'request and revalidateTag has nothing to bust. A staff member who edits a ' +
+    'mapping sees it on their next page load.',
   // The two `approvers` routes sat here reading "writes approver_assignments.
   // lib/sis/approvers/queries.ts is uncached." That reader is indeed uncached,
   // but naming it was not the same as checking every reader: `getSystemHealth`

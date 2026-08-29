@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
 import {
@@ -129,6 +131,60 @@ const first = <T>(v: T | T[] | null): T | null =>
 
 const empty: Cell = { quarterly: null, letter: null, is_na: false };
 
+/**
+ * Read the whole `subject_report_map` catalog. REQUEST-MEMOISED with React
+ * `cache()`, exactly as phase 3 did for `getSchoolConfig`.
+ *
+ * WHY. This read carries no filter at all — not by student, not by AY, not by
+ * level — because a report-map row is catalog shape rather than a per-year
+ * fact (migration 080 gives the table no `academic_year_id`). `buildReportCard`
+ * issues it once per card, so the section batch print
+ * (`/markbook/report-cards/section/[id]/print`) fired one identical unfiltered
+ * read PER STUDENT: ~50 round trips over a 40-50 roster for rows that cannot
+ * differ between them. `cache()` is request-scoped, so they collapse to one and
+ * nothing outlives the request.
+ *
+ * WHY IT KEYS ON THE CLIENT. The client is a parameter rather than a service
+ * client created in here, because this table's callers deliberately differ:
+ * the two pages pass an RLS-scoped client (the policy is
+ * `current_user_role() is not null`, i.e. staff) and the two API routes pass a
+ * service client. Creating one in here would silently widen the page path from
+ * RLS to service. React `cache()` keys on argument identity, and the batch
+ * print resolves its client ONCE above the loop and passes that same instance
+ * to every call — so the memo hits.
+ *
+ * WHY THAT IS SAFE — the argument is "no write route reads through this", and
+ * it is a search, not an impression. Searched every `subject_report_map`
+ * occurrence in the repo: the table has exactly TWO readers app-wide, this one
+ * and `listSubjectReportMap` (lib/sis/subjects/queries.ts), which is uncached,
+ * has one caller (`listCatalogForLevelType`) and is untouched here. Then every
+ * caller of `buildReportCard`, which is the only path that reaches this
+ * function: `GET /api/report-card/[studentId]`, `GET /api/parent/v2/report-card`,
+ * and the two server-component pages. Not one of them has a write method. Then
+ * every write of the table: the single writer is
+ * `PUT /api/sis/admin/subjects/[configId]/report-map`, which does its own
+ * `delete` + `insert` through a direct `.from('subject_report_map')` on a
+ * service client and calls neither this function nor `buildReportCard`. There
+ * are no server actions in this repo (`'use server'` matches nothing under
+ * `app/`, `lib/` or `components/`). So no request can both write these rows and
+ * read them back through here.
+ *
+ * ⚠ The saving is real inside a Server Component render, which is where the
+ * batch print lives. A route handler builds ONE card, so it neither gains nor
+ * loses. With no React dispatcher `cache()` falls through to a plain call
+ * rather than throwing — the behaviour phase 3 pinned in
+ * `__tests__/perf/school-config-request-cache.test.ts`, and the reason the
+ * single-card budget below stays at 11/8.
+ */
+const getSubjectReportMap = cache(async function getSubjectReportMap(
+  supabase: SupabaseClient
+): Promise<ReportMapEntry[]> {
+  const { data } = await supabase
+    .from('subject_report_map')
+    .select('subject_id, report_subject_id');
+  return (data ?? []) as ReportMapEntry[];
+});
+
 // Batch-print optimisation: the section batch-print page
 // (app/(markbook)/markbook/report-cards/section/[sectionId]/print) calls
 // buildReportCard once per student in the SAME section — every one of those
@@ -169,7 +225,10 @@ export async function buildReportCard(
   //                           database filter;
   //   - `subject_report_map`  no filter at all (it is a catalog-shape table,
   //                           deliberately un-scoped — see the block further
-  //                           down where `reportMap` is consumed).
+  //                           down where `reportMap` is consumed). Read through
+  //                           `getSubjectReportMap`, which request-memoises it,
+  //                           so on cards 2..N of a batch print this element is
+  //                           a memo hit and issues no query at all.
   // Everything below this point still runs in exactly the order it did when
   // each of these had its own `await`, so the guard precedence
   // (student_not_found → no_current_ay → not_enrolled_this_ay) is unchanged.
@@ -194,7 +253,7 @@ export async function buildReportCard(
     { data: student },
     { data: ay },
     { data: enrolments },
-    { data: reportMapRaw },
+    reportMap,
     schoolConfig,
   ] = await Promise.all([
     supabase
@@ -215,7 +274,7 @@ export async function buildReportCard(
          level:levels(id, code, label, level_type))`
       )
       .eq('student_id', studentId),
-    supabase.from('subject_report_map').select('subject_id, report_subject_id'),
+    getSubjectReportMap(supabase),
     getSchoolConfig().catch(() => DEFAULT_SCHOOL_CONFIG),
   ]);
 
@@ -421,10 +480,13 @@ export async function buildReportCard(
   // resolveReportSubjects is a no-op.
   //
   // The read itself is issued up in wave 1 — having no filter at all is
-  // exactly what makes it hoistable. Only the shaping stays here, next to the
-  // target lookup that does depend on it.
-  const reportMap: ReportMapEntry[] = (reportMapRaw ?? []) as ReportMapEntry[];
-
+  // exactly what makes it hoistable, and is also what makes it request-
+  // memoisable: `getSubjectReportMap` (module scope above) wraps it in React
+  // `cache()`, so a batch print pays for these rows once rather than once per
+  // card. Only the shaping stays here, next to the target lookup that does
+  // depend on it. That target lookup is deliberately NOT memoised with it —
+  // it is filtered by the ids this map yields, so it belongs to the card's
+  // own serial chain.
   const reportTargets = new Map<string, ReportTargetMeta>();
   if (reportMap.length > 0) {
     const targetIds = Array.from(
