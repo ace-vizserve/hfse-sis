@@ -802,23 +802,29 @@ async function loadRecordsKpisForRange(
 async function loadRecordsKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<RecordsRangeKpis>> {
-  const current = await loadRecordsKpisForRange(input);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadRecordsKpisForRange(input),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadRecordsKpisForRange({
-    ayCode: input.ayCode,
-    from: input.cmpFrom,
-    to: input.cmpTo,
-    cmpFrom: input.cmpFrom,
-    cmpTo: input.cmpTo,
-  });
+  // Two disjoint date windows, neither feeding the other — see the identical
+  // note in lib/markbook/dashboard.ts. `getAyIdByCode` inside both arms is
+  // request-cached, so running them together shares that lookup rather than
+  // duplicating it.
+  const [current, comparison] = await Promise.all([
+    loadRecordsKpisForRange(input),
+    loadRecordsKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
   return {
     current,
     comparison,
@@ -1054,17 +1060,22 @@ async function loadAuditActivityByModuleUncached(
     return results;
   }
 
-  const current = await countsFor(input.from, input.to);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await countsFor(input.from, input.to),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await countsFor(input.cmpFrom, input.cmpTo);
+  // Two serial waves of six counts each, and the second wave never read the
+  // first. Six modules x two windows is twelve independent `count` queries —
+  // one wave, not two.
+  const [current, comparison] = await Promise.all([
+    countsFor(input.from, input.to),
+    countsFor(input.cmpFrom, input.cmpTo),
+  ]);
   const currentTotal = current.reduce((s, p) => s + p.count, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.count, 0);
   return {
@@ -1310,17 +1321,22 @@ async function loadAuditDailyForRange(
 async function loadAuditDailyTrendUncached(
   input: RangeInput
 ): Promise<AuditDailyTrendResult> {
-  const current = await loadAuditDailyForRange(input.from, input.to);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadAuditDailyForRange(input.from, input.to),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadAuditDailyForRange(input.cmpFrom, input.cmpTo);
+  // Two disjoint date windows, neither feeding the other — see the identical
+  // note in lib/markbook/dashboard.ts. Each arm is a paginated walk, so this
+  // is the deepest of the five and the one that gains most.
+  const [current, comparison] = await Promise.all([
+    loadAuditDailyForRange(input.from, input.to),
+    loadAuditDailyForRange(input.cmpFrom, input.cmpTo),
+  ]);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
   return {

@@ -782,23 +782,31 @@ function emptyMarkbookKpis(): MarkbookRangeKpis {
 async function loadMarkbookKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<MarkbookRangeKpis>> {
-  const current = await loadMarkbookKpisForRange(input);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadMarkbookKpisForRange(input),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadMarkbookKpisForRange({
-    ayCode: input.ayCode,
-    from: input.cmpFrom,
-    to: input.cmpTo,
-    cmpFrom: input.cmpFrom,
-    cmpTo: input.cmpTo,
-  });
+  // THE COMPARISON WINDOW IS NOT DOWNSTREAM OF THE CURRENT ONE. Two reads of
+  // the same shape over two disjoint date ranges; neither result feeds the
+  // other, and the delta below is computed from both afterwards. Ran serially,
+  // compare mode cost exactly twice the latency of the plain view for no
+  // reason. The no-comparison path above still issues one read, so nothing
+  // fires that did not fire before.
+  const [current, comparison] = await Promise.all([
+    loadMarkbookKpisForRange(input),
+    loadMarkbookKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
   return {
     current,
     comparison,
