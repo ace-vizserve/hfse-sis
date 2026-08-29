@@ -256,8 +256,18 @@ async function getLevelRowsUncached(
   }));
 }
 
-// All levels, ordered by sort_order. Cached 60s under the shared 'levels'
-// tag — any write path that mutates `levels` should `revalidateTag('levels')`.
+// All levels, ordered by sort_order. Cached 60s under the 'levels' tag, which
+// nothing emits — deliberately. An earlier version of this comment said any
+// write path that mutates `levels` "should" `revalidateTag('levels')`; none
+// ever did, because there is no such write path and there can't be one.
+// `/sis/admin/levels` and its three API routes were removed wholesale by
+// migration 086 (see KD #153's SUPERSEDED note in
+// docs/key-decisions/records.md); the catalogue is a fixed 10 rows, P1–P6 and
+// S1–S4, changed only by migration. The 60s TTL covers a deploy.
+//
+// The tag stays as the hook to hang an emitter on if a CRUD page ever returns.
+// Its exemption is recorded with this reason in the bare-tag guard in
+// __tests__/cache/write-route-invalidation.test.ts.
 export function getLevelRows(service: SupabaseClient): Promise<LevelRow[]> {
   return unstable_cache(
     () => getLevelRowsUncached(service),

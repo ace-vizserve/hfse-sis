@@ -554,6 +554,14 @@ async function loadRecentMarkbookActivityUncached(
   }));
 }
 
+// The bare 'markbook' tag here is inert and that is a decision (2026-08-29),
+// not an oversight: this feed reads `audit_log`, which has no AY column, so
+// there is no AY to scope a real tag to — and because every write in the app
+// appends an audit row, a working tag would bust this on essentially every
+// request, turning a cache into pure overhead. The 120s TTL is the freshness
+// contract. Exempted with this reason in the bare-tag guard in
+// __tests__/cache/write-route-invalidation.test.ts. (Its two siblings are the
+// activity feeds in lib/sis/dashboard.ts.)
 const loadRecentMarkbookActivity = unstable_cache(
   loadRecentMarkbookActivityUncached,
   ['markbook', 'recent-activity'],

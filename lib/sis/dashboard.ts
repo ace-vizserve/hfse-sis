@@ -625,6 +625,13 @@ async function loadRecentSisActivityUncached(
   }));
 }
 
+// The bare 'sis' tag here is inert and that is a decision (2026-08-29), not an
+// oversight: this feed reads `audit_log`, which has no AY column, so there is
+// no AY to scope a real tag to — and because every write in the app appends an
+// audit row, a working tag would bust this on essentially every request,
+// turning a cache into pure overhead. The 120s TTL is the freshness contract.
+// Exempted with this reason in the bare-tag guard in
+// __tests__/cache/write-route-invalidation.test.ts.
 const loadRecentSisActivity = unstable_cache(
   loadRecentSisActivityUncached,
   ['sis', 'recent-activity'],
@@ -1527,6 +1534,11 @@ async function loadStructuralChangeFeedUncached(): Promise<
   }));
 }
 
+// Bare 'sis' is inert here by the same decision as `loadRecentSisActivity`
+// above: an `audit_log` read has no AY to scope a tag to, and a working tag
+// would fire on nearly every request. The 120s TTL is the freshness contract,
+// and the exemption is recorded in
+// __tests__/cache/write-route-invalidation.test.ts.
 const loadStructuralChangeFeedCached = unstable_cache(
   loadStructuralChangeFeedUncached,
   ['sis', 'structural-change-feed'],
