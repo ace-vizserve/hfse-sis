@@ -313,7 +313,26 @@ describe('budget: buildReportCard (one student)', () => {
   // only in projection, so `school_days` now rides on the first read and the
   // fallback map is derived from those same rows — one round trip fewer, and
   // one wave fewer because the deleted read sat on its own tick.
-  it('measured 2026-08-29: roundTrips=11, waves=11', async () => {
+  //
+  // Re-measured 2026-08-30 after phase 6b (the SHALLOW half of the re-wave):
+  // 11/11 → 11/8. `academic_years`, `section_students` and
+  // `subject_report_map` consume nothing this loader has fetched — the first
+  // two are filtered by the `studentId` PARAMETER or a constant, the third
+  // carries no filter at all — so all three joined `students` in one
+  // `Promise.all`. Three queries left the serial chain; none left the loader,
+  // which is why `roundTrips` is deliberately unchanged at 11. (`getSchoolConfig`
+  // moved into that same wave but is mocked out here, per the header's
+  // "cached / config dependencies are mocked out" rule, so it never appears
+  // in either number.)
+  //
+  // The remaining 8 are genuinely serial and each one names its dependency:
+  // wave 1 the four above · 2 `terms` (needs ay.id) · 3 `teacher_assignments`
+  // (needs the section from the enrolments) · 4 `section_subjects` ·
+  // 5 `grading_sheets` · 6 `grade_entries` · 7 `attendance_records` ·
+  // 8 `evaluation_writeups`. Collapsing THOSE is the deep re-wave, which is
+  // gated on a measured batch-print wall-clock and a committed golden-payload
+  // fixture and is not attempted here.
+  it('measured 2026-08-30: roundTrips=11, waves=8', async () => {
     const { buildReportCard } =
       await import('@/lib/report-card/build-report-card');
     const { roundTrips, waves } = await measureQueries(
@@ -321,12 +340,10 @@ describe('budget: buildReportCard (one student)', () => {
         buildReportCard(client as unknown as SupabaseClient, STUDENT_ID),
       fixtures()
     );
-    // Every recorded query resolves on its own tick here (waves == round
-    // trips) — none of this fixture's queries reference an earlier result,
-    // so nothing forced them to overlap into a real Promise.all. That is
-    // itself the finding: a fully-serial 11-deep chain for ONE student.
+    // roundTrips is the control, not the win: it must NOT move, because
+    // nothing was merged or deleted here — only re-ordered.
     expect(roundTrips).toBe(11);
-    expect(waves).toBe(11);
+    expect(waves).toBe(8);
   });
 });
 

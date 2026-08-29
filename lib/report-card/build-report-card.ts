@@ -12,6 +12,7 @@ import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DEFAULT_SCHOOL_CONFIG,
+  getSchoolConfig,
   type SchoolConfig,
 } from '@/lib/sis/school-config';
 import {
@@ -156,18 +157,69 @@ export async function buildReportCard(
   | { ok: true; payload: ReportCardPayload }
   | { ok: false; error: BuildReportCardError }
 > {
-  const { data: student } = await supabase
-    .from('students')
-    .select('id, student_number, last_name, first_name, middle_name')
-    .eq('id', studentId)
-    .single();
-  if (!student) return { ok: false, error: { kind: 'student_not_found' } };
+  // ── WAVE 1 ────────────────────────────────────────────────────────────────
+  // Four reads that consume nothing this function has fetched, so none of them
+  // could ever have been waiting on an earlier one. Verified individually
+  // against their own filters, not by position in the file:
+  //   - `students`            filtered by the `studentId` PARAMETER;
+  //   - `academic_years`      filtered by the constant `is_current = true`;
+  //   - `section_students`    filtered by that same `studentId` parameter —
+  //                           the `ay.id` match is a JS `.filter()` applied to
+  //                           the rows AFTER both have landed, never a
+  //                           database filter;
+  //   - `subject_report_map`  no filter at all (it is a catalog-shape table,
+  //                           deliberately un-scoped — see the block further
+  //                           down where `reportMap` is consumed).
+  // Everything below this point still runs in exactly the order it did when
+  // each of these had its own `await`, so the guard precedence
+  // (student_not_found → no_current_ay → not_enrolled_this_ay) is unchanged.
+  // The one behaviour difference is on the two early-error paths: a request
+  // for a nonexistent student now pays four reads instead of one before it
+  // 404s. That is the price of the collapse and it is bounded at four.
+  //
+  // `getSchoolConfig()` rides along as a fifth element rather than sitting at
+  // the very bottom of the function: it takes no arguments, reads the
+  // singleton row through its own service client, and is request-memoised
+  // with React `cache()` — so on cards 2..N of a batch print this element is
+  // a memo hit and issues no query at all. Its `.catch()` is attached to the
+  // element, never to the `Promise.all`, so a config failure still degrades
+  // to defaults instead of failing the whole card.
+  //
+  // NOT hoisted, and why: `terms` needs `ay.id`; `teacher_assignments` needs
+  // the section resolved from `enrolments`; `section_subjects`,
+  // `grading_sheets`, `grade_entries`, `attendance_records` and
+  // `evaluation_writeups` each consume a result from above them. The deeper
+  // re-wave those would need is deliberately out of scope here.
+  const [
+    { data: student },
+    { data: ay },
+    { data: enrolments },
+    { data: reportMapRaw },
+    schoolConfig,
+  ] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, student_number, last_name, first_name, middle_name')
+      .eq('id', studentId)
+      .single(),
+    supabase
+      .from('academic_years')
+      .select('id, label')
+      .eq('is_current', true)
+      .single(),
+    supabase
+      .from('section_students')
+      .select(
+        `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
+       section:sections!inner(id, name, form_class_adviser, academic_year_id,
+         level:levels(id, code, label, level_type))`
+      )
+      .eq('student_id', studentId),
+    supabase.from('subject_report_map').select('subject_id, report_subject_id'),
+    getSchoolConfig().catch(() => DEFAULT_SCHOOL_CONFIG),
+  ]);
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, label')
-    .eq('is_current', true)
-    .single();
+  if (!student) return { ok: false, error: { kind: 'student_not_found' } };
   if (!ay) return { ok: false, error: { kind: 'no_current_ay' } };
 
   const { data: terms } = await supabase
@@ -176,15 +228,6 @@ export async function buildReportCard(
     .eq('academic_year_id', ay.id)
     .order('term_number');
   const termList = (terms ?? []) as Term[];
-
-  const { data: enrolments } = await supabase
-    .from('section_students')
-    .select(
-      `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
-       section:sections!inner(id, name, form_class_adviser, academic_year_id,
-         level:levels(id, code, label, level_type))`
-    )
-    .eq('student_id', studentId);
 
   type LevelLite = {
     id: string;
@@ -376,9 +419,10 @@ export async function buildReportCard(
   // unverified one. Every subject is seeded self-mapped (migration 080), so
   // in production today this resolves to a full self-map and
   // resolveReportSubjects is a no-op.
-  const { data: reportMapRaw } = await supabase
-    .from('subject_report_map')
-    .select('subject_id, report_subject_id');
+  //
+  // The read itself is issued up in wave 1 — having no filter at all is
+  // exactly what makes it hoistable. Only the shaping stays here, next to the
+  // target lookup that does depend on it.
   const reportMap: ReportMapEntry[] = (reportMapRaw ?? []) as ReportMapEntry[];
 
   const reportTargets = new Map<string, ReportTargetMeta>();
@@ -710,13 +754,13 @@ export async function buildReportCard(
     .filter(Boolean)
     .join(', ');
 
-  // School-wide config (singleton, id=1). Uses its own service-role helper
-  // to sidestep RLS; falls back to defaults if the row is missing for any
-  // reason so the report card still renders.
-  const { getSchoolConfig } = await import('@/lib/sis/school-config');
-  const schoolConfig = await getSchoolConfig().catch(
-    () => DEFAULT_SCHOOL_CONFIG
-  );
+  // School-wide config (singleton, id=1) — resolved in wave 1 at the top of
+  // this function. It uses its own service-role helper to sidestep RLS and
+  // falls back to defaults if the row is missing for any reason, so the report
+  // card still renders. It used to be read here, last, behind a dynamic
+  // `import()`; that import bought nothing, because `DEFAULT_SCHOOL_CONFIG` is
+  // already a static value import from the same `server-only` module at the
+  // top of this file, so the module was in the static graph either way.
 
   return {
     ok: true,
