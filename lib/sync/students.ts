@@ -595,6 +595,23 @@ export async function syncOneStudent(
     }
 
     // 3. Commit. Same shape as /api/students/sync but narrowed to this one row.
+    //
+    // ⚠ The four loops below look like row-at-a-time writes and are not, which
+    // is why `scripts/audit/row-at-a-time-writes.ts` flags three of them.
+    // `buildSyncPlan` was handed a ONE-ROW roster and a snapshot holding one
+    // student, so it can plan at most one student upsert and at most one
+    // enrolment insert; `enrollment_status_changes` is bounded by that one
+    // student's enrolment rows in this AY (one normally, two after a mid-year
+    // transfer). Batching them would collapse nothing.
+    //
+    // The roster-sized caller is POST /api/students/sync, which already writes
+    // in single batched statements. The per-student fan-out through here is
+    // bounded to waves of five by the auto-sync route.
+    //
+    // Do NOT widen these writes to spread a planned row: the object literals
+    // are field-scoped on purpose so an admissions sync cannot touch the
+    // SIS-owned columns that also live on `students`
+    // (__tests__/sis/students-sync-preserves-attributes.test.ts, KD #178).
     const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
     const updates = plan.student_upserts.filter((u) => u.kind === 'update');
 
