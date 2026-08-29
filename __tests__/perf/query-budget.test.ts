@@ -666,7 +666,18 @@ describe('budget: recomputeSheetEntries (25 entries, all changed)', () => {
     return { grade_entries: entries };
   }
 
-  it('measured 2026-08-29: roundTrips=26, waves=26 (one select + 25 SERIAL updates)', async () => {
+  // Re-measured 2026-08-29 after phase 5 item 3: 26/26 -> 26/5. Every entry
+  // takes a DIFFERENT patch, so there is no single statement to collapse 25
+  // UPDATEs into — and the obvious `.upsert()` per sheet is verified NOT to
+  // work (`grading_sheet_id`/`section_student_id` are NOT NULL with no default
+  // and Postgres checks the proposed tuple before resolving the conflict). The
+  // writes now go in bounded waves of 8, mirroring `writeDailyBatch`: one
+  // select plus ceil(25/8) = 4 waves of latency instead of 25.
+  //
+  // `roundTrips` is deliberately UNCHANGED at 26 — that is the proof this is a
+  // latency fix and not a semantics change. Each of the 25 entries still gets
+  // its own UPDATE, still only when `recomputeEntryRow` says it is dirty.
+  it('measured 2026-08-29: roundTrips=26, waves=5 (one select + 25 updates in 4 waves)', async () => {
     const { recomputeSheetEntries } =
       await import('@/lib/grading/recompute-sheet');
     const { roundTrips, waves, result } = await measureQueries(
@@ -682,12 +693,8 @@ describe('budget: recomputeSheetEntries (25 entries, all changed)', () => {
     );
     expect(result.entriesScanned).toBe(25);
     expect(result.entriesWritten).toBe(25);
-    // The finding this budget exists to carry forward: 26 SERIAL round trips
-    // for one sheet. A later phase fixing this is only a win if `waves` drops
-    // well below 26 — batching the reads changes nothing here, since the
-    // writes are what is serial.
     expect(roundTrips).toBe(26);
-    expect(waves).toBe(26);
+    expect(waves).toBe(5);
   });
 });
 
