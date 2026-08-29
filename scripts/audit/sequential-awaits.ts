@@ -1,28 +1,42 @@
 // scripts/audit/sequential-awaits.ts
 //
-// Every `page.tsx` / `layout.tsx` under `app/`, plus every `app/api/**/route.ts`,
-// scanned for back-to-back `const x = await …; const y = await …;` where the
-// second statement's expression does not reference the first's binding — the
-// exact waterfall shape docs/context/11-performance-patterns.md §2 calls a bug
-// ("Two sequential `await supabase.from(...)` calls in a page is a bug. Use
-// `Promise.all([...])`"), and which that same doc's changelog records fixing
-// by hand at least twice already (`lib/evaluation/dashboard.ts::loadWriteupsUncached`,
-// `app/(attendance)/attendance/page.tsx`). This script is the repeatable sweep
-// so the NEXT one doesn't wait for a human read-through to notice.
+// COVERAGE LISTER, not a defect classifier. Read this before changing the
+// counting logic.
+//
+// EARLIER DESIGN (abandoned). The first version of this script tried to spot
+// the exact bug docs/context/11-performance-patterns.md §2 warns about — two
+// back-to-back `await`s where the second doesn't depend on the first — by
+// text-matching single-line `const x = await …;` statements and checking
+// whether the next one referenced the first's binding. It shipped 73
+// "candidate pairs," and ALL 73 turned out to be Next.js boilerplate
+// (`const { id } = await params;` followed by `const body = await
+// request.json();`) — zero touched a database query.
+//
+// WHY THAT APPROACH CANNOT WORK HERE. This codebase's real waterfalls run
+// through named helper functions, not inline Supabase chains. The known
+// ground-truth example is app/(classroom)/classroom/[sectionId]/page.tsx,
+// which chains `loadClassroomAccess(...)`, `getTermsForAy(...)`,
+// `getSectionAttendanceSummary(...)` and more — none of those call sites
+// contain a literal `.from(` for a text scanner to recognise as "a query," so
+// the "does the second line depend on the first" test only ever fires on the
+// handful of statements that scanner COULD parse (routing boilerplate). Seeing
+// through a helper call to know whether it makes a DB round trip requires
+// whole-program analysis, which is out of scope for a fast text scan.
+//
+// THE RULING (current design). Stop trying to classify whether an await is
+// "a query," and stop trying to decide whether two awaits are independent of
+// each other — that is exactly what a static scanner cannot know, and it is
+// what a later phase's RUNTIME harness (the counting-supabase.ts clock, run
+// against real pages) is the actual authority on. This script now just
+// COUNTS: for each page/layout/route handler, how many sequential top-level
+// `await`s does it contain that are not already inside a `Promise.all(...)`?
+// A file at the top of this list is a CANDIDATE TO MEASURE, not a confirmed
+// defect. It deliberately over-reports — a nested `if` guard, a ternary, a
+// closure — anything with an `await` in the function body counts, because
+// under-reporting a real waterfall is the worse failure for a worklist whose
+// whole job is "don't let a human read-through miss one again."
 //
 // STATIC TEXT SCAN, line-oriented. No DB credentials, no network. Exits 0.
-//
-// APPROXIMATION, STATED RATHER THAN HIDDEN: this scanner matches a single-line
-// `const|let <binding> = await <expr>;` statement — which is the shape every
-// fixed example in this codebase's own history actually had. A statement
-// whose `await <expr>` spans multiple lines (a long argument list, a chained
-// `.select(...)` broken across lines) will not be matched, which is a false
-// NEGATIVE, not a false positive — the opposite bias to the rest of this
-// directory. Chosen anyway because a naive multi-line join would either
-// require real statement parsing (out of scope for a fast text scan) or
-// produce enough false positives on ordinary multi-line chains to bury the
-// real hits. "Consecutive" means "next non-blank, non-comment line", not
-// "next line" literally.
 //
 // Run:
 //   npx tsx scripts/audit/sequential-awaits.ts
@@ -30,6 +44,9 @@
 import { join } from 'node:path';
 import {
   REPO_ROOT,
+  findMatchingBrace,
+  findMatchingParen,
+  maskNoise,
   printFooter,
   printHeader,
   readSource,
@@ -37,90 +54,110 @@ import {
   walkNamed,
 } from './_shared';
 
-type AwaitStmt = {
-  line: number;
-  bindings: string[];
-  rhs: string;
-  raw: string;
+type Span = { start: number; end: number };
+
+type FileTally = {
+  file: string;
+  sequential: number; // top-level awaits NOT already inside Promise.all/allSettled
+  parallel: number; // awaits that ARE `await Promise.all(...)` / `allSettled(...)`
+  boilerplate: number; // subset of `sequential` recognised as routing plumbing
 };
 
-const AWAIT_LINE_RE =
-  /^\s*(?:export\s+)?(?:const|let)\s+([^=]+?)\s*=\s*(await\s+.+?);?\s*$/;
+const HANDLER_NAMES = [
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+];
 
-/** Every bound identifier on the LHS, whether plain, destructured object, or
- * destructured array. Good enough for a "does the next line MENTION this" check. */
-function bindingNames(lhs: string): string[] {
-  return [...lhs.matchAll(/[A-Za-z_$][\w$]*/g)]
-    .map((m) => m[0])
-    .filter((w) => !['const', 'let'].includes(w));
+// Recognised routing/plumbing awaits — reported separately so a reader can
+// discount them, but NOT dropped from the count (requirement: list, don't
+// drop). Matched against the text starting right at the `await` keyword.
+const BOILERPLATE_RE =
+  /^await\s+(?:params\b|searchParams\b|cookies\s*\(\s*\)|headers\s*\(\s*\)|(?:request|req)\.json\s*\(\s*\))/;
+
+const ALREADY_PARALLEL_RE = /^await\s+Promise\.(?:all|allSettled)\s*\(/;
+
+/** Locate the body `{ ... }` of `export default (async) function Name(...) { ... }`. */
+function findDefaultExportBody(masked: string): Span | null {
+  const re = /export\s+default\s+(?:async\s+)?function\s*\w*\s*\(/;
+  const m = re.exec(masked);
+  if (!m) return null;
+  const openParen = m.index + m[0].length - 1; // last char of the match is '('
+  const closeParen = findMatchingParen(masked, openParen);
+  const braceIdx = masked.indexOf('{', closeParen);
+  if (braceIdx === -1) return null;
+  return { start: braceIdx, end: findMatchingBrace(masked, braceIdx) };
 }
 
-function isBlankOrComment(line: string): boolean {
-  const t = line.trim();
-  return (
-    t.length === 0 ||
-    t.startsWith('//') ||
-    t.startsWith('*') ||
-    t.startsWith('/*')
-  );
-}
-
-function referencesAny(text: string, names: string[]): boolean {
-  return names.some((n) => new RegExp(`\\b${n}\\b`).test(text));
-}
-
-function scanFile(file: string): string[] {
-  const source = readSource(file);
-  const lines = source.split('\n');
-  const findings: string[] = [];
-
-  const awaitLines: Array<{ index: number; stmt: AwaitStmt }> = [];
-  lines.forEach((line, i) => {
-    const m = AWAIT_LINE_RE.exec(line);
-    if (!m) return;
-    const rhs = m[2];
-    // Already parallel — not a candidate.
-    if (/^await\s+Promise\.(all|allSettled)\s*\(/.test(rhs)) return;
-    awaitLines.push({
-      index: i,
-      stmt: {
-        line: i + 1,
-        bindings: bindingNames(m[1]),
-        rhs,
-        raw: line.trim(),
-      },
-    });
-  });
-
-  for (let k = 0; k < awaitLines.length - 1; k++) {
-    const cur = awaitLines[k];
-    const next = awaitLines[k + 1];
-
-    // "Consecutive" — nothing but blank/comment lines between them.
-    let onlyBlankBetween = true;
-    for (let i = cur.index + 1; i < next.index; i++) {
-      if (!isBlankOrComment(lines[i])) {
-        onlyBlankBetween = false;
-        break;
-      }
-    }
-    if (!onlyBlankBetween) continue;
-
-    if (referencesAny(next.stmt.rhs, cur.stmt.bindings)) continue; // genuine wave 2
-
-    findings.push(
-      `${relative(file)}:${cur.stmt.line} — sequential awaits, second does not reference first:\n` +
-        `    L${cur.stmt.line}: ${cur.stmt.raw}\n` +
-        `    L${next.stmt.line}: ${next.stmt.raw}\n` +
-        '    suggest: Promise.all([...]) unless there is a reason not shown in these two lines'
+/** Locate the body of every named route-handler export (`GET`, `POST`, ...). */
+function findHandlerBodies(masked: string): Span[] {
+  const spans: Span[] = [];
+  for (const name of HANDLER_NAMES) {
+    const re = new RegExp(
+      `export\\s+(?:default\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`,
+      'g'
     );
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(masked))) {
+      const openParen = m.index + m[0].length - 1;
+      const closeParen = findMatchingParen(masked, openParen);
+      const braceIdx = masked.indexOf('{', closeParen);
+      if (braceIdx === -1) continue;
+      spans.push({ start: braceIdx, end: findMatchingBrace(masked, braceIdx) });
+    }
+  }
+  return spans;
+}
+
+/** Count sequential / already-parallel / boilerplate awaits inside one span. */
+function tallySpan(masked: string, span: Span) {
+  const slice = masked.slice(span.start, span.end);
+  const awaitRe = /\bawait\b/g;
+  let sequential = 0;
+  let parallel = 0;
+  let boilerplate = 0;
+  let m: RegExpExecArray | null;
+  while ((m = awaitRe.exec(slice))) {
+    const context = slice.slice(m.index, m.index + 200);
+    if (ALREADY_PARALLEL_RE.test(context)) {
+      parallel++;
+      continue;
+    }
+    sequential++;
+    if (BOILERPLATE_RE.test(context)) boilerplate++;
+  }
+  return { sequential, parallel, boilerplate };
+}
+
+function tallyFile(file: string): FileTally {
+  const masked = maskNoise(readSource(file));
+  const isRoute = file.endsWith('route.ts');
+  const spans = isRoute
+    ? findHandlerBodies(masked)
+    : [findDefaultExportBody(masked)];
+
+  let sequential = 0;
+  let parallel = 0;
+  let boilerplate = 0;
+  for (const span of spans) {
+    if (!span) continue;
+    const t = tallySpan(masked, span);
+    sequential += t.sequential;
+    parallel += t.parallel;
+    boilerplate += t.boilerplate;
   }
 
-  return findings;
+  return { file, sequential, parallel, boilerplate };
 }
 
 function main() {
-  printHeader('SEQUENTIAL AWAITS — page.tsx / layout.tsx / route.ts');
+  printHeader(
+    'SEQUENTIAL AWAITS — coverage list (page.tsx / layout.tsx / route.ts)'
+  );
 
   const pageFiles = walkNamed(join(REPO_ROOT, 'app'), [
     'page.tsx',
@@ -131,13 +168,30 @@ function main() {
   console.log(
     `\n${pageFiles.length} page.tsx/layout.tsx file(s), ${routeFiles.length} route.ts file(s).\n`
   );
+  console.log(
+    'A file below is a CANDIDATE TO MEASURE, not a confirmed defect — this\n' +
+      'scanner cannot know whether its awaits are independent of each other.\n' +
+      'Run the runtime counting harness against the file to find out.\n'
+  );
 
   const allFiles = [...pageFiles, ...routeFiles];
-  const allFindings = allFiles.flatMap(scanFile);
+  const tallies = allFiles
+    .map(tallyFile)
+    .filter((t) => t.sequential >= 2)
+    .sort((a, b) => b.sequential - a.sequential);
 
-  for (const f of allFindings) console.log(f + '\n');
+  for (const t of tallies) {
+    const boilerplateNote =
+      t.boilerplate > 0
+        ? ` (of which ${t.boilerplate} ${t.boilerplate === 1 ? 'is' : 'are'} routing boilerplate)`
+        : '';
+    console.log(
+      `${relative(t.file)} — ${t.sequential} sequential await${t.sequential === 1 ? '' : 's'} ` +
+        `(${t.parallel} already in Promise.all)${boilerplateNote}`
+    );
+  }
 
-  printFooter(allFindings.length, 'candidate pair(s)');
+  printFooter(tallies.length, 'file(s) with 2+ sequential awaits');
 }
 
 main();
