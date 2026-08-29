@@ -85,7 +85,34 @@ const loadSystemHealth = unstable_cache(
   loadSystemHealthUncached,
   ['sis', 'system-health'],
   {
-    tags: ['sis', 'markbook'],
+    // This strip is school-wide by design — it takes no ayCode and counts
+    // every AY — so there is no AY-coded tag to scope it with. It gets its own
+    // dedicated tag instead, and the five write paths that change what the
+    // query above selects all emit it:
+    //   - sis/ay-setup POST / DELETE — create and remove `academic_years`
+    //     rows, which move `ayCount` and can move `currentAy`.
+    //   - sis/ay-setup PATCH — flips `academic_years.is_current`, which IS
+    //     `currentAy`.
+    //   - sis/admin/approvers POST and [id] DELETE — the only writers of
+    //     `approver_assignments`, which is the per-flow coverage count.
+    //
+    // Two things touch this data and deliberately do NOT emit it:
+    //   - sis/ay-setup/accepting-applications — writes
+    //     `academic_years.accepting_applications`, a column the query above
+    //     does not select.
+    //   - `lastAdminActivityAt`, the one field read from `audit_log`, CANNOT
+    //     be tagged: every admin action in the app appends an audit row, so a
+    //     tag covering it would fire on nearly every request and turn this
+    //     cache into pure overhead. The 60s TTL is that one field's freshness
+    //     contract, and it is the only reason the TTL still matters.
+    // Don't close a perceived gap by shotgunning the tag onto either.
+    //
+    // The bare 'sis' and 'markbook' tags that used to sit here were removed
+    // rather than kept: nothing in the app emits either one bare, so both were
+    // inert, and 'sis' must NOT start being emitted — it is exempt on two
+    // audit_log activity feeds in lib/sis/dashboard.ts that emitting it would
+    // bust as collateral.
+    tags: ['sis-health'],
     revalidate: CACHE_TTL_SECONDS,
   }
 );

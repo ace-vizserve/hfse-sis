@@ -65,10 +65,13 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   'app/api/sis/admin/subjects/[configId]/report-map/route.ts':
     'writes subject_report_map. No cached reader; the report card resolves the ' +
     'mapping when it renders.',
-  'app/api/sis/admin/approvers/route.ts':
-    'writes approver_assignments. lib/sis/approvers/queries.ts is uncached.',
-  'app/api/sis/admin/approvers/[id]/route.ts':
-    'same — approver config is read uncached.',
+  // The two `approvers` routes sat here reading "writes approver_assignments.
+  // lib/sis/approvers/queries.ts is uncached." That reader is indeed uncached,
+  // but naming it was not the same as checking every reader: `getSystemHealth`
+  // (lib/sis/health.ts) counts the same table into the /sis readiness strip
+  // from inside an `unstable_cache`. Both routes now emit 'sis-health', so
+  // they invalidate and no longer belong on this list. A reason that names one
+  // reader is only as good as the search behind it.
   'app/api/sis/admin/approval-stages/route.ts':
     'writes approval_stages. lib/approvals/config.ts is uncached, deliberately: ' +
     'these are read by the queue and the readiness strip, both per request.',
@@ -484,17 +487,15 @@ describe('a lone bare cache tag is one some write actually emits', () => {
       'OPEN — the second tag on that same getActivityByActor call. Nothing ' +
       'emits `audit-log` either, and every write appends an audit row, so ' +
       'emitting it would bust the entry on nearly every request.',
-    'lib/sis/health.ts|loadSystemHealthUncached|sis':
-      'OPEN — getSystemHealth, the readiness strip on the /sis hub. Also ' +
-      'missed by the ten-loader enumeration. It reads academic_years, ' +
-      'approver_assignments and audit_log, so unlike the feeds it CAN go ' +
-      'meaningfully stale: creating an AY or assigning an approver is not ' +
-      'reflected for up to its 60s TTL. Named, not fixed — this pass owns ' +
-      'the guard only, and a source change belongs with the loaders it ' +
-      'affects rather than smuggled into a test commit.',
-    'lib/sis/health.ts|loadSystemHealthUncached|markbook':
-      'OPEN — the second tag on that same getSystemHealth call; the approver ' +
-      'flow it counts is markbook.change_request. Same 60s TTL, same call.',
+    // `lib/sis/health.ts|loadSystemHealthUncached` held two OPEN entries here
+    // and now holds none: getSystemHealth was the one of the four found by
+    // this guard that could go MEANINGFULLY stale, so it was fixed rather than
+    // exempted. It now carries a single dedicated 'sis-health' tag, emitted by
+    // all five writes of the `academic_years` and `approver_assignments` data
+    // it reads, so it is produced and this scan no longer reaches it. The bare
+    // 'sis' and 'markbook' tags it used to carry were deleted — both were
+    // inert, and 'sis' in particular must never start being emitted, because
+    // the two activity feeds exempted above would be busted as collateral.
   };
 
   /** The loader an `unstable_cache()` call wraps — its first argument, seen
