@@ -172,7 +172,18 @@ export async function getDailyForSection(
   // The dedupe below depends on `recorded_at desc` ordering to keep the LATEST
   // correction per (student, date, period). That ordering is applied by the
   // server across the whole result set, and `fetchAllPages` walks pages in
-  // order, so the invariant survives pagination.
+  // order, so the ORDERING survives pagination.
+  //
+  // ⚠ The ordering surviving is not the same as the ROWS surviving, and
+  // `recorded_at` alone does not give the second. A class register submit
+  // writes one row per student in a single statement, so ~25 rows share one
+  // `recorded_at` to the microsecond — and `recorded_at desc` on its own
+  // leaves PostgREST free to order those tied rows differently on each
+  // `.range()` request. A tie straddling the 1,000-row page boundary then
+  // repeats rows on the next page and skips others, in a read whose worst
+  // (section × term) is 1,610 rows. `.order('id')` breaks every tie the same
+  // way on every page, which is what makes the walk stable; it is a TIE-break
+  // only, so `recorded_at desc` still decides which correction is latest.
   const data = await fetchAllPages<DailyRaw>((from, to) => {
     let query = service
       .from('attendance_daily')
@@ -181,7 +192,8 @@ export async function getDailyForSection(
       )
       .eq('term_id', termId)
       .in('section_student_id', enrolmentIds)
-      .order('recorded_at', { ascending: false });
+      .order('recorded_at', { ascending: false })
+      .order('id', { ascending: true });
 
     if (opts?.fromDate) query = query.gte('date', opts.fromDate);
     if (opts?.toDate) query = query.lte('date', opts.toDate);
@@ -751,6 +763,15 @@ export async function getCompassionateUsageForSection(
   //
   // `recorded_at desc` + latest-per-key dedupe below survives paging: the
   // server orders the whole set and `fetchAllPages` walks it in order.
+  //
+  // ⚠ `.order('id')` is the TIE-break that makes that true, and it is required
+  // here for the same reason as in `getDailyForSection`: a register submit
+  // writes ~25 rows in one statement, so they share a `recorded_at`, and
+  // `recorded_at desc` alone lets PostgREST order a tied group differently on
+  // each `.range()` call. Over 5,925 rows that is six page boundaries for a
+  // tie to straddle, and a repeated/skipped row here changes an allowance
+  // tally. It does not touch which row wins the dedupe — `recorded_at desc`
+  // still decides that.
   const daily = await fetchAllPages<DailyRow>((from, to) =>
     service
       .from('attendance_daily')
@@ -759,6 +780,7 @@ export async function getCompassionateUsageForSection(
       )
       .in('section_student_id', allAyEnrolmentIds)
       .order('recorded_at', { ascending: false })
+      .order('id', { ascending: true })
       .range(from, to)
   );
 
@@ -1129,6 +1151,12 @@ export async function getVacationLeaveUsageForSection(
   // Started HERE and not earlier on purpose: the three guards above return
   // without ever needing a trip context, so hoisting this any higher would
   // trade one wave for a handful of wasted calendar reads on an empty class.
+  //
+  // `.order('id')` is the pagination tie-break, third instance of the same
+  // shape in this file — a register submit's ~25 rows share one `recorded_at`,
+  // and without a stable second key a tie sitting on a page boundary can come
+  // back twice or not at all. Tie-break only; `recorded_at desc` still picks
+  // the latest correction.
   const [daily, { schoolDays, priorSchoolDay }] = await Promise.all([
     fetchAllPages<DailyRow>((from, to) =>
       service
@@ -1139,6 +1167,7 @@ export async function getVacationLeaveUsageForSection(
         .in('section_student_id', allAyEnrolmentIds)
         .eq('term_id', termId)
         .order('recorded_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(from, to)
     ),
     loadTermTripContext(service, termId),
