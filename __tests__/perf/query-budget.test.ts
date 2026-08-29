@@ -730,10 +730,18 @@ describe('budget: logActions (30 rows)', () => {
 // ─────────────────────────────────────────────────────────────────────────
 // 6. Relief bulk book — 10 assignments
 // ─────────────────────────────────────────────────────────────────────────
-// Measured 2026-08-29. app/api/relief/book/route.ts's own header already
-// states the cost as deliberate ("NOT ATOMIC ACROSS CLASSES... every class is
-// written [serially]") — this is that stated cost's real number for a
-// 10-class teacher, the shape scripts/audit/row-at-a-time-writes.ts flags.
+// Measured 2026-08-29. app/api/relief/book/route.ts's own header used to state
+// the cost as deliberate ("NOT ATOMIC ACROSS CLASSES... every class is written
+// [serially]") — 13/13 for a 10-class teacher, the shape
+// scripts/audit/row-at-a-time-writes.ts flags. Re-measured 2026-08-29 after
+// phase 5 item 2: 13/13 -> 4/4. Every class took the SAME patch, so the ten
+// serial UPDATEs are one `.update(patch).in('id', ids)`. The four that remain
+// are the current AY, the assignment read, the write, and the single audit row.
+//
+// The header's stated cost went with them: one UPDATE cannot half-apply, so the
+// partial-write failure mode the route documented no longer exists, and the
+// `failed`/`partial` response fields were deleted rather than left describing
+// an impossible state.
 
 describe('budget: relief bulk book (10 assignments)', () => {
   const COVERED = '11111111-1111-4111-8111-111111111111';
@@ -750,7 +758,7 @@ describe('budget: relief bulk book (10 assignments)', () => {
     };
   }
 
-  it('measured 2026-08-29: roundTrips=13, waves=13 (1 ay + 1 read + 10 SERIAL updates + 1 audit)', async () => {
+  it('measured 2026-08-29: roundTrips=4, waves=4 (1 ay + 1 read + 1 update + 1 audit)', async () => {
     getTeacherListMock.mockImplementation(async () => [
       {
         id: RELIEF,
@@ -780,8 +788,8 @@ describe('budget: relief bulk book (10 assignments)', () => {
     );
 
     expect((result as Response).status).toBe(200);
-    expect(roundTrips).toBe(13);
-    expect(waves).toBe(13);
+    expect(roundTrips).toBe(4);
+    expect(waves).toBe(4);
   });
 });
 
