@@ -8,9 +8,10 @@
 classified below with one of exactly two verdicts — **INDEX** or **EXEMPT**. Nothing is left as
 "probably fine".
 
-**Headline:** **5 of the 86 warrant an index. The other 81 do not, and 68 of those are false
-positives of the scanner rather than judgement calls.** The 5 are all on the per-AY admissions
-tables and are **future-proofing, not a speed-up** — see the sizing note in §1.
+**Headline:** **13 of the 86 warrant an index, and those 13 collapse to 5 real (table, column)
+targets. The other 73 do not — and 32 of them are outright scanner false positives, accounting for
+244 of the 484 reported call sites.** The 5 real targets are all on the per-AY admissions tables and
+are **future-proofing, not a speed-up** — see the sizing note in §1.
 
 This document exists so nobody re-runs this sweep by hand. **The exempt list is the deliverable.**
 
@@ -145,7 +146,7 @@ one.
 
 ---
 
-## §2 — EXEMPT: an index already exists (34 pairs, 218 call sites)
+## §2 — EXEMPT: an index already exists (32 pairs, 244 call sites)
 
 **These are false positives.** The column is indexed; the scanner could not see it. No action, ever.
 
@@ -212,12 +213,12 @@ resolve to the AY admissions tables and are covered by §1's DDL. They are shown
 where the scanner filed them, and leaving them out would make the bucket look like it lost two
 pairs.
 
-**§2 subtotal: 34 pairs listed, of which 32 are genuinely exempt** and 2 are §1 entries appearing
-under their scanner label.
+**§2 subtotal: 34 rows listed above, of which 32 are genuinely exempt** (244 call sites); the other 2
+are §1 entries shown under the label the scanner gave them, and are counted in §1.
 
 ---
 
-## §3 — EXEMPT: bounded by construction (33 pairs, 116 call sites)
+## §3 — EXEMPT: bounded by construction (33 pairs, 118 call sites)
 
 Rule 2. Postgres will not choose an index on a table that fits in a page or two, and adding one buys
 a write cost for a plan the planner will refuse. **Each row names the fact that bounds the table** —
@@ -225,20 +226,23 @@ a schema constraint, a Key Decision, or a measured production count. None of the
 
 ### §3a — fixed-size configuration tables
 
-| Pair                                                        | Sites | Bound                                                                                                                                                                                                                                                               |
-| ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terms.term_number`                                         | 18    | **4 rows per AY** — `001:29`, `check (term_number between 1 and 4)`. ~12–16 rows total. The second column of `unique (academic_year_id, term_number)`, so the composite serves it anyway once `academic_year_id` is filtered, which every one of the 18 sites does. |
-| `terms.start_date`                                          | 1     | Same 4-per-AY bound. `lib/dashboard/windows.ts:43` sorts them.                                                                                                                                                                                                      |
-| `academic_years.accepting_applications`                     | 2     | **≈ 3 rows** (Phase 0). A boolean on a 3-row table.                                                                                                                                                                                                                 |
-| `levels.sort_order`                                         | 1     | **Fixed 10 rows**, P1–P6 + S1–S4 — KD #153 SUPERSEDED note.                                                                                                                                                                                                         |
-| `houses.sort_order`                                         | 1     | **4 rows** — KD #178.                                                                                                                                                                                                                                               |
-| `approval_stages.is_active`                                 | 4     | **2 rows** — the declaration flow's adviser → officer-in-charge ladder, KD #196. Also already served by `approval_stages_flow_idx` (`126:126`), a partial index `where is_active`.                                                                                  |
-| `sections.name`                                             | 5     | **21 sections per AY** — KD #193 / the AY2026 deployment import.                                                                                                                                                                                                    |
-| `sections.level_id`                                         | 4     | Same 21-per-AY bound; also the second column of `unique (academic_year_id, level_id, name)` (`001:59`).                                                                                                                                                             |
-| `subjects.is_examinable`                                    | 3     | The subject catalogue — one row per subject the school offers. A boolean has ~2 distinct values, so an index would be rejected by the planner even on a large table.                                                                                                |
-| `subjects.name`                                             | 1     | Same table; an `.order()` for a picker.                                                                                                                                                                                                                             |
-| `subject_configs.subject_id`                                | 5     | One row per (AY, subject) since `080:481` collapsed the shape — bounded by the catalogue × ≈3 AYs.                                                                                                                                                                  |
-| `role_permissions` / `level_aliases` / `subject_report_map` | —     | Already covered in §2a by their PK/unique.                                                                                                                                                                                                                          |
+| Pair                                    | Sites | Bound                                                                                                                                                                                                                                                               |
+| --------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terms.term_number`                     | 18    | **4 rows per AY** — `001:29`, `check (term_number between 1 and 4)`. ~12–16 rows total. The second column of `unique (academic_year_id, term_number)`, so the composite serves it anyway once `academic_year_id` is filtered, which every one of the 18 sites does. |
+| `terms.start_date`                      | 1     | Same 4-per-AY bound. `lib/dashboard/windows.ts:43` sorts them.                                                                                                                                                                                                      |
+| `academic_years.accepting_applications` | 2     | **≈ 3 rows** (Phase 0). A boolean on a 3-row table.                                                                                                                                                                                                                 |
+| `levels.sort_order`                     | 1     | **Fixed 10 rows**, P1–P6 + S1–S4 — KD #153 SUPERSEDED note.                                                                                                                                                                                                         |
+| `houses.sort_order`                     | 1     | **4 rows** — KD #178.                                                                                                                                                                                                                                               |
+| `approval_stages.is_active`             | 4     | **2 rows** — the declaration flow's adviser → officer-in-charge ladder, KD #196. Also already served by `approval_stages_flow_idx` (`126:126`), a partial index `where is_active`.                                                                                  |
+| `sections.name`                         | 5     | **21 sections per AY** — KD #193 / the AY2026 deployment import.                                                                                                                                                                                                    |
+| `sections.level_id`                     | 4     | Same 21-per-AY bound; also the second column of `unique (academic_year_id, level_id, name)` (`001:59`).                                                                                                                                                             |
+| `subjects.is_examinable`                | 3     | The subject catalogue — one row per subject the school offers. A boolean has ~2 distinct values, so an index would be rejected by the planner even on a large table.                                                                                                |
+| `subjects.name`                         | 1     | Same table; an `.order()` for a picker.                                                                                                                                                                                                                             |
+| `subject_configs.subject_id`            | 5     | One row per (AY, subject) since `080:481` collapsed the shape — bounded by the catalogue × ≈3 AYs.                                                                                                                                                                  |
+
+(`role_permissions.role`, `level_aliases.raw_label` and `subject_report_map.subject_id` are also
+fixed-size config tables, but they are already exempt in §2a on their PK/unique and are counted
+there, not here.)
 
 ### §3b — per-AY roster tables (bounded by a ~400-student school × 21 sections)
 
@@ -290,7 +294,7 @@ expression index only serves the exact expression it was built on.
 
 ---
 
-## §4 — EXEMPT: other (8 pairs, 13 call sites)
+## §4 — EXEMPT: other (8 pairs, 12 call sites)
 
 These are neither "already indexed on that column" nor "too small". Each has its own reason.
 
@@ -374,3 +378,77 @@ adding entries. **Re-measure it on the next sweep.** The trigger: if it exceeds 
 `create index … on public.grade_audit_log (changed_at desc)` and
 `… (grading_sheet_id, changed_at desc)`. Until someone has counted it, proposing those would be
 guessing — and a false "missing index" finding is worse than none.
+
+---
+
+## §5 — Counts, and the reconciliation
+
+Every one of the 86 pairs and all 484 call sites are accounted for exactly once.
+
+| Category                             | Pairs                                                      | Call sites |
+| ------------------------------------ | ---------------------------------------------------------- | ---------- |
+| **§1 — INDEX**                       | **13 scanner labels → 5 distinct (table, column) targets** | **110**    |
+| §2 — EXEMPT, an index already exists | 32                                                         | 244        |
+| §3 — EXEMPT, bounded by construction | 33                                                         | 118        |
+| §4 — EXEMPT, other                   | 8                                                          | 12         |
+| **Total**                            | **86**                                                     | **484**    |
+
+By verdict, counting the scanner's own 86 labels: **13 INDEX, 73 EXEMPT**. Those 13 INDEX labels
+collapse to **5 distinct (table, column) targets** and therefore 5 index statements per AY.
+
+⚠ **The 13-vs-5 gap is not double-counting.** The scanner sees the AY tables under thirteen
+different spellings, because the table name is built at runtime from a template literal that four
+different files spell four different ways (`${prefix}_`, `${rePrefix}_`, `ay${year}_`,
+`${prefixFor(ayCode)}_`) and a fifth group of call sites builds the query across statements so the
+name resolves to `unknown`. All thirteen are the same three physical tables and the same five
+columns. **The migration writes five index statements per AY, not thirteen.**
+
+### Where the exemptions come from
+
+Of the 73 exempt labels:
+
+- **32 are outright scanner false positives** — the column is indexed and the scanner could not see
+  it (§2). 17 because the index came from an inline `unique` / `primary key` constraint instead of a
+  `create index`, 6 because a dotted PostgREST filter reports the SELECT alias instead of the table,
+  and 9 because the table name could not be resolved statically at all. **Between them these account
+  for 244 of the 484 reported call sites — just over half the report.**
+- **33 are on tables bounded by a documented fact** (§3) — a check constraint, a Key Decision, or a
+  Phase 0 measurement. These are the real judgement calls, and every one names its bound.
+- **8 are one-off reasons** (§4): 2 already covered by a partial index built for the exact query,
+  4 where the query reads the whole table so an index cannot help, and 2 on `grade_audit_log` —
+  **the only pair in this document whose exemption rests on an inference rather than a count.**
+
+### Where the scanner should improve, if anyone touches it
+
+Two of the three blind spots are cheap to close and would take the noise floor of this sweep from
+86 pairs to about 30:
+
+1. **Parse `unique (...)` and `primary key (...)` out of `create table` bodies** and register the
+   lead column (and every prefix) as indexed. This alone removes 17 pairs and 186 call sites,
+   including the two loudest findings in the report.
+2. **Resolve a dotted filter's alias against the select clause** (`section:sections!inner(...)`)
+   before deciding which table it names. Removes 6 more pairs and 27 sites.
+
+The third — resolving a query builder assembled across statements — is real static analysis and is
+not worth it; 11 pairs answered by hand in an afternoon is cheaper than a TypeScript AST pass, and
+the script already reports them as `unknown` rather than dropping them, which is the right
+behaviour.
+
+### What this document does NOT do
+
+- **No migration is written here.** §1 gives the DDL and the three traps; a separate agent owns the
+  migration.
+- **No claim that this is a speed-up.** It is not. See the sizing note in §1.
+- **`attendance_daily` is not touched** — see §4a.
+- **`grade_audit_log` is the one open thread**, with its trigger and DDL written down in §4c.
+
+### Re-running this
+
+```
+npx tsx scripts/audit/unindexed-filters.ts    # ~40s, no DB credentials, exits 0 always
+```
+
+The script enumerates; it cannot prove a query plan is a sequential scan. Anything it surfaces that
+is not in this document is genuinely new. Anything in this document that it surfaces again is
+already answered above — **do not re-litigate an exempt row without a new measurement to overturn the
+bound it cites.**
