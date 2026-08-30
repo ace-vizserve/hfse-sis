@@ -25,6 +25,38 @@ import { describe, expect, it } from 'vitest';
 // "nobody has checked" look identical in a bare allowlist — which is exactly
 // how the last one rotted.
 
+/**
+ * Every file in this app that can hold an `unstable_cache()` call — `lib` AND
+ * all of `app`, `.ts` and `.tsx`.
+ *
+ * ⚠ WHY `app` IS IN HERE, AND WHY ALL THREE TAG GUARDS BELOW SHARE ONE WALK.
+ * All three were written walking `lib/**\/*.ts` only, on the assumption that
+ * cached loaders live in `lib`. They do not: `app/(sis)/sis/page.tsx` holds two
+ * `unstable_cache()` calls today. Both are correct — they carry
+ * `` `sis:${ayCode}` `` — so nothing was broken, but a page-level loader with a
+ * uuid tag, an unproducible sibling, or a lone bare tag would have walked past
+ * all three guards untouched.
+ *
+ * This is the SAME too-narrow-walk gap the pagination guard had, widened in
+ * a8cc7069 for the same reason and stated the same way there: a server
+ * component is not an API route but reads the database exactly like one. It
+ * found a live defect on its first pass.
+ *
+ * `app` subsumes `app/api`, so it is listed once — concatenating both would
+ * double every hit and make the stale-entry checks meaningless. `producedBareTags()`
+ * has always walked this exact set; the guards now agree with it, which they
+ * must, or a tag counted as emitted by one scan is invisible to another.
+ */
+function cacheSourceFiles(): string[] {
+  return execFileSync(
+    'git',
+    ['ls-files', 'app/**/*.ts', 'app/**/*.tsx', 'lib/**/*.ts', 'lib/**/*.tsx'],
+    { encoding: 'utf8' }
+  )
+    .split('\n')
+    .filter(Boolean);
+}
+
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // ── delegate: the bust happens one module down ──────────────────────────
@@ -177,11 +209,10 @@ describe('AY-scoped cache tags are keyed by ay_code', () => {
   // only ever expired on its TTL. One character of difference, invisible in
   // review, and no test could have caught it because both sides compile.
   it('no tag template interpolates an id', () => {
-    const files = execFileSync('git', ['ls-files', 'lib/**/*.ts'], {
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter(Boolean);
+    // `lib` + all of `app` — see cacheSourceFiles(). The bug this pins lived in
+    // lib/, but nothing about it is confined there: a page-level loader can
+    // interpolate a uuid exactly as easily.
+    const files = cacheSourceFiles();
 
     const offenders: string[] = [];
     for (const file of files) {
@@ -333,11 +364,10 @@ describe('every AY-scoped tag is one invalidateDrillTags() can actually produce'
 
   it('every tag beside an AY-coded tag is producible, or is an allowed dead one', () => {
     const prefixes = producibleColonPrefixes();
-    const files = execFileSync('git', ['ls-files', 'lib/**/*.ts'], {
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter(Boolean);
+    // `lib` + all of `app` — see cacheSourceFiles(). app/(sis)/sis/page.tsx's
+    // two cached loaders land in THIS guard (both carry an AY-coded tag), which
+    // is the concrete proof the old lib-only walk was short.
+    const files = cacheSourceFiles();
 
     const offenders: string[] = [];
     const seenAllowed = new Set<string>();
@@ -409,7 +439,8 @@ describe('every AY-scoped tag is one invalidateDrillTags() can actually produce'
     );
     expect(
       stale,
-      'These allowed bare tags were not found anywhere in lib/ — remove them.'
+      'These allowed bare tags were not found anywhere in app/ or lib/ — ' +
+        'remove them.'
     ).toEqual([]);
   });
 });
@@ -435,9 +466,17 @@ describe('a lone bare cache tag is one some write actually emits', () => {
   // not catch this bug class, because it only looked where the bug wasn't.
   //
   // So this one asks the complementary question, of every bare string tag on
-  // an `unstable_cache()` call in lib/ that has no AY-coded sibling: does any
-  // `revalidateTag('<tag>')` in app/ or lib/ actually emit it? If not, the tag
-  // is inert — it must be named below with the reason that is acceptable.
+  // an `unstable_cache()` call in app/ or lib/ that has no AY-coded sibling:
+  // does any `revalidateTag('<tag>')` in app/ or lib/ actually emit it? If not,
+  // the tag is inert — it must be named below with the reason that is
+  // acceptable.
+  //
+  // ⚠ It shipped walking lib/ ONLY, which is the same too-narrow walk this
+  // whole file keeps re-learning: it asked "does anything emit this tag" of a
+  // strictly smaller set of tags than the set it had emitters for, since
+  // `producedBareTags()` below has always read app/ as well. Widened
+  // 2026-08-30 — see cacheSourceFiles() at the top for what app/ actually
+  // holds and why the two sibling guards were widened with it.
 
   /**
    * Keyed on `file|loader|tag` — per CALL SITE, not per tag, and that is
@@ -550,19 +589,9 @@ describe('a lone bare cache tag is one some write actually emits', () => {
 
   /** Every bare-string tag some write path can actually emit. */
   function producedBareTags(): Set<string> {
-    const files = execFileSync(
-      'git',
-      [
-        'ls-files',
-        'app/**/*.ts',
-        'app/**/*.tsx',
-        'lib/**/*.ts',
-        'lib/**/*.tsx',
-      ],
-      { encoding: 'utf8' }
-    )
-      .split('\n')
-      .filter(Boolean);
+    // The same walk the tag guards use — this scan defined it first, and the
+    // guards were widened to match rather than the other way round.
+    const files = cacheSourceFiles();
 
     const produced = new Set<string>();
     const permissionsTag = permissionsCacheTag();
@@ -591,11 +620,11 @@ describe('a lone bare cache tag is one some write actually emits', () => {
 
   it('every lone bare tag is emitted by a write, or is named as inert', () => {
     const produced = producedBareTags();
-    const files = execFileSync('git', ['ls-files', 'lib/**/*.ts'], {
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter(Boolean);
+    // `lib` + all of `app` — see cacheSourceFiles(). This walk read `lib` only
+    // while the emitter scan below it already read `app` too, so the guard was
+    // asking "does anything emit this" of a strictly smaller set of tags than
+    // it had answers for.
+    const files = cacheSourceFiles();
 
     const offenders: string[] = [];
     const seenInert = new Set<string>();
@@ -622,7 +651,8 @@ describe('a lone bare cache tag is one some write actually emits', () => {
 
         // The guard above owns every call carrying an AY-coded tag. This one
         // owns the complement — the calls that guard never looks at. Between
-        // the two, every tag in lib/ is now examined by exactly one of them.
+        // the two, and now that both walk the same file set, every tag in app/
+        // and lib/ is examined by exactly one of them.
         const hasAyColonTag = tags.some(
           (t) => t.startsWith('`') && /:\$\{/.test(t)
         );
@@ -670,8 +700,8 @@ describe('a lone bare cache tag is one some write actually emits', () => {
     expect(
       stale,
       'These are named as inert-on-purpose but no longer match a lone bare ' +
-        'tag in lib/ — the loader was removed, its tag changed, or something ' +
-        'now emits it. Remove them.'
+        'tag in app/ or lib/ — the loader was removed, its tag changed, or ' +
+        'something now emits it. Remove them.'
     ).toEqual([]);
   });
 });
