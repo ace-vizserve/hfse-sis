@@ -271,9 +271,46 @@ The general guard `__tests__/data/no-unpaginated-high-volume-reads.test.ts` now 
 
 Full classification: **`docs/superpowers/specs/2026-08-29-phase-2-unindexed-filter-classification.md`** — 484 call sites across **86 distinct (table, column) pairs, every one classified exactly once**: 13 INDEX labels collapsing to **5 real statements per AY**, 32 outright scanner false positives, 33 bounded by a documented fact, 8 other. ⚠ The 13-to-5 gap is not double counting — four files build the AY table name from a template literal four different ways, so one physical table appears under several labels. See "Corrections to this document" for what the migration actions.
 
-### ⚠ Two migrations are written and NOT APPLIED
+### ✅ Two migrations — APPLIED AND VERIFIED IN PRODUCTION, 2026-08-30
 
-Both are on the branch, neither has been run against production, and applying production DDL is not this pass's to do. **They share no object and can land in either order, or independently.** ⚠ **That is independence from EACH OTHER, and only one of them is independent of the CODE: 133 must be applied BEFORE this branch deploys, 132 need not be.** See 133's paragraph below.
+Written by this pass, applied by Mr Ace (130–133 together) and verified the same day by
+**`scripts/verify-perf-migrations.ts`** — read-only, re-runnable, **17 passed / 0 failed**.
+**They share no object and could land in either order.** ⚠ That was independence from EACH
+OTHER; only 132 was ever independent of the CODE, since 133 had to precede the deploy. Both
+constraints are now discharged, and the paragraphs below are kept as the record of the
+reasoning, not as open items.
+
+**What the verification actually proved, and how:**
+
+- **133 is proven by the fix appearing, not by the function existing.** The script re-runs the
+  pre-133 `.limit(200)` projection beside the RPC: markbook listed **8 actors against the RPC's
+  9** — the one person the old dropdown dropped. attendance (8/8) and evaluation (4/4) were
+  already accurate and **changed shape, not answer**. Row counts matched the 2026-08-30
+  measurement exactly: 306 / 138 / 29.
+- **The grants were read, not inferred** — `anon false, authenticated true, service_role true`.
+  ⚠ The `authenticated` half is the load-bearing one (114/116 blanked a teacher-facing tab by
+  revoking exactly this class of grant), and **the anon refusal does not stand in for it.**
+- **132 is proven by the planner**, forced: `set enable_seqscan = off` yields
+  **`Index Only Scan using ay2025_enrolment_applications_enrolee_idx`** with
+  `Index Cond: ("enroleeNumber" = 'x'::text)`. **The double-quoting held** — the single risk
+  this migration carried, since an unquoted identifier folds to lowercase and builds the index
+  on a column nothing ever matches.
+
+⚠ **Neither proof was obtainable from the app's own client, and that is worth writing down for
+the next migration:** PostgREST reads no `pg_catalog` and has no `explain` verb, and there is
+no `DATABASE_URL` in `.env.local` — so `pg_indexes`, `pg_policies`, `has_function_privilege`
+and every query plan are reachable **only** from the Supabase SQL editor. The verification
+script therefore reports what a client can see and **prints the rest as ready-to-paste SQL
+rather than implying it passed.**
+
+⚠ **130 and 131 remain confirmed only by their original 2026-08-27/28 verification.** A partial
+unique index and an RLS policy both live in `pg_catalog`, and an anon read returns **0 rows
+with no error** under _both_ 126's deny-all and 131's own-work policy — the two are
+indistinguishable from a client, so this run recorded them as not-checkable rather than as
+evidence.
+
+⚠ `ay2027_enrolment_applications` read **265 rows**, not the 264 recorded on 2026-08-29. One
+application arrived in between. Harmless, but do not read a moved count as a failed re-run.
 
 **`132_ay_enrolment_indexes.sql`** — five non-unique btree indexes per AY (`_enrolment_applications("enroleeNumber")`, `("studentNumber")`, `_enrolment_status("enroleeNumber")`, `("applicationStatus")`, `_enrolment_documents("enroleeNumber")`), delivered as an idempotent `attach_enrolment_indexes(slug)` helper + a backfill + **one `perform` line** added to `create_ay_admissions_tables`. **15 indexes after backfill** (5 × 3 AYs). Its three acceptance queries:
 
