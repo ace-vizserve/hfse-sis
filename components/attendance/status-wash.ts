@@ -52,12 +52,20 @@ export const STATUS_TOGGLE_WASH: Record<AttendanceStatus, string> = {
 // `hover:` / `data-[state=on]:` variants must be spelled out or
 // `toggleVariants`' own grey wins. `__tests__/attendance/status-wash.test.ts`
 // pins all three maps against each other.
+// ⚠ THE UNCHOSEN TINT IS DELIBERATELY FAINT, and it was /35 until 2026-08-31.
+// Mr Ace, looking at the dialog: *"its not clear whats the selected attendance
+// type"*. At /35 a pale pastel against its own full strength is a difference of
+// saturation only, and on an UNMARKED cell all four segments read as equally
+// chosen — there is no "off" state to compare against. Dropping the unchosen
+// tint to /20 widens that gap, and `SEGMENT_BASE` carries the rest of the
+// answer (a ring, heavier type and darker ink on the chosen one), because
+// colour alone should never be the sole carrier of a selected state.
 export const STATUS_SEGMENT_WASH: Record<AttendanceStatus, string> = {
-  P: 'bg-attendance-present/35 hover:bg-attendance-present/55 data-[state=on]:bg-attendance-present',
-  L: 'bg-attendance-late/35 hover:bg-attendance-late/55 data-[state=on]:bg-attendance-late',
-  EX: 'bg-attendance-excused/35 hover:bg-attendance-excused/55 data-[state=on]:bg-attendance-excused',
-  A: 'bg-attendance-absent/35 hover:bg-attendance-absent/55 data-[state=on]:bg-attendance-absent',
-  NC: 'bg-ink-4/25 hover:bg-ink-4/40 data-[state=on]:bg-ink-4',
+  P: 'bg-attendance-present/20 hover:bg-attendance-present/45 data-[state=on]:bg-attendance-present',
+  L: 'bg-attendance-late/20 hover:bg-attendance-late/45 data-[state=on]:bg-attendance-late',
+  EX: 'bg-attendance-excused/20 hover:bg-attendance-excused/45 data-[state=on]:bg-attendance-excused',
+  A: 'bg-attendance-absent/20 hover:bg-attendance-absent/45 data-[state=on]:bg-attendance-absent',
+  NC: 'bg-ink-4/20 hover:bg-ink-4/40 data-[state=on]:bg-ink-4',
 };
 
 export function statusCellWash(status: AttendanceStatus | null): string {

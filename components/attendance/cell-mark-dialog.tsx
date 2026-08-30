@@ -139,8 +139,16 @@ const MARKS: { status: AttendanceStatus; word: string }[] = [
 // STATUS_SEGMENT_WASH. The `hover:` and `data-[state=on]:` text colours are
 // spelled out for the same reason the fills are — `toggleVariants` sets its
 // own under both states, and a plain `text-*` class does not outrank them.
+// ⚠ THE CHOSEN SEGMENT IS SAID FOUR WAYS, NOT ONE. Mr Ace on the first cut:
+// *"its not clear whats the selected attendance type"*. It leaned entirely on
+// the fill going from a fraction of its paper colour to all of it — which on
+// an unmarked cell gives nothing to compare against, since no segment is on.
+// So the chosen one now also takes a ring in the mark ink, heavier type, and
+// darker ink, and only the ring is a shape rather than a shade. Contrast alone
+// is not a selected state: it fails anyone who cannot separate these four
+// pastels, and it failed the person who asked for the screen.
 const SEGMENT_BASE =
-  'relative h-auto w-full flex-col items-center gap-1 rounded-lg px-1 py-2.5 text-[10px] font-medium text-ink-2 transition-all hover:text-ink-2 data-[state=on]:text-attendance-mark-ink data-[state=on]:shadow-sm';
+  'relative h-auto w-full flex-col items-center gap-1 rounded-lg px-1 py-2.5 text-[10px] font-medium text-ink-2 transition-all hover:text-ink-2 data-[state=on]:font-semibold data-[state=on]:text-attendance-mark-ink data-[state=on]:shadow-sm data-[state=on]:ring-2 data-[state=on]:ring-attendance-mark-ink/45 data-[state=on]:ring-inset';
 
 // The eyebrow over each band of the body. One voice, declared once, so
 // "Reason" / "Note" / "Medical certificate" cannot drift apart.
