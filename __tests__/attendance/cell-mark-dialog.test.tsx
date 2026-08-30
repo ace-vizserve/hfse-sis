@@ -5,28 +5,41 @@
  * each Excused student to submit" — but the term grid saves on every click
  * rather than at a submit step, so clicking Excused wrote a reasonless EX
  * immediately. That is a difference in plumbing, not in policy, and it showed:
- * of 2,516 EX rows on production, 2,511 carry no reason. (Almost all are the
- * AY2025 paper-register backfill, where the reason was never captured — which
- * is also why this is a UI rule and not a database constraint.)
+ * of 2,516 EX rows on production, 2,511 carry no reason.
  *
  * So the Excused tile opens the reasons; a reason saves the mark.
+ *
+ * ── The container changed on 2026-08-31 and the rules did not ─────────────
+ *
+ * Mr Ace: *"its not a sheet its a dialog"*. The marking palette moved out of a
+ * popover into a centred dialog — nothing about WHAT it saves moved with it,
+ * which is why every test below predates the move and still passes. The three
+ * that changed are the NC ones (the mark is gone from the track) and the note's
+ * label (the header now writes the date out in full).
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CellMarkPalette } from '@/components/attendance/cell-mark-popover';
+import { CellMarkDialog } from '@/components/attendance/cell-mark-dialog';
 
-function setup(overrides: Partial<Parameters<typeof CellMarkPalette>[0]> = {}) {
+// The long date the grid now passes — see `cellDateLabel` in wide-grid.tsx.
+const DATE_LABEL = 'Friday, 7 August 2026';
+const NOTE_LABEL = `Note for Reyes, Ana on ${DATE_LABEL}`;
+
+function setup(overrides: Partial<Parameters<typeof CellMarkDialog>[0]> = {}) {
   const onPick = vi.fn();
+  const onOpenChange = vi.fn();
   render(
-    <CellMarkPalette
+    <CellMarkDialog
+      open
+      onOpenChange={onOpenChange}
       studentName="Reyes, Ana"
-      dateLabel="7 Aug"
+      indexNumber={12}
+      dateLabel={DATE_LABEL}
       status={null}
       exReason={null}
       exNote={null}
-      canWriteNc={false}
       vlUsed={0}
       vlAllowance={1}
       compassionateUsed={0}
@@ -35,7 +48,7 @@ function setup(overrides: Partial<Parameters<typeof CellMarkPalette>[0]> = {}) {
       {...overrides}
     />
   );
-  return { onPick, user: userEvent.setup() };
+  return { onPick, onOpenChange, user: userEvent.setup() };
 }
 
 describe('the excused mark needs a reason', () => {
@@ -69,7 +82,7 @@ describe('the excused mark needs a reason', () => {
 
     // The note saves as part of the excused mark, so accepting one before a
     // reason exists would write the very row this guard prevents.
-    const note = screen.getByLabelText('Note for Reyes, Ana on 7 Aug');
+    const note = screen.getByLabelText(NOTE_LABEL);
     expect((note as HTMLTextAreaElement).disabled).toBe(true);
     expect(
       screen.getByText('Choose a reason to mark this student excused.')
@@ -78,7 +91,7 @@ describe('the excused mark needs a reason', () => {
 
   it('takes a note once the mark is complete', () => {
     setup({ status: 'EX', exReason: 'mc' });
-    const note = screen.getByLabelText('Note for Reyes, Ana on 7 Aug');
+    const note = screen.getByLabelText(NOTE_LABEL);
     expect((note as HTMLTextAreaElement).disabled).toBe(false);
     expect(screen.getByText('Saves when you click away.')).toBeTruthy();
   });
@@ -116,34 +129,89 @@ describe('the other marks are unaffected', () => {
  * every test in this file predates the rebuild and still passes.
  */
 describe('the segmented track', () => {
-  it('hides No class from a teacher and shows it to a registrar', () => {
-    setup({ canWriteNc: false });
-    expect(screen.queryByRole('radio', { name: 'No class' })).toBeNull();
-
-    cleanup();
-    setup({ canWriteNc: true });
-    expect(screen.getByRole('radio', { name: 'No class' })).toBeTruthy();
-  });
-
-  it('saves No class on the first click, like any other mark', async () => {
-    const { onPick, user } = setup({ canWriteNc: true });
-    await user.click(screen.getByRole('radio', { name: 'No class' }));
-    expect(onPick).toHaveBeenCalledWith('NC', null);
-  });
-
   it('says a plain mark saves immediately, and stops saying so once Excused opens', async () => {
     const { user } = setup();
     expect(screen.getByText('Saves as soon as you pick.')).toBeTruthy();
     await user.click(screen.getByRole('radio', { name: 'Excused' }));
     expect(screen.queryByText('Saves as soon as you pick.')).toBeNull();
   });
+
+  it('names the student and writes the day out in full', () => {
+    // The dialog is no longer anchored to the cell it came from, so the header
+    // is the only thing confirming WHICH student and WHICH day is being
+    // marked. The roster number is how teachers actually address a student
+    // (KD: index_number), so it travels with the name.
+    setup();
+    expect(screen.getByRole('heading', { name: 'Reyes, Ana' })).toBeTruthy();
+    expect(screen.getByText(`No. 12 · ${DATE_LABEL}`)).toBeTruthy();
+  });
+});
+
+/**
+ * "No class" left the track on 2026-08-31.
+ *
+ * Mr Ace: *"there is no NC type of attendance mark"*. A day the class did not
+ * meet belongs to the school calendar, not to a student's row — the register
+ * card above the grid already links to the page that sets it.
+ *
+ * ⚠ THE TWO HALVES OF THIS ARE DIFFERENT CLAIMS. Removing a way to PICK a mark
+ * is not removing a way to SHOW one, and the second would be data loss on
+ * screen: imports, holidays and not-yet-enrolled rows have written real NC
+ * rows. The display half is proved in `wide-grid-nc-cell.test.tsx`, against the
+ * grid that actually paints them.
+ */
+describe('no class is not a mark a person picks', () => {
+  it('is nowhere on the track, and no longer answers its keyboard shortcut', async () => {
+    const { onPick, user } = setup();
+
+    expect(screen.queryByRole('radio', { name: 'No class' })).toBeNull();
+    expect(screen.getAllByRole('radio')).toHaveLength(4);
+
+    // "n" used to stamp NC. It must now do nothing at all rather than fall
+    // through to some other mark.
+    await user.click(screen.getByRole('radio', { name: 'Present' }));
+    onPick.mockClear();
+    await user.keyboard('n');
+    expect(onPick).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The certificate slot — the second reason this stopped being a popover.
+ *
+ * Nothing is built yet. The empty state says so in as many words rather than
+ * pretending, because a control that looks live and does nothing is worse than
+ * one that admits it is coming.
+ */
+describe('the medical certificate slot', () => {
+  it('appears with the excused reasons and says it is not ready', async () => {
+    const { user } = setup();
+    expect(screen.queryByText('Medical certificate')).toBeNull();
+
+    await user.click(screen.getByRole('radio', { name: 'Excused' }));
+    expect(screen.getByText('Medical certificate')).toBeTruthy();
+
+    const slot = screen.getByRole('button', { name: /Coming soon/i });
+    expect(
+      (slot as HTMLButtonElement).disabled,
+      'A placeholder that can be clicked is a broken feature, not a promise.'
+    ).toBe(true);
+  });
+
+  it('stays out of the way of a plain mark', async () => {
+    // Nine marks in ten are "P". The rare case must not set the size of the
+    // common one — that was the 2026-08-27 note and it survives the move.
+    const { user } = setup();
+    await user.click(screen.getByRole('radio', { name: 'Present' }));
+    expect(screen.queryByText('Medical certificate')).toBeNull();
+  });
 });
 
 /**
  * Undoing a mark — migration 134.
  *
- * A clear is not a sixth thing on the track. It is the way out of a choice
- * already made, so it sits under a hairline rule, stays quieter than the five
+ * A clear is not a fifth thing on the track. It is the way out of a choice
+ * already made, so it sits in the dialog's footer, stays quieter than the four
  * marks, and does not exist at all on a cell nobody has marked.
  */
 describe('clearing a mark', () => {
@@ -169,7 +237,7 @@ describe('clearing a mark', () => {
   });
 
   it('replaces the "saves as soon as you pick" line rather than stacking on it', () => {
-    // Two lines of micro-copy under the track is the clutter the 2026-08-27
+    // Two lines of micro-copy in one footer is the clutter the 2026-08-27
     // redesign was asked to remove. The reader of "saves as soon as you pick"
     // is someone who has not picked yet.
     setup({ status: 'P' });
@@ -248,6 +316,10 @@ describe('a day a parent filed for', () => {
     // many details its hard to read". Who approved it and what an override
     // does both moved into the confirmation, where they are the reason to
     // stop and think rather than badges nobody reads at rest.
+    //
+    // ⚠ THE DIALOG'S EXTRA ROOM IS NOT AN INVITATION TO PUT THEM BACK. It
+    // went to the note and the certificate slot, which are things a teacher
+    // does — not to detail they only read past.
     setup({ status: 'EX', exReason: 'mc', filing: FILING });
     expect(screen.queryByText(/Approved by/)).toBeNull();
     expect(screen.queryByText(/won't change what the parent sent/)).toBeNull();
@@ -257,7 +329,7 @@ describe('a day a parent filed for', () => {
     // The parent's own note is on the filing. Asking the teacher to write a
     // second explanation under the first is how the two end up disagreeing.
     setup({ status: 'EX', exReason: 'mc', filing: FILING });
-    expect(screen.queryByLabelText('Note for Reyes, Ana on 7 Aug')).toBeNull();
+    expect(screen.queryByLabelText(NOTE_LABEL)).toBeNull();
   });
 
   it('asks before overriding a day the school approved', async () => {
@@ -282,6 +354,20 @@ describe('a day a parent filed for', () => {
     ).toBeTruthy();
   });
 
+  it('asks inside the dialog it is already in, never in a second one', async () => {
+    // ⚠ NESTED DIALOGS ARE A STANDING NO on this project: the two focus traps
+    // fight, and dismissing the inner one can dismiss both. The confirmation
+    // takes over the body of this dialog instead — which is also why the mark
+    // track and the footer are gone while the question is up. One dialog, one
+    // question, one way out.
+    const { user } = setup({ status: 'EX', exReason: 'mc', filing: FILING });
+    await user.click(screen.getByRole('radio', { name: 'Absent' }));
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryByRole('radio', { name: 'Present' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Clear mark/i })).toBeNull();
+  });
+
   it('writes the new mark once confirmed', async () => {
     const { onPick, user } = setup({
       status: 'EX',
@@ -303,6 +389,9 @@ describe('a day a parent filed for', () => {
     await user.click(screen.getByRole('button', { name: /Keep excused/i }));
     expect(onPick).not.toHaveBeenCalled();
     expect(screen.getByText(/Excused by a parent's filing/)).toBeTruthy();
+    // Backing out restores the palette exactly as it was — the day is still
+    // excused, and the track is there to change it again.
+    expect(screen.getByRole('radio', { name: 'Excused' })).toBeTruthy();
   });
 
   it('asks on the keyboard shortcut too', async () => {
@@ -383,7 +472,7 @@ describe('a day a parent filed for', () => {
   it('stays out of the way on a day nobody filed for', () => {
     setup({ status: 'EX', exReason: 'mc' });
     expect(screen.queryByText('A parent filed for this day')).toBeNull();
-    expect(screen.getByLabelText('Note for Reyes, Ana on 7 Aug')).toBeTruthy();
+    expect(screen.getByLabelText(NOTE_LABEL)).toBeTruthy();
   });
 
   // ── an approved family holiday ─────────────────────────────────────────
@@ -396,12 +485,16 @@ describe('a day a parent filed for', () => {
   it('names a holiday as a holiday, and never mentions a certificate', () => {
     // ⚠ "no certificate" would be a lie of a particular kind: it implies a
     // document is missing, when a holiday has none to give.
+    //
+    // ⚠ The heading of the upload slot is excluded deliberately. It is the
+    // name of a band in the form, not a claim about this filing.
     setup({ status: 'EX', exReason: 'vacation', filing: TRAVEL_FILING });
     expect(
       screen.getByText(/Excused by a parent's travel filing/)
     ).toBeTruthy();
     expect(screen.getByText(/27 Aug – 3 Sep 2026/)).toBeTruthy();
-    expect(screen.queryByText(/certificate/)).toBeNull();
+    expect(screen.queryByText(/· certificate/)).toBeNull();
+    expect(screen.queryByText(/no certificate/)).toBeNull();
   });
 
   it('asks before overriding an approved holiday', async () => {

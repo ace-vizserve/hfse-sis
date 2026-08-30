@@ -7,8 +7,8 @@ import Link from 'next/link';
 //
 // Render-perf invariants — do not regress:
 //   1. Each cell is a plain <button> (CellButton), NOT a per-cell Radix
-//      Select/Popover. There is exactly ONE shared marking popover for the
-//      whole grid, anchored to the active cell (state: `activeCell`). 1,410
+//      Select/Dialog. There is exactly ONE shared marking dialog for the
+//      whole grid, opened on the active cell (state: `activeCell`). 1,410
 //      portals would be catastrophic — one is fine. Don't give cells their own
 //      portal-mounting picker.
 //   2. State lives in a single `cells` Map keyed by `${enrolmentId}|${date}`.
@@ -75,20 +75,15 @@ import type {
 import { resolveColumnTag } from '@/lib/attendance/sheet-columns';
 import { COLUMN_TAG_COLOR } from '@/components/attendance/column-tags';
 import {
-  CellMarkPalette,
+  CellMarkDialog,
   type CellFiling as WideGridCellFiling,
-} from '@/components/attendance/cell-mark-popover';
+} from '@/components/attendance/cell-mark-dialog';
 import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 // Re-exported so the page can build the map without reaching past the grid
-// into the popover it happens to render.
-export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-popover';
+// into the dialog it happens to render.
+export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-dialog';
 import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
 import { statusCellWash } from '@/components/attendance/status-wash';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui/popover';
 import { Sheet } from '@/components/ui/sheet';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
 import {
@@ -106,7 +101,9 @@ import {
 
 // STATUS_CELL_WASH (status → HFSE paper-palette wash) + statusCellWash now live
 // in components/attendance/status-wash.ts — shared single source (§10.2) for the
-// grid cells, the legend, AND the cell-mark popover chips.
+// grid cells, the legend, AND the cell-mark dialog's segmented track. Its NC
+// entry stays: the palette no longer OFFERS "no class", but stored NC rows are
+// still real data and still have to paint.
 
 // The sheet's legend (status swatches + day-type chips) lives in
 // components/attendance/sheet-legend.tsx, mounted in the register card above
@@ -147,8 +144,8 @@ export type WideGridEnrolment = {
 };
 
 // The per-cell native <select> + <optgroup> was replaced by a single shared
-// "marking palette" popover (components/attendance/cell-mark-popover.tsx)
-// anchored to the active cell — see the cell render + <Popover> below.
+// "marking palette" dialog (components/attendance/cell-mark-dialog.tsx) opened
+// on the active cell — see the cell render + <CellMarkDialog> below.
 
 // No per-cell `saving`/`savedAt` here. A cell used to carry its own spinner and
 // then a tick for 1.5s, which put ~1,410 potential indicators on one screen and
@@ -168,13 +165,24 @@ function keyFor(enrolmentId: string, date: string): GridKey {
   return `${enrolmentId}|${date}`;
 }
 
-// "14 Jul" label for the popover header (on-screen only — browser ICU).
+// "Monday, 14 July 2026" for the marking dialog's header (on-screen only —
+// browser ICU).
+//
+// ⚠ THE LONG FORM, not the "14 Jul" the popover used. With the editor no
+// longer floating beside the cell it came from, the header is what confirms
+// which day is being marked — and a teacher scrolling a 47-column row needs
+// the weekday to catch an off-by-one column before they save, not after.
 function cellDateLabel(iso: string): string {
   return new Date(
     Number(iso.slice(0, 4)),
     Number(iso.slice(5, 7)) - 1,
     Number(iso.slice(8, 10))
-  ).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
+  ).toLocaleDateString('en-SG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export function AttendanceWideGrid({
@@ -196,6 +204,22 @@ export function AttendanceWideGrid({
   calendar: SchoolCalendarRow[];
   events: CalendarEventRow[];
   initialDaily: DailyEntryRow[];
+  /**
+   * Whether this user may write "no class" marks — registrar and above.
+   *
+   * ⚠ NOTHING IN THE GRID READS THIS ANY MORE, AND IT IS KEPT ON PURPOSE
+   * (2026-08-31). "No class" left the marking palette because it is not a
+   * mark a person picks — a day the class did not meet is set on the school
+   * calendar, which the register card above links to. But the permission it
+   * describes did NOT go away: `PATCH /api/attendance/daily` still refuses an
+   * NC write from anyone below registrar, and that guard is what actually
+   * enforces the rule, since the route is reachable from the daily register
+   * and from imports without ever passing through this component.
+   *
+   * So the page keeps computing it, the route keeps checking it, and this prop
+   * stays as the visible thread between them. Deleting it here would read to
+   * the next person as though the restriction had been lifted.
+   */
   canWriteNc: boolean;
   canEditBusCare: boolean;
   canEditAcademics: boolean;
@@ -228,16 +252,24 @@ export function AttendanceWideGrid({
     () => new Map(seed)
   );
 
+  // See the prop's own doc comment: the grid no longer offers "no class", but
+  // the permission behind it is still enforced server-side and the prop is the
+  // thread that says so.
+  void canWriteNc;
+
   const [showDetails, setShowDetails] = useState(false);
-  // The one open cell-mark popover (single portal — see the marking-palette note
-  // above and the perf invariants in the file header). null = closed.
+  // The one open cell-mark dialog (single portal — see the marking-palette note
+  // above and the perf invariants in the file header). null = closed, and it is
+  // ALSO what rings the cell being edited: with the editor no longer floating
+  // beside its cell, that ring is the only thing telling a teacher which of
+  // ~1,410 days they have open.
   const [activeCell, setActiveCell] = useState<{
     enrolmentId: string;
     iso: string;
   } | null>(null);
 
   // The one open roster-metadata editor sheet (single portal, mirrors the
-  // cell-mark popover's perf invariant above). null = closed.
+  // cell-mark dialog's perf invariant above). null = closed.
   const [activeMetaEnrolmentId, setActiveMetaEnrolmentId] = useState<
     string | null
   >(null);
@@ -632,542 +664,534 @@ export function AttendanceWideGrid({
           {showDetails ? 'Hide details' : 'Show details'}
         </Button>
       </div>
-      {/* One shared cell-mark popover — anchored to the active cell (single
-          portal; the per-cell control is a plain button). */}
-      <Popover
-        open={activeCell != null}
-        onOpenChange={(o) => {
-          if (!o) setActiveCell(null);
-        }}
-      >
-        {/* While a mark is being written the whole register goes dim, soft
+      {/* While a mark is being written the whole register goes dim, soft
             and non-interactive: one edit at a time, and the teacher can see
             that the sheet is busy rather than discovering it when a second
             click does nothing. `aria-busy` says the same thing to a screen
             reader, which the blur alone cannot. */}
-        <Card
-          aria-busy={isSaving}
-          className={
-            'p-0 overflow-hidden transition duration-200 ' +
-            (isSaving
-              ? 'pointer-events-none select-none blur-[1px] opacity-60'
-              : '')
-          }
-        >
-          {enrolments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
-              <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Users className="size-5" aria-hidden />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                No students enrolled in this section yet.
-              </p>
+      <Card
+        aria-busy={isSaving}
+        className={
+          'p-0 overflow-hidden transition duration-200 ' +
+          (isSaving
+            ? 'pointer-events-none select-none blur-[1px] opacity-60'
+            : '')
+        }
+      >
+        {enrolments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+            <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Users className="size-5" aria-hidden />
             </div>
-          ) : (
-            // ONE real table — the roster columns (#, Student, and the
-            // optional Details columns) are `position: sticky` cells pinned
-            // to the left inside the SAME <tr> as that student's attendance
-            // marks, so a name and its marks are structurally one row:
-            // shared hover highlight, shared zebra striping, no possibility
-            // of drifting out of sync (the previous two-independent-tables
-            // design could only ever *approximate* alignment via matched
-            // <tr> heights). `border-separate` (never `border-collapse`) is
-            // what makes `position: sticky` cells safe in a table — the
-            // same convention already proven by the single sticky column in
-            // components/attendance/term-sheet-summary-table.tsx. A much
-            // older attempt at this used `border-collapse` and hit the
-            // known browser bug where scrolling content paints over sticky
-            // cells (see git history) — avoided here by construction.
-            <div className="overflow-x-auto">
-              <Table
-                noWrapper
-                className="border-separate border-spacing-0 table-fixed text-[11px]"
-              >
-                <colgroup>
-                  {stickyCols.map((c) => (
-                    <col key={c.key} style={{ width: c.width }} />
-                  ))}
-                  {columns.map((c) => (
-                    <col key={c.iso} style={{ width: 36 }} />
-                  ))}
-                  <col style={{ width: 40 }} />
-                </colgroup>
-                <TableHeader>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.monthBanner }}
-                    className="hover:bg-transparent"
+            <p className="text-sm text-muted-foreground">
+              No students enrolled in this section yet.
+            </p>
+          </div>
+        ) : (
+          // ONE real table — the roster columns (#, Student, and the
+          // optional Details columns) are `position: sticky` cells pinned
+          // to the left inside the SAME <tr> as that student's attendance
+          // marks, so a name and its marks are structurally one row:
+          // shared hover highlight, shared zebra striping, no possibility
+          // of drifting out of sync (the previous two-independent-tables
+          // design could only ever *approximate* alignment via matched
+          // <tr> heights). `border-separate` (never `border-collapse`) is
+          // what makes `position: sticky` cells safe in a table — the
+          // same convention already proven by the single sticky column in
+          // components/attendance/term-sheet-summary-table.tsx. A much
+          // older attempt at this used `border-collapse` and hit the
+          // known browser bug where scrolling content paints over sticky
+          // cells (see git history) — avoided here by construction.
+          <div className="overflow-x-auto">
+            <Table
+              noWrapper
+              className="border-separate border-spacing-0 table-fixed text-[11px]"
+            >
+              <colgroup>
+                {stickyCols.map((c) => (
+                  <col key={c.key} style={{ width: c.width }} />
+                ))}
+                {columns.map((c) => (
+                  <col key={c.iso} style={{ width: 36 }} />
+                ))}
+                <col style={{ width: 40 }} />
+              </colgroup>
+              <TableHeader>
+                <TableRow
+                  style={{ height: ROW_HEIGHT.monthBanner }}
+                  className="hover:bg-transparent"
+                >
+                  <TableHead
+                    colSpan={stickyCols.length}
+                    style={{ ...cellHeight(ROW_HEIGHT.monthBanner), left: 0 }}
+                    className="sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                   >
+                    Roster
+                  </TableHead>
+                  {monthGroups.map((g) => (
                     <TableHead
-                      colSpan={stickyCols.length}
-                      style={{ ...cellHeight(ROW_HEIGHT.monthBanner), left: 0 }}
-                      className="sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                    >
-                      Roster
-                    </TableHead>
-                    {monthGroups.map((g) => (
-                      <TableHead
-                        key={g.month}
-                        colSpan={g.dates.length}
-                        style={cellHeight(ROW_HEIGHT.monthBanner)}
-                        className="overflow-hidden border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                      >
-                        {g.label}
-                      </TableHead>
-                    ))}
-                    <TableHead
+                      key={g.month}
+                      colSpan={g.dates.length}
                       style={cellHeight(ROW_HEIGHT.monthBanner)}
-                      className="overflow-hidden border-b border-border bg-muted/60 p-0"
-                    />
-                  </TableRow>
-                  <TableRow
-                    style={{ height: ROW_HEIGHT.dateRow }}
-                    className="hover:bg-transparent"
+                      className="overflow-hidden border-b border-r border-border bg-muted/60 px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                    >
+                      {g.label}
+                    </TableHead>
+                  ))}
+                  <TableHead
+                    style={cellHeight(ROW_HEIGHT.monthBanner)}
+                    className="overflow-hidden border-b border-border bg-muted/60 p-0"
+                  />
+                </TableRow>
+                <TableRow
+                  style={{ height: ROW_HEIGHT.dateRow }}
+                  className="hover:bg-transparent"
+                >
+                  <TableHead
+                    style={{
+                      ...cellHeight(ROW_HEIGHT.dateRow),
+                      left: stickyOf('index').left,
+                    }}
+                    className={
+                      'sticky z-20 overflow-hidden border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground' +
+                      (isLastSticky('index')
+                        ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                        : '')
+                    }
                   >
+                    #
+                  </TableHead>
+                  <TableHead
+                    style={{
+                      ...cellHeight(ROW_HEIGHT.dateRow),
+                      left: stickyOf('student').left,
+                    }}
+                    className={
+                      'sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                      (isLastSticky('student')
+                        ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                        : '')
+                    }
+                  >
+                    Student
+                  </TableHead>
+                  {showDetails && (
                     <TableHead
                       style={{
                         ...cellHeight(ROW_HEIGHT.dateRow),
-                        left: stickyOf('index').left,
+                        left: stickyOf('busCare').left,
                       }}
                       className={
-                        'sticky z-20 overflow-hidden border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground' +
-                        (isLastSticky('index')
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        (isLastSticky('busCare')
                           ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                           : '')
                       }
                     >
-                      #
+                      Bus / Student Care
                     </TableHead>
+                  )}
+                  {showDetails && canEditAcademics && (
                     <TableHead
                       style={{
                         ...cellHeight(ROW_HEIGHT.dateRow),
-                        left: stickyOf('student').left,
+                        left: stickyOf('academics').left,
                       }}
                       className={
-                        'sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
-                        (isLastSticky('student')
-                          ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        (isLastSticky('academics')
+                          ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                           : '')
                       }
                     >
-                      Student
+                      Academics
                     </TableHead>
-                    {showDetails && (
+                  )}
+                  {showDetails && canEditAdmin && (
+                    <TableHead
+                      style={{
+                        ...cellHeight(ROW_HEIGHT.dateRow),
+                        left: stickyOf('admin').left,
+                      }}
+                      className={
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        (isLastSticky('admin')
+                          ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                          : '')
+                      }
+                    >
+                      Admin
+                    </TableHead>
+                  )}
+                  {columns.map((c) => {
+                    const eventLabel = c.events.map((e) => e.label).join(' · ');
+                    const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
+                      c.label ? ` · ${c.label}` : ''
+                    }${eventLabel ? ` · ${eventLabel}` : ''}`;
+                    const isToday = c.iso === todayIso;
+                    return (
                       <TableHead
-                        style={{
-                          ...cellHeight(ROW_HEIGHT.dateRow),
-                          left: stickyOf('busCare').left,
-                        }}
+                        key={c.iso}
+                        ref={isToday ? todayHeaderRef : undefined}
+                        title={
+                          isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
+                        }
+                        style={cellHeight(ROW_HEIGHT.dateRow)}
                         className={
-                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
-                          (isLastSticky('busCare')
-                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                          'overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
+                          (c.drawMonthBoundary
+                            ? ' border-l-2 border-l-border'
+                            : '') +
+                          (isToday
+                            ? ' relative ring-2 ring-inset ring-brand-indigo'
                             : '')
                         }
                       >
-                        Bus / Student Care
-                      </TableHead>
-                    )}
-                    {showDetails && canEditAcademics && (
-                      <TableHead
-                        style={{
-                          ...cellHeight(ROW_HEIGHT.dateRow),
-                          left: stickyOf('academics').left,
-                        }}
-                        className={
-                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
-                          (isLastSticky('academics')
-                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
-                            : '')
-                        }
-                      >
-                        Academics
-                      </TableHead>
-                    )}
-                    {showDetails && canEditAdmin && (
-                      <TableHead
-                        style={{
-                          ...cellHeight(ROW_HEIGHT.dateRow),
-                          left: stickyOf('admin').left,
-                        }}
-                        className={
-                          'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
-                          (isLastSticky('admin')
-                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
-                            : '')
-                        }
-                      >
-                        Admin
-                      </TableHead>
-                    )}
-                    {columns.map((c) => {
-                      const eventLabel = c.events
-                        .map((e) => e.label)
-                        .join(' · ');
-                      const dayTypeTitle = `${DAY_TYPE_LABELS[c.dayType]}${
-                        c.label ? ` · ${c.label}` : ''
-                      }${eventLabel ? ` · ${eventLabel}` : ''}`;
-                      const isToday = c.iso === todayIso;
-                      return (
-                        <TableHead
-                          key={c.iso}
-                          ref={isToday ? todayHeaderRef : undefined}
-                          title={
-                            isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
-                          }
-                          style={cellHeight(ROW_HEIGHT.dateRow)}
-                          className={
-                            'overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
-                            (c.drawMonthBoundary
-                              ? ' border-l-2 border-l-border'
-                              : '') +
-                            (isToday
-                              ? ' relative ring-2 ring-inset ring-brand-indigo'
-                              : '')
-                          }
-                        >
-                          <div className="leading-tight">{c.iso.slice(-2)}</div>
-                          <div className="text-[9px] font-normal opacity-70">
-                            {c.weekday.slice(0, 3)}
-                          </div>
-                          {/* Column tag — resolveColumnTag picks the single
+                        <div className="leading-tight">{c.iso.slice(-2)}</div>
+                        <div className="text-[9px] font-normal opacity-70">
+                          {c.weekday.slice(0, 3)}
+                        </div>
+                        {/* Column tag — resolveColumnTag picks the single
                             most-informative tag: PH/SH/NC from day_type,
                             EX for exam events, SE for other events, HBL
                             for HBL days; plain school days are untagged.
                             Same ChartLegendChip rendered in the register
                             card's legend above so the column header and legend
                             chip read as the same affordance per §10. */}
-                          {c.tag && (
-                            <div className="mt-0.5 flex justify-center">
-                              <ChartLegendChip
-                                color={COLUMN_TAG_COLOR[c.tag]}
-                                label={c.tag}
-                                className="px-1 py-px text-[9px] tracking-[0.1em]"
-                              />
-                            </div>
-                          )}
-                        </TableHead>
-                      );
-                    })}
-                    <TableHead
-                      style={cellHeight(ROW_HEIGHT.dateRow)}
-                      className="overflow-hidden border-b border-border bg-muted/60 p-0"
-                    />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrolments.map((e) => {
-                    // Explicit (not inherited), fully OPAQUE background on
-                    // every sticky cell — a sticky cell paints in its own
-                    // layer, so any transparency lets the date columns
-                    // scrolling underneath show through (this previously
-                    // used bg-muted/10 and bg-muted/[0.04], which are both
-                    // ~90%+ transparent — nowhere near opaque enough, and
-                    // the actual cause of the roster column visually
-                    // "mixing" with the marks while scrolling). Matches the
-                    // proven sticky-cell convention in
-                    // term-sheet-summary-table.tsx: a flat bg-card, no
-                    // per-row alpha variation. Zebra striping / withdrawn
-                    // dimming stay on the non-sticky mark cells via the
-                    // <TableRow>'s own `odd:`/conditional classes below —
-                    // those aren't `position: sticky` so they don't have
-                    // this problem. Withdrawn signaling inside the sticky
-                    // cell itself is carried by the italic/dimmed text +
-                    // "Withdrawn" badge already rendered below, not by the
-                    // background.
-                    const rowStickyBg = 'bg-card';
-                    return (
-                      <TableRow
-                        key={e.enrolmentId}
-                        style={{ height: ROW_HEIGHT.body }}
+                        {c.tag && (
+                          <div className="mt-0.5 flex justify-center">
+                            <ChartLegendChip
+                              color={COLUMN_TAG_COLOR[c.tag]}
+                              label={c.tag}
+                              className="px-1 py-px text-[9px] tracking-[0.1em]"
+                            />
+                          </div>
+                        )}
+                      </TableHead>
+                    );
+                  })}
+                  <TableHead
+                    style={cellHeight(ROW_HEIGHT.dateRow)}
+                    className="overflow-hidden border-b border-border bg-muted/60 p-0"
+                  />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {enrolments.map((e) => {
+                  // Explicit (not inherited), fully OPAQUE background on
+                  // every sticky cell — a sticky cell paints in its own
+                  // layer, so any transparency lets the date columns
+                  // scrolling underneath show through (this previously
+                  // used bg-muted/10 and bg-muted/[0.04], which are both
+                  // ~90%+ transparent — nowhere near opaque enough, and
+                  // the actual cause of the roster column visually
+                  // "mixing" with the marks while scrolling). Matches the
+                  // proven sticky-cell convention in
+                  // term-sheet-summary-table.tsx: a flat bg-card, no
+                  // per-row alpha variation. Zebra striping / withdrawn
+                  // dimming stay on the non-sticky mark cells via the
+                  // <TableRow>'s own `odd:`/conditional classes below —
+                  // those aren't `position: sticky` so they don't have
+                  // this problem. Withdrawn signaling inside the sticky
+                  // cell itself is carried by the italic/dimmed text +
+                  // "Withdrawn" badge already rendered below, not by the
+                  // background.
+                  const rowStickyBg = 'bg-card';
+                  return (
+                    <TableRow
+                      key={e.enrolmentId}
+                      style={{ height: ROW_HEIGHT.body }}
+                      className={
+                        e.withdrawn
+                          ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
+                          : 'odd:bg-muted/[0.04] hover:bg-muted/20'
+                      }
+                    >
+                      <TableCell
+                        style={{
+                          ...cellHeight(ROW_HEIGHT.body),
+                          left: stickyOf('index').left,
+                        }}
                         className={
-                          e.withdrawn
-                            ? 'bg-muted/10 text-muted-foreground hover:bg-muted/10'
-                            : 'odd:bg-muted/[0.04] hover:bg-muted/20'
+                          'sticky z-10 overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground ' +
+                          rowStickyBg +
+                          (isLastSticky('index')
+                            ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            : '')
                         }
                       >
+                        {e.indexNumber}
+                      </TableCell>
+                      <TableCell
+                        style={{
+                          ...cellHeight(ROW_HEIGHT.body),
+                          left: stickyOf('student').left,
+                        }}
+                        className={
+                          'sticky z-10 overflow-hidden px-2 py-1 ' +
+                          rowStickyBg +
+                          (isLastSticky('student')
+                            ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            : '')
+                        }
+                      >
+                        <div
+                          className={
+                            'truncate text-[12px] font-medium text-foreground ' +
+                            (e.withdrawn ? 'opacity-60 italic' : '')
+                          }
+                          title={e.studentName}
+                        >
+                          {e.studentName}
+                        </div>
+                        <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-muted-foreground">
+                          {e.withdrawn && (
+                            <Badge
+                              variant="secondary"
+                              className="border-0 px-1.5 py-0 font-mono text-[10px] font-normal shadow-none"
+                            >
+                              Withdrawn
+                            </Badge>
+                          )}
+                          {e.busNo && (
+                            <Badge
+                              variant="secondary"
+                              className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                              title="Bus number"
+                            >
+                              <Bus aria-hidden /> {e.busNo}
+                            </Badge>
+                          )}
+                          {e.classroomOfficerRole && (
+                            <Badge
+                              variant="secondary"
+                              className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                              title="Classroom officer"
+                            >
+                              <Star aria-hidden /> {e.classroomOfficerRole}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      {showDetails && (
                         <TableCell
                           style={{
                             ...cellHeight(ROW_HEIGHT.body),
-                            left: stickyOf('index').left,
+                            left: stickyOf('busCare').left,
                           }}
                           className={
-                            'sticky z-10 overflow-hidden border-r border-border px-1 py-1 text-right font-mono tabular-nums text-muted-foreground ' +
+                            'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
                             rowStickyBg +
-                            (isLastSticky('index')
+                            (isLastSticky('busCare')
                               ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                               : '')
                           }
                         >
-                          {e.indexNumber}
+                          {canEditBusCare ? (
+                            <button
+                              type="button"
+                              className="w-full truncate text-left hover:underline"
+                              onClick={() =>
+                                setActiveMetaEnrolmentId(e.enrolmentId)
+                              }
+                            >
+                              {busCareLabel(e)}
+                            </button>
+                          ) : (
+                            busCareLabel(e)
+                          )}
                         </TableCell>
+                      )}
+                      {showDetails && canEditAcademics && (
                         <TableCell
                           style={{
                             ...cellHeight(ROW_HEIGHT.body),
-                            left: stickyOf('student').left,
+                            left: stickyOf('academics').left,
                           }}
                           className={
-                            'sticky z-10 overflow-hidden px-2 py-1 ' +
+                            'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
                             rowStickyBg +
-                            (isLastSticky('student')
-                              ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                            (isLastSticky('academics')
+                              ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                               : '')
                           }
                         >
-                          <div
-                            className={
-                              'truncate text-[12px] font-medium text-foreground ' +
-                              (e.withdrawn ? 'opacity-60 italic' : '')
+                          <button
+                            type="button"
+                            className="w-full truncate text-left hover:underline"
+                            onClick={() =>
+                              setActiveMetaEnrolmentId(e.enrolmentId)
                             }
-                            title={e.studentName}
                           >
-                            {e.studentName}
-                          </div>
-                          <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-muted-foreground">
-                            {e.withdrawn && (
-                              <Badge
-                                variant="secondary"
-                                className="border-0 px-1.5 py-0 font-mono text-[10px] font-normal shadow-none"
-                              >
-                                Withdrawn
-                              </Badge>
-                            )}
-                            {e.busNo && (
-                              <Badge
-                                variant="secondary"
-                                className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
-                                title="Bus number"
-                              >
-                                <Bus aria-hidden /> {e.busNo}
-                              </Badge>
-                            )}
-                            {e.classroomOfficerRole && (
-                              <Badge
-                                variant="secondary"
-                                className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
-                                title="Classroom officer"
-                              >
-                                <Star aria-hidden /> {e.classroomOfficerRole}
-                              </Badge>
-                            )}
-                          </div>
+                            {e.academicsNotes ?? '—'}
+                          </button>
                         </TableCell>
-                        {showDetails && (
+                      )}
+                      {showDetails && canEditAdmin && (
+                        <TableCell
+                          style={{
+                            ...cellHeight(ROW_HEIGHT.body),
+                            left: stickyOf('admin').left,
+                          }}
+                          className={
+                            'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
+                            rowStickyBg +
+                            (isLastSticky('admin')
+                              ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                              : '')
+                          }
+                        >
+                          <button
+                            type="button"
+                            className="w-full truncate text-left hover:underline"
+                            onClick={() =>
+                              setActiveMetaEnrolmentId(e.enrolmentId)
+                            }
+                          >
+                            {e.adminNotes ?? '—'}
+                          </button>
+                        </TableCell>
+                      )}
+                      {columns.map((c) => {
+                        const cell = cells.get(keyFor(e.enrolmentId, c.iso));
+                        const status = cell?.status ?? null;
+                        const exReason = cell?.exReason ?? null;
+                        const exNote = cell?.exNote ?? null;
+                        // Pre-enrollment: date is before the student's enrollment
+                        // date — cell should be dimmed and non-interactive. If
+                        // there is already a recorded entry, we still show it
+                        // dimmed rather than silently discarding it.
+                        const beforeEnrolment =
+                          !!e.enrollmentDate && c.iso < e.enrollmentDate;
+
+                        return (
                           <TableCell
-                            style={{
-                              ...cellHeight(ROW_HEIGHT.body),
-                              left: stickyOf('busCare').left,
-                            }}
+                            key={c.iso}
+                            title={
+                              beforeEnrolment
+                                ? 'Before enrolment date'
+                                : undefined
+                            }
+                            style={cellHeight(ROW_HEIGHT.body)}
                             className={
-                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
-                              rowStickyBg +
-                              (isLastSticky('busCare')
-                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
+                              'overflow-hidden p-0 text-center align-middle ' +
+                              (beforeEnrolment
+                                ? 'bg-muted/40 '
+                                : DAY_TYPE_CELL_BG[c.dayType]) +
+                              (c.drawMonthBoundary
+                                ? ' border-l-2 border-l-border'
                                 : '')
                             }
                           >
-                            {canEditBusCare ? (
-                              <button
-                                type="button"
-                                className="w-full truncate text-left hover:underline"
-                                onClick={() =>
-                                  setActiveMetaEnrolmentId(e.enrolmentId)
+                            {beforeEnrolment ? (
+                              // Dim cell for pre-enrollment dates. If data was
+                              // already recorded (edge-case: back-dated entry),
+                              // show the value dimmed but do not allow edits.
+                              <span
+                                className={
+                                  'block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-40 ' +
+                                  (status
+                                    ? statusCellWash(status)
+                                    : 'text-muted-foreground')
+                                }
+                                title={
+                                  status
+                                    ? `Before enrolment date · ${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
+                                    : 'Before enrolment date'
                                 }
                               >
-                                {busCareLabel(e)}
-                              </button>
+                                {status ?? '—'}
+                              </span>
+                            ) : !c.encodable ? (
+                              <span
+                                className="block px-1 py-1 text-[10px] text-muted-foreground"
+                                title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
+                              >
+                                —
+                              </span>
                             ) : (
-                              busCareLabel(e)
+                              <CellButton
+                                enrolmentId={e.enrolmentId}
+                                iso={c.iso}
+                                active={
+                                  activeCell?.enrolmentId === e.enrolmentId &&
+                                  activeCell?.iso === c.iso
+                                }
+                                withdrawn={e.withdrawn}
+                                status={status}
+                                exReason={exReason}
+                                exNote={exNote}
+                                onOpen={openCell}
+                              />
                             )}
                           </TableCell>
-                        )}
-                        {showDetails && canEditAcademics && (
-                          <TableCell
-                            style={{
-                              ...cellHeight(ROW_HEIGHT.body),
-                              left: stickyOf('academics').left,
-                            }}
-                            className={
-                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
-                              rowStickyBg +
-                              (isLastSticky('academics')
-                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
-                                : '')
-                            }
-                          >
-                            <button
-                              type="button"
-                              className="w-full truncate text-left hover:underline"
-                              onClick={() =>
-                                setActiveMetaEnrolmentId(e.enrolmentId)
-                              }
-                            >
-                              {e.academicsNotes ?? '—'}
-                            </button>
-                          </TableCell>
-                        )}
-                        {showDetails && canEditAdmin && (
-                          <TableCell
-                            style={{
-                              ...cellHeight(ROW_HEIGHT.body),
-                              left: stickyOf('admin').left,
-                            }}
-                            className={
-                              'sticky z-10 overflow-hidden border-l border-border px-2 py-1 text-[11px] text-foreground ' +
-                              rowStickyBg +
-                              (isLastSticky('admin')
-                                ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
-                                : '')
-                            }
-                          >
-                            <button
-                              type="button"
-                              className="w-full truncate text-left hover:underline"
-                              onClick={() =>
-                                setActiveMetaEnrolmentId(e.enrolmentId)
-                              }
-                            >
-                              {e.adminNotes ?? '—'}
-                            </button>
-                          </TableCell>
-                        )}
-                        {columns.map((c) => {
-                          const cell = cells.get(keyFor(e.enrolmentId, c.iso));
-                          const status = cell?.status ?? null;
-                          const exReason = cell?.exReason ?? null;
-                          const exNote = cell?.exNote ?? null;
-                          // Pre-enrollment: date is before the student's enrollment
-                          // date — cell should be dimmed and non-interactive. If
-                          // there is already a recorded entry, we still show it
-                          // dimmed rather than silently discarding it.
-                          const beforeEnrolment =
-                            !!e.enrollmentDate && c.iso < e.enrollmentDate;
+                        );
+                      })}
+                      <TableCell
+                        style={cellHeight(ROW_HEIGHT.body)}
+                        className="overflow-hidden bg-background p-0"
+                      />
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
 
-                          return (
-                            <TableCell
-                              key={c.iso}
-                              title={
-                                beforeEnrolment
-                                  ? 'Before enrolment date'
-                                  : undefined
-                              }
-                              style={cellHeight(ROW_HEIGHT.body)}
-                              className={
-                                'overflow-hidden p-0 text-center align-middle ' +
-                                (beforeEnrolment
-                                  ? 'bg-muted/40 '
-                                  : DAY_TYPE_CELL_BG[c.dayType]) +
-                                (c.drawMonthBoundary
-                                  ? ' border-l-2 border-l-border'
-                                  : '')
-                              }
-                            >
-                              {beforeEnrolment ? (
-                                // Dim cell for pre-enrollment dates. If data was
-                                // already recorded (edge-case: back-dated entry),
-                                // show the value dimmed but do not allow edits.
-                                <span
-                                  className={
-                                    'block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-40 ' +
-                                    (status
-                                      ? statusCellWash(status)
-                                      : 'text-muted-foreground')
-                                  }
-                                  title={
-                                    status
-                                      ? `Before enrolment date · ${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
-                                      : 'Before enrolment date'
-                                  }
-                                >
-                                  {status ?? '—'}
-                                </span>
-                              ) : !c.encodable ? (
-                                <span
-                                  className="block px-1 py-1 text-[10px] text-muted-foreground"
-                                  title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
-                                >
-                                  —
-                                </span>
-                              ) : (
-                                <CellButton
-                                  enrolmentId={e.enrolmentId}
-                                  iso={c.iso}
-                                  active={
-                                    activeCell?.enrolmentId === e.enrolmentId &&
-                                    activeCell?.iso === c.iso
-                                  }
-                                  withdrawn={e.withdrawn}
-                                  status={status}
-                                  exReason={exReason}
-                                  exNote={exNote}
-                                  onOpen={openCell}
-                                />
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell
-                          style={cellHeight(ROW_HEIGHT.body)}
-                          className="overflow-hidden bg-background p-0"
-                        />
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Card>
-        <PopoverContent align="center" sideOffset={6} className="w-72">
-          {activeEnrolment && activeCell && (
-            <CellMarkPalette
-              // Keyed on the cell so moving to another one remounts the
-              // palette. Its draft state — the note being typed, and whether
-              // the excused reasons have been opened without a reason chosen
-              // yet — belongs to ONE cell, and React would otherwise reuse the
-              // instance and carry it across.
-              key={`${activeCell.enrolmentId}|${activeCell.iso}`}
-              studentName={activeEnrolment.studentName}
-              dateLabel={cellDateLabel(activeCell.iso)}
-              status={activeCellState?.status ?? null}
-              exReason={activeCellState?.exReason ?? null}
-              exNote={activeCellState?.exNote ?? null}
-              canWriteNc={canWriteNc}
-              filing={
-                filingsByCell?.[
-                  `${activeCell.enrolmentId}|${activeCell.iso}`
-                ] ?? null
-              }
-              vlUsed={activeEnrolment.vlUsedThisTerm}
-              vlAllowance={activeEnrolment.vlAllowance}
-              compassionateUsed={activeEnrolment.compassionateUsed}
-              compassionateAllowance={activeEnrolment.compassionateAllowance}
-              onPick={(status, exReason, exNote) => {
-                void writeCell(
-                  activeCell.enrolmentId,
-                  activeCell.iso,
-                  status,
-                  exReason,
-                  exNote
-                );
-                // Present, Absent, Late, No class and a clear are each one
-                // decision, so the popover closes and the teacher moves on —
-                // that is the fast bulk-encoding path and it must stay one
-                // click. (A clear arrives as `null`, which is not 'EX', so it
-                // closes with the rest — and it should: the panel's whole
-                // lower half is about a mark that no longer exists.)
-                //
-                // Excused is not one decision: it is a mark, then a reason,
-                // then possibly a note. Closing after the first of those threw
-                // the teacher out of the cell and made them re-open it twice
-                // to finish. So EX keeps the popover open, and they leave it
-                // the way they leave any popover — Esc, or clicking the next
-                // cell, which opens that one in the same motion.
-                if (status !== 'EX') setActiveCell(null);
-              }}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
+      {/* One shared cell-mark dialog for the whole register (single portal;
+          the per-cell control is a plain button). It is rendered only while a
+          cell is active so its internal draft state — the note being typed,
+          and whether the excused reasons have been opened without a reason
+          chosen yet — cannot survive into the next cell. The key does the same
+          job for a move from one open cell straight to another. */}
+      {activeEnrolment && activeCell && (
+        <CellMarkDialog
+          key={`${activeCell.enrolmentId}|${activeCell.iso}`}
+          open
+          onOpenChange={(o) => {
+            if (!o) setActiveCell(null);
+          }}
+          studentName={activeEnrolment.studentName}
+          indexNumber={activeEnrolment.indexNumber}
+          dateLabel={cellDateLabel(activeCell.iso)}
+          status={activeCellState?.status ?? null}
+          exReason={activeCellState?.exReason ?? null}
+          exNote={activeCellState?.exNote ?? null}
+          filing={
+            filingsByCell?.[`${activeCell.enrolmentId}|${activeCell.iso}`] ??
+            null
+          }
+          vlUsed={activeEnrolment.vlUsedThisTerm}
+          vlAllowance={activeEnrolment.vlAllowance}
+          compassionateUsed={activeEnrolment.compassionateUsed}
+          compassionateAllowance={activeEnrolment.compassionateAllowance}
+          onPick={(status, exReason, exNote) => {
+            void writeCell(
+              activeCell.enrolmentId,
+              activeCell.iso,
+              status,
+              exReason,
+              exNote
+            );
+            // Present, Absent, Late and a clear are each one decision, so the
+            // dialog closes and the teacher moves on — that is the fast
+            // bulk-encoding path and it must stay one click. (A clear arrives
+            // as `null`, which is not 'EX', so it closes with the rest — and
+            // it should: the dialog's whole lower half is about a mark that no
+            // longer exists.)
+            //
+            // Excused is not one decision: it is a mark, then a reason, then
+            // possibly a note. Closing after the first of those threw the
+            // teacher out of the cell and made them re-open it twice to
+            // finish. So EX keeps the dialog open, and they leave it the way
+            // they leave any dialog — Esc, the close button, or clicking
+            // outside it.
+            if (status !== 'EX') setActiveCell(null);
+          }}
+        />
+      )}
 
       {/* One shared roster-metadata editor sheet — anchored to whichever
           row's Bus/Academics/Admin cell was clicked (single portal; mirrors
@@ -1199,9 +1223,20 @@ export function AttendanceWideGrid({
 }
 
 // The per-cell control: a plain button showing the canonical letter on its
-// paper-palette wash. Clicking opens the one shared marking popover; when this
-// cell is the active one it becomes the popover's anchor. Withdrawn cells render
-// a non-interactive letter (no marking). Replaces the old native <select>.
+// paper-palette wash. Clicking opens the one shared marking dialog; when this
+// cell is the active one it carries the ring that says so. Withdrawn cells
+// render a non-interactive letter (no marking). Replaces the old native
+// <select>.
+//
+// ⚠ THE RING IS THE FEATURE, not decoration (2026-08-31). The editor used to
+// be a popover floating beside its cell, and Mr Ace's first complaint about it
+// was that "there is no indicator which cell is open" — true, and at ~1,410
+// cells there is no recovering that from proximity. A dialog sits in the
+// middle of the screen, so this ring is now the ONLY thing on screen naming
+// the day being edited. `ring-inset` (not an offset ring) because the cell has
+// `overflow: hidden` and a ring drawn outside the box would be clipped away;
+// indigo on an inset ring stays legible over all four paper washes AND over an
+// empty white cell, which a wash-tinted highlight would not.
 //
 // Memoized: at HFSE scale (~1,410 cells) an unmemoized CellButton re-renders
 // every cell on every grid re-render (e.g. a single `writeCell` optimistic
@@ -1236,8 +1271,18 @@ const CellButton = memo(function CellButton({
     ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}${hasNote ? ` — ${exNote}` : ''}`
     : 'Mark attendance';
 
-  const inner = (
-    <div className={'relative ' + statusCellWash(status)}>
+  return (
+    <div
+      // `active` is a primitive prop, so the memo above still short-circuits
+      // every cell that is not the open one — only two cells re-render when
+      // the teacher moves from one day to the next.
+      data-active={active || undefined}
+      className={
+        'relative ' +
+        statusCellWash(status) +
+        (active ? ' z-10 ring-2 ring-primary ring-inset' : '')
+      }
+    >
       {withdrawn ? (
         <span className="block px-1 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] opacity-60">
           {label}
@@ -1270,6 +1315,4 @@ const CellButton = memo(function CellButton({
       )}
     </div>
   );
-
-  return active ? <PopoverAnchor asChild>{inner}</PopoverAnchor> : inner;
 });
