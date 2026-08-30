@@ -30,6 +30,7 @@ import {
   Sparkles,
   SquarePen,
   Tag,
+  TrendingUp,
   Users,
   UserX,
   XCircle,
@@ -128,13 +129,29 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     icon: CalendarCheck,
     primaryHref: '/attendance',
     fallbackIcon: CalendarCheck,
+    // Every row carries its own icon. Four of these used to resolve to
+    // CalendarCheck — Sections and Summary said so explicitly, Declarations
+    // and Insights were absent and fell through to `fallbackIcon` — so most
+    // of the module's nav was one repeated glyph and the icons named the
+    // module rather than the destination. Each now says what the row is:
+    // a roster, a filed document, a trend, a date range.
     iconByHref: {
       '/attendance': LayoutDashboard,
-      '/attendance/sections': CalendarCheck,
+      // The class roster you open to mark — same icon, same meaning, as
+      // '/markbook/sections'.
+      '/attendance/sections': Users,
+      // A parent-filed document waiting on a decision. Deliberately the same
+      // icon P-Files gives '/p-files/document-validation', which is the same
+      // idea in another module.
+      '/attendance/declarations': FileCheck,
+      // The app's established insights glyph — the Insights pages themselves
+      // head their hero with TrendingUp.
+      '/attendance/insights': TrendingUp,
       '/sis/calendar': CalendarDays,
       '/attendance/import': FileUp,
       '/attendance/audit-log': History,
-      '/attendance/summary': CalendarCheck,
+      // Term-wide, read across a span of dates rather than marked on one.
+      '/attendance/summary': CalendarRange,
     },
     // No quick action for any role — teacher's would-be target (Sections)
     // is already the second row of nav, right under Dashboard, with an
