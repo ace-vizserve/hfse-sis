@@ -64,10 +64,11 @@ type Exemption = { decided: string; why: string };
  * converts.
  */
 const NOT_CONVERTED: Record<string, Exemption> = {
-  'components/grading/score-entry-grid.tsx': {
-    decided: '2026-08-16',
-    why: 'Tier-3 autosave — saves per cell as the teacher types. A pending toast per cell would be a serious regression; it applies the server response to the row directly and coalesces the stats refresh through useDebouncedRefresh instead.',
-  },
+  // components/grading/score-entry-grid.tsx was exempt here until 2026-08-30.
+  // The exemption argued that a pending toast per cell would be a regression,
+  // which was true only while the grid accepted a burst of cells. It no longer
+  // does: a save now makes the whole grid inert until it lands, so there is at
+  // most one save in flight and exactly one toast for it.
   'components/grading/annual-letter-input.tsx': {
     decided: '2026-08-16',
     why: 'Tier-3 autosave holding its own state — there is no server-rendered copy of the value to go stale, so it needs no refresh and reports failures only.',
@@ -350,14 +351,9 @@ describe('a converted file does not also do it the old way', () => {
 describe('the exempt files still do the thing that exempts them', () => {
   // This is what stops the allowlist becoming a lie. It cannot be satisfied by
   // editing the allowlist alone — the file itself has to still be autosave.
-  it('score-entry-grid still coalesces its refresh', () => {
-    const source = readFileSync(
-      join(REPO_ROOT, 'components/grading/score-entry-grid.tsx'),
-      'utf8'
-    );
-    expect(source.includes('useDebouncedRefresh')).toBe(true);
-  });
-
+  // score-entry-grid had a proof here — "still coalesces its refresh" — for as
+  // long as it was exempt. It converted on 2026-08-30, so the proof went with
+  // the exemption rather than being weakened to keep it green.
   it('annual-letter-input still holds its own state instead of refreshing', () => {
     const source = readFileSync(
       join(REPO_ROOT, 'components/grading/annual-letter-input.tsx'),

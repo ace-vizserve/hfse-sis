@@ -272,9 +272,15 @@ describe('ScoreEntryGrid — first-score label gate', () => {
 
   // The "Graded n/N · % complete" card is computed by the page's server
   // component, so before this it sat at its page-load value while the teacher
-  // filled the grid. One coalesced refresh once entry goes idle — never one per
-  // cell, which would re-run the whole server render per keystroke.
-  it('refreshes the server-rendered stat cards after a saved score, debounced', async () => {
+  // filled the grid.
+  //
+  // The refresh used to be debounced, to coalesce a burst of cells into one
+  // server render. It is not any more: the grid now goes inert for the
+  // duration of a save (useWriteAction awaits the refresh before it reports
+  // success), so there is no burst left to coalesce — one save, one refresh,
+  // and the success toast lands only once the new numbers are really on
+  // screen.
+  it('refreshes the server-rendered stat cards as part of the save', async () => {
     refreshMock.mockClear();
     const fetchSpy = stubFetch(() =>
       Promise.resolve(okEntryResponse({ ww_scores: [8] }))
@@ -287,12 +293,39 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     await typeAndBlur(aliceWw, '8');
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
 
-    // Not immediately — the whole point is to coalesce a burst.
-    expect(refreshMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    // The save reports itself through the standard lifecycle now, rather than
+    // through the inline "Saving…" chip this replaced.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Saved.'));
+  });
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1), {
-      timeout: 4000,
+  // A score grid is typed blind — tab, type, tab — so the failure to prevent
+  // is a second cell being committed on top of an unresolved save. The grid
+  // refuses it outright while one is in flight, and says so with `aria-busy`
+  // for anyone who cannot see the blur.
+  it('marks itself busy while a save is in flight, and releases when it lands', async () => {
+    let release!: (v: Response) => void;
+    stubFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        })
+    );
+    const { container } = renderGrid({
+      rows: [alice({ ww_scores: [5] }), bob({ ww_scores: [10] })],
     });
+    const grid = container.querySelector('[aria-busy]') as HTMLElement;
+    expect(grid.getAttribute('aria-busy')).toBe('false');
+
+    const [aliceWw] = scoreInputs(container);
+    await typeAndBlur(aliceWw, '8');
+
+    await waitFor(() => expect(grid.getAttribute('aria-busy')).toBe('true'));
+    expect(grid.className).toContain('pointer-events-none');
+
+    release(okEntryResponse({ ww_scores: [8] }));
+    await waitFor(() => expect(grid.getAttribute('aria-busy')).toBe('false'));
+    expect(grid.className).not.toContain('pointer-events-none');
   });
 
   it('editing an existing non-null score on the same cell never opens the dialog', async () => {

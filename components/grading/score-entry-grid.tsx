@@ -553,22 +553,22 @@ export function ScoreEntryGrid({
               );
             }
           },
-          // The two approval voices are kept exactly as they were, because
-          // neither is "Saved." — one says a change request was consumed, the
-          // other that a correction is now on the activity history. They raise
-          // their own toast and return `null`, which is how useWriteAction is
-          // told the surface has already reported the outcome, so exactly one
-          // toast lands per save.
+          // The two approval voices are kept word for word, because neither is
+          // "Saved." — one says a change request was consumed, the other that
+          // a correction is now on the activity history.
+          //
+          // They are RETURNED rather than raised here with their own
+          // toast.success. Same wording, same single toast, but returning them
+          // keeps them on the helper's clock: the message lands only after the
+          // refresh has committed, which is the whole point of routing through
+          // it. Raising them inline would put the approval branches back on
+          // the old timing while the ordinary save moved forward.
           success: () => {
             if ('change_request_id' in extraPayload) {
-              toast.success(
-                'Change request applied — teacher will be notified'
-              );
-              return null;
+              return 'Change request applied — teacher will be notified';
             }
             if ('correction_reason' in extraPayload) {
-              toast.success('Correction logged on activity history');
-              return null;
+              return 'Correction logged on activity history';
             }
             return 'Saved.';
           },
@@ -744,7 +744,20 @@ export function ScoreEntryGrid({
   );
 
   return (
-    <div className="space-y-3">
+    // The whole grid goes inert and softens while a cell is saving. Score
+    // entry is fast and typed blind — tab, type, tab — so the risk is not
+    // that the teacher waits, it is that they have already typed into the
+    // next cell before the previous one lands. `pointer-events-none` refuses
+    // the second edit outright; the blur and the fade are what make the
+    // refusal legible rather than a click that mysteriously did nothing.
+    // `aria-busy` says the same thing to a screen reader, which cannot see
+    // either.
+    <div
+      aria-busy={isSaving}
+      className={`space-y-3 transition ${
+        isSaving ? 'pointer-events-none select-none opacity-60 blur-[1px]' : ''
+      }`}
+    >
       <ScoringGuide
         wwTotals={wwTotals}
         ptTotals={ptTotals}
