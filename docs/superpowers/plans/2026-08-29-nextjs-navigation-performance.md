@@ -1,5 +1,64 @@
 # Next.js Navigation Performance — Plan
 
+## ✅ EXECUTED 2026-08-30 — read this before the plan below
+
+All four phases ran. 31 commits, merged to local `main` (`cb01598d`, `--no-ff`),
+branch `perf/next-16-3-upgrade` deleted. **Nothing pushed.** Build exits 0,
+`tsc` 0, tests green.
+
+🔴 **THE PROBLEM THIS PLAN EXISTED TO SOLVE DID NOT EXIST.** The slow
+navigation was `next dev` compiling routes on demand, not the app. Measured
+same-machine on `/login`: **dev 315ms cold / 78ms warm, production 33ms cold /
+27ms warm** — and that is the floor, since `/login` was already compiled in dev.
+Confirmed in a browser against a production build. **Build and measure before
+investigating a page that "feels slow".**
+
+| Phase                   | Outcome                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — Skeleton system     | ✅ Shipped, design signed off from a mockup. Fill is `bg-border` (neutral); the first pass used `bg-accent` and came out blue — rejected on sight. |
+| 1 — Nested Suspense     | ✅ Shipped on report-cards (2 boundaries), staff (1), classroom (1). Classroom deliberately not decomposed further.                                |
+| 2 — Instant Navigations | ✅ On, but only after a **reverted first attempt**. See below.                                                                                     |
+| 3 — Crossfade           | 🔴 **Built, then REMOVED.** It animates client-side updates only, so it never fired on a page load. Do not rebuild.                                |
+
+**Phase 2 is the lesson.** The first attempt (`9683124c`) flipped the two flags
+and silenced the fallout with `export const instant = false` on the **root**
+layout. That opts out every route beneath it, so the app paid the whole cost of
+the stricter model and got none of the benefit — reverted in `5443d3de`. The
+second attempt (`d78616a1`) **migrated** the root layout instead (its session
+read now sits behind Suspense, plus `await connection()` because the assignment
+lookup reaches `new Date()`), and put `instant = false` on the **10 module
+layouts** — Next's guidance is to place it "as low as possible". Validation is
+`manual-warning`, so routes opt in one at a time.
+
+⚠ **Every module is still opted out, so no page is faster than before.** What
+changed is that the root no longer blocks the app, so per-route migration is now
+possible. Do not start that work to fix perceived slowness — see the measurement
+above.
+
+**Two corrections to this plan's own text, both proven from source:**
+
+1. _"Validation is development-only and never blocks the build"_ — **true of the
+   Partial Prefetching insight, FALSE of Cache Components**, which failed the
+   build outright. The predicted `new Date()` failure never appeared at build
+   time; the real blockers were one stale `export const dynamic` and the root
+   layout's cookie read.
+2. _"Server Actions — the stated win does not exist"_ — **wrong as a general
+   claim.** It is true of `revalidateTag`, which the app calls with the `'max'`
+   profile 36 times, and Next only re-renders when there is no profile
+   (`max.expire` is 31536000). But **`updateTag` passes no profile** and exists
+   precisely for read-your-own-writes. The win is real via `updateTag`, which
+   only works inside a Server Action. Auto-save is queued as follow-up work.
+
+**Delivered beyond the plan:** all **58** `loading.tsx` files rebuilt on the
+archetypes, which surfaced three loaders painting a _second_ copy of chrome
+their layout already renders, two rendering at the wrong width, three drawing
+full pages for redirect stubs, and several missing pagination bars. Plus the
+p-files drill cache, which had **never once cached** (2.63MB against a 2MB
+ceiling, recomputing ~1.3s per request), and a `/login` copyright year that
+would have frozen at build time.
+
+---
+
 **Rewritten 2026-08-30.** The previous version was 4,300 lines across four phases. This is three, and it is short on purpose: the old plan's bulk is why nobody read it and why two of its phases were never verified.
 
 **Goal:** pages arrive in pieces instead of all at once.
