@@ -73,7 +73,7 @@ export default async function StaffAssignmentsPage({
   // already in hand while the staffing reads are still in flight.
   return (
     <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
-      <Suspense fallback={<StaffAssignmentsFallback />}>
+      <Suspense fallback={<StaffAssignmentsFallback viewOnly={viewOnly} />}>
         <Crossfade>
           <StaffAssignmentsBody
             ayCode={ayCode}
@@ -285,7 +285,7 @@ async function StaffAssignmentsBody({
  * roughly two dozen accounts. No widths are pinned because no column declares
  * one — inventing them here would cause the shift this file exists to avoid.
  */
-function StaffAssignmentsFallback() {
+function StaffAssignmentsFallback({ viewOnly }: { viewOnly: boolean }) {
   return (
     <>
       {/* `grid`, not `className`: it REPLACES the default grid rather than
@@ -311,12 +311,20 @@ function StaffAssignmentsFallback() {
             <SkeletonText variant="title" className="w-[168px]" />
           </div>
           {/* Where the AySwitcher lands — same height and width, so the title
-              row keeps its shape. */}
+              row keeps its shape. The "View only" badge has to be reserved
+              too: it renders whenever a past year is selected, and `viewOnly`
+              is already settled in the gate above the boundary, so leaving it
+              out would shift the title row on ?ay=AY2025. */}
           <CardAction className="flex items-center gap-2 self-center">
+            {viewOnly && <Skeleton className="h-8 w-[86px]" />}
             <Skeleton className="h-9 w-[128px]" />
           </CardAction>
         </CardHeader>
         <CardContent>
+          {/* No `pagination`: StaffTable sets `hidePagination={rows.length
+              <= 20}` and AY2026 has 19 teacher accounts, so the footer bar
+              does not render. If staffing grows past 20 this needs
+              `pagination` — it is a real ~45px of layout. */}
           <SkeletonTable columns={4} rows={12} />
         </CardContent>
       </Card>

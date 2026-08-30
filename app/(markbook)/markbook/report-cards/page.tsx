@@ -629,7 +629,11 @@ function PublicationsOverviewFallback() {
       <div className="@container/main">
         <SkeletonCards count={4} grid={KPI_GRID_CLASS} />
       </div>
-      <SkeletonTable columns={7} rows={10} />
+      {/* `pagination`: AllPublicationsOverview sets pageSize={25} and never
+          hides the footer bar, so it renders whenever there is a row — and it
+          lives inside the table's border, so leaving it out shifts everything
+          below it when the data lands. */}
+      <SkeletonTable columns={7} rows={10} pagination />
     </>
   );
 }

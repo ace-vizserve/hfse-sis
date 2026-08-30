@@ -94,16 +94,23 @@ function cellWidth(row: number, col: number) {
  *                the typical roster length for an unpaginated table.
  * @param toolbar Draw the search/filter strip above the table. `DataTable`
  *                renders one unless it was explicitly turned off.
+ * @param pagination Draw the footer bar. `DataTable` renders it whenever
+ *                `hidePagination` is false AND there is at least one row, and
+ *                it lives INSIDE the bordered shell — so omitting it when the
+ *                real table has one shoves everything below up by ~45px the
+ *                moment data lands.
  */
 export function SkeletonTable({
   columns = 5,
   rows = 8,
   toolbar = true,
+  pagination = false,
   className,
 }: {
   columns?: number | readonly string[];
   rows?: number;
   toolbar?: boolean;
+  pagination?: boolean;
   className?: string;
 }) {
   const widths = Array.isArray(columns) ? columns : undefined;
@@ -119,7 +126,12 @@ export function SkeletonTable({
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-hairline">
+      {/* Shell classes copied from `DataTable`'s own wrapper
+          (components/ui/data-table/index.tsx) — `rounded-lg border-border`,
+          NOT `rounded-xl border-hairline`. `--av-hairline` has no `.dark`
+          value, so a hairline border here would draw a bright outline on a
+          dark card and then snap dark when the real table replaced it. */}
+      <div className="overflow-hidden rounded-lg border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -145,6 +157,13 @@ export function SkeletonTable({
             ))}
           </TableBody>
         </Table>
+
+        {pagination ? (
+          <div className="flex items-center justify-between gap-4 border-t border-border bg-muted/20 px-1 py-2">
+            <SkeletonText variant="micro" className="ml-2 w-[140px]" />
+            <Skeleton className="mr-2 h-7 w-[160px]" />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -255,7 +274,10 @@ export function SkeletonDetail({
         <SkeletonCards
           count={stats}
           footer={false}
-          className={cn(
+          // `grid`, not `className` — see SkeletonCards. Merging would leave
+          // DEFAULT_CARD_GRID's `lg:grid-cols-4` live, so a 2- or 3-stat
+          // fallback would lay out in four columns above 1024px.
+          grid={cn(
             'grid grid-cols-1 gap-4',
             stats === 2 && 'sm:grid-cols-2',
             stats === 3 && 'sm:grid-cols-3',
