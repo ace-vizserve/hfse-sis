@@ -192,7 +192,13 @@ approved as part of this plan.
 - **View transitions.** Of the four patterns, the flagship shared-element morph
   still has **zero surface** here (no images; every list→detail pair is text-row
   → text-card) and directional slides still mis-model the module-switcher
-  lattice. The `Crossfade` wrapper on Suspense reveals is the one worthwhile
+  lattice. ⚠ **"Morphs have zero surface here" was too broad and is corrected:**
+  the blog's §2 uses the SAME component for a **layout** morph with no images at
+  all — each keyed row wrapped in `<ViewTransition key={row.id}>` so that
+  removing one animates the rows below into their new positions instead of
+  jumping. This app is full of tables that filter, sort and delete rows, so that
+  variant **does** apply; only the shared-element (thumbnail→hero) morph does
+  not. The `Crossfade` wrapper on Suspense reveals is still the first worthwhile
   piece, and it is worth more **after** Phase 2, since it animates the handoff
   to skeletons that must exist first. ⚠ Also note `::view-transition
 { pointer-events: none }` — without it, clicks during a transition are lost —
@@ -213,3 +219,80 @@ approved as part of this plan.
 Components is never going to be adopted, those five files should be left alone.
 Confirm before executing Phase 3, or defer it into the Phase 4 plan where it
 belongs.
+
+---
+
+## Appendix A — every mechanism in the two documents, and its status here
+
+Reference only; **nothing here is scope.** It exists so a future session does
+not re-read thirteen documents to re-derive it. Status measured 2026-08-29 on
+`next@16.2.10`.
+
+| #   | Mechanism                                    | What it buys                                         | Status in this app                                                    |
+| --- | -------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
+| 1   | `cacheComponents: true`                      | Prerendered shell per route, paints before data      | Available on 16.2.10; blocked only by effort, not by auth (§2.2)      |
+| 2   | `partialPrefetching: true`                   | Pulls that shell to the browser pre-click            | **16.3 only** — absent from the installed config schema               |
+| 3   | `'use cache'`                                | Reuses a read instead of re-querying per render      | Exported, **0 usages**                                                |
+| 4   | `cacheLife()`                                | Freshness profile for a cached read                  | Exported, **0 usages**                                                |
+| 5   | `cacheTag()`                                 | Tags a cached read for later expiry                  | Exported, **0 usages**                                                |
+| 6   | `updateTag()`                                | Expires **and** refreshes in one action              | 🔴 Unusable — Server-Actions-only, and there are none (§2.1)          |
+| 7   | `'use cache: private'`                       | Caches a function that reads `cookies()`/`headers()` | The answer to the auth objection; browser-only, never server-side     |
+| 8   | `<Link prefetch={true}>`                     | Resolves `params`/`searchParams` before the click    | Prop plumbed in `components/ui/identifier-link.tsx`, **never passed** |
+| 9   | Default `<Link>` prefetch                    | One App Shell per route, shared across links         | Active, but there is no shell to fetch until #1                       |
+| 10  | Nested `<Suspense>`                          | Top-down settling; kills layout shift                | Not used — boundaries are siblings                                    |
+| 11  | `useTransition`                              | Action + server update as one pending operation      | Present via `useWriteAction` (KD #186)                                |
+| 12  | `useOptimistic`                              | Renders the change before the save lands             | **0 usages**; assumes Server Actions                                  |
+| 13  | `useActionState`                             | Orders repeated mutations, keeps pending on screen   | Not used; assumes Server Actions                                      |
+| 14  | Provider in a shared layout                  | State survives navigation, no refetch                | Partially                                                             |
+| 15  | `useOffline` + `experimental.useOffline`     | Retries dropped requests instead of throwing         | Experimental; the guide says **not for production**                   |
+| 16  | SWR / TanStack + server `preload`            | Kills the client waterfall on live data              | Not used; no shared-browser-cache requirement today                   |
+| 17  | `@next/playwright` `instant()`               | E2E assertion that the prefetched UI is visible      | **Not installed** — the suite is vitest-only, no Playwright at all    |
+| 18  | `::view-transition { pointer-events: none }` | Without it, clicks during a transition are **lost**  | N/A until transitions exist — but mandatory the day they do           |
+| 19  | Header anchoring (`viewTransitionName`)      | Stops the header sliding with the content            | **9 module layouts** have sticky headers; all would need it           |
+| 20  | `transitionTypes` on `<Link>` / `useRouter`  | Tags a navigation forward or back                    | Mis-models the module-switcher lattice (§6)                           |
+
+### Details that cost the most to re-derive
+
+- **The morph only fires if the destination is already prefetched.** If it
+  suspends to a fallback first, no pair forms and the content plays its enter
+  animation instead. This ties animation work to prefetching work — they are not
+  independent.
+- **`default="none"` with no `share` prop silently stops a named pair
+  morphing.** Keep the explicit `share` whenever you add `default="none"`.
+- **Put a directional wrapper in `page.tsx`, never `layout.tsx`** — layouts
+  persist across navigations, so `enter`/`exit` never fire there.
+- **Browser back/forward carries no transition type**, so directional slides do
+  not play on it; a shared-element morph still does.
+- **Cache Components changes prefetch semantics**: with `partialPrefetching`, a
+  visible `<Link prefetch={true}>` costs **one server invocation per link** — a
+  grid of 25 rows is 25 invocations. The hover-triggered pattern
+  (`prefetch={active ? null : false}` set on `onMouseEnter`) is the documented
+  way to avoid that.
+- **`cacheLife` thresholds that gate behaviour:** `stale` must be **≥ 30s** for
+  per-link prefetching to work at all, and **≥ 5 minutes** for content to reach
+  the App Shell. Below 30s the scope silently drops out of prefetching.
+- **Cache keys and `cacheTag` values are stored in PLAIN TEXT.** Key on a stable
+  identifier such as a user id; never put tokens, raw emails or other personal
+  data in a cache key or tag.
+- **Streaming / Web Vitals:** an LCP element inside a Suspense boundary cannot
+  paint until that boundary resolves, so keep LCP elements **outside** boundaries;
+  skeletons must match the dimensions of what replaces them or they cause CLS;
+  each boundary is a hydration unit, which is what improves INP. And "if there is
+  a Suspense boundary, React might use it" — do not add one you do not need.
+- **The HTTP contract:** once streaming starts the status code is already sent, so
+  a `notFound()` mid-stream cannot become a 404 (Next injects
+  `<meta name="robots" content="noindex">` instead) and a `redirect()` becomes a
+  client-side redirect. Put `notFound()` **before** any `await` or boundary to get
+  a real status code.
+- **`instant = false` does NOT clear synchronous-IO build errors.** `new Date()`,
+  `Date.now()`, `Math.random()`, `crypto.randomUUID()` during prerender fail the
+  build regardless of the opt-out. This is why §6's Phase 3 is un-deferrable
+  entry-fee work rather than something the codemod can postpone.
+- **Five adoption skills exist:** `next-cache-components-adoption`,
+  `next-partial-prefetching-adoption`, `next-cache-components-optimizer`,
+  `next-dev-loop`, and `vercel-react-view-transitions`. The first two work
+  route-by-route and check in at each feature boundary.
+- **Tooling that only exists under Cache Components:** the dev-overlay validation
+  insights (which name the blocking component and offer Stream/Cache/Block fixes)
+  and the **Navigation Inspector**, which freezes a navigation so you can see the
+  actual shell. The entire migration workflow is built around both.
