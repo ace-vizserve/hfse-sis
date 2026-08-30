@@ -21,6 +21,7 @@ import {
   getCompassionateUsage,
   getDailyForStudent,
   getMonthlyBreakdown,
+  isMarked,
 } from '@/lib/attendance/queries';
 
 // Status tone — gradient bg per the project's "we don't do flats" rule
@@ -140,10 +141,22 @@ export async function StudentAttendanceTab({
   // homeroom attendance), show all.
   const sections = await Promise.all(
     enrolments.map(async (e) => {
-      const [daily, monthly] = await Promise.all([
+      const [allDays, monthly] = await Promise.all([
         getDailyForStudent(e.sectionStudentId),
         getMonthlyBreakdown(e.sectionStudentId),
       ]);
+      // FILTERED ONCE HERE, so `summarise` and `groupByMonth` keep their
+      // narrow row types instead of each learning about null. A cleared day
+      // (status null, migration 134) is NOT MARKED: it must not be totalled,
+      // and it must not appear as a row in the log — there is no mark to show
+      // and the chip would have no status to render.
+      //
+      // `daily` is the filtered list on purpose, because the only other thing
+      // this page asks of it is `daily.length === 0` → "No daily attendance
+      // logged yet". A student whose every mark has been cleared HAS no daily
+      // attendance logged, and the unfiltered list would answer that question
+      // wrongly while rendering an empty log underneath.
+      const daily = allDays.filter(isMarked);
       const summary = summarise(daily);
       const grouped = groupByMonth(daily);
       return { ...e, daily, monthly, summary, grouped };

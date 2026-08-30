@@ -31,7 +31,15 @@ export type DailyEntryRow = {
   sectionStudentId: string;
   termId: string;
   date: string; // yyyy-MM-dd
-  status: AttendanceStatus;
+  /**
+   * `null` means the day was UNMARKED — a mark that was taken back off it.
+   * Migration 134 made `attendance_daily.status` nullable and clearing a mark
+   * appends such a row, so it supersedes the prior mark by `recorded_at` like
+   * any other correction. This type said `AttendanceStatus` for a while after
+   * that shipped, which told every reader a status is always present when the
+   * newest row for a day may have none.
+   */
+  status: AttendanceStatus | null;
   exReason: ExReason | null;
   /** Free-text "why" on an EX mark (migration 109). */
   exNote: string | null;
@@ -39,6 +47,33 @@ export type DailyEntryRow = {
   recordedBy: string | null;
   recordedAt: string; // ISO 8601 UTC
 };
+
+/** A `DailyEntryRow` whose day is actually marked — the cleared ones removed. */
+export type MarkedEntryRow = DailyEntryRow & { status: AttendanceStatus };
+
+/**
+ * Is this row a MARK, or a day whose mark was taken back off it?
+ *
+ * ⚠ THE ONE RULE FOR EVERY READER OF `attendance_daily`. Migration 134 made
+ * `status` nullable, and a NULL row is how a mark is UNDONE: it is appended
+ * like any correction and supersedes the prior mark by `recorded_at`, so the
+ * newest row for a day may carry no status at all. Such a day is NOT MARKED —
+ * it must be excluded from every tally, never bucketed, never coerced to a
+ * status, and never counted as present or absent.
+ *
+ * That is not a convention this file invented; it is what the database already
+ * does. `recompute_attendance_rollup` counts with `count(*) filter (...)`, and
+ * because `NULL <> 'NC'` evaluates to NULL rather than TRUE, a cleared row
+ * drops out of school_days, present, late, excused and absent alike. The
+ * TypeScript agreeing with the SQL is the whole point.
+ *
+ * It is a type PREDICATE so callers can filter a collection once, at the point
+ * they read it, and hand the result to helpers that keep their narrow row
+ * types — rather than teaching every helper downstream about null.
+ */
+export function isMarked(row: DailyEntryRow): row is MarkedEntryRow {
+  return row.status !== null;
+}
 
 export type RollupRow = {
   sectionStudentId: string;
@@ -64,7 +99,8 @@ type DailyRaw = {
   section_student_id: string;
   term_id: string;
   date: string;
-  status: AttendanceStatus;
+  // Nullable since 134 — see DailyEntryRow.status above.
+  status: AttendanceStatus | null;
   ex_reason: ExReason | null;
   ex_note: string | null;
   period_id: string | null;
@@ -475,7 +511,18 @@ export async function getMonthlyBreakdown(
   sectionStudentId: string,
   termId?: string
 ): Promise<MonthlyBreakdownRow[]> {
-  const daily = await getDailyForStudent(sectionStudentId, termId);
+  // FILTERED AT THE READ, not guarded inside the loop: a cleared day (status
+  // null, migration 134) is NOT MARKED, so it belongs in no bucket at all and
+  // nothing downstream of here should have to know it existed. `byMonth` is
+  // keyed by the five stored codes, and `byMonth.get(key)![null]` reads the
+  // `'null'` property — `undefined + 1` — so a single cleared day turned that
+  // whole month's present/late/excused/absent figures into NaN with no error.
+  // This is the same answer the database gives: `recompute_attendance_rollup`
+  // counts with `count(*) filter (...)`, and `NULL <> 'NC'` is NULL rather than
+  // TRUE, so a cleared row already falls out of every one of its aggregates.
+  const daily = (await getDailyForStudent(sectionStudentId, termId)).filter(
+    isMarked
+  );
   if (daily.length === 0) return [];
 
   const byMonth = new Map<

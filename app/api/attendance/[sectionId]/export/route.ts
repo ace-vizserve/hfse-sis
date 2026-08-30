@@ -9,7 +9,7 @@ import {
   getCalendarEventsForTerm,
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
-import { getDailyForSection } from '@/lib/attendance/queries';
+import { getDailyForSection, isMarked } from '@/lib/attendance/queries';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
@@ -165,8 +165,18 @@ export async function GET(
     calendarByDate.set(c.date, { dayType: c.dayType, label: c.label });
 
   // Group daily marks by section_student_id.
+  //
+  // FILTERED HERE rather than widening this map to `AttendanceStatus | null`:
+  // a cleared day (status null, migration 134) is NOT MARKED, and leaving its
+  // date out of the map is precisely how the sheet already renders a day
+  // nobody ever marked. `AttendanceSheetExportInput.marksByDate` is read as
+  // `marksByDate.get(iso) ?? null`, a null prints an empty cell, and
+  // `summarizeMarks` skips null when totalling — so an absent key and a null
+  // value take the identical path. Excluding the row keeps ONE representation
+  // of "no mark" instead of two that have to agree.
   const marksByEnrolment = new Map<string, Map<string, AttendanceStatus>>();
   for (const d of daily) {
+    if (!isMarked(d)) continue;
     const m =
       marksByEnrolment.get(d.sectionStudentId) ??
       new Map<string, AttendanceStatus>();

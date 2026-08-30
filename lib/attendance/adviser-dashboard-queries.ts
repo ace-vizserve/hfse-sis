@@ -30,6 +30,7 @@ import {
   getSectionAttendanceSummary,
   getCompassionateUsageForSection,
   getVacationLeaveUsageForSection,
+  isMarked,
   type SectionAttendanceSummary,
 } from '@/lib/attendance/queries';
 import {
@@ -190,11 +191,27 @@ export async function loadAdviserAttendanceDashboard(opts: {
         // __tests__/attendance/adviser-dashboard-today-subset.test.ts, which was
         // run green against the two-fetch version first and includes the case
         // where today's marks only appear on the wide read's SECOND page.
-        const [allMarks, encodable, summary] = await Promise.all([
+        const [allRows, encodable, summary] = await Promise.all([
           getDailyForSection(s.id, termId, { toDate: today }),
           getEncodableDatesForTerm(termId, levelType),
           getSectionAttendanceSummary(s.id, termId),
         ]);
+        // FILTERED AT THE READ, which fixes BOTH consumers below at once and
+        // is why it is done here rather than at either call site. A cleared
+        // day (status null, migration 134) is NOT MARKED:
+        //
+        //   · `tallyToday` would otherwise count it in `marked` — the number
+        //     driving "this class is done for today" — while it landed in none
+        //     of present/late/absent/excused/noClass, so the tally would not
+        //     even add up to itself;
+        //   · `unmarkedSchoolDays` keys purely on the DATE being present, so a
+        //     day whose only marks were all cleared would still read as done
+        //     and quietly drop off the list of days that slipped. That list is
+        //     the entire point of this dashboard.
+        //
+        // `MarkLite` deliberately stays narrow — it is the pure engine's row
+        // type and has no business knowing a mark can be absent.
+        const allMarks = allRows.filter(isMarked);
         const todayMarks = allMarks.filter((m) => m.date === today);
 
         const isSchoolDayHere = encodable.includes(today);
