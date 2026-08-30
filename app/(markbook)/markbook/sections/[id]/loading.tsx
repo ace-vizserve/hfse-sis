@@ -1,37 +1,24 @@
 import { PageShell } from '@/components/ui/page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonDetail } from '@/components/ui/skeleton-layouts';
 
+/**
+ * Mirrors `app/(markbook)/markbook/sections/[id]/page.tsx` — change them
+ * together.
+ *
+ * That page is a REDIRECT STUB: it awaits `params` and sends the visitor to
+ * `/classroom/[id]`, so it renders no content of its own. The old loader here
+ * drew a full roster — stat cards, a filter bar, fifteen row bars — for a page
+ * that has not existed since the Classroom module superseded it, and none of
+ * it ever matched what landed.
+ *
+ * A bare masthead is the honest fallback: it holds the page's own chrome for
+ * the moment the redirect resolves, and deliberately does NOT mirror
+ * `/classroom/[id]`, which owns its own loader.
+ */
 export default function Loading() {
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-12 w-72" />
-          <Skeleton className="h-4 w-[28rem] max-w-full" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-32" />
-          <Skeleton className="h-9 w-32" />
-        </div>
-      </header>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-lg" />
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="ml-auto h-9 w-28" />
-      </div>
-
-      <div className="space-y-2">
-        {Array.from({ length: 15 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg" />
-        ))}
-      </div>
+      <SkeletonDetail />
     </PageShell>
   );
 }

@@ -1,27 +1,23 @@
 import { PageShell } from '@/components/ui/page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonDetail } from '@/components/ui/skeleton-layouts';
 
+/**
+ * Mirrors `app/(markbook)/markbook/compare/page.tsx` — change them together.
+ *
+ * That page is a REDIRECT STUB: Markbook's Compare surface was replaced by
+ * Academic Performance Insights, and the route now only forwards to
+ * `/markbook/insights`. It renders no content of its own, so the old loader
+ * here — a filter row, six tiles and a chart block — described a page that no
+ * longer exists and nothing it drew ever landed.
+ *
+ * A bare masthead is the honest fallback for the instant the redirect
+ * resolves. It deliberately does NOT mirror the Insights page, which has its
+ * own loader.
+ */
 export default function Loading() {
   return (
     <PageShell>
-      <header className="space-y-4">
-        <Skeleton className="h-3 w-40" />
-        <Skeleton className="h-12 w-72" />
-      </header>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-28" />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
-        ))}
-      </div>
-
-      <Skeleton className="h-64 w-full rounded-lg" />
+      <SkeletonDetail />
     </PageShell>
   );
 }
