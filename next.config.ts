@@ -20,9 +20,16 @@ const nextConfig: NextConfig = {
   // A first attempt on 2026-08-30 flipped these and then silenced the fallout
   // with `export const instant = false` on the ROOT layout. That opts out
   // every route beneath it, so the app paid the whole cost of the stricter
-  // model and got none of the benefit — navigation got slower, not faster.
-  // The root layout has since been fixed properly (its session read now sits
-  // behind a boundary), which is what makes a static shell possible at all.
+  // model and got none of the benefit. The root layout has since been fixed
+  // properly (its session read now sits behind a boundary), which is what
+  // makes a static shell possible at all.
+  //
+  // ⚠ THE SLOW NAVIGATION THAT PROMPTED ALL OF THIS WAS `next dev`, NOT THIS
+  // APP. Measured the same day, same machine, `/login`: dev 315ms cold /
+  // 78ms warm, production 33ms cold / 27ms warm — and that is the FLOOR,
+  // since a route dev has not compiled yet is far worse. Confirmed in a
+  // browser against a production build. So do not reach for this config to
+  // fix a page that feels slow in development; build it and measure first.
   cacheComponents: true,
   partialPrefetching: true,
 
