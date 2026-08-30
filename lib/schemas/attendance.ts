@@ -62,7 +62,14 @@ export const DailyEntrySchema = z
     sectionStudentId: uuidString,
     termId: uuidString,
     date: dateString,
-    status: z.enum(ATTENDANCE_STATUS_VALUES),
+    // `null` CLEARS the day — it returns the cell to unmarked rather than
+    // writing a mark (migration 134). It is appended like any other
+    // correction, so the prior mark stays in the ledger and the latest
+    // `recorded_at` still wins; a NULL status simply falls out of every
+    // rollup aggregate. The two refinements below already forbid a reason or
+    // a note alongside it, which is the same rule the DB enforces with
+    // `attendance_daily_cleared_has_no_reason_chk`.
+    status: z.enum(ATTENDANCE_STATUS_VALUES).nullable(),
     exReason: z.enum(EX_REASON_VALUES).optional().nullable(),
     // Free-text "why" for an EX mark. An explicit null CLEARS it; omitting the
     // key leaves whatever is on file alone, so the two are not interchangeable.
