@@ -14,6 +14,17 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 
+// Cache Components is on (next.config.ts), and this layout calls
+// getSessionUser() — a cookie read — to build the sidebar. A request read
+// cannot go into a prerendered static shell, so without this the build fails
+// on every route in the app.
+//
+// This is the documented migration path, not a workaround: Next's own
+// "Migrating an existing app" guidance says to set `instant = false` and then
+// adopt the streaming patterns one route at a time. Removing it means moving
+// the session read behind a Suspense boundary here first.
+export const instant = false;
+
 const inter = Inter({
   variable: '--font-sans',
   subsets: ['latin'],

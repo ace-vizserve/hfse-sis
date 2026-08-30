@@ -9,6 +9,18 @@ import './lib/env';
 // `proxy.ts` (the Next 16 middleware) — origin reflection + credentials +
 // preflight, which a static `headers()` block here cannot do per-origin.
 const nextConfig: NextConfig = {
+  // Instant Navigations (Next 16.3). Cache Components gives each route a
+  // prerendered shell it can paint before its data arrives; Partial
+  // Prefetching pulls that shell to the browser before the click.
+  //
+  // Routes that are not ready opt out with `export const instant = false` and
+  // render exactly as they do today. Every page here reads the session cookie
+  // (KD #35), so expect every one to be flagged in the dev overlay — that is
+  // expected, not failure. Validation is development-only and never blocks a
+  // build.
+  cacheComponents: true,
+  partialPrefetching: true,
+
   serverExternalPackages: ['pdf-merger-js'],
   experimental: {
     // Next's default is 0 — every dynamically-rendered route (which is

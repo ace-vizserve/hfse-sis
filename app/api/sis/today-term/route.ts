@@ -3,8 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { getEnrolmentPosition } from '@/lib/sis/terms';
 
-export const dynamic = 'force-dynamic';
-
+// No `export const dynamic = 'force-dynamic'` — Cache Components rejects the
+// route segment config outright, and it was redundant here anyway: this
+// handler reads cookies (via requireRole) and `req.nextUrl.searchParams`, and
+// either one already makes it dynamic. This was the only such export in the
+// whole of `app/`.
 export async function GET(req: NextRequest) {
   const auth = await requireRole([
     'academic_coordinator',
