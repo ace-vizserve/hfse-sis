@@ -7,13 +7,17 @@ function Skeleton({
   return (
     <div
       className={cn(
-        // `bg-accent` (not `bg-white`) — hard rule #7 bans `bg-white` in
-        // `app/` and `components/`, and `--accent` is one of the few fill
-        // tokens with a real `.dark` override, so the placeholder stays
-        // visible on both canvases without the component branching on theme.
+        // `bg-border` (not `bg-white`) — hard rule #7 bans `bg-white` here.
+        // `--border` is the only NEUTRAL fill in the palette that survives
+        // both themes: `#e2e8f0` on a white card, and a mid-grey that sits
+        // lighter than `--card` in dark. `--muted` is near-white and
+        // disappears on a card; `--secondary` resolves to exactly `--card`
+        // in dark and disappears there; `--accent` is the indigo hover wash
+        // and tints the whole page blue. Using a border value as a fill is
+        // the trade for not branching on theme (§2 rule 5).
         // The former `from-muted via-muted/60 to-muted` were inert: nothing
         // ever set `bg-gradient-*` to activate them.
-        'animate-pulse rounded-md border border-hairline bg-accent',
+        'animate-pulse rounded-md border border-hairline bg-border',
         className
       )}
       {...props}
