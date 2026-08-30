@@ -350,6 +350,75 @@ async function loadPFilesRowsUncached(
   return { rows: out, revisionEvents };
 }
 
+/**
+ * What actually goes into the data cache.
+ *
+ * `unstable_cache` refuses anything over 2MB, and the full
+ * `PFilesDrillLoadResult` is ~2.6MB for AY2026 — so the cache write failed
+ * silently on EVERY request and this loader has never once been cached. The
+ * only symptom was an error line in the server log and ~1.3s of recomputation
+ * per drill request.
+ *
+ * Three things made it oversized, all of them recoverable for free after the
+ * cache boundary:
+ *
+ * - `slotLabel` is a constant per `slotKey`, repeated on all ~6,400 rows.
+ * - `fileUrl` is ALWAYS null here (the detail page handles file urls).
+ * - `revisionEvents` stored a FULL COPY of a row per revision event.
+ *
+ * So the cache holds rows without those two fields, plus revision events as
+ * `[rowIndex, replacedAt]` pairs. `expand()` puts the public shape back.
+ * `PFilesDrillRow` and `PFilesDrillLoadResult` are unchanged — every consumer
+ * (CSV export, column config, the drill sheet) sees exactly what it did.
+ */
+/** Same composite key the loader uses internally, at module scope. */
+const rowKey = (en: string, slot: string) => `${en}|${slot}`;
+
+type CachedRow = Omit<PFilesDrillRow, 'slotLabel' | 'fileUrl'>;
+type CachedPFilesRows = {
+  rows: CachedRow[];
+  /** [index into `rows`, the event's `replaced_at`] */
+  revisions: Array<[number, string]>;
+};
+
+const SLOT_LABEL_BY_KEY: Record<string, string> = Object.fromEntries(
+  DOCUMENT_SLOTS.map((s) => [s.key, s.label])
+);
+
+function expand(cached: CachedPFilesRows): PFilesDrillLoadResult {
+  const rows: PFilesDrillRow[] = cached.rows.map((r) => ({
+    ...r,
+    slotLabel: SLOT_LABEL_BY_KEY[r.slotKey] ?? r.slotKey,
+    fileUrl: null,
+  }));
+  const revisionEvents: PFilesDrillRow[] = cached.revisions.map(
+    ([i, replacedAt]) => ({
+      ...rows[i],
+      revisionCount: 1,
+      lastRevisionAt: replacedAt,
+    })
+  );
+  return { rows, revisionEvents };
+}
+
+function toCached(result: PFilesDrillLoadResult): CachedPFilesRows {
+  const indexByKey = new Map<string, number>();
+  const rows: CachedRow[] = result.rows.map((r, i) => {
+    indexByKey.set(rowKey(r.enroleeNumber, r.slotKey), i);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { slotLabel: _label, fileUrl: _url, ...rest } = r;
+    return rest;
+  });
+  const revisions: Array<[number, string]> = [];
+  for (const ev of result.revisionEvents) {
+    const i = indexByKey.get(rowKey(ev.enroleeNumber, ev.slotKey));
+    if (i !== undefined && ev.lastRevisionAt) {
+      revisions.push([i, ev.lastRevisionAt]);
+    }
+  }
+  return { rows, revisions };
+}
+
 export async function buildPFilesDrillRows(input: {
   ayCode: string;
   from?: string;
@@ -362,11 +431,12 @@ export async function buildPFilesDrillRows(input: {
   // not applied at load time — P-Files renders all enrolled students every
   // render so the slot-status mix and completion-by-level are full-AY
   // views regardless of the user's selected range.
-  return unstable_cache(
-    () => loadPFilesRowsUncached(input.ayCode),
+  const cached = await unstable_cache(
+    async () => toCached(await loadPFilesRowsUncached(input.ayCode)),
     ['p-files-drill', 'rows', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
+  return expand(cached);
 }
 
 // ─── Per-target filter ──────────────────────────────────────────────────────
