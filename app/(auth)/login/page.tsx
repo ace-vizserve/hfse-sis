@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Lock } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -21,6 +21,13 @@ import { createClient } from '@/lib/supabase/client';
 
 const INPUT_CLASS =
   'h-11 w-full rounded-lg border border-hairline bg-white px-3.5 text-[15px] text-ink shadow-input outline-none transition placeholder:text-ink-5 focus:border-brand-indigo focus:ring-4 focus:ring-brand-indigo/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-4 aria-[invalid=true]:ring-destructive/10';
+
+/** Current year, read on the client after mount — see the call site. */
+function CopyrightYear() {
+  const [year, setYear] = useState<number | null>(null);
+  useEffect(() => setYear(new Date().getFullYear()), []);
+  return <>{year}</>;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -252,7 +259,13 @@ export default function LoginPage() {
               <span className="text-white/20">·</span>
               <span>PDPA-aligned</span>
             </div>
-            <span>&copy; {new Date().getFullYear()} HFSE</span>
+            {/* Year resolved after mount, not during render. `new Date()` in a
+                prerendered Client Component bakes the build year into the
+                static shell, so Cache Components rejects it. The footer simply
+                reads "© HFSE" for the first frame. */}
+            <span>
+              &copy; <CopyrightYear /> HFSE
+            </span>
           </div>
         </div>
       </aside>

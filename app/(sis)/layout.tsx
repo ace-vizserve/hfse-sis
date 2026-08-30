@@ -23,6 +23,12 @@ import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSectionsCount } from '@/lib/sis/sidebar-counts';
 import { createServiceClient } from '@/lib/supabase/service';
 
+// Cache Components (next.config.ts) requires each segment to prerender into a
+// static shell or declare that it blocks. This layout reads cookies() to gate on
+// the session (KD #35), so it legitimately blocks. Kept on the MODULE layout, not
+// the root, so the rest of the app keeps validating; pages below can opt back in.
+export const instant = false;
+
 export default async function SisLayout({
   children,
 }: {

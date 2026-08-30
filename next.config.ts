@@ -9,23 +9,31 @@ import './lib/env';
 // `proxy.ts` (the Next 16 middleware) — origin reflection + credentials +
 // preflight, which a static `headers()` block here cannot do per-origin.
 const nextConfig: NextConfig = {
-  // ⚠ DO NOT re-add `cacheComponents: true` / `partialPrefetching: true`
-  // without reading this first. They were turned on 2026-08-30 and reverted
-  // the same day, measured rather than guessed.
+  // Instant Navigation. A route can paint a prerendered shell the moment the
+  // link is clicked, and stream the rest into its Suspense fallbacks.
   //
-  // The build only passed with `export const instant = false` on the ROOT
-  // layout, because it calls getSessionUser() — a cookie read — to build the
-  // sidebar, and a request read cannot go into a prerendered static shell.
-  // Opting out at the root opts out EVERY route beneath it, so the app paid
-  // the whole cost of the stricter model and got none of the benefit: no
-  // route gained a prefetchable shell, the dev overlay filled with blocking
-  // -route errors (including an unstable `Date.now()` reached from
-  // RootLayout), and navigation got slower, not faster.
+  // ⚠ Turning these on is the EASY half and on its own buys nothing. The win
+  // comes from the per-route work: anything reading `cookies()`/`headers()`
+  // or uncached data has to sit behind a `<Suspense>` boundary, or be given a
+  // lifetime with `use cache`, before that route's shell can be static.
   //
-  // The prerequisite is moving the root layout's session read behind its own
-  // Suspense boundary. Until that is done this is strictly a regression.
+  // A first attempt on 2026-08-30 flipped these and then silenced the fallout
+  // with `export const instant = false` on the ROOT layout. That opts out
+  // every route beneath it, so the app paid the whole cost of the stricter
+  // model and got none of the benefit — navigation got slower, not faster.
+  // The root layout has since been fixed properly (its session read now sits
+  // behind a boundary), which is what makes a static shell possible at all.
+  cacheComponents: true,
+  partialPrefetching: true,
+
   serverExternalPackages: ['pdf-merger-js'],
   experimental: {
+    // Default is 'warning', which validates EVERY page in dev — that is the
+    // wall of overlay errors from the first attempt. 'manual-warning' checks
+    // only routes that opt in with `export const instant = true`, so routes
+    // are migrated deliberately, one at a time, and an un-migrated route
+    // behaves exactly as it does today.
+    instantInsights: { validationLevel: 'manual-warning' },
     // Next's default is 0 — every dynamically-rendered route (which is
     // effectively every page here, since getSessionUser() reads cookies()
     // on all of them, KD #35) is treated as instantly stale by the client
