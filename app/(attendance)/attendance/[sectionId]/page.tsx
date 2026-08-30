@@ -521,6 +521,14 @@ export default async function SectionAttendancePage({
           events={events}
           initialDaily={daily}
           today={todayIso}
+          // The daily view is the FASTER of the two marking paths and the one
+          // a form adviser opens every morning, so it needs the filings at
+          // least as much as the term sheet does — it went without them until
+          // 2026-08-31, and a teacher marking here was back to guessing
+          // between Absent and Excused. The whole term's map is passed and
+          // narrowed to the selected day inside the component, because the
+          // date stepper never comes back to the server.
+          filingsByCell={filingsByCell}
         />
       ) : (
         <AttendanceWideGrid

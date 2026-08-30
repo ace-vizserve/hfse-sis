@@ -1,6 +1,11 @@
 'use client';
 
+// `FileText` / `Plane` / `ArrowUpRight` are the same three the marking palette
+// puts on a filing (cell-mark-dialog.tsx), and `Plane` is what the declarations
+// queue puts on a travel row — so one filing wears one symbol wherever a person
+// meets it.
 import {
+  ArrowUpRight,
   CalendarOff,
   ChevronLeft,
   ChevronRight,
@@ -9,6 +14,7 @@ import {
   Clock,
   Eraser,
   FileText,
+  Plane,
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -22,6 +28,11 @@ import type {
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
 import type { DailyEntryRow } from '@/lib/attendance/queries';
+// ⚠ The SAME type the marking palette takes, imported from where it is
+// declared rather than re-shaped here. The filing is one fact appearing in two
+// places; giving the daily register its own copy of the shape is the first step
+// towards giving it its own copy of the words.
+import type { CellFiling } from '@/components/attendance/cell-mark-dialog';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
 import {
   computeSubmitEntries,
@@ -142,6 +153,7 @@ export function DailyEntry({
   events,
   initialDaily,
   today,
+  filingsByCell = {},
 }: {
   sectionId: string;
   termId: string;
@@ -150,6 +162,19 @@ export function DailyEntry({
   events: CalendarEventRow[];
   initialDaily: DailyEntryRow[];
   today: string;
+  /**
+   * `enrolmentId|yyyy-MM-dd` → the approved parent filing covering that day
+   * (KD #195 / #197). The WHOLE TERM arrives, exactly as the term sheet gets
+   * it, and is narrowed to the selected date below.
+   *
+   * ⚠ NARROWED HERE AND NOT ON THE SERVER, and that is not a preference. The
+   * date is client state — the stepper walks it without a round trip — so a
+   * map the server had already cut down to one day would freeze on whichever
+   * day the page happened to render with, and the indicator would then be
+   * right on arrival and wrong from the first click of the arrow. A term's
+   * filings are a handful of rows, so carrying all of them costs nothing.
+   */
+  filingsByCell?: Record<string, CellFiling>;
 }) {
   void sectionId; // not needed for the write (the bulk endpoint keys on sectionStudentId)
 
@@ -190,6 +215,17 @@ export function DailyEntry({
   );
 
   const isToday = date === today;
+
+  // The filings that land on the day being marked, keyed by student. Recomputed
+  // whenever the stepper moves, which is the whole point — see the prop's note.
+  const filingsForDate = useMemo(() => {
+    const suffix = `|${date}`;
+    const out = new Map<string, CellFiling>();
+    for (const [key, filing] of Object.entries(filingsByCell)) {
+      if (key.endsWith(suffix)) out.set(key.slice(0, -suffix.length), filing);
+    }
+    return out;
+  }, [filingsByCell, date]);
 
   return (
     <div className="space-y-4">
@@ -247,6 +283,7 @@ export function DailyEntry({
             termId={termId}
             roster={roster}
             initialDaily={initialDaily}
+            filings={filingsForDate}
           />
         )
       ) : (
@@ -332,11 +369,14 @@ function DailyPanel({
   termId,
   roster,
   initialDaily,
+  filings,
 }: {
   date: string;
   termId: string;
   roster: WideGridEnrolment[];
   initialDaily: DailyEntryRow[];
+  /** Student → the approved parent filing covering THIS date. */
+  filings: Map<string, CellFiling>;
 }) {
   const loaded = useMemo(
     () => loadedMarksForDate(initialDaily, date),
@@ -466,6 +506,20 @@ function DailyPanel({
             // test is on the ENTRY existing with no status — `!m` is state (a),
             // "not touched yet", which means Present and is a different thing.
             const isCleared = !!m && m.status == null;
+            // ⚠ Shown on a row NOBODY HAS TOUCHED, which is the point of it
+            // being here at all. This register marks the exceptions, so the
+            // moment a teacher has to decide between Absent and Excused is
+            // before the first click — and until now the daily view was the
+            // one marking path that never mentioned the filing.
+            //
+            // ⚠ Withheld from a "Before enrolment date" row on purpose. That
+            // row carries no marking control, is excluded from the submit set
+            // outright, and is dimmed — a link nobody can act on there is
+            // noise, and it would be the only interactive thing inside a
+            // deliberately inert row. Same gate the excused block uses.
+            const filing = beforeJoin
+              ? null
+              : (filings.get(e.enrolmentId) ?? null);
             return (
               <li
                 key={e.enrolmentId}
@@ -596,6 +650,25 @@ function DailyPanel({
                   )}
                 </div>
 
+                {/* What a parent already told the school about this day.
+                    Its own full-width line, under the marks and above the
+                    excused block: the row's first line is a name and a set of
+                    letters, and squeezing a sentence into it would push the
+                    control off the edge on a phone. The file already learned
+                    this once — see the note above, on why the excused block
+                    stopped being a narrow strip in the right-hand column.
+
+                    ⚠ It does NOT replace the note field the way the term
+                    sheet's palette does. There, the filing and the note
+                    compete for one slot in a small dialog. Here they are in
+                    different places — the filing on the row, the note inside
+                    the excused block — and the note is where a teacher records
+                    what the filing does not cover, such as a child coming back
+                    early from a holiday their parent filed to the Friday. */}
+                {filing && (
+                  <FilingLine filing={filing} studentName={e.studentName} />
+                )}
+
                 {/* The excused block, on the cyan of the EX button that opened
                     it — the same "colour as parentage" the term view uses, so
                     the two surfaces read as one feature. Full row width: the
@@ -712,5 +785,82 @@ function DailyPanel({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * What an approved parent filing put on this day — on the roster row.
+ *
+ * ⚠ THE SAME FACT AS THE TERM SHEET'S `FilingCard`, SO IT SAYS THE SAME WORDS.
+ * The phrase, the two icons, the date range, the certificate clause and the
+ * link out are lifted from `cell-mark-dialog.tsx` deliberately and must not be
+ * reworded here: a filing wears one symbol wherever a person meets it, and a
+ * teacher who reads "Excused by a parent's filing" on the term sheet and
+ * something else on the daily register has met two features, not one.
+ *
+ * ⚠ IT IS A SEPARATE COMPONENT ONLY BECAUSE `FilingCard` IS PRIVATE. Nothing
+ * about the two is meant to differ except the box: this one is tighter
+ * (`rounded-lg`, less padding, smaller icons) because it repeats down a roster
+ * of thirty rather than sitting alone in a dialog. Same paint, same tokens —
+ * `bg-muted` at rest, the indigo hover wash, the icon in `brand-indigo`.
+ *
+ * ⚠ NOBODY IS NAMED. The palette drops the parent and the approver at rest for
+ * a reason that holds twice as hard on a list: the question a teacher is
+ * answering is "why is this day excused", not "who sent it", and the only
+ * identifier held reliably is an email address, which answers neither. Both are
+ * on the filing, behind the link, where the queue does its own scoping.
+ */
+function FilingLine({
+  filing,
+  studentName,
+}: {
+  filing: CellFiling;
+  studentName: string;
+}) {
+  const isTravel = filing.kind === 'travel';
+  const Icon = isTravel ? Plane : FileText;
+  // ⚠ Built as a string, never as JSX text wrapped around an expression. The
+  // dialog learned this the hard way — JSX drops the whitespace between an
+  // expression and an adjacent newline, so a formatter wrapping the line runs
+  // two words together on screen.
+  const phrase = isTravel
+    ? "Excused by a parent's travel filing"
+    : "Excused by a parent's filing";
+  return (
+    <a
+      href={filing.href}
+      target="_blank"
+      rel="noreferrer"
+      // Thirty of these can sit on one page, so the link has to say WHOSE it
+      // is. The visible sentence is the same on every row; a screen reader
+      // listing the links would otherwise read thirty identical entries.
+      aria-label={`${phrase} for ${studentName}`}
+      className="group flex items-center gap-2 rounded-lg bg-muted px-2 py-1.5 transition-colors hover:bg-accent"
+    >
+      <Icon className="size-3.5 shrink-0 text-brand-indigo" aria-hidden />
+      <span className="min-w-0 flex-1 text-[12px] leading-snug text-foreground">
+        <span className="font-semibold">{phrase}</span>
+        <span className="text-muted-foreground">
+          {' · '}
+          {filing.dateRange}
+          {/* ⚠ The absence of proof is STATED. A parent may file without a
+              certificate, and a teacher reading only "excused by a filing"
+              would assume one exists.
+
+              ⚠ ABSENCE ONLY. A holiday has no certificate to have or lack, so
+              "no certificate" there would invent a missing document nobody
+              ever asked the parent for. */}
+          {isTravel
+            ? ''
+            : filing.hasEvidence
+              ? ' · certificate'
+              : ' · no certificate'}
+        </span>
+      </span>
+      <ArrowUpRight
+        className="size-3 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+        aria-hidden
+      />
+    </a>
   );
 }
