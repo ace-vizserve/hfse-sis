@@ -401,6 +401,30 @@ function templateSummary(
       const type = str(ctx.declaration_type);
       if (type) parts.push(type === 'travel' ? 'travel' : 'absence');
       if (boolish(ctx.with_medical) === true) parts.push('with certificate');
+
+      // ── The school recording its own evidence ──────────────────────────
+      //
+      // Staff attaching a medical certificate the parent could not file
+      // (Mr Ace: "if the parent wasn't able to"). The row lands already
+      // approved with no approval ladder behind it, so there is no step and
+      // no outcome to name — and, crucially, no queue entry and no Activity
+      // event either, because both are derived from
+      // `approval_request_stages`. THIS LINE IS THEREFORE THE ONLY PLACE THE
+      // action is visible to anybody, which is why it says who did it in
+      // words rather than leaving the reader to infer it from a blank stage.
+      //
+      // ⚠ Presence only, never the file or the link — migration 109's rule,
+      // kept by 125 and 126. `audit_log` is readable by every
+      // is_registrar_or_above() user and can never be corrected, and a URL to
+      // a child's medical certificate is exactly what that rule is about.
+      if (boolish(ctx.recorded_by_school) === true) {
+        parts.push('recorded by the school office');
+        const kind = str(ctx.evidence_kind);
+        if (kind === 'file') parts.push('certificate uploaded');
+        else if (kind === 'link') parts.push('certificate link');
+        else if (kind === 'both') parts.push('certificate uploaded and link');
+        return joinParts(parts);
+      }
       const stage = str(ctx.stage_label);
       if (stage) parts.push(stage);
       const outcome = str(ctx.outcome);

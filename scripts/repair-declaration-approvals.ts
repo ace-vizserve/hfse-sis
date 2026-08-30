@@ -159,8 +159,28 @@ async function main() {
   // backlog of work that did not exist. Now that an approved trip writes
   // `EX` / `vacation`, a travel filing with no stamp is a real gap, and the
   // filings approved before Phase 4 shipped are exactly what this finds.
+  //
+  // 🔴 A FILING WITH NO LADDER IS EXCLUDED, AND THIS IS LOAD-BEARING.
+  // `POST /api/declarations/staff` — a member of staff attaching a medical
+  // certificate the parent could not file — inserts the row ALREADY APPROVED
+  // and deliberately opens no approval request, because the school recording
+  // its own evidence has nobody left to vet it. It also deliberately leaves
+  // `register_written_at` null, because the person doing it is already marking
+  // the day `EX` through the normal attendance path — that IS the register
+  // write.
+  //
+  // Without this clause every one of those rows reads here as "approved but
+  // the sheet was never marked", and `--apply` would write a SECOND `EX` for
+  // each day: `attendance_daily` is append-only, so nothing errors and nothing
+  // is overwritten — the duplicate simply lands under the teacher's own mark
+  // with no actor on it. Having a request is the exact test, because it is the
+  // ladder's approval that KD #197's register write hangs off; a filing that
+  // never had one was never going to be marked from here.
   const unmarked = declarations.filter(
-    (d) => d.status === 'approved' && d.register_written_at == null
+    (d) =>
+      d.status === 'approved' &&
+      d.register_written_at == null &&
+      requestBySubject.has(d.id)
   );
 
   console.log(`Declarations: ${declarations.length}`);
