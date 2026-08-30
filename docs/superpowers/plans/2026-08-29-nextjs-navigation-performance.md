@@ -18,7 +18,7 @@
 - **Always `git pull --rebase origin <branch>` before any push**, manual pushes included.
 - Branch: `perf/app-wide-query-pass` is the current branch. Phase 1 should branch fresh from `main` as `perf/next-16-3-upgrade` to keep the version bump reviewable on its own.
 - Test command is `npm test` (`vitest run`). A single file: `npx vitest run <path>`.
-- ⚠ **~4 test files flake under full-suite load** (`role-permissions-guardrails`, `student-lookup-sheet`, `grading-workbook-secondary-t2`, `data-table-export-sheet`). This is pre-existing. Diagnose with `--testTimeout=30000` first; if it passes with more time it is transform cost, not your change.
+- ⚠ **~6 test files flake under full-suite load** (`role-permissions-guardrails`, `student-lookup-sheet`, `grading-workbook-secondary-t2`, `data-table-export-sheet`, and — added 2026-08-30 from the Phase 1 spike — `at-risk-lookup`, `grade-lookup-dialog`). This is pre-existing and **not** upgrade damage: all three lookup-shaped tests passed 44/44 in 9s when run in isolation on 16.3.3. Diagnose with `--testTimeout=30000` first; if it passes with more time it is transform cost, not your change.
 
 ---
 
@@ -49,19 +49,27 @@ node -p "require('next/package.json').version"
 
 Expected: prints `16.2.10`.
 
+✅ **THIS TASK WAS RUN AS A SPIKE ON 2026-08-30 AND VERIFIED END TO END** on branch `spike/next-16-3-verify`. `16.3.3` installs, `tsc` reports **zero errors in our own source**, and `npm run build` **exits 0** with the Proxy (Middleware) still compiling. The steps below carry what the spike learned, including three things the original draft of this task did not have. Do not treat the outcome as unknown — treat it as reproducible.
+
 - [ ] **Step 2: Confirm the target version exists**
 
 ```bash
 npm view next@16 version
 ```
 
-Expected: prints a `16.3.x` version. Use whatever it prints as the target below.
+Expected: prints `16.3.3` (verified 2026-08-30). If npm reports something newer, use that.
 
-- [ ] **Step 3: Install**
+- [ ] **Step 3: Install — bump `eslint-config-next` in lockstep**
+
+⚠ **The original draft installed only `next` and staged only `package.json` + `package-lock.json`.** `eslint-config-next` is pinned at `^16.2.10` and must move too, or lint rules drift a minor behind. It will not break the app if left behind, but there is no reason to leave it.
 
 ```bash
-npm install next@16
+npm install next@16.3.3 eslint-config-next@16.3.3
 ```
+
+Expected: installs cleanly. The spike saw `added 105 packages, removed 1, changed 13`, no peer conflicts. **React needs no change** — `19.2.4` already satisfies 16.3.
+
+⚠ **No lockstep bump is needed for anything else.** There are no `@next/*` packages in this repo, and `@types/react`/`@types/react-dom` at `^19` are already compatible.
 
 - [ ] **Step 4: Verify the two config options that motivated the upgrade**
 
@@ -72,24 +80,55 @@ grep -c "partialPrefetching" node_modules/next/dist/server/config-shared.d.ts
 
 Expected: version is `16.3.x`, and the grep count is **greater than 0**. On 16.2.10 that grep returns 0 — that difference is the whole point of this task.
 
-- [ ] **Step 5: Type-check and build**
+- [ ] **Step 5: DELETE `.next` BEFORE type-checking — this step is not optional**
+
+🔴 **The spike hit this and it looks exactly like the upgrade broke.** A stale `.next/dev/cache/turbopack/v16.2.10` sitting beside freshly generated 16.3.3 types produces six `TS2344` errors in `.next/types/validator.ts` (`Type '"/sis/admin/staff"' is not assignable to type 'LayoutRoutes'`). **They are generated-artifact errors, not source errors.**
 
 ```bash
+rm -rf .next
 npx tsc --noEmit
+```
+
+Expected: **zero errors.** ⚠ If `rm -rf .next` reports `Directory not empty`, a dev server is holding files open — **stop it first, and do not kill a process you did not start** (concurrent sessions share this tree). To confirm any surviving errors are artifacts rather than real, filter them:
+
+```bash
+npx tsc --noEmit 2>&1 | grep -v "^\.next/" | grep "error"
+```
+
+Expected: **no output.** The spike confirmed zero errors in our own source on 16.3.3.
+
+- [ ] **Step 6: Build**
+
+```bash
 npm run build
 ```
 
-Expected: both succeed. If `tsc` reports errors in files you did not touch, check file mtimes — concurrent Claude sessions share this tree.
+Expected: **exit 0**, and the route table ends with a `ƒ Proxy (Middleware)` line — that line is the cheap proof the proxy still compiles, which is the highest-risk surface in this upgrade.
 
-- [ ] **Step 6: Run the full test suite**
+- [ ] **Step 7: Run the tests, and fix the one real break**
 
 ```bash
 npm test
 ```
 
-Expected: green apart from the four known flakes listed in Global Constraints.
+🔴 **Two perf tests WILL fail, and this is a genuine required change that the 16.3 release post does not name:**
 
-- [ ] **Step 7: Smoke-test the app in a browser**
+```
+TypeError: incrementalCache.generateSimpleCacheKey is not a function
+  ❯ node_modules/next/src/server/web/spec-extension/unstable-cache.ts:139
+```
+
+Affects `__tests__/perf/unstable-cache-composition.test.ts` and `__tests__/perf/school-config-request-cache.test.ts`. **`unstable_cache` is NOT broken in production** — the tests hand-roll a fake `globalThis.__incrementalCache` (see `unstable-cache-composition.test.ts:68`) and 16.3 now calls a `generateSimpleCacheKey` method the fake does not implement. **Fix: add that method to the mock in both files.** Read Next's `unstable-cache.ts:139` for the expected signature before writing it.
+
+⚠ **Three UI tests may also fail under full-suite load** — `at-risk-lookup`, `grade-lookup-dialog`, `student-lookup-sheet`. These are **pre-existing load flakes, not upgrade damage**: the spike ran all three in isolation and got **44/44 passing in 9s**. Confirm the same way before investigating:
+
+```bash
+npx vitest run __tests__/classroom/at-risk-lookup.test.tsx __tests__/grading/grade-lookup-dialog.test.tsx __tests__/attendance/student-lookup-sheet.test.tsx --testTimeout=30000
+```
+
+⚠ **`at-risk-lookup` and `grade-lookup-dialog` were NOT on the known-flake list in Global Constraints.** Add them.
+
+- [ ] **Step 8: Smoke-test the app in a browser**
 
 ```bash
 npm run dev
@@ -97,17 +136,41 @@ npm run dev
 
 Open `/`, sign in, and visit one page per module: `/markbook`, `/attendance`, `/records`, `/sis/admin`, `/classroom`, `/p-files`, `/admissions`, `/evaluation`. Confirm each renders and the module switcher works.
 
-⚠ **Also test one parent-portal endpoint**, because the proxy is the most fragile thing a Next upgrade can disturb (see `5381bb95`):
+⚠ **Also test one parent-portal endpoint**, because the proxy is the most fragile thing a Next upgrade can disturb (see `5381bb95`). ✅ **Both checks below were RUN on 16.3.3 during the 2026-08-30 spike and passed.**
+
+🔴 **THE ORIGIN MUST BE ONE THE ALLOWLIST ACTUALLY CONTAINS.** `lib/cors.ts:44` only emits `Access-Control-Allow-Origin` when the origin is in `allowedOrigins` — which is `ADMISSIONS_PORTAL_ORIGIN` (from env) plus `http://localhost:5173`. **An earlier draft of this step used a made-up `https://portal.hfse.edu.sg` and produced a 204 with NO `Access-Control-Allow-Origin` header, which reads exactly like a broken proxy and is not.** Use `http://localhost:5173`.
+
+⚠ **Check the port.** `next dev` falls back to 3001 (or higher) if another dev server holds 3000, and the spike hit exactly that. Read the port off the dev-server output rather than assuming 3000.
 
 ```bash
 curl -i -X OPTIONS http://localhost:3000/api/parent/v2/declarations \
-  -H "Origin: https://portal.hfse.edu.sg" \
-  -H "Access-Control-Request-Method: POST"
+  -H "Origin: http://localhost:5173" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
 ```
 
-Expected: a `2xx` with CORS headers, **not** a `307`. A 307 here means the matcher lost its `api` exclusion and the portal is broken.
+Expected — all four of these, exactly as the spike observed:
 
-- [ ] **Step 8: Commit**
+```
+HTTP/1.1 204 No Content
+access-control-allow-credentials: true
+access-control-allow-headers: Authorization, Content-Type
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-allow-origin: http://localhost:5173
+```
+
+A `307` here means the matcher lost its `api` exclusion and the portal is broken. A `204` **without** `access-control-allow-origin` means your origin is not on the allowlist — check the origin before suspecting the proxy.
+
+Then confirm the page-side gate still redirects:
+
+```bash
+curl -s -o /dev/null -w "status=%{http_code} location=%{redirect_url}\n" \
+  http://localhost:3000/markbook
+```
+
+Expected: `status=307 location=http://localhost:3000/login` (spike-verified).
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add package.json package-lock.json
@@ -299,29 +362,43 @@ Every exemption carries a reason so the list cannot rot the way the
 2026-07-29 hand audit did."
 ```
 
-### Task 3: The three skeleton archetypes
+### Task 3: One reference `loading.tsx` per mode
 
-Every one of the 36 routes matches one of three shapes. Build them once as copy-sources; there is **no shared component** — `loading.tsx` must default-export a component, and Next requires one file per route.
+🔴 **The three-archetype model this task used to describe was wrong.** A verification pass on 2026-08-30 checked all 36 routes against their nearest ancestor layout and found the real split is not "has `PageShell` or doesn't" — it is **three MODES**, and the archetype (what shape the content is: table, detail form, card grid, or something bespoke) is an **independent axis** on top of the mode. Getting the mode wrong makes the page jump the instant real content arrives, which is worse than the blank pause Phase 2 exists to fix.
+
+**The three modes, and the rule for each:**
+
+- **FULL (19 routes)** — the nearest layout renders sidebar/topbar only; the page itself builds everything else. `loading.tsx` needs its own `PageShell` + header skeleton + content skeleton, in full.
+- **PANEL_ONLY (11 routes)** — the nearest layout already renders `PageShell` **and** the page header **and** the tab strip. `loading.tsx` must render **only the inner content** — no `PageShell`, no header, no tab strip. Duplicating any of them is what makes the page jump.
+- **HYBRID (6 routes)** — the layout renders `<PageShell>{children}</PageShell>` and **nothing else**, deliberately: the header/tabs are pushed down into the page because a layout cannot see `?ay=` or a route param the header needs. So `loading.tsx` must **skip the outer `PageShell`** (the layout still wraps it) but **still build its own header + tab-strip skeleton**, because nothing above the page will.
+
+There is **no shared skeleton component** across any of this — `loading.tsx` must default-export a component, and Next requires one file per route. Every file below is written out in full, even where two files are byte-identical, because a reader who lands on one task without reading another still needs working code.
 
 **Files:**
 
-- Create: `app/(classroom)/classroom/loading.tsx` (the _index_ archetype — a list of cards)
-- Create: `app/(sis)/sis/admin/staff/loading.tsx` (the _table_ archetype)
-- Create: `app/(classroom)/classroom/[sectionId]/loading.tsx` (the _detail_ archetype — header + tabs + panels)
+- Create: `app/(records)/records/discipline/loading.tsx` — **FULL** reference (table archetype: header + 3 stat cards + table, all built by the page itself)
+- Create: `app/(classroom)/classroom/[sectionId]/students/loading.tsx` — **PANEL_ONLY** reference (table archetype: only the toolbar + rows, because `app/(classroom)/classroom/[sectionId]/layout.tsx` already renders `PageShell`, the section header and `ClassroomSubnav`)
+- Create: `app/(sis)/sis/admin/staff/loading.tsx` — **HYBRID** reference (table archetype: header + tab strip + rows, but no `PageShell`, because `app/(sis)/sis/admin/staff/layout.tsx` renders exactly `<PageShell>{children}</PageShell>` and the page itself renders `StaffDirectoryChrome` = `SisPageHeader` + `PageTabNav`)
+
+All three use the same archetype (table) on purpose — the only variable being demonstrated here is the mode, not the content shape. Tasks 4–10 vary the archetype.
 
 **Interfaces:**
 
 - Consumes: `PageShell` from `@/components/ui/page-shell`, `Skeleton` from `@/components/ui/skeleton`.
-- Produces: three reference files that Tasks 4–10 copy and adjust. No exported symbols beyond each file's `default`.
+- Produces: three reference files. Tasks 4–10 write the remaining 33 files by picking whichever of these three matches a route's mode, then swapping in that route's archetype content.
 
-- [ ] **Step 1: Create the index archetype**
+- [ ] **Step 1: Create the FULL reference**
 
-`app/(classroom)/classroom/loading.tsx`:
+`app/(records)/records/discipline/loading.tsx`:
 
 ```tsx
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 
+// FULL mode reference. app/(records)/layout.tsx renders only the sidebar
+// and topbar — this page builds its own PageShell, header and content, so
+// this file has to build all three too. Copy this shape whenever the
+// coverage table in the Phase 2 plan marks a route FULL.
 export default function Loading() {
   return (
     <PageShell>
@@ -334,39 +411,9 @@ export default function Loading() {
         <Skeleton className="h-9 w-32" />
       </header>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <Skeleton key={i} className="h-32 w-full rounded-xl" />
-        ))}
-      </div>
-    </PageShell>
-  );
-}
-```
-
-- [ ] **Step 2: Create the table archetype**
-
-`app/(sis)/sis/admin/staff/loading.tsx`:
-
-```tsx
-import { PageShell } from '@/components/ui/page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
-
-export default function Loading() {
-  return (
-    <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-12 w-72" />
-          <Skeleton className="h-4 w-[28rem] max-w-full" />
-        </div>
-        <Skeleton className="h-9 w-32" />
-      </header>
-
-      <div className="flex flex-wrap gap-2 border-b border-hairline pb-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-28 rounded-md" />
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
         ))}
       </div>
 
@@ -386,43 +433,82 @@ export default function Loading() {
 }
 ```
 
-- [ ] **Step 3: Create the detail archetype**
+- [ ] **Step 2: Create the PANEL_ONLY reference**
 
-`app/(classroom)/classroom/[sectionId]/loading.tsx`:
+`app/(classroom)/classroom/[sectionId]/students/loading.tsx`:
 
 ```tsx
-import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 
+// PANEL_ONLY mode reference. app/(classroom)/classroom/[sectionId]/layout.tsx
+// already renders PageShell, the section header (back link, class name,
+// badges) and ClassroomSubnav (the tab strip) around {children}. This file
+// renders ONLY the inner content — no PageShell, no header, no tab strip.
+// Duplicating any of them is what makes the page jump when the real
+// content arrives.
 export default function Loading() {
   return (
-    <PageShell>
-      <Skeleton className="h-4 w-32" />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
 
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Create the HYBRID reference**
+
+`app/(sis)/sis/admin/staff/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+// HYBRID mode reference. app/(sis)/sis/admin/staff/layout.tsx renders
+// exactly `<PageShell>{children}</PageShell>` and nothing else — the header
+// and tab strip live in the PAGE (StaffDirectoryChrome = SisPageHeader +
+// PageTabNav), because a layout cannot see `?ay=` or the route's own
+// params. So this file SKIPS the outer PageShell (the layout still
+// supplies it) but STILL builds its own header + tab-strip skeleton, or
+// the page jumps from "no header at all" to "header + tabs" on arrival.
+export default function Loading() {
+  return (
+    <div className="space-y-6">
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
-          <Skeleton className="h-3 w-48" />
-          <Skeleton className="h-12 w-96 max-w-full" />
-          <Skeleton className="h-4 w-[26rem] max-w-full" />
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
         </div>
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-7 w-24" />
-          <Skeleton className="h-7 w-20" />
-        </div>
+        <Skeleton className="h-9 w-32" />
       </header>
 
       <div className="flex flex-wrap gap-2 border-b border-hairline pb-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-24 rounded-md" />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-28 rounded-md" />
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 w-full rounded-lg" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
         ))}
       </div>
-    </PageShell>
+    </div>
   );
 }
 ```
@@ -433,50 +519,125 @@ export default function Loading() {
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, now listing **33** routes. `app/(classroom)/classroom`, `app/(classroom)/classroom/[sectionId]` and `app/(sis)/sis/admin/staff` are gone from it.
+Expected: still FAIL, now listing **33** routes. `app/(records)/records/discipline`, `app/(classroom)/classroom/[sectionId]/students` and `app/(sis)/sis/admin/staff` are gone from it.
 
-- [ ] **Step 5: Verify one in a browser**
+- [ ] **Step 5: Verify all three modes in a browser**
 
 ```bash
 npm run dev
 ```
 
-Sign in, then click into `/classroom` from another page. Confirm a card-grid skeleton appears immediately rather than a blank pause. ⚠ **Automatic prefetching only runs in production**, so in dev the skeleton is easy to see — that is expected, not a bug.
+Sign in, then: (1) click into `/records/discipline` from another page — a full header + stat cards + table skeleton should appear immediately; (2) open a classroom and click into Students — the section header and tab strip must **stay put**, only the row list should skeleton; (3) open `/sis/admin/staff` — the page's own header and tab strip should skeleton in, not just rows. ⚠ **Automatic prefetching only runs in production**, so in dev the skeleton is easy to see — that is expected, not a bug.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add "app/(classroom)/classroom/loading.tsx" "app/(classroom)/classroom/[sectionId]/loading.tsx" "app/(sis)/sis/admin/staff/loading.tsx"
-git commit -m "feat(ui): loading skeletons for the three route archetypes
+git add "app/(records)/records/discipline/loading.tsx" "app/(classroom)/classroom/[sectionId]/students/loading.tsx" "app/(sis)/sis/admin/staff/loading.tsx"
+git commit -m "feat(ui): loading skeletons for the three route modes
 
-Index (card grid), table, and detail (header + tabs + panels). The
-remaining 33 routes copy one of these."
+FULL, PANEL_ONLY, HYBRID — the axis that actually varies is what the
+nearest layout already renders, not the content shape. The remaining 33
+routes pick one of these three and swap in their own archetype."
 ```
 
-### Task 4: Classroom module — the remaining 7 routes
+### Task 4: Classroom module — the remaining 8 routes
 
-The whole Classroom module had no `loading.tsx` at all, which made it the largest single cluster.
+The whole Classroom module had no `loading.tsx` at all, which made it the largest single cluster. It mixes modes: the module index is FULL, every tab under `[sectionId]` is PANEL_ONLY.
 
 **Files:**
 
-- Create: `app/(classroom)/classroom/[sectionId]/attendance/loading.tsx` — _table_
-- Create: `app/(classroom)/classroom/[sectionId]/discipline/loading.tsx` — _table_
-- Create: `app/(classroom)/classroom/[sectionId]/grades/loading.tsx` — _table_
-- Create: `app/(classroom)/classroom/[sectionId]/settings/loading.tsx` — _detail_
-- Create: `app/(classroom)/classroom/[sectionId]/students/loading.tsx` — _table_
-- Create: `app/(classroom)/classroom/[sectionId]/timeline/loading.tsx` — _index_
-- Create: `app/(classroom)/classroom/[sectionId]/write-ups/loading.tsx` — _table_
+- Create: `app/(classroom)/classroom/loading.tsx` — **FULL**, table (list table + 2 stat cards + cover panel)
+- Create: `app/(classroom)/classroom/[sectionId]/loading.tsx` — **PANEL_ONLY**, cards (overview stat cards + health panel)
+- Create: `app/(classroom)/classroom/[sectionId]/attendance/loading.tsx` — **PANEL_ONLY**, detail (one summary card)
+- Create: `app/(classroom)/classroom/[sectionId]/discipline/loading.tsx` — **PANEL_ONLY**, table
+- Create: `app/(classroom)/classroom/[sectionId]/grades/loading.tsx` — **PANEL_ONLY**, table
+- Create: `app/(classroom)/classroom/[sectionId]/settings/loading.tsx` — **PANEL_ONLY**, detail (one form card)
+- Create: `app/(classroom)/classroom/[sectionId]/timeline/loading.tsx` — **PANEL_ONLY**, other (activity feed, not a table)
+- Create: `app/(classroom)/classroom/[sectionId]/write-ups/loading.tsx` — **PANEL_ONLY**, table
 
 **Interfaces:**
 
-- Consumes: the three archetypes from Task 3.
+- Consumes: the FULL and PANEL_ONLY references from Task 3.
 - Produces: nothing other than the files.
 
-- [ ] **Step 1: Create each file by copying its archetype**
+- [ ] **Step 1: Create the module index (FULL, table)**
 
-For each of the seven, copy the archetype named above verbatim. These sit **inside** the `[sectionId]` layout, which already renders the section header and tab strip, so **delete the `<header>` block and the tab-strip block** from the copied archetype — the layout supplies both, and duplicating them makes the page jump when content arrives.
+`app/(classroom)/classroom/loading.tsx`:
 
-For example, `app/(classroom)/classroom/[sectionId]/students/loading.tsx`:
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the seven PANEL_ONLY tabs**
+
+⚠ **None of these import `PageShell`** — `app/(classroom)/classroom/[sectionId]/layout.tsx` already renders it, the section header, and `ClassroomSubnav` (the tab strip) around `{children}`. Importing any of that again double-pads the page and makes the header/tabs flicker on arrival.
+
+`app/(classroom)/classroom/[sectionId]/loading.tsx` (the Overview tab — stat cards + health panel):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
+      </div>
+
+      <Skeleton className="h-48 w-full rounded-xl" />
+    </div>
+  );
+}
+```
+
+`app/(classroom)/classroom/[sectionId]/attendance/loading.tsx` (one summary card):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-9 w-[380px] rounded-xl" />
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+```
+
+`app/(classroom)/classroom/[sectionId]/discipline/loading.tsx`:
 
 ```tsx
 import { Skeleton } from '@/components/ui/skeleton';
@@ -500,7 +661,31 @@ export default function Loading() {
 }
 ```
 
-Use that exact shape for `attendance`, `discipline`, `grades`, `students` and `write-ups`. For `timeline`, replace the row list with the card grid from the index archetype. For `settings`, use a two-field form shape:
+`app/(classroom)/classroom/[sectionId]/grades/loading.tsx` (identical shape to `discipline`, written out in full since it is its own file):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+`app/(classroom)/classroom/[sectionId]/settings/loading.tsx` (one form card):
 
 ```tsx
 import { Skeleton } from '@/components/ui/skeleton';
@@ -519,228 +704,1143 @@ export default function Loading() {
 }
 ```
 
-⚠ **`PageShell` is not imported in these** — the parent layout already provides the page frame. Importing it again double-pads the content.
+`app/(classroom)/classroom/[sectionId]/timeline/loading.tsx` (activity feed — not a table, so no header row and no aligned columns):
 
-- [ ] **Step 2: Confirm the failing list shrank by 7**
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-3 rounded-lg border border-hairline bg-card p-4"
+        >
+          <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-4 w-full max-w-md" />
+          </div>
+          <Skeleton className="h-3 w-16 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+`app/(classroom)/classroom/[sectionId]/write-ups/loading.tsx` (same table shape as `discipline`/`grades`, plus its own file since a Term-4 branch on the real page renders a message instead — the loading state doesn't need to anticipate that, it only covers the normal case):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Confirm the failing list shrank by 8**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, now listing **26** routes.
+Expected: still FAIL, now listing **25** routes.
 
-- [ ] **Step 3: Browser-check one nested route**
+- [ ] **Step 4: Browser-check one nested route**
 
 ```bash
 npm run dev
 ```
 
-Open a classroom, then click between the Students and Attendance tabs. Confirm the section header and tab strip **stay put** while only the panel below shows a skeleton. If the header flickers or duplicates, the `<header>` block was not removed from that file.
+Open a classroom, then click between the Students and Attendance tabs. Confirm the section header and tab strip **stay put** while only the panel below shows a skeleton. If the header flickers or duplicates, `PageShell` or the header markup was not removed from that file.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add "app/(classroom)/classroom/loading.tsx" "app/(classroom)/classroom/[sectionId]"
+git commit -m "feat(ui): loading skeletons for the eight remaining Classroom routes
+
+The module index is FULL; every [sectionId] tab is PANEL_ONLY — the
+layout already renders the header and tab strip, so repeating them
+would make the page jump on arrival."
+```
+
+### Task 5: SIS Admin — the remaining 4 HYBRID routes
+
+**Files:**
+
+- Create: `app/(sis)/sis/admin/staff/[teacherId]/loading.tsx` — **HYBRID**, table (renders `SisPageHeader` directly, no tabs; the page's own root is a plain `<div className="space-y-4">`)
+- Create: `app/(sis)/sis/admin/staff/accounts/loading.tsx` — **HYBRID**, table (same `StaffDirectoryChrome` as the Task 3 reference)
+- Create: `app/(sis)/sis/admin/subjects/loading.tsx` — **HYBRID**, table (`SubjectSetupView` renders `SisPageHeader` + `PageTabNav` itself)
+- Create: `app/(sis)/sis/admin/subjects/secondary/loading.tsx` — **HYBRID**, table (the same shared `SubjectSetupView`)
+
+**Interfaces:**
+
+- Consumes: the HYBRID reference from Task 3.
+- Produces: nothing other than the files.
+
+- [ ] **Step 1: Create the teacher detail page (no tab strip)**
+
+`app/(sis)/sis/admin/staff/[teacherId]/loading.tsx` — this one differs from the Task 3 reference: the real page has no tab strip, just `SisPageHeader` over a plain `<div className="space-y-4">`, so the skeleton must not invent tabs that will never render:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+// HYBRID, no tab strip — app/(sis)/sis/admin/staff/layout.tsx supplies only
+// PageShell; this page renders SisPageHeader directly over a plain
+// `space-y-4` div, unlike its siblings which also render PageTabNav.
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+      </header>
+
+      <div className="space-y-2">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Create the three routes that share the Task 3 reference shape verbatim**
+
+`app/(sis)/sis/admin/staff/accounts/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap gap-2 border-b border-hairline pb-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-28 rounded-md" />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+⚠ **`subjects` and `subjects/secondary` are two halves of one screen** (primary and secondary levels sharing `SubjectSetupView`), so give them the byte-identical file — a user toggling between them must not see the skeleton change shape.
+
+`app/(sis)/sis/admin/subjects/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap gap-2 border-b border-hairline pb-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-28 rounded-md" />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+`app/(sis)/sis/admin/subjects/secondary/loading.tsx` (byte-identical to the file above):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap gap-2 border-b border-hairline pb-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-28 rounded-md" />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Confirm the failing list shrank by 4**
+
+```bash
+npx vitest run __tests__/ui/loading-coverage.test.ts
+```
+
+Expected: still FAIL, now listing **21** routes.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add "app/(classroom)/classroom/[sectionId]"
-git commit -m "feat(ui): loading skeletons for the seven Classroom tabs
+git add "app/(sis)/sis/admin/staff/[teacherId]" "app/(sis)/sis/admin/staff/accounts" "app/(sis)/sis/admin/subjects"
+git commit -m "feat(ui): loading skeletons for four HYBRID SIS Admin routes
 
-Panel-only skeletons — the [sectionId] layout already renders the header
-and tab strip, so repeating them made the page jump on arrival."
+All four skip the outer PageShell (their layout already supplies it) and
+build their own header — three share PageTabNav, the teacher detail page
+does not."
 ```
 
-### Task 5: SIS Admin — 8 routes
+### Task 6: The rest of SIS — 6 routes
+
+The remaining SIS routes split three ways: four top-level FULL pages under Admin, one HYBRID page under AY setup, and one PANEL_ONLY page under the audit log.
 
 **Files:**
 
-- Create: `app/(sis)/sis/admin/cover/loading.tsx` — _table_
-- Create: `app/(sis)/sis/admin/discount-codes/loading.tsx` — _table_
-- Create: `app/(sis)/sis/admin/roles/loading.tsx` — _table_
-- Create: `app/(sis)/sis/admin/school-config/loading.tsx` — _detail_
-- Create: `app/(sis)/sis/admin/staff/[teacherId]/loading.tsx` — _detail_
-- Create: `app/(sis)/sis/admin/staff/accounts/loading.tsx` — _table_
-- Create: `app/(sis)/sis/admin/subjects/loading.tsx` — _table_
-- Create: `app/(sis)/sis/admin/subjects/secondary/loading.tsx` — _table_
+- Create: `app/(sis)/sis/admin/cover/loading.tsx` — **FULL**, other (`CoverBoardView` — a board grouped by absent teacher, not a table)
+- Create: `app/(sis)/sis/admin/discount-codes/loading.tsx` — **FULL**, table (5 stat tiles above)
+- Create: `app/(sis)/sis/admin/roles/loading.tsx` — **FULL**, other (role × capability matrix)
+- Create: `app/(sis)/sis/admin/school-config/loading.tsx` — **FULL**, detail (form + risk banner)
+- Create: `app/(sis)/sis/ay-setup/manage/loading.tsx` — **HYBRID**, table (page renders `AySetupHeader` itself; the existing parent `loading.tsx` at `app/(sis)/sis/ay-setup/loading.tsx` is wrong-shaped for this route and must not be relied on)
+- Create: `app/(sis)/sis/audit-log/overview/loading.tsx` — **PANEL_ONLY**, cards
 
 **Interfaces:**
 
-- Consumes: the three archetypes from Task 3.
+- Consumes: the FULL, HYBRID and PANEL_ONLY references from Task 3.
 - Produces: nothing other than the files.
 
-- [ ] **Step 1: Create each file from its archetype**
+- [ ] **Step 1: Create the cover board skeleton**
 
-Copy the _table_ archetype verbatim for `cover`, `discount-codes`, `roles`, `staff/accounts`, `subjects` and `subjects/secondary`. Copy the _detail_ archetype verbatim for `school-config` and `staff/[teacherId]`.
+⚠ **Read `components/relief/cover-board-view.tsx` before committing this file.** It groups by the absent teacher, not by class (see the "Relief cover carries START and END dates" note in CLAUDE.md) — this is a best-guess board shape; adjust the row/card counts to match what actually renders before treating this step as done.
 
-⚠ **`subjects` and `subjects/secondary` are two halves of one screen** (primary and secondary), so give them the identical file — a user toggling between them should not see the skeleton change shape.
+`app/(sis)/sis/admin/cover/loading.tsx`:
 
-⚠ **These are top-level SIS Admin pages and DO need `PageShell`** — unlike the Classroom tabs in Task 4, there is no intermediate layout supplying the header here.
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
 
-- [ ] **Step 2: Confirm the failing list shrank by 8**
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-40" />
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="space-y-2 rounded-xl border border-hairline bg-card p-4"
+          >
+            <Skeleton className="h-4 w-48" />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {Array.from({ length: 2 }).map((_, j) => (
+                <Skeleton key={j} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the discount codes skeleton (5 stat tiles above the table)**
+
+`app/(sis)/sis/admin/discount-codes/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full rounded-xl" />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 3: Create the role × capability matrix skeleton**
+
+⚠ **Read `components/sis/role-permissions-editor.tsx` before committing** — this skeleton hardcodes 6 role columns as a best guess; match it to the actual `ROLES` count.
+
+`app/(sis)/sis/admin/roles/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <Skeleton className="h-20 w-full rounded-xl" />
+
+      <div className="overflow-hidden rounded-xl border border-hairline">
+        <div className="flex items-center gap-3 border-b border-hairline bg-muted/40 px-4 py-3">
+          <Skeleton className="h-4 w-32" />
+          <div className="ml-auto flex gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-4 w-16" />
+            ))}
+          </div>
+        </div>
+        {Array.from({ length: 14 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 border-b border-hairline px-4 py-3 last:border-b-0"
+          >
+            <Skeleton className="h-4 w-40" />
+            <div className="ml-auto flex gap-6">
+              {Array.from({ length: 6 }).map((_, j) => (
+                <Skeleton key={j} className="h-4 w-4 rounded-sm" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 4: Create the school config skeleton (form + risk banner)**
+
+`app/(sis)/sis/admin/school-config/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <Skeleton className="h-16 w-full rounded-xl" />
+
+      <div className="space-y-4 rounded-xl border border-hairline bg-card p-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ))}
+        <Skeleton className="h-9 w-32" />
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 5: Create the AY setup manage skeleton (HYBRID — do not reuse the existing parent `loading.tsx`)**
+
+`app/(sis)/sis/ay-setup/layout.tsx` renders exactly `<PageShell>{children}</PageShell>`, same as staff's layout. The file at `app/(sis)/sis/ay-setup/loading.tsx` already exists for the sibling index page and is two large skeleton blocks with no header or table shape — it is the wrong fallback for `/manage`, which renders its own `AySetupHeader` over a data table. `manage/loading.tsx` overrides it for this route specifically.
+
+`app/(sis)/sis/ay-setup/manage/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 6: Create the audit log overview skeleton (PANEL_ONLY, cards)**
+
+`app/(sis)/sis/audit-log/overview/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-32 w-full rounded-xl" />
+      ))}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 7: Confirm the failing list shrank by 6**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, now listing **18** routes.
+Expected: still FAIL, now listing **15** routes.
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add "app/(sis)/sis/admin"
-git commit -m "feat(ui): loading skeletons for eight SIS Admin routes"
-```
-
-### Task 6: Remaining SIS routes — 2 routes
-
-**Files:**
-
-- Create: `app/(sis)/sis/audit-log/overview/loading.tsx` — _table_
-- Create: `app/(sis)/sis/ay-setup/manage/loading.tsx` — _detail_
-
-**Interfaces:**
-
-- Consumes: the archetypes from Task 3.
-- Produces: nothing other than the files.
-
-- [ ] **Step 1: Create both files from their archetypes, verbatim, with `PageShell`.**
-
-- [ ] **Step 2: Confirm the list shrank by 2**
+- [ ] **Step 8: Commit**
 
 ```bash
-npx vitest run __tests__/ui/loading-coverage.test.ts
-```
+git add "app/(sis)/sis/admin/cover" "app/(sis)/sis/admin/discount-codes" "app/(sis)/sis/admin/roles" "app/(sis)/sis/admin/school-config" "app/(sis)/sis/ay-setup/manage" "app/(sis)/sis/audit-log/overview"
+git commit -m "feat(ui): loading skeletons for the rest of SIS
 
-Expected: still FAIL, listing **16** routes.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add "app/(sis)/sis/audit-log" "app/(sis)/sis/ay-setup"
-git commit -m "feat(ui): loading skeletons for audit-log overview and AY setup"
+Four FULL admin pages, one HYBRID (ay-setup/manage, which does NOT
+inherit its parent's mismatched loading.tsx), one PANEL_ONLY (audit-log
+overview)."
 ```
 
 ### Task 7: Admissions — 4 routes
 
+All four are FULL and all four are table-shaped.
+
 **Files:**
 
-- Create: `app/(admissions)/admissions/applications/closed/loading.tsx` — _table_
-- Create: `app/(admissions)/admissions/cohorts/pre-course/loading.tsx` — _table_
-- Create: `app/(admissions)/admissions/feedback/loading.tsx` — _table_
-- Create: `app/(admissions)/admissions/upcoming/applications/loading.tsx` — _table_
+- Create: `app/(admissions)/admissions/applications/closed/loading.tsx` — **FULL**, table (AY switcher + reason chips above)
+- Create: `app/(admissions)/admissions/cohorts/pre-course/loading.tsx` — **FULL**, table (the real page delegates its shell to `CohortPageShell`, which itself renders `PageShell` + header — this file still imports `PageShell` directly, since that's the only shell primitive `loading.tsx` is allowed to use)
+- Create: `app/(admissions)/admissions/feedback/loading.tsx` — **FULL**, table (3 stat cards above)
+- Create: `app/(admissions)/admissions/upcoming/applications/loading.tsx` — **FULL**, table (the real page has a "no upcoming AY" empty-state branch; the loading state only needs to cover the normal case)
 
 **Interfaces:**
 
-- Consumes: the _table_ archetype from Task 3.
+- Consumes: the FULL reference from Task 3.
 - Produces: nothing other than the files.
 
-- [ ] **Step 1: Copy the table archetype verbatim into all four, with `PageShell`.**
+- [ ] **Step 1: Create the closed applications skeleton (AY switcher + reason chips)**
 
-- [ ] **Step 2: Confirm the list shrank by 4**
+`app/(admissions)/admissions/applications/closed/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-40" />
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-7 w-24 rounded-full" />
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the pre-course cohort skeleton**
+
+`app/(admissions)/admissions/cohorts/pre-course/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 3: Create the feedback skeleton (3 stat cards above)**
+
+`app/(admissions)/admissions/feedback/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 4: Create the upcoming applications skeleton**
+
+`app/(admissions)/admissions/upcoming/applications/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 5: Confirm the failing list shrank by 4**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, listing **12** routes.
+Expected: still FAIL, now listing **11** routes.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add "app/(admissions)/admissions"
+git add "app/(admissions)/admissions/applications/closed" "app/(admissions)/admissions/cohorts/pre-course" "app/(admissions)/admissions/feedback" "app/(admissions)/admissions/upcoming/applications"
 git commit -m "feat(ui): loading skeletons for four Admissions routes"
 ```
 
 ### Task 8: Attendance and Evaluation — 5 routes
 
+All five are FULL. Two — `attendance/summary` and `evaluation/comments` — are the exception the mode table flags explicitly: their own page root is a bare `<div className="space-y-6">`, not `PageShell`, and the skeleton must mirror that rather than introduce padding the real page never has.
+
 **Files:**
 
-- Create: `app/(attendance)/attendance/[sectionId]/summary/loading.tsx` — _table_
-- Create: `app/(attendance)/attendance/import/loading.tsx` — _detail_
-- Create: `app/(attendance)/attendance/summary/loading.tsx` — _table_
-- Create: `app/(evaluation)/evaluation/comments/loading.tsx` — _table_
-- Create: `app/(evaluation)/evaluation/virtue-themes/loading.tsx` — _table_
+- Create: `app/(attendance)/attendance/[sectionId]/summary/loading.tsx` — **FULL**, table ("no calendar configured" empty branch on the real page; the loading state only covers the normal case)
+- Create: `app/(attendance)/attendance/import/loading.tsx` — **FULL**, detail (single form in a card)
+- Create: `app/(attendance)/attendance/summary/loading.tsx` — **FULL**, table, ⚠ bare `<div>` root, not `PageShell`
+- Create: `app/(evaluation)/evaluation/comments/loading.tsx` — **FULL**, table, ⚠ bare `<div>` root, not `PageShell`
+- Create: `app/(evaluation)/evaluation/virtue-themes/loading.tsx` — **FULL**, detail (editor, T1–T3)
 
 **Interfaces:**
 
-- Consumes: the archetypes from Task 3.
+- Consumes: the FULL reference from Task 3.
 - Produces: nothing other than the files.
 
-- [ ] **Step 1: Copy each archetype verbatim, with `PageShell`.**
+- [ ] **Step 1: Create the section attendance summary skeleton**
 
-⚠ `attendance/import` is a wizard-shaped upload screen, so use the _detail_ archetype rather than a row list — a twelve-row table skeleton resolving into a file picker is worse than no skeleton.
+`app/(attendance)/attendance/[sectionId]/summary/loading.tsx`:
 
-- [ ] **Step 2: Confirm the list shrank by 5**
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the import wizard skeleton**
+
+⚠ This is a wizard-shaped upload screen, so use the detail archetype rather than a row list — a twelve-row table skeleton resolving into a file picker is worse than no skeleton.
+
+`app/(attendance)/attendance/import/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <div className="space-y-4 rounded-xl border border-hairline bg-card p-6">
+        <Skeleton className="h-5 w-56" />
+        <Skeleton className="h-4 w-96 max-w-full" />
+        <Skeleton className="h-40 w-full rounded-lg border border-dashed border-hairline" />
+        <Skeleton className="h-9 w-32" />
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 3: Create the attendance summary skeleton — bare `<div>` root, no `PageShell`**
+
+`app/(attendance)/attendance/summary/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+// ⚠ This page's own root is a bare `<div className="space-y-6">`, not
+// PageShell (it deliberately mirrors markbook/awards's shape rather than
+// adopting PageShell — see the header comment in page.tsx). Mirror that
+// here; wrapping in PageShell would double the outer padding.
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Create the evaluation comments skeleton — bare `<div>` root, no `PageShell`**
+
+`app/(evaluation)/evaluation/comments/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+// ⚠ Same shape family as app/(markbook)/markbook/awards/page.tsx and
+// app/(attendance)/attendance/summary/page.tsx (see that file's own header
+// comment) — a bare `<div className="space-y-6">` root, not PageShell.
+export default function Loading() {
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 5: Create the virtue themes editor skeleton (T1–T3)**
+
+`app/(evaluation)/evaluation/virtue-themes/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <div className="space-y-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className="space-y-3 rounded-xl border border-hairline bg-card p-6"
+          >
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+          </div>
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 6: Confirm the failing list shrank by 5**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, listing **7** routes.
+Expected: still FAIL, now listing **6** routes.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add "app/(attendance)/attendance" "app/(evaluation)/evaluation"
-git commit -m "feat(ui): loading skeletons for Attendance and Evaluation routes"
+git add "app/(attendance)/attendance/[sectionId]/summary" "app/(attendance)/attendance/import" "app/(attendance)/attendance/summary" "app/(evaluation)/evaluation/comments" "app/(evaluation)/evaluation/virtue-themes"
+git commit -m "feat(ui): loading skeletons for Attendance and Evaluation routes
+
+Two of the five mirror their page's bare div root instead of PageShell —
+copying PageShell in blind would have added padding the real page
+never has."
 ```
 
-### Task 9: Markbook, P-Files, Records — 6 routes
+### Task 9: Markbook and P-Files — 4 routes
 
 **Files:**
 
-- Create: `app/(markbook)/markbook/awards/loading.tsx` — _table_
-- Create: `app/(markbook)/markbook/grading/new/loading.tsx` — _detail_
-- Create: `app/(p-files)/p-files/document-validation/applicants/loading.tsx` — _table_
-- Create: `app/(p-files)/p-files/document-validation/expiring/loading.tsx` — _table_
-- Create: `app/(records)/records/discipline/loading.tsx` — _table_
-- Create: `app/(records)/records/level-mismatches/loading.tsx` — _table_
+- Create: `app/(markbook)/markbook/awards/loading.tsx` — **FULL**, other (filter bar + level-breakdown dashboard, not a table)
+- Create: `app/(markbook)/markbook/grading/new/loading.tsx` — **FULL**, detail (multi-field create form)
+- Create: `app/(p-files)/p-files/document-validation/applicants/loading.tsx` — **PANEL_ONLY**, table
+- Create: `app/(p-files)/p-files/document-validation/expiring/loading.tsx` — **PANEL_ONLY**, table
 
 **Interfaces:**
 
-- Consumes: the archetypes from Task 3.
+- Consumes: the FULL and PANEL_ONLY references from Task 3.
 - Produces: nothing other than the files.
 
-- [ ] **Step 1: Copy each archetype verbatim.**
+- [ ] **Step 1: Create the awards dashboard skeleton**
 
-⚠ The two `document-validation` routes sit under a layout that renders the shared tab strip, so **omit `PageShell` and the tab-strip block** in those two, exactly as in Task 4. The other four are top-level and need `PageShell`.
+`app/(markbook)/markbook/awards/loading.tsx`:
 
-⚠ `markbook/grading/new` is a create form, so use the _detail_ archetype.
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
 
-- [ ] **Step 2: Confirm the list shrank by 6**
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-36" />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 w-full rounded-xl" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the grading create-form skeleton**
+
+`app/(markbook)/markbook/grading/new/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <Skeleton className="h-4 w-32" />
+
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <div className="space-y-4 rounded-xl border border-hairline bg-card p-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ))}
+        <Skeleton className="h-9 w-32" />
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 3: Create the two document-validation queue skeletons**
+
+⚠ **These sit under a layout that already renders the shared tab strip** — same rule as the Classroom tabs in Task 4: no `PageShell`, no header, no tab strip in either file.
+
+`app/(p-files)/p-files/document-validation/applicants/loading.tsx`:
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+`app/(p-files)/p-files/document-validation/expiring/loading.tsx` (same shape, its own file):
+
+```tsx
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="ml-auto h-9 w-28" />
+      </div>
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Confirm the failing list shrank by 4**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: still FAIL, listing **1** route — `app/(dashboard)/account`.
+Expected: still FAIL, now listing **2** routes — `app/(records)/records/level-mismatches` and `app/(dashboard)/account`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add "app/(markbook)/markbook" "app/(p-files)/p-files" "app/(records)/records"
-git commit -m "feat(ui): loading skeletons for Markbook, P-Files and Records routes"
+git add "app/(markbook)/markbook/awards" "app/(markbook)/markbook/grading/new" "app/(p-files)/p-files/document-validation"
+git commit -m "feat(ui): loading skeletons for Markbook and P-Files routes"
 ```
 
-### Task 10: Account, and the test goes green
+### Task 10: Records and Account — the test goes green
 
 **Files:**
 
-- Create: `app/(dashboard)/account/loading.tsx` — _detail_
+- Create: `app/(records)/records/level-mismatches/loading.tsx` — **FULL**, table (1 card above)
+- Create: `app/(dashboard)/account/loading.tsx` — **FULL**, cards (asymmetric 300px/1fr card grid)
 
 **Interfaces:**
 
-- Consumes: the _detail_ archetype from Task 3.
+- Consumes: the FULL reference from Task 3.
 - Produces: a passing `loading-coverage` test — the deliverable of Phase 2.
 
-- [ ] **Step 1: Create the file from the detail archetype, with `PageShell`.**
+- [ ] **Step 1: Create the level mismatches skeleton (1 card above the table)**
 
-- [ ] **Step 2: Run the coverage test and confirm it PASSES**
+`app/(records)/records/level-mismatches/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-12 w-72" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </header>
+
+      <Skeleton className="h-24 w-full rounded-xl" />
+
+      <div className="space-y-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 2: Create the account skeleton (asymmetric 300px/1fr card grid)**
+
+`app/(dashboard)/account/loading.tsx`:
+
+```tsx
+import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export default function Loading() {
+  return (
+    <PageShell>
+      <header className="space-y-3">
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-12 w-72" />
+        <Skeleton className="h-4 w-[28rem] max-w-full" />
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[300px_1fr]">
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    </PageShell>
+  );
+}
+```
+
+- [ ] **Step 3: Run the coverage test and confirm it PASSES**
 
 ```bash
 npx vitest run __tests__/ui/loading-coverage.test.ts
 ```
 
-Expected: **PASS**, all five assertions.
+Expected: **PASS**, all five assertions. This is the last of the 36 routes — the count should be **0**.
 
-- [ ] **Step 3: Run the full suite**
+- [ ] **Step 4: Run the full suite**
 
 ```bash
 npm test
@@ -748,19 +1848,19 @@ npm test
 
 Expected: green apart from the four known flakes.
 
-- [ ] **Step 4: Production build and browser pass**
+- [ ] **Step 5: Production build and browser pass**
 
 ```bash
 npm run build && npm start
 ```
 
-⚠ **Test in the production build, not dev** — prefetching only runs in production, and the whole point is what a real user sees. Click into five routes that previously had no skeleton, from a different page each time: `/classroom`, `/sis/admin/staff`, `/records/discipline`, `/admissions/feedback`, `/account`. Confirm each shows a skeleton on click rather than a dead screen.
+⚠ **Test in the production build, not dev** — prefetching only runs in production, and the whole point is what a real user sees. Click into six routes covering all three modes, from a different page each time: `/records/discipline` (FULL), `/classroom/[a real sectionId]/students` (PANEL_ONLY), `/sis/admin/staff` (HYBRID), `/sis/admin/cover` (FULL, other), `/admissions/feedback` (FULL, table), `/account` (FULL, cards). Confirm each shows a skeleton on click rather than a dead screen, and that the PANEL_ONLY and HYBRID routes do **not** show the header/tabs jump described in Task 3.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add "app/(dashboard)/account/loading.tsx"
-git commit -m "feat(ui): loading skeleton for Account, completing coverage
+git add "app/(records)/records/level-mismatches" "app/(dashboard)/account/loading.tsx"
+git commit -m "feat(ui): loading skeletons for Records and Account, completing coverage
 
 All 112 routes now either show a skeleton on click or carry a written
 reason why they should not. __tests__/ui/loading-coverage.test.ts fails
