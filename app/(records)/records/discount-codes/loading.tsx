@@ -1,38 +1,25 @@
 import { PageShell } from '@/components/ui/page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonText } from '@/components/ui/skeleton-layouts';
 
+/**
+ * Mirrors `app/(records)/records/discount-codes/page.tsx` — change this file
+ * when that one changes.
+ *
+ * That page is a redirect stub: the discount-code catalogue moved to SIS Admin
+ * in 2026-04, and the component's whole body forwards to
+ * `/sis/admin/discount-codes`. There is no shape here to mirror, so the loader
+ * it replaces — a hero, an AY switcher, four stat cards and a tall table
+ * block — was drawing a page that no longer exists at this path. It stays
+ * minimal on purpose: it shows for the instant the redirect takes, then the
+ * destination's own loader takes over.
+ */
 export default function Loading() {
   return (
     <PageShell>
-      <Skeleton className="h-4 w-32" />
-
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <Skeleton className="h-3 w-48" />
-          <Skeleton className="h-12 w-80" />
-          <Skeleton className="h-4 w-[28rem] max-w-full" />
-        </div>
-        <div className="flex flex-col items-start gap-2 md:items-end">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-7 w-20" />
-            <Skeleton className="h-7 w-20" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-9 w-40" />
-            <Skeleton className="h-9 w-28" />
-          </div>
-        </div>
+      <header className="space-y-4">
+        <SkeletonText variant="eyebrow" className="w-48" />
+        <SkeletonText variant="headline" className="w-72 max-w-full" />
       </header>
-
-      <section>
-        <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-xl" />
-          ))}
-        </div>
-      </section>
-
-      <Skeleton className="h-96 w-full rounded-xl" />
     </PageShell>
   );
 }

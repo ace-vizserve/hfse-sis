@@ -1,27 +1,26 @@
 import { PageShell } from '@/components/ui/page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonText } from '@/components/ui/skeleton-layouts';
 
+/**
+ * Mirrors `app/(records)/records/compare/page.tsx` — change this file when
+ * that one changes.
+ *
+ * That page is a redirect stub: Compare was replaced by Records → Insights,
+ * and the component's whole body is `redirect('/records/insights')`. It
+ * therefore has NO shape to mirror, and the loader it used to carry — a hero,
+ * a filter row, six stat tiles and a chart — drew a page that has not existed
+ * for months. Anything more than a header bar here is a picture of a screen
+ * the visitor will never see, so this deliberately stays minimal: it shows
+ * for the instant the redirect takes and is replaced by the Insights page's
+ * own loader.
+ */
 export default function Loading() {
   return (
     <PageShell>
       <header className="space-y-4">
-        <Skeleton className="h-3 w-40" />
-        <Skeleton className="h-12 w-72" />
+        <SkeletonText variant="eyebrow" className="w-32" />
+        <SkeletonText variant="headline" className="w-60 max-w-full" />
       </header>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-28" />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
-        ))}
-      </div>
-
-      <Skeleton className="h-64 w-full rounded-lg" />
     </PageShell>
   );
 }
