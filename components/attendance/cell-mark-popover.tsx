@@ -5,6 +5,7 @@
 import {
   ArrowUpRight,
   Check,
+  Eraser,
   FileText,
   Plane,
   TriangleAlert,
@@ -148,8 +149,16 @@ export type CellMarkPaletteProps = {
   compassionateAllowance: number;
   /** Present only when a parent's approved filing covers this day. */
   filing?: CellFiling | null;
+  /**
+   * Save a mark — or, with `null`, CLEAR the day (migration 134).
+   *
+   * A clear is not a sixth mark and is not offered on the track beside the
+   * five. It is the undo for a mark that should not be there, so it always
+   * arrives as `(null, null, null)`: a cleared day may carry neither a reason
+   * nor a note, which is a database constraint, not a convention.
+   */
   onPick: (
-    status: AttendanceStatus,
+    status: AttendanceStatus | null,
     exReason: ExReason | null,
     exNote?: string | null
   ) => void;
@@ -203,8 +212,15 @@ export function CellMarkPalette({
   // already set", which is a no-op.
   // Changing a day the school has already excused. Held here until confirmed —
   // see `OverrideConfirm` for why this is inline rather than a dialog.
-  const [pendingOverride, setPendingOverride] =
-    useState<AttendanceStatus | null>(null);
+  //
+  // `'clear'` is a change like any other as far as this question goes: a
+  // teacher blanking a day two people approved is exactly the moment the
+  // filing has to interrupt. Routing it anywhere else would repeat the bug
+  // the keyboard shortcuts already had — a guard only one path respects is
+  // not a guard.
+  const [pendingOverride, setPendingOverride] = useState<
+    AttendanceStatus | 'clear' | null
+  >(null);
 
   function pickStatus(next: string) {
     if (!next) return;
@@ -230,7 +246,31 @@ export function CellMarkPalette({
     const next = pendingOverride;
     setPendingOverride(null);
     setExcusedArmed(false);
-    onPick(next, null);
+    if (next === 'clear') onPick(null, null, null);
+    else onPick(next, null);
+  }
+
+  /**
+   * Return the day to unmarked.
+   *
+   * Offered only on a cell that HAS a mark — there is nothing to clear
+   * otherwise, and an action that does nothing is worse than no action. The
+   * grid renders this panel only for the active cell, so `status` is that
+   * cell's current mark.
+   *
+   * ⚠ It is not destructive in the sense the design rules mean. `attendance_
+   * daily` is append-only, so the mark being cleared stays in the ledger with
+   * its author and its timestamp; what changes is which row wins. That is why
+   * this is a quiet `ghost` and not a red commit button — a red button here
+   * would say "this is final" about the one action in the panel that is not.
+   */
+  function clearMark() {
+    if (filing && status === 'EX') {
+      setPendingOverride('clear');
+      return;
+    }
+    setExcusedArmed(false);
+    onPick(null, null, null);
   }
 
   function pickReason(next: string) {
@@ -286,7 +326,9 @@ export function CellMarkPalette({
   const noteLeft = EX_NOTE_MAX_LENGTH - noteDraft.length;
 
   const pendingWord =
-    marks.find((m) => m.status === pendingOverride)?.word ?? '';
+    pendingOverride === 'clear'
+      ? 'cleared'
+      : (marks.find((m) => m.status === pendingOverride)?.word ?? '');
 
   return (
     <div onKeyDown={onKeyDown} className="flex flex-col gap-3.5">
@@ -486,11 +528,41 @@ export function CellMarkPalette({
 
       {/* The resting line. A plain mark saves on the click and the popover
           closes, which is the fast bulk-encoding path — worth saying once
-          rather than leaving the teacher to discover it. */}
-      {!excusedOpen && !pendingOverride && (
+          rather than leaving the teacher to discover it.
+
+          ⚠ EMPTY CELLS ONLY, now that a marked cell has its own footer below.
+          Two lines of micro-copy stacked under the track is exactly the
+          clutter the 2026-08-27 redesign was asked to remove, and the reader
+          of "saves as soon as you pick" is someone who has not picked yet. */}
+      {!excusedOpen && !pendingOverride && status === null && (
         <p className="text-[11px] text-muted-foreground">
           Saves as soon as you pick.
         </p>
+      )}
+
+      {/* Undo. Below a hairline and deliberately quieter than the five marks:
+          it is not a sixth thing to choose between, it is the way out of the
+          choice already made. Never rendered on an empty cell — see
+          `clearMark`. */}
+      {status !== null && !pendingOverride && (
+        <>
+          <div className="h-px bg-border" aria-hidden />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              Returns the day to unmarked.
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={clearMark}
+              className="h-7 gap-1.5 px-2 text-[12px] font-normal text-muted-foreground hover:text-foreground"
+            >
+              <Eraser className="size-3.5" aria-hidden />
+              Clear mark
+            </Button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -589,11 +661,22 @@ function OverrideConfirm({
   onConfirm,
 }: {
   filing: CellFiling;
-  nextStatus: AttendanceStatus;
+  nextStatus: AttendanceStatus | 'clear';
   nextWord: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const isClear = nextStatus === 'clear';
+  // ⚠ SAME RULE AS THE SENTENCE BELOW — built in JS, never as JSX text around
+  // an expression. "Marking it cleared" is also not English, so the clear
+  // branch rewrites the verb rather than substituting a word into the
+  // reviewed absence sentence.
+  const consequence = isClear
+    ? 'Clearing it won’t change what the parent sent.'
+    : `Marking it ${nextWord.toLowerCase()} won’t change what the parent sent.`;
+  const confirmLabel = isClear
+    ? 'Clear the mark'
+    : `Mark ${nextWord.toLowerCase()}`;
   return (
     <div className="flex animate-in flex-col gap-3 fade-in-0 slide-in-from-top-1 duration-150">
       <div className="flex items-start gap-2.5 rounded-xl bg-brand-amber/10 px-3 py-2.5">
@@ -611,9 +694,7 @@ function OverrideConfirm({
           {filing.approvedBy
             ? `${filing.approvedBy} approved this day as excused.`
             : 'The school approved this day as excused.'}{' '}
-          <span className="text-muted-foreground">
-            {`Marking it ${nextWord.toLowerCase()} won’t change what the parent sent.`}
-          </span>
+          <span className="text-muted-foreground">{consequence}</span>
         </p>
       </div>
       <div className="flex items-center justify-end gap-2">
@@ -621,11 +702,13 @@ function OverrideConfirm({
           Keep excused
         </Button>
         <Button type="button" size="sm" onClick={onConfirm}>
-          Mark {nextWord.toLowerCase()}
+          {confirmLabel}
         </Button>
       </div>
       <span className="sr-only" role="status">
-        {`Confirm changing an excused day to ${nextStatus}.`}
+        {isClear
+          ? 'Confirm returning an excused day to unmarked.'
+          : `Confirm changing an excused day to ${nextStatus}.`}
       </span>
     </div>
   );

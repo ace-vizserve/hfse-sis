@@ -139,6 +139,45 @@ describe('the segmented track', () => {
   });
 });
 
+/**
+ * Undoing a mark — migration 134.
+ *
+ * A clear is not a sixth thing on the track. It is the way out of a choice
+ * already made, so it sits under a hairline rule, stays quieter than the five
+ * marks, and does not exist at all on a cell nobody has marked.
+ */
+describe('clearing a mark', () => {
+  it('is not offered on a cell that has no mark', () => {
+    // An action that does nothing is worse than no action — and here it would
+    // sit on the panel a teacher meets most often, the empty one.
+    setup({ status: null });
+    expect(screen.queryByRole('button', { name: /Clear mark/i })).toBeNull();
+  });
+
+  it('is offered once the cell carries a mark', () => {
+    setup({ status: 'P' });
+    expect(screen.getByRole('button', { name: /Clear mark/i })).toBeTruthy();
+  });
+
+  it('sends a null status carrying no reason and no note', async () => {
+    // ⚠ The three nulls are the contract, not tidiness:
+    // `attendance_daily_cleared_has_no_reason_chk` refuses a cleared row that
+    // still holds an excuse, so a reason surviving here is a 500 in the grid.
+    const { onPick, user } = setup({ status: 'EX', exReason: 'mc' });
+    await user.click(screen.getByRole('button', { name: /Clear mark/i }));
+    expect(onPick).toHaveBeenCalledWith(null, null, null);
+  });
+
+  it('replaces the "saves as soon as you pick" line rather than stacking on it', () => {
+    // Two lines of micro-copy under the track is the clutter the 2026-08-27
+    // redesign was asked to remove. The reader of "saves as soon as you pick"
+    // is someone who has not picked yet.
+    setup({ status: 'P' });
+    expect(screen.queryByText('Saves as soon as you pick.')).toBeNull();
+    expect(screen.getByText('Returns the day to unmarked.')).toBeTruthy();
+  });
+});
+
 describe('quotas read as what is left, not as a fraction', () => {
   it('counts down the remaining allowance', async () => {
     const { user } = setup({ vlUsed: 0, vlAllowance: 1 });
@@ -292,6 +331,42 @@ describe('a day a parent filed for', () => {
     const { onPick, user } = setup({ status: 'P', filing: FILING });
     await user.click(screen.getByRole('radio', { name: 'Absent' }));
     expect(onPick).toHaveBeenCalledWith('A', null);
+  });
+
+  it('asks before CLEARING a day the school approved', async () => {
+    // Blanking an approved day is the same interruption as re-marking one —
+    // a guard only some paths respect is not a guard. The verb changes,
+    // because "Marking it cleared" is not English.
+    const { onPick, user } = setup({
+      status: 'EX',
+      exReason: 'mc',
+      filing: FILING,
+    });
+    await user.click(screen.getByRole('button', { name: /Clear mark/i }));
+
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByText(/Ms Lhen Mendoza approved this day/)).toBeTruthy();
+    expect(
+      screen.getByText('Clearing it won’t change what the parent sent.')
+    ).toBeTruthy();
+  });
+
+  it('clears once confirmed', async () => {
+    const { onPick, user } = setup({
+      status: 'EX',
+      exReason: 'mc',
+      filing: FILING,
+    });
+    await user.click(screen.getByRole('button', { name: /Clear mark/i }));
+    await user.click(screen.getByRole('button', { name: /Clear the mark/i }));
+    expect(onPick).toHaveBeenCalledWith(null, null, null);
+  });
+
+  it('does not ask when the teacher marked the day themselves', async () => {
+    // No filing on the cell, so there is nothing to override.
+    const { onPick, user } = setup({ status: 'EX', exReason: 'mc' });
+    await user.click(screen.getByRole('button', { name: /Clear mark/i }));
+    expect(onPick).toHaveBeenCalledWith(null, null, null);
   });
 
   it('states the absence of proof rather than leaving it blank', () => {

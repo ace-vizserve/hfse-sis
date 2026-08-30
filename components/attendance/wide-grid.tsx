@@ -312,7 +312,10 @@ export function AttendanceWideGrid({
       sectionStudentId: string;
       termId: string;
       date: string;
-      status: AttendanceStatus;
+      // `null` CLEARS the day (migration 134) — the route appends a row with
+      // no status, which supersedes the prior mark and falls out of every
+      // rollup, so the cell reads as never marked.
+      status: AttendanceStatus | null;
       exReason: ExReason | null;
       exNote?: string | null;
     }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
@@ -367,7 +370,10 @@ export function AttendanceWideGrid({
   async function writeCell(
     enrolmentId: string,
     date: string,
-    status: AttendanceStatus,
+    // `null` CLEARS the cell — migration 134. It is a write like any other:
+    // optimistic here, reverted the same way on failure, and reported through
+    // the same `useWriteAction` lifecycle.
+    status: AttendanceStatus | null,
     exReason: ExReason | null,
     // `undefined` means "leave the note as it is" (a status/reason change);
     // an explicit null clears it. The popover only passes this when the note
@@ -382,15 +388,28 @@ export function AttendanceWideGrid({
       exNote: null,
     };
 
-    // A note only belongs to an EX mark, so moving away from EX drops it.
+    // A note only belongs to an EX mark, so moving away from EX drops it —
+    // and a clear is the furthest away from EX there is.
     const nextNote =
       status !== 'EX' ? null : exNote === undefined ? prev.exNote : exNote;
+
+    // ⚠ A CLEARED CELL CARRIES NOTHING WITH IT. The database says the same
+    // thing outright (`attendance_daily_cleared_has_no_reason_chk`): a row
+    // with no status may hold neither a reason nor a note, or the day reads
+    // as unmarked while still carrying "medical certificate submitted"
+    // underneath. Normalised here rather than trusted from the caller, so a
+    // future caller that forgets cannot turn it into a 500 in the grid.
+    const nextReason = status === null ? null : exReason;
 
     // KD #94 — soft warning when a vacation-leave entry would push the
     // student over their per-term quota (HFSE policy: 1 per term). The
     // write proceeds either way — registrar can grant an exception, this
     // is just a heads-up. Count cells in the current grid (all in this
     // term) excluding the cell we're about to flip.
+    //
+    // ⚠ A CLEAR NEVER REACHES THIS BLOCK, and must not: it GIVES an allowance
+    // back rather than spending one, so a quota warning on the way out would
+    // be both wrong and alarming.
     if (status === 'EX' && exReason === 'vacation') {
       const wasAlreadyVacation =
         prev.status === 'EX' && prev.exReason === 'vacation';
@@ -432,7 +451,7 @@ export function AttendanceWideGrid({
       }
     }
 
-    updateCell(k, { status, exReason, exNote: nextNote });
+    updateCell(k, { status, exReason: nextReason, exNote: nextNote });
     setIsSaving(true);
     const saved = await run(
       () =>
@@ -441,16 +460,20 @@ export function AttendanceWideGrid({
           termId,
           date,
           status,
-          exReason,
+          exReason: nextReason,
           exNote: nextNote,
         }),
       {
         pending: 'Saving…',
-        success: 'Saved.',
+        // A clear says what it did. "Saved." over a cell that just went blank
+        // reads as though something was written into it.
+        success: status === null ? 'Mark cleared.' : 'Saved.',
         // Same wording the inline handler used. `run` hands over the thrown
         // error rather than a string so the server's own message survives.
         error: (e) =>
-          `Could not save: ${e instanceof Error ? e.message : 'error'}`,
+          `${status === null ? 'Could not clear the mark' : 'Could not save'}: ${
+            e instanceof Error ? e.message : 'error'
+          }`,
       }
     );
     setIsSaving(false);
@@ -1126,9 +1149,12 @@ export function AttendanceWideGrid({
                   exReason,
                   exNote
                 );
-                // Present, Absent, Late and No class are one decision, so the
-                // popover closes and the teacher moves on — that is the fast
-                // bulk-encoding path and it must stay one click.
+                // Present, Absent, Late, No class and a clear are each one
+                // decision, so the popover closes and the teacher moves on —
+                // that is the fast bulk-encoding path and it must stay one
+                // click. (A clear arrives as `null`, which is not 'EX', so it
+                // closes with the rest — and it should: the panel's whole
+                // lower half is about a mark that no longer exists.)
                 //
                 // Excused is not one decision: it is a mark, then a reason,
                 // then possibly a note. Closing after the first of those threw
