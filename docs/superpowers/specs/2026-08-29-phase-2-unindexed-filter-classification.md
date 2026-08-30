@@ -379,7 +379,16 @@ The third `unknown.created_at` site is `lib/activity/feed.ts:210` — an `.order
 (`126:200`, `(flow, created_at desc) where status = 'pending'`) and bounded per §3c. The remaining
 one is `lib/discipline/queries.ts:256`, already answered in §2c.
 
-### §4c — `grade_audit_log`: unindexed, and the only entry carrying a re-measure trigger (2 pairs)
+### §4c — `grade_audit_log`: unindexed, and the only entry that rested on an inference — ✅ NOW COUNTED (2 pairs)
+
+> ✅ **Resolved 2026-08-30: 6 rows.** `scripts/probe-grade-audit-log-size.ts` (read-only,
+> re-runnable) measured **6 rows against 16,456 `grade_entries`** — the table only gains a row
+> on a **post-lock** change through the change-request flow, which is rare by design. The
+> ~50,000-row trigger below stands as the re-open condition and is four orders of magnitude
+> away. ⚠ **The reasoning error below is worth keeping:** it bounded an append-only, cross-AY
+> table using AY2026's 4,636 grade entries, when the all-years figure is 16,456 — an AY-scoped
+> number used as if it capped a table with no per-AY ceiling. The verdict was right and the
+> argument was not, which is why it was counted rather than trusted.
 
 | Pair                         | Sites | Verdict                                                                    |
 | ---------------------------- | ----- | -------------------------------------------------------------------------- |
