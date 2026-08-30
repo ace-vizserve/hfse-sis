@@ -26,14 +26,7 @@ import Link from 'next/link';
 // Chromebooks. At that point look at column virtualization (react-window)
 // or a paginated-by-week view.
 
-import {
-  Bus,
-  CalendarDays,
-  CheckCircle2,
-  Loader2,
-  Star,
-  Users,
-} from 'lucide-react';
+import { Bus, CalendarDays, Star, Users } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import {
   memo,
@@ -157,13 +150,16 @@ export type WideGridEnrolment = {
 // "marking palette" popover (components/attendance/cell-mark-popover.tsx)
 // anchored to the active cell — see the cell render + <Popover> below.
 
+// No per-cell `saving`/`savedAt` here. A cell used to carry its own spinner and
+// then a tick for 1.5s, which put ~1,410 potential indicators on one screen and
+// still left the teacher free to start a second edit on top of an unwritten
+// one. The whole grid now reports the write instead — dimmed while it runs
+// (`isSaving`), and a toast when it lands.
 type CellState = {
   status: AttendanceStatus | null;
   exReason: ExReason | null;
   /** Free-text "why" on an EX mark. Shown in the tooltip + a corner dot. */
   exNote: string | null;
-  saving: boolean;
-  savedAt: number | null;
 };
 
 type GridKey = string; // `${enrolmentId}|${date}`
@@ -223,8 +219,6 @@ export function AttendanceWideGrid({
         status: r.status,
         exReason: r.exReason,
         exNote: r.exNote,
-        saving: false,
-        savedAt: null,
       });
     }
     return m;
@@ -301,8 +295,6 @@ export function AttendanceWideGrid({
         status: null,
         exReason: null,
         exNote: null,
-        saving: false,
-        savedAt: null,
       };
       next.set(k, { ...prev, ...patch });
       return next;
@@ -388,8 +380,6 @@ export function AttendanceWideGrid({
       status: null,
       exReason: null,
       exNote: null,
-      saving: false,
-      savedAt: null,
     };
 
     // A note only belongs to an EX mark, so moving away from EX drops it.
@@ -442,7 +432,7 @@ export function AttendanceWideGrid({
       }
     }
 
-    updateCell(k, { status, exReason, exNote: nextNote, saving: true });
+    updateCell(k, { status, exReason, exNote: nextNote });
     setIsSaving(true);
     const saved = await run(
       () =>
@@ -472,21 +462,8 @@ export function AttendanceWideGrid({
         status: prev.status,
         exReason: prev.exReason,
         exNote: prev.exNote,
-        saving: false,
       });
-      return;
     }
-
-    updateCell(k, { saving: false, savedAt: Date.now() });
-    setTimeout(() => {
-      setCells((current) => {
-        const c = current.get(k);
-        if (!c || !c.savedAt || Date.now() - c.savedAt < 1400) return current;
-        const next = new Map(current);
-        next.set(k, { ...c, savedAt: null });
-        return next;
-      });
-    }, 1500);
   }
 
   // Today's column — ref + ISO captured once at mount so the auto-scroll
@@ -1099,8 +1076,6 @@ export function AttendanceWideGrid({
                                   status={status}
                                   exReason={exReason}
                                   exNote={exNote}
-                                  saving={!!cell?.saving}
-                                  saved={!!cell?.savedAt}
                                   onOpen={openCell}
                                 />
                               )}
@@ -1208,8 +1183,8 @@ export function AttendanceWideGrid({
 // parent's stable `openCell` callback (identity never changes) and
 // `enrolmentId`/`iso` are passed as primitive props instead of baked into a
 // fresh per-cell closure, so React.memo's default shallow-prop comparison
-// correctly skips re-rendering every cell whose props (status/saving/
-// saved/active) are unchanged.
+// correctly skips re-rendering every cell whose props (status/exReason/
+// exNote/active) are unchanged.
 const CellButton = memo(function CellButton({
   enrolmentId,
   iso,
@@ -1218,8 +1193,6 @@ const CellButton = memo(function CellButton({
   status,
   exReason,
   exNote,
-  saving,
-  saved,
   onOpen,
 }: {
   enrolmentId: string;
@@ -1229,8 +1202,6 @@ const CellButton = memo(function CellButton({
   status: AttendanceStatus | null;
   exReason: ExReason | null;
   exNote: string | null;
-  saving: boolean;
-  saved: boolean;
   onOpen: (enrolmentId: string, iso: string) => void;
 }) {
   const label = status ?? '—';
@@ -1262,17 +1233,10 @@ const CellButton = memo(function CellButton({
           {label}
         </button>
       )}
-      {saving && (
-        <Loader2 className="pointer-events-none absolute right-0 top-0 size-2.5 animate-spin text-muted-foreground" />
-      )}
-      {saved && (
-        <CheckCircle2 className="pointer-events-none absolute right-0 top-0 size-2.5 text-primary" />
-      )}
       {/* A note lives in the tooltip, which nobody discovers by accident.
           This dot is the only thing that says "there is a reason recorded
-          here" while scanning the sheet. Bottom-left keeps it clear of the
-          saving/saved indicators. */}
-      {hasNote && !saving && !saved && (
+          here" while scanning the sheet. */}
+      {hasNote && (
         <span
           className="pointer-events-none absolute bottom-0.5 left-0.5 size-1 rounded-full bg-foreground/50"
           aria-hidden
