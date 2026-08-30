@@ -369,22 +369,3 @@
     overflow: hidden;
   }
 }
-
-/* View Transitions (Phase 3 — components/ui/crossfade.tsx).
-
-   During a transition the browser paints a snapshot pseudo-element over the
-   page. Without this rule that snapshot swallows clicks, so anything a user
-   taps while a streamed section is fading in is silently lost. */
-::view-transition {
-  pointer-events: none;
-}
-
-/* A crossfade is decoration, so it goes away for anyone who has asked their
-   system to reduce motion. The content still swaps — it just cuts. */
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-}

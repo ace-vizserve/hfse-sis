@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Crossfade } from '@/components/ui/crossfade';
 import { SkeletonCards, SkeletonTable } from '@/components/ui/skeleton-layouts';
 import { PublishWindowPanel } from '@/components/admin/publish-window-panel';
 import { BulkPublishDialog } from '@/components/admin/bulk-publish-dialog';
@@ -204,13 +203,11 @@ export default async function ReportCardsListPage({
       {/* No section picked — current-term KPIs + cross-section publications overview */}
       {!q.section_id && (
         <Suspense fallback={<PublicationsOverviewFallback />}>
-          <Crossfade>
-            <PublicationsOverviewSection
-              sections={sectionsList}
-              termList={termList}
-              currentTermId={currentTermId}
-            />
-          </Crossfade>
+          <PublicationsOverviewSection
+            sections={sectionsList}
+            termList={termList}
+            currentTermId={currentTermId}
+          />
         </Suspense>
       )}
 
@@ -219,15 +216,13 @@ export default async function ReportCardsListPage({
         <Suspense
           fallback={<SectionReportCardsFallback termCount={termList.length} />}
         >
-          <Crossfade>
-            <SectionReportCardsBody
-              sectionId={q.section_id}
-              selectedLabel={selectedLabel}
-              selectedSectionName={selectedSectionName}
-              selectedLevelId={selectedLevelId}
-              termList={termList}
-            />
-          </Crossfade>
+          <SectionReportCardsBody
+            sectionId={q.section_id}
+            selectedLabel={selectedLabel}
+            selectedSectionName={selectedSectionName}
+            selectedLevelId={selectedLevelId}
+            termList={termList}
+          />
         </Suspense>
       )}
     </PageShell>
