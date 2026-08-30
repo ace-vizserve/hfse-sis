@@ -9,12 +9,11 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
-import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -228,7 +227,12 @@ export function ScoreEntryGrid({
     seedMeta: SlotMeta;
   } | null>(null);
 
-  const [savingId, setSavingId] = useState<string | null>(null);
+  // While a score save is in flight the whole grid is disabled and blurred, so
+  // a second edit cannot start on top of an unresolved one. It replaces the old
+  // per-row "Saving…" chip: the save now reports itself through the standard
+  // toast lifecycle (useWriteAction), and what the grid owes the teacher is not
+  // a second narration but a guarantee that nothing else is editable yet.
+  const [isSaving, setIsSaving] = useState(false);
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } =
     useChangeReference();
@@ -414,14 +418,13 @@ export function ScoreEntryGrid({
   // the optimistic flow. The 422 error codes the autosave surfaces + the exact
   // per-cell revert/toast are preserved in patchEntry below.
   // The sheet's "Graded n/N · % complete" card is computed by the page's server
-  // component from `grade_entries`, so it sat at its page-load value while the
-  // teacher filled the grid. Signal after each saved cell and let the hook
-  // coalesce the burst into one refresh once entry goes idle — score entry is
-  // bursty (a column at a time) and each refresh re-runs the whole server
-  // render, so per-cell would be the wrong trade. Same hook, same reason, as
-  // the attendance Term sheet.
-  const router = useRouter();
-  const signalStatsRefresh = useDebouncedRefresh(() => router.refresh());
+  // component from `grade_entries`, so it would otherwise sit at its page-load
+  // value while the teacher filled the grid. `useWriteAction` AWAITS that
+  // refresh before it reports success, which is what lets the grid stay locked
+  // until the numbers on screen are really the new ones — so the old debounced,
+  // coalesced refresh is gone: coalescing exists to let edits keep arriving
+  // during a burst, and this surface now deliberately refuses the burst.
+  const run = useWriteAction();
 
   const entryMutation = useMutation({
     mutationFn: (vars: { entryId: string; payload: Record<string, unknown> }) =>
@@ -516,57 +519,82 @@ export function ScoreEntryGrid({
         }
       }
 
-      setSavingId(entryId);
-      try {
-        const payload = {
-          ...body,
-          ...(bodyOverride ?? {}),
-          ...extraPayload,
-          ...(slotLabel ? { slot_label: slotLabel } : {}),
-        };
-        const data = await entryMutation.mutateAsync({ entryId, payload });
-        setRows((current) =>
-          current.map((r) =>
-            r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
-          )
-        );
-        // Advance the last-saved snapshot to the server-confirmed state so a
-        // later failed commit reverts to THIS save, not the page-load values.
-        const savedPrev = savedRowsRef.current.get(entryId);
-        if (savedPrev) {
-          savedRowsRef.current.set(
-            entryId,
-            applyServerEntry(savedPrev, data.entry)
-          );
+      const payload = {
+        ...body,
+        ...(bodyOverride ?? {}),
+        ...extraPayload,
+        ...(slotLabel ? { slot_label: slotLabel } : {}),
+      };
+
+      setIsSaving(true);
+      // `run` NEVER rejects — it resolves the parsed body, or `undefined` if
+      // the write failed. That is the failure signal here; there is no catch.
+      const result = await run(
+        () => entryMutation.mutateAsync({ entryId, payload }),
+        {
+          pending: 'Saving…',
+          // Reconcile the row from the server's own computed values BEFORE the
+          // refresh is awaited — the grid catches up at once while the toast
+          // keeps holding until the page's "Graded n/N" card is really new.
+          onResolved: (data) => {
+            setRows((current) =>
+              current.map((r) =>
+                r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
+              )
+            );
+            // Advance the last-saved snapshot to the server-confirmed state so
+            // a later failed commit reverts to THIS save, not the page-load
+            // values.
+            const savedPrev = savedRowsRef.current.get(entryId);
+            if (savedPrev) {
+              savedRowsRef.current.set(
+                entryId,
+                applyServerEntry(savedPrev, data.entry)
+              );
+            }
+          },
+          // The two approval voices are kept exactly as they were, because
+          // neither is "Saved." — one says a change request was consumed, the
+          // other that a correction is now on the activity history. They raise
+          // their own toast and return `null`, which is how useWriteAction is
+          // told the surface has already reported the outcome, so exactly one
+          // toast lands per save.
+          success: () => {
+            if ('change_request_id' in extraPayload) {
+              toast.success(
+                'Change request applied — teacher will be notified'
+              );
+              return null;
+            }
+            if ('correction_reason' in extraPayload) {
+              toast.success('Correction logged on activity history');
+              return null;
+            }
+            return 'Saved.';
+          },
+          // Preserve the exact per-cell error voices: a non-2xx (ApiError)
+          // keeps the "Failed to save #N Name: {server error}" line with the
+          // same 'save failed' fallback (reading body.error off
+          // ApiError.body); any other failure (network) keeps the generic
+          // 'Failed to save entry'.
+          error: (e) => {
+            if (e instanceof ApiError) {
+              const row = rowsRef.current.find((r) => r.entry_id === entryId);
+              const serverError =
+                (e.body as { error?: string } | null)?.error ?? 'save failed';
+              return `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${serverError}`;
+            }
+            return e instanceof Error ? e.message : 'Failed to save entry';
+          },
         }
-        if ('change_request_id' in extraPayload) {
-          toast.success('Change request applied — teacher will be notified');
-        } else if ('correction_reason' in extraPayload) {
-          toast.success('Correction logged on activity history');
-        }
-        // Server-confirmed, so the stat cards are now stale. Coalesced.
-        signalStatsRefresh();
-      } catch (e) {
+      );
+      setIsSaving(false);
+
+      if (result === undefined) {
         // The commit did NOT persist — fold the optimistic cell (and its
         // derived Total) back to the last saved values so the grid never
         // keeps displaying a rejected score.
         revertEntry();
-        // Preserve the exact per-cell error voices: a non-2xx (ApiError) keeps
-        // the "Failed to save #N Name: {server error}" line with the same
-        // 'save failed' fallback (reading body.error off ApiError.body); any
-        // other failure (network) keeps the generic 'Failed to save entry'.
-        if (e instanceof ApiError) {
-          const row = rowsRef.current.find((r) => r.entry_id === entryId);
-          const serverError =
-            (e.body as { error?: string } | null)?.error ?? 'save failed';
-          toast.error(
-            `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${serverError}`
-          );
-        } else {
-          toast.error(e instanceof Error ? e.message : 'Failed to save entry');
-        }
-      } finally {
-        setSavingId(null);
       }
     },
     [
@@ -576,7 +604,7 @@ export function ScoreEntryGrid({
       wwTotals.length,
       ptTotals.length,
       entryMutation,
-      signalStatsRefresh,
+      run,
     ]
   );
 
@@ -747,12 +775,6 @@ export function ScoreEntryGrid({
           currentTermLabel={currentTermLabel}
           weights={{ ww: wwPct, pt: ptPct, qa: qaPct }}
         />
-        {savingId && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-brand-indigo/20 bg-brand-indigo/8 px-2.5 py-1 font-mono text-[11px] font-semibold text-brand-indigo">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Saving…
-          </span>
-        )}
       </div>
 
       <Card className="overflow-hidden p-0">
