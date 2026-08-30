@@ -9,18 +9,21 @@ import './lib/env';
 // `proxy.ts` (the Next 16 middleware) — origin reflection + credentials +
 // preflight, which a static `headers()` block here cannot do per-origin.
 const nextConfig: NextConfig = {
-  // Instant Navigations (Next 16.3). Cache Components gives each route a
-  // prerendered shell it can paint before its data arrives; Partial
-  // Prefetching pulls that shell to the browser before the click.
+  // ⚠ DO NOT re-add `cacheComponents: true` / `partialPrefetching: true`
+  // without reading this first. They were turned on 2026-08-30 and reverted
+  // the same day, measured rather than guessed.
   //
-  // Routes that are not ready opt out with `export const instant = false` and
-  // render exactly as they do today. Every page here reads the session cookie
-  // (KD #35), so expect every one to be flagged in the dev overlay — that is
-  // expected, not failure. Validation is development-only and never blocks a
-  // build.
-  cacheComponents: true,
-  partialPrefetching: true,
-
+  // The build only passed with `export const instant = false` on the ROOT
+  // layout, because it calls getSessionUser() — a cookie read — to build the
+  // sidebar, and a request read cannot go into a prerendered static shell.
+  // Opting out at the root opts out EVERY route beneath it, so the app paid
+  // the whole cost of the stricter model and got none of the benefit: no
+  // route gained a prefetchable shell, the dev overlay filled with blocking
+  // -route errors (including an unstable `Date.now()` reached from
+  // RootLayout), and navigation got slower, not faster.
+  //
+  // The prerequisite is moving the root layout's session read behind its own
+  // Suspense boundary. Until that is done this is strictly a regression.
   serverExternalPackages: ['pdf-merger-js'],
   experimental: {
     // Next's default is 0 — every dynamically-rendered route (which is
