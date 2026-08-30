@@ -67,7 +67,14 @@ beforeEach(() => {
 
   (globalThis as Record<string, unknown>).__incrementalCache = {
     isOnDemandRevalidate: false,
-    generateCacheKey: async (invocationKey: string) => {
+    // Next 16.3 SPLIT this method: `generateCacheKey(url, init)` is now the
+    // fetch-key generator, and `unstable_cache` calls the new
+    // `generateSimpleCacheKey(input)` instead (see
+    // node_modules/next/dist/server/lib/incremental-cache/index.js). This is
+    // the hook the whole file observes — every assertion below reads
+    // `requestedKeys`, so the name has to track what unstable_cache actually
+    // calls. Production unstable_cache is unaffected by the rename.
+    generateSimpleCacheKey: async (invocationKey: string) => {
       requestedKeys.push(invocationKey);
       return invocationKey;
     },

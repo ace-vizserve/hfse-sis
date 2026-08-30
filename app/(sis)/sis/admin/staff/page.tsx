@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, UserCheck, Users2 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { StaffDirectoryChrome } from '@/components/sis/staff-directory-chrome';
@@ -14,6 +15,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Crossfade } from '@/components/ui/crossfade';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SkeletonCards,
+  SkeletonTable,
+  SkeletonText,
+} from '@/components/ui/skeleton-layouts';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { getSectionStaffingCoverage } from '@/lib/sis/dashboard';
@@ -58,6 +66,55 @@ export default async function StaffAssignmentsPage({
   // editable — staffing next year before it starts is the normal way to do it.
   const viewOnly = ayCode < currentAyCode;
 
+  // Everything above this line is a GATE: each one can still send the reader
+  // somewhere else, so none of it may stream. Everything below it is the
+  // ANSWER, and an answer is allowed to arrive second — the header, the
+  // people/teaching badge and the two tabs (the LCP) paint from the values
+  // already in hand while the staffing reads are still in flight.
+  return (
+    <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
+      <Suspense fallback={<StaffAssignmentsFallback viewOnly={viewOnly} />}>
+        <Crossfade>
+          <StaffAssignmentsBody
+            ayCode={ayCode}
+            currentAyCode={currentAyCode}
+            ayCodes={ayCodes}
+            viewOnly={viewOnly}
+          />
+        </Crossfade>
+      </Suspense>
+    </StaffDirectoryChrome>
+  );
+}
+
+/**
+ * The staffing reads and everything they render.
+ *
+ * ONE boundary, not two, and that is forced rather than chosen: `rows` from
+ * `loadStaffAssignments` feeds BOTH the "Active teachers" figure in the stat
+ * grid AND the table below it, so splitting the grid from the table would mean
+ * calling that loader twice.
+ *
+ * The accepted cost is the `AySwitcher` and the "View only" badge. Both depend
+ * only on gate values and could paint immediately, but they live in the
+ * `CardAction` of the same card as the table, so they stream in with it. That
+ * is the right trade: a year switcher with no table under it is not something
+ * anyone can use.
+ *
+ * No Supabase client is passed in or created here — all three loaders are
+ * `unstable_cache`-wrapped and build their own.
+ */
+async function StaffAssignmentsBody({
+  ayCode,
+  currentAyCode,
+  ayCodes,
+  viewOnly,
+}: {
+  ayCode: string;
+  currentAyCode: string;
+  ayCodes: string[];
+  viewOnly: boolean;
+}) {
   const [rows, coverage, teacherList] = await Promise.all([
     loadStaffAssignments(ayCode),
     getSectionStaffingCoverage(ayCode),
@@ -72,7 +129,7 @@ export default async function StaffAssignmentsPage({
   const teachingCount = teacherList.length;
 
   return (
-    <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
+    <>
       {/* "Sections missing FCA" leads — it is the one actionable metric of the
           three (Serial Position / Pareto). */}
       <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:shadow-xs sm:grid-cols-3">
@@ -206,6 +263,71 @@ export default async function StaffAssignmentsPage({
           <StaffTable rows={rows} ayCode={ayCode} viewOnly={viewOnly} />
         </CardContent>
       </Card>
-    </StaffDirectoryChrome>
+    </>
+  );
+}
+
+/**
+ * What stands in the boundary's place while the three staffing reads run.
+ *
+ * Built from the archetypes in `components/ui/skeleton-layouts.tsx`, so the
+ * placeholder renders the REAL `<Card>` and `<Table>` emptied and cannot drift
+ * from the shape it stands in for.
+ *
+ * Three cards with `footer={false}`: these are CardHeader-only (description,
+ * `text-3xl` figure, `size-9` tile) and therefore shorter than the
+ * footer-carrying stat cards elsewhere in the app. The grid classes are the
+ * loaded grid's own.
+ *
+ * Four table columns, not eight: `StaffTable` defines eight and hides levels,
+ * subjects, roles and cover through `initialColumnVisibility`, so four is what
+ * a reader actually sees. Twelve rows against a page size of 20 and a roster of
+ * roughly two dozen accounts. No widths are pinned because no column declares
+ * one — inventing them here would cause the shift this file exists to avoid.
+ */
+function StaffAssignmentsFallback({ viewOnly }: { viewOnly: boolean }) {
+  return (
+    <>
+      {/* `grid`, not `className`: it REPLACES the default grid rather than
+          merging with it. Merging would leave the default's `lg:grid-cols-4`
+          applying alongside `sm:grid-cols-3`, so the fallback would lay out
+          four columns where the real grid has three. */}
+      <SkeletonCards
+        count={3}
+        footer={false}
+        grid="grid grid-cols-1 gap-4 sm:grid-cols-3"
+      />
+
+      {/* Real card chrome, so the border and padding do not pop in around the
+          table when the data lands. */}
+      <Card>
+        <CardHeader>
+          <SkeletonText variant="micro" className="w-[120px]" />
+          <div className="flex items-center gap-2">
+            <div
+              aria-hidden
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy shadow-brand-tile"
+            />
+            <SkeletonText variant="title" className="w-[168px]" />
+          </div>
+          {/* Where the AySwitcher lands — same height and width, so the title
+              row keeps its shape. The "View only" badge has to be reserved
+              too: it renders whenever a past year is selected, and `viewOnly`
+              is already settled in the gate above the boundary, so leaving it
+              out would shift the title row on ?ay=AY2025. */}
+          <CardAction className="flex items-center gap-2 self-center">
+            {viewOnly && <Skeleton className="h-8 w-[86px]" />}
+            <Skeleton className="h-9 w-[128px]" />
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {/* No `pagination`: StaffTable sets `hidePagination={rows.length
+              <= 20}` and AY2026 has 19 teacher accounts, so the footer bar
+              does not render. If staffing grows past 20 this needs
+              `pagination` — it is a real ~45px of layout. */}
+          <SkeletonTable columns={4} rows={12} />
+        </CardContent>
+      </Card>
+    </>
   );
 }

@@ -114,7 +114,14 @@ describe('getSchoolConfig — React cache() wrapper', () => {
     const store = new Map<string, unknown>();
     (globalThis as Record<string, unknown>).__incrementalCache = {
       isOnDemandRevalidate: false,
-      generateCacheKey: async (k: string) => k,
+      // Next 16.3 SPLIT this method: `generateCacheKey(url, init)` is now the
+      // fetch-key generator, and `unstable_cache` calls the new
+      // `generateSimpleCacheKey(input)` instead (see
+      // node_modules/next/dist/server/lib/incremental-cache/index.js). A mock
+      // carrying only the old name makes unstable_cache throw
+      // "generateSimpleCacheKey is not a function" — a test-only break;
+      // production unstable_cache is unaffected.
+      generateSimpleCacheKey: async (k: string) => k,
       get: async (key: string) => store.get(key) ?? null,
       set: async (key: string, value: unknown) => {
         store.set(key, { value, isStale: false });
