@@ -7,6 +7,7 @@ import {
   CircleCheck,
   CircleX,
   Clock,
+  Eraser,
   FileText,
   type LucideIcon,
 } from 'lucide-react';
@@ -83,6 +84,16 @@ const MARKS: Array<{ status: 'P' | 'L' | 'A' | 'EX'; word: string }> = [
   { status: 'EX', word: 'Excused' },
 ];
 const EX_REASONS: ExReason[] = ['mc', 'compassionate', 'vacation'];
+
+// The fifth segment on the track is NOT a mark — it is the removal of one, so
+// it deliberately carries no paper-sheet colour. A wash would put it in the
+// same family as P/L/A/EX and read as a fifth thing a student can be. It takes
+// neutral chrome instead (§9.1 muted) with an inset ring so "chosen" still
+// reads, and an eraser rather than a letter: on a paper register, taking a mark
+// back off the day is what an eraser does.
+const CLEARED = 'cleared';
+const CLEAR_BUTTON =
+  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:ring-1 data-[state=on]:ring-inset data-[state=on]:ring-border';
 
 // Day-summary stat cards — status gradient tiles (§9.3 palette). The number
 // is `text-foreground`; the tile carries the colour (matches the page's
@@ -348,6 +359,10 @@ function DailyPanel({
   const run = useWriteAction();
   const [saving, setSaving] = useState(false);
 
+  // Passing `null` here REMOVES the student from the working map, which is
+  // state (a) — "not touched", and therefore Present on Submit. It is NOT how
+  // a mark is taken off a day; that is an entry with no status, state (c).
+  // The two are one keystroke apart and mean opposite things.
   function setMark(enrolmentId: string, m: DailyMark | null) {
     setMarks((cur) => {
       const next = new Map(cur);
@@ -383,10 +398,23 @@ function DailyPanel({
       toast.info('No changes to submit.');
       return;
     }
+    // A submission can carry marks, removals, or both, and "12 updated" would
+    // be wrong about a removal — nothing was updated, a day was blanked. Say
+    // which happened, in the same words the row and the header use.
+    const removed = entries.filter((x) => x.status === null).length;
+    const marked = entries.length - removed;
+    const markWord = (n: number) => `${n} mark${n === 1 ? '' : 's'}`;
+    const success =
+      removed === 0
+        ? `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`
+        : marked === 0
+          ? `Removed ${markWord(removed)} for ${formatLongDate(date)}.`
+          : `Saved attendance for ${formatLongDate(date)} (${marked} updated, ${markWord(removed)} removed).`;
+
     setSaving(true);
     await run(() => submitMutation.mutateAsync(entries), {
       pending: `Saving attendance for ${entries.length} student${entries.length === 1 ? '' : 's'}…`,
-      success: `Saved attendance for ${formatLongDate(date)} (${entries.length} updated).`,
+      success,
       error: (e) => (e instanceof Error ? e.message : 'Save failed'),
     });
     setSaving(false);
@@ -434,11 +462,10 @@ function DailyPanel({
           {roster.map((e) => {
             const beforeJoin = !!e.enrollmentDate && e.enrollmentDate > date;
             const m = marks.get(e.enrolmentId);
-            const active: 'P' | 'L' | 'A' | 'EX' = m
-              ? m.status === 'NC'
-                ? 'P'
-                : m.status
-              : 'P';
+            // State (c): the teacher took the mark back off this day. Note the
+            // test is on the ENTRY existing with no status — `!m` is state (a),
+            // "not touched yet", which means Present and is a different thing.
+            const isCleared = !!m && m.status == null;
             return (
               <li
                 key={e.enrolmentId}
@@ -457,6 +484,15 @@ function DailyPanel({
                     <span className="text-sm font-medium text-foreground">
                       {e.studentName}
                     </span>
+                    {/* Said in words as well as in the control. A cleared row
+                        and an untouched row both show four unchosen letters,
+                        and they mean opposite things — this is the one that
+                        records nothing for the day. */}
+                    {isCleared && (
+                      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        Mark removed
+                      </span>
+                    )}
                   </div>
 
                   {beforeJoin ? (
@@ -468,15 +504,37 @@ function DailyPanel({
                        one joined strip, corners on the ends only. */
                     <ToggleGroup
                       type="single"
-                      value={m?.status ?? ''}
+                      value={m ? (m.status ?? CLEARED) : ''}
                       spacing={0}
                       aria-label={`Attendance mark for ${e.studentName}`}
                       onValueChange={(next) => {
-                        // Empty means the teacher clicked the mark that is
-                        // already set. There is no "unmarked" they can choose
-                        // — leaving the row alone is how you say Present — so
-                        // it is a no-op rather than a clear.
+                        // ⚠ THREE STATES HERE, and two of them show four
+                        // unchosen letters:
+                        //   (a) this student is NOT in `marks` — nobody has
+                        //       touched them. This register marks the
+                        //       EXCEPTIONS, so leaving the row alone is how
+                        //       you say Present, and Submit writes P.
+                        //   (b) a chosen letter — P / L / A / EX.
+                        //   (c) the eraser — the mark comes OFF the day and
+                        //       Submit records nothing for it.
+                        // An empty `next` is Radix reporting that the teacher
+                        // pressed the segment that was already on. It stays a
+                        // no-op: every move between the three states is a
+                        // press on the segment you want, never a side effect
+                        // of pressing the one you already have.
                         if (!next) return;
+                        if (next === CLEARED) {
+                          // (c). No reason and no note travel with a removed
+                          // mark — the day is blank, so "MC submitted" has
+                          // nothing left to describe, and the database
+                          // refuses the pair.
+                          setMark(e.enrolmentId, {
+                            status: null,
+                            exReason: null,
+                            exNote: null,
+                          });
+                          return;
+                        }
                         setMark(
                           e.enrolmentId,
                           next === 'EX'
@@ -518,6 +576,22 @@ function DailyPanel({
                           {s}
                         </ToggleGroupItem>
                       ))}
+                      {/* Trailing, past the four marks, because it undoes
+                          them rather than joining them. Always offered: for a
+                          student with no mark on file the day is already
+                          blank, so Submit simply has nothing to write for
+                          them — the row still tells the truth. */}
+                      <ToggleGroupItem
+                        value={CLEARED}
+                        aria-label={`Remove the mark for ${e.studentName}`}
+                        className={cn(
+                          MARK_BUTTON,
+                          CLEAR_BUTTON,
+                          'bg-transparent hover:bg-muted/60'
+                        )}
+                      >
+                        <Eraser className="size-3.5" aria-hidden="true" />
+                      </ToggleGroupItem>
                     </ToggleGroup>
                   )}
                 </div>
@@ -617,7 +691,16 @@ function DailyPanel({
             ? exMissingReasonCount === 1
               ? '1 excused student still needs a reason.'
               : `${exMissingReasonCount} excused students still need a reason.`
-            : `${counts.P + counts.unmarked} present · ${counts.L + counts.A + counts.EX} exceptions`}
+            : /* `unmarked` joins `present` because an untouched row submits
+                 P — that is the register's convention. `cleared` must NOT:
+                 those students end the day with nothing recorded, so
+                 counting them present would be the header telling the
+                 teacher the opposite of what Submit is about to write. */
+              `${counts.P + counts.unmarked} present · ${counts.L + counts.A + counts.EX} exceptions${
+                counts.cleared > 0
+                  ? ` · ${counts.cleared} mark${counts.cleared === 1 ? '' : 's'} removed`
+                  : ''
+              }`}
         </p>
         <Button
           onClick={() => void submit()}
