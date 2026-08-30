@@ -1,19 +1,26 @@
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonCards, SkeletonText } from '@/components/ui/skeleton-layouts';
 import { Card } from '@/components/ui/card';
 
 // Loading skeleton for /attendance/[sectionId]. Five parallel fetches
 // (calendar, events, daily, rollup, quota) take ~300–600ms at HFSE scale.
 // Without this skeleton the user sees the previous page until the server
-// component resolves. Shape mirrors the wide-grid hero + stat row + grid.
+// component resolves. Mirrors `page.tsx` — keep the two in step.
+//
+// The marking grid below is composed by hand ON PURPOSE. It is not a
+// `DataTable`, so `SkeletonTable` would draw the wrong thing: the real grid
+// has sticky identity columns, one column per school day, and a horizontal
+// scroll area. The archetypes are used for the parts that ARE standard — the
+// masthead voices and the stat row.
 export default function Loading() {
   return (
     <PageShell>
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-12 w-[260px]" />
-          <Skeleton className="h-4 w-[28rem] max-w-full" />
+          <SkeletonText variant="eyebrow" className="w-24" />
+          <SkeletonText variant="headline" className="w-[260px]" />
+          <SkeletonText variant="body" className="w-[28rem] max-w-full" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Skeleton className="h-7 w-32" />
@@ -23,11 +30,16 @@ export default function Loading() {
 
       <Skeleton className="h-9 w-[380px] rounded-xl" />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[148px] w-full rounded-xl" />
-        ))}
+      {/* Four StatCards, sheet view only. The grid classes are copied from
+          page.tsx and break on the CONTAINER (`@xl/main`), not the viewport —
+          this file previously used `md:grid-cols-4`, which reflows at a
+          different width from the real row. StatCard here always renders a
+          CardFooter, so the archetype's `footer` default is correct. */}
+      <div className="@container/main">
+        <SkeletonCards
+          count={4}
+          grid="grid grid-cols-1 gap-4 @xl/main:grid-cols-4"
+        />
       </div>
 
       {/* Grid shimmer — approx the wide-grid footprint. 30 rows × a handful of
