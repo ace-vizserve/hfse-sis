@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { Layers, Users } from 'lucide-react';
 
@@ -44,12 +45,6 @@ export default async function ClassroomListPage() {
       ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
       : [];
   const scope = resolveClassroomScope(role, assignments);
-
-  // Cover this teacher is booked to take but cannot open yet (migration 123).
-  // Caller's client on purpose: the row-read policy is deliberately unwindowed
-  // so this needs no service-role escalation.
-  const upcomingCover =
-    role === 'teacher' ? await loadUpcomingCoverForUser(supabase, userId) : [];
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -161,8 +156,18 @@ export default async function ClassroomListPage() {
       </header>
 
       {/* Cover booked for this teacher that has not started. Not a link and
-          never the word "covering" — see components/relief/upcoming-cover.tsx. */}
-      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
+          never the word "covering" — see components/relief/upcoming-cover.tsx.
+
+          Behind a boundary because this read used to sit on the critical path:
+          it ran between resolveClassroomScope and the academic-year query, so
+          the header waited on a panel that most teachers never see.
+
+          `fallback={null}`, deliberately, not a skeleton — UpcomingCoverPanel
+          returns null when nothing is booked, which is the common case, so a
+          placeholder here would flash and then collapse the layout under it. */}
+      <Suspense fallback={null}>
+        <UpcomingCover userId={userId} role={role} className="mt-6" />
+      </Suspense>
 
       <div className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
@@ -191,6 +196,34 @@ export default async function ClassroomListPage() {
       />
     </PageShell>
   );
+}
+
+/**
+ * Cover this teacher is booked to take but cannot open yet (migration 123).
+ *
+ * Caller's client on purpose: the row-read policy is deliberately unwindowed
+ * (KD #191 — seeing a cover and acting on one are different questions), so
+ * this needs no service-role escalation.
+ *
+ * Split out of the page body so it streams. Nothing else on the page consumes
+ * its result, which is what makes it the one read here that decomposes — the
+ * rest of the page funnels into a single `rows` array that both summary cards
+ * and the table read, and prising that apart would mean restructuring the data
+ * flow rather than adding a boundary.
+ */
+async function UpcomingCover({
+  userId,
+  role,
+  className,
+}: {
+  userId: string;
+  role: string | null;
+  className?: string;
+}) {
+  if (role !== 'teacher') return null;
+  const supabase = await createClient();
+  const covers = await loadUpcomingCoverForUser(supabase, userId);
+  return <UpcomingCoverPanel covers={covers} className={className} />;
 }
 
 function SummaryCard({
