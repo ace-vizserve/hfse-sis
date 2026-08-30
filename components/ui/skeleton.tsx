@@ -17,7 +17,12 @@ function Skeleton({
         // the trade for not branching on theme (§2 rule 5).
         // The former `from-muted via-muted/60 to-muted` were inert: nothing
         // ever set `bg-gradient-*` to activate them.
-        'animate-pulse rounded-md border border-hairline bg-border',
+        //
+        // No border: the fill carries the shape now. The old
+        // `border-hairline` was only there to make a white box visible, and
+        // `--av-hairline` has no `.dark` override, so on a dark card it drew
+        // a bright outline around every placeholder.
+        'animate-pulse rounded-md bg-border motion-reduce:animate-none',
         className
       )}
       {...props}
