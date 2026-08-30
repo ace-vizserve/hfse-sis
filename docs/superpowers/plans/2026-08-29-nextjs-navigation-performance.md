@@ -4,7 +4,7 @@
 
 **Goal:** Upgrade to Next.js 16.3 and give every non-exempt route immediate click feedback, so a teacher clicking a link never sees a dead screen.
 
-**Architecture:** Four phases; the first three are sequential preparation, the fourth is independent of all of them. Phase 1 is a version bump with no code changes. Phase 2 adds a `loading.tsx` to each of 36 routes that lack one, locked in by a coverage test in which every exemption carries a written reason — the same idiom as `__tests__/cache/write-route-invalidation.test.ts`, so the list cannot rot. Phase 3 is preparation for a deferred Cache Components migration and is **gated on an explicit decision** (see spec §7). Phase 4 converts the two write surfaces where a second network round trip is actually felt — document validation and the evaluation write-up roster, five call sites total — from route handlers to Server Actions, keeping each route handler alive as a thin wrapper over the same shared function the action calls. It has no dependency on Phases 1–3 and is not gated.
+**Architecture:** Three live phases. Phase 1 is a version bump with no code changes. Phase 2 adds a `loading.tsx` to each of 36 routes that lack one, locked in by a coverage test in which every exemption carries a written reason — the same idiom as `__tests__/cache/write-route-invalidation.test.ts`, so the list cannot rot. **Phase 3 was deleted on 2026-08-30** — it was Cache Components entry fee, it delivered nothing standalone, and it was scoped to `app/` when `lib/` carries more of the same reads; the tombstone below records why so it is not revived by accident. Phase 4 converts the two write surfaces where a second network round trip is actually felt — document validation and the evaluation write-up roster, five call sites total — from route handlers to Server Actions, keeping each route handler alive as a thin wrapper over the same shared function the action calls. It has no dependency on Phases 1–2 and is not gated.
 
 **Tech Stack:** Next.js 16.3 (App Router), React 19.2.4, TypeScript, Tailwind v4, vitest.
 
@@ -36,7 +36,9 @@
 **Interfaces:**
 
 - Consumes: nothing.
-- Produces: a tree on `next@16.3.x`, where `partialPrefetching` exists as a config option and `experimental.viewTransition` is no longer required for `<ViewTransition>`. Phase 2 does not depend on this, but Phase 3 and the deferred Phase 4 do.
+- Produces: a tree on `next@16.3.x`, where `partialPrefetching` exists as a config option and `experimental.viewTransition` is no longer required for `<ViewTransition>`. Neither Phase 2 nor Phase 4 depends on this — it is groundwork for a Cache Components decision that has not been taken.
+
+✅ **DONE 2026-08-30.** Landed on `perf/next-16-3-upgrade` as `97904e7b` (cherry-picked from the verified spike `f2955dff`), plus `94c54bc0` fixing the two perf-test mocks. `package.json`, `package-lock.json` and `node_modules` now all agree on `16.3.3`; `npm ls` is clean; `partialPrefetching` is present in the config schema; `npx tsc --noEmit` reports **0 errors**. ⚠ **The `rm -rf .next` step in Step 5 was NOT needed** — the Turbopack cache had already regenerated as `v16.3.3-a9a1cb78`, so the stale-artifact `TS2344` trap did not fire. Check `ls .next/dev/cache/turbopack/` before deleting anything; a dev server on port 3000 is holding that directory open and **must not be killed** (concurrent sessions share this tree).
 
 - [ ] **Step 1: Record the current state so the upgrade is reversible**
 
@@ -184,9 +186,18 @@ experimental.viewTransition flag requirement. No code changes."
 
 ## Phase 2 — `loading.tsx` coverage
 
-**Why this phase exists:** 54 of 112 routes have no `loading.tsx`. On those, clicking a link produces **no feedback at all** until the page swaps in. 18 are legitimately exempt (they only redirect, or are the login/print targets), leaving **36 routes** that need one.
+**Why this phase exists:** 54 of 112 routes have no `loading.tsx` of their own. 18 are legitimately exempt (they only redirect, or are the login/print targets), leaving **36 routes** that need one.
 
-**Gate before Phase 3:** the coverage test passes and a browser pass confirms three of the new skeletons appear on click.
+🔴 **CORRECTED 2026-08-30 — "all 36 show a blank screen on click" was WRONG, and it is the same folder-scoped counting error this plan was already burned by twice.** A `loading.tsx` covers its own segment **and every segment below it** — Next's own file-convention reference says it "will automatically wrap the `page.js` file **and any children below** in a `<Suspense>` boundary" (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/loading.md`). Enumerating by the actual condition — walk each route's ancestors, not its own directory — splits the 36 in two:
+
+- **9 routes genuinely show nothing.** They are the whole of Classroom: `app/(classroom)/classroom` and all eight routes under `[sectionId]`. Nothing anywhere above them has a `loading.tsx`, so the click is dead until the page arrives. **This is the entire blank-screen problem, and it is one module.**
+- **27 routes already show something — the wrong thing.** They inherit an ancestor skeleton built for a different page: all nine `/sis/admin/*` routes fall back to `app/(sis)/sis/loading.tsx` (the SIS hub's shape), the four admissions routes to the module skeleton, and so on. The defect there is not a dead click, it is a **jump** — the user sees a hub-shaped skeleton resolve into a table.
+
+**Both are still worth fixing and the work does not change**, because a right-shaped skeleton is what removes the jump. But the _justification_ differs per route, and the "36 blank screens" figure must not be re-quoted. Do **Classroom first** (Task 4, plus its reference file in Task 3) — that is where the felt improvement is.
+
+⚠ **This also means the coverage test is necessary but not sufficient as a measure.** It asks "does this directory have a `loading.tsx`", which is the right invariant to pin, but passing it is not evidence that any particular click got better. Only the browser pass is.
+
+**Gate before Phase 4:** the coverage test passes and a browser pass confirms three of the new skeletons appear on click — one per mode. ⚠ **The test passing is not the gate**; it only checks a file exists. The browser pass is what shows the skeleton is the right shape, and it is the only thing that can catch a PANEL_ONLY file that duplicates its layout's header.
 
 ### Task 2: The coverage test and its exemption list
 
@@ -1869,98 +1880,35 @@ the build if that drifts."
 
 ---
 
-## Phase 3 — Prerender-blocking dates (⚠ GATED, DO NOT START UNPROMPTED)
+## Phase 3 — DELETED 2026-08-30 (was: prerender-blocking dates)
 
-🔴 **This phase delivers nothing on its own and must not be executed until Mr Ace answers spec §7.**
+🔴 **Mr Ace's call, and it was right on two independent grounds.** Do not
+reinstate it without a Cache Components decision first.
 
-`new Date()` in a server component is entirely fine today. It only breaks under
-Cache Components, where it throws a build error that `instant = false` does
-**not** clear. These five files are the un-deferrable entry fee for a Phase 4
-that has not been approved. **If Cache Components is never adopted, leave them
-alone.**
+1. **It delivers nothing on its own.** `new Date()` in a server component is
+   entirely fine today. It only breaks under Cache Components, where it throws
+   a build error that `instant = false` does **not** clear. It was pure entry
+   fee for a migration nobody has approved.
+2. 🔴 **It was mis-scoped, by the same folder-counting error as the "36 blank
+   screens" figure above.** The five files it named were found by grepping
+   `app/` alone. **`lib/` holds 41 more files with synchronous `new Date()` /
+   `Date.now()` reads** (measured 2026-08-30: `grep -rln "new Date()\|Date\.now()" lib/`),
+   and server pages import from `lib/` constantly — so converting the five
+   `app/` files would not have made a single page prerenderable. The task would
+   have been finished, green, committed, and worth nothing.
 
-### Task 11: Move request-time dates behind `connection()`
+   ⚠ **41 is the file count, NOT the work estimate — do not repeat this
+   plan's own mistake by treating it as one.** The condition that matters is
+   "synchronous date read **reachable from a server page**", and that subset
+   has never been measured. Some of the 41 are only reached from route
+   handlers, which never prerender (the spec's §2.3 correction: 47 of 62 `app/`
+   hits were exactly that). Measure reachability before costing this.
 
-**Files:**
-
-- Modify: `app/(admissions)/admissions/applications/[enroleeNumber]/page.tsx`
-- Modify: `app/(markbook)/markbook/grading/page.tsx`
-- Modify: `app/(markbook)/markbook/report-cards/page.tsx`
-- Modify: `app/(p-files)/p-files/page.tsx`
-- Modify: `app/(p-files)/p-files/[enroleeNumber]/page.tsx`
-
-**Interfaces:**
-
-- Consumes: nothing from earlier tasks.
-- Produces: five pages whose date reads sit inside a `<Suspense>` boundary after `await connection()`, which is the precondition for enabling `cacheComponents` in a future Phase 4.
-
-- [ ] **Step 1: Confirm the five files and the exact call sites**
-
-```bash
-grep -n "new Date()\|Date.now()" \
-  "app/(admissions)/admissions/applications/[enroleeNumber]/page.tsx" \
-  "app/(markbook)/markbook/grading/page.tsx" \
-  "app/(markbook)/markbook/report-cards/page.tsx" \
-  "app/(p-files)/p-files/page.tsx" \
-  "app/(p-files)/p-files/[enroleeNumber]/page.tsx"
-```
-
-Expected: a small number of hits per file. Read each in full before changing it — several are "today" used to compute an expiry window or a term, and moving one changes what the page shows.
-
-- [ ] **Step 2: For each call site, extract the date-dependent subtree into a child component wrapped in `<Suspense>`, calling `connection()` first**
-
-The shape, applied per file:
-
-```tsx
-import { Suspense } from 'react';
-import { connection } from 'next/server';
-
-export default function Page() {
-  return (
-    <PageShell>
-      {/* everything not date-dependent stays here, outside the boundary */}
-      <Suspense fallback={<Skeleton className="h-64 w-full rounded-lg" />}>
-        <ExpiringPanel />
-      </Suspense>
-    </PageShell>
-  );
-}
-
-async function ExpiringPanel() {
-  await connection();
-  const today = new Date();
-  // ...the existing date-dependent work, unchanged
-}
-```
-
-⚠ **`connection()` must be awaited BEFORE the date call**, not after — it is what tells the prerenderer this subtree is request-time work.
-
-- [ ] **Step 3: Type-check and test**
-
-```bash
-npx tsc --noEmit && npm test
-```
-
-Expected: both green.
-
-- [ ] **Step 4: Browser-verify each of the five pages still shows the same values**
-
-```bash
-npm run dev
-```
-
-Open all five and confirm the date-derived figures are unchanged — the 90-day expiring window on P-Files, the term resolution on the grading and report-card pages. ⚠ **A wrong term or window here is silent**, so compare against the values before the change rather than just checking the page renders.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app
-git commit -m "refactor(perf): push request-time dates behind connection()
-
-Preparation for a possible Cache Components adoption, where a synchronous
-new Date() during prerender is a build error that instant=false cannot
-defer. No behaviour change."
-```
+**The analysis is kept, not lost:** the per-file call sites live in the spec
+(`docs/superpowers/specs/2026-08-29-nextjs-navigation-performance-findings.md`
+§6 and Appendix A). If Cache Components is ever adopted, that work belongs in
+its plan, scoped by the real condition — every synchronous date read reachable
+from a server page, `lib/` included — not by directory.
 
 ---
 
