@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 // Attendance wide grid. Rows = students (~30), columns = term school-days
 // (~47). Cell count at HFSE scale: ~1,410 per render.
@@ -91,7 +90,6 @@ import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 // into the popover it happens to render.
 export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-popover';
 import { EnrolmentMetaEditor } from '@/components/attendance/enrolment-meta-editor';
-import { useDebouncedRefresh } from '@/lib/hooks/use-debounced-refresh';
 import { statusCellWash } from '@/components/attendance/status-wash';
 import {
   Popover,
@@ -215,7 +213,6 @@ export function AttendanceWideGrid({
    */
   filingsByCell?: Record<string, WideGridCellFiling>;
 }) {
-  const router = useRouter();
   // Seed cell state map from the latest-per-(date) rows we already fetched.
   const seed = useMemo(() => {
     const m = new Map<GridKey, CellState>();
@@ -312,12 +309,12 @@ export function AttendanceWideGrid({
     });
   }
 
-  // Tier-3 autosave grid: the cell state stays in the local `cells` Map with
-  // its own optimistic write + revert-on-failure (unchanged). The ONLY change
-  // is that the per-cell PATCH now goes through useMutation so it gets the
-  // shared retry: 0 + apiFetch error handling. `mutate` is called per cell —
-  // each call is independent. The optimistic write, the saved-tick timeout, and
-  // the revert all stay inside writeCell exactly as before.
+  // Autosave grid: the cell state stays in the local `cells` Map with its own
+  // optimistic write + revert-on-failure (unchanged). The per-cell PATCH goes
+  // through useMutation so it gets the shared retry: 0 + apiFetch error
+  // handling, and through `useWriteAction` so it reports itself the way every
+  // other write in the app does — one pending/success/error toast lifecycle,
+  // with the success held until the server re-render lands.
   const saveCellMutation = useMutation({
     mutationFn: (payload: {
       sectionStudentId: string;
@@ -331,16 +328,13 @@ export function AttendanceWideGrid({
 
   // The stat cards above this grid (average attendance, perfect attendance)
   // are rendered by the page's server component from the rollup that each
-  // write recomputes. Marking is bursty, so we ask for a fresh render once
-  // marking goes quiet rather than once per cell — see the hook's own note.
-  const refreshStats = useDebouncedRefresh(() => router.refresh());
+  // write recomputes, so they are stale the moment a mark lands. The refresh
+  // that fixes them is no longer debounced here — `useWriteAction` awaits it
+  // as part of the write, which is also what the grid's disabled state waits
+  // on: one edit at a time, and the numbers above are right before the next
+  // one can start.
 
   // Low-frequency roster-metadata edit (Bus/Care, Academics, Admin notes).
-  //
-  // This file is BOTH kinds of write, which is why the sweep reads statements
-  // rather than files: the per-cell mark above stays on the debounced refresh
-  // with no toast (one per keystroke would be unusable), while this one is a
-  // deliberate single save and gets the full lifecycle.
   const metaMutation = useMutation({
     mutationFn: (vars: {
       enrolmentId: string;
@@ -356,6 +350,13 @@ export function AttendanceWideGrid({
   // Not `metaMutation.isPending` — that goes false when the PATCH resolves,
   // which is before the roster pane behind the editor has re-rendered.
   const [metaSaving, setMetaSaving] = useState(false);
+
+  // A cell save is in flight. The whole register is dimmed and made
+  // non-interactive while it runs, so a second mark cannot be started on top
+  // of one that has not been written yet. Not `saveCellMutation.isPending` —
+  // that clears when the PATCH resolves, which is before the refreshed stat
+  // cards above the grid have rendered.
+  const [isSaving, setIsSaving] = useState(false);
 
   async function saveMeta(vars: {
     enrolmentId: string;
@@ -442,39 +443,50 @@ export function AttendanceWideGrid({
     }
 
     updateCell(k, { status, exReason, exNote: nextNote, saving: true });
-    try {
-      await saveCellMutation.mutateAsync({
-        sectionStudentId: enrolmentId,
-        termId,
-        date,
-        status,
-        exReason,
-        exNote: nextNote,
-      });
-      updateCell(k, { saving: false, savedAt: Date.now() });
-      // Saved — the server's rollup has moved, so the stat cards are now
-      // stale. Only on success: a failed write reverts and changes nothing.
-      refreshStats();
-      setTimeout(() => {
-        setCells((current) => {
-          const c = current.get(k);
-          if (!c || !c.savedAt || Date.now() - c.savedAt < 1400) return current;
-          const next = new Map(current);
-          next.set(k, { ...c, savedAt: null });
-          return next;
-        });
-      }, 1500);
-    } catch (e) {
+    setIsSaving(true);
+    const saved = await run(
+      () =>
+        saveCellMutation.mutateAsync({
+          sectionStudentId: enrolmentId,
+          termId,
+          date,
+          status,
+          exReason,
+          exNote: nextNote,
+        }),
+      {
+        pending: 'Saving…',
+        success: 'Saved.',
+        // Same wording the inline handler used. `run` hands over the thrown
+        // error rather than a string so the server's own message survives.
+        error: (e) =>
+          `Could not save: ${e instanceof Error ? e.message : 'error'}`,
+      }
+    );
+    setIsSaving(false);
+
+    // `run` NEVER REJECTS — `undefined` is how it reports a failed write, so
+    // that, not a catch, is what the optimistic revert hangs off.
+    if (saved === undefined) {
       updateCell(k, {
         status: prev.status,
         exReason: prev.exReason,
         exNote: prev.exNote,
         saving: false,
       });
-      toast.error(
-        `Could not save: ${e instanceof Error ? e.message : 'error'}`
-      );
+      return;
     }
+
+    updateCell(k, { saving: false, savedAt: Date.now() });
+    setTimeout(() => {
+      setCells((current) => {
+        const c = current.get(k);
+        if (!c || !c.savedAt || Date.now() - c.savedAt < 1400) return current;
+        const next = new Map(current);
+        next.set(k, { ...c, savedAt: null });
+        return next;
+      });
+    }, 1500);
   }
 
   // Today's column — ref + ISO captured once at mount so the auto-scroll
@@ -628,7 +640,20 @@ export function AttendanceWideGrid({
           if (!o) setActiveCell(null);
         }}
       >
-        <Card className="p-0 overflow-hidden">
+        {/* While a mark is being written the whole register goes dim, soft
+            and non-interactive: one edit at a time, and the teacher can see
+            that the sheet is busy rather than discovering it when a second
+            click does nothing. `aria-busy` says the same thing to a screen
+            reader, which the blur alone cannot. */}
+        <Card
+          aria-busy={isSaving}
+          className={
+            'p-0 overflow-hidden transition duration-200 ' +
+            (isSaving
+              ? 'pointer-events-none select-none blur-[1px] opacity-60'
+              : '')
+          }
+        >
           {enrolments.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
               <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
