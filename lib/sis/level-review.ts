@@ -219,18 +219,31 @@ async function loadUnmatchedLevelLabelsUncached(
     }
   }
 
-  for (const ayCode of ayCodes) {
-    const prefix = prefixFor(ayCode);
+  // ONE WAVE FOR EVERY YEAR IN SCOPE. Each AY reads its own prefixed tables and
+  // nothing another year produced, so the years go out together rather than one
+  // after the next.
+  //
+  // ⚠ THE FETCH IS PARALLEL; THE FOLD IS STILL IN `ayCodes` ORDER. `addObservations`
+  // mutates shared buckets, and `sampleEnrolees` keeps only the FIRST few it
+  // sees — folding in resolution order would make the samples depend on which
+  // year's query happened to come back first. Fetch concurrently, reduce
+  // deterministically.
+  const perAy = await Promise.all(
+    ayCodes.map(async (ayCode) => {
+      const prefix = prefixFor(ayCode);
+      const [appsRes, statusRes] = await Promise.all([
+        admissions
+          .from(`${prefix}_enrolment_applications`)
+          .select('enroleeNumber, levelApplied'),
+        admissions
+          .from(`${prefix}_enrolment_status`)
+          .select('enroleeNumber, levelApplied'),
+      ]);
+      return { ayCode, appsRes, statusRes };
+    })
+  );
 
-    const [appsRes, statusRes] = await Promise.all([
-      admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select('enroleeNumber, levelApplied'),
-      admissions
-        .from(`${prefix}_enrolment_status`)
-        .select('enroleeNumber, levelApplied'),
-    ]);
-
+  for (const { ayCode, appsRes, statusRes } of perAy) {
     if (appsRes.error) {
       console.warn(
         `[sis/level-review] apps fetch failed for ${ayCode}:`,

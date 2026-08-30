@@ -108,15 +108,24 @@ export async function listAllAuthUsers(
 // caller whose ids are wider than a uuid still fits.
 const DEFAULT_IN_CHUNK = 200;
 
+// THE CHUNKS GO OUT TOGETHER. Unlike `fetchAllPages` above — where page N+1's
+// existence is only known once page N has come back short — every chunk here is
+// decided up front from `ids`, and no chunk reads anything another produces.
+// Splitting a 450-id list therefore never needed three serial round trips; it
+// needed one wave of three. Order is preserved exactly: the slices are built in
+// index order, `fetchChunk` is invoked in that order, and `flat()` merges the
+// results in that order, so a caller relying on "every id covered once, in
+// order" (which is what __tests__/supabase/fetch-in-chunks.test.ts pins) sees
+// no change.
 export async function fetchInChunks<T>(
   ids: readonly string[],
   fetchChunk: (slice: string[]) => Promise<T[]>,
   chunkSize: number = DEFAULT_IN_CHUNK,
 ): Promise<T[]> {
-  const out: T[] = [];
+  const slices: string[][] = [];
   for (let i = 0; i < ids.length; i += chunkSize) {
-    const slice = ids.slice(i, i + chunkSize);
-    out.push(...(await fetchChunk(slice)));
+    slices.push(ids.slice(i, i + chunkSize));
   }
-  return out;
+  const results = await Promise.all(slices.map((slice) => fetchChunk(slice)));
+  return results.flat();
 }

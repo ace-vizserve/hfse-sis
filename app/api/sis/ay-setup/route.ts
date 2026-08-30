@@ -101,6 +101,12 @@ export async function POST(request: Request) {
   }
 
   revalidateTag(`sis:${ayCode}`, 'max');
+  // `create_academic_year` writes this AY's term rows, which `loadTerms`
+  // (lib/dashboard/windows.ts) caches globally.
+  revalidateTag('dashboard-windows', 'max');
+  // A new `academic_years` row moves the AY count on the /sis readiness strip,
+  // which `getSystemHealth` (lib/sis/health.ts) caches school-wide.
+  revalidateTag('sis-health', 'max');
 
   return NextResponse.json({ ok: true, alreadyExisted, summary });
 }
@@ -196,6 +202,11 @@ export async function PATCH(request: Request) {
 
   revalidateTag(`sis:${targetAy}`, 'max');
   if (prevAy && prevAy !== targetAy) revalidateTag(`sis:${prevAy}`, 'max');
+  // The readiness strip names the current AY, so the switch has to bust it —
+  // and unconditionally, not inside the `prevAy` guard above: switching to the
+  // AY that was already current is a no-op for the two `sis:` tags but this
+  // entry can still be holding a stale row from before an unrelated edit.
+  revalidateTag('sis-health', 'max');
 
   return NextResponse.json({ ok: true, from: prevAy, to: targetAy });
 }
@@ -266,6 +277,12 @@ export async function DELETE(request: Request) {
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');
+  // `delete_academic_year` removes this AY's term rows, which `loadTerms`
+  // (lib/dashboard/windows.ts) caches globally.
+  revalidateTag('dashboard-windows', 'max');
+  // One fewer `academic_years` row on the /sis readiness strip's count, and
+  // possibly one fewer current AY. Same loader as the POST above.
+  revalidateTag('sis-health', 'max');
 
   return NextResponse.json({ ok: true, summary });
 }

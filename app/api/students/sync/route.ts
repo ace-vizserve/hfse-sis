@@ -39,17 +39,35 @@ export async function POST(request: Request) {
     const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
     const updates = plan.student_upserts.filter((u) => u.kind === 'update');
 
+    // Every id an enrolment insert can need is already knowable without a
+    // second read: a student the planner did NOT plan to insert was in the
+    // snapshot (that is exactly how the planner decided), and one it DID plan
+    // to insert hands back its generated uuid on the insert itself. Seed from
+    // the snapshot, then fill in the fresh ones below.
+    const idByNumber = new Map<string, string>(
+      snapshot.students.map((s) => [s.student_number, s.id])
+    );
+
     const now = new Date().toISOString();
     if (inserts.length > 0) {
-      const { error } = await service.from('students').insert(
-        inserts.map((u) => ({
-          student_number: u.student_number,
-          last_name: u.last_name,
-          first_name: u.first_name,
-          middle_name: u.middle_name,
-        }))
-      );
+      const { data, error } = await service
+        .from('students')
+        .insert(
+          inserts.map((u) => ({
+            student_number: u.student_number,
+            last_name: u.last_name,
+            first_name: u.first_name,
+            middle_name: u.middle_name,
+          }))
+        )
+        .select('id, student_number');
       if (error) throw new Error(`student insert failed: ${error.message}`);
+      for (const r of (data ?? []) as Array<{
+        id: string;
+        student_number: string;
+      }>) {
+        idByNumber.set(r.student_number, r.id);
+      }
     }
     if (updates.length > 0) {
       const { error } = await service.from('students').upsert(
@@ -65,24 +83,11 @@ export async function POST(request: Request) {
       if (error) throw new Error(`student update failed: ${error.message}`);
     }
 
-    // 2) Resolve student_number â†’ student_id for enrollment inserts
-    //    (newly inserted students need their freshly generated UUIDs).
-    const needed = new Set(
-      plan.enrollment_inserts.map((e) => e.student_number)
-    );
-    let idByNumber = new Map<string, string>();
-    if (needed.size > 0) {
-      const { data, error } = await service
-        .from('students')
-        .select('id, student_number')
-        .in('student_number', Array.from(needed));
-      if (error) throw new Error(`student id lookup failed: ${error.message}`);
-      idByNumber = new Map(
-        (data ?? []).map((r) => [r.student_number as string, r.id as string])
-      );
-    }
-
-    // 3) Enrollment inserts
+    // 2) Enrollment inserts. `idByNumber` was settled above — the re-select
+    //    that used to sit here asked the database to tell us ids it had just
+    //    handed back on the insert. The `missing student_id` guard below still
+    //    stands: it now fails on a planner/snapshot disagreement rather than on
+    //    a read that raced the write.
     if (plan.enrollment_inserts.length > 0) {
       const payload = plan.enrollment_inserts.map((e) => {
         const student_id = idByNumber.get(e.student_number);
@@ -104,7 +109,7 @@ export async function POST(request: Request) {
       if (error) throw new Error(`enrollment insert failed: ${error.message}`);
     }
 
-    // 4) Status changes — batch by change type to avoid N+1 updates.
+    // 3) Status changes — batch by change type to avoid N+1 updates.
     const withdrawals = plan.enrollment_status_changes.filter(
       (c) => c.to === 'withdrawn'
     );

@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -102,6 +103,12 @@ export async function POST(request: Request) {
     entityId: (inserted as { id: string }).id,
     context: { user_id, flow, email: userRes.user.email ?? null },
   });
+
+  // Approver coverage per flow is what the /sis readiness strip reports, and
+  // `getSystemHealth` (lib/sis/health.ts) caches it school-wide. Emitted only
+  // here, after a row was actually inserted — the 23505 branch above returns an
+  // idempotent success having changed nothing, so there is nothing to bust.
+  revalidateTag('sis-health', 'max');
 
   return NextResponse.json({ ok: true, id: (inserted as { id: string }).id });
 }

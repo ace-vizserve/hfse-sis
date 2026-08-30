@@ -235,18 +235,25 @@ export async function expandSchoolDays(
   // term, not of the window we just read. A range landing entirely inside an
   // unconfigured stretch of an otherwise-configured term would otherwise read
   // as legacy mode and mark straight through a holiday block.
+  //
+  // One probe per term, and they are asked TOGETHER. A range that crosses a
+  // term boundary (a declaration spanning the end of a term, KD #197) used to
+  // pay one serial round trip per term it touched; the probes read different
+  // rows and none of them informs another, so they belong on one wave.
   const termConfigured = new Map<string, boolean>();
-  for (const termId of termIds) {
-    if (termsWithRows.has(termId)) {
-      termConfigured.set(termId, true);
-      continue;
-    }
-    const { count } = await service
-      .from('school_calendar')
-      .select('*', { count: 'exact', head: true })
-      .eq('term_id', termId);
-    termConfigured.set(termId, (count ?? 0) > 0);
-  }
+  await Promise.all(
+    termIds.map(async (termId) => {
+      if (termsWithRows.has(termId)) {
+        termConfigured.set(termId, true);
+        return;
+      }
+      const { count } = await service
+        .from('school_calendar')
+        .select('*', { count: 'exact', head: true })
+        .eq('term_id', termId);
+      termConfigured.set(termId, (count ?? 0) > 0);
+    })
+  );
 
   return dated.filter(
     ({ date, termId }) =>

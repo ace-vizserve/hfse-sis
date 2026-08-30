@@ -28,8 +28,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const CACHE_TTL_SECONDS = 60;
 
-function tag(academicYearId: string): string[] {
-  return ['markbook', `markbook:${academicYearId}`];
+// ⚠ Takes an AY CODE, never a uuid — invalidateDrillTags('markbook', ayCode)
+// in lib/cache/invalidate-drill-tags.ts is the only emitter of the
+// AY-scoped member of this pair, and it always emits `markbook:AY2026`
+// shaped strings. Three call sites used to pass a raw academicYearId uuid
+// here (getGradeDistribution, getSheetLockProgressByTerm,
+// getPublicationCoverage) — those panels were never busted by any write and
+// only ever expired on the 60s TTL. Fixed 2026-08-29; see
+// __tests__/cache/ay-tags-are-codes.test.ts.
+function tag(ayCode: string): string[] {
+  return ['markbook', `markbook:${ayCode}`];
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -201,12 +209,13 @@ async function loadGradeDistributionUncached(
 
 export function getGradeDistribution(
   academicYearId: string,
+  ayCode: string,
   termId: string | null = null
 ): Promise<GradeBucket[]> {
   return unstable_cache(
     loadGradeDistributionUncached,
     ['markbook', 'grade-distribution', academicYearId, termId ?? 'current'],
-    { tags: tag(academicYearId), revalidate: CACHE_TTL_SECONDS }
+    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )(academicYearId, termId);
 }
 
@@ -275,13 +284,14 @@ async function loadSheetLockProgressByTermUncached(
 }
 
 export function getSheetLockProgressByTerm(
-  academicYearId: string
+  academicYearId: string,
+  ayCode: string
 ): Promise<TermLockProgress[]> {
   return unstable_cache(
     loadSheetLockProgressByTermUncached,
     ['markbook', 'sheet-lock-progress', academicYearId],
     {
-      tags: tag(academicYearId),
+      tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
     }
   )(academicYearId);
@@ -461,13 +471,14 @@ async function loadPublicationCoverageUncached(
 }
 
 export function getPublicationCoverage(
-  academicYearId: string
+  academicYearId: string,
+  ayCode: string
 ): Promise<TermPubCoverage[]> {
   return unstable_cache(
     loadPublicationCoverageUncached,
     ['markbook', 'publication-coverage', academicYearId],
     {
-      tags: tag(academicYearId),
+      tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
     }
   )(academicYearId);
@@ -543,6 +554,14 @@ async function loadRecentMarkbookActivityUncached(
   }));
 }
 
+// The bare 'markbook' tag here is inert and that is a decision (2026-08-29),
+// not an oversight: this feed reads `audit_log`, which has no AY column, so
+// there is no AY to scope a real tag to — and because every write in the app
+// appends an audit row, a working tag would bust this on essentially every
+// request, turning a cache into pure overhead. The 120s TTL is the freshness
+// contract. Exempted with this reason in the bare-tag guard in
+// __tests__/cache/write-route-invalidation.test.ts. (Its two siblings are the
+// activity feeds in lib/sis/dashboard.ts.)
 const loadRecentMarkbookActivity = unstable_cache(
   loadRecentMarkbookActivityUncached,
   ['markbook', 'recent-activity'],
@@ -763,23 +782,31 @@ function emptyMarkbookKpis(): MarkbookRangeKpis {
 async function loadMarkbookKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<MarkbookRangeKpis>> {
-  const current = await loadMarkbookKpisForRange(input);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadMarkbookKpisForRange(input),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadMarkbookKpisForRange({
-    ayCode: input.ayCode,
-    from: input.cmpFrom,
-    to: input.cmpTo,
-    cmpFrom: input.cmpFrom,
-    cmpTo: input.cmpTo,
-  });
+  // THE COMPARISON WINDOW IS NOT DOWNSTREAM OF THE CURRENT ONE. Two reads of
+  // the same shape over two disjoint date ranges; neither result feeds the
+  // other, and the delta below is computed from both afterwards. Ran serially,
+  // compare mode cost exactly twice the latency of the plain view for no
+  // reason. The no-comparison path above still issues one read, so nothing
+  // fires that did not fire before.
+  const [current, comparison] = await Promise.all([
+    loadMarkbookKpisForRange(input),
+    loadMarkbookKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
   return {
     current,
     comparison,

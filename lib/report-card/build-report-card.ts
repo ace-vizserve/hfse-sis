@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeAnnualGrade } from '@/lib/compute/annual';
 import {
@@ -12,6 +14,7 @@ import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DEFAULT_SCHOOL_CONFIG,
+  getSchoolConfig,
   type SchoolConfig,
 } from '@/lib/sis/school-config';
 import {
@@ -128,6 +131,60 @@ const first = <T>(v: T | T[] | null): T | null =>
 
 const empty: Cell = { quarterly: null, letter: null, is_na: false };
 
+/**
+ * Read the whole `subject_report_map` catalog. REQUEST-MEMOISED with React
+ * `cache()`, exactly as phase 3 did for `getSchoolConfig`.
+ *
+ * WHY. This read carries no filter at all — not by student, not by AY, not by
+ * level — because a report-map row is catalog shape rather than a per-year
+ * fact (migration 080 gives the table no `academic_year_id`). `buildReportCard`
+ * issues it once per card, so the section batch print
+ * (`/markbook/report-cards/section/[id]/print`) fired one identical unfiltered
+ * read PER STUDENT: ~50 round trips over a 40-50 roster for rows that cannot
+ * differ between them. `cache()` is request-scoped, so they collapse to one and
+ * nothing outlives the request.
+ *
+ * WHY IT KEYS ON THE CLIENT. The client is a parameter rather than a service
+ * client created in here, because this table's callers deliberately differ:
+ * the two pages pass an RLS-scoped client (the policy is
+ * `current_user_role() is not null`, i.e. staff) and the two API routes pass a
+ * service client. Creating one in here would silently widen the page path from
+ * RLS to service. React `cache()` keys on argument identity, and the batch
+ * print resolves its client ONCE above the loop and passes that same instance
+ * to every call — so the memo hits.
+ *
+ * WHY THAT IS SAFE — the argument is "no write route reads through this", and
+ * it is a search, not an impression. Searched every `subject_report_map`
+ * occurrence in the repo: the table has exactly TWO readers app-wide, this one
+ * and `listSubjectReportMap` (lib/sis/subjects/queries.ts), which is uncached,
+ * has one caller (`listCatalogForLevelType`) and is untouched here. Then every
+ * caller of `buildReportCard`, which is the only path that reaches this
+ * function: `GET /api/report-card/[studentId]`, `GET /api/parent/v2/report-card`,
+ * and the two server-component pages. Not one of them has a write method. Then
+ * every write of the table: the single writer is
+ * `PUT /api/sis/admin/subjects/[configId]/report-map`, which does its own
+ * `delete` + `insert` through a direct `.from('subject_report_map')` on a
+ * service client and calls neither this function nor `buildReportCard`. There
+ * are no server actions in this repo (`'use server'` matches nothing under
+ * `app/`, `lib/` or `components/`). So no request can both write these rows and
+ * read them back through here.
+ *
+ * ⚠ The saving is real inside a Server Component render, which is where the
+ * batch print lives. A route handler builds ONE card, so it neither gains nor
+ * loses. With no React dispatcher `cache()` falls through to a plain call
+ * rather than throwing — the behaviour phase 3 pinned in
+ * `__tests__/perf/school-config-request-cache.test.ts`, and the reason the
+ * single-card budget below stays at 11/8.
+ */
+const getSubjectReportMap = cache(async function getSubjectReportMap(
+  supabase: SupabaseClient
+): Promise<ReportMapEntry[]> {
+  const { data } = await supabase
+    .from('subject_report_map')
+    .select('subject_id, report_subject_id');
+  return (data ?? []) as ReportMapEntry[];
+});
+
 // Batch-print optimisation: the section batch-print page
 // (app/(markbook)/markbook/report-cards/section/[sectionId]/print) calls
 // buildReportCard once per student in the SAME section — every one of those
@@ -156,18 +213,72 @@ export async function buildReportCard(
   | { ok: true; payload: ReportCardPayload }
   | { ok: false; error: BuildReportCardError }
 > {
-  const { data: student } = await supabase
-    .from('students')
-    .select('id, student_number, last_name, first_name, middle_name')
-    .eq('id', studentId)
-    .single();
-  if (!student) return { ok: false, error: { kind: 'student_not_found' } };
+  // ── WAVE 1 ────────────────────────────────────────────────────────────────
+  // Four reads that consume nothing this function has fetched, so none of them
+  // could ever have been waiting on an earlier one. Verified individually
+  // against their own filters, not by position in the file:
+  //   - `students`            filtered by the `studentId` PARAMETER;
+  //   - `academic_years`      filtered by the constant `is_current = true`;
+  //   - `section_students`    filtered by that same `studentId` parameter —
+  //                           the `ay.id` match is a JS `.filter()` applied to
+  //                           the rows AFTER both have landed, never a
+  //                           database filter;
+  //   - `subject_report_map`  no filter at all (it is a catalog-shape table,
+  //                           deliberately un-scoped — see the block further
+  //                           down where `reportMap` is consumed). Read through
+  //                           `getSubjectReportMap`, which request-memoises it,
+  //                           so on cards 2..N of a batch print this element is
+  //                           a memo hit and issues no query at all.
+  // Everything below this point still runs in exactly the order it did when
+  // each of these had its own `await`, so the guard precedence
+  // (student_not_found → no_current_ay → not_enrolled_this_ay) is unchanged.
+  // The one behaviour difference is on the two early-error paths: a request
+  // for a nonexistent student now pays four reads instead of one before it
+  // 404s. That is the price of the collapse and it is bounded at four.
+  //
+  // `getSchoolConfig()` rides along as a fifth element rather than sitting at
+  // the very bottom of the function: it takes no arguments, reads the
+  // singleton row through its own service client, and is request-memoised
+  // with React `cache()` — so on cards 2..N of a batch print this element is
+  // a memo hit and issues no query at all. Its `.catch()` is attached to the
+  // element, never to the `Promise.all`, so a config failure still degrades
+  // to defaults instead of failing the whole card.
+  //
+  // NOT hoisted, and why: `terms` needs `ay.id`; `teacher_assignments` needs
+  // the section resolved from `enrolments`; `section_subjects`,
+  // `grading_sheets`, `grade_entries`, `attendance_records` and
+  // `evaluation_writeups` each consume a result from above them. The deeper
+  // re-wave those would need is deliberately out of scope here.
+  const [
+    { data: student },
+    { data: ay },
+    { data: enrolments },
+    reportMap,
+    schoolConfig,
+  ] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, student_number, last_name, first_name, middle_name')
+      .eq('id', studentId)
+      .single(),
+    supabase
+      .from('academic_years')
+      .select('id, label')
+      .eq('is_current', true)
+      .single(),
+    supabase
+      .from('section_students')
+      .select(
+        `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
+       section:sections!inner(id, name, form_class_adviser, academic_year_id,
+         level:levels(id, code, label, level_type))`
+      )
+      .eq('student_id', studentId),
+    getSubjectReportMap(supabase),
+    getSchoolConfig().catch(() => DEFAULT_SCHOOL_CONFIG),
+  ]);
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, label')
-    .eq('is_current', true)
-    .single();
+  if (!student) return { ok: false, error: { kind: 'student_not_found' } };
   if (!ay) return { ok: false, error: { kind: 'no_current_ay' } };
 
   const { data: terms } = await supabase
@@ -176,15 +287,6 @@ export async function buildReportCard(
     .eq('academic_year_id', ay.id)
     .order('term_number');
   const termList = (terms ?? []) as Term[];
-
-  const { data: enrolments } = await supabase
-    .from('section_students')
-    .select(
-      `id, enrollment_status, created_at, enrollment_date, withdrawal_date,
-       section:sections!inner(id, name, form_class_adviser, academic_year_id,
-         level:levels(id, code, label, level_type))`
-    )
-    .eq('student_id', studentId);
 
   type LevelLite = {
     id: string;
@@ -376,11 +478,15 @@ export async function buildReportCard(
   // unverified one. Every subject is seeded self-mapped (migration 080), so
   // in production today this resolves to a full self-map and
   // resolveReportSubjects is a no-op.
-  const { data: reportMapRaw } = await supabase
-    .from('subject_report_map')
-    .select('subject_id, report_subject_id');
-  const reportMap: ReportMapEntry[] = (reportMapRaw ?? []) as ReportMapEntry[];
-
+  //
+  // The read itself is issued up in wave 1 — having no filter at all is
+  // exactly what makes it hoistable, and is also what makes it request-
+  // memoisable: `getSubjectReportMap` (module scope above) wraps it in React
+  // `cache()`, so a batch print pays for these rows once rather than once per
+  // card. Only the shaping stays here, next to the target lookup that does
+  // depend on it. That target lookup is deliberately NOT memoised with it —
+  // it is filtered by the ids this map yields, so it belongs to the card's
+  // own serial chain.
   const reportTargets = new Map<string, ReportTargetMeta>();
   if (reportMap.length > 0) {
     const targetIds = Array.from(
@@ -565,9 +671,17 @@ export async function buildReportCard(
   // — i.e., the number of teaching days in the term per the school
   // calendar) regardless of whether attendance has been entered yet. We
   // override school_days below with the school_calendar count.
+  //
+  // ONE READ, TWO MAPS. `school_days` rides along on this projection rather
+  // than being fetched again further down: the fallback read that used to sit
+  // below the calendar block carried byte-identical filters, so it returned
+  // the same rows and only a narrower column list. Merging is a projection
+  // change, not a scope change. Pinned by the subset-equivalence test in
+  // __tests__/report-card/build-report-card.test.ts, which was run green
+  // against the two-read version first.
   const { data: attendanceRaw } = await supabase
     .from('attendance_records')
-    .select('term_id, days_present, days_late')
+    .select('term_id, days_present, days_late, school_days')
     .in('section_student_id', allEnrolmentIds)
     .in(
       'term_id',
@@ -578,12 +692,14 @@ export async function buildReportCard(
     term_id: string;
     days_present: number | null;
     days_late: number | null;
+    school_days: number | null;
   };
+  const attendanceRows = (attendanceRaw ?? []) as AttendanceRow[];
   const studentDaysByTerm = new Map<
     string,
     { days_present: number | null; days_late: number | null }
   >();
-  for (const r of (attendanceRaw ?? []) as AttendanceRow[]) {
+  for (const r of attendanceRows) {
     const cur = studentDaysByTerm.get(r.term_id);
     // Sum nullables — null + null = null, null + N = N.
     const sumNullable = (a: number | null, b: number | null) =>
@@ -625,20 +741,10 @@ export async function buildReportCard(
 
   // Fallback recorded-days count per term — needed only when the calendar
   // helper returns 0 for a term (legacy / unconfigured). Matches the
-  // pre-fix behavior of reading `attendance_records.school_days`.
-  const { data: recordedSchoolDaysRaw } = await supabase
-    .from('attendance_records')
-    .select('term_id, school_days')
-    .in('section_student_id', allEnrolmentIds)
-    .in(
-      'term_id',
-      termList.map((t) => t.id)
-    );
+  // pre-fix behavior of reading `attendance_records.school_days`; the rows
+  // come from the single read above rather than a second identical one.
   const recordedSchoolDaysByTerm = new Map<string, number>();
-  for (const r of (recordedSchoolDaysRaw ?? []) as Array<{
-    term_id: string;
-    school_days: number | null;
-  }>) {
+  for (const r of attendanceRows) {
     recordedSchoolDaysByTerm.set(
       r.term_id,
       (recordedSchoolDaysByTerm.get(r.term_id) ?? 0) + (r.school_days ?? 0)
@@ -710,13 +816,13 @@ export async function buildReportCard(
     .filter(Boolean)
     .join(', ');
 
-  // School-wide config (singleton, id=1). Uses its own service-role helper
-  // to sidestep RLS; falls back to defaults if the row is missing for any
-  // reason so the report card still renders.
-  const { getSchoolConfig } = await import('@/lib/sis/school-config');
-  const schoolConfig = await getSchoolConfig().catch(
-    () => DEFAULT_SCHOOL_CONFIG
-  );
+  // School-wide config (singleton, id=1) — resolved in wave 1 at the top of
+  // this function. It uses its own service-role helper to sidestep RLS and
+  // falls back to defaults if the row is missing for any reason, so the report
+  // card still renders. It used to be read here, last, behind a dynamic
+  // `import()`; that import bought nothing, because `DEFAULT_SCHOOL_CONFIG` is
+  // already a static value import from the same `server-only` module at the
+  // top of this file, so the module was in the static graph either way.
 
   return {
     ok: true,

@@ -85,6 +85,13 @@ function toLedgerRow(i: DailyWriteInput) {
 export const ROLLUP_CONCURRENCY = 8;
 
 /**
+ * The import's bound — deliberately HALF `ROLLUP_CONCURRENCY`, because an
+ * import's fan-out is roughly an order of magnitude larger than one class
+ * register submit's. See writeDailyBulk for the measurement behind it.
+ */
+export const IMPORT_ROLLUP_CONCURRENCY = 4;
+
+/**
  * Batch daily write for ONE user action — a Daily submit covering a class.
  * Returns each affected (term, student)'s recomputed rollup, keyed
  * `${termId}|${sectionStudentId}`.
@@ -98,12 +105,12 @@ export const ROLLUP_CONCURRENCY = 8;
  * Here it is one insert, then the rollups in bounded-concurrency waves: ~4
  * round-trips of latency for the same class.
  *
- * The bound matters and is not arbitrary. `writeDailyBulk` below runs its
- * rollups strictly sequentially, and its comment records why: an import can
- * carry 1,500+ pairs, and firing that many RPCs at once exhausts the client's
- * connection pool and draws rate-limit warnings. A class-sized batch is two
- * orders of magnitude smaller, so it can afford concurrency — but capped, so
- * the same failure cannot reappear if somebody submits a whole level.
+ * The bound matters and is not arbitrary. An import can carry 1,500+ pairs,
+ * and firing that many RPCs at once exhausts the client's connection pool and
+ * draws rate-limit warnings — so nothing here is ever unbounded. A class-sized
+ * batch is two orders of magnitude smaller than an import, so it can afford
+ * eight at a time; `writeDailyBulk` below is capped at half that for the same
+ * reason in the other direction.
  */
 export async function writeDailyBatch(
   service: SupabaseClient,
@@ -138,8 +145,33 @@ export async function writeDailyBatch(
   return rollups;
 }
 
-// Bulk daily write — used by the import route. Inserts all rows in one
-// batch, then recomputes rollup once per unique (term, section_student).
+/**
+ * Bulk daily write — used by the import route. Inserts all rows in one batch,
+ * then recomputes the rollup once per unique (term, section_student).
+ *
+ * THE ROLLUPS RUN IN BOUNDED WAVES OF `IMPORT_ROLLUP_CONCURRENCY`, and the
+ * distinction from what this loop used to be matters. It was strictly
+ * sequential, and its comment gave the reason: an import can carry 1,500+
+ * pairs, and firing that many RPCs at once exhausts the client's connection
+ * pool and draws rate-limit warnings. That reasoning is still correct and is
+ * NOT being overturned — it argues against UNBOUNDED parallelism, which a wave
+ * of four is not. `writeDailyBatch` above has run the bounded form in
+ * production since it was written.
+ *
+ * MEASURED AGAINST PRODUCTION, 2026-08-29 (`scripts/probe-import-rollup-cost.ts`,
+ * read-only). AY2026's busiest term holds 404 unique (term, student) pairs, and
+ * one round trip to Supabase for the query this RPC runs costs a median 85 ms —
+ * so the serial loop spent ~34.5 s on rollup latency alone for one workbook,
+ * before parsing, the per-sheet inserts or the per-sheet audit rows. The import
+ * form posts the WHOLE workbook in one request (`components/attendance/
+ * import-form.tsx` sends only the term and the file), so that is one HTTP
+ * request's cost, not something amortised across twenty-one of them. Waves of
+ * four bring it to ~8.6 s.
+ *
+ * ⚠ The route sets no `maxDuration`, while three other long-running routes in
+ * this repo set 60 (`app/api/teacher-assignments/route.ts` and the two subject
+ * routes). That is worth a look on its own; it is not this function's to fix.
+ */
 export async function writeDailyBulk(
   service: SupabaseClient,
   inputs: DailyWriteInput[]
@@ -158,19 +190,23 @@ export async function writeDailyBulk(
   }
 
   // Unique (term, student) pairs to recompute.
-  const pairs = new Set<string>();
-  for (const i of inputs) {
-    pairs.add(`${i.termId}|${i.sectionStudentId}`);
-  }
+  const pairs = [
+    ...new Set(inputs.map((i) => `${i.termId}|${i.sectionStudentId}`)),
+  ];
 
+  // Bounded waves, never unbounded — same shape as writeDailyBatch, half the
+  // width. Each pair's rollup is independent of every other, so order carries
+  // no meaning and only the cap does.
   let recomputed = 0;
-  // Sequential on purpose — Supabase's JS client pools connections, but each
-  // rpc call is a round-trip; running 1,500+ in parallel overwhelms the pool
-  // and produces rate-limit warnings. Batched imports happen rarely.
-  for (const key of pairs) {
-    const [termId, ssId] = key.split('|');
-    await recomputeRollup(service, termId, ssId);
-    recomputed += 1;
+  for (let i = 0; i < pairs.length; i += IMPORT_ROLLUP_CONCURRENCY) {
+    const wave = pairs.slice(i, i + IMPORT_ROLLUP_CONCURRENCY);
+    await Promise.all(
+      wave.map(async (key) => {
+        const [termId, ssId] = key.split('|');
+        await recomputeRollup(service, termId, ssId);
+      })
+    );
+    recomputed += wave.length;
   }
   return { inserted: rows.length, rollupsRecomputed: recomputed };
 }

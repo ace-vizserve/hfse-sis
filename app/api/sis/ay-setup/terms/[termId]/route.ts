@@ -187,6 +187,11 @@ export async function PATCH(
   // dynamic (uncached) routes — so bust those two modules only when the dates
   // actually moved (a virtue-only / lock-only save shouldn't churn the cache).
   if (datesChanged) {
+    // `loadTerms` (lib/dashboard/windows.ts) caches every term row globally, so
+    // it is busted whenever the dates move — not only when the AY code below
+    // resolves. Same `datesChanged` gate as above for the same reason.
+    revalidateTag('dashboard-windows', 'max');
+
     const { data: ay } = await service
       .from('academic_years')
       .select('ay_code')

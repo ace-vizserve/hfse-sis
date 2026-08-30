@@ -154,58 +154,95 @@ export async function loadAdviserAttendanceDashboard(opts: {
   if (sections.length === 0) return null;
 
   const today = sgToday();
-  const counts = await activeRosterCounts(sections.map((s) => s.id));
 
-  // The calendar is audience-resolved per level (KD #50), so a primary and a
-  // secondary class can genuinely disagree about whether today is a school day.
-  // Resolve per section rather than once for the whole page.
-  const perSection = await Promise.all(
-    sections.map(async (s) => {
-      const levelType = levelTypeForAudienceLookup(s.levelCode);
-      const [todayMarks, allMarks, encodable, summary] = await Promise.all([
-        getDailyForSection(s.id, termId, { fromDate: today, toDate: today }),
-        getDailyForSection(s.id, termId, { toDate: today }),
-        getEncodableDatesForTerm(termId, levelType),
-        getSectionAttendanceSummary(s.id, termId),
-      ]);
+  // ── THREE INDEPENDENT GROUPS, ONE WAVE ────────────────────────────────
+  // The roster counts, the per-section day/summary fan-out and the quota scan
+  // are all functions of `sections`, `academicYearId` and `termId` — nothing
+  // in any of them consumes a result from either of the others. They ran one
+  // after another anyway, and the last one ran LAST BY ACCIDENT: `quotaRisks`
+  // was `await`ed inside the returned object literal, whose properties
+  // evaluate in source order, so the deepest of the three was pinned behind
+  // both of the others with nothing to show for it.
+  //
+  // The roster count is joined onto each section AFTER the group resolves
+  // rather than read inside the per-section map, which is the only reason the
+  // map could be lifted out from behind it.
+  const [counts, perSection, quotaRisks] = await Promise.all([
+    activeRosterCounts(sections.map((s) => s.id)),
+    // The calendar is audience-resolved per level (KD #50), so a primary and a
+    // secondary class can genuinely disagree about whether today is a school
+    // day. Resolve per section rather than once for the whole page.
+    Promise.all(
+      sections.map(async (s) => {
+        const levelType = levelTypeForAudienceLookup(s.levelCode);
+        // ONE DAILY READ PER CLASS, NOT TWO. This asked `getDailyForSection`
+        // for `{ fromDate: today, toDate: today }` AND `{ toDate: today }` — the
+        // second window contains the first, so the narrow read re-fetched rows
+        // the wide one already had, at a roster read plus a paginated daily read
+        // per class, every load.
+        //
+        // The filter below is exact, not approximate: `getDailyForSection`
+        // dedupes to the latest row per `student|date|period`, and because that
+        // key CONTAINS the date, earlier days cannot displace a winner on today
+        // — not even a backdated correction entered after today's marks. Order
+        // survives too, since `recorded_at desc` is applied across the whole set
+        // and filtering preserves relative order. Pinned by
+        // __tests__/attendance/adviser-dashboard-today-subset.test.ts, which was
+        // run green against the two-fetch version first and includes the case
+        // where today's marks only appear on the wide read's SECOND page.
+        const [allMarks, encodable, summary] = await Promise.all([
+          getDailyForSection(s.id, termId, { toDate: today }),
+          getEncodableDatesForTerm(termId, levelType),
+          getSectionAttendanceSummary(s.id, termId),
+        ]);
+        const todayMarks = allMarks.filter((m) => m.date === today);
 
-      const isSchoolDayHere = encodable.includes(today);
-      const tally = tallyToday(todayMarks);
-      const todayState: SectionTodayState = !isSchoolDayHere
-        ? { kind: 'not-a-school-day' }
-        : tally.marked > 0
-          ? { kind: 'marked', tally }
-          : { kind: 'unmarked' };
+        const isSchoolDayHere = encodable.includes(today);
+        const tally = tallyToday(todayMarks);
+        const todayState: SectionTodayState = !isSchoolDayHere
+          ? { kind: 'not-a-school-day' }
+          : tally.marked > 0
+            ? { kind: 'marked', tally }
+            : { kind: 'unmarked' };
 
-      return {
-        section: {
+        return {
           sectionId: s.id,
           sectionName: s.name,
           levelLabel: s.levelLabel,
-          rosterCount: counts[s.id] ?? 0,
           today: todayState,
           unmarked: unmarkedSchoolDays(
             encodable,
             new Set(allMarks.map((m) => m.date)),
             today
           ),
-        } satisfies AdviserSection,
-        summary,
-        isSchoolDayHere,
-      };
-    })
-  );
+          summary,
+          isSchoolDayHere,
+        };
+      })
+    ),
+    loadQuotaRisks(sections, academicYearId, termId),
+  ]);
+
+  const adviserSections: AdviserSection[] = perSection.map((p) => ({
+    sectionId: p.sectionId,
+    sectionName: p.sectionName,
+    levelLabel: p.levelLabel,
+    rosterCount: counts[p.sectionId] ?? 0,
+    today: p.today,
+    unmarked: p.unmarked,
+  }));
 
   // Page-level day state follows the sections: it is a school day if it is one
-  // for any class the adviser holds.
+  // for any class the adviser holds. GENUINELY DEPENDENT and left serial —
+  // `describeNonSchoolDay` is only asked when no class has a school day today,
+  // which is a fact only the fan-out above can produce.
   const isSchoolDay = perSection.some((p) => p.isSchoolDayHere);
   const { holidayLabel, nextSchoolDay } = isSchoolDay
     ? { holidayLabel: null, nextSchoolDay: null }
     : await describeNonSchoolDay(termId, today, sections[0]?.levelCode ?? null);
 
-  const adviserSections = perSection.map((p) => p.section);
   const summaries: Record<string, SectionAttendanceSummary> = {};
-  for (const p of perSection) summaries[p.section.sectionId] = p.summary;
+  for (const p of perSection) summaries[p.sectionId] = p.summary;
 
   return {
     today,
@@ -216,7 +253,7 @@ export async function loadAdviserAttendanceDashboard(opts: {
     subhead: subheadFor(adviserSections, isSchoolDay, nextSchoolDay),
     sections: adviserSections,
     summaries,
-    quotaRisks: await loadQuotaRisks(sections, academicYearId, termId),
+    quotaRisks,
   };
 }
 
@@ -256,19 +293,19 @@ async function loadQuotaRisks(
   const service = createServiceClient();
   const out: QuotaRisk[] = [];
 
+  // ⚠ THE TWO QUOTAS ARE INDEPENDENT AND USED TO BE SERIAL BY OBJECT-LITERAL
+  // ORDER. Written as `{ compassionate: await …, vacation: await … }`, the
+  // properties evaluate top to bottom, so the vacation scan — the deeper of
+  // the two by a wide margin — never started until the compassionate one had
+  // finished. Neither reads anything the other produces.
   const perSection = await Promise.all(
-    sections.map(async (s) => ({
-      section: s,
-      compassionate: await getCompassionateUsageForSection(
-        s.id,
-        academicYearId
-      ),
-      vacation: await getVacationLeaveUsageForSection(
-        s.id,
-        academicYearId,
-        termId
-      ),
-    }))
+    sections.map(async (s) => {
+      const [compassionate, vacation] = await Promise.all([
+        getCompassionateUsageForSection(s.id, academicYearId),
+        getVacationLeaveUsageForSection(s.id, academicYearId, termId),
+      ]);
+      return { section: s, compassionate, vacation };
+    })
   );
 
   const studentIds = new Set<string>();

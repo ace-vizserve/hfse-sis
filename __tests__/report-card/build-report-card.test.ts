@@ -58,7 +58,7 @@ vi.mock('@/lib/sis/school-config', () => {
 
 vi.mock('@/lib/attendance/calendar', () => ({
   // Return empty dates → enrolledSchoolDays = 0 → falls back to
-  // recordedSchoolDaysByTerm from the second attendance_records query.
+  // recordedSchoolDaysByTerm, the `school_days` half of the attendance read.
   getEncodableDatesForTerm: vi.fn().mockResolvedValue([]),
 }));
 
@@ -73,13 +73,38 @@ vi.mock('@/lib/auth/staff-list', () => ({
 // ─── Fake SupabaseClient factory ──────────────────────────────────────────────
 
 /**
+ * Apply a flat `.select('a, b, c')` projection to one seeded row, the way
+ * PostgREST would. Only flat column lists appear in the attendance reads, so
+ * embeds/aliases are deliberately not handled — an unrecognised select string
+ * would silently return `{}`, which is why the caller restricts this to
+ * `attendance_records`.
+ */
+function projectRow(row: Record<string, unknown>, sel: string) {
+  const cols = sel
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (cols.length === 0) return row;
+  const out: Record<string, unknown> = {};
+  for (const c of cols) out[c] = row[c];
+  return out;
+}
+
+/**
  * Build a minimal chainable fake. All filter methods (.eq / .in / .order /
  * .neq) return `this` so they chain. `.single()` resolves with the first row.
  * The chain itself is Thenable (`.then`) so `await chain` resolves with
  * `{ data: rows }` — needed for queries that don't end with `.single()`.
  *
- * For `attendance_records` we have TWO queries with DIFFERENT select strings;
- * differentiate on whether the `sel` string contains 'school_days'.
+ * `attendance_records` is seeded ONCE, as whole rows, and the fake applies the
+ * `.select()` projection itself (`projectRow` above). That mirrors the real
+ * database — where both of this file's historical attendance reads hit the SAME
+ * rows under byte-identical filters and differ only in which columns come back
+ * — and it is what makes the read count invisible to these tests: whether
+ * build-report-card issues one query for
+ * `term_id, days_present, days_late, school_days` or two narrower ones, the
+ * values it sees are identical. See the subset-equivalence test at the bottom
+ * of this file.
  */
 function makeClient(tables: {
   students?: unknown[];
@@ -93,8 +118,9 @@ function makeClient(tables: {
   section_subjects?: unknown[];
   grading_sheets?: unknown[];
   grade_entries?: unknown[];
-  'attendance_records:presence'?: unknown[]; // term_id, days_present, days_late
-  'attendance_records:school_days'?: unknown[]; // term_id, school_days
+  // Whole rows — { term_id, days_present, days_late, school_days }. The fake
+  // projects them per the caller's `.select()` string.
+  attendance_records?: unknown[];
   evaluation_writeups?: unknown[];
   teacher_assignments?: unknown[]; // { teacher_user_id } — role='form_adviser' row
   // subject_report_map wiring: subject_id/report_subject_id rows (flat, no
@@ -134,13 +160,10 @@ function makeClient(tables: {
         onFulfilled: (v: { data: unknown[] }) => unknown,
         onRejected?: (e: unknown) => unknown
       ) {
-        let key: string = table;
+        let rows = (tables[table as keyof typeof tables] ?? []) as unknown[];
         if (table === 'attendance_records') {
-          key = sel.includes('school_days')
-            ? 'attendance_records:school_days'
-            : 'attendance_records:presence';
+          rows = rows.map((r) => projectRow(r as Record<string, unknown>, sel));
         }
-        const rows = (tables[key as keyof typeof tables] ?? []) as unknown[];
         return Promise.resolve({ data: rows }).then(
           onFulfilled as (v: unknown) => unknown,
           onRejected
@@ -315,10 +338,9 @@ describe('buildReportCard', () => {
         // server when the teacher saved scores; this test proves the card reads the
         // stored value unchanged, not a re-derivation).
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [
-          { term_id: 't1', days_present: 70, days_late: 2 },
+        attendance_records: [
+          { term_id: 't1', days_present: 70, days_late: 2, school_days: 75 },
         ],
-        'attendance_records:school_days': [{ term_id: 't1', school_days: 75 }],
         evaluation_writeups: [],
       });
 
@@ -350,8 +372,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
       });
 
@@ -401,10 +422,9 @@ describe('buildReportCard', () => {
         // A T1 entry exists (maybe backfilled in error), but student wasn't enrolled
         // for T1 → the coverage override must null it and mark is_na=true.
         grade_entries: makeGradeEntries([80, 90, 88, 85]),
-        'attendance_records:presence': [
-          { term_id: 't2', days_present: 60, days_late: 1 },
+        attendance_records: [
+          { term_id: 't2', days_present: 60, days_late: 1, school_days: 70 },
         ],
-        'attendance_records:school_days': [{ term_id: 't2', school_days: 70 }],
         evaluation_writeups: [],
       });
 
@@ -442,8 +462,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([80, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
       });
 
@@ -478,8 +497,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         // `submitted: true` is explicit. The builder now carries the flag
         // through, and the parent API + batch print drop an unsubmitted
         // write-up — so without it these two would be drafts and the
@@ -535,8 +553,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [{ term_id: 't1', writeup: null }],
       });
 
@@ -580,8 +597,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
         teacher_assignments: [{ teacher_user_id: 'user-adviser-1' }],
       });
@@ -618,8 +634,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
         teacher_assignments: [],
       });
@@ -661,8 +676,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
       });
 
@@ -719,8 +733,7 @@ describe('buildReportCard', () => {
             annual_letter_grade: null,
           },
         ],
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
       });
 
@@ -769,8 +782,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH, SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
       });
 
@@ -835,8 +847,7 @@ describe('buildReportCard', () => {
             annual_letter_grade: null,
           },
         ],
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
         subject_report_map: [
           {
@@ -890,8 +901,7 @@ describe('buildReportCard', () => {
         section_subjects: sectionSubjectRows(SUBJECT_MATH),
         grading_sheets: SHEETS,
         grade_entries: makeGradeEntries([93, 90, 88, 85]),
-        'attendance_records:presence': [],
-        'attendance_records:school_days': [],
+        attendance_records: [],
         evaluation_writeups: [],
         subject_report_map: [
           { subject_id: SUBJECT_MATH.id, report_subject_id: SUBJECT_MATH.id },
@@ -909,6 +919,113 @@ describe('buildReportCard', () => {
       expect(result.payload.subjects).toHaveLength(1);
       expect(result.payload.subjects[0].subject).toEqual(SUBJECT_MATH);
       expect(result.payload.subjects[0].t1.quarterly).toBe(93);
+    });
+  });
+
+  // ── Subset-equivalence: one attendance read, or two, must not matter ──────
+  //
+  // build-report-card historically issued TWO `attendance_records` reads with
+  // byte-identical filters (`.in(section_student_id, allEnrolmentIds)` +
+  // `.in(term_id, termList)`), one projecting `days_present, days_late` and one
+  // projecting `school_days`. Because the filters are identical, the second
+  // read's rows are the SAME rows as the first's — so `school_days` can be
+  // carried on the first read's projection and the fallback map derived from
+  // it, with no change to a single output value.
+  //
+  // This test pins that. It seeds whole rows once, lets the fake apply the
+  // projection (so it is faithful whichever way production asks), and builds
+  // the expectation by reducing the SEEDED rows — i.e. the map a merged read
+  // derives — then asserts the payload matches. It was written and run GREEN
+  // against the two-read version before the reads were merged, so a pass here
+  // means both shapes agree, not merely that the merged shape is self-consistent.
+  describe('attendance reads — merged projection equals the separate fetches', () => {
+    // Two rows for T1 (a transferred student's pre- and post-transfer enrolment
+    // rows both land in the same `.in()`) so the summing branch is exercised,
+    // plus a single-row T2 and a term with no row at all.
+    const SEEDED = [
+      { term_id: 't1', days_present: 40, days_late: 1, school_days: 45 },
+      { term_id: 't1', days_present: 30, days_late: 1, school_days: 30 },
+      { term_id: 't2', days_present: 60, days_late: 0, school_days: 70 },
+    ];
+
+    it('payload.attendance carries the values a single merged read would derive', async () => {
+      const supabase = makeClient({
+        students: [
+          {
+            id: STUDENT_ID,
+            student_number: 'SN-001',
+            last_name: 'Dela Cruz',
+            first_name: 'Juan',
+            middle_name: null,
+          },
+        ],
+        academic_years: [{ id: 'ay-1', label: 'AY2026' }],
+        terms: TERMS,
+        section_students: [makeEnrolment()],
+        section_subjects: sectionSubjectRows(SUBJECT_MATH),
+        grading_sheets: SHEETS,
+        grade_entries: makeGradeEntries([93, 90, 88, 85]),
+        attendance_records: SEEDED,
+        evaluation_writeups: [],
+      });
+
+      const result = await buildReportCard(
+        supabase as unknown as SupabaseClient,
+        STUDENT_ID
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Derive both maps from the one seeded row set — this is exactly what a
+      // merged `select('term_id, days_present, days_late, school_days')`
+      // returns, and what the second fetch used to return separately.
+      const derivedPresence = new Map<
+        string,
+        { days_present: number | null; days_late: number | null }
+      >();
+      const derivedSchoolDays = new Map<string, number>();
+      for (const r of SEEDED) {
+        const cur = derivedPresence.get(r.term_id);
+        derivedPresence.set(r.term_id, {
+          days_present: (cur?.days_present ?? 0) + r.days_present,
+          days_late: (cur?.days_late ?? 0) + r.days_late,
+        });
+        derivedSchoolDays.set(
+          r.term_id,
+          (derivedSchoolDays.get(r.term_id) ?? 0) + r.school_days
+        );
+      }
+
+      // getEncodableDatesForTerm is mocked to [] file-wide, so every term takes
+      // the "calendar unconfigured" fallback — the ONLY consumer of the
+      // school_days map, and therefore the branch that would break first if the
+      // merged read stopped agreeing with the separate one.
+      const expected = TERMS.map((t) => ({
+        term_id: t.id,
+        school_days: derivedSchoolDays.get(t.id) ?? null,
+        days_present: derivedPresence.get(t.id)?.days_present ?? null,
+        days_late: derivedPresence.get(t.id)?.days_late ?? null,
+      }));
+
+      expect(result.payload.attendance).toEqual(expected);
+      // Spelled out so a future reader sees the real numbers, not just the
+      // reduction: T1 sums two rows, T2 has one, T3/T4 have none.
+      expect(result.payload.attendance).toEqual([
+        { term_id: 't1', school_days: 75, days_present: 70, days_late: 2 },
+        { term_id: 't2', school_days: 70, days_present: 60, days_late: 0 },
+        {
+          term_id: 't3',
+          school_days: null,
+          days_present: null,
+          days_late: null,
+        },
+        {
+          term_id: 't4',
+          school_days: null,
+          days_present: null,
+          days_late: null,
+        },
+      ]);
     });
   });
 

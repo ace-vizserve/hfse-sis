@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -53,6 +54,11 @@ export async function DELETE(
     entityId: id,
     context: existing,
   });
+
+  // Revoking drops this flow's coverage count on the /sis readiness strip,
+  // which is exactly the signal that turns it from ok to not-ok. Same loader
+  // the sibling POST busts (`getSystemHealth`, lib/sis/health.ts).
+  revalidateTag('sis-health', 'max');
 
   return NextResponse.json({ ok: true });
 }

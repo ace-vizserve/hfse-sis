@@ -612,12 +612,22 @@ async function enrichWithStudents(
   const studentById = new Map<string, StudentRow>();
   if (studentIds.length > 0) {
     // Chunk to keep .in() lists tractable (mirrors lib/sis/drill.ts:185).
+    // The chunks are decided up front and none reads another's result, so they
+    // go out together; a failed chunk still degrades to "those names missing"
+    // rather than aborting the enrichment, exactly as the serial loop did.
+    const chunks: string[][] = [];
     for (let i = 0; i < studentIds.length; i += 100) {
-      const chunk = studentIds.slice(i, i + 100);
-      const { data, error } = await service
-        .from('students')
-        .select('id, student_number, first_name, last_name')
-        .in('id', chunk);
+      chunks.push(studentIds.slice(i, i + 100));
+    }
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        service
+          .from('students')
+          .select('id, student_number, first_name, last_name')
+          .in('id', chunk)
+      )
+    );
+    for (const { data, error } of chunkResults) {
       if (error) {
         console.warn('[movements] students enrichment failed:', error.message);
         continue;
@@ -638,14 +648,23 @@ async function enrichWithStudents(
     }
     needFallbackByAy.get(v.ayCode)!.add(student.student_number);
   }
+  // ONE WAVE PER PASS, NOT ONE PER YEAR. Each AY reads its own prefixed table
+  // and writes its own entry in the map below — no iteration informs the next.
+  // Two years in scope today (current + upcoming), and a rollover window puts
+  // three in play, so the loop was a per-year multiplier on a page load.
   const enroleeByStudentNumberByAy = new Map<string, Map<string, string>>();
-  for (const [ayCode, studentNumbers] of needFallbackByAy) {
-    const year = ayCode.replace(/^AY/i, '').toLowerCase();
-    const list = Array.from(studentNumbers);
-    const { data, error } = await service
-      .from(`ay${year}_enrolment_applications`)
-      .select('studentNumber, enroleeNumber')
-      .in('studentNumber', list);
+  const fallbackByAy = await Promise.all(
+    Array.from(needFallbackByAy).map(async ([ayCode, studentNumbers]) => {
+      const year = ayCode.replace(/^AY/i, '').toLowerCase();
+      const list = Array.from(studentNumbers);
+      const res = await service
+        .from(`ay${year}_enrolment_applications`)
+        .select('studentNumber, enroleeNumber')
+        .in('studentNumber', list);
+      return { ayCode, ...res };
+    })
+  );
+  for (const { ayCode, data, error } of fallbackByAy) {
     if (error) {
       console.warn(
         `[movements] enroleeNumber fallback (${ayCode}) failed:`,
@@ -676,15 +695,21 @@ async function enrichWithStudents(
     string,
     Map<string, { studentNumber: string | null; fullName: string }>
   >();
-  for (const [ayCode, enroleeNumbers] of transferByAy) {
-    const year = ayCode.replace(/^AY/i, '').toLowerCase();
-    const list = Array.from(enroleeNumbers);
-    const { data, error } = await service
-      .from(`ay${year}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName'
-      )
-      .in('enroleeNumber', list);
+  // Same per-AY shape as pass 3 above, same reasoning.
+  const transferRowsByAy = await Promise.all(
+    Array.from(transferByAy).map(async ([ayCode, enroleeNumbers]) => {
+      const year = ayCode.replace(/^AY/i, '').toLowerCase();
+      const list = Array.from(enroleeNumbers);
+      const res = await service
+        .from(`ay${year}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName'
+        )
+        .in('enroleeNumber', list);
+      return { ayCode, ...res };
+    })
+  );
+  for (const { ayCode, data, error } of transferRowsByAy) {
     if (error) {
       console.warn(
         `[movements] transfer-name lookup (${ayCode}) failed:`,

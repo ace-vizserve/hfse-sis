@@ -119,10 +119,12 @@ export default async function SisAdminHub() {
     cmpTo: null,
   };
 
-  const ayReadiness = currentAy
-    ? await getAyReadiness(currentAy.ay_code)
-    : null;
-
+  // `getAyReadiness` used to sit here, on its own `await`, ahead of the AY-code
+  // list. It feeds only the year band and nothing below depends on it, so it
+  // has moved into the big fan-out at the end of this block — where its depth
+  // hides inside the deepest loader instead of adding to it. The AY-code list
+  // stays here because `compareAyCode` is derived from it and half that fan-out
+  // is keyed on the result.
   const ayCodes = ayCode ? await listAyCodes(service) : [];
   const compareAyCode = ayCode
     ? resolveCompareAy(undefined, ayCodes, ayCode)
@@ -147,6 +149,7 @@ export default async function SisAdminHub() {
     structuralChanges,
     auditTrend,
     auditByModule,
+    ayReadiness,
   ] = await Promise.all([
     role === 'superadmin' ? getSystemHealth() : Promise.resolve(null),
     ayCode ? getHubKpis(ayCode).catch(() => null) : Promise.resolve(null),
@@ -191,6 +194,9 @@ export default async function SisAdminHub() {
     ayCode
       ? getAuditActivityByModule(weekRange).catch(() => null)
       : Promise.resolve(null),
+    // Year band. Appended rather than inserted so the thirteen entries above
+    // keep their positions in the destructure.
+    currentAy ? getAyReadiness(currentAy.ay_code) : Promise.resolve(null),
   ]);
 
   // Enrolled-students growth-delta chip (design spec §4.3) — the sole owner

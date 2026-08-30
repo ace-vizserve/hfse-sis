@@ -625,6 +625,13 @@ async function loadRecentSisActivityUncached(
   }));
 }
 
+// The bare 'sis' tag here is inert and that is a decision (2026-08-29), not an
+// oversight: this feed reads `audit_log`, which has no AY column, so there is
+// no AY to scope a real tag to — and because every write in the app appends an
+// audit row, a working tag would bust this on essentially every request,
+// turning a cache into pure overhead. The 120s TTL is the freshness contract.
+// Exempted with this reason in the bare-tag guard in
+// __tests__/cache/write-route-invalidation.test.ts.
 const loadRecentSisActivity = unstable_cache(
   loadRecentSisActivityUncached,
   ['sis', 'recent-activity'],
@@ -795,23 +802,29 @@ async function loadRecordsKpisForRange(
 async function loadRecordsKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<RecordsRangeKpis>> {
-  const current = await loadRecordsKpisForRange(input);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadRecordsKpisForRange(input),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadRecordsKpisForRange({
-    ayCode: input.ayCode,
-    from: input.cmpFrom,
-    to: input.cmpTo,
-    cmpFrom: input.cmpFrom,
-    cmpTo: input.cmpTo,
-  });
+  // Two disjoint date windows, neither feeding the other — see the identical
+  // note in lib/markbook/dashboard.ts. `getAyIdByCode` inside both arms is
+  // request-cached, so running them together shares that lookup rather than
+  // duplicating it.
+  const [current, comparison] = await Promise.all([
+    loadRecordsKpisForRange(input),
+    loadRecordsKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
   return {
     current,
     comparison,
@@ -1047,17 +1060,22 @@ async function loadAuditActivityByModuleUncached(
     return results;
   }
 
-  const current = await countsFor(input.from, input.to);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await countsFor(input.from, input.to),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await countsFor(input.cmpFrom, input.cmpTo);
+  // Two serial waves of six counts each, and the second wave never read the
+  // first. Six modules x two windows is twelve independent `count` queries —
+  // one wave, not two.
+  const [current, comparison] = await Promise.all([
+    countsFor(input.from, input.to),
+    countsFor(input.cmpFrom, input.cmpTo),
+  ]);
   const currentTotal = current.reduce((s, p) => s + p.count, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.count, 0);
   return {
@@ -1083,7 +1101,7 @@ export function getAuditActivityByModule(
       input.cmpFrom ?? '',
       input.cmpTo ?? '',
     ],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1255,6 +1273,19 @@ export async function getActivityByActor(range?: {
     range?.from ?? 'all',
     range?.to ?? 'all',
   ];
+  // Both tags below are inert, and that is a decision (2026-08-29), not an
+  // oversight. This is the FOURTH `audit_log` feed — `loadActorActivity`
+  // (lib/sis/drill.ts) reads that table and nothing else — so the reasoning on
+  // `loadRecentSisActivity` and `loadStructuralChangeFeedCached` above applies
+  // here unchanged: `audit_log` has no AY column, so there is no AY to scope a
+  // real tag to, and because every write in the app appends an audit row, a
+  // working tag would bust this on essentially every request and turn the
+  // cache into pure overhead. The 60s TTL is the freshness contract.
+  //
+  // 'audit-log' looks like the tag that ought to exist for exactly this table.
+  // It is the one that must NOT: it would name the busiest write path in the
+  // app. Nothing emits it, deliberately. Exempted with this reason in the
+  // bare-tag guard in __tests__/cache/write-route-invalidation.test.ts.
   return unstable_cache(() => loadActorActivity(range), key, {
     revalidate: 60,
     tags: ['sis-dashboard', 'audit-log'],
@@ -1290,17 +1321,22 @@ async function loadAuditDailyForRange(
 async function loadAuditDailyTrendUncached(
   input: RangeInput
 ): Promise<AuditDailyTrendResult> {
-  const current = await loadAuditDailyForRange(input.from, input.to);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadAuditDailyForRange(input.from, input.to),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadAuditDailyForRange(input.cmpFrom, input.cmpTo);
+  // Two disjoint date windows, neither feeding the other — see the identical
+  // note in lib/markbook/dashboard.ts. Each arm is a paginated walk, so this
+  // is the deepest of the five and the one that gains most.
+  const [current, comparison] = await Promise.all([
+    loadAuditDailyForRange(input.from, input.to),
+    loadAuditDailyForRange(input.cmpFrom, input.cmpTo),
+  ]);
   const currentTotal = current.reduce((s, p) => s + p.y, 0);
   const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
   return {
@@ -1326,7 +1362,7 @@ export function getAuditDailyTrend(
       input.cmpFrom ?? '',
       input.cmpTo ?? '',
     ],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1377,7 +1413,7 @@ export function getGradeChangePipeline(
   return unstable_cache(
     loadGradeChangePipelineUncached,
     ['sis', 'grade-change-pipeline', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1415,7 +1451,7 @@ export function getTopAuditActions(
   return unstable_cache(
     loadTopAuditActionsUncached,
     ['sis', 'top-audit-actions', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1462,7 +1498,7 @@ export function getAuthEventCounts(
   return unstable_cache(
     loadAuthEventCountsUncached,
     ['sis', 'auth-event-counts', input.ayCode, input.from, input.to],
-    { tags: ['sis'], revalidate: 120 }
+    { tags: tag(input.ayCode), revalidate: 120 }
   )(input);
 }
 
@@ -1527,6 +1563,11 @@ async function loadStructuralChangeFeedUncached(): Promise<
   }));
 }
 
+// Bare 'sis' is inert here by the same decision as `loadRecentSisActivity`
+// above: an `audit_log` read has no AY to scope a tag to, and a working tag
+// would fire on nearly every request. The 120s TTL is the freshness contract,
+// and the exemption is recorded in
+// __tests__/cache/write-route-invalidation.test.ts.
 const loadStructuralChangeFeedCached = unstable_cache(
   loadStructuralChangeFeedUncached,
   ['sis', 'structural-change-feed'],

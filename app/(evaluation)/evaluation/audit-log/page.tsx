@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import {
   Card,
   CardAction,
@@ -81,18 +82,19 @@ export default async function EvaluationAuditLogPage({
 
   const supabase = await createClient();
 
-  // Distinct actor query for the Actor select options (un-paginated, scoped
-  // to the same allowlist so we only show actors who appear in this module).
-  const { data: actorData } = await supabase
-    .from('audit_log')
-    .select('actor_email')
-    .in('action', EVALUATION_AUDIT_ALLOWLIST);
-  const actorOptions = Array.from(
-    new Set(
-      (actorData ?? []).map((r: { actor_email: string }) => r.actor_email)
-    )
-  ).sort();
-
+  // Distinct actors for the Actor select, scoped to this module's allowlist.
+  //
+  // ⚠ This page was NOT given the sibling pages' `.limit(200)`, and must not
+  // be. It was reported as silently truncating in production and it was not:
+  // measured 2026-08-30 this module holds 29 rows across 4 actors, against
+  // PostgREST's 1,000-row cap, so it was the only one of the three that was
+  // accurate — and adding a 200-row limit to "match the siblings" would have
+  // been the one change here capable of making a correct dropdown wrong.
+  //
+  // What was real is that the read was unbounded on a table that only grows,
+  // so it was right about today rather than right. `audit_actor_emails`
+  // (migration 133) does the DISTINCT in the database and returns 4 rows for
+  // 4 actors however long the log gets.
   let query = supabase
     .from('audit_log')
     .select(
@@ -105,7 +107,13 @@ export default async function EvaluationAuditLogPage({
   if (currentAction) query = query.eq('action', currentAction);
   if (currentActor) query = query.eq('actor_email', currentActor);
 
-  const { data, count, error } = await query.range(from, to);
+  // The actor list depends on nothing the log query produces, so the two go out
+  // together — the sibling markbook and attendance pages already do this, and
+  // this page was paying for them one after the other (§2, 11-performance-patterns).
+  const [{ data, count, error }, actorOptions] = await Promise.all([
+    query.range(from, to),
+    loadAuditActorEmails(supabase, EVALUATION_AUDIT_ALLOWLIST, 'evaluation'),
+  ]);
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 

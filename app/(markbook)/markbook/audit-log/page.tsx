@@ -8,6 +8,7 @@ import {
   Users,
 } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import {
   Card,
   CardAction,
@@ -120,24 +121,18 @@ export default async function AuditLogPage({
   if (params.sheet_id)
     q = q.contains('context', { grading_sheet_id: params.sheet_id });
 
-  const [{ data, count, error }, actorEmailsResult] = await Promise.all([
+  const [{ data, count, error }, actorOptions] = await Promise.all([
     q.order('created_at', { ascending: false }).range(from, to),
-    // Fetch distinct actor emails across the whole allowlist (unfiltered by page)
-    supabase
-      .from('audit_log')
-      .select('actor_email')
-      .in('action', MARKBOOK_AUDIT_ALLOWLIST)
-      .order('actor_email')
-      .limit(200),
+    // Distinct actors across the whole allowlist, unfiltered by page.
+    //
+    // This used to select the actor_email COLUMN with `.limit(200)` and
+    // de-duplicate in JS. A row limit is not an actor limit: measured in
+    // production 2026-08-30 this module had 306 rows across 9 actors, and
+    // ordered by email the first 200 rows covered only 8 of them — so one
+    // person could not be selected in this dropdown, and had not been able to
+    // for some time. The DISTINCT now happens in the database (migration 133).
+    loadAuditActorEmails(supabase, MARKBOOK_AUDIT_ALLOWLIST, 'markbook'),
   ]);
-
-  const actorOptions = Array.from(
-    new Set(
-      (actorEmailsResult.data ?? [])
-        .map((r: { actor_email: string }) => r.actor_email)
-        .filter(Boolean)
-    )
-  ).sort();
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 

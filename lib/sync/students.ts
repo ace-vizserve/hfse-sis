@@ -595,24 +595,52 @@ export async function syncOneStudent(
     }
 
     // 3. Commit. Same shape as /api/students/sync but narrowed to this one row.
+    //
+    // ⚠ The four loops below look like row-at-a-time writes and are not, which
+    // is why `scripts/audit/row-at-a-time-writes.ts` flags three of them.
+    // `buildSyncPlan` was handed a ONE-ROW roster and a snapshot holding one
+    // student, so it can plan at most one student upsert and at most one
+    // enrolment insert; `enrollment_status_changes` is bounded by that one
+    // student's enrolment rows in this AY (one normally, two after a mid-year
+    // transfer). Batching them would collapse nothing.
+    //
+    // The roster-sized caller is POST /api/students/sync, which already writes
+    // in single batched statements. The per-student fan-out through here is
+    // bounded to waves of five by the auto-sync route.
+    //
+    // Do NOT widen these writes to spread a planned row: the object literals
+    // are field-scoped on purpose so an admissions sync cannot touch the
+    // SIS-owned columns that also live on `students`
+    // (__tests__/sis/students-sync-preserves-attributes.test.ts, KD #178).
     const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
     const updates = plan.student_upserts.filter((u) => u.kind === 'update');
 
+    // The insert hands back the generated uuid, so it is captured here rather
+    // than re-read below. A `null` studentRow is what made the planner choose
+    // 'insert' in the first place, so this is the only way a fresh enrolment
+    // can get an id — and if the write returns nothing, `studentId` stays null
+    // and the enrolment loop below refuses rather than guessing.
+    let insertedStudentId: string | null = null;
     if (inserts.length > 0) {
-      const { error } = await service.from('students').insert(
-        inserts.map((u) => ({
-          student_number: u.student_number,
-          last_name: u.last_name,
-          first_name: u.first_name,
-          middle_name: u.middle_name,
-        }))
-      );
+      const { data, error } = await service
+        .from('students')
+        .insert(
+          inserts.map((u) => ({
+            student_number: u.student_number,
+            last_name: u.last_name,
+            first_name: u.first_name,
+            middle_name: u.middle_name,
+          }))
+        )
+        .select('id');
       if (error)
         return {
           ok: false,
           change: 'skipped',
           error: `student insert: ${error.message}`,
         };
+      insertedStudentId =
+        ((data ?? []) as Array<{ id: string }>)[0]?.id ?? null;
     }
     for (const u of updates) {
       const { error } = await service
@@ -632,17 +660,10 @@ export async function syncOneStudent(
         };
     }
 
-    // Resolve student_id for fresh enrolments (newly-inserted students need
-    // their generated UUID looked up).
-    let studentId: string | null = studentRow?.id ?? null;
-    if (!studentId && plan.enrollment_inserts.length > 0) {
-      const { data } = await service
-        .from('students')
-        .select('id')
-        .eq('student_number', app.studentNumber)
-        .maybeSingle();
-      studentId = (data as { id: string } | null)?.id ?? null;
-    }
+    // The student this enrolment hangs off: the one the snapshot already read,
+    // or the one just inserted. There is no third case — the planner only
+    // plans an insert when the snapshot read came back empty.
+    const studentId: string | null = studentRow?.id ?? insertedStudentId;
 
     for (const e of plan.enrollment_inserts) {
       if (!studentId)

@@ -247,6 +247,33 @@ type LogActionParams = {
   context?: Record<string, unknown>;
 };
 
+export type AuditRow = {
+  actor_id: string | null;
+  actor_email: string;
+  action: AuditAction;
+  entity_type: AuditEntityType;
+  entity_id: string | null;
+  context: Record<string, unknown>;
+};
+
+// The ONE place a `public.audit_log` row is shaped. Both the single-row
+// (`logAction`) and the batched (`logActions`) writers go through here, so the
+// two paths cannot drift — `__tests__/audit/log-actions-batch.test.ts` pins 30
+// rows byte-identical between them.
+export function toAuditRow(
+  actor: Pick<LogActionParams, 'actor'>['actor'],
+  row: Omit<LogActionParams, 'service' | 'actor'>
+): AuditRow {
+  return {
+    actor_id: actor.id,
+    actor_email: actor.email ?? '(unknown)',
+    action: row.action,
+    entity_type: row.entityType,
+    entity_id: row.entityId ?? null,
+    context: row.context ?? {},
+  };
+}
+
 // Writes one row to `public.audit_log`. Never throws — audit failures must
 // not break user actions. Errors are logged to the console and swallowed.
 //
@@ -254,14 +281,9 @@ type LogActionParams = {
 export async function logAction(params: LogActionParams): Promise<void> {
   const { service, actor, action, entityType, entityId, context } = params;
   try {
-    const { error } = await service.from('audit_log').insert({
-      actor_id: actor.id,
-      actor_email: actor.email ?? '(unknown)',
-      action,
-      entity_type: entityType,
-      entity_id: entityId ?? null,
-      context: context ?? {},
-    });
+    const { error } = await service
+      .from('audit_log')
+      .insert(toAuditRow(actor, { action, entityType, entityId, context }));
     if (error) {
       console.error('[audit] failed to write log row', {
         action,
@@ -281,12 +303,83 @@ export async function logAction(params: LogActionParams): Promise<void> {
 }
 
 // Convenience wrapper when multiple rows need to be written for one action
-// (e.g. entries PATCH that touches several fields in one request).
+// (e.g. entries PATCH that touches several fields in one request, ~25-30 per
+// class register submit, 200 on a teacher-assignment bulk create, ~125 on a
+// year lock).
+//
+// ONE array insert, mirroring `writeAuditRows` in
+// `lib/audit/log-grade-change.ts` — the established precedent for a batched
+// audit write in this codebase.
+//
+// ⚠ WHY THE PER-ROW FALLBACK EXISTS, and why it is not dead code. An array
+// insert is ALL-OR-NOTHING: one row PostgREST rejects (an `action` value the
+// enum has not seen, context that will not serialise) discards the other 199
+// alongside it. `logAction` has never thrown and never lost a row for a
+// neighbour's fault, and a silently incomplete audit trail is worse than a
+// slow one — so a REJECTED batch is retried row by row, which lands every good
+// row and isolates the bad one in the console. Pinned by
+// `__tests__/audit/log-actions-batch.test.ts`.
+//
+// ⚠ AND WHY ONLY ONE OF THE TWO FAILURE PATHS TAKES IT. The two are not the
+// same failure and must not share a branch:
+//
+//   * A RETURNED `error` is the server's own answer. PostgREST ran the
+//     statement, the statement failed, and nothing was committed — so there is
+//     nothing to duplicate and the per-row retry is strictly a repair.
+//   * A THROWN error is a TRANSPORT failure, and it is ambiguous by nature. A
+//     socket that dies, a fetch that aborts, a gateway timeout: each of those
+//     can arrive AFTER the insert has already committed. We cannot tell from
+//     here which side of the commit we are on.
+//
+// `audit_log` has no unique constraint and no dedupe (nor should it — Hard Rule
+// #6 makes it append-only, and a dedupe would be an update path). So retrying a
+// throw would, whenever the statement had in fact landed, write every row a
+// SECOND time: a class register submit's ~30 marks appearing twice in the log
+// and twice in the Activity panel (KD #200, which derives its events on read
+// and would faithfully show both). A duplicated audit trail is a wrong record;
+// a missing one is a gap that other evidence can still close. Between the two
+// we take the gap, log it loudly enough to be actioned, and return.
+//
+// Hard Rule #6: this is append-only. It inserts; it never updates or upserts.
 // fallow-ignore-next-line unused-export
 export async function logActions(
   service: SupabaseClient,
   actor: { id: string; email: string | null },
   rows: Array<Omit<LogActionParams, 'service' | 'actor'>>
 ): Promise<void> {
+  if (rows.length === 0) return;
+
+  try {
+    const { error } = await service
+      .from('audit_log')
+      .insert(rows.map((row) => toAuditRow(actor, row)));
+    if (!error) return;
+
+    console.error('[audit] batch insert failed, falling back to per-row', {
+      rows: rows.length,
+      error: error.message,
+    });
+  } catch (e) {
+    // NO RETRY HERE — see the note above the function. A throw cannot be
+    // placed relative to the commit, so retrying risks duplicating every row
+    // into an append-only table that has no way to remove them. Returning
+    // honours this function's never-throw contract; the caller's own write is
+    // unaffected either way.
+    console.error(
+      '[audit] batch insert THREW — audit rows may or may not have landed, NOT retrying',
+      {
+        rows: rows.length,
+        actions: [...new Set(rows.map((r) => r.action))],
+        error: e instanceof Error ? e.message : String(e),
+        why: 'a thrown (transport) error can arrive after the insert committed; a per-row retry would double every row in an append-only log',
+      }
+    );
+    return;
+  }
+
+  // Fallback only, and reached ONLY from the returned-`error` branch above —
+  // the statement failed server-side, so nothing committed and there is nothing
+  // to duplicate. `logAction` swallows its own errors, so a bad row is reported
+  // and skipped while every good row still lands.
   await Promise.all(rows.map((row) => logAction({ service, actor, ...row })));
 }

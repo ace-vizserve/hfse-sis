@@ -161,12 +161,41 @@ export type RecomputeResult = {
 };
 
 /**
+ * Writes run this many at a time. Mirrors `ROLLUP_CONCURRENCY` in
+ * `lib/attendance/mutations.ts`, which is the proven bound in this codebase for
+ * a class-sized fan-out — same order of magnitude (a roster tops out at 50),
+ * same reasoning about not exhausting the client's connection pool.
+ */
+const WRITE_CONCURRENCY = 8;
+
+/**
  * Recompute every entry on one sheet. I/O shell around the pure functions
  * above; throws on a database error so the caller decides the response.
  *
  * A roster tops out at 50 students (Hard Rule #5), so one sheet's entries
  * always fit in a single page — no pagination needed here. Callers fanning
  * out across many sheets should still bound their own concurrency.
+ *
+ * WHY THE WRITES GO IN BOUNDED WAVES rather than one statement. Each entry
+ * gets a DIFFERENT patch, so there is no single `.update()` to collapse them
+ * into. The obvious alternative, one `.upsert()` per sheet, DOES NOT WORK and
+ * this is verified, not assumed: `grade_entries.grading_sheet_id` and
+ * `.section_student_id` are `not null` with no default
+ * (`001_initial_schema.sql:149-150`), and Postgres checks NOT NULL against the
+ * PROPOSED tuple before it resolves the conflict — so `{ id, ...patch }` is
+ * rejected outright rather than merged into the existing row. Do not retry it.
+ *
+ * Waves of `WRITE_CONCURRENCY` therefore trade depth for the same number of
+ * round trips: 25 changed entries cost 25 UPDATEs either way, but four waves
+ * of latency instead of twenty-five.
+ *
+ * ⚠ THIS DOES NOT MAKE THE RECOMPUTE ATOMIC, and it was not atomic before
+ * either — the serial loop threw on the first failed write and left the
+ * earlier ones applied. A wave throws the same way, only with up to seven
+ * siblings already in flight. What WOULD fix it is an RPC doing
+ * `UPDATE grade_entries … FROM (VALUES …)`, one statement per sheet; that is
+ * its own scoped piece of work against the highest-stakes write in the app,
+ * not a rider on a performance pass.
  */
 export async function recomputeSheetEntries(
   service: SupabaseClient,
@@ -185,25 +214,35 @@ export async function recomputeSheetEntries(
     throw new Error(`recompute: reading entries failed: ${error.message}`);
 
   const entries = (data ?? []) as RecomputableEntry[];
-  let entriesWritten = 0;
 
+  // Decide everything first, then write. `recomputeEntryRow` is pure, so the
+  // dirty set is settled before a single UPDATE goes out — the common case
+  // (a slot-count increase that moves no grade) still writes nothing at all.
+  const dirty: Array<{ id: string; patch: EntryPatch }> = [];
   for (const entry of entries) {
     const { patch, changed } = recomputeEntryRow(entry, totals, weights);
-    if (!changed) continue;
-    const { error: upErr } = await service
-      .from('grade_entries')
-      .update(patch)
-      .eq('id', entry.id);
-    if (upErr)
-      throw new Error(
-        `recompute: writing entry ${entry.id} failed: ${upErr.message}`
-      );
-    entriesWritten += 1;
+    if (changed) dirty.push({ id: entry.id, patch });
+  }
+
+  for (let i = 0; i < dirty.length; i += WRITE_CONCURRENCY) {
+    const wave = dirty.slice(i, i + WRITE_CONCURRENCY);
+    await Promise.all(
+      wave.map(async ({ id, patch }) => {
+        const { error: upErr } = await service
+          .from('grade_entries')
+          .update(patch)
+          .eq('id', id);
+        if (upErr)
+          throw new Error(
+            `recompute: writing entry ${id} failed: ${upErr.message}`
+          );
+      })
+    );
   }
 
   return {
     entriesScanned: entries.length,
-    entriesWritten,
+    entriesWritten: dirty.length,
     anchorEntryId: entries[0]?.id ?? null,
   };
 }

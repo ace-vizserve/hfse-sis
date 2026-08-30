@@ -459,23 +459,27 @@ async function loadPFilesKpisForRange(
 async function loadPFilesKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<PFilesRangeKpis>> {
-  const current = await loadPFilesKpisForRange(input);
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
-      current,
+      current: await loadPFilesKpisForRange(input),
       comparison: null,
       delta: null,
       range: { from: input.from, to: input.to },
       comparisonRange: null,
     };
   }
-  const comparison = await loadPFilesKpisForRange({
-    ayCode: input.ayCode,
-    from: input.cmpFrom,
-    to: input.cmpTo,
-    cmpFrom: input.cmpFrom,
-    cmpTo: input.cmpTo,
-  });
+  // Two disjoint date windows, neither feeding the other — see the identical
+  // note in lib/markbook/dashboard.ts.
+  const [current, comparison] = await Promise.all([
+    loadPFilesKpisForRange(input),
+    loadPFilesKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
   return {
     current,
     comparison,

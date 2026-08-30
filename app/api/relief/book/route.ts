@@ -22,13 +22,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 // above. Arranging cover decides who may act on a class, so it stays narrower
 // than editing the timetable.
 //
-// ⚠ NOT ATOMIC ACROSS CLASSES, and that is a deliberate, stated cost. Supabase
-// gives no multi-statement transaction over PostgREST, and an RPC purely to wrap
-// four UPDATEs would be a SECURITY DEFINER function to audit and maintain for a
-// failure nobody has seen. Instead every class is written, the failures are
-// counted, and the response says exactly which ones did not take so the caller
-// can fix those rather than guessing. Silence on a partial write is the thing
-// worth avoiding here, not the partial write itself.
+// ATOMIC ACROSS CLASSES, as of the phase-5 query pass. This route used to write
+// one UPDATE per class in a serial loop, count the failures, and report a
+// partial write — a shape that needed a `done`/`failed` split, a `partial` flag
+// on the response, and a paragraph here explaining why silence on a half-done
+// booking was the real risk. Every class takes the SAME patch, so all of it
+// collapses to one `.update(patch).in('id', ids)`: Postgres applies it to every
+// matched row or to none, and the partial-write failure mode stops existing
+// rather than being documented. The `done`/`failed` bookkeeping was deleted
+// with it — code implying a state that can no longer occur is worse than no
+// code.
 export async function POST(request: NextRequest) {
   const auth = await requireCapability('staff.manage_relief');
   if ('error' in auth) return auth.error;
@@ -102,7 +105,7 @@ export async function POST(request: NextRequest) {
   // and must not quietly gain a substitute.
   const { data: rows, error: readError } = await service
     .from('teacher_assignments')
-    .select('id, section_id, section:sections!inner(academic_year_id)')
+    .select('id, section:sections!inner(academic_year_id)')
     .eq('teacher_user_id', coveredId)
     .eq('section.academic_year_id', ayId);
 
@@ -110,10 +113,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: readError.message }, { status: 400 });
   }
 
-  const assignments = (rows ?? []) as unknown as Array<{
-    id: string;
-    section_id: string;
-  }>;
+  // `section_id` came back here too, purely to build the per-class `done` list
+  // the serial loop reported on. The join stays — it is what scopes the read to
+  // this academic year — but the column is gone with the loop.
+  const assignments = (rows ?? []) as unknown as Array<{ id: string }>;
 
   if (assignments.length === 0) {
     return NextResponse.json(
@@ -126,27 +129,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const failed: string[] = [];
-  const done: Array<{ id: string; sectionId: string }> = [];
+  const assignmentIds = assignments.map((a) => a.id);
 
-  for (const a of assignments) {
-    const { error } = await service
-      .from('teacher_assignments')
-      .update({
-        relief_teacher_user_id: reliefId,
-        // Ending clears the window with the name, exactly as the per-class
-        // PATCH does — a window left on a class nobody covers would sit there
-        // waiting to mean something.
-        relief_started_on: ending ? null : startedOn,
-        relief_ended_on: ending ? null : endedOn,
-      })
-      .eq('id', a.id);
+  // ONE update for every class the teacher holds. The ids come from the read
+  // above, which is already scoped to this teacher AND this academic year, so
+  // `.in('id', …)` cannot reach a row that read did not authorise.
+  const { error: writeError } = await service
+    .from('teacher_assignments')
+    .update({
+      relief_teacher_user_id: reliefId,
+      // Ending clears the window with the name, exactly as the per-class
+      // PATCH does — a window left on a class nobody covers would sit there
+      // waiting to mean something.
+      relief_started_on: ending ? null : startedOn,
+      relief_ended_on: ending ? null : endedOn,
+    })
+    .in('id', assignmentIds);
 
-    if (error) failed.push(a.id);
-    else done.push({ id: a.id, sectionId: a.section_id });
-  }
-
-  if (done.length === 0) {
+  if (writeError) {
     return NextResponse.json(
       {
         error: ending
@@ -166,16 +166,15 @@ export async function POST(request: NextRequest) {
     actor: { id: auth.user.id, email: auth.user.email ?? null },
     action: ending ? 'assignment.relief.end' : 'assignment.relief.start',
     entityType: 'teacher_assignment',
-    entityId: done[0].id,
+    entityId: assignmentIds[0],
     context: {
       bulk: true,
       covered_teacher_user_id: coveredId,
       relief_teacher_user_id: reliefId,
       relief_started_on: ending ? null : startedOn,
       relief_ended_on: ending ? null : endedOn,
-      assignment_ids: done.map((d) => d.id),
-      classes_covered: done.length,
-      classes_failed: failed.length,
+      assignment_ids: assignmentIds,
+      classes_covered: assignmentIds.length,
     },
   });
 
@@ -189,11 +188,10 @@ export async function POST(request: NextRequest) {
     invalidateDrillTags('attendance', ayRow.ay_code);
   }
 
-  return NextResponse.json({
-    ok: true,
-    covered: done.length,
-    failed: failed.length,
-    // Named so a partial write cannot pass for a clean one.
-    partial: failed.length > 0,
-  });
+  // `failed` and `partial` used to ride along here so a half-done booking
+  // could not pass for a clean one. One UPDATE cannot be half-done, no caller
+  // ever read either field (`components/relief/book-cover-dialog.tsx`,
+  // `components/relief/end-cover-button.tsx`), and a flag that is structurally
+  // always false invites someone to branch on it.
+  return NextResponse.json({ ok: true, covered: assignmentIds.length });
 }

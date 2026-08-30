@@ -35,10 +35,12 @@ const logAction = vi.fn((_call: { context: Record<string, unknown> }) =>
 );
 vi.mock('@/lib/audit/log-action', () => ({
   logAction: (call: { context: Record<string, unknown> }) => logAction(call),
-  // Mirrors the real helper (lib/audit/log-action.ts:258) — one logAction per
-  // row — so the route writing a whole class in one parallel wave still lands
-  // as one recorded call per student here, and every assertion below keeps
-  // measuring the same thing it did when the route looped.
+  // The real helper writes ONE array insert (phase 5); this stand-in keeps
+  // fanning out to one `logAction` per row on purpose, so the assertions below
+  // can address a single student's context by index. What is being measured
+  // here is the CONTENT of each row, not how many round trips carry them —
+  // the row shaping the two paths share is pinned in
+  // __tests__/audit/log-actions-batch.test.ts.
   logActions: (
     _service: unknown,
     _actor: unknown,
