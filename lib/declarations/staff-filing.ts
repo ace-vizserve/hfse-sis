@@ -237,9 +237,20 @@ export function alreadyOnRecordMessage(existing: OverlappingFiling): string {
     existing.startDate === existing.endDate
       ? existing.startDate
       : `${existing.startDate} to ${existing.endDate}`;
-  const kind = existing.declarationType === 'travel' ? 'travel' : 'absence';
+  // ⚠ THE ARTICLE COMES WITH THE NOUN, not from a template. A first cut built
+  // this as `a ${kind}` and produced "already has a absence on record" on the
+  // commonest path of the two. Nothing type-checks a sentence, and the only
+  // reader is a member of staff who now trusts the message slightly less.
+  const kind =
+    existing.declarationType === 'travel'
+      ? {
+          indefinite: 'a travel declaration',
+          approved: 'an approved travel declaration',
+        }
+      : { indefinite: 'an absence', approved: 'an approved absence' };
+
   if (existing.status === 'approved') {
-    return `${existing.studentName} already has an approved ${kind} on record for ${range}. Open that record to add the certificate to it instead of creating a second one.`;
+    return `${existing.studentName} already has ${kind.approved} on record for ${range}. Open that record to add the certificate to it instead of creating a second one.`;
   }
-  return `${existing.studentName} already has a ${kind} on record for ${range} that the school has not decided yet. Open it from the declarations queue and attach the certificate there.`;
+  return `${existing.studentName} already has ${kind.indefinite} on record for ${range} that the school has not decided yet. Open it from the declarations queue and attach the certificate there.`;
 }
