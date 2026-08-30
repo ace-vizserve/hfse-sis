@@ -285,10 +285,14 @@ async function StaffAssignmentsBody({
 function StaffAssignmentsFallback() {
   return (
     <>
+      {/* `grid`, not `className`: it REPLACES the default grid rather than
+          merging with it. Merging would leave the default's `lg:grid-cols-4`
+          applying alongside `sm:grid-cols-3`, so the fallback would lay out
+          four columns where the real grid has three. */}
       <SkeletonCards
         count={3}
         footer={false}
-        className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+        grid="grid grid-cols-1 gap-4 sm:grid-cols-3"
       />
 
       {/* Real card chrome, so the border and padding do not pop in around the

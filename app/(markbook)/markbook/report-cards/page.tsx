@@ -66,12 +66,6 @@ const KPI_GRID_CLASS =
 const DETAIL_GRID_CLASS =
   'grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-3';
 
-// `SkeletonCards` defaults to viewport breakpoints (`sm:` / `lg:`); these
-// pages break on the *container* (`@xl/main`). tailwind-merge only collapses
-// classes that share a modifier, so the viewport ones have to be neutralised
-// explicitly or both rulesets would apply at once.
-const SKELETON_GRID_RESET = 'sm:grid-cols-1 lg:grid-cols-1';
-
 // ROUTE_ACCESS gates the broad `/markbook` prefix to teachers too (they need
 // it for their own grading sheets), so this page defends at the page level
 // like every one of its siblings (insights / sections / audit-log /
@@ -628,10 +622,7 @@ function PublicationsOverviewFallback() {
   return (
     <>
       <div className="@container/main">
-        <SkeletonCards
-          count={4}
-          className={`${SKELETON_GRID_RESET} ${KPI_GRID_CLASS}`}
-        />
+        <SkeletonCards count={4} grid={KPI_GRID_CLASS} />
       </div>
       <SkeletonTable columns={7} rows={10} />
     </>
@@ -647,10 +638,7 @@ function SectionReportCardsFallback({ termCount }: { termCount: number }) {
   return (
     <>
       <div className="@container/main">
-        <SkeletonCards
-          count={3}
-          className={`${SKELETON_GRID_RESET} ${DETAIL_GRID_CLASS}`}
-        />
+        <SkeletonCards count={3} grid={DETAIL_GRID_CLASS} />
       </div>
       {termCount > 0 && <PublishWindowPanelFallback termCount={termCount} />}
       <SkeletonTable columns={5} rows={12} />

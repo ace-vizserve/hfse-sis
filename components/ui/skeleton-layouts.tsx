@@ -159,26 +159,36 @@ export function SkeletonTable({
  *
  * @param footer Whether the real cards carry a `CardFooter`. This is the
  *               difference between a ~168px card and a ~132px one, so it has
- *               to match or the grid below the cards jumps.
- * @param className Pass the loaded grid's own classes when they differ from
- *                  the default — container queries in particular.
+ *               to match or the grid below the cards jumps. Check the real
+ *               card: if its footer props are required, this is always true.
+ * @param grid   REPLACES the default grid classes outright. Use this — not
+ *               `className` — to mirror the loaded grid.
+ *
+ *               Why a separate prop: `cn`/tailwind-merge only collapses
+ *               classes that share a modifier. A page breaking on its
+ *               container (`@xl/main:grid-cols-2`) does NOT override the
+ *               viewport default (`sm:grid-cols-2`), so passing the live
+ *               classes via `className` leaves BOTH rulesets applying and the
+ *               skeleton lays out differently from the content it stands in
+ *               for. Replacing the string avoids the whole problem.
+ * @param className Extra non-grid classes only.
  */
+const DEFAULT_CARD_GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4';
+
 export function SkeletonCards({
   count = 4,
   footer = true,
+  grid,
   className,
 }: {
   count?: number;
   footer?: boolean;
+  grid?: string;
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4',
-        className
-      )}
-    >
+    <div className={cn(grid ?? DEFAULT_CARD_GRID, className)}>
       {Array.from({ length: count }).map((_, i) => (
         <Card key={i}>
           <CardHeader>
