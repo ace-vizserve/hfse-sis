@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Crossfade } from '@/components/ui/crossfade';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   SkeletonCards,
@@ -73,12 +74,14 @@ export default async function StaffAssignmentsPage({
   return (
     <StaffDirectoryChrome role={sessionUser.role} ayCode={ayCode}>
       <Suspense fallback={<StaffAssignmentsFallback />}>
-        <StaffAssignmentsBody
-          ayCode={ayCode}
-          currentAyCode={currentAyCode}
-          ayCodes={ayCodes}
-          viewOnly={viewOnly}
-        />
+        <Crossfade>
+          <StaffAssignmentsBody
+            ayCode={ayCode}
+            currentAyCode={currentAyCode}
+            ayCodes={ayCodes}
+            viewOnly={viewOnly}
+          />
+        </Crossfade>
       </Suspense>
     </StaffDirectoryChrome>
   );

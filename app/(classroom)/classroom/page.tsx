@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Layers, Users } from 'lucide-react';
 
 import { ClassroomListTable } from '@/components/classroom/classroom-list-table';
+import { Crossfade } from '@/components/ui/crossfade';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -166,7 +167,9 @@ export default async function ClassroomListPage() {
           returns null when nothing is booked, which is the common case, so a
           placeholder here would flash and then collapse the layout under it. */}
       <Suspense fallback={null}>
-        <UpcomingCover userId={userId} role={role} className="mt-6" />
+        <Crossfade>
+          <UpcomingCover userId={userId} role={role} className="mt-6" />
+        </Crossfade>
       </Suspense>
 
       <div className="@container/main">
