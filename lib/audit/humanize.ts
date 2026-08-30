@@ -447,7 +447,24 @@ function templateSummary(
         'status',
         ctx.status ?? ctx.new_status ?? ctx.after
       );
-      if (before && after && before !== after)
+      // A CLEARED MARK — migration 134. The writer sends `status` as a
+      // present key with an explicit `null`, which is what separates "the day
+      // was returned to unmarked" from "this row records no status at all":
+      // an absent key reads as `undefined`, a clear reads as `null`.
+      //
+      // ⚠ It needs its own sentence because `str(null)` is '', so `after` is
+      // empty and the two branches below would BOTH fall through — the line
+      // would name the class and the date and then say nothing about what
+      // happened. Printing the raw value instead is not an option: "null" is
+      // not a word a school administrator should ever be shown.
+      const cleared =
+        ctx.status === null && ctx.new_status == null && ctx.after == null;
+      if (cleared) {
+        // "was Absent" and not an arrow. An arrow points at what the day says
+        // now, and a cleared day says nothing — `Absent → ` would read as an
+        // unfinished sentence.
+        parts.push(before ? `Mark cleared (was ${before})` : 'Mark cleared');
+      } else if (before && after && before !== after)
         parts.push(`${before}${ARROW}${after}`);
       else if (after) parts.push(after);
       const ex = labelFor('ex_reason', ctx.ex_reason ?? ctx.exReason);

@@ -17,7 +17,16 @@ export type DailyWriteInput = {
   sectionStudentId: string;
   termId: string;
   date: string; // yyyy-MM-dd
-  status: AttendanceStatus;
+  /**
+   * `null` CLEARS the day — migration 134. It is appended like any other
+   * correction and supersedes the prior mark by `recorded_at`, but falls out
+   * of every rollup aggregate, so the day reads as never marked.
+   *
+   * ⚠ `toLedgerRow` already nulls `ex_reason` and `ex_note` for anything that
+   * is not `EX`, which is what `attendance_daily_cleared_has_no_reason_chk`
+   * requires of a cleared row — so a clear needs no branch of its own here.
+   */
+  status: AttendanceStatus | null;
   exReason?: ExReason | null;
   /** Free-text "why" for an EX mark (migration 109). EX-only, ≤300 chars. */
   exNote?: string | null;

@@ -30,6 +30,11 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 // supersede by recorded_at desc) and recomputes the `attendance_records`
 // rollup for each affected (term × section_student) pair.
 //
+// A `null` status CLEARS the day (migration 134) — it returns the cell to
+// unmarked rather than writing a sixth kind of mark. It is appended to the
+// ledger like any other correction, so the prior mark survives and the audit
+// row still records what was undone.
+//
 // Access:
 // - Teachers: write only sections they form-advise (via teacher_assignments)
 // - Registrar / school_admin / admin / superadmin: write any section
@@ -127,6 +132,12 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Teachers can't write `NC` — only registrar+ marks holidays / not-yet-enrolled.
+  //
+  // ⚠ UNCHANGED BY MIGRATION 134, deliberately. A cleared entry carries
+  // `status: null`, which is not `'NC'`, so it passes this gate — and it
+  // should: clearing removes a mark, it never writes the one this reserves.
+  // A teacher clearing a day a registrar marked `NC` is undoing their own
+  // reach into that cell, not claiming it.
   if (auth.role === 'teacher' && entries.some((e) => e.status === 'NC')) {
     return NextResponse.json(
       { error: 'teachers cannot write NC status; registrar only' },
@@ -198,7 +209,9 @@ export async function PATCH(request: NextRequest) {
     sectionStudentId: string;
     termId: string;
     date: string;
-    status: string;
+    // `null` = the day was CLEARED. Echoed back exactly as it was written so
+    // the grid's optimistic cell and the server agree on "unmarked".
+    status: string | null;
     rollup: RollupAfterWrite;
   }> = [];
 
@@ -263,7 +276,8 @@ export async function PATCH(request: NextRequest) {
     fetchAllPages<{
       section_student_id: string;
       date: string;
-      status: string;
+      // Nullable since migration 134 — a cleared day is a real ledger row.
+      status: string | null;
     }>((from, to) =>
       service
         .from('attendance_daily')
@@ -275,7 +289,13 @@ export async function PATCH(request: NextRequest) {
         .range(from, to)
     )
   );
-  const priorStatusByKey = new Map<string, string>();
+  // ⚠ A CLEARED ROW IS RECORDED HERE TOO, as `null`. It is the newest row and
+  // therefore IS the current mark, so skipping it would let the older mark
+  // underneath read as current — the audit trail would then claim a day was
+  // changed "from Absent" when it had already been blanked. The audit block
+  // below is what decides not to render a null prior; this map's job is only
+  // to answer "what was on the day", and "nothing" is an answer.
+  const priorStatusByKey = new Map<string, string | null>();
   for (const row of priorRows) {
     const key = `${row.section_student_id}|${row.date}`;
     if (!priorStatusByKey.has(key)) priorStatusByKey.set(key, row.status);
@@ -313,7 +333,15 @@ export async function PATCH(request: NextRequest) {
     // on a pre-calendar date or back-fill a closure).
     const levelType = levelTypeByEnrolment.get(entry.sectionStudentId) ?? null;
     const blocked = await isNonSchoolDay(entry.termId, entry.date, levelType);
-    if (blocked && entry.status !== 'NC') {
+    // ⚠ A CLEAR (status null) IS ALWAYS LET THROUGH, whatever the calendar
+    // says. This gate exists to stop a mark being PUT on a day the school was
+    // shut; clearing only ever takes one away, so refusing it protects
+    // nothing. And the case is real rather than theoretical: a day is marked
+    // while the calendar still calls it a school day, the registrar then
+    // corrects the calendar, and the mark left behind is now unreachable —
+    // blocked from being changed and blocked from being removed. The 409
+    // would strand exactly the rows somebody is trying to clean up.
+    if (blocked && entry.status !== 'NC' && entry.status !== null) {
       return NextResponse.json(
         {
           error: `${entry.date} isn't a school day (it's marked as a public holiday, school holiday, or no class). Update the school calendar if this is wrong.`,
@@ -369,50 +397,57 @@ export async function PATCH(request: NextRequest) {
   // already guards against elsewhere. Parallelising takes 30 sequential
   // round-trips down to roughly one, which is nearly all of the win at none of
   // that risk.
-  const auditRows = entries.map((entry) => ({
-    action:
-      entry.date < today
-        ? ('attendance.daily.correct' as const)
-        : ('attendance.daily.update' as const),
-    entityType: 'attendance_daily' as const,
-    entityId: null,
-    // Key names match the FIRST alternative in each `??` chain in
-    // lib/audit/humanize.ts (`section_name` at :358, `prior_status` at
-    // :365) and match what the import route already writes, so the two
-    // attendance writers finally agree. The renderer was always correct;
-    // only this writer was silent, which is why every daily row showed up
-    // on /attendance/audit-log with no class name and no before -> after.
-    context: {
-      section_student_id: entry.sectionStudentId,
-      section_id: sectionIdByEnrolment.get(entry.sectionStudentId) ?? null,
-      section_name:
-        sectionNameById.get(
-          sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
-        ) ?? null,
-      term_id: entry.termId,
-      date: entry.date,
-      status: entry.status,
-      // Omitted entirely when there is no prior row: a first mark is not a
-      // transition, and humanize renders just the new status for that case.
-      ...(priorStatusByKey.has(`${entry.sectionStudentId}|${entry.date}`)
-        ? {
-            prior_status: priorStatusByKey.get(
-              `${entry.sectionStudentId}|${entry.date}`
-            ),
-          }
-        : {}),
-      ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
-      // PRESENCE ONLY — never the note text. `audit_log` is readable by
-      // every `is_registrar_or_above()` user, a wider audience than the
-      // mark itself (attendance_daily is registrar+ OR that section's form
-      // adviser), and its rows can never be updated or deleted. A note
-      // reading "MC submitted — dengue, hospitalised" would therefore be
-      // permanently un-redactable and visible to more people than the
-      // absence it explains. The trail still proves a note was attached or
-      // changed and by whom, which is what an audit needs to answer.
-      ...(entry.exNote != null ? { ex_note_present: true } : {}),
-    },
-  }));
+  const auditRows = entries.map((entry) => {
+    const priorKey = `${entry.sectionStudentId}|${entry.date}`;
+    // `undefined` = no ledger row at all; `null` = the day was already
+    // cleared. Neither is a transition worth rendering, and only a real prior
+    // mark goes in the context — see the comment on `prior_status` below.
+    const prior = priorStatusByKey.get(priorKey) ?? null;
+    return {
+      action:
+        entry.date < today
+          ? ('attendance.daily.correct' as const)
+          : ('attendance.daily.update' as const),
+      entityType: 'attendance_daily' as const,
+      entityId: null,
+      // Key names match the FIRST alternative in each `??` chain in
+      // lib/audit/humanize.ts (`section_name` at :358, `prior_status` at
+      // :365) and match what the import route already writes, so the two
+      // attendance writers finally agree. The renderer was always correct;
+      // only this writer was silent, which is why every daily row showed up
+      // on /attendance/audit-log with no class name and no before -> after.
+      context: {
+        section_student_id: entry.sectionStudentId,
+        section_id: sectionIdByEnrolment.get(entry.sectionStudentId) ?? null,
+        section_name:
+          sectionNameById.get(
+            sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
+          ) ?? null,
+        term_id: entry.termId,
+        date: entry.date,
+        // ⚠ AN EXPLICIT `null` HERE IS THE RECORD OF A CLEAR, and it is the one
+        // thing that tells the renderer this row undid a mark rather than
+        // writing one. It must stay a present key with a null value — dropping
+        // it would leave the summary saying nothing happened.
+        status: entry.status,
+        // Omitted entirely when there is no prior mark: a first mark is not a
+        // transition, and neither is clearing a day that was already blank.
+        // humanize renders just the new status for that case — and it never
+        // sees a `null` prior, which it could only render as the word "null".
+        ...(prior !== null ? { prior_status: prior } : {}),
+        ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
+        // PRESENCE ONLY — never the note text. `audit_log` is readable by
+        // every `is_registrar_or_above()` user, a wider audience than the
+        // mark itself (attendance_daily is registrar+ OR that section's form
+        // adviser), and its rows can never be updated or deleted. A note
+        // reading "MC submitted — dengue, hospitalised" would therefore be
+        // permanently un-redactable and visible to more people than the
+        // absence it explains. The trail still proves a note was attached or
+        // changed and by whom, which is what an audit needs to answer.
+        ...(entry.exNote != null ? { ex_note_present: true } : {}),
+      },
+    };
+  });
 
   if (results.length > 0) {
     await logActions(
