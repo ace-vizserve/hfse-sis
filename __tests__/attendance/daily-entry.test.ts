@@ -53,7 +53,10 @@ function enr(
 function daily(
   sectionStudentId: string,
   date: string,
-  status: DailyEntryRow['status'],
+  // `null` is a day whose mark was REMOVED (migration 134 made the column
+  // nullable). `DailyEntryRow` still declares `status` as always present, so
+  // the cast below stands in until that row type catches up with the column.
+  status: DailyEntryRow['status'] | null,
   exReason: DailyEntryRow['exReason'] = null,
   exNote: string | null = null
 ): DailyEntryRow {
@@ -62,7 +65,7 @@ function daily(
     sectionStudentId,
     termId: 't1',
     date,
-    status,
+    status: status as DailyEntryRow['status'],
     exReason,
     exNote,
     periodId: null,
@@ -196,6 +199,171 @@ describe('computeSubmitEntries', () => {
   });
 });
 
+// ── Removing a mark (migration 134) ───────────────────────────────────────
+//
+// The daily register marks the EXCEPTIONS, so "nothing here" already means
+// Present. That gives three states, and two of them look alike:
+//
+//   (a) the student is not in `marks`         -> submits 'P'
+//   (b) the student is in `marks` with a mark -> submits that mark
+//   (c) the student is in `marks` with no mark -> submits an empty status,
+//       i.e. the teacher took the mark back off the day
+//
+// Collapsing (c) into (a) is the bug this block exists to prevent: it writes
+// Present onto a day the teacher meant to blank, which is a WRONG mark rather
+// than a missing one.
+describe('computeSubmitEntries — removing a mark', () => {
+  const date = '2026-06-04';
+  const termId = 't1';
+
+  it('(a) an untouched student still submits P — the register convention', () => {
+    // The regression guard for everything above. If this ever fails, the
+    // "mark only the exceptions" convention has been broken and every quiet
+    // student stops being recorded present.
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1), enr('b', 2)],
+      marks: new Map(),
+      loaded: new Map(),
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: 'P' },
+      { sectionStudentId: 'b', termId, date, status: 'P' },
+    ]);
+  });
+
+  it('(c) submits an empty status for a student whose mark was removed', () => {
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    const loaded: Map<string, DailyMark> = new Map([
+      ['a', { status: 'A', exReason: null, exNote: null }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded,
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: null },
+    ]);
+  });
+
+  it('(c) carries no reason and no note — the database refuses either', () => {
+    // Clearing an excused absence has to drop the excuse with it, or the day
+    // reads as unmarked while still carrying "MC submitted" underneath.
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    const loaded: Map<string, DailyMark> = new Map([
+      ['a', { status: 'EX', exReason: 'mc', exNote: 'MC submitted' }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded,
+      termId,
+      date,
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).not.toHaveProperty('exReason');
+    expect(entries[0]).not.toHaveProperty('exNote');
+    expect(entries[0].status).toBeNull();
+  });
+
+  it('(c) writes NOTHING for a student who had no mark on file to remove', () => {
+    // There is no day to undo. Appending an empty row would say exactly what
+    // the ledger already says.
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded: new Map(),
+      termId,
+      date,
+    });
+    expect(entries).toEqual([]);
+  });
+
+  it('(a) and (c) are not the same student: one submits P, the other an empty status', () => {
+    // Both look like "no mark" on screen; they must not write the same thing.
+    const marks: Map<string, DailyMark> = new Map([
+      ['b', { status: null, exReason: null, exNote: null }],
+    ]);
+    const loaded: Map<string, DailyMark> = new Map([
+      ['b', { status: 'L', exReason: null, exNote: null }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1), enr('b', 2)],
+      marks,
+      loaded,
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: 'P' },
+      { sectionStudentId: 'b', termId, date, status: null },
+    ]);
+  });
+
+  it('(c) re-submitting an already-cleared day writes nothing', () => {
+    // A day cleared and saved comes back with an empty status on file. The
+    // idempotent-re-submit rule has to recognise it, or every visit to the
+    // date appends another empty row.
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    const loaded: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    expect(
+      computeSubmitEntries({
+        roster: [enr('a', 1)],
+        marks,
+        loaded,
+        termId,
+        date,
+      })
+    ).toEqual([]);
+  });
+
+  it('(b) a mark placed on a previously cleared day is written', () => {
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: 'A', exReason: null, exNote: null }],
+    ]);
+    const loaded: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+    ]);
+    expect(
+      computeSubmitEntries({
+        roster: [enr('a', 1)],
+        marks,
+        loaded,
+        termId,
+        date,
+      })
+    ).toEqual([{ sectionStudentId: 'a', termId, date, status: 'A' }]);
+  });
+
+  it('keeps a cleared day on file as cleared, not as untouched', () => {
+    // loadedMarksForDate seeds the panel. If it dropped the empty row, the
+    // student would re-open as state (a) and the next submit would write P
+    // over the day the teacher deliberately blanked.
+    const rows = [daily('a', '2026-06-04', null)];
+    const map = loadedMarksForDate(rows, '2026-06-04');
+    expect(map.get('a')).toEqual({
+      status: null,
+      exReason: null,
+      exNote: null,
+    });
+  });
+});
+
 describe('tally', () => {
   it('counts P/L/A/EX and unmarked across the eligible roster', () => {
     const roster = [enr('a', 1), enr('b', 2), enr('c', 3), enr('d', 4)];
@@ -209,6 +377,27 @@ describe('tally', () => {
       A: 1,
       EX: 0,
       unmarked: 2,
+      cleared: 0,
+    });
+  });
+
+  it('counts a removed mark separately from an untouched student', () => {
+    // The submit bar adds `unmarked` to `P` to say how many are present. A
+    // student whose mark was removed records nothing for the day, so folding
+    // the two together would report them present on screen while the day goes
+    // in blank.
+    const roster = [enr('a', 1), enr('b', 2), enr('c', 3)];
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: null, exReason: null, exNote: null }],
+      ['b', { status: 'A', exReason: null, exNote: null }],
+    ]);
+    expect(tally({ roster, marks, date: '2026-06-04' })).toEqual({
+      P: 0,
+      L: 0,
+      A: 1,
+      EX: 0,
+      unmarked: 1,
+      cleared: 1,
     });
   });
 });

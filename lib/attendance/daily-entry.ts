@@ -7,9 +7,25 @@ import {
   type ExReason,
 } from '@/lib/schemas/attendance';
 
-// A single student's mark for the day being edited.
+/**
+ * A single student's mark for the day being edited.
+ *
+ * ⚠ THREE STATES, NOT TWO — the daily register marks the EXCEPTIONS, so the
+ * absence of an entry already carries meaning:
+ *
+ *   (a) NOT IN the `marks` map          — the teacher has not touched this
+ *                                          student, which by this register's
+ *                                          convention means Present;
+ *   (b) in the map with a status        — an explicit P / L / EX / A / NC;
+ *   (c) in the map with `status: null`  — the teacher explicitly REMOVED the
+ *                                          mark, returning the day to unmarked
+ *                                          (migration 134).
+ *
+ * (a) and (c) look alike and mean opposite things: (a) submits 'P', (c) submits
+ * nothing at all for that day. Never collapse them.
+ */
 export type DailyMark = {
-  status: AttendanceStatus;
+  status: AttendanceStatus | null;
   exReason: ExReason | null;
   /** Free-text "why" on an EX mark. Null when absent or not applicable. */
   exNote: string | null;
@@ -20,7 +36,12 @@ export type SubmitEntry = {
   sectionStudentId: string;
   termId: string;
   date: string;
-  status: AttendanceStatus;
+  /**
+   * `null` REMOVES the mark — the row is appended with no status, so the day
+   * falls back out of every rollup (migration 134). A cleared entry carries
+   * neither `exReason` nor `exNote`; the database refuses one that does.
+   */
+  status: AttendanceStatus | null;
   exReason?: ExReason;
   /**
    * Sent as an explicit `null` to CLEAR a note, and omitted when there is
@@ -56,7 +77,15 @@ export function pickDefaultDate(
   return encodable[0];
 }
 
-/** Latest mark per student for `date` (input rows are latest-first per the query). */
+/**
+ * Latest mark per student for `date` (input rows are latest-first per the
+ * query).
+ *
+ * A row whose status is missing is a day that was CLEARED (migration 134). It
+ * is kept in the map, carrying a null status, so the panel re-opens showing
+ * state (c) — "the mark was removed" — rather than state (a), "nobody has
+ * touched this student yet". Dropping it would make a re-submit write Present.
+ */
 export function loadedMarksForDate(
   daily: DailyEntryRow[],
   date: string
@@ -91,6 +120,12 @@ function isEligible(e: WideGridEnrolment, date: string): boolean {
  * and the toast "No changes to submit", with their typing discarded. Compare
  * normalised — the UI hands back `''` for an emptied input while the ledger
  * stores `null`, and those mean the same thing.
+ *
+ * `status` may be null on EITHER side — a cleared target, or a day already on
+ * file as cleared — and `===` compares those correctly. What it must NOT do is
+ * treat a missing `a` as equal to a cleared `b`: "no row on file" and "a row
+ * saying unmarked" are different, and the caller handles that case before
+ * asking.
  */
 function sameMark(a: DailyMark | undefined, b: DailyMark): boolean {
   if (a == null) return false;
@@ -106,6 +141,14 @@ function sameMark(a: DailyMark | undefined, b: DailyMark): boolean {
  * Mark-the-exceptions write set: every eligible student gets `P` unless the
  * teacher set an explicit mark. Students whose target already matches what's
  * on file are skipped (idempotent re-submit — append-only ledger stays clean).
+ *
+ * Handles all three states described on `DailyMark`:
+ *   (a) no entry in `marks`     -> submits 'P'  (the register's convention)
+ *   (b) an entry with a status  -> submits that mark
+ *   (c) an entry with `status: null` (the teacher removed the mark)
+ *                               -> submits `status: null`, or NOTHING at all
+ *                                  when the student had no mark on file to
+ *                                  remove.
  */
 export function computeSubmitEntries(input: {
   roster: WideGridEnrolment[];
@@ -124,7 +167,23 @@ export function computeSubmitEntries(input: {
       exNote: null,
     };
     const previous = loaded.get(e.enrolmentId);
+
+    // (c) Removing a mark from a student who has none on file writes nothing.
+    // There is no day to undo, and an unmarked day is what a cleared row would
+    // have produced anyway — so this would append a row that says exactly what
+    // the ledger already says.
+    if (target.status == null && previous == null) continue;
+
     if (sameMark(previous, target)) continue;
+
+    // (c) A cleared day carries no excuse. Both keys are omitted rather than
+    // sent as null: the row is appended fresh, and
+    // `attendance_daily_cleared_has_no_reason_chk` refuses a reason or a note
+    // beside a missing status.
+    if (target.status == null) {
+      out.push({ sectionStudentId: e.enrolmentId, termId, date, status: null });
+      continue;
+    }
 
     // A note only travels with EX. An emptied input arrives as '' and must be
     // sent as an explicit null so the route can tell "clear this" from "no
@@ -149,19 +208,38 @@ export function computeSubmitEntries(input: {
   return out;
 }
 
-/** Live tally for the header strip. Unmarked = eligible students with no explicit mark. */
+/**
+ * Live tally for the header strip.
+ *
+ * `unmarked` and `cleared` are SEPARATE and must stay that way. `unmarked` is
+ * state (a) — nobody has touched the student, so they submit as Present, and
+ * the submit bar counts them among the present. `cleared` is state (c) — the
+ * teacher removed the mark on purpose, so that day records nothing and the
+ * student must not be counted present.
+ */
 export function tally(input: {
   roster: WideGridEnrolment[];
   marks: Map<string, DailyMark>;
   date: string;
-}): { P: number; L: number; A: number; EX: number; unmarked: number } {
+}): {
+  P: number;
+  L: number;
+  A: number;
+  EX: number;
+  unmarked: number;
+  cleared: number;
+} {
   const { roster, marks, date } = input;
-  const t = { P: 0, L: 0, A: 0, EX: 0, unmarked: 0 };
+  const t = { P: 0, L: 0, A: 0, EX: 0, unmarked: 0, cleared: 0 };
   for (const e of roster) {
     if (!isEligible(e, date)) continue;
     const m = marks.get(e.enrolmentId);
     if (!m) {
       t.unmarked += 1;
+      continue;
+    }
+    if (m.status == null) {
+      t.cleared += 1;
       continue;
     }
     t[m.status === 'NC' ? 'unmarked' : m.status] += 1;
