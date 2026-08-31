@@ -1,4 +1,9 @@
-// TEMPORARY, read-only. Delete after running.
+// scripts/probe-mother-tongue-sheets.ts
+//
+// Read-only. Kept because it is the evidence behind migration 138's "no
+// backfill" decision, and re-running it is how you check whether the school
+// has changed its mind about grading Mother Tongue as one sheet or as two
+// languages.
 //
 // What do the Mother Tongue / Filipino / Mandarin grading sheets actually look
 // like? Three questions:
@@ -27,13 +32,14 @@ async function main() {
 
   const { data: subjects } = await service
     .from('subjects')
-    .select('id, code, name, report_label')
+    // No report_label — migration 138 dropped it from `subjects` and put a
+    // per-academic-year one on `subject_configs`.
+    .select('id, code, name')
     .in('code', ['FIL', 'MANDARIN', 'MT']);
   const subs = (subjects ?? []) as {
     id: string;
     code: string;
     name: string;
-    report_label: string | null;
   }[];
   const codeById = new Map(subs.map((s) => [s.id, s.code]));
 
