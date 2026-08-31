@@ -266,8 +266,26 @@ const SUBJECT_MOTHER_TONGUE_TARGET = {
 };
 
 /** section_subjects fixture rows — { subject_config: { subject } } shape. */
+/**
+ * `section_subjects` rows as PostgREST returns them.
+ *
+ * The embed is section_subjects -> subject_configs -> subjects, and since
+ * migration 138 BOTH per-year overrides hang off the middle row: `display_name`
+ * (what the year calls it) and `report_label` (what the year's report card
+ * calls it). A fixture may pass either on the subject object for readability;
+ * this lifts them onto the config, where the loader reads them from.
+ */
 function sectionSubjectRows(...subjects: unknown[]) {
-  return subjects.map((subject) => ({ subject_config: { subject } }));
+  return subjects.map((subject) => {
+    const {
+      display_name = null,
+      report_label = null,
+      ...catalogue
+    } = subject as Record<string, unknown>;
+    return {
+      subject_config: { display_name, report_label, subject: catalogue },
+    };
+  });
 }
 
 /** 4 grading sheets — one per term for Mathematics */
@@ -697,7 +715,7 @@ describe('buildReportCard', () => {
       ).toBe(false);
     });
 
-    it('carries a subject-level report_label through as its own field, without touching name', async () => {
+    it("carries the year's report label through as its own field, without touching name", async () => {
       const relabeled = {
         id: 'sub-relabeled',
         code: 'MAPEH',
@@ -748,7 +766,8 @@ describe('buildReportCard', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const row = result.payload.subjects[0];
-      // name stays the real catalog name — report_label carried separately.
+      // name stays the real catalogue name — the label is carried as its own
+      // field and resolved once, at render time, by subjectReportName.
       expect(row.subject.name).toBe('MAPEH');
       expect(row.subject.report_label).toBe('STAR');
     });

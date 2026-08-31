@@ -41,25 +41,16 @@ export const SubjectCreateSchema = z.object({
     .max(128, 'Keep name under 128 chars'),
   is_examinable: z.boolean(),
   grading_method: z.enum(GRADING_METHOD_VALUES),
-  // What prints on the report card, independent of the catalog `name` —
-  // e.g. a subject could be catalogued one way internally but print
-  // differently on the card. Empty/absent → null, which falls back to
-  // `name` everywhere the report card resolves a subject's label (see
-  // lib/report-card/build-report-card.ts).
-  report_label: z
-    .string()
-    .trim()
-    .max(128, 'Keep report label under 128 chars')
-    .nullable()
-    .optional()
-    .transform((s) => (s == null || s.length === 0 ? null : s)),
+  // NO report_label. It moved to `subject_configs` in migration 138, because
+  // "what the report card calls this subject" turned out to be a per-academic-
+  // year question exactly like the name is — see SubjectConfigUpdateSchema.
 });
 export type SubjectCreateInput = z.infer<typeof SubjectCreateSchema>;
-// Pre-transform shape — what an RHF form actually holds as field state
-// (report_label is optional here; the schema's transform normalizes it to
-// `string | null` only in the parsed OUTPUT). Pass this as useForm<T>'s
-// first generic when a schema has a transform, per react-hook-form's
-// TFieldValues/TTransformedValues split — see components/sis/new-subject-form.tsx.
+// Pre-transform shape — what an RHF form actually holds as field state.
+// Kept as its own alias even though the schema no longer transforms anything
+// (report_label, its only transformed field, moved to subject_configs in
+// migration 138): the form imports this name, and a transform coming back
+// would otherwise silently change what useForm's first generic means.
 export type SubjectCreateFormInput = z.input<typeof SubjectCreateSchema>;
 
 // PATCH /api/sis/admin/subjects/catalog/[subjectId] — Task 2 of the
@@ -76,31 +67,15 @@ export const SubjectCatalogUpdateSchema = z
   .object({
     is_examinable: z.boolean().optional(),
     grading_method: z.enum(GRADING_METHOD_VALUES).optional(),
-    // See SubjectCreateSchema.report_label for what this is. Deliberately
-    // NO `.transform()` here, unlike the create schema — this is a partial-
-    // merge schema (the route only patches keys it can tell were actually
-    // sent, via `!== undefined`), so an empty-string-means-null transform
-    // would fire even when the caller never mentioned this field at all
-    // (zod runs `.transform()` on an `.optional()` field's absent value
-    // too, turning "don't touch" into "clear it" — silently wiping an
-    // existing report_label on every is_examinable/grading_method-only
-    // save). The empty-string-to-null normalization happens in the route
-    // instead, where "was this key present" is still known.
-    report_label: z
-      .string()
-      .trim()
-      .max(128, 'Keep report label under 128 chars')
-      .nullable()
-      .optional(),
+    // report_label is gone from here (migration 138) — it is per academic year
+    // now and belongs to SubjectConfigUpdateSchema. This schema is for the two
+    // fields that genuinely have no year: a subject either is examinable or is
+    // not, in every year at once.
   })
   .refine(
-    (v) =>
-      v.is_examinable !== undefined ||
-      v.grading_method !== undefined ||
-      v.report_label !== undefined,
+    (v) => v.is_examinable !== undefined || v.grading_method !== undefined,
     {
-      message:
-        'At least one field (is_examinable, grading_method, or report_label) is required',
+      message: 'At least one field (is_examinable, grading_method) is required',
     }
   );
 export type SubjectCatalogUpdateInput = z.infer<

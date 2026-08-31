@@ -70,7 +70,7 @@ export default async function NewGradingSheetPage() {
       .order('name'),
     supabase
       .from('subjects')
-      .select('id, code, name, report_label, is_examinable')
+      .select('id, code, name, is_examinable')
       .order('name'),
     supabase
       .from('subject_level_offerings')
@@ -198,7 +198,6 @@ export default async function NewGradingSheetPage() {
             id: string;
             code: string;
             name: string;
-            report_label: string | null;
             is_examinable: boolean;
           }[]
         ).map((s) => ({

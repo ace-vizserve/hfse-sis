@@ -388,7 +388,7 @@ async function loadMasterfileUncached(
   // (migration 080 dropped subject_configs.level_id — Pattern A).
   const { data: cfgRows } = await service
     .from('subject_level_offerings')
-    .select('subject:subjects(id, code, name, report_label, is_examinable)')
+    .select('subject:subjects(id, code, name, is_examinable)')
     .eq('academic_year_id', ayId)
     .eq('level_id', input.levelId);
 
@@ -396,7 +396,6 @@ async function loadMasterfileUncached(
     id: string;
     code: string;
     name: string;
-    report_label: string | null;
     is_examinable: boolean;
   };
   type CfgRow = {

@@ -90,9 +90,17 @@ export function selectsSubjectName(source: string): boolean {
   return false;
 }
 
-/** Does the file resolve through the one rule, rather than reading raw? */
+/**
+ * Does the file resolve through the rule, rather than reading raw?
+ *
+ * EITHER resolver counts. Migration 138 split the rule in two —
+ * `subjectDisplayName` for every screen, `subjectReportName` for the report
+ * card — and the report card legitimately uses only the second. Matching on
+ * the first alone marked build-report-card.ts as an unreviewed raw read the
+ * moment it was converted, which is precisely backwards.
+ */
 function resolvesDisplayName(source: string): boolean {
-  return /subjectDisplayName/.test(source);
+  return /subjectDisplayName|subjectReportName/.test(source);
 }
 
 /**

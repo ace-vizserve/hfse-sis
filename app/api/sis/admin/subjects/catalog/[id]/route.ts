@@ -51,7 +51,7 @@ export async function PATCH(
 
   const { data: before, error: loadErr } = await service
     .from('subjects')
-    .select('id, code, name, is_examinable, grading_method, report_label')
+    .select('id, code, name, is_examinable, grading_method')
     .eq('id', subjectId)
     .maybeSingle();
   if (loadErr)
@@ -64,7 +64,6 @@ export async function PATCH(
     name: string;
     is_examinable: boolean;
     grading_method: string;
-    report_label: string | null;
   };
 
   const patch: Record<string, unknown> = {};
@@ -72,19 +71,9 @@ export async function PATCH(
     patch.is_examinable = parsed.data.is_examinable;
   if (parsed.data.grading_method !== undefined)
     patch.grading_method = parsed.data.grading_method;
-  // Empty string clears back to null (falls back to `name` on the report
-  // card) — normalized here, not in the schema (see the schema's own
-  // comment for why a transform there would be unsafe for a partial-merge
-  // payload). `resolvedReportLabel` is the value after this PATCH either
-  // way — computed once so `?? subject.report_label` below (which would
-  // be WRONG for an explicit clear-to-null) is never used.
-  const reportLabelProvided = parsed.data.report_label !== undefined;
-  const resolvedReportLabel = reportLabelProvided
-    ? parsed.data.report_label === ''
-      ? null
-      : (parsed.data.report_label as string | null)
-    : subject.report_label;
-  if (reportLabelProvided) patch.report_label = resolvedReportLabel;
+  // The report label used to be normalised here too. It moved to
+  // `subject_configs` in migration 138 (per academic year), so this route is
+  // back to the two genuinely year-less fields it started with.
 
   const { error: updateErr } = await service
     .from('subjects')
@@ -105,12 +94,10 @@ export async function PATCH(
       before: {
         is_examinable: subject.is_examinable,
         grading_method: subject.grading_method,
-        report_label: subject.report_label,
       },
       after: {
         is_examinable: parsed.data.is_examinable ?? subject.is_examinable,
         grading_method: parsed.data.grading_method ?? subject.grading_method,
-        report_label: resolvedReportLabel,
       },
     },
   });
@@ -126,6 +113,5 @@ export async function PATCH(
     id: subjectId,
     is_examinable: parsed.data.is_examinable ?? subject.is_examinable,
     grading_method: parsed.data.grading_method ?? subject.grading_method,
-    report_label: resolvedReportLabel,
   });
 }

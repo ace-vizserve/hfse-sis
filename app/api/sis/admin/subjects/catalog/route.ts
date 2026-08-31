@@ -30,8 +30,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { code, name, is_examinable, grading_method, report_label } =
-    parsed.data;
+  const { code, name, is_examinable, grading_method } = parsed.data;
 
   const service = createServiceClient();
 
@@ -54,8 +53,8 @@ export async function POST(request: NextRequest) {
 
   const { data: inserted, error: insertErr } = await service
     .from('subjects')
-    .insert({ code, name, is_examinable, grading_method, report_label })
-    .select('id, code, name, is_examinable, grading_method, report_label')
+    .insert({ code, name, is_examinable, grading_method })
+    .select('id, code, name, is_examinable, grading_method')
     .single();
   if (insertErr || !inserted) {
     return NextResponse.json(
@@ -69,7 +68,6 @@ export async function POST(request: NextRequest) {
     name: string;
     is_examinable: boolean;
     grading_method: string;
-    report_label: string | null;
   };
 
   await logAction({
@@ -83,7 +81,6 @@ export async function POST(request: NextRequest) {
       name: row.name,
       is_examinable: row.is_examinable,
       grading_method: row.grading_method,
-      report_label: row.report_label,
     },
   });
 

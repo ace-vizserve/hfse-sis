@@ -50,7 +50,6 @@ function renderCreate(code: string) {
         name: code,
         is_examinable: true,
         grading_method: 'standard_sheet',
-        report_label: null,
       }}
       ayId={AY_UUID}
       ayCode="AY2026"
@@ -61,11 +60,14 @@ function renderCreate(code: string) {
 
 // PercentField renders WW, PT, QA in that fixed order — no htmlFor/id
 // association to the visible label, so DOM order is the reliable query.
-// Index 0 is the "Report label" free-text field, which renders before the
-// weights row in the Subject identity FieldRow — skip it.
+//
+// CREATE mode renders no free-text field before them: all three per-year
+// fields (name, report-card name, description) need a subject_configs row and
+// a subject being created has none. So the weights are the first textboxes on
+// the form.
 function weightInputs() {
   const inputs = screen.getAllByRole('textbox');
-  return { ww: inputs[1], pt: inputs[2], qa: inputs[3] };
+  return { ww: inputs[0], pt: inputs[1], qa: inputs[2] };
 }
 
 describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
@@ -170,7 +172,6 @@ function renderEdit(displayName: string | null) {
         name: 'MAPEH',
         is_examinable: true,
         grading_method: 'standard_sheet',
-        report_label: null,
         ayCode: 'AY2026',
         ww_weight: 20,
         pt_weight: 60,
@@ -180,24 +181,40 @@ function renderEdit(displayName: string | null) {
         qa_max: 30,
         reportSubjectId: SUBJECT_UUID,
         display_name: displayName,
+        report_label: null,
+        description: null,
       }}
       subjects={[]}
     />
   );
 }
 
+// ANCHORED. "Report card name for MAPEH in AY2026" also contains "name for
+// MAPEH in AY2026", so an unanchored pattern matches two inputs and the query
+// throws rather than picking one.
 function nameBox() {
-  return screen.getByLabelText(/name for MAPEH in AY2026/i);
+  return screen.getByLabelText(/^name for MAPEH in AY2026$/i);
 }
 
-// weightInputs() above indexes the textboxes positionally, and edit mode
-// renders one more of them than create mode does — the per-year name box sits
-// first, ahead of the report label. So the weights start one further along
-// here. (Getting this wrong is not subtle in a good way: the first attempt
-// typed into the report label and saved it to the catalogue route.)
+function reportLabelBox() {
+  return screen.getByLabelText(/^report card name for MAPEH in AY2026$/i);
+}
+
+function descriptionBox() {
+  return screen.getByLabelText(/^description for MAPEH in AY2026$/i);
+}
+
+// EDIT mode renders THREE free-text fields ahead of the weights — the "In
+// AY2026" group: subject name, name on the report card, and what it stands
+// for. So the weights start three further along than in create mode.
+//
+// (Getting this wrong is not subtle in a good way: an earlier version of this
+// helper typed a weight into the report-label box and saved it to the
+// catalogue route. Positional queries are used because PercentField's visible
+// label has no htmlFor/id association to its input.)
 function editWeightInputs() {
   const inputs = screen.getAllByRole('textbox');
-  return { ww: inputs[2], pt: inputs[3], qa: inputs[4] };
+  return { ww: inputs[3], pt: inputs[4], qa: inputs[5] };
 }
 
 describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
@@ -290,5 +307,81 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
   it('is not offered in create mode — a per-year name needs this year’s row', () => {
     renderCreate('MAPEH');
     expect(screen.queryByLabelText(/name for MAPEH in/i)).toBeNull();
+  });
+});
+
+/**
+ * Edit mode — the other two per-year fields (migration 138).
+ *
+ * `report_label` used to live on `subjects`, with no academic year on it at
+ * all, and the form saved it through the CATALOGUE route. Both facts changed:
+ * it is per year now, and it saves through the same subject_configs PATCH the
+ * name does. `description` is new.
+ *
+ * The route is what these pin — a field that posts to the wrong endpoint still
+ * looks like it saved.
+ */
+describe('SubjectConfigForm (edit mode — report card name and description)', () => {
+  it('offers all three per-year fields, and none of them in create mode', () => {
+    renderEdit(null);
+    expect(nameBox()).toBeInTheDocument();
+    expect(reportLabelBox()).toBeInTheDocument();
+    expect(descriptionBox()).toBeInTheDocument();
+  });
+
+  it('saves the report card name to the config route, not the catalogue route', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit(null);
+
+    await user.type(reportLabelBox(), 'Mother Tongue');
+    await user.tab();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const [url, init] = fetchSpy.mock.calls[0];
+    // The catalogue route would be /catalog/<subjectId>. This must be the
+    // per-year config route.
+    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({
+      report_label: 'Mother Tongue',
+      // Saved weights ride along untouched, same as for the name.
+      ww_weight: 20,
+      pt_weight: 60,
+      qa_weight: 20,
+    });
+    // The other two per-year fields are NOT sent — an unsent field means
+    // "don't touch", and naming them here would clear them.
+    expect(body.display_name).toBeUndefined();
+    expect(body.description).toBeUndefined();
+  });
+
+  it('saves the description to the config route', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit(null);
+
+    await user.type(descriptionBox(), 'Sports, Talent, Arts and Rhythm');
+    await user.tab();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({
+      description: 'Sports, Talent, Arts and Rhythm',
+    });
+    expect(body.report_label).toBeUndefined();
+  });
+
+  it('shows the year name as the report-card placeholder, so the default is visible', () => {
+    // Leaving the report-card box blank means "print what everything else
+    // shows". The placeholder says so by BEING that value.
+    renderEdit('STAR');
+    expect(reportLabelBox()).toHaveAttribute('placeholder', 'STAR');
   });
 });

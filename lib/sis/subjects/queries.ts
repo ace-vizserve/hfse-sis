@@ -18,10 +18,6 @@ export type SubjectRow = {
   // grading grid) vs 'no_sheet' (recorded some other way, no grid
   // generated). Every pre-082 subject defaults to 'standard_sheet'.
   grading_method: 'standard_sheet' | 'no_sheet';
-  // `report_label` (migration 087) — what prints on the report card for
-  // this subject, independent of `name`. Null = falls back to `name`
-  // (see lib/report-card/build-report-card.ts).
-  report_label: string | null;
 };
 
 export type LevelRow = {
@@ -53,11 +49,17 @@ export type SubjectConfigRow = {
   // CatalogSubjectRow.needsAttention below for the consumer.
   weights_confirmed: boolean;
   // migration 137 — what the school calls this subject in THIS academic year
-  // (MAPEH in AY2025, STAR in AY2026). NULL means fall back to
-  // subjects.report_label, then subjects.name. Never read it directly: pass
-  // the subject and this row to subjectDisplayName()
-  // (lib/sis/subjects/display-name.ts), which is the one resolution rule.
+  // (MAPEH in AY2025, STAR in AY2026). NULL means fall back to subjects.name.
+  // Never read it directly: pass the subject and this row to
+  // subjectDisplayName() (lib/sis/subjects/display-name.ts).
   display_name: string | null;
+  // migration 138 — what the REPORT CARD calls it in this year, when that
+  // differs from display_name. Report card only; subjectReportName() is the
+  // one reader, and __tests__/sis/report-label-scope.test.ts keeps it that way.
+  report_label: string | null;
+  // migration 138 — what the subject IS, in this year (e.g. STAR is "Sports,
+  // Talent, Arts and Rhythm"). Shown on the grading sheet page. Staff only.
+  description: string | null;
 };
 
 // `subject_level_offerings(subject_id, level_id, academic_year_id)` — this
@@ -79,7 +81,7 @@ export async function listSubjects(): Promise<SubjectRow[]> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('subjects')
-    .select('id, code, name, is_examinable, grading_method, report_label')
+    .select('id, code, name, is_examinable, grading_method')
     .order('name', { ascending: true });
   if (error) {
     console.error('[subjects] listSubjects failed:', error.message);
@@ -108,7 +110,7 @@ export async function listSubjectConfigsForAy(
   const { data, error } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name, report_label, description'
     )
     .eq('academic_year_id', academicYearId);
   if (error) {
@@ -177,8 +179,6 @@ export type CatalogSubjectRow = {
   name: string;
   is_examinable: boolean;
   grading_method: 'standard_sheet' | 'no_sheet';
-  /** Report-card display label — null falls back to `name`. */
-  report_label: string | null;
   /** Whether a subject_configs row exists for this AY. */
   hasConfig: boolean;
   /** The full config row (weights + slot counts) when hasConfig is true. */
@@ -300,7 +300,6 @@ export function computeCatalogForLevelType(
       name: subject.name,
       is_examinable: subject.is_examinable,
       grading_method: subject.grading_method,
-      report_label: subject.report_label,
       hasConfig: !!config,
       config,
       reportSubjectId,

@@ -21,25 +21,44 @@ export const SubjectConfigUpdateSchema = z
     qa_max: z.number().int().min(1).max(100),
     // What this subject is called in THIS academic year (migration 137) —
     // MAPEH in AY2025, STAR in AY2026. NULL/absent falls back to
-    // subjects.report_label then subjects.name; see
-    // lib/sis/subjects/display-name.ts for the one resolution rule.
+    // subjects.name; see lib/sis/subjects/display-name.ts.
     //
     // ⚠ Display only. `subjects.code` is the identity and never changes with a
     // rename, so no code-keyed list (MAPEH_FAMILY_CODES and the 20/60/20
     // split, MOTHER_TONGUE_SUBJECT_CODES, the deployment importer's
     // SUBJECT_MAP) is affected by anything typed here.
     //
-    // Deliberately NO `.transform()` normalising '' -> null, for the same
-    // reason SubjectCatalogUpdateSchema.report_label has none (see the comment
-    // there): zod runs a transform on an `.optional()` field's ABSENT value
-    // too, which would turn "the caller never mentioned this field" into
-    // "clear the name" and silently wipe an existing rename on every
+    // ⚠ Deliberately NO `.transform()` normalising '' -> null on ANY of the
+    // three text fields below: zod runs a transform on an `.optional()`
+    // field's ABSENT value too, which would turn "the caller never mentioned
+    // this field" into "clear it" and silently wipe an existing value on every
     // weights-only save. The route normalises instead, where "was this key
     // present" is still knowable.
     display_name: z
       .string()
       .trim()
       .max(128, 'Keep the subject name under 128 characters')
+      .nullable()
+      .optional(),
+    // What the REPORT CARD calls this subject in this academic year
+    // (migration 138). Distinct from display_name above, which is what every
+    // other screen calls it — the two were one fallback chain until the
+    // report label leaked onto markbook screens, and keeping them apart is
+    // the point. Same no-transform reasoning as display_name.
+    report_label: z
+      .string()
+      .trim()
+      .max(128, 'Keep the report card name under 128 characters')
+      .nullable()
+      .optional(),
+    // What the subject IS, in this year — "STAR" is "Sports, Talent, Arts and
+    // Rhythm" (migration 138). Rendered on the grading sheet page. Longer cap
+    // than the two names because it is a phrase, not a label, but still short
+    // enough to sit on one line under a heading.
+    description: z
+      .string()
+      .trim()
+      .max(200, 'Keep the description under 200 characters')
       .nullable()
       .optional(),
   })

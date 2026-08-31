@@ -31,23 +31,23 @@
 //    data under one of them (source selection resolves per-row).
 
 import type { SubjectRow } from '@/lib/report-card/build-report-card';
-import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import { subjectReportName } from '@/lib/sis/subjects/display-name';
 
 export type ReportTargetMeta = {
   id: string;
   code: string;
   name: string;
-  // What prints on the report card, independent of `name` — null falls
-  // back to `name`. Resolved by the CALLER at render time for the common
-  // (self-map) case; this module composes it directly into `.name` only
-  // for the fan-in case below, since that's already synthesizing a new
-  // "{Target} ({Source})" string from two subjects' identities, not a
-  // simple passthrough.
+  // What prints on the report card, independent of `name` — null falls back
+  // to `display_name`, then `name`. Per academic year since migration 138.
+  // Resolved by the CALLER at render time for the common (self-map) case;
+  // this module composes it directly into `.name` only for the fan-in case
+  // below, since that's already synthesizing a new "{Target} ({Source})"
+  // string from two subjects' identities, not a simple passthrough.
   report_label: string | null;
   /**
    * What the school called this subject in the card's academic year
-   * (migration 137). Beats `report_label`, which is global. Null when the year
-   * never renamed it.
+   * (migration 137) — used on every screen. `report_label` above overrides it
+   * on the report card only. Null when the year never renamed it.
    */
   display_name: string | null;
   is_examinable: boolean;
@@ -205,6 +205,18 @@ export function resolveReportSubjects(
       output.push(sourceRow);
       continue;
     }
+    // ⚠ A GROUP CAN CONTAIN ITS OWN TARGET, and then there is nothing to
+    // compose. "Mother Tongue" maps to ITSELF as well as receiving Filipino
+    // and Mandarin, so its group has three mappers and always reaches this
+    // branch — including in AY2025, where the student is graded under Mother
+    // Tongue directly and the other two carry no marks at all. Composing
+    // blindly printed "Mother Tongue (Mother Tongue)" on every AY2025 card.
+    //
+    // The parenthetical exists to say WHICH track a student took when the
+    // heading alone cannot. When the source IS the target it says nothing, so
+    // the heading is just the target.
+    const sourceIsTarget = sourceRow.subject.id === target.id;
+    const targetName = subjectReportName(target, target);
     output.push({
       ...sourceRow,
       subject: {
@@ -222,7 +234,9 @@ export function resolveReportSubjects(
         // composed string above already IS the final display text, so a
         // render-time resolution must never re-substitute anything for this
         // row. Leaving either populated would do exactly that.
-        name: `${subjectDisplayName(target, target)} (${subjectDisplayName(sourceRow.subject, sourceRow.subject)})`,
+        name: sourceIsTarget
+          ? targetName
+          : `${targetName} (${subjectReportName(sourceRow.subject, sourceRow.subject)})`,
         report_label: null,
         display_name: null,
         is_examinable: sourceRow.subject.is_examinable,
@@ -238,8 +252,8 @@ export function resolveReportSubjects(
   // under a different name, whether a global report label or this year's own,
   // should sort where it is shown rather than where it is catalogued.
   return output.sort((a, b) =>
-    subjectDisplayName(a.subject, a.subject).localeCompare(
-      subjectDisplayName(b.subject, b.subject)
+    subjectReportName(a.subject, a.subject).localeCompare(
+      subjectReportName(b.subject, b.subject)
     )
   );
 }

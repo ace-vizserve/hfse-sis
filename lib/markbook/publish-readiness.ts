@@ -141,7 +141,7 @@ export async function computePublishReadiness(
         .order('index_number'),
       service
         .from('grading_sheets')
-        .select('id, is_locked, subject:subjects(id, name, report_label)')
+        .select('id, is_locked, subject:subjects(id, name)')
         .eq('section_id', sectionId)
         .eq('term_id', termId),
       service
@@ -170,9 +170,7 @@ export async function computePublishReadiness(
   // pass exists to stop.
   const sheetSubjects = (sheets ?? [])
     .map((sh) => (Array.isArray(sh.subject) ? sh.subject[0] : sh.subject))
-    .filter(
-      (s): s is { id: string; name: string; report_label: string | null } => !!s
-    );
+    .filter((s): s is { id: string; name: string } => !!s);
   const sheetSubjectNames = await subjectDisplayNamesForAy(
     service,
     term.academic_year_id,
@@ -341,7 +339,7 @@ export async function computePublishReadiness(
         service
           .from('grading_sheets')
           .select(
-            'id, term_id, is_locked, subject:subjects(id, name, report_label, is_examinable)'
+            'id, term_id, is_locked, subject:subjects(id, name, is_examinable)'
           )
           .eq('section_id', sectionId)
           .in('term_id', termIds),
@@ -435,7 +433,6 @@ export async function computePublishReadiness(
         ): s is {
           id: string;
           name: string;
-          report_label: string | null;
           is_examinable: boolean;
         } => !!s
       );

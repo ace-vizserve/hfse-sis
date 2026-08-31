@@ -12,7 +12,7 @@ import {
 } from '@/lib/compute/letter-grade';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
-import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import { subjectReportName } from '@/lib/sis/subjects/display-name';
 import {
   DEFAULT_SCHOOL_CONFIG,
   getSchoolConfig,
@@ -39,17 +39,22 @@ export type SubjectRow = {
     id: string;
     code: string;
     name: string;
+    /**
+     * What this card should PRINT for the subject, when that differs from the
+     * name (migration 138 — per academic year, moved off `subjects`). Null
+     * means the report card and every other screen agree.
+     */
     report_label: string | null;
     /**
      * What the school called this subject IN THIS ACADEMIC YEAR — MAPEH on an
      * AY2025 card, STAR on an AY2026 one (migration 137). Null means the year
-     * never renamed it, so `report_label` and then `name` answer instead.
+     * never renamed it, so `name` answers instead.
      *
-     * Carried as its own field beside `report_label` rather than folded into
-     * `name`, for the same reason `report_label` is: the raw catalogue name
-     * stays available, and one place resolves the three into display text.
-     * That place is `subjectDisplayName`, and a row carrying all three passes
-     * itself as both of its arguments.
+     * Both overrides are carried as their own fields rather than folded into
+     * `name`: the raw catalogue name stays available, and one place turns the
+     * three into printed text. On a report card that place is
+     * `subjectReportName`, and a row carrying all three passes itself as both
+     * of its arguments.
      */
     display_name: string | null;
     is_examinable: boolean;
@@ -432,22 +437,19 @@ export async function buildReportCard(
   // level-membership re-check is needed here — subject_level_offerings is
   // no longer queried by this file at all.
   //
-  // report_label (migration 087) — what prints on the report card for a
-  // subject, independent of `name`. display_name (migration 137) — what the
-  // school called it in THIS academic year. Both are carried through as their
-  // OWN fields (never overwriting `name`) all the way to render time — see
-  // components/report-card/report-card-document.tsx, the one place that
-  // resolves the three into display text, via `subjectDisplayName`.
+  // BOTH overrides now live on `subject_configs` and both are per academic
+  // year (137 for display_name, 138 for report_label). They are carried
+  // through as their OWN fields, never overwriting `name`, all the way to
+  // render time — see components/report-card/report-card-document.tsx, the one
+  // place that turns the three into printed text, via `subjectReportName`.
   //
-  // The per-year name comes off `subject_configs` — the row this select is
-  // already walking through — so it costs no extra query. That is not a
-  // coincidence: `section_subjects` points at a config, and a config is
-  // per-(subject, academic year), which is the exact grain a per-year name
-  // needs.
+  // Neither costs an extra query, and that is not a coincidence:
+  // `section_subjects` points at a config, and a config is per-(subject,
+  // academic year), which is the exact grain both overrides need.
   const { data: sectionSubjectRows } = await supabase
     .from('section_subjects')
     .select(
-      'subject_config:subject_configs(display_name, subject:subjects(id, code, name, report_label, is_examinable))'
+      'subject_config:subject_configs(display_name, report_label, subject:subjects(id, code, name, is_examinable))'
     )
     .in('section_id', allSectionIds);
 
@@ -459,9 +461,10 @@ export async function buildReportCard(
     display_name: string | null;
     is_examinable: boolean;
   };
-  type SubjectCatalogMeta = Omit<SubjectMeta, 'display_name'>;
+  type SubjectCatalogMeta = Omit<SubjectMeta, 'display_name' | 'report_label'>;
   type SectionSubjectConfig = {
     display_name: string | null;
+    report_label: string | null;
     subject: SubjectCatalogMeta | SubjectCatalogMeta[] | null;
   };
   type SectionSubjectRow = {
@@ -472,8 +475,8 @@ export async function buildReportCard(
     const cfg = first(row.subject_config);
     const s = cfg ? first(cfg.subject) : null;
     // `!cfg` is redundant with `!s` at runtime (s is only ever read off cfg),
-    // but it is what tells the compiler cfg is non-null on the display_name
-    // read below.
+    // but it is what tells the compiler cfg is non-null on the two override
+    // reads below.
     if (!cfg || !s) continue;
     // De-dupe: a transferred student's old + new section can both carry a
     // section_subjects row for the same ongoing subject.
@@ -482,7 +485,7 @@ export async function buildReportCard(
       id: s.id,
       code: s.code,
       name: s.name,
-      report_label: s.report_label,
+      report_label: cfg.report_label,
       display_name: cfg.display_name,
       is_examinable: s.is_examinable,
     });
@@ -490,7 +493,7 @@ export async function buildReportCard(
   // Sort by what the card will actually print, not by the catalogue name — a
   // subject shown as STAR belongs where STAR sorts.
   const subjects = Array.from(subjectsById.values()).sort((a, b) =>
-    subjectDisplayName(a, a).localeCompare(subjectDisplayName(b, b))
+    subjectReportName(a, a).localeCompare(subjectReportName(b, b))
   );
 
   // Report-card grouping map (migration 080, KD reference: subject_report_map
@@ -521,46 +524,47 @@ export async function buildReportCard(
     const targetIds = Array.from(
       new Set(reportMap.map((r) => r.report_subject_id))
     );
-    // The per-year name has to be fetched separately here, unlike the section
-    // subjects above. A fan-in TARGET is only ever a display target — "Mother
-    // Tongue" is not attached to any section — so there is no
+    // The per-year overrides have to be fetched separately here, unlike the
+    // section subjects above. A fan-in TARGET is only ever a display target —
+    // "Mother Tongue" is attached to no section in AY2026 — so there is no
     // section_subjects row to reach its config through, and the catalogue row
-    // alone has no year. This asks `subject_configs` directly for this card's
-    // academic year.
+    // alone has no year.
     //
     // A target with no config for the year is normal, not an error: it means
-    // the school never renamed it, and `subjectDisplayName` falls back
+    // the school never overrode anything, and `subjectReportName` falls back
     // exactly as it does for a null.
     const [{ data: targetRows }, { data: targetConfigRows }] =
       await Promise.all([
         supabase
           .from('subjects')
-          .select('id, code, name, report_label, is_examinable')
+          .select('id, code, name, is_examinable')
           .in('id', targetIds),
         supabase
           .from('subject_configs')
-          .select('subject_id, display_name')
+          .select('subject_id, display_name, report_label')
           .eq('academic_year_id', ay.id)
           .in('subject_id', targetIds),
       ]);
-    const targetDisplayNames = new Map(
+    const targetOverrides = new Map(
       (
         (targetConfigRows ?? []) as {
           subject_id: string;
           display_name: string | null;
+          report_label: string | null;
         }[]
-      ).map((r) => [r.subject_id, r.display_name])
+      ).map((r) => [r.subject_id, r])
     );
     for (const t of (targetRows ?? []) as Omit<
       ReportTargetMeta,
-      'display_name'
+      'display_name' | 'report_label'
     >[]) {
+      const override = targetOverrides.get(t.id);
       reportTargets.set(t.id, {
         id: t.id,
         code: t.code,
         name: t.name,
-        report_label: t.report_label,
-        display_name: targetDisplayNames.get(t.id) ?? null,
+        report_label: override?.report_label ?? null,
+        display_name: override?.display_name ?? null,
         is_examinable: t.is_examinable,
       });
     }

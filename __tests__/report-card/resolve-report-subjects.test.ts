@@ -693,7 +693,7 @@ describe('resolveReportSubjects — the name the year uses', () => {
     expect(result.map((r) => r.subject.id)).toEqual(['m', 'a']);
   });
 
-  it('beats a global report label — the year is the more specific statement', () => {
+  it('yields to the year’s report label — on a card, that is the more specific statement', () => {
     const row = makeRow({
       subject: {
         id: 'm',
@@ -714,9 +714,17 @@ describe('resolveReportSubjects — the name the year uses', () => {
         is_examinable: true,
       },
     });
-    // Sorting on report_label would put Bravo first; on display_name, MAPEH.
+    // Both overrides are per academic year since migration 138, so this is no
+    // longer "specific beats global" — it is "the report card's own answer
+    // beats the general one, on the report card". Sorting follows what the
+    // card prints, so "Zulu" sorts after "Bravo".
+    //
+    // ⚠ The opposite is true everywhere else: subjectDisplayName cannot see a
+    // report label at all, so a markbook screen sorts this row under
+    // "Aardvark". That divergence is deliberate and is what
+    // __tests__/sis/report-label-scope.test.ts protects.
     const result = resolveReportSubjects([other, row], [], new Map());
-    expect(result.map((r) => r.subject.id)).toEqual(['m', 'b']);
+    expect(result.map((r) => r.subject.id)).toEqual(['b', 'm']);
   });
 
   it('composes a fan-in row from both sides’ per-year names', () => {
@@ -770,5 +778,136 @@ describe('resolveReportSubjects — the name the year uses', () => {
     // renderer must not re-substitute over it.
     expect(result[0].subject.display_name).toBeNull();
     expect(result[0].subject.report_label).toBeNull();
+  });
+});
+
+/**
+ * MOTHER TONGUE — the real production shape, and the two headings it produced.
+ *
+ * Read from production 2026-08-31:
+ *   subject_report_map: FIL -> MT, MANDARIN -> MT, and MT -> MT (a self-map).
+ *   Three mappers, so the group ALWAYS takes the real-fan-in branch.
+ *
+ *   AY2025  Mother Tongue is the graded sheet (88 sheets, 53 with marks);
+ *           Filipino and Mandarin are attached but carry zero marks.
+ *   AY2026  Filipino (31 sheets, 8 with marks) and Mandarin (10 / 5) are graded
+ *           separately; Mother Tongue has no sheets at all.
+ *
+ * The school changed how it grades this mid-way, which is exactly the kind of
+ * per-year fact migrations 137 and 138 exist to express. Before them the
+ * headings read:
+ *
+ *   AY2025  "Mother Tongue (Mother Tongue)"          — the source IS the target
+ *   AY2026  "Mother Tongue (Mother Tongue (Filipino))" — the label doubled up
+ *
+ * Both are pinned here because each had a different cause and only one of them
+ * was fixed by dropping the global report label.
+ */
+describe('resolveReportSubjects — the Mother Tongue group', () => {
+  const REPORT_MAP: ReportMapEntry[] = [
+    { subject_id: 'fil', report_subject_id: 'mt' },
+    { subject_id: 'man', report_subject_id: 'mt' },
+    // ⚠ Mother Tongue maps to ITSELF. This is the row that makes the group a
+    // three-mapper fan-in in every year, including years where nothing fans in.
+    { subject_id: 'mt', report_subject_id: 'mt' },
+  ];
+
+  const TARGETS = new Map<string, ReportTargetMeta>([
+    [
+      'mt',
+      {
+        id: 'mt',
+        code: 'MT',
+        name: 'Mother Tongue',
+        report_label: null,
+        display_name: null,
+        is_examinable: false,
+      },
+    ],
+  ]);
+
+  function lang(id: string, code: string, name: string, graded: boolean) {
+    return makeRow({
+      subject: {
+        id,
+        code,
+        name,
+        report_label: null,
+        display_name: null,
+        is_examinable: false,
+      },
+      ...(graded ? { t1: { quarterly: 92, letter: 'A', is_na: false } } : {}),
+    });
+  }
+
+  it('AY2025 — graded under Mother Tongue itself, so no parenthetical', () => {
+    // The source IS the target. A parenthetical exists to say WHICH track a
+    // student took when the heading alone cannot; here it says nothing, and
+    // saying it anyway printed "Mother Tongue (Mother Tongue)" on every AY2025
+    // card.
+    const result = resolveReportSubjects(
+      [
+        lang('mt', 'MT', 'Mother Tongue', true),
+        lang('fil', 'FIL', 'Filipino', false),
+        lang('man', 'MANDARIN', 'Mandarin', false),
+      ],
+      REPORT_MAP,
+      TARGETS
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].subject.name).toBe('Mother Tongue');
+  });
+
+  it('AY2026 — graded under Filipino, so exactly one parenthetical', () => {
+    // The doubling came from FIL carrying a report_label of "Mother Tongue
+    // (Filipino)" — a hand-written copy of the heading this function already
+    // composes. Migration 138 dropped that global column without carrying the
+    // value over, so the composition is the only source of the parenthetical.
+    const result = resolveReportSubjects(
+      [
+        lang('fil', 'FIL', 'Filipino', true),
+        lang('man', 'MANDARIN', 'Mandarin', false),
+      ],
+      REPORT_MAP,
+      TARGETS
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].subject.name).toBe('Mother Tongue (Filipino)');
+  });
+
+  it('a per-year report label still wins on both halves', () => {
+    // The label is not gone, it is per year now. A year that genuinely wants
+    // different words on the card can still say so, and both halves of the
+    // composition honour it.
+    const targets = new Map<string, ReportTargetMeta>([
+      [
+        'mt',
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: 'Languages',
+          display_name: null,
+          is_examinable: false,
+        },
+      ],
+    ]);
+    const filipino = makeRow({
+      subject: {
+        id: 'fil',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: 'Filipino Language',
+        display_name: null,
+        is_examinable: false,
+      },
+      t1: { quarterly: 92, letter: 'A', is_na: false },
+    });
+    const result = resolveReportSubjects(
+      [filipino, lang('man', 'MANDARIN', 'Mandarin', false)],
+      REPORT_MAP,
+      targets
+    );
+    expect(result[0].subject.name).toBe('Languages (Filipino Language)');
   });
 });

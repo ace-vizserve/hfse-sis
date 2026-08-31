@@ -74,11 +74,7 @@ type SubjectRow = {
     subject_id: string;
     /** This year's name for the subject, or null if it was never renamed. */
     display_name: string | null;
-    subject: {
-      code: string | null;
-      name: string;
-      report_label: string | null;
-    } | null;
+    subject: { code: string | null; name: string } | null;
   } | null;
 };
 
@@ -110,7 +106,7 @@ export async function getSectionStaff(
         // display_name is this year's name for the subject (migration 137) —
         // it is on the config row this select already walks through, because
         // a config IS the per-(subject, year) row.
-        'subject_config:subject_configs(subject_id, display_name, subject:subjects(code, name, report_label))'
+        'subject_config:subject_configs(subject_id, display_name, subject:subjects(code, name))'
       )
       .eq('section_id', sectionId),
     // Falls back to an empty map rather than throwing: a name lookup failing

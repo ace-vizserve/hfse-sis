@@ -69,7 +69,6 @@ type Subject = {
   id: string;
   code: string;
   name: string;
-  report_label: string | null;
   is_examinable: boolean;
 };
 type Term = { id: string; term_number: number; label: string };
@@ -79,6 +78,13 @@ type SubjectConfig = {
    * (migration 137). Null when the year never renamed it.
    */
   display_name: string | null;
+  /**
+   * What the subject IS, in this year — "STAR" is "Sports, Talent, Arts and
+   * Rhythm" (migration 138). Rendered under the heading below, so a teacher
+   * opening the sheet knows what the name means. Staff-facing: it is
+   * deliberately absent from the report card, which uses the subject name.
+   */
+  description: string | null;
   ww_weight: number;
   pt_weight: number;
   qa_weight: number;
@@ -136,9 +142,9 @@ export default async function GradingSheetPage({
     .select(
       `id, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
        term:terms(id, term_number, label),
-       subject:subjects(id, code, name, report_label, is_examinable),
+       subject:subjects(id, code, name, is_examinable),
        section:sections(id, name, level:levels(id, code, label)),
-       subject_config:subject_configs(display_name, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
+       subject_config:subject_configs(display_name, description, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
     .eq('id', id)
     .single();
@@ -466,6 +472,17 @@ export default async function GradingSheetPage({
               </Badge>
             )}
           </div>
+          {/* What the subject's name stands for, this year (migration 138).
+              Sits directly under the heading it explains, in the mono
+              micro-copy voice the design system reserves for context rather
+              than content — it is an aside about the title, not part of the
+              sheet's own detail line below. Absent for every subject whose
+              name explains itself, which is most of them. */}
+          {config?.description ? (
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+              {config.description}
+            </p>
+          ) : null}
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {level?.label} {section?.name}
             {subjectTeacherLabel ? (

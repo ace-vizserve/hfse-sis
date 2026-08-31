@@ -21,11 +21,7 @@ import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 // here would duplicate the subtlest query in the codebase and let the two
 // copies drift. Ten subjects is ten parallel calls, on a panel opened by hand.
 
-type SubjectLite = {
-  name: string;
-  report_label: string | null;
-  is_examinable: boolean;
-};
+type SubjectLite = { name: string; is_examinable: boolean };
 
 /**
  * Stored as decimals (0.40), printed as percents on the panel's measure pills.
@@ -112,7 +108,7 @@ export async function loadSectionAtRisk(
         // display_name rides in on the config embed that was already here for
         // the weights — a config is the per-(subject, year) row, so this
         // year's name for the subject is on it (migration 137).
-        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, report_label, is_examinable), config:subject_configs(display_name, ww_weight, pt_weight, qa_weight)'
+        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable), config:subject_configs(display_name, ww_weight, pt_weight, qa_weight)'
       )
       .eq('section_id', sectionId)
       .eq('term_id', termId),

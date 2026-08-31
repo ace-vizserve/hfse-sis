@@ -40,7 +40,6 @@ type SubjectLite = {
   id: string;
   code: string;
   name: string;
-  report_label: string | null;
   is_examinable: boolean;
 };
 /**
@@ -169,7 +168,7 @@ export default async function GradingListPage({
         .select(
           `id, is_locked, teacher_name,
            term:terms(id, term_number, label),
-           subject:subjects(id, code, name, report_label, is_examinable),
+           subject:subjects(id, code, name, is_examinable),
            subject_config:subject_configs(display_name),
            section:sections!inner(id, name, academic_year_id, level:levels(id, code, label, level_type))`
         )

@@ -31,11 +31,14 @@ export type SubjectConfigBefore = {
   qa_max: number;
   weights_confirmed: boolean | null;
   /**
-   * The per-year name (migration 137). Part of the row the route selects, and
-   * DELIBERATELY not read by subjectConfigUnchanged below — see the sibling
-   * subjectDisplayNameUnchanged for why the two verdicts stay apart.
+   * The per-year text fields (migrations 137 + 138). Part of the row the route
+   * selects, and DELIBERATELY not read by subjectConfigUnchanged below — see
+   * the sibling subjectPerYearTextUnchanged for why the two verdicts stay
+   * apart.
    */
   display_name?: string | null;
+  report_label?: string | null;
+  description?: string | null;
 };
 
 export type SubjectConfigSubmission = {
@@ -86,29 +89,35 @@ export function subjectConfigUnchanged(
   );
 }
 
-// ── The per-year name (migration 137) ────────────────────────────────────────
+// ── The per-year TEXT fields (migrations 137 + 138) ─────────────────────────
 //
-// A SIBLING of the function above, never a seventh field inside it, because the
+// `subject_configs` carries three of them now: `display_name` (what the
+// subject is called this year), `report_label` (what the report card calls it
+// this year) and `description` (what it stands for, shown on the grading
+// sheet). They behave identically for the purposes of "did this save change
+// anything", so one function answers for all three and the caller passes the
+// column it is asking about.
+//
+// A SIBLING of the function above, never a fourth field inside it, because the
 // two halves have different consequences and the route acts on them
 // differently: a weights or slot change has to resync and recompute every
-// unlocked grading sheet, while a rename changes words on a screen and nothing
-// else. Folding the name in would make a rename-only save drag the whole sheet
-// sync behind it, re-stamping updated_at on every sheet for a change no sheet
+// unlocked grading sheet, while these change words on a screen and nothing
+// else. Folding them in would make a text-only save drag the whole sheet sync
+// behind it, re-stamping updated_at on every sheet for a change no sheet
 // stores.
 //
 // `next === undefined` means the caller never sent the field — "don't touch",
 // not "clear it" — so it can never be a change. See the comment on
-// SubjectConfigUpdateSchema.display_name for why that distinction survives to
-// here instead of being normalised away by a zod transform.
+// SubjectConfigUpdateSchema for why that distinction survives to here instead
+// of being normalised away by a zod transform.
 //
 // The route hands us the ALREADY-NORMALISED value (blank -> null), so `null`
-// here means exactly one thing: clear the override and fall back to the
-// catalogue name.
+// here means exactly one thing: clear the override and fall back.
 
-export function subjectDisplayNameUnchanged(
-  before: { display_name?: string | null },
+export function subjectPerYearTextUnchanged(
+  stored: string | null | undefined,
   next: string | null | undefined
 ): boolean {
   if (next === undefined) return true;
-  return (before.display_name ?? null) === next;
+  return (stored ?? null) === next;
 }

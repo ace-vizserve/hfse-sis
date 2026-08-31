@@ -20,7 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   subjectConfigUnchanged,
-  subjectDisplayNameUnchanged,
+  subjectPerYearTextUnchanged,
   subjectNumbersIdentical,
   type SubjectConfigBefore,
   type SubjectConfigSubmission,
@@ -160,7 +160,9 @@ describe('subjectNumbersIdentical', () => {
 });
 
 /**
- * The per-year subject name (migration 137 — MAPEH in AY2025, STAR in AY2026).
+ * The per-year TEXT fields (migrations 137 + 138). One function answers for all
+ * three — the subject name, the report-card name and the description — because
+ * "did this save change anything" is the same question for each.
  *
  * Three input states have to stay distinguishable all the way from the request
  * body to this comparison, and two of them look identical if anything upstream
@@ -174,44 +176,32 @@ describe('subjectNumbersIdentical', () => {
  * an existing rename on every weights-only save, silently, with the response
  * still saying ok.
  */
-describe('subjectDisplayNameUnchanged', () => {
+describe('subjectPerYearTextUnchanged', () => {
   it('an absent field is never a change', () => {
-    expect(
-      subjectDisplayNameUnchanged({ display_name: 'STAR' }, undefined)
-    ).toBe(true);
-    expect(subjectDisplayNameUnchanged({ display_name: null }, undefined)).toBe(
-      true
-    );
+    expect(subjectPerYearTextUnchanged('STAR', undefined)).toBe(true);
+    expect(subjectPerYearTextUnchanged(null, undefined)).toBe(true);
   });
 
   it('setting a name on a row that had none is a change', () => {
-    expect(subjectDisplayNameUnchanged({ display_name: null }, 'STAR')).toBe(
-      false
-    );
+    expect(subjectPerYearTextUnchanged(null, 'STAR')).toBe(false);
   });
 
   it('clearing an existing name is a change', () => {
     // The route normalises '' to null before it gets here, so null means
     // exactly one thing: go back to the catalogue name.
-    expect(subjectDisplayNameUnchanged({ display_name: 'STAR' }, null)).toBe(
-      false
-    );
+    expect(subjectPerYearTextUnchanged('STAR', null)).toBe(false);
   });
 
   it('re-saving the same name is not a change', () => {
-    expect(subjectDisplayNameUnchanged({ display_name: 'STAR' }, 'STAR')).toBe(
-      true
-    );
+    expect(subjectPerYearTextUnchanged('STAR', 'STAR')).toBe(true);
   });
 
   it('treats a missing column and a stored null identically', () => {
-    expect(subjectDisplayNameUnchanged({}, null)).toBe(true);
+    expect(subjectPerYearTextUnchanged(undefined, null)).toBe(true);
   });
 
   it('renaming one name to another is a change', () => {
-    expect(subjectDisplayNameUnchanged({ display_name: 'MAPEH' }, 'STAR')).toBe(
-      false
-    );
+    expect(subjectPerYearTextUnchanged('MAPEH', 'STAR')).toBe(false);
   });
 });
 

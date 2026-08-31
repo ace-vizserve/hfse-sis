@@ -74,7 +74,6 @@ function draftFromRow(
     name: row.name,
     is_examinable: row.is_examinable,
     grading_method: row.grading_method,
-    report_label: row.report_label,
     ayCode,
     ww_weight: Math.round(cfg.ww_weight * 100),
     pt_weight: Math.round(cfg.pt_weight * 100),
@@ -84,6 +83,8 @@ function draftFromRow(
     qa_max: cfg.qa_max,
     reportSubjectId: row.reportSubjectId,
     display_name: cfg.display_name,
+    report_label: cfg.report_label,
+    description: cfg.description,
   };
 }
 
@@ -189,7 +190,6 @@ function subjectIdentity(row: CatalogSubjectRow): SubjectConfigFormSubject {
     name: row.name,
     is_examinable: row.is_examinable,
     grading_method: row.grading_method,
-    report_label: row.report_label,
   };
 }
 

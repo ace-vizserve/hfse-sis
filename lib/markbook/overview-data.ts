@@ -124,10 +124,7 @@ export async function loadOverviewDataUncached(
         .eq('academic_year_id', academicYearId)
         .order('term_number', { ascending: true }),
       service.from('levels').select('id, code, label, sort_order'),
-      // report_label comes along so the per-year overlay below can fall
-      // through the full rule (this year's name -> report label -> catalogue
-      // name) rather than only its first and last steps.
-      service.from('subjects').select('id, name, report_label, is_examinable'),
+      service.from('subjects').select('id, name, is_examinable'),
     ]);
 
   const terms: OverviewTermInput[] = (
@@ -166,7 +163,6 @@ export async function loadOverviewDataUncached(
   const subjectCatalog = (subjectRows ?? []) as {
     id: string;
     name: string;
-    report_label: string | null;
     is_examinable: boolean | null;
   }[];
   // `subjects` here is the panel's own label set, read by a person, so it

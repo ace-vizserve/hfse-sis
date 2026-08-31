@@ -5,7 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   subjectConfigUnchanged,
-  subjectDisplayNameUnchanged,
+  subjectPerYearTextUnchanged,
   subjectNumbersIdentical,
 } from '@/lib/sis/subject-config-unchanged';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
@@ -56,30 +56,32 @@ export async function PATCH(
     pt_max_slots,
     qa_max,
     display_name,
+    report_label,
+    description,
   } = parsed.data;
 
-  // Normalise the per-year name HERE, not in the schema. Three states have to
-  // survive to this line and a zod `.transform()` would collapse two of them:
-  //   • key absent   -> undefined -> don't touch the stored name
-  //   • '' or null   -> null      -> clear the override, fall back to the
-  //                                  catalogue name (migration 137's CHECK
-  //                                  refuses a blank string outright)
-  //   • real text    -> the name for this academic year
-  // See SubjectConfigUpdateSchema.display_name, and the same reasoning on
-  // SubjectCatalogUpdateSchema.report_label.
-  const nextDisplayName =
-    display_name === undefined
-      ? undefined
-      : display_name === null || display_name.length === 0
-        ? null
-        : display_name;
+  // Normalise the three per-year text fields HERE, not in the schema. Three
+  // states have to survive to this line and a zod `.transform()` would
+  // collapse two of them:
+  //   • key absent   -> undefined -> don't touch what is stored
+  //   • '' or null   -> null      -> clear the override and fall back
+  //                                  (both migrations' CHECK constraints
+  //                                  refuse a blank string outright)
+  //   • real text    -> the value for this academic year
+  // See SubjectConfigUpdateSchema for the matching note on the schema side.
+  const clearable = (v: string | null | undefined) =>
+    v === undefined ? undefined : v === null || v.length === 0 ? null : v;
+
+  const nextDisplayName = clearable(display_name);
+  const nextReportLabel = clearable(report_label);
+  const nextDescription = clearable(description);
 
   const service = createServiceClient();
 
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name, report_label, description'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -114,41 +116,57 @@ export async function PATCH(
     qa_max,
   };
   const numbersUnchanged = subjectConfigUnchanged(before, submission);
-  // The per-year name is compared SEPARATELY (migration 137). It has to
-  // participate in the no-op decision or a rename-only save would be swallowed
-  // by the guard above and answered `{ ok: true }` with nothing written — but
-  // it must not be folded into the same verdict, because the two halves have
-  // different consequences. See subjectDisplayNameUnchanged.
-  const nameUnchanged = subjectDisplayNameUnchanged(before, nextDisplayName);
 
-  if (numbersUnchanged && nameUnchanged) {
+  // The three per-year TEXT fields are compared SEPARATELY (migrations 137 +
+  // 138). They have to participate in the no-op decision or a text-only save
+  // would be swallowed by the guard above and answered `{ ok: true }` with
+  // nothing written — but they must not be folded into the same verdict,
+  // because the two halves have different consequences. See
+  // subjectPerYearTextUnchanged.
+  const textEdits: Array<{
+    column: 'display_name' | 'report_label' | 'description';
+    next: string | null | undefined;
+  }> = [
+    { column: 'display_name', next: nextDisplayName },
+    { column: 'report_label', next: nextReportLabel },
+    { column: 'description', next: nextDescription },
+  ];
+  const changedText = textEdits.filter(
+    (e) => !subjectPerYearTextUnchanged(before[e.column], e.next)
+  );
+  const textUnchanged = changedText.length === 0;
+
+  if (numbersUnchanged && textUnchanged) {
     return NextResponse.json({ ok: true, changed: false, sheets_synced: 0 });
   }
 
-  // ── Rename-only: change the words, touch nothing else ───────────────────
-  // Nothing a grading sheet stores depends on the name — the slot maxima and
-  // qa_max are what `sync_grading_sheets_from_config` denormalises, and those
-  // are unchanged here. Running the sync anyway would re-stamp updated_at on
-  // every unlocked sheet tied to this config and re-run the recompute over
-  // every entry, for a change that only alters a heading. The audit row is
-  // still written: a rename is a real change and this is the only record of
-  // when the school started calling it something else.
+  // ── Text-only: change the words, touch nothing else ─────────────────────
+  // Nothing a grading sheet stores depends on any of these — the slot maxima
+  // and qa_max are what `sync_grading_sheets_from_config` denormalises, and
+  // those are unchanged here. Running the sync anyway would re-stamp
+  // updated_at on every unlocked sheet tied to this config and re-run the
+  // recompute over every entry, for a change that only alters words on a
+  // screen. The audit row is still written: this is the only record of when
+  // the school started calling a subject something else.
   //
   // ⚠ Gated on subjectNumbersIdentical, NOT on the no-op guard above, and the
   // difference is `weights_confirmed`. Five production configs still carry the
   // flag as false (migration 082's stand-in rows). Renaming one through the
   // full path would flip it true — silently recording that an admin reviewed
-  // weights they never looked at, because they typed a name. A rename is not a
-  // review, so the flagged row stays flagged and the "fix the weights → the
-  // flag clears" loop is untouched: that save carries no name change and lands
-  // below.
-  if (subjectNumbersIdentical(before, submission) && !nameUnchanged) {
-    const { error: renameErr } = await service
+  // weights they never looked at, because they typed a name. Typing a name is
+  // not a review, so the flagged row stays flagged and the "fix the weights →
+  // the flag clears" loop is untouched: that save carries no text change and
+  // lands below.
+  if (subjectNumbersIdentical(before, submission) && !textUnchanged) {
+    const patch: Record<string, string | null> = {};
+    for (const e of changedText) patch[e.column] = e.next ?? null;
+
+    const { error: textErr } = await service
       .from('subject_configs')
-      .update({ display_name: nextDisplayName ?? null })
+      .update(patch)
       .eq('id', configId);
-    if (renameErr)
-      return NextResponse.json({ error: renameErr.message }, { status: 500 });
+    if (textErr)
+      return NextResponse.json({ error: textErr.message }, { status: 500 });
 
     await logAction({
       service,
@@ -159,20 +177,25 @@ export async function PATCH(
       context: {
         academic_year_id: before.academic_year_id,
         subject_id: before.subject_id,
-        before: { display_name: before.display_name ?? null },
-        after: { display_name: nextDisplayName ?? null },
+        // Only the fields that actually moved, so the row says what changed
+        // rather than restating everything that did not.
+        before: Object.fromEntries(
+          changedText.map((e) => [e.column, before[e.column] ?? null])
+        ),
+        after: Object.fromEntries(
+          changedText.map((e) => [e.column, e.next ?? null])
+        ),
         sheets_synced: 0,
       },
     });
 
-    const { data: renameAy } = await service
+    const { data: textAy } = await service
       .from('academic_years')
       .select('ay_code')
       .eq('id', before.academic_year_id)
       .maybeSingle();
-    const renameAyCode =
-      (renameAy as { ay_code: string } | null)?.ay_code ?? null;
-    if (renameAyCode) invalidateDrillTags('markbook', renameAyCode);
+    const textAyCode = (textAy as { ay_code: string } | null)?.ay_code ?? null;
+    if (textAyCode) invalidateDrillTags('markbook', textAyCode);
 
     return NextResponse.json({ ok: true, changed: true, sheets_synced: 0 });
   }
@@ -257,13 +280,11 @@ export async function PATCH(
       pt_max_slots,
       qa_max,
       weights_confirmed: true,
-      // Spread, not `display_name: nextDisplayName`, so the key is genuinely
+      // Spread, not `display_name: nextDisplayName`, so each key is genuinely
       // absent when the caller never sent it — writing `undefined` into the
-      // payload would serialise to null and clear a rename on every
-      // weights-only save. See nextDisplayName above.
-      ...(nextDisplayName === undefined
-        ? {}
-        : { display_name: nextDisplayName }),
+      // payload would serialise to null and clear a stored value on every
+      // weights-only save. See `clearable` above.
+      ...Object.fromEntries(changedText.map((e) => [e.column, e.next ?? null])),
     })
     .eq('id', configId);
   if (updateErr)
@@ -350,7 +371,9 @@ export async function PATCH(
         pt_max_slots: before.pt_max_slots,
         qa_max: before.qa_max,
         weights_confirmed: before.weights_confirmed,
-        display_name: before.display_name ?? null,
+        ...Object.fromEntries(
+          changedText.map((e) => [e.column, before[e.column] ?? null])
+        ),
       },
       after: {
         ww_weight: Number(ww_dec),
@@ -360,12 +383,11 @@ export async function PATCH(
         pt_max_slots,
         qa_max,
         weights_confirmed: true,
-        // Unsent means unchanged, so the after-block reports what is still
-        // stored rather than claiming a null nobody wrote.
-        display_name:
-          nextDisplayName === undefined
-            ? (before.display_name ?? null)
-            : nextDisplayName,
+        // Only the text fields that actually moved — an unsent field is
+        // unchanged, and naming it here would claim a write nobody made.
+        ...Object.fromEntries(
+          changedText.map((e) => [e.column, e.next ?? null])
+        ),
       },
       sheets_synced: sync.sheetsSynced,
       sheets_skipped_locked: sync.sheetsSkippedLocked,

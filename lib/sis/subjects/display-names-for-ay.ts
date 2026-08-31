@@ -32,8 +32,8 @@ import {
  *
  * ⚠ A SUBJECT WITH NO CONFIG FOR THE YEAR IS NORMAL, NOT AN ERROR. It means
  * the subject is not set up for that year, or simply was never renamed; either
- * way `subjectDisplayName` falls through to `report_label` and then `name`,
- * which is what those loaders showed before this existed.
+ * way `subjectDisplayName` falls through to `name`, which is what those
+ * loaders showed before this existed.
  *
  * ⚠ DISPLAY ONLY. Never key anything off the value returned here — a rename
  * changes it and `subjects.code` does not. Codes are the identity every static

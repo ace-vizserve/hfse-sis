@@ -59,13 +59,12 @@ export function NewSubjectForm({
   onSuccess: (subject: NewSubjectResult) => void;
   onCancel: () => void;
 }) {
-  // Two generics because SubjectCreateSchema has a transform
-  // (report_label): TFieldValues (what RHF's Controllers actually hold,
-  // pre-transform — report_label optional) vs the third generic,
-  // TTransformedValues (what handleSubmit's callback receives, post-
-  // transform — report_label always string | null). Passing just one
-  // generic here would pin both to the same shape and mismatch the
-  // resolver's own inferred type.
+  // Three generics, kept after migration 138 removed the schema's only
+  // transformed field (report_label, now per academic year on
+  // subject_configs): TFieldValues is what RHF's Controllers hold,
+  // TTransformedValues is what handleSubmit receives. The two shapes are
+  // identical today, and stating both keeps this form correct the moment a
+  // transform comes back rather than failing then.
   const form = useForm<SubjectCreateFormInput, unknown, SubjectCreateInput>({
     resolver: zodResolver(SubjectCreateSchema),
     defaultValues: {
@@ -73,11 +72,6 @@ export function NewSubjectForm({
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
-      // No visible field for this at creation time — a brand-new subject
-      // can have its report label set afterward via the catalog row's
-      // edit drawer. Explicit null (not omitted) since the schema's
-      // transform makes the output type string | null, never undefined.
-      report_label: null,
     },
   });
 
@@ -87,7 +81,6 @@ export function NewSubjectForm({
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
-      report_label: null,
     });
     // Reset once on mount only — this form is embedded fresh each time its
     // chrome (Dialog/Sheet) opens (both callers unmount-on-close), so a
