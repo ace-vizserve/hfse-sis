@@ -12,16 +12,19 @@ import {
   APPLICATION_TERMINAL_STATUSES,
   ENROLLED_PREREQ_STAGES,
   evaluateEnrolledFlip,
+  findStageCompletionBlockers,
   isAdmissionsStageFrozen,
   POST_ENROLMENT_EDITABLE_STAGES,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
+  stageCompletionMessage,
   StageUpdateSchema,
   validateTerminalReason,
   type StageKey,
 } from '@/lib/schemas/sis';
 import { validateSectionChoice } from '@/lib/sis/class-assignment';
+import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
 import {
   DOCUMENT_SLOTS,
   OPTIONAL_DOCUMENT_SLOT_KEYS,
@@ -589,6 +592,66 @@ export async function PATCH(
       return NextResponse.json(
         { error: gate.error, code: gate.code },
         { status: 422 }
+      );
+    }
+  }
+
+  // 2d) Stage completion gate — a status may not be saved while the fields
+  // that status needs are still blank. Action item #1 from admin training
+  // session #1 (Wynne, @24:43): the school asked for this, and the rules key
+  // on (stage, STATUS) because "the required fields are depending on the
+  // status selected". The rules themselves live in
+  // STAGE_STATUS_REQUIRED_FIELDS, shared with the edit dialog so the button
+  // that disables and the server that refuses cannot drift.
+  //
+  // THE CHECK IS ON THE MERGED ROW — the record as it will stand AFTER this
+  // save, not the edit that was sent. That is the whole point of the feature:
+  // a record already sitting at a finished status with a blank invoice is
+  // refused even on a Remarks-only edit, which is how the existing backlog of
+  // blank fields gets cleared as records are touched. Deliberate (Mr Ace,
+  // explicit), not a side effect. The merge itself is
+  // `resolveEffectiveStageValues`, which follows the same blank rules this
+  // route writes with above ('' clears to null).
+  //
+  // WHY THIS SITS AFTER 2c AND MUST STAY THERE. The application →
+  // Cancelled/Withdrawn → reason rule is in the map too, but 2c's
+  // validateTerminalReason is STRICTER (it also checks the reason is a known
+  // value and demands notes when it is 'other'). Running 2c first means its
+  // specific message wins on the application stage and this block never fires
+  // there — which matters, because every Cancelled/Withdrawn row in
+  // production carries no reason and 2c is already refusing them. Do not move
+  // this earlier, and do not weaken 2c.
+  //
+  // 400, not the 422 the gates above use: this is the response shape the item
+  // was specified with. Left as-is on purpose — please don't "harmonise" it.
+  {
+    // StageUpdateSchema.status is nullable but NOT optional, so in practice
+    // the key is always present; the merge is written for the general case
+    // anyway rather than resting on that.
+    const preImage = before as unknown as Record<string, unknown>;
+    const effective = resolveEffectiveStageValues(
+      cols,
+      preImage,
+      status,
+      extras
+    );
+    const completionBlockers = findStageCompletionBlockers(
+      stageKey,
+      effective.status,
+      effective.extras
+    );
+    if (completionBlockers.length > 0) {
+      return NextResponse.json(
+        {
+          error: stageCompletionMessage(
+            stageKey,
+            effective.status ?? '',
+            completionBlockers
+          ),
+          code: 'stage_fields_required',
+          blockers: completionBlockers,
+        },
+        { status: 400 }
       );
     }
   }
