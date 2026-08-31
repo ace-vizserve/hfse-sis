@@ -52,6 +52,22 @@ export type CellFilingRow = {
    */
   hasEvidence: boolean;
   approvedBy: string | null;
+  /**
+   * The SCHOOL put this on the day, not a parent.
+   *
+   * ⚠ DERIVED FROM THE ABSENCE OF AN APPROVAL LADDER, which costs nothing —
+   * `loadFinalApprovers` already reads `approval_requests` for every row here.
+   * A parent's filing always opens a ladder at the moment it is filed; a
+   * certificate the office records goes in already approved with no ladder at
+   * all, deliberately (`lib/declarations/staff-filing.ts`), so "no request"
+   * and "the school recorded it" are the same row.
+   *
+   * ⚠ IT EXISTS BECAUSE THE SENTENCE WOULD OTHERWISE BE FALSE. Both surfaces
+   * say "Excused by a parent's filing", which is exactly wrong for a
+   * certificate a teacher scanned in themselves — and it is the row this
+   * feature creates most often.
+   */
+  recordedBySchool: boolean;
   declarationId: string;
   /**
    * The approval request, which is what the queue deep-links on.
@@ -132,6 +148,7 @@ export async function loadCellFilingsForSection(
     endDate: row.end_date,
     hasEvidence: row.evidence_path != null || row.evidence_url != null,
     approvedBy: approverByDeclaration.get(row.id) ?? null,
+    recordedBySchool: !requestByDeclaration.has(row.id),
   }));
 }
 

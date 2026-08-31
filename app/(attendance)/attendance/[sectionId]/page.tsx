@@ -330,6 +330,7 @@ export default async function SectionAttendancePage({
               kind: f.declarationType,
               hasEvidence: f.hasEvidence,
               approvedBy: f.approvedBy,
+              recordedBySchool: f.recordedBySchool,
               // ⚠ `?req=` and the REQUEST id — the same deep link the
               // notification bell builds. The queue selects it from rows the
               // reader may already see, so an id they have no business with

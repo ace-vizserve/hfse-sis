@@ -187,6 +187,17 @@ export type CellFiling = {
   kind: 'absence' | 'travel';
   /** A certificate was uploaded or a link was given. Absence only. */
   hasEvidence: boolean;
+  /**
+   * The SCHOOL recorded this, not a parent — a certificate handed in at the
+   * office and scanned onto the day.
+   *
+   * ⚠ IT SUPPRESSES THE FILING CARD ENTIRELY, and that is the point. "Excused
+   * by a parent's filing" is false for one of these, there is no queue entry
+   * to link to (the row goes in with no approval ladder), and the certificate
+   * band below already says a certificate is on the day. The card would be a
+   * wrong sentence pointing at a page that cannot show the row.
+   */
+  recordedBySchool: boolean;
   /** Who gave the final approval. Null if the name could not be resolved. */
   approvedBy: string | null;
   /** Opens the filing in the declarations queue. */
@@ -567,7 +578,7 @@ export function CellMarkDialog({
                       parent's own note is ON the filing, and asking the teacher
                       to write a second explanation under the first is how the
                       two end up disagreeing. */}
-                  {filing ? (
+                  {filing && !filing.recordedBySchool ? (
                     <FilingCard filing={filing} />
                   ) : (
                     <div className="flex flex-col gap-2">
@@ -800,9 +811,16 @@ function OverrideConfirm({
   // an expression. "Marking it cleared" is also not English, so the clear
   // branch rewrites the verb rather than substituting a word into the
   // reviewed absence sentence.
+  // ⚠ "WHAT THE PARENT SENT" IS FALSE FOR A CERTIFICATE THE OFFICE SCANNED IN,
+  // and that row is the commonest one this warning now fires on. What survives
+  // the change is different in each case, so the noun changes with it: a
+  // parent's filing, or the certificate on the day.
+  const survives = filing.recordedBySchool
+    ? 'the certificate on file'
+    : 'what the parent sent';
   const consequence = isClear
-    ? 'Clearing it won’t change what the parent sent.'
-    : `Marking it ${nextWord.toLowerCase()} won’t change what the parent sent.`;
+    ? `Clearing it won’t change ${survives}.`
+    : `Marking it ${nextWord.toLowerCase()} won’t change ${survives}.`;
   const confirmLabel = isClear
     ? 'Clear the mark'
     : `Mark ${nextWord.toLowerCase()}`;
@@ -820,9 +838,11 @@ function OverrideConfirm({
             exactly what it looked like on screen. Building the sentence in JS
             removes the whole class of bug rather than re-adding one space. */}
         <p className="text-[12px] leading-relaxed text-foreground">
-          {filing.approvedBy
-            ? `${filing.approvedBy} approved this day as excused.`
-            : 'The school approved this day as excused.'}{' '}
+          {filing.recordedBySchool
+            ? 'The school office recorded a certificate for this day.'
+            : filing.approvedBy
+              ? `${filing.approvedBy} approved this day as excused.`
+              : 'The school approved this day as excused.'}{' '}
           <span className="text-muted-foreground">{consequence}</span>
         </p>
       </div>

@@ -670,7 +670,12 @@ function DailyPanel({
                     the excused block — and the note is where a teacher records
                     what the filing does not cover, such as a child coming back
                     early from a holiday their parent filed to the Friday. */}
-                {filing && (
+                {/* ⚠ NOT for a certificate the office scanned in itself.
+                    "Excused by a parent's filing" is false for one of those,
+                    and the link goes to a queue that cannot show the row —
+                    it goes in with no approval ladder. The certificate band
+                    inside the excused block below says what there is to say. */}
+                {filing && !filing.recordedBySchool && (
                   <FilingLine filing={filing} studentName={e.studentName} />
                 )}
 

@@ -99,6 +99,10 @@ const ABSENCE_FILING: CellFiling = {
   kind: 'absence',
   hasEvidence: true,
   approvedBy: 'Ms Lhen Mendoza',
+  // A PARENT filed this one. A certificate the office scanned in carries no
+  // approval ladder, sets this true, and is deliberately not shown as a
+  // parent's filing.
+  recordedBySchool: false,
   href: '/attendance/declarations?req=abc',
 };
 
@@ -108,6 +112,7 @@ const TRAVEL_FILING: CellFiling = {
   // Always false for travel — the schema forbids a holiday carrying evidence.
   hasEvidence: false,
   approvedBy: 'Ms Elaine Wee',
+  recordedBySchool: false,
   href: '/attendance/declarations?req=xyz',
 };
 

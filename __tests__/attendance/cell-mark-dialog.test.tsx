@@ -228,6 +228,7 @@ describe('the medical certificate slot', () => {
         kind: 'absence',
         hasEvidence: true,
         approvedBy: 'Ms Lhen Mendoza',
+        recordedBySchool: false,
         href: '/attendance/declarations?req=r1',
       },
     });
@@ -247,6 +248,7 @@ describe('the medical certificate slot', () => {
         kind: 'travel',
         hasEvidence: false,
         approvedBy: 'Ms Lhen Mendoza',
+        recordedBySchool: false,
         href: '/attendance/declarations?req=r2',
       },
     });
@@ -343,6 +345,9 @@ describe('a day a parent filed for', () => {
     kind: 'absence' as const,
     hasEvidence: true,
     approvedBy: 'Ms Lhen Mendoza',
+    // A PARENT filed this one. The school's own certificate uploads set this
+    // true and are shown differently — see the group below.
+    recordedBySchool: false,
     href: '/attendance/declarations?filing=abc',
   };
 
@@ -356,6 +361,7 @@ describe('a day a parent filed for', () => {
     // Always false for travel; the schema forbids a holiday carrying evidence.
     hasEvidence: false,
     approvedBy: 'Ms Elaine Wee',
+    recordedBySchool: false,
     href: '/attendance/declarations?req=xyz',
   };
 
