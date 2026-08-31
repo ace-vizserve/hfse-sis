@@ -23,6 +23,16 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellMarkDialog } from '@/components/attendance/cell-mark-dialog';
 
+// The excused body now carries the medical-certificate control, and its write
+// lifecycle (`useWriteAction`) reaches `useRouter` — which throws outright
+// without an app router mounted. Same three-line stub the daily-register suite
+// uses; nothing below asserts on navigation.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/attendance/section-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 // The long date the grid now passes — see `cellDateLabel` in wide-grid.tsx.
 const DATE_LABEL = 'Friday, 7 August 2026';
 const NOTE_LABEL = `Note for Reyes, Ana on ${DATE_LABEL}`;
@@ -35,6 +45,8 @@ function setup(overrides: Partial<Parameters<typeof CellMarkDialog>[0]> = {}) {
       open
       onOpenChange={onOpenChange}
       studentName="Reyes, Ana"
+      sectionStudentId="11111111-1111-4111-8111-111111111111"
+      date="2026-08-07"
       indexNumber={12}
       dateLabel={DATE_LABEL}
       status={null}
@@ -177,25 +189,68 @@ describe('no class is not a mark a person picks', () => {
 });
 
 /**
- * The certificate slot — the second reason this stopped being a popover.
+ * The certificate slot — the second reason this stopped being a popover, and
+ * live since 2026-08-31.
  *
- * Nothing is built yet. The empty state says so in as many words rather than
- * pretending, because a control that looks live and does nothing is worse than
- * one that admits it is coming.
+ * Mr Ace: *"the simplest way is just allow the SIS users to upload the MC."*
+ * The band is a real control now, and what these pin is WHEN it is offered.
+ * The control's own behaviour has its own suite
+ * (`__tests__/attendance/medical-certificate-field.test.tsx`).
  */
 describe('the medical certificate slot', () => {
-  it('appears with the excused reasons and says it is not ready', async () => {
-    const { user } = setup();
-    expect(screen.queryByText('Medical certificate')).toBeNull();
-
-    await user.click(screen.getByRole('radio', { name: 'Excused' }));
+  it('appears on a day that is marked excused', () => {
+    setup({ status: 'EX', exReason: 'mc' });
     expect(screen.getByText('Medical certificate')).toBeTruthy();
-
-    const slot = screen.getByRole('button', { name: /Coming soon/i });
+    expect(screen.getByRole('button', { name: /Choose a file/i })).toBeTruthy();
     expect(
-      (slot as HTMLButtonElement).disabled,
-      'A placeholder that can be clicked is a broken feature, not a promise.'
-    ).toBe(true);
+      screen.getByRole('button', { name: /Save certificate/i })
+    ).toBeTruthy();
+  });
+
+  it('does NOT appear merely because Excused was clicked', async () => {
+    // ⚠ ARMING EXCUSED IS NOT MARKING IT. Clicking the segment only opens the
+    // reasons; nothing is on record until one is picked, and offering to
+    // attach proof to a day carrying no mark is the reasonless EX the note
+    // field is disabled to prevent.
+    const { user } = setup();
+    await user.click(screen.getByRole('radio', { name: 'Excused' }));
+    expect(screen.queryByText('Medical certificate')).toBeNull();
+  });
+
+  it('is replaced by the record once a certificate is on the day', () => {
+    // Whether the parent filed it or the office attached it, the answer to
+    // "is there a certificate" is the same — so the empty control goes.
+    setup({
+      status: 'EX',
+      exReason: 'mc',
+      filing: {
+        dateRange: '7 Aug 2026',
+        kind: 'absence',
+        hasEvidence: true,
+        approvedBy: 'Ms Lhen Mendoza',
+        href: '/attendance/declarations?req=r1',
+      },
+    });
+    expect(screen.getByText('Certificate on file')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Choose a file/i })).toBeNull();
+  });
+
+  it('is absent on a family holiday, which cannot carry one', () => {
+    // `student_declarations_type_shape_chk` forbids evidence on a travel row
+    // outright, so the band is absent rather than present-and-refusing — the
+    // same absence-only rule FilingCard follows.
+    setup({
+      status: 'EX',
+      exReason: 'vacation',
+      filing: {
+        dateRange: '24–27 Aug 2026',
+        kind: 'travel',
+        hasEvidence: false,
+        approvedBy: 'Ms Lhen Mendoza',
+        href: '/attendance/declarations?req=r2',
+      },
+    });
+    expect(screen.queryByText('Medical certificate')).toBeNull();
   });
 
   it('stays out of the way of a plain mark', async () => {

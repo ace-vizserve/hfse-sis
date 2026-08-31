@@ -7,12 +7,12 @@ import {
   Check,
   Eraser,
   FileText,
-  Paperclip,
   Plane,
   TriangleAlert,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { MedicalCertificateField } from '@/components/attendance/medical-certificate-field';
 import { STATUS_SEGMENT_WASH } from '@/components/attendance/status-wash';
 import { Button } from '@/components/ui/button';
 import {
@@ -198,6 +198,14 @@ export type CellMarkDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   studentName: string;
+  /**
+   * The enrolment being marked — `section_students.id`, which is what the
+   * register itself is keyed on. Carried so a medical certificate can be
+   * recorded against this cell without the dialog reaching back into the grid.
+   */
+  sectionStudentId: string;
+  /** The day being marked as `yyyy-MM-dd`, for the certificate write. */
+  date: string;
   /** The student's permanent roster number, shown beside the date. */
   indexNumber: number;
   /** The day being marked, written out in full ("Friday, 7 August 2026"). */
@@ -230,6 +238,8 @@ export function CellMarkDialog({
   open,
   onOpenChange,
   studentName,
+  sectionStudentId,
+  date,
   indexNumber,
   dateLabel,
   status,
@@ -408,7 +418,7 @@ export function CellMarkDialog({
           Padding moves onto the three bands so the hairlines run edge to edge. */}
       <DialogContent
         onKeyDown={onKeyDown}
-        className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-md"
+        className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-xl"
       >
         {/* The student is the headline, so it is set like one. The number and
             the day are reference, so they are mono and quiet. `pr-10` keeps a
@@ -607,31 +617,33 @@ export function CellMarkDialog({
                     </div>
                   )}
 
-                  {/* MC upload slot — the second half of why this stopped
-                      being a popover. Nothing is built yet, and the empty
-                      state says so in as many words rather than pretending:
-                      a control that looks live and does nothing is worse than
-                      one that admits it is coming. Rendered as its own band
-                      under a rule so the eventual uploader lands somewhere
-                      already reserved for it, instead of pushing the note
-                      around on the day it ships. */}
-                  <div className="h-px bg-border" aria-hidden />
-                  <div className="flex flex-col gap-2">
-                    <span className={BAND_EYEBROW}>Medical certificate</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled
-                      className="h-9 w-full justify-start gap-2 border-dashed font-normal"
-                    >
-                      <Paperclip className="size-3.5" aria-hidden />
-                      Coming soon
-                    </Button>
-                    <span className="text-[11px] leading-snug text-muted-foreground">
-                      A certificate for this day will be attached here.
-                    </span>
-                  </div>
+                  {/* The certificate for this day — the slot this band was
+                      reserved for when the panel stopped being a popover.
+                      Mr Ace: *"the simplest way is just allow the SIS users to
+                      upload the MC."*
+
+                      ⚠ ONLY ON A MARK THAT IS ACTUALLY ON RECORD, not merely
+                      on `excusedOpen`. Arming Excused without picking a reason
+                      has saved nothing, and offering to attach proof to a day
+                      that carries no mark is the same reasonless EX the note
+                      field is disabled to prevent.
+
+                      ⚠ NOT ON A FAMILY HOLIDAY. A travel filing carries no
+                      certificate and the schema forbids it one, so the band is
+                      absent rather than present-and-refusing — the same
+                      absence-only rule `FilingCard` follows when it declines to
+                      say "no certificate" on a holiday. */}
+                  {status === 'EX' && filing?.kind !== 'travel' && (
+                    <>
+                      <div className="h-px bg-border" aria-hidden />
+                      <MedicalCertificateField
+                        sectionStudentId={sectionStudentId}
+                        date={date}
+                        studentName={studentName}
+                        hasCertificate={filing?.hasEvidence === true}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </>

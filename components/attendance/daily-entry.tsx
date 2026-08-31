@@ -34,6 +34,7 @@ import type { DailyEntryRow } from '@/lib/attendance/queries';
 // towards giving it its own copy of the words.
 import type { CellFiling } from '@/components/attendance/cell-mark-dialog';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
+import { MedicalCertificateField } from '@/components/attendance/medical-certificate-field';
 import {
   computeSubmitEntries,
   encodableDates,
@@ -746,6 +747,37 @@ function DailyPanel({
                       aria-label={`Note for ${e.studentName}`}
                       className="min-h-0 w-full resize-none px-2 py-1.5 text-[12px] leading-snug"
                     />
+
+                    {/* The certificate for this day — the same control the
+                        term sheet's marking dialog carries, imported rather
+                        than rebuilt. Mr Ace: *"the simplest way is just allow
+                        the SIS users to upload the MC."*
+
+                        ⚠ NOT ON A FAMILY HOLIDAY. A travel filing carries no
+                        certificate and the schema forbids it one, so the band
+                        is absent rather than present-and-refusing — the same
+                        absence-only rule `FilingLine` follows when it declines
+                        to say "no certificate" on a holiday.
+
+                        ⚠ It writes on its own, and does NOT wait for Submit.
+                        The certificate is evidence about the day; the marks
+                        below are the register. Holding proof hostage to a
+                        batch the teacher may abandon is how it ends up back in
+                        a drawer. */}
+                    {filing?.kind !== 'travel' && (
+                      <>
+                        <div
+                          className="h-px bg-foreground/10"
+                          aria-hidden="true"
+                        />
+                        <MedicalCertificateField
+                          sectionStudentId={e.enrolmentId}
+                          date={date}
+                          studentName={e.studentName}
+                          hasCertificate={filing?.hasEvidence === true}
+                        />
+                      </>
+                    )}
                   </div>
                 )}
               </li>

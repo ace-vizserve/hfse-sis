@@ -1154,6 +1154,8 @@ export function AttendanceWideGrid({
             if (!o) setActiveCell(null);
           }}
           studentName={activeEnrolment.studentName}
+          sectionStudentId={activeCell.enrolmentId}
+          date={activeCell.iso}
           indexNumber={activeEnrolment.indexNumber}
           dateLabel={cellDateLabel(activeCell.iso)}
           status={activeCellState?.status ?? null}
