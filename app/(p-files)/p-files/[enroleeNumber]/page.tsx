@@ -316,6 +316,11 @@ export default async function StudentDocumentDetailPage({
                 // moved to the queue above (KD #91's one-document-one-place
                 // pass), so `validate` is the only right it needs.
                 canWrite={canValidateDocs}
+                // ...except for school forms, which are deliberately absent
+                // from that queue (nobody chases a family for a form the
+                // school writes), so the card is the ONLY place their upload
+                // can live. Without this they are visible and un-uploadable.
+                canUpload={canUploadDocs && g.group === 'school'}
                 studentName={student.fullName}
                 recipients={student.recipients}
                 lastReminderAt={outreach?.lastReminderAt ?? null}

@@ -15,6 +15,7 @@ import {
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { RejectDialog } from '@/components/p-files/document-validation/reject-dialog';
+import { UploadDialog } from '@/components/p-files/upload-dialog';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,20 @@ type DocumentCardProps = {
   ayCode: string;
   /** Whether the viewing role can upload / replace. Admin viewers read-only. */
   canWrite?: boolean;
+  /**
+   * Show Upload / Replace on the card itself.
+   *
+   * Normally false, and the comment further down explains why: for documents a
+   * FAMILY sends in, uploading lives in the action queue at the top of the page
+   * and nowhere else, so one document is never two rows with two vocabularies.
+   *
+   * School forms are the exception, because they are not in that queue at all.
+   * The queue is a chase worklist — every row offers to remind a parent — and
+   * nobody chases a family for a form the school writes itself. Without this
+   * the eight school forms could be seen and never uploaded, which is exactly
+   * what shipped for one commit.
+   */
+  canUpload?: boolean;
   /** Student full name — used in the reject-dialog description. */
   studentName?: string;
   /** Parent / guardian emails on file — drives Notify dialog recipient list. */
@@ -209,6 +224,7 @@ export function DocumentCard({
   meta,
   ayCode,
   canWrite = false,
+  canUpload = false,
   studentName = '',
   recipients,
   lastReminderAt,
@@ -377,7 +393,31 @@ export function DocumentCard({
 
             Approve / Reject below stay: approving a file a parent has already
             sent is a different act from chasing one that hasn't arrived, it is
-            done while looking at the file, and the queue does not offer it. */}
+            done while looking at the file, and the queue does not offer it.
+
+            `canUpload` is the one exception, and it exists for school forms —
+            see the prop's own comment. They are absent from the queue by
+            design, so the card is the only place their upload can live. */}
+        {canUpload && (
+          <UploadDialog
+            enroleeNumber={enroleeNumber}
+            slotKey={slotKey}
+            label={label}
+            expires={expires}
+            meta={meta}
+            isReplacement={hasFile}
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+              >
+                <Upload className="size-3" />
+                {hasFile ? 'Replace file' : 'Upload file'}
+              </Button>
+            }
+          />
+        )}
         {url && (
           <Button
             asChild
