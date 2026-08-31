@@ -233,6 +233,10 @@ const SUBJECT_MATH = {
   code: 'MATH',
   name: 'Mathematics',
   report_label: null,
+  // The per-year name (migration 137). Null here because the stub below
+  // returns no subject_configs.display_name — the ordinary case, where a year
+  // never renamed the subject and the catalogue name stands.
+  display_name: null,
   is_examinable: true,
 };
 
@@ -877,6 +881,11 @@ describe('buildReportCard', () => {
         code: SUBJECT_MOTHER_TONGUE_TARGET.code,
         name: 'Mother Tongue (Filipino)',
         report_label: null,
+        // Both overrides are deliberately null on a merged row: the composed
+        // "{Target} ({Source})" string above already IS the final display
+        // text, and leaving either populated would let the renderer
+        // re-substitute over it. See resolveReportSubjects.
+        display_name: null,
         is_examinable: false,
       });
       // Filipino's T1 data passed through onto the merged row unchanged.

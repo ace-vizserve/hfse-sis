@@ -11,6 +11,7 @@ import type {
   ReportCardPayload,
 } from '@/lib/report-card/build-report-card';
 import { AnnualLetterInput } from '@/components/grading/annual-letter-input';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 export function ReportCardDocument({
   payload,
@@ -135,7 +136,10 @@ export function ReportCardDocument({
                 {subjects.map((row) => (
                   <tr key={row.subject.id} className="border-t border-hairline">
                     <td className="px-4 py-2 font-medium">
-                      {row.subject.report_label ?? row.subject.name}
+                      {/* The row carries name, report_label and this year's
+                          display_name; one rule turns the three into the words
+                          on the card (migration 137). */}
+                      {subjectDisplayName(row.subject, row.subject)}
                     </td>
                     {visibleTerms.map((t) => {
                       const termKey = `t${t.term_number}` as

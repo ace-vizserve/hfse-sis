@@ -12,6 +12,7 @@ import {
 } from '@/lib/compute/letter-grade';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   DEFAULT_SCHOOL_CONFIG,
   getSchoolConfig,
@@ -39,6 +40,18 @@ export type SubjectRow = {
     code: string;
     name: string;
     report_label: string | null;
+    /**
+     * What the school called this subject IN THIS ACADEMIC YEAR — MAPEH on an
+     * AY2025 card, STAR on an AY2026 one (migration 137). Null means the year
+     * never renamed it, so `report_label` and then `name` answer instead.
+     *
+     * Carried as its own field beside `report_label` rather than folded into
+     * `name`, for the same reason `report_label` is: the raw catalogue name
+     * stays available, and one place resolves the three into display text.
+     * That place is `subjectDisplayName`, and a row carrying all three passes
+     * itself as both of its arguments.
+     */
+    display_name: string | null;
     is_examinable: boolean;
   };
   t1: Cell;
@@ -420,14 +433,21 @@ export async function buildReportCard(
   // no longer queried by this file at all.
   //
   // report_label (migration 087) — what prints on the report card for a
-  // subject, independent of `name`. Carried through as its OWN field
-  // (never overwriting `name`) all the way to render time — see
+  // subject, independent of `name`. display_name (migration 137) — what the
+  // school called it in THIS academic year. Both are carried through as their
+  // OWN fields (never overwriting `name`) all the way to render time — see
   // components/report-card/report-card-document.tsx, the one place that
-  // resolves `report_label ?? name` for display.
+  // resolves the three into display text, via `subjectDisplayName`.
+  //
+  // The per-year name comes off `subject_configs` — the row this select is
+  // already walking through — so it costs no extra query. That is not a
+  // coincidence: `section_subjects` points at a config, and a config is
+  // per-(subject, academic year), which is the exact grain a per-year name
+  // needs.
   const { data: sectionSubjectRows } = await supabase
     .from('section_subjects')
     .select(
-      'subject_config:subject_configs(subject:subjects(id, code, name, report_label, is_examinable))'
+      'subject_config:subject_configs(display_name, subject:subjects(id, code, name, report_label, is_examinable))'
     )
     .in('section_id', allSectionIds);
 
@@ -436,19 +456,25 @@ export async function buildReportCard(
     code: string;
     name: string;
     report_label: string | null;
+    display_name: string | null;
     is_examinable: boolean;
   };
+  type SubjectCatalogMeta = Omit<SubjectMeta, 'display_name'>;
+  type SectionSubjectConfig = {
+    display_name: string | null;
+    subject: SubjectCatalogMeta | SubjectCatalogMeta[] | null;
+  };
   type SectionSubjectRow = {
-    subject_config:
-      | { subject: SubjectMeta | SubjectMeta[] | null }
-      | { subject: SubjectMeta | SubjectMeta[] | null }[]
-      | null;
+    subject_config: SectionSubjectConfig | SectionSubjectConfig[] | null;
   };
   const subjectsById = new Map<string, SubjectMeta>();
   for (const row of (sectionSubjectRows ?? []) as SectionSubjectRow[]) {
     const cfg = first(row.subject_config);
     const s = cfg ? first(cfg.subject) : null;
-    if (!s) continue;
+    // `!cfg` is redundant with `!s` at runtime (s is only ever read off cfg),
+    // but it is what tells the compiler cfg is non-null on the display_name
+    // read below.
+    if (!cfg || !s) continue;
     // De-dupe: a transferred student's old + new section can both carry a
     // section_subjects row for the same ongoing subject.
     if (subjectsById.has(s.id)) continue;
@@ -457,11 +483,14 @@ export async function buildReportCard(
       code: s.code,
       name: s.name,
       report_label: s.report_label,
+      display_name: cfg.display_name,
       is_examinable: s.is_examinable,
     });
   }
+  // Sort by what the card will actually print, not by the catalogue name — a
+  // subject shown as STAR belongs where STAR sorts.
   const subjects = Array.from(subjectsById.values()).sort((a, b) =>
-    (a.report_label ?? a.name).localeCompare(b.report_label ?? b.name)
+    subjectDisplayName(a, a).localeCompare(subjectDisplayName(b, b))
   );
 
   // Report-card grouping map (migration 080, KD reference: subject_report_map
@@ -492,16 +521,46 @@ export async function buildReportCard(
     const targetIds = Array.from(
       new Set(reportMap.map((r) => r.report_subject_id))
     );
-    const { data: targetRows } = await supabase
-      .from('subjects')
-      .select('id, code, name, report_label, is_examinable')
-      .in('id', targetIds);
-    for (const t of (targetRows ?? []) as ReportTargetMeta[]) {
+    // The per-year name has to be fetched separately here, unlike the section
+    // subjects above. A fan-in TARGET is only ever a display target — "Mother
+    // Tongue" is not attached to any section — so there is no
+    // section_subjects row to reach its config through, and the catalogue row
+    // alone has no year. This asks `subject_configs` directly for this card's
+    // academic year.
+    //
+    // A target with no config for the year is normal, not an error: it means
+    // the school never renamed it, and `subjectDisplayName` falls back
+    // exactly as it does for a null.
+    const [{ data: targetRows }, { data: targetConfigRows }] =
+      await Promise.all([
+        supabase
+          .from('subjects')
+          .select('id, code, name, report_label, is_examinable')
+          .in('id', targetIds),
+        supabase
+          .from('subject_configs')
+          .select('subject_id, display_name')
+          .eq('academic_year_id', ay.id)
+          .in('subject_id', targetIds),
+      ]);
+    const targetDisplayNames = new Map(
+      (
+        (targetConfigRows ?? []) as {
+          subject_id: string;
+          display_name: string | null;
+        }[]
+      ).map((r) => [r.subject_id, r.display_name])
+    );
+    for (const t of (targetRows ?? []) as Omit<
+      ReportTargetMeta,
+      'display_name'
+    >[]) {
       reportTargets.set(t.id, {
         id: t.id,
         code: t.code,
         name: t.name,
         report_label: t.report_label,
+        display_name: targetDisplayNames.get(t.id) ?? null,
         is_examinable: t.is_examinable,
       });
     }

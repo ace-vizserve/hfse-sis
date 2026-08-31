@@ -47,6 +47,13 @@ export function subjectDisplayName(
   subject: SubjectNameSource,
   config?: SubjectConfigNameSource | null
 ): string {
+  // A caller holding a FLATTENED row — one object carrying `name`,
+  // `report_label` and `display_name` together, which is what the report card
+  // and the markbook loaders shape their subject rows into — passes it as both
+  // arguments: `subjectDisplayName(row, row)`. That reads oddly for a moment
+  // and is deliberate; the alternative was a second exported function whose
+  // only job was to destructure, and two entry points into a resolution rule
+  // is exactly how the rule starts to disagree with itself.
   const perYear = config?.display_name?.trim();
   if (perYear) return perYear;
 

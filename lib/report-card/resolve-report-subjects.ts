@@ -31,6 +31,7 @@
 //    data under one of them (source selection resolves per-row).
 
 import type { SubjectRow } from '@/lib/report-card/build-report-card';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 export type ReportTargetMeta = {
   id: string;
@@ -43,6 +44,12 @@ export type ReportTargetMeta = {
   // "{Target} ({Source})" string from two subjects' identities, not a
   // simple passthrough.
   report_label: string | null;
+  /**
+   * What the school called this subject in the card's academic year
+   * (migration 137). Beats `report_label`, which is global. Null when the year
+   * never renamed it.
+   */
+  display_name: string | null;
   is_examinable: boolean;
 };
 
@@ -158,6 +165,7 @@ export function resolveReportSubjects(
             code: target.code,
             name: target.name,
             report_label: target.report_label,
+            display_name: target.display_name,
             is_examinable: row.subject.is_examinable,
           },
         });
@@ -182,6 +190,12 @@ export function resolveReportSubjects(
         ? candidates[0]
         : candidates
             .slice()
+            // Raw catalogue name ON PURPOSE, unlike every other comparison in
+            // this file. This is a tie-break picking WHICH ROW represents the
+            // group, not a decision about what to print. Resolving it would
+            // make a rename able to change which student's grade a fan-in row
+            // shows, which is a different and much worse kind of change than
+            // a heading reading differently.
             .sort((a, b) => a.subject.name.localeCompare(b.subject.name))[0];
 
     if (!target) {
@@ -198,13 +212,19 @@ export function resolveReportSubjects(
         code: target.code,
         // Composing a new "{Target} ({Source})" string here — a real
         // synthesis of two subjects' identities, not a simple passthrough —
-        // so this is the one place report_label resolution happens ahead of
-        // render time. `report_label: null` on the output row is correct
-        // (not a loss of information): the composed string above already IS
-        // the final display text, so a render-time `report_label ?? name`
-        // fallback should never re-substitute anything for this row.
-        name: `${target.report_label ?? target.name} (${sourceRow.subject.report_label ?? sourceRow.subject.name})`,
+        // so this is the one place name resolution happens ahead of render
+        // time. Both halves resolve through the same rule the renderer uses,
+        // so a fan-in row reads "Mother Tongue (STAR)" in the year STAR was
+        // the name and "Mother Tongue (MAPEH)" in the year it was not.
+        //
+        // `report_label: null` AND `display_name: null` on the output row are
+        // both correct, and for one reason (not a loss of information): the
+        // composed string above already IS the final display text, so a
+        // render-time resolution must never re-substitute anything for this
+        // row. Leaving either populated would do exactly that.
+        name: `${subjectDisplayName(target, target)} (${subjectDisplayName(sourceRow.subject, sourceRow.subject)})`,
         report_label: null,
+        display_name: null,
         is_examinable: sourceRow.subject.is_examinable,
       },
     });
@@ -214,12 +234,12 @@ export function resolveReportSubjects(
   // where its source row(s) sorted — re-sort the final list. (Array.sort is
   // stable, so an input that's already correctly sorted — e.g. every group
   // is single-mapper, nothing changed — round-trips byte-identical.) Sort by
-  // the EFFECTIVE display value (report_label ?? name), not the raw
-  // catalog name — a subject printed under a different report label should
-  // sort where it's shown, not where it's catalogued.
+  // the EFFECTIVE display value, not the raw catalog name — a subject printed
+  // under a different name, whether a global report label or this year's own,
+  // should sort where it is shown rather than where it is catalogued.
   return output.sort((a, b) =>
-    (a.subject.report_label ?? a.subject.name).localeCompare(
-      b.subject.report_label ?? b.subject.name
+    subjectDisplayName(a.subject, a.subject).localeCompare(
+      subjectDisplayName(b.subject, b.subject)
     )
   );
 }

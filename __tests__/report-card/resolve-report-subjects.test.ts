@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<SubjectRow> = {}): SubjectRow {
       code: 'SUB1',
       name: 'Subject One',
       report_label: null,
+      display_name: null,
       is_examinable: true,
     },
     t1: emptyCell,
@@ -40,6 +41,7 @@ describe('resolveReportSubjects', () => {
           code: 'A',
           name: 'Alpha',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       }),
@@ -49,6 +51,7 @@ describe('resolveReportSubjects', () => {
           code: 'B',
           name: 'Bravo',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       }),
@@ -64,6 +67,7 @@ describe('resolveReportSubjects', () => {
         code: 'A',
         name: 'Alpha',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
       t1: { quarterly: 93, letter: null, is_na: false },
@@ -76,6 +80,7 @@ describe('resolveReportSubjects', () => {
         code: 'B',
         name: 'Bravo',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
     });
@@ -92,6 +97,7 @@ describe('resolveReportSubjects', () => {
           code: 'A',
           name: 'Alpha',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -102,6 +108,7 @@ describe('resolveReportSubjects', () => {
           code: 'B',
           name: 'Bravo',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -117,6 +124,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAPEH',
         name: 'MAPEH',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -132,6 +140,7 @@ describe('resolveReportSubjects', () => {
           code: 'MAPEH',
           name: 'MAPEH',
           report_label: 'STAR',
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -146,6 +155,7 @@ describe('resolveReportSubjects', () => {
       code: 'MAPEH',
       name: 'MAPEH',
       report_label: 'STAR',
+      display_name: null,
       is_examinable: false,
     });
   });
@@ -157,6 +167,7 @@ describe('resolveReportSubjects', () => {
         code: 'FIL',
         name: 'Filipino',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -167,6 +178,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAN',
         name: 'Mandarin',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'NA', is_na: true },
@@ -186,6 +198,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -201,6 +214,7 @@ describe('resolveReportSubjects', () => {
       code: 'MT',
       name: 'Mother Tongue (Filipino)',
       report_label: null,
+      display_name: null,
       is_examinable: false,
     });
     expect(result[0].t1).toEqual(rowA.t1);
@@ -213,6 +227,7 @@ describe('resolveReportSubjects', () => {
         code: 'FIL',
         name: 'Filipino',
         report_label: 'Filipino Language',
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -223,6 +238,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAN',
         name: 'Mandarin',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
     });
@@ -238,6 +254,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: 'MT',
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -263,6 +280,7 @@ describe('resolveReportSubjects', () => {
         code: 'FIL',
         name: 'Filipino',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
     });
@@ -272,6 +290,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAN',
         name: 'Mandarin',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'B', is_na: false },
@@ -288,6 +307,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -309,6 +329,7 @@ describe('resolveReportSubjects', () => {
         code: 'FIL',
         name: 'Filipino',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
     });
@@ -318,6 +339,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAN',
         name: 'Mandarin',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
     });
@@ -327,6 +349,7 @@ describe('resolveReportSubjects', () => {
         code: 'MATH',
         name: 'Mathematics',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
       t1: { quarterly: 90, letter: null, is_na: false },
@@ -344,6 +367,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -354,6 +378,7 @@ describe('resolveReportSubjects', () => {
           code: 'MATH',
           name: 'Mathematics',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -376,6 +401,7 @@ describe('resolveReportSubjects', () => {
         code: 'A',
         name: 'Alpha',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
       t1: { quarterly: 85, letter: null, is_na: false },
@@ -391,6 +417,7 @@ describe('resolveReportSubjects', () => {
           code: 'T',
           name: 'Target Subject',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -402,6 +429,7 @@ describe('resolveReportSubjects', () => {
       code: 'T',
       name: 'Target Subject',
       report_label: null,
+      display_name: null,
       is_examinable: true,
     });
     // Cell data passes through unchanged (single-mapper groups never
@@ -417,6 +445,7 @@ describe('resolveReportSubjects', () => {
         code: 'ZED',
         name: 'Zed Subject',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -427,6 +456,7 @@ describe('resolveReportSubjects', () => {
         code: 'ALP',
         name: 'Alpha Subject',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'B', is_na: false },
@@ -443,6 +473,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -471,6 +502,7 @@ describe('resolveReportSubjects', () => {
         code: 'HR',
         name: 'Homeroom',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
       t1: { quarterly: 88, letter: null, is_na: false },
@@ -481,6 +513,7 @@ describe('resolveReportSubjects', () => {
         code: 'FIL',
         name: 'Filipino',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
       t1: { quarterly: null, letter: 'A', is_na: false },
@@ -491,6 +524,7 @@ describe('resolveReportSubjects', () => {
         code: 'MAN',
         name: 'Mandarin',
         report_label: null,
+        display_name: null,
         is_examinable: false,
       },
     });
@@ -500,6 +534,7 @@ describe('resolveReportSubjects', () => {
         code: 'SCI',
         name: 'Science',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
       t1: { quarterly: 91, letter: null, is_na: false },
@@ -523,6 +558,7 @@ describe('resolveReportSubjects', () => {
           code: 'MT',
           name: 'Mother Tongue',
           report_label: null,
+          display_name: null,
           is_examinable: false,
         },
       ],
@@ -533,6 +569,7 @@ describe('resolveReportSubjects', () => {
           code: 'HR',
           name: 'Homeroom',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -543,6 +580,7 @@ describe('resolveReportSubjects', () => {
           code: 'SCI',
           name: 'Science',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -564,6 +602,7 @@ describe('resolveReportSubjects', () => {
         code: 'A',
         name: 'Alpha',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
     });
@@ -573,6 +612,7 @@ describe('resolveReportSubjects', () => {
         code: 'B',
         name: 'Bravo',
         report_label: null,
+        display_name: null,
         is_examinable: true,
       },
     });
@@ -588,6 +628,7 @@ describe('resolveReportSubjects', () => {
           code: 'A',
           name: 'Alpha',
           report_label: 'Zulu',
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -598,6 +639,7 @@ describe('resolveReportSubjects', () => {
           code: 'B',
           name: 'Bravo',
           report_label: null,
+          display_name: null,
           is_examinable: true,
         },
       ],
@@ -609,5 +651,124 @@ describe('resolveReportSubjects', () => {
     );
     // Bravo ("Bravo") sorts before Alpha's relabeled "Zulu".
     expect(result.map((r) => r.subject.id)).toEqual(['b', 'a']);
+  });
+});
+
+/**
+ * The per-year name on a report card (migration 137).
+ *
+ * MAPEH became STAR in AY2026 and AY2025 keeps saying MAPEH, so the same
+ * subject sorts and prints differently depending on whose card it is. These
+ * pin the two places this file decides display text — the sort, and the
+ * fan-in composition — because both were reading the raw catalogue name
+ * before, and a card that sorts by one name while printing another is the
+ * confusing half of getting this wrong.
+ */
+describe('resolveReportSubjects — the name the year uses', () => {
+  it('sorts by this year’s name, not the catalogue name', () => {
+    // Catalogue order would be Alpha then MAPEH. Renamed to STAR for this
+    // year, MAPEH sorts second on the printed card either way — so use a name
+    // that MOVES it: "Aardvark" must come first despite cataloguing as MAPEH.
+    const alpha = makeRow({
+      subject: {
+        id: 'a',
+        code: 'A',
+        name: 'Alpha',
+        report_label: null,
+        display_name: null,
+        is_examinable: true,
+      },
+    });
+    const mapeh = makeRow({
+      subject: {
+        id: 'm',
+        code: 'MAPEH',
+        name: 'MAPEH',
+        report_label: null,
+        display_name: 'Aardvark',
+        is_examinable: true,
+      },
+    });
+    const result = resolveReportSubjects([alpha, mapeh], [], new Map());
+    expect(result.map((r) => r.subject.id)).toEqual(['m', 'a']);
+  });
+
+  it('beats a global report label — the year is the more specific statement', () => {
+    const row = makeRow({
+      subject: {
+        id: 'm',
+        code: 'MAPEH',
+        name: 'MAPEH',
+        report_label: 'Zulu',
+        display_name: 'Aardvark',
+        is_examinable: true,
+      },
+    });
+    const other = makeRow({
+      subject: {
+        id: 'b',
+        code: 'B',
+        name: 'Bravo',
+        report_label: null,
+        display_name: null,
+        is_examinable: true,
+      },
+    });
+    // Sorting on report_label would put Bravo first; on display_name, MAPEH.
+    const result = resolveReportSubjects([other, row], [], new Map());
+    expect(result.map((r) => r.subject.id)).toEqual(['m', 'b']);
+  });
+
+  it('composes a fan-in row from both sides’ per-year names', () => {
+    const filipino = makeRow({
+      subject: {
+        id: 'fil',
+        code: 'FIL',
+        name: 'Filipino',
+        report_label: null,
+        display_name: 'Filipino (this year)',
+        is_examinable: false,
+      },
+      t1: { quarterly: 92, letter: 'A', is_na: false },
+    });
+    const mandarin = makeRow({
+      subject: {
+        id: 'man',
+        code: 'MAN',
+        name: 'Mandarin',
+        report_label: null,
+        display_name: null,
+        is_examinable: false,
+      },
+    });
+    const reportMap: ReportMapEntry[] = [
+      { subject_id: 'fil', report_subject_id: 'mt' },
+      { subject_id: 'man', report_subject_id: 'mt' },
+    ];
+    const targets = new Map<string, ReportTargetMeta>([
+      [
+        'mt',
+        {
+          id: 'mt',
+          code: 'MT',
+          name: 'Mother Tongue',
+          report_label: null,
+          display_name: 'Languages',
+          is_examinable: false,
+        },
+      ],
+    ]);
+
+    const result = resolveReportSubjects(
+      [filipino, mandarin],
+      reportMap,
+      targets
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].subject.name).toBe('Languages (Filipino (this year))');
+    // Both overrides cleared: the composed string IS the final text, so a
+    // renderer must not re-substitute over it.
+    expect(result[0].subject.display_name).toBeNull();
+    expect(result[0].subject.report_label).toBeNull();
   });
 });
