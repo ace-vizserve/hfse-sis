@@ -686,6 +686,160 @@ export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
   orientation: ['Pending', 'Finished', 'Cancelled'],
 } as const;
 
+// ── What a stage needs before it can hold a given status ──────────────────
+//
+// WHY THIS KEYS ON (STAGE, STATUS) AND NOT ON STAGE ALONE. The fields a stage
+// needs depend on where that stage has got to — Mr Ace: "the required fields
+// are depending on the status selected" (Wynne, admin training session #1
+// @24:43). Fees at 'Invoiced' needs an invoice number and nothing else; the
+// same stage at 'Paid' needs the payment date too. A per-stage list could not
+// express that without demanding a payment date the moment an invoice is sent.
+//
+// ENFORCED ON EVERY SAVE, NOT ONLY WHEN THE STATUS CHANGES. Many records
+// already sit at a finished status with the fields behind it blank. Checking
+// the row as it will stand AFTER the save — rather than only when someone
+// moves the status — is what clears that backlog: each record gets completed
+// the next time anyone touches it. This is the school's ask, not our
+// invention. Mr Ace, explicit: "they requested the enforcement not us".
+//
+// PRESENCE ONLY. A field counts as filled when it is non-empty after trimming.
+// No format checks, no ranges, no "is this date in the past" — those are a
+// different job and belong wherever that job lives, not here.
+//
+// `class` IS DELIBERATELY ABSENT AND MUST STAY ABSENT. The class stage has no
+// edit dialog, so no human could ever satisfy a rule on it. Its columns are
+// written by the Enrolled flip and by the assign-section route, and enforcing
+// classAY / classLevel / classSection against write paths that never set them
+// would risk breaking section assignment in order to fix a blank field. Do not
+// add a `class` rule.
+//
+// `documents`, `contract` and `orientation` carry no extra fields at all
+// (STAGE_COLUMN_MAP[...].extras is []), so there is nothing to require on
+// them. `documents` only becomes enforceable once the P-Files slots work
+// lands and gives it something to point at.
+//
+// The `application` → terminalReason rule is ALSO enforced, more strictly, by
+// validateTerminalReason below — which additionally checks the reason is one
+// of the known values and demands notes when it is 'other'. The rule is
+// restated here so this map is a complete statement of "what a status
+// requires" and the UI can drive off one source. It does not replace
+// validateTerminalReason, and neither one is redundant.
+//
+// Following isAdmissionsStageFrozen's precedent, this map is SHARED by the
+// stage PATCH route (server enforcement) and the stage edit dialog (which
+// disables save), so the two cannot drift.
+//
+// Outer key: the stage. Inner key: the status value. Value: the fieldKeys from
+// STAGE_COLUMN_MAP[stage].extras that must be filled in at that status, in the
+// order they should be read out to a person.
+export type StageRequiredFieldsByStatus = Readonly<
+  Record<string, readonly string[]>
+>;
+
+export const STAGE_STATUS_REQUIRED_FIELDS: Partial<
+  Record<StageKey, StageRequiredFieldsByStatus>
+> = {
+  registration: {
+    Finished: ['invoice', 'paymentDate'],
+  },
+  fees: {
+    Invoiced: ['invoice'],
+    'Re-invoiced': ['invoice'],
+    Paid: ['invoice', 'paymentDate'],
+  },
+  assessment: {
+    Finished: ['math', 'english'],
+  },
+  supplies: {
+    Claimed: ['claimedDate'],
+  },
+  application: {
+    Cancelled: ['terminalReason'],
+    Withdrawn: ['terminalReason'],
+  },
+} as const;
+
+/** One field a stage is missing before it may hold the status it is being
+ *  saved with. */
+export type StageCompletionBlocker = {
+  /** fieldKey from STAGE_COLUMN_MAP[stage].extras */
+  fieldKey: string;
+  /** Human label from the same entry, e.g. 'Payment date' */
+  label: string;
+};
+
+/**
+ * Which required fields is this stage still missing? Pure — no I/O, no dates,
+ * no randomness, and it never throws.
+ *
+ * The check is on the row as it will stand AFTER the save, so the caller has
+ * to merge the incoming payload over the stored row and pass the result in as
+ * `effectiveExtras`. This function does not read the database.
+ *
+ * An unrecognised status — including the edit dialog's free-text "Other…"
+ * escape hatch — is not gated: we only know what the canonical statuses
+ * require.
+ */
+export function findStageCompletionBlockers(
+  stageKey: StageKey,
+  /** The status the row will hold AFTER this save. */
+  status: string | null | undefined,
+  /** The extras the row will hold AFTER this save, keyed by fieldKey — the
+   *  incoming payload merged over the stored row. Callers must merge; this
+   *  function does not read the database. */
+  effectiveExtras: Record<string, string | null | undefined>
+): StageCompletionBlocker[] {
+  const trimmed = (status ?? '').trim();
+  if (!trimmed) return [];
+
+  const required = STAGE_STATUS_REQUIRED_FIELDS[stageKey]?.[trimmed];
+  if (!required || required.length === 0) return [];
+
+  const extras = STAGE_COLUMN_MAP[stageKey]?.extras ?? [];
+  const blockers: StageCompletionBlocker[] = [];
+
+  for (const fieldKey of required) {
+    const value = effectiveExtras?.[fieldKey];
+    const filled = value != null && String(value).trim() !== '';
+    if (filled) continue;
+    // Fall back to the raw key rather than throwing if the map ever names a
+    // field the column map doesn't carry — the guard test catches that case,
+    // and a save is not the place to blow up over it.
+    const label =
+      extras.find((e) => e.fieldKey === fieldKey)?.label ?? fieldKey;
+    blockers.push({ fieldKey, label });
+  }
+
+  return blockers;
+}
+
+/**
+ * The refusal, in plain English, for both the server response and the dialog.
+ * School admins are not IT, so this says what is missing and nothing about
+ * validation, payloads or fields being required.
+ *
+ * Because the gate looks at the row as it will stand after the save, someone
+ * editing only the Remarks on a record that was already incomplete sees this
+ * too. The wording holds there: it describes the state of the record, not the
+ * edit that was attempted.
+ */
+export function stageCompletionMessage(
+  stageKey: StageKey,
+  status: string,
+  blockers: StageCompletionBlocker[]
+): string {
+  if (blockers.length === 0) return '';
+
+  const names = blockers.map((b) => b.label);
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const verb = names.length === 1 ? 'has' : 'have';
+
+  return `${STAGE_LABELS[stageKey]} is set to ${status.trim()}, so ${list} ${verb} to be filled in first.`;
+}
+
 // The pre-enrolment, actively-in-flight subset of the application stage
 // vocabulary above (STAGE_STATUS_OPTIONS.application minus the post-funnel
 // values Enrolled / Enrolled (Conditional) and the terminals Cancelled /
