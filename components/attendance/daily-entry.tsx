@@ -433,6 +433,10 @@ function DailyPanel({
       loaded,
       termId,
       date,
+      // An approved filing can exist with nothing on the register behind it,
+      // and this is what stops Submit writing Present over such a day. See the
+      // guard in computeSubmitEntries for how that happens.
+      excusedByFiling: new Set(filings.keys()),
     });
     if (entries.length === 0) {
       toast.info('No changes to submit.');

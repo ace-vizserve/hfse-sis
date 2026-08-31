@@ -527,3 +527,67 @@ describe('computeSubmitEntries — excused-absence note', () => {
     });
   });
 });
+
+describe('computeSubmitEntries — a day an approved filing already covers', () => {
+  const date = '2026-06-04';
+  const termId = 't1';
+  const roster = [enr('a', 1), enr('b', 2), enr('c', 3)];
+
+  // ⚠ THE REGRESSION THESE PIN. `computeSubmitEntries` defaults an untouched
+  // student to Present, which is this register's convention. That is safe only
+  // while `marks` seeds from what is on file — and an APPROVED filing does not
+  // guarantee anything is on file: `lib/declarations/register.ts` leaves a
+  // filing approved when its write throws, and writes nothing at all when the
+  // filed range expands to zero school days (its `days.length > 0` guard)
+  // while still reporting success. Both leave `loaded` empty, so without this
+  // guard a whole-class Submit marks the child Present over a day the school
+  // agreed they were away — with nobody touching the row.
+  it('leaves an untouched student alone rather than marking them present', () => {
+    const entries = computeSubmitEntries({
+      roster,
+      marks: new Map<string, DailyMark>(),
+      loaded: new Map<string, DailyMark>(),
+      termId,
+      date,
+      excusedByFiling: new Set(['b']),
+    });
+
+    expect(entries.map((e) => e.sectionStudentId)).toEqual(['a', 'c']);
+    expect(entries.every((e) => e.status === 'P')).toBe(true);
+  });
+
+  it('still obeys a teacher who deliberately picks a mark on that row', () => {
+    // Marking over a filing on purpose is a considered act and stays allowed —
+    // the guard only withholds the SILENT default.
+    const entries = computeSubmitEntries({
+      roster,
+      marks: new Map<string, DailyMark>([
+        ['b', { status: 'A', exReason: null, exNote: null }],
+      ]),
+      loaded: new Map<string, DailyMark>(),
+      termId,
+      date,
+      excusedByFiling: new Set(['b']),
+    });
+
+    expect(entries).toContainEqual({
+      sectionStudentId: 'b',
+      termId,
+      date,
+      status: 'A',
+    });
+  });
+
+  it('changes nothing when no filing covers the day', () => {
+    const entries = computeSubmitEntries({
+      roster,
+      marks: new Map<string, DailyMark>(),
+      loaded: new Map<string, DailyMark>(),
+      termId,
+      date,
+      excusedByFiling: new Set<string>(),
+    });
+
+    expect(entries).toHaveLength(3);
+  });
+});

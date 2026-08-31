@@ -156,11 +156,42 @@ export function computeSubmitEntries(input: {
   loaded: Map<string, DailyMark>;
   termId: string;
   date: string;
+  /**
+   * Enrolments whose day is covered by an APPROVED parent filing. They are
+   * left alone rather than defaulted to Present — see the guard below.
+   */
+  excusedByFiling?: ReadonlySet<string>;
 }): SubmitEntry[] {
-  const { roster, marks, loaded, termId, date } = input;
+  const { roster, marks, loaded, termId, date, excusedByFiling } = input;
   const out: SubmitEntry[] = [];
   for (const e of roster) {
     if (!isEligible(e, date)) continue;
+
+    // ⚠ DO NOT MARK A CHILD PRESENT ON A DAY THE SCHOOL APPROVED AS EXCUSED.
+    //
+    // The `?? {status:'P'}` below is this register's convention — you mark the
+    // exceptions and everyone else is present — and it is normally safe
+    // because `marks` seeds from `loaded`, so a student the approval already
+    // marked EX is in the map and `sameMark` skips them.
+    //
+    // But AN APPROVED FILING DOES NOT GUARANTEE A MARK EXISTS. Two ways it
+    // doesn't: `lib/declarations/register.ts` leaves the filing approved and
+    // only stamps `register_write_error` when the write throws (KD #197 — a
+    // failed register write never un-does the approval), and its
+    // `if (days.length > 0)` guard writes nothing at all when the filed range
+    // expands to zero school days, while still reporting success. In both
+    // cases there is nothing in `loaded` to seed from, so an untouched row
+    // would submit Present over a day the school agreed the child was away —
+    // and nobody is told, because this needs no human error to happen.
+    //
+    // Not touching the row is the whole fix: no entry is emitted, so the day
+    // keeps saying what it already says. A teacher who DELIBERATELY picks a
+    // mark here is still obeyed — that is a considered act, and it is the
+    // other, louder half of this problem, which is not settled yet.
+    if (!marks.has(e.enrolmentId) && excusedByFiling?.has(e.enrolmentId)) {
+      continue;
+    }
+
     const target: DailyMark = marks.get(e.enrolmentId) ?? {
       status: 'P',
       exReason: null,
