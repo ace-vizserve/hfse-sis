@@ -25,12 +25,17 @@ export default async function DocumentValidationApplicantsPage() {
   const ayCode = currentAy.ay_code;
 
   const applicantRows = await loadPendingDocValidation(ayCode);
-  const applicantCount = applicantRows.length;
-  const applicantStudentCount = new Set(
-    applicantRows.map((r) => r.enroleeNumber)
-  ).size;
+  // The loader now returns every applicant against every slot, so
+  // `applicantRows.length` is the size of the TABLE, not the size of the job.
+  // Both numbers in the sentence below describe work waiting for a decision:
+  // documents actually uploaded, and the applicants they belong to.
+  const awaiting = applicantRows.filter((r) => r.status === 'Uploaded');
+  const applicantCount = awaiting.length;
+  const applicantStudentCount = new Set(awaiting.map((r) => r.enroleeNumber))
+    .size;
 
-  if (applicantCount === 0) {
+  // The table still lists everyone; only the empty state keys on the queue.
+  if (applicantRows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-hairline bg-card p-10 text-center">
         <p className="text-sm text-muted-foreground">

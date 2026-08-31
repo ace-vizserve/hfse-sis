@@ -42,9 +42,18 @@ export default async function DocumentValidationEnrolledPage() {
     loadAwaitingVerification(ayCode),
     countAwaitingVerification(ayCode),
   ]);
-  const awaitingStudentCount = new Set(awaitingRows.map((r) => r.enroleeNumber))
-    .size;
+  // Students with something ACTUALLY waiting, not students on the page. The
+  // sentence reads "N documents from M students waiting for review", so both
+  // halves have to describe the same set — pairing a filtered document count
+  // with every student in the year says something untrue.
+  const awaitingStudentCount = new Set(
+    awaitingRows
+      .filter((r) => r.status === 'Uploaded')
+      .map((r) => r.enroleeNumber)
+  ).size;
 
+  // The table lists every student now, so the empty state keys on there being
+  // nobody at all — not on there being nothing to review.
   if (awaitingRows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-hairline bg-card p-10 text-center">

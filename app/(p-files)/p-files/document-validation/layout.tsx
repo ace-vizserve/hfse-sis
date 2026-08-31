@@ -85,7 +85,12 @@ export default async function DocumentValidationLayout({
           {
             href: '/p-files/document-validation/applicants',
             label: 'Applicants',
-            count: applicantRows.length || undefined,
+            // Documents awaiting a DECISION, not rows in the table. The
+            // loader returns every applicant against every slot now, so
+            // `.length` would badge this tab with thousands.
+            count:
+              applicantRows.filter((r) => r.status === 'Uploaded').length ||
+              undefined,
           },
         ]
       : []),
