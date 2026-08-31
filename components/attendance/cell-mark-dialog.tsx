@@ -573,60 +573,78 @@ export function CellMarkDialog({
                     </ToggleGroup>
                   </div>
 
-                  {/* The parent's filing, when one covers this day. It stands
-                      in for the note field rather than sitting beside it: the
-                      parent's own note is ON the filing, and asking the teacher
-                      to write a second explanation under the first is how the
-                      two end up disagreeing. */}
-                  {filing && !filing.recordedBySchool ? (
+                  {/* The parent's filing, when one covers this day. */}
+                  {filing && !filing.recordedBySchool && (
                     <FilingCard filing={filing} />
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className={BAND_EYEBROW}>Note</span>
-                        <span className="text-[11px] text-muted-foreground">
-                          optional
-                        </span>
-                      </div>
-                      {/* Christina's ask (2026-07-31, 31:07) and Melissa's
+                  )}
+
+                  {/* ⚠ THE NOTE SHOWS WHETHER OR NOT A PARENT FILED, and it
+                      used to be REPLACED by the card above it. Mr Ace,
+                      2026-08-31: *"show the note regardless its internal
+                      notes"*.
+
+                      The old reasoning was that the parent's note is already
+                      on the filing, so a second explanation underneath is how
+                      the two come to disagree. That mistook them for the same
+                      fact. `attendance_daily.ex_note` is the SCHOOL'S OWN
+                      record and never leaves the school — migration 109 keeps
+                      it out of `audit_log` deliberately, and no parent route
+                      returns it. `student_declarations.parent_note` is the
+                      parent's message coming IN. One is not a copy of the
+                      other, and a teacher still needs somewhere to put
+                      "certificate seen by the office" or "back Monday" on a
+                      day the parent has already explained in their own words.
+
+                      The either/or was also decided when this was a 288px
+                      popover, where the two genuinely competed for one slot.
+                      It is a dialog now and that constraint is gone. The daily
+                      register already showed both, so this ends a real
+                      disagreement between the two surfaces about one day. */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className={BAND_EYEBROW}>Note</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        optional
+                      </span>
+                    </div>
+                    {/* Christina's ask (2026-07-31, 31:07) and Melissa's
                           (32:44): somewhere to record WHY. Disabled until a
                           reason is chosen, because the note saves as part of
                           the excused mark — typing here first would write the
                           very reasonless EX the disclosure above exists to
                           prevent. */}
-                      <Textarea
-                        rows={3}
-                        value={noteDraft}
-                        disabled={!excusedComplete}
-                        maxLength={EX_NOTE_MAX_LENGTH}
-                        onChange={(e) => setNoteDraft(e.target.value)}
-                        onBlur={commitNote}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            commitNote();
-                          }
-                        }}
-                        placeholder={EX_NOTE_PLACEHOLDER}
-                        aria-label={`Note for ${studentName} on ${dateLabel}`}
-                        className="min-h-0 resize-none border-0 bg-muted px-3 py-2 text-[13px] leading-snug shadow-none"
-                      />
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          {excusedComplete
-                            ? // The one thing about this field that is not
-                              // obvious: it saves on blur, not as you type.
-                              'Saves when you click away.'
-                            : 'Choose a reason to mark this student excused.'}
+                    <Textarea
+                      rows={3}
+                      value={noteDraft}
+                      disabled={!excusedComplete}
+                      maxLength={EX_NOTE_MAX_LENGTH}
+                      onChange={(e) => setNoteDraft(e.target.value)}
+                      onBlur={commitNote}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          commitNote();
+                        }
+                      }}
+                      placeholder={EX_NOTE_PLACEHOLDER}
+                      aria-label={`Note for ${studentName} on ${dateLabel}`}
+                      className="min-h-0 resize-none border-0 bg-muted px-3 py-2 text-[13px] leading-snug shadow-none"
+                    />
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground">
+                        {excusedComplete
+                          ? // The one thing about this field that is not
+                            // obvious: it saves on blur, not as you type.
+                            'Saves when you click away.'
+                          : 'Choose a reason to mark this student excused.'}
+                      </span>
+                      {excusedComplete && (
+                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                          {noteLeft} left
                         </span>
-                        {excusedComplete && (
-                          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                            {noteLeft} left
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* The certificate for this day — the slot this band was
                       reserved for when the panel stopped being a popover.

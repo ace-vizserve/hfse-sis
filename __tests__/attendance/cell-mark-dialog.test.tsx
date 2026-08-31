@@ -386,11 +386,26 @@ describe('a day a parent filed for', () => {
     expect(screen.queryByText(/won't change what the parent sent/)).toBeNull();
   });
 
-  it('replaces the note field rather than sitting beside it', () => {
-    // The parent's own note is on the filing. Asking the teacher to write a
-    // second explanation under the first is how the two end up disagreeing.
+  it('sits beside the note field rather than replacing it', () => {
+    // ⚠ THIS ASSERTION IS THE REVERSE OF WHAT IT WAS. The filing card used to
+    // stand in for the note, on the reasoning that the parent's own note is
+    // already on the filing and a second explanation underneath is how the two
+    // come to disagree. Mr Ace, 2026-08-31: *"show the note regardless its
+    // internal notes"*.
+    //
+    // They are not the same fact. `attendance_daily.ex_note` is the SCHOOL'S
+    // record and never leaves the school — migration 109 keeps it out of
+    // `audit_log`, and no parent route returns it. `parent_note` is the
+    // parent's message coming in. A teacher still needs somewhere to write
+    // "certificate seen by the office" on a day the parent already explained.
+    //
+    // The daily register already showed both, so this also ends a real
+    // disagreement between the two surfaces about the same day.
     setup({ status: 'EX', exReason: 'mc', filing: FILING });
-    expect(screen.queryByLabelText(NOTE_LABEL)).toBeNull();
+    expect(screen.getByLabelText(NOTE_LABEL)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Excused by a parent's filing/)
+    ).toBeInTheDocument();
   });
 
   it('asks before overriding a day the school approved', async () => {

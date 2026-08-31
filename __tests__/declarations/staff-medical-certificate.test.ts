@@ -125,10 +125,14 @@ type Row = Record<string, unknown>;
 let enrolmentRow: Row | null;
 let sectionRow: Row | null;
 let studentRow: Row | null;
-let overlapRows: Row[];
+/** What `findFilingCoveringDays` finds — live filings covering the days. */
+let existingRows: Row[];
 let insertError: { code?: string; message: string } | null;
 let conflictLookupRow: Row | null;
 let inserted: Row | null;
+/** The patch `attachEvidenceToFiling` sent, and what came back. */
+let updated: Row | null;
+let updateReturns: Row[];
 
 function reads(result: unknown) {
   const obj: Record<string, unknown> = {};
@@ -163,15 +167,31 @@ function buildService() {
           in: self,
           lte: self,
           gte: self,
-          // The overlap read is awaited straight off the chain.
+          order: self,
+          // The existing-filing read is awaited straight off the chain.
           then: (
             resolve: (v: unknown) => unknown,
             reject: (e: unknown) => unknown
           ) =>
-            Promise.resolve({ data: overlapRows, error: null }).then(
+            Promise.resolve({ data: existingRows, error: null }).then(
               resolve,
               reject
             ),
+          // The attach. `.is('evidence_path', null).is('evidence_url', null)`
+          // is part of the WHERE clause, so the chain has to survive two of
+          // them before `.select()` resolves.
+          update: (patch: Row) => {
+            updated = patch;
+            const u: Record<string, unknown> = {};
+            const uself = () => u;
+            Object.assign(u, {
+              eq: uself,
+              is: uself,
+              select: () =>
+                Promise.resolve({ data: updateReturns, error: null }),
+            });
+            return u;
+          },
           // The 23505 branch's "what won the race" lookup.
           maybeSingle: () =>
             Promise.resolve({ data: conflictLookupRow, error: null }),
@@ -256,10 +276,24 @@ beforeEach(() => {
     first_name: 'Ana',
     last_name: 'Reyes',
   };
-  overlapRows = [];
+  existingRows = [];
   insertError = null;
   conflictLookupRow = null;
   inserted = null;
+  updated = null;
+  updateReturns = [];
+});
+
+/** A live parent filing covering 2 Sep, with nothing attached to it yet. */
+const parentFiling = (over: Row = {}): Row => ({
+  id: 'decl-parent',
+  declaration_type: 'absence',
+  status: 'pending',
+  start_date: '2026-09-01',
+  end_date: '2026-09-03',
+  evidence_path: null,
+  evidence_url: null,
+  ...over,
 });
 
 // ── 1. Authorisation is the register's ─────────────────────────────────────
@@ -572,48 +606,173 @@ describe('the audit row', () => {
 // ── The duplicate question (point 8) ───────────────────────────────────────
 
 describe('days that are already spoken for', () => {
-  it('refuses when a live parent filing already covers the days', async () => {
+  it('attaches to a live parent filing instead of creating a second row', async () => {
     // ⚠ THE UNIQUE INDEX CANNOT SEE THIS. `student_declarations_no_duplicate_filing`
     // keys on `filed_by`, and a staff filing carries the STAFF member's id — so
     // it can never collide with a parent's row for the same child and dates.
-    // The overlap check is the only thing standing between one illness and two
-    // rows.
-    overlapRows = [
-      {
-        student_id: STUDENT,
-        start_date: '2026-09-01',
-        end_date: '2026-09-03',
-        declaration_type: 'absence',
-        status: 'pending',
-      },
+    // Without this branch one illness becomes two records, which is the split
+    // record migration 125 exists to end.
+    //
+    // ⚠ AND THE PERSON WAS NEVER ASKED. Mr Ace's ask was ONE upload control;
+    // whether a parent has filed is not something the office can know from the
+    // certificate in their hand.
+    existingRows = [parentFiling()];
+    updateReturns = [
+      { status: 'pending', start_date: '2026-09-01', end_date: '2026-09-03' },
     ];
 
     const { status, json } = await post(validBody());
 
-    expect(status).toBe(409);
-    expect(inserted).toBeNull();
-    // Worded for the OFFICE, not for a parent: telling the school to "contact
-    // the school office" would be absurd. It says what exists and what to do
-    // with the certificate in hand.
-    expect(json.error).toMatch(/already has an absence on record/i);
-    expect(json.error).toMatch(/attach the certificate there/i);
-    expect(json.alreadyFiled).toBe(true);
-    expect((json.overlapping as unknown[]).length).toBe(1);
+    expect(status).toBe(200);
+    expect(json.attached).toBe(true);
+    expect(
+      inserted,
+      'a second row is the whole thing this prevents'
+    ).toBeNull();
+    expect(updated).toMatchObject({
+      evidence_path: OWN_PATH,
+      evidence_url: null,
+    });
   });
 
-  it('words an already-approved clash differently', async () => {
-    overlapRows = [
-      {
-        student_id: STUDENT,
-        start_date: '2026-09-02',
-        end_date: '2026-09-02',
-        declaration_type: 'absence',
-        status: 'approved',
-      },
+  it('moves `with_medical` in the SAME statement as the evidence', async () => {
+    // ⚠ `student_declarations_medical_needs_evidence_chk`: for an absence,
+    // `with_medical = true` obliges the row to carry evidence. Read the other
+    // way round — which is how this row got here — a filing with NO evidence
+    // is necessarily `with_medical = false`, because the constraint forbids
+    // the other combination from ever existing. So attaching the proof and
+    // flipping the column are one act; splitting them leaves the row either
+    // refused by the database or claiming there is no certificate when there
+    // is.
+    existingRows = [parentFiling({ status: 'approved' })];
+    updateReturns = [
+      { status: 'approved', start_date: '2026-09-01', end_date: '2026-09-03' },
     ];
+
+    const { status } = await post(validBody());
+
+    expect(status).toBe(200);
+    expect(updated).toMatchObject({ with_medical: true });
+    // The ladder and the register are not this route's business: an approved
+    // filing already wrote its marks, a pending one still needs deciding.
+    expect(updated).not.toHaveProperty('status');
+    expect(updated).not.toHaveProperty('register_written_at');
+  });
+
+  it('takes a link the same way it takes a file', async () => {
+    existingRows = [parentFiling()];
+    updateReturns = [
+      { status: 'pending', start_date: '2026-09-01', end_date: '2026-09-03' },
+    ];
+
+    const { status } = await post(
+      validBody({
+        evidencePath: undefined,
+        evidenceUrl: 'https://mc.gov.sg/abc123',
+      })
+    );
+
+    expect(status).toBe(200);
+    expect(updated).toMatchObject({
+      evidence_path: null,
+      evidence_url: 'https://mc.gov.sg/abc123',
+      with_medical: true,
+    });
+  });
+
+  it('refuses when the day already has a certificate, and changes nothing', async () => {
+    // Replacing it would silently discard whichever one the school actually
+    // looked at.
+    existingRows = [parentFiling({ evidence_path: 'declarations/p1/mc.pdf' })];
+
     const { status, json } = await post(validBody());
+
     expect(status).toBe(409);
-    expect(json.error).toMatch(/already has an approved absence on record/i);
+    expect(updated).toBeNull();
+    expect(inserted).toBeNull();
+    expect(json.error).toMatch(/already has a certificate on file/i);
+    // Plain English: no constraint name, no table name, no status code.
+    expect(String(json.error)).not.toMatch(/_chk|student_declarations|409/);
+  });
+
+  it('refuses when the write loses a race it thought it had won', async () => {
+    // The parent uploading in the portal at the same instant as the office
+    // scanning the paper copy. `evidence_path is null` is in the WHERE clause,
+    // so the loser gets zero rows back rather than overwriting the winner.
+    existingRows = [parentFiling()];
+    updateReturns = [];
+
+    const { status, json } = await post(validBody());
+
+    expect(status).toBe(409);
+    expect(json.error).toMatch(/already has a certificate on file/i);
+  });
+
+  it('will not put a medical certificate on a family holiday', async () => {
+    // `student_declarations_type_shape_chk` forbids a travel row carrying
+    // evidence outright, so the message points at the likeliest cause — the
+    // wrong dates — rather than at the schema.
+    existingRows = [
+      parentFiling({ id: 'decl-travel', declaration_type: 'travel' }),
+    ];
+
+    const { status, json } = await post(validBody());
+
+    expect(status).toBe(409);
+    expect(updated).toBeNull();
+    expect(inserted).toBeNull();
+    expect(json.error).toMatch(/family holiday/i);
+    expect(json.error).toMatch(/check the dates/i);
+  });
+
+  it('prefers the absence when a holiday overlaps it too', async () => {
+    // A certificate belongs on the absence. The travel row is only ever the
+    // answer when it is the only thing there.
+    existingRows = [
+      parentFiling({ id: 'decl-travel', declaration_type: 'travel' }),
+      parentFiling(),
+    ];
+    updateReturns = [
+      { status: 'pending', start_date: '2026-09-01', end_date: '2026-09-03' },
+    ];
+
+    const { status } = await post(validBody());
+    expect(status).toBe(200);
+    expect(updated).toMatchObject({ evidence_path: OWN_PATH });
+  });
+
+  it('audits the attach under the create path’s action, told apart in words', async () => {
+    // ⚠ Same action name deliberately — a new one needs a line in
+    // `ATTENDANCE_AUDIT_ACTIONS` or `allowlist-coverage` fails, and an action
+    // nobody can see is worse than a shared one that reads correctly. With no
+    // approval ladder behind this row, the audit line is the ONLY place either
+    // action is visible.
+    existingRows = [parentFiling()];
+    updateReturns = [
+      { status: 'pending', start_date: '2026-09-01', end_date: '2026-09-03' },
+    ];
+
+    await post(validBody());
+
+    const row = auditRow();
+    expect(row.action).toBe('declaration.approve');
+    // The filing that CHANGED, not the row we would have created.
+    expect(row.entityId).toBe('decl-parent');
+    expect(row.context.attached_to_existing).toBe(true);
+    // ⚠ The filing's OWN dates, which can be wider than the single day the
+    // certificate was recorded against.
+    expect(row.context.start_date).toBe('2026-09-01');
+    expect(row.context.end_date).toBe('2026-09-03');
+    // Presence only — never the document, never the link.
+    expect(JSON.stringify(row.context)).not.toContain(OWN_PATH);
+
+    const { auditContextSummary } = await import('@/lib/audit/humanize');
+    const summary = auditContextSummary('declaration.approve', row.context);
+    expect(summary).toContain('certificate added to the parent’s filing');
+    expect(
+      summary,
+      'Attaching to a filing is not the office recording a fresh absence.'
+    ).not.toContain('recorded by the school office');
   });
 
   it('never surfaces a raw duplicate error to the user', async () => {
@@ -637,10 +796,11 @@ describe('days that are already spoken for', () => {
 
   it('does not let a rejected filing block the office', async () => {
     // A filing turned down for the want of a certificate is precisely when the
-    // office needs to record one. `findOverlappingFilings` counts only
+    // office needs to record one. `findFilingCoveringDays` counts only
     // `pending` and `approved`, and migration 130 removed `rejected` from the
-    // index, so nothing anywhere stands in the way.
-    overlapRows = [];
+    // index, so nothing anywhere stands in the way — and the certificate is
+    // NOT attached to the dead row, where nobody reads it.
+    existingRows = [];
     const { status } = await post(validBody());
     expect(status).toBe(201);
   });
