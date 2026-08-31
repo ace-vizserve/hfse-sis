@@ -4,7 +4,7 @@ Split out of [`10-parent-portal.md`](./10-parent-portal.md) for length. Read it 
 
 Frozen copy of the admissions table definitions, as of 2026-05-15, pulled from the parent portal's Supabase project (verified live against all four AY-prefixed tables). **Update this block whenever the parent portal bumps its schema** — the "what the SIS reads" list in `10-parent-portal.md` only stays accurate if this ground truth does, and `supabase/migrations/012_ay_setup_helpers.sql` (the wizard's DDL template) must be updated in lockstep.
 
-**Changes since 2026-04-20:** `"stpApplicationStatus" text` column + its 4-value CHECK constraint added to `enrolment_applications`; `capture_doc_revision_trigger` body documented on `enrolment_documents`.
+**Changes since 2026-04-20:** `"stpApplicationStatus" text` column + its 4-value CHECK constraint added to `enrolment_applications`; `capture_doc_revision_trigger` body documented on `enrolment_documents`. **2026-08-31 (migration 135, applied):** sixteen columns added to `enrolment_documents` for eight P-Files document slots — uploaded by staff in the P-Files module, never offered by the parent portal — with migration 136 extending the revision-capture trigger to cover them.
 
 **Changes since 2026-05-15 (2026-07, not independently re-verified live — added per operator report):** three columns added to `enrolment_applications` directly on the admissions Supabase project, outside any migration: `"preferredPaymentScheme" text` (∈ Annual (Full Payment) / Quarterly Payment / Monthly Payment), `"preferredPaymentMethod" text` (∈ Bank Transfer / GIRO / Credit/Debit Card Payment), `"marketingReferrerName" text` (the referral person's name when `howDidYouKnowAboutHFSEIS = 'Referral'`). Healed onto every existing AY table + added to `create_ay_admissions_tables` by migration 076 (`supabase/migrations/076_payment_preference_referral_columns.sql`); surfaced read-only on the SIS Profile tab (`lib/schemas/sis.ts::PREFERRED_PAYMENT_SCHEME_OPTIONS` / `PREFERRED_PAYMENT_METHOD_OPTIONS`).
 
@@ -18,7 +18,7 @@ There are **two columns named `applicationStatus`** in the DDL below — one on 
 
 The `*Status` columns on `ay{YY}_enrolment_documents` follow two different state machines depending on whether the slot is expiring or non-expiring. Full reference: `12-p-files-module.md` § Required Documents Per Student.
 
-- **Non-expiring slots** (`idPicture`, `birthCert`, `educCert`, `medical`, `form12`, `icaPhoto`, `financialSupportDocs`, `vaccinationInformation`): `null` → `'Uploaded'` → `'Valid'` (or `'Rejected'`). The `'Uploaded'` intermediate means the parent uploaded the file but registrar hasn't validated yet.
+- **Non-expiring slots** (`idPicture`, `birthCert`, `educCert`, `medical`, `form12`, `icaPhoto`, `financialSupportDocs`, `vaccinationInformation`, plus the eight added by 135 — `lastSchoolRecommendation`, `assessmentResult`, `signedContract`, `newStudentChecksheet`, `pfilesChecklist`, `preCounsellingAck`, `conditionalEnrolment`, `lateEnrolmentForm`): `null` → `'Uploaded'` → `'Valid'` (or `'Rejected'`). The `'Uploaded'` intermediate means the parent uploaded the file but registrar hasn't validated yet. ⚠ **The eight from 135 never reach `'Uploaded'` in practice** — the parent portal offers none of them; they are uploaded in the P-Files module by the P-Files officer and above, and a staff upload writes `'Valid'` directly.
 - **Expiring slots** (`passport`, `pass`, `motherPassport`, `motherPass`, `fatherPassport`, `fatherPass`, `guardianPassport`, `guardianPass`): `null` → `'Valid'` → `'Expired'` (auto-flip when the `*Expiry` column passes today's date). **No `'Uploaded'` intermediate** — the expiry date is itself the validation evidence.
 - `'To follow'` = parent-acknowledged-pending, applies to either type.
 - `'Rejected'` and `'Expired'` both mean the parent must re-upload.
@@ -271,17 +271,47 @@ create table public.ay2026_enrolment_documents (
   "financialSupportDocsStatus" character varying null,
   "vaccinationInformation" text null,
   "vaccinationInformationStatus" character varying null,
+  -- Added by migration 135. Eight P-Files slots, uploaded by the P-Files
+  -- officer and above — NOT by the parent portal, which offers none of them.
+  -- No {key}Expiry on any: these are one-off forms, not renewable documents.
+  "lastSchoolRecommendation" text null,
+  "lastSchoolRecommendationStatus" character varying null,
+  "assessmentResult" text null,
+  "assessmentResultStatus" character varying null,
+  "signedContract" text null,
+  "signedContractStatus" character varying null,
+  "newStudentChecksheet" text null,
+  "newStudentChecksheetStatus" character varying null,
+  "pfilesChecklist" text null,
+  "pfilesChecklistStatus" character varying null,
+  "preCounsellingAck" text null,
+  "preCounsellingAckStatus" character varying null,
+  "conditionalEnrolment" text null,
+  "conditionalEnrolmentStatus" character varying null,
+  "lateEnrolmentForm" text null,
+  "lateEnrolmentFormStatus" character varying null,
   constraint ay2026_enrolment_documents_pkey primary key (id)
 ) TABLESPACE pg_default;
 
--- Fires after UPDATE on any of the 16 document URL columns.
+-- Fires after UPDATE on any of the 24 document URL columns.
 -- Inserts one p_file_revisions row per changed slot (KD #63).
+--
+-- ⚠ THE COLUMN LIST IS LOAD-BEARING, not documentation. `after update OF`
+-- fires only when a LISTED column is in the UPDATE's SET clause, so a slot
+-- missing from it is silently never captured — a replaced document would
+-- overwrite its predecessor with no copy kept. The list is generated by
+-- `attach_doc_revision_trigger()`, which holds its own copy of the slot keys
+-- SEPARATE from `capture_doc_revision()`'s. Both were extended by migration
+-- 136; extending only one leaves a fix that looks complete and records nothing.
 create trigger capture_doc_revision_trigger
 after update OF
   form12, medical, passport, "birthCert", pass, "educCert",
   "motherPassport", "motherPass", "fatherPassport", "fatherPass",
   "guardianPassport", "guardianPass", "idPicture",
-  "icaPhoto", "financialSupportDocs", "vaccinationInformation"
+  "icaPhoto", "financialSupportDocs", "vaccinationInformation",
+  "lastSchoolRecommendation", "assessmentResult", "signedContract",
+  "newStudentChecksheet", "pfilesChecklist", "preCounsellingAck",
+  "conditionalEnrolment", "lateEnrolmentForm"
 on ay2026_enrolment_documents
 for each row execute function capture_doc_revision();
 ```
