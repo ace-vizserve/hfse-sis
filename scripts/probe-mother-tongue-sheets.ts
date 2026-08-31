@@ -128,10 +128,7 @@ async function main() {
   }
 
   console.log('\n── the three subjects as the catalogue holds them ──');
-  for (const s of subs)
-    console.log(
-      `  ${s.code.padEnd(9)} name="${s.name}" report_label=${s.report_label ? `"${s.report_label}"` : 'null'}`
-    );
+  for (const s of subs) console.log(`  ${s.code.padEnd(9)} name="${s.name}"`);
 }
 
 main().catch((e) => {
