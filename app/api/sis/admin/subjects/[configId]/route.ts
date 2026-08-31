@@ -3,7 +3,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
-import { subjectConfigUnchanged } from '@/lib/sis/subject-config-unchanged';
+import {
+  subjectConfigUnchanged,
+  subjectDisplayNameUnchanged,
+} from '@/lib/sis/subject-config-unchanged';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import {
@@ -51,14 +54,31 @@ export async function PATCH(
     ww_max_slots,
     pt_max_slots,
     qa_max,
+    display_name,
   } = parsed.data;
+
+  // Normalise the per-year name HERE, not in the schema. Three states have to
+  // survive to this line and a zod `.transform()` would collapse two of them:
+  //   • key absent   -> undefined -> don't touch the stored name
+  //   • '' or null   -> null      -> clear the override, fall back to the
+  //                                  catalogue name (migration 137's CHECK
+  //                                  refuses a blank string outright)
+  //   • real text    -> the name for this academic year
+  // See SubjectConfigUpdateSchema.display_name, and the same reasoning on
+  // SubjectCatalogUpdateSchema.report_label.
+  const nextDisplayName =
+    display_name === undefined
+      ? undefined
+      : display_name === null || display_name.length === 0
+        ? null
+        : display_name;
 
   const service = createServiceClient();
 
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -84,7 +104,7 @@ export async function PATCH(
   // only the six numeric fields would make that flag-clearing save look like a
   // no-op and silently drop it — so a false -> true transition still counts as
   // a real change and proceeds.
-  const unchanged = subjectConfigUnchanged(before, {
+  const numbersUnchanged = subjectConfigUnchanged(before, {
     ww_weight,
     pt_weight,
     qa_weight,
@@ -92,8 +112,58 @@ export async function PATCH(
     pt_max_slots,
     qa_max,
   });
-  if (unchanged) {
+  // The per-year name is compared SEPARATELY (migration 137). It has to
+  // participate in the no-op decision or a rename-only save would be swallowed
+  // by the guard above and answered `{ ok: true }` with nothing written — but
+  // it must not be folded into the same verdict, because the two halves have
+  // different consequences. See subjectDisplayNameUnchanged.
+  const nameUnchanged = subjectDisplayNameUnchanged(before, nextDisplayName);
+
+  if (numbersUnchanged && nameUnchanged) {
     return NextResponse.json({ ok: true, changed: false, sheets_synced: 0 });
+  }
+
+  // ── Rename-only: change the words, touch nothing else ───────────────────
+  // Nothing a grading sheet stores depends on the name — the slot maxima and
+  // qa_max are what `sync_grading_sheets_from_config` denormalises, and those
+  // are unchanged here. Running the sync anyway would re-stamp updated_at on
+  // every unlocked sheet tied to this config and re-run the recompute over
+  // every entry, for a change that only alters a heading. The audit row is
+  // still written: a rename is a real change and this is the only record of
+  // when the school started calling it something else.
+  if (numbersUnchanged) {
+    const { error: renameErr } = await service
+      .from('subject_configs')
+      .update({ display_name: nextDisplayName ?? null })
+      .eq('id', configId);
+    if (renameErr)
+      return NextResponse.json({ error: renameErr.message }, { status: 500 });
+
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'subject_config.update',
+      entityType: 'subject_config',
+      entityId: configId,
+      context: {
+        academic_year_id: before.academic_year_id,
+        subject_id: before.subject_id,
+        before: { display_name: before.display_name ?? null },
+        after: { display_name: nextDisplayName ?? null },
+        sheets_synced: 0,
+      },
+    });
+
+    const { data: renameAy } = await service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', before.academic_year_id)
+      .maybeSingle();
+    const renameAyCode =
+      (renameAy as { ay_code: string } | null)?.ay_code ?? null;
+    if (renameAyCode) invalidateDrillTags('markbook', renameAyCode);
+
+    return NextResponse.json({ ok: true, changed: true, sheets_synced: 0 });
   }
 
   // ── Rule 1: never destroy entered marks ────────────────────────────────
@@ -176,6 +246,13 @@ export async function PATCH(
       pt_max_slots,
       qa_max,
       weights_confirmed: true,
+      // Spread, not `display_name: nextDisplayName`, so the key is genuinely
+      // absent when the caller never sent it — writing `undefined` into the
+      // payload would serialise to null and clear a rename on every
+      // weights-only save. See nextDisplayName above.
+      ...(nextDisplayName === undefined
+        ? {}
+        : { display_name: nextDisplayName }),
     })
     .eq('id', configId);
   if (updateErr)
@@ -262,6 +339,7 @@ export async function PATCH(
         pt_max_slots: before.pt_max_slots,
         qa_max: before.qa_max,
         weights_confirmed: before.weights_confirmed,
+        display_name: before.display_name ?? null,
       },
       after: {
         ww_weight: Number(ww_dec),
@@ -271,6 +349,12 @@ export async function PATCH(
         pt_max_slots,
         qa_max,
         weights_confirmed: true,
+        // Unsent means unchanged, so the after-block reports what is still
+        // stored rather than claiming a null nobody wrote.
+        display_name:
+          nextDisplayName === undefined
+            ? (before.display_name ?? null)
+            : nextDisplayName,
       },
       sheets_synced: sync.sheetsSynced,
       sheets_skipped_locked: sync.sheetsSkippedLocked,

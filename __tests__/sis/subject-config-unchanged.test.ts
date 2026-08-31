@@ -20,9 +20,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   subjectConfigUnchanged,
+  subjectDisplayNameUnchanged,
   type SubjectConfigBefore,
   type SubjectConfigSubmission,
 } from '@/lib/sis/subject-config-unchanged';
+import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 
 // Stored form: decimals, flag already cleared.
 const STORED: SubjectConfigBefore = {
@@ -110,5 +112,124 @@ describe('subjectConfigUnchanged — every field participates', () => {
     expect(subjectConfigUnchanged(STORED, { ...SAME, pt_max_slots: 3 })).toBe(
       false
     );
+  });
+
+  it('ignores the per-year name — that is the sibling guard, not this one', () => {
+    // Pinned so nobody "completes" this function by folding display_name in.
+    // A rename must not drag the grading-sheet sync behind it; the route
+    // branches on the two verdicts separately.
+    expect(
+      subjectConfigUnchanged({ ...STORED, display_name: 'STAR' }, SAME)
+    ).toBe(true);
+  });
+});
+
+/**
+ * The per-year subject name (migration 137 — MAPEH in AY2025, STAR in AY2026).
+ *
+ * Three input states have to stay distinguishable all the way from the request
+ * body to this comparison, and two of them look identical if anything upstream
+ * normalises too early:
+ *
+ *   undefined — the caller never mentioned the field. Don't touch the name.
+ *   null / '' — clear the override; fall back to the catalogue name.
+ *   'STAR'    — the name for this academic year.
+ *
+ * Collapsing the first two is the failure this is here to catch: it would wipe
+ * an existing rename on every weights-only save, silently, with the response
+ * still saying ok.
+ */
+describe('subjectDisplayNameUnchanged', () => {
+  it('an absent field is never a change', () => {
+    expect(
+      subjectDisplayNameUnchanged({ display_name: 'STAR' }, undefined)
+    ).toBe(true);
+    expect(subjectDisplayNameUnchanged({ display_name: null }, undefined)).toBe(
+      true
+    );
+  });
+
+  it('setting a name on a row that had none is a change', () => {
+    expect(subjectDisplayNameUnchanged({ display_name: null }, 'STAR')).toBe(
+      false
+    );
+  });
+
+  it('clearing an existing name is a change', () => {
+    // The route normalises '' to null before it gets here, so null means
+    // exactly one thing: go back to the catalogue name.
+    expect(subjectDisplayNameUnchanged({ display_name: 'STAR' }, null)).toBe(
+      false
+    );
+  });
+
+  it('re-saving the same name is not a change', () => {
+    expect(subjectDisplayNameUnchanged({ display_name: 'STAR' }, 'STAR')).toBe(
+      true
+    );
+  });
+
+  it('treats a missing column and a stored null identically', () => {
+    expect(subjectDisplayNameUnchanged({}, null)).toBe(true);
+  });
+
+  it('renaming one name to another is a change', () => {
+    expect(subjectDisplayNameUnchanged({ display_name: 'MAPEH' }, 'STAR')).toBe(
+      false
+    );
+  });
+});
+
+describe('SubjectConfigUpdateSchema — display_name', () => {
+  const WEIGHTS = {
+    ww_weight: 40,
+    pt_weight: 40,
+    qa_weight: 20,
+    ww_max_slots: 5,
+    pt_max_slots: 5,
+    qa_max: 30,
+  };
+
+  it('accepts a save with no display_name at all', () => {
+    const parsed = SubjectConfigUpdateSchema.parse(WEIGHTS);
+    // Absent must stay absent. A `.transform()` on the optional field would
+    // turn this into `null` and clear the stored rename — the exact reason the
+    // normalisation lives in the route instead.
+    expect('display_name' in parsed && parsed.display_name !== undefined).toBe(
+      false
+    );
+  });
+
+  it('accepts a name and trims it', () => {
+    expect(
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: '  STAR  ' })
+        .display_name
+    ).toBe('STAR');
+  });
+
+  it('accepts an explicit null (clear the override)', () => {
+    expect(
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: null })
+        .display_name
+    ).toBeNull();
+  });
+
+  it('leaves a blank string for the route to normalise, rather than rejecting it', () => {
+    // Migration 137's CHECK refuses a blank string, so the route turns '' into
+    // null. Rejecting here instead would make "clear the name" impossible from
+    // a text input the user simply emptied.
+    expect(
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: '   ' })
+        .display_name
+    ).toBe('');
+  });
+
+  it('refuses a name longer than the column allows', () => {
+    expect(
+      SubjectConfigUpdateSchema.safeParse({
+        ...WEIGHTS,
+        display_name: 'x'.repeat(129),
+      }).success
+    ).toBe(false);
   });
 });

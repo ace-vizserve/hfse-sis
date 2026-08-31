@@ -19,6 +19,29 @@ export const SubjectConfigUpdateSchema = z
     // per Hard Rule #1 canonical case; registrars can vary (e.g. 50 for
     // Math, 20 for Art).
     qa_max: z.number().int().min(1).max(100),
+    // What this subject is called in THIS academic year (migration 137) —
+    // MAPEH in AY2025, STAR in AY2026. NULL/absent falls back to
+    // subjects.report_label then subjects.name; see
+    // lib/sis/subjects/display-name.ts for the one resolution rule.
+    //
+    // ⚠ Display only. `subjects.code` is the identity and never changes with a
+    // rename, so no code-keyed list (MAPEH_FAMILY_CODES and the 20/60/20
+    // split, MOTHER_TONGUE_SUBJECT_CODES, the deployment importer's
+    // SUBJECT_MAP) is affected by anything typed here.
+    //
+    // Deliberately NO `.transform()` normalising '' -> null, for the same
+    // reason SubjectCatalogUpdateSchema.report_label has none (see the comment
+    // there): zod runs a transform on an `.optional()` field's ABSENT value
+    // too, which would turn "the caller never mentioned this field" into
+    // "clear the name" and silently wipe an existing rename on every
+    // weights-only save. The route normalises instead, where "was this key
+    // present" is still knowable.
+    display_name: z
+      .string()
+      .trim()
+      .max(128, 'Keep the subject name under 128 characters')
+      .nullable()
+      .optional(),
   })
   .refine((v) => v.ww_weight + v.pt_weight + v.qa_weight === 100, {
     message: 'WW + PT + QA must sum to 100',

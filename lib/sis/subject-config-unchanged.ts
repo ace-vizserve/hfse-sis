@@ -30,6 +30,12 @@ export type SubjectConfigBefore = {
   pt_max_slots: number;
   qa_max: number;
   weights_confirmed: boolean | null;
+  /**
+   * The per-year name (migration 137). Part of the row the route selects, and
+   * DELIBERATELY not read by subjectConfigUnchanged below — see the sibling
+   * subjectDisplayNameUnchanged for why the two verdicts stay apart.
+   */
+  display_name?: string | null;
 };
 
 export type SubjectConfigSubmission = {
@@ -57,4 +63,31 @@ export function subjectConfigUnchanged(
     // to do even when every number matches.
     before.weights_confirmed === true
   );
+}
+
+// ── The per-year name (migration 137) ────────────────────────────────────────
+//
+// A SIBLING of the function above, never a seventh field inside it, because the
+// two halves have different consequences and the route acts on them
+// differently: a weights or slot change has to resync and recompute every
+// unlocked grading sheet, while a rename changes words on a screen and nothing
+// else. Folding the name in would make a rename-only save drag the whole sheet
+// sync behind it, re-stamping updated_at on every sheet for a change no sheet
+// stores.
+//
+// `next === undefined` means the caller never sent the field — "don't touch",
+// not "clear it" — so it can never be a change. See the comment on
+// SubjectConfigUpdateSchema.display_name for why that distinction survives to
+// here instead of being normalised away by a zod transform.
+//
+// The route hands us the ALREADY-NORMALISED value (blank -> null), so `null`
+// here means exactly one thing: clear the override and fall back to the
+// catalogue name.
+
+export function subjectDisplayNameUnchanged(
+  before: { display_name?: string | null },
+  next: string | null | undefined
+): boolean {
+  if (next === undefined) return true;
+  return (before.display_name ?? null) === next;
 }
