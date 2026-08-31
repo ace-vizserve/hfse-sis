@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import {
   isEnrolledForTerm,
   type EnrolmentInterval,
@@ -140,7 +141,7 @@ export async function computePublishReadiness(
         .order('index_number'),
       service
         .from('grading_sheets')
-        .select('id, is_locked, subject:subjects(id, name)')
+        .select('id, is_locked, subject:subjects(id, name, report_label)')
         .eq('section_id', sectionId)
         .eq('term_id', termId),
       service
@@ -163,12 +164,28 @@ export async function computePublishReadiness(
       enrollmentDate: rawDate ? rawDate.slice(0, 10) : null,
     };
   });
+  // The checklist names the sheets an adviser still has to deal with, so it
+  // uses the name this academic year uses (migration 137) — telling somebody
+  // "MAPEH is unlocked" when their screen says STAR is the whole failure this
+  // pass exists to stop.
+  const sheetSubjects = (sheets ?? [])
+    .map((sh) => (Array.isArray(sh.subject) ? sh.subject[0] : sh.subject))
+    .filter(
+      (s): s is { id: string; name: string; report_label: string | null } => !!s
+    );
+  const sheetSubjectNames = await subjectDisplayNamesForAy(
+    service,
+    term.academic_year_id,
+    sheetSubjects
+  );
   const sheetList = (sheets ?? []).map((sh) => {
     const subj = Array.isArray(sh.subject) ? sh.subject[0] : sh.subject;
     return {
       id: sh.id,
       is_locked: sh.is_locked,
-      subject_name: subj?.name ?? '(unknown)',
+      subject_name: subj
+        ? (sheetSubjectNames.get(subj.id) ?? subj.name)
+        : '(unknown)',
     };
   });
   const unlockedSheets = sheetList.filter((s) => !s.is_locked);
@@ -324,7 +341,7 @@ export async function computePublishReadiness(
         service
           .from('grading_sheets')
           .select(
-            'id, term_id, is_locked, subject:subjects(id, name, is_examinable)'
+            'id, term_id, is_locked, subject:subjects(id, name, report_label, is_examinable)'
           )
           .eq('section_id', sectionId)
           .in('term_id', termIds),
@@ -403,16 +420,40 @@ export async function computePublishReadiness(
     }
 
     // Collect the subject sets for this section from the sheet list.
+    //
+    // These names are BOTH the key of the grade map below AND the words in the
+    // "missing grades" list a person reads, so they resolve to the name this
+    // academic year uses (migration 137). Resolving them everywhere from ONE
+    // map, keyed by subject id, is what keeps the two roles in agreement — a
+    // set built from renamed names and a map keyed on raw ones would report
+    // every subject as missing every grade.
+    const allSheetSubjects = (allSheets ?? [])
+      .map((sh) => (Array.isArray(sh.subject) ? sh.subject[0] : sh.subject))
+      .filter(
+        (
+          s
+        ): s is {
+          id: string;
+          name: string;
+          report_label: string | null;
+          is_examinable: boolean;
+        } => !!s
+      );
+    const annualSubjectNames = await subjectDisplayNamesForAy(
+      service,
+      term.academic_year_id,
+      allSheetSubjects
+    );
+    const nameOfSubject = (s: { id: string; name: string }) =>
+      annualSubjectNames.get(s.id) ?? s.name;
+
     const examinableSubjectNames = new Set<string>();
     const nonExaminableSubjectNames = new Set<string>();
-    for (const sh of allSheets ?? []) {
-      const subj = Array.isArray(sh.subject) ? sh.subject[0] : sh.subject;
-      if (!subj) continue;
-      const s = subj as { name: string; is_examinable: boolean };
+    for (const s of allSheetSubjects) {
       if (s.is_examinable) {
-        examinableSubjectNames.add(s.name);
+        examinableSubjectNames.add(nameOfSubject(s));
       } else {
-        nonExaminableSubjectNames.add(s.name);
+        nonExaminableSubjectNames.add(nameOfSubject(s));
       }
     }
 
@@ -440,7 +481,7 @@ export async function computePublishReadiness(
 
       const studentKey = studentBySectionStudent.get(e.section_student_id);
       if (!studentKey) continue;
-      const subjKey = subj.name;
+      const subjKey = nameOfSubject(subj);
       if (!gradeMap.has(studentKey)) gradeMap.set(studentKey, new Map());
       const subjMap = gradeMap.get(studentKey)!;
       if (!subjMap.has(subjKey)) subjMap.set(subjKey, blankCells());
@@ -510,7 +551,10 @@ export async function computePublishReadiness(
       if (!subj || subj.is_examinable) continue;
       const studentKey = studentBySectionStudent.get(e.section_student_id);
       if (!studentKey) continue;
-      const key: NonExamKey = `${studentKey}::${subj.name}`;
+      // Resolved, matching nonExaminableSubjectNames above — the two halves of
+      // this key have to be built the same way or every non-examinable subject
+      // reads as missing its Final Grade.
+      const key: NonExamKey = `${studentKey}::${nameOfSubject(subj)}`;
       const hasGrade =
         e.is_na === true ||
         (e.annual_letter_grade !== null && e.annual_letter_grade.trim() !== '');

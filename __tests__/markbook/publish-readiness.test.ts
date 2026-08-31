@@ -163,6 +163,17 @@ function makeService(opts: {
         };
         return chain;
       }
+      // Per-year subject names (migration 137). No rows: none of these
+      // fixtures renames a subject, which is the ordinary case — every name
+      // then falls through to the catalogue name exactly as before, so the
+      // existing expectations still describe the behaviour.
+      if (table === 'subject_configs') {
+        const chain = {
+          select: () => chain,
+          eq: () => Promise.resolve({ data: [], error: null }),
+        };
+        return chain;
+      }
       throw new Error(`unexpected table ${table}`);
     },
   } as unknown as SupabaseClient;
@@ -530,6 +541,17 @@ function makeT4Service(opts: {
           select: () => chain,
           eq: () => chain,
           in: () => Promise.resolve({ data: opts.attendanceRows, error: null }),
+        };
+        return chain;
+      }
+      // Per-year subject names (migration 137). No rows: none of these
+      // fixtures renames a subject, which is the ordinary case — every name
+      // then falls through to the catalogue name exactly as before, so the
+      // existing expectations still describe the behaviour.
+      if (table === 'subject_configs') {
+        const chain = {
+          select: () => chain,
+          eq: () => Promise.resolve({ data: [], error: null }),
         };
         return chain;
       }

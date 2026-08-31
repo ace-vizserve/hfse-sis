@@ -13,6 +13,7 @@ import {
   type OverviewTermInput,
 } from '@/lib/markbook/academic-overview-compute';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -123,7 +124,10 @@ export async function loadOverviewDataUncached(
         .eq('academic_year_id', academicYearId)
         .order('term_number', { ascending: true }),
       service.from('levels').select('id, code, label, sort_order'),
-      service.from('subjects').select('id, name, is_examinable'),
+      // report_label comes along so the per-year overlay below can fall
+      // through the full rule (this year's name -> report label -> catalogue
+      // name) rather than only its first and last steps.
+      service.from('subjects').select('id, name, report_label, is_examinable'),
     ]);
 
   const terms: OverviewTermInput[] = (
@@ -159,15 +163,22 @@ export async function loadOverviewDataUncached(
   }));
   const levelById = new Map(allLevels.map((l) => [l.id, l]));
 
-  const subjects: OverviewSubjectInput[] = (
-    (subjectRows ?? []) as {
-      id: string;
-      name: string;
-      is_examinable: boolean | null;
-    }[]
-  ).map((s) => ({
+  const subjectCatalog = (subjectRows ?? []) as {
+    id: string;
+    name: string;
+    report_label: string | null;
+    is_examinable: boolean | null;
+  }[];
+  // `subjects` here is the panel's own label set, read by a person, so it
+  // carries the name this academic year uses (migration 137).
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    academicYearId,
+    subjectCatalog
+  );
+  const subjects: OverviewSubjectInput[] = subjectCatalog.map((s) => ({
     id: s.id,
-    name: s.name,
+    name: subjectNames.get(s.id) ?? s.name,
     isExaminable: s.is_examinable === true,
   }));
 

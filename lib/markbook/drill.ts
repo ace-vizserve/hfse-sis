@@ -17,6 +17,7 @@ import { termIdsForRange } from '@/lib/markbook/term-range';
 import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 
 // Markbook drill-down primitives — sibling of `lib/admissions/drill.ts`.
 //
@@ -260,13 +261,21 @@ async function resolveAyContext(ayCode: string): Promise<{
     levels.set(l.id, l.code);
   const terms = (termsRes.data ?? []) as TermLite[];
   const subjects = new Map<string, string>();
-  const subjectNames = new Map<string, string>();
   const subjectExaminable = new Map<string, boolean>();
-  for (const s of (subjectsRes.data ?? []) as SubjectLite[]) {
+  const subjectRows = (subjectsRes.data ?? []) as SubjectLite[];
+  for (const s of subjectRows) {
     subjects.set(s.id, s.code);
-    subjectNames.set(s.id, s.name);
     subjectExaminable.set(s.id, s.is_examinable === true);
   }
+  // `subjectNames` feeds drill row labels, which are read by a person, so it
+  // carries the name THIS year uses — STAR in AY2026, MAPEH in AY2025
+  // (migration 137). `subjects` above stays keyed on the code and must: it is
+  // the identity half, and a rename never touches it.
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    ayId,
+    subjectRows
+  );
   return {
     ayId,
     sections,

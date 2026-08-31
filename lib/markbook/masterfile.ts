@@ -20,6 +20,7 @@ import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import {
   isEnrolledForTerm,
   type EnrolmentInterval,
@@ -387,28 +388,33 @@ async function loadMasterfileUncached(
   // (migration 080 dropped subject_configs.level_id — Pattern A).
   const { data: cfgRows } = await service
     .from('subject_level_offerings')
-    .select('subject:subjects(id, code, name, is_examinable)')
+    .select('subject:subjects(id, code, name, report_label, is_examinable)')
     .eq('academic_year_id', ayId)
     .eq('level_id', input.levelId);
 
+  type CatalogSubject = {
+    id: string;
+    code: string;
+    name: string;
+    report_label: string | null;
+    is_examinable: boolean;
+  };
   type CfgRow = {
-    subject:
-      | { id: string; code: string; name: string; is_examinable: boolean }
-      | { id: string; code: string; name: string; is_examinable: boolean }[]
-      | null;
+    subject: CatalogSubject | CatalogSubject[] | null;
   };
   const subjectsRaw = ((cfgRows ?? []) as CfgRow[])
     .map((c) => (Array.isArray(c.subject) ? c.subject[0] : c.subject))
-    .filter(
-      (
-        s
-      ): s is {
-        id: string;
-        code: string;
-        name: string;
-        is_examinable: boolean;
-      } => !!s
-    );
+    .filter((s): s is CatalogSubject => !!s);
+
+  // The masterfile's column headers are what a person reads, so they carry
+  // the name this academic year uses — MAPEH on an AY2025 workbook, STAR on an
+  // AY2026 one (migration 137). The sort follows the header for the same
+  // reason it always has: a column belongs where its heading sorts.
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    ayId,
+    subjectsRaw
+  );
 
   // Sort: examinable first (alphabetical within), then non-examinable
   // (alphabetical within). Matches the AY2025 workbook column layout.
@@ -416,7 +422,7 @@ async function loadMasterfileUncached(
     .map((s) => ({
       id: s.id,
       code: s.code,
-      name: s.name,
+      name: subjectNames.get(s.id) ?? s.name,
       isExaminable: s.is_examinable,
     }))
     .sort((a, b) => {
