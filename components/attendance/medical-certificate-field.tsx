@@ -1,12 +1,12 @@
 'use client';
 
-import { FileText, Paperclip, X } from 'lucide-react';
+import { FileText, Paperclip, TriangleAlert, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 
 // The medical certificate for one excused day, attached where the day is
 // marked.
@@ -108,7 +108,43 @@ export function MedicalCertificateField({
   // the page has finished refreshing behind it.
   const [justSaved, setJustSaved] = useState(false);
 
+  // ⚠ REPLACING IS A SEPARATE, DELIBERATE MODE — not a flag on Save.
+  //
+  // Mr Ace: re-uploading in the SIS "will override it but theres a warning".
+  // A day that already carries proof shows the record, not a picker; asking
+  // to replace swaps in the warning, and only agreeing to THAT reveals the
+  // controls. So the certificate on file cannot be overwritten by anybody who
+  // did not read why.
+  //
+  // ⚠ INLINE, NEVER A SECOND DIALOG. This control renders inside the already
+  // open cell-mark dialog, where a stacked dialog fights the focus trap and
+  // dismissing the inner one takes the outer one with it — the same reason
+  // `OverrideConfirm` swaps that dialog's body instead. It also has to work in
+  // the daily register, where there is no dialog at all.
+  const [replacing, setReplacing] = useState(false);
+  // Set when the SERVER says the day already has proof — the race where the
+  // parent uploads in the portal while the office is scanning the paper copy.
+  // The warning then appears on a control that was showing an empty picker.
+  const [raced, setRaced] = useState(false);
+
   const onFile = hasCertificate || justSaved;
+  // The warning is showing: either they asked to replace, or the server told
+  // us one landed while this screen was open.
+  const warning = replacing || raced;
+
+  function beginReplace() {
+    setProblem(null);
+    setReplacing(true);
+  }
+
+  function cancelReplace() {
+    setProblem(null);
+    setReplacing(false);
+    setRaced(false);
+    setFile(null);
+    setLink('');
+    if (fileRef.current) fileRef.current.value = '';
+  }
 
   function chooseFile(next: File | null) {
     setProblem(null);
@@ -178,6 +214,10 @@ export function MedicalCertificateField({
             endDate: date,
             evidencePath,
             evidenceUrl: trimmed || undefined,
+            // Only ever set after a person read the warning and went on. The
+            // server declines a replacement that does not carry it, which is
+            // what makes the warning load-bearing rather than decorative.
+            replaceExisting: replacing || raced ? true : undefined,
           })
         );
       },
@@ -186,9 +226,29 @@ export function MedicalCertificateField({
         // ⚠ ONE SENTENCE FOR BOTH OUTCOMES. Whether the server created a
         // filing or attached this to one a parent had already sent is not
         // something the person did, chose, or can act on.
-        success: 'Certificate saved.',
+        success:
+          replacing || raced ? 'Certificate replaced.' : 'Certificate saved.',
+        // ⚠ THE "ALREADY ON FILE" REFUSAL IS NOT AN ERROR TO TOAST — it is the
+        // warning, arriving late. It happens when a certificate landed between
+        // this screen loading and Save being pressed: the parent uploading in
+        // the portal while the office scans the paper copy. Returning null
+        // suppresses the toast and the band shows the question instead, so the
+        // person answers it in the place they are already looking.
+        error: (e) => {
+          const body =
+            e instanceof ApiError
+              ? (e.body as { certificateAlreadyOnFile?: boolean } | null)
+              : null;
+          if (body?.certificateAlreadyOnFile === true) {
+            setRaced(true);
+            return null;
+          }
+          return e instanceof Error ? e.message : 'Could not save that.';
+        },
         onResolved: () => {
           setJustSaved(true);
+          setReplacing(false);
+          setRaced(false);
           setFile(null);
           setLink('');
         },
@@ -206,7 +266,7 @@ export function MedicalCertificateField({
         )}
       </div>
 
-      {onFile ? (
+      {onFile && !warning ? (
         // The record. `FilingCard`'s shape, so a certificate the office
         // attached reads in the same voice as one a parent filed.
         <div
@@ -221,9 +281,49 @@ export function MedicalCertificateField({
               {justSaved && !hasCertificate ? 'just added' : 'for this day'}
             </span>
           </span>
+          {/* Quiet on purpose. Replacing a certificate is rare and
+              consequential, so it must be reachable without inviting itself —
+              §9.2's variant for a tertiary action beside a record. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground"
+            onClick={beginReplace}
+          >
+            Replace
+          </Button>
         </div>
       ) : (
         <>
+          {warning && (
+            // ⚠ THE WARNING IS A BAND IN THIS CONTROL, NOT A DIALOG. Nesting a
+            // dialog inside the cell-mark dialog breaks the focus trap, and
+            // this same component renders in the daily register where there is
+            // no dialog to nest inside.
+            <div
+              className="flex items-start gap-2.5 rounded-xl bg-destructive/8 px-3 py-2.5 ring-1 ring-inset ring-destructive/20"
+              role="alert"
+            >
+              <TriangleAlert
+                className="mt-px size-4 shrink-0 text-destructive"
+                aria-hidden
+              />
+              <p className="min-w-0 flex-1 text-[12px] leading-snug text-foreground">
+                <span className="font-semibold">
+                  {raced
+                    ? 'A certificate arrived while this was open.'
+                    : 'This day already has a certificate.'}
+                </span>{' '}
+                <span className="text-muted-foreground">
+                  Saving another one puts it in place of the one on file.{' '}
+                  {studentName}&rsquo;s current certificate will no longer be
+                  shown here, and this screen cannot bring it back.
+                </span>
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             {/* ⚠ A REAL AFFORDANCE OVER A HIDDEN INPUT. A bare
                 `<input type="file">` renders the browser's own unstyled
@@ -279,8 +379,23 @@ export function MedicalCertificateField({
               onClick={save}
               className="h-9"
             >
-              Save certificate
+              {warning ? 'Replace certificate' : 'Save certificate'}
             </Button>
+            {/* Only while replacing — with nothing on file there is nothing to
+                go back to, and a Cancel that cleared the picker would read as
+                an action rather than an escape. */}
+            {warning && onFile && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={cancelReplace}
+                className="h-9 text-muted-foreground"
+              >
+                Keep the one on file
+              </Button>
+            )}
           </div>
 
           {file && (

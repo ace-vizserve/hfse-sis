@@ -177,9 +177,10 @@ function buildService() {
               resolve,
               reject
             ),
-          // The attach. `.is('evidence_path', null).is('evidence_url', null)`
-          // is part of the WHERE clause, so the chain has to survive two of
-          // them before `.select()` resolves.
+          // The attach. The evidence condition is part of the WHERE clause —
+          // `.is(...).is(...)` for a first attach, `.or(...)` for a
+          // replacement — so the chain has to survive either before
+          // `.select()` resolves.
           update: (patch: Row) => {
             updated = patch;
             const u: Record<string, unknown> = {};
@@ -187,6 +188,7 @@ function buildService() {
             Object.assign(u, {
               eq: uself,
               is: uself,
+              or: uself,
               select: () =>
                 Promise.resolve({ data: updateReturns, error: null }),
             });
@@ -681,8 +683,11 @@ describe('days that are already spoken for', () => {
   });
 
   it('refuses when the day already has a certificate, and changes nothing', async () => {
-    // Replacing it would silently discard whichever one the school actually
-    // looked at.
+    // ⚠ THIS REFUSAL IS THE WARNING, NOT A DEAD END. Mr Ace, 2026-08-31:
+    // re-uploading "will override it but theres a warning". The first request
+    // never carries `replaceExisting`, so it lands here, and the screen turns
+    // this 409 into the question it puts to the person. The one they send
+    // after agreeing is the test below.
     existingRows = [parentFiling({ evidence_path: 'declarations/p1/mc.pdf' })];
 
     const { status, json } = await post(validBody());
@@ -691,8 +696,52 @@ describe('days that are already spoken for', () => {
     expect(updated).toBeNull();
     expect(inserted).toBeNull();
     expect(json.error).toMatch(/already has a certificate on file/i);
+    // The screen keys its warning on the flag, not on the sentence, so the
+    // wording stays free to change without breaking the interaction.
+    expect(json.certificateAlreadyOnFile).toBe(true);
     // Plain English: no constraint name, no table name, no status code.
     expect(String(json.error)).not.toMatch(/_chk|student_declarations|409/);
+  });
+
+  it('replaces the certificate once the person has agreed to it', async () => {
+    // The second request — the one sent after the warning was read. Without
+    // the flag the identical body is refused by the test above, which is what
+    // stops anything that skipped the UI, or any retry of a stale request,
+    // replacing a child's medical certificate with nobody asked.
+    existingRows = [parentFiling({ evidence_path: 'declarations/p1/mc.pdf' })];
+    updateReturns = [
+      { status: 'approved', start_date: '2026-09-01', end_date: '2026-09-03' },
+    ];
+
+    const { status, json } = await post({
+      ...validBody(),
+      replaceExisting: true,
+    });
+
+    expect(status).toBe(200);
+    expect(json.error).toBeUndefined();
+    expect(inserted, 'a replacement edits the row, it does not add one').toBe(
+      null
+    );
+    expect(updated).toMatchObject({ with_medical: true });
+  });
+
+  it('tells the user to look again when the certificate changed under them', async () => {
+    // Agreed to replace, but the thing being replaced went away in between.
+    // Landing this silently would overwrite something they were never shown.
+    existingRows = [parentFiling({ evidence_path: 'declarations/p1/mc.pdf' })];
+    updateReturns = [];
+
+    const { status, json } = await post({
+      ...validBody(),
+      replaceExisting: true,
+    });
+
+    expect(status).toBe(409);
+    expect(json.error).toMatch(/changed while you were looking at it/i);
+    // NOT the already-on-file flag — there is nothing left to warn about, so
+    // re-showing the warning would ask a question with no answer.
+    expect(json.certificateAlreadyOnFile).toBe(false);
   });
 
   it('refuses when the write loses a race it thought it had won', async () => {
