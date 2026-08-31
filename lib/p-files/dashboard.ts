@@ -1,6 +1,10 @@
 import { unstable_cache } from 'next/cache';
 
-import { DOCUMENT_SLOTS, resolveStatus } from '@/lib/p-files/document-config';
+import {
+  DOCUMENT_SLOTS,
+  isSlotApplicable,
+  resolveStatus,
+} from '@/lib/p-files/document-config';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -116,23 +120,42 @@ async function loadCompletionByLevelUncached(
     guardianEmail: string | null;
     stpApplicationType: string | null;
   };
-  type StatusRow = { enroleeNumber: string | null; classLevel: string | null };
+  type StatusRow = {
+    enroleeNumber: string | null;
+    classLevel: string | null;
+    applicationStatus: string | null;
+  };
 
   const statusByEnrolee = new Map<string, string>();
+  // `applicationStatus` gates the Conditional Enrolment slot but lives on
+  // the status row, not the applications row — the status fetch above
+  // already selects it, so no extra query is needed to carry it through.
+  const appStatusByEnrolee = new Map<string, string>();
   for (const s of (statusRes.data ?? []) as StatusRow[]) {
-    if (s.enroleeNumber && s.classLevel)
-      statusByEnrolee.set(s.enroleeNumber, s.classLevel);
+    if (!s.enroleeNumber) continue;
+    if (s.classLevel) statusByEnrolee.set(s.enroleeNumber, s.classLevel);
+    if (s.applicationStatus)
+      appStatusByEnrolee.set(s.enroleeNumber, s.applicationStatus);
   }
 
   // level + gate info per enrollee
-  const byEnrolee = new Map<string, { level: string; gate: AppRow }>();
+  const byEnrolee = new Map<
+    string,
+    { level: string; gate: AppRow & { applicationStatus: string | null } }
+  >();
   for (const a of (appsRes.data ?? []) as AppRow[]) {
     if (!a.enroleeNumber) continue;
     const level =
       statusByEnrolee.get(a.enroleeNumber) ||
       a.levelApplied?.trim() ||
       'Unknown';
-    byEnrolee.set(a.enroleeNumber, { level, gate: a });
+    byEnrolee.set(a.enroleeNumber, {
+      level,
+      gate: {
+        ...a,
+        applicationStatus: appStatusByEnrolee.get(a.enroleeNumber) ?? null,
+      },
+    });
   }
 
   const buckets = new Map<string, LevelCompletionRow>();
@@ -161,16 +184,10 @@ async function loadCompletionByLevelUncached(
     const bucket = ensureBucket(entry.level);
 
     for (const slot of DOCUMENT_SLOTS) {
-      if (slot.conditional) {
-        const gateValue =
-          entry.gate[
-            slot.conditional as
-              | 'fatherEmail'
-              | 'guardianEmail'
-              | 'stpApplicationType'
-          ] ?? null;
-        if (!gateValue || String(gateValue).trim() === '') continue;
-      }
+      // `isLateEnrollee` is left undefined — this aggregator never reads
+      // `section_students`, so the Late Enrolment Form slot is treated as
+      // not applicable rather than counted missing for the whole school.
+      if (!isSlotApplicable(slot, { app: entry.gate })) continue;
       const url = row[slot.key];
       const rawStatus = row[`${slot.key}Status`];
       const expiry = slot.expires ? row[`${slot.key}Expiry`] : null;

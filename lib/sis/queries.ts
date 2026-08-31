@@ -818,6 +818,54 @@ export const DOCUMENT_SLOTS: Array<{
     urlCol: 'form12',
   },
   {
+    key: 'lastSchoolRecommendation',
+    label: 'Last School Recommendation and Good Moral',
+    statusCol: 'lastSchoolRecommendationStatus',
+    urlCol: 'lastSchoolRecommendation',
+  },
+  {
+    key: 'assessmentResult',
+    label: 'Assessment Result and Interview',
+    statusCol: 'assessmentResultStatus',
+    urlCol: 'assessmentResult',
+  },
+  {
+    key: 'signedContract',
+    label: 'Signed Student Contract',
+    statusCol: 'signedContractStatus',
+    urlCol: 'signedContract',
+  },
+  {
+    key: 'newStudentChecksheet',
+    label: 'New Student Checksheet',
+    statusCol: 'newStudentChecksheetStatus',
+    urlCol: 'newStudentChecksheet',
+  },
+  {
+    key: 'pfilesChecklist',
+    label: 'Student P-Files Checklist',
+    statusCol: 'pfilesChecklistStatus',
+    urlCol: 'pfilesChecklist',
+  },
+  {
+    key: 'preCounsellingAck',
+    label: 'Pre-Counselling Acknowledgement Form',
+    statusCol: 'preCounsellingAckStatus',
+    urlCol: 'preCounsellingAck',
+  },
+  {
+    key: 'conditionalEnrolment',
+    label: 'Conditional Enrolment',
+    statusCol: 'conditionalEnrolmentStatus',
+    urlCol: 'conditionalEnrolment',
+  },
+  {
+    key: 'lateEnrolmentForm',
+    label: 'Late Enrolment Form',
+    statusCol: 'lateEnrolmentFormStatus',
+    urlCol: 'lateEnrolmentForm',
+  },
+  {
     key: 'passport',
     label: 'Student Passport',
     statusCol: 'passportStatus',
@@ -914,6 +962,22 @@ export const OPTIONAL_DOCUMENT_SLOT_KEYS = [
   'medical',
   'educCert',
   'form12',
+  // The eight slots added alongside migration 135. None of them has been
+  // agreed with the school as something that must be on file before a
+  // student can be enrolled — they are places to keep a document, not a
+  // requirement. Leaving them off this list would make all eight blocking
+  // the moment they ship, and since every existing student's columns start
+  // empty, the admissions team could no longer flip Documents to Verified
+  // for anybody in the system. If the school later says one of these really
+  // is required, remove that one key here — deliberately, not by omission.
+  'lastSchoolRecommendation',
+  'assessmentResult',
+  'signedContract',
+  'newStudentChecksheet',
+  'pfilesChecklist',
+  'preCounsellingAck',
+  'conditionalEnrolment',
+  'lateEnrolmentForm',
 ] as const;
 
 const DOCUMENT_COLUMNS = [

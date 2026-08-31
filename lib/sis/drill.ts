@@ -19,6 +19,7 @@ import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
 import { inChaseLensScope, type ChaseQueueLens } from '@/lib/sis/chase-lens';
 import {
   DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
+  isSlotApplicable,
   resolveStatus,
   resolveBacklogBucket,
 } from '@/lib/p-files/document-config';
@@ -567,16 +568,11 @@ async function enrichWithDocSlotBuckets(
     > = {};
 
     for (const slot of PFILES_DOCUMENT_SLOTS) {
-      if (slot.conditional) {
-        const gateValue =
-          gate?.[
-            slot.conditional as
-              | 'fatherEmail'
-              | 'guardianEmail'
-              | 'stpApplicationType'
-          ] ?? null;
-        if (!gateValue || gateValue.trim() === '') continue; // 'na' — skip
-      }
+      // Same rule as the dashboard this drill backs, through the same
+      // evaluator so the drill can't disagree with the count above it
+      // (KD #124). No `isLateEnrollee` here either — the gate row is
+      // admissions-side and carries no roster join.
+      if (!isSlotApplicable(slot, { app: gate })) continue; // 'na' — skip
       const rawStatus = d[`${slot.key}Status`] ?? null;
       const expiry = slot.expires ? (d[`${slot.key}Expiry`] ?? null) : null;
       const status = resolveStatus(null, rawStatus, expiry, slot.expires);

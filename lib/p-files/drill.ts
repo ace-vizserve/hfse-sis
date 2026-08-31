@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { parseLocalDate } from '@/lib/dashboard/range';
 import {
   DOCUMENT_SLOTS,
+  isSlotApplicable,
   resolveStatus,
   type DocumentStatus,
 } from '@/lib/p-files/document-config';
@@ -94,14 +95,9 @@ function appName(a: AppLite): string {
   );
 }
 
-/** Resolve a slot's `conditional` gate column value off the applicant row.
- *  Mirrors `getCompletionByLevel`'s gate lookup — only fatherEmail /
- *  guardianEmail are real conditional values in DOCUMENT_SLOTS today. */
-function gateValueFor(app: AppLite, column: string): string | null {
-  if (column === 'fatherEmail') return app.fatherEmail;
-  if (column === 'guardianEmail') return app.guardianEmail;
-  return null;
-}
+// The old hand-rolled `gateValueFor` (fatherEmail / guardianEmail only) is
+// gone — `isSlotApplicable` in lib/p-files/document-config.ts is now the
+// single place that decides whether a slot applies to a student.
 
 // Map the canonical `resolveStatus` result (the same classifier every
 // dashboard chart/KPI in lib/p-files/dashboard.ts uses) to the discrete
@@ -240,6 +236,9 @@ async function loadPFilesRowsUncached(
   }
 
   const classLevelByEnrolee = new Map<string, string>();
+  // Gates the Conditional Enrolment slot. Lives on the status row, which
+  // this loader already fetches — no extra query.
+  const appStatusByEnrolee = new Map<string, string>();
   // Set of enrolled enroleeNumbers — only these emit drill rows below.
   // The status fetch already filtered at SQL but we materialize the Set
   // for the iteration filter (`apps` is not pre-filtered).
@@ -314,9 +313,14 @@ async function loadPFilesRowsUncached(
       );
       const status = documentStatusToDisplay(docStatus);
 
-      const gated = slot.conditional
-        ? !(gateValueFor(app, slot.conditional)?.trim() ?? '')
-        : false;
+      // "Gated" = this slot does not apply to this student, so the row is
+      // carried but not counted against them. No `isLateEnrollee` is available
+      // on this projection, and the evaluator reads "cannot tell" as not
+      // applicable — which lands on `gated: true`, i.e. excluded rather than
+      // held against the student. That is the safe direction.
+      const gated = !isSlotApplicable(slot, {
+        app: app as unknown as Record<string, unknown>,
+      });
 
       const k = revKey(app.enroleeNumber, slot.key);
       const row: PFilesDrillRow = {

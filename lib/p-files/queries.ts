@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   DOCUMENT_SLOTS,
+  isSlotApplicable,
   resolveStatus,
   type DocumentStatus,
 } from './document-config';
@@ -149,10 +150,21 @@ function computeForStudent(
   const level = str(statusRow ?? {}, 'classLevel');
   const section = str(statusRow ?? {}, 'classSection');
 
-  const applicableSlots = DOCUMENT_SLOTS.filter((slot) => {
-    if (!slot.conditional) return true;
-    return !!str(app, slot.conditional);
-  });
+  // `applicationStatus` lives on the enrolment_status row, not the
+  // applications row, so it is merged into the facts bag here — this
+  // loader already fetches both. `isLateEnrollee` is left undefined: it
+  // comes from `section_students`, which this loader does not read, so
+  // the Late Enrolment Form slot stays hidden here rather than being
+  // demanded of students we can't classify.
+  const facts = {
+    app: {
+      ...app,
+      applicationStatus: str(statusRow ?? {}, 'applicationStatus'),
+    },
+  };
+  const applicableSlots = DOCUMENT_SLOTS.filter((slot) =>
+    isSlotApplicable(slot, facts)
+  );
 
   const slots = applicableSlots.map((slot) => {
     const url = docRow ? str(docRow, slot.key) : null;

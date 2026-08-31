@@ -44,6 +44,7 @@ import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   DOCUMENT_SLOTS,
   GROUP_LABELS,
+  isChaseableGroup,
   type DocumentGroup,
 } from '@/lib/p-files/document-config';
 import {
@@ -209,9 +210,24 @@ export default async function StudentDocumentDetailPage({
     (s) => s.status === 'rejected'
   ).length;
 
-  // ── Action queue: every actionable slot, ranked by urgency.
+  // ── Action queue: every actionable slot the SCHOOL CAN CHASE A FAMILY FOR,
+  //    ranked by urgency.
+  //
+  // The group test is not a tidy-up. This queue and the "N documents need
+  // attention" headline above it are a chase worklist — every row offers
+  // "Remind parent" and "Set promised date". School forms (migration 135) are
+  // uploaded by the P-Files officer and the parent portal never offers them,
+  // so a missing one is internal school admin with nobody to remind. Without
+  // this filter every student showed six permanently-outstanding rows that no
+  // reminder could ever clear. They stay fully visible and uploadable in their
+  // own group below; they are simply not something to badger a family about.
   const actionableSlots = student.slots
-    .filter((s) => isActionable(classifyUrgency(s)))
+    .filter((s) => {
+      if (!isActionable(classifyUrgency(s))) return false;
+      const group = slotConfigByKey.get(s.key)?.group;
+      // An unknown slot keeps the old behaviour rather than vanishing.
+      return group ? isChaseableGroup(group) : true;
+    })
     .slice()
     .sort(compareSlotsByUrgency);
   const totalActionable = actionableSlots.length;
@@ -241,7 +257,17 @@ export default async function StudentDocumentDetailPage({
     label: string;
     slots: typeof student.slots;
   }[] = [];
-  const groupOrder: DocumentGroup[] = ['student-expiring', 'parent', 'student'];
+  // `school` last: it is the only group the family never sees, so it sits
+  // after the three they are chased for. ⚠ This list is what produces the
+  // tabs — a group missing from it has no tab at all, and therefore nowhere to
+  // upload from. That is exactly what happened when the migration-135 slots
+  // first shipped, so add every new group here.
+  const groupOrder: DocumentGroup[] = [
+    'student-expiring',
+    'parent',
+    'student',
+    'school',
+  ];
   for (const g of groupOrder) {
     const groupSlots = student.slots
       .filter((slot) => slotConfigByKey.get(slot.key)?.group === g)

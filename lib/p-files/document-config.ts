@@ -1,4 +1,4 @@
-// Static configuration for the 13 document slots tracked per student (post KD #96).
+// Static configuration for the document slots tracked per student (post KD #96).
 // Each slot maps to columns in `ay{YY}_enrolment_documents`:
 //   {key}        — URL (text, nullable)
 //   {key}Status  — status string (varchar, nullable)
@@ -10,7 +10,33 @@
 // The STP *application* workflow (stpApplicationType / stpApplicationStatus)
 // is still tracked; only the document slots are gone.
 
-export type DocumentGroup = 'student' | 'student-expiring' | 'parent';
+/**
+ * Which family a document slot belongs to. Three of these are documents the
+ * FAMILY supplies; `school` is the one the school produces and holds itself.
+ *
+ * That distinction is not presentational. Everything in P-Files that chases a
+ * parent — the Action Queue, "N documents need attention", the reminder mail,
+ * the promised-date flow — is a worklist of things to ask a family for. A
+ * school form has no family to ask, so it belongs in none of them. Ask
+ * `isChaseableGroup` rather than testing the group value inline.
+ */
+export type DocumentGroup =
+  | 'student'
+  | 'student-expiring'
+  | 'parent'
+  | 'school';
+
+/**
+ * Can a missing document in this group legitimately be chased from a parent?
+ *
+ * `school` documents are uploaded by the P-Files officer and above and are
+ * never offered by the parent portal, so a reminder about one is noise at
+ * best. This is the ONE definition — the queue, the counts and the buttons all
+ * read it, so a fifth group can never be added to a chase surface by accident.
+ */
+export function isChaseableGroup(group: DocumentGroup): boolean {
+  return group !== 'school';
+}
 
 /**
  * For expiring document slots, describes which columns in
@@ -24,16 +50,96 @@ export type SlotMeta = {
   expiryCol: string;
 };
 
+/**
+ * When a slot only applies to *some* students, `conditional` says how to
+ * decide. Every consumer must ask that question through `isSlotApplicable`
+ * below rather than reading the shape inline — the whole point of the union
+ * is that a new condition kind lands in one place instead of six.
+ *
+ *  - `filled`       — the named column on the applications row is non-empty
+ *                     (the original behaviour: fatherEmail / guardianEmail).
+ *  - `equals`       — the named column equals an exact value, e.g.
+ *                     applicationStatus === 'Enrolled (Conditional)'.
+ *  - `lateEnrollee` — the student joined after the year started. This does
+ *                     NOT live on the applications row at all; it is
+ *                     `section_students.enrollment_status === 'late_enrollee'`
+ *                     (see `ENROLLED_STATUSES` in lib/schemas/enrolment.ts),
+ *                     so it arrives as a separate fact, not a column read.
+ */
+export type SlotCondition =
+  | { kind: 'filled'; column: string }
+  | { kind: 'equals'; column: string; value: string }
+  | { kind: 'lateEnrollee' };
+
+/**
+ * Everything `isSlotApplicable` is allowed to look at.
+ *
+ * `app` is whatever row-ish bag the caller has in hand — usually the
+ * applications row, optionally with a column or two merged in from the
+ * enrolment_status row. A column that isn't there simply reads as empty;
+ * the evaluator never reaches back to the database.
+ */
+export type SlotFacts = {
+  app: Record<string, unknown> | null | undefined;
+  /**
+   * Whether this student is a late enrollee. Deliberately optional and
+   * deliberately tri-state: `undefined` means the caller could not tell,
+   * and that resolves to NOT applicable. Hiding is the safe direction — a
+   * slot that isn't shown is merely invisible, whereas a slot we falsely
+   * require makes every ordinary student read as permanently incomplete on
+   * every completeness figure in the app.
+   */
+  isLateEnrollee?: boolean;
+};
+
 export type DocumentSlot = {
   key: string;
   label: string;
   expires: boolean;
   group: DocumentGroup;
-  /** If set, this slot is only required when the named column is non-null in enrolment_applications */
-  conditional: string | null;
+  /** null = always applicable. Otherwise see `SlotCondition` / `isSlotApplicable`. */
+  conditional: SlotCondition | null;
   /** Metadata columns in enrolment_applications for expiring docs, null for non-expiring */
   meta: SlotMeta | null;
 };
+
+/** Read one column off the facts bag as a trimmed string. Total: a missing
+ *  row, a missing column, null, or a non-scalar value all read as ''. */
+function factColumn(
+  app: Record<string, unknown> | null | undefined,
+  column: string
+): string {
+  if (!app) return '';
+  const v = app[column];
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v).trim();
+  return '';
+}
+
+/**
+ * The one place that decides whether a document slot applies to a student.
+ *
+ * Pure, and never throws — callers feed it half-populated rows from six
+ * different queries and a thrown error there would take out a dashboard.
+ */
+export function isSlotApplicable(
+  slot: Pick<DocumentSlot, 'conditional'>,
+  facts: SlotFacts
+): boolean {
+  const condition = slot.conditional;
+  if (!condition) return true;
+
+  switch (condition.kind) {
+    case 'filled':
+      return factColumn(facts.app, condition.column).length > 0;
+    case 'equals':
+      return factColumn(facts.app, condition.column) === condition.value;
+    case 'lateEnrollee':
+      // `undefined` (caller can't tell) => not applicable. See SlotFacts.
+      return facts.isLateEnrollee === true;
+  }
+}
 
 /** Fixed options for the pass-type dropdown. */
 export const PASS_TYPES = [
@@ -85,6 +191,88 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     expires: false,
     group: 'student',
     conditional: null,
+    meta: null,
+  },
+  // ── School forms (migration 135) ─────────────────────────────────────────
+  // The eight below are `group: 'school'`, and that is load-bearing rather
+  // than cosmetic. THE PARENT PORTAL OFFERS NONE OF THEM — Mr Ace, 2026-08-31:
+  // "p-files officer and above will upload the extended documents list" and
+  // "these files are not gonna be uploaded in the parent portal, this will be
+  // uploaded in p-files module". They were briefly filed under 'student', and
+  // the result was visible immediately: the student page listed six of them in
+  // the parent-chase Action Queue, each offering to "Remind parent" about a
+  // form no parent can produce, and the "N documents need attention" headline
+  // became a backlog nobody could ever clear. See `isChaseableGroup` below.
+  {
+    key: 'lastSchoolRecommendation',
+    label: 'Last School Recommendation and Good Moral',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  {
+    key: 'assessmentResult',
+    label: 'Assessment Result and Interview',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  {
+    key: 'signedContract',
+    label: 'Signed Student Contract',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  {
+    key: 'newStudentChecksheet',
+    label: 'New Student Checksheet',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  {
+    key: 'pfilesChecklist',
+    label: 'Student P-Files Checklist',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  {
+    key: 'preCounsellingAck',
+    label: 'Pre-Counselling Acknowledgement Form',
+    expires: false,
+    group: 'school',
+    conditional: null,
+    meta: null,
+  },
+  // The last two only show for the students they actually apply to.
+  {
+    key: 'conditionalEnrolment',
+    label: 'Conditional Enrolment',
+    expires: false,
+    group: 'school',
+    // `applicationStatus` lives on the enrolment_STATUS row, not the
+    // applications row — callers merge it into the facts bag. A caller that
+    // doesn't have it reads '' and the slot stays hidden.
+    conditional: {
+      kind: 'equals',
+      column: 'applicationStatus',
+      value: 'Enrolled (Conditional)',
+    },
+    meta: null,
+  },
+  {
+    key: 'lateEnrolmentForm',
+    label: 'Late Enrolment Form',
+    expires: false,
+    group: 'school',
+    conditional: { kind: 'lateEnrollee' },
     meta: null,
   },
   // Expiring (student)
@@ -139,7 +327,7 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     label: 'Father Passport',
     expires: true,
     group: 'parent',
-    conditional: 'fatherEmail',
+    conditional: { kind: 'filled', column: 'fatherEmail' },
     meta: {
       kind: 'passport',
       numberCol: 'fatherPassport',
@@ -151,7 +339,7 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     label: 'Father Pass',
     expires: true,
     group: 'parent',
-    conditional: 'fatherEmail',
+    conditional: { kind: 'filled', column: 'fatherEmail' },
     meta: {
       kind: 'pass',
       numberCol: 'fatherPass',
@@ -164,7 +352,7 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     label: 'Guardian Passport',
     expires: true,
     group: 'parent',
-    conditional: 'guardianEmail',
+    conditional: { kind: 'filled', column: 'guardianEmail' },
     meta: {
       kind: 'passport',
       numberCol: 'guardianPassport',
@@ -176,7 +364,7 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     label: 'Guardian Pass',
     expires: true,
     group: 'parent',
-    conditional: 'guardianEmail',
+    conditional: { kind: 'filled', column: 'guardianEmail' },
     meta: {
       kind: 'pass',
       numberCol: 'guardianPass',
@@ -189,6 +377,7 @@ export const GROUP_LABELS: Record<DocumentGroup, string> = {
   student: 'Student Documents (Non-Expiring)',
   'student-expiring': 'Student Documents (Expiring)',
   parent: 'Parent / Guardian Documents',
+  school: 'School Forms',
 };
 
 // P-Files is a repository, not a review queue — but it does render every

@@ -18,6 +18,7 @@ import {
   stalenessLabel,
 } from '@/lib/admissions/staleness';
 import { isActiveFunnelStatus } from '@/lib/schemas/sis';
+import { isSlotApplicable } from '@/lib/p-files/document-config';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -1340,14 +1341,14 @@ async function loadAdmissionsCompletenessForChaseUncached(
     // conditional gate (fatherEmail / guardianEmail / stpApplicationType)
     // hides slots not relevant for this applicant so chase counts only
     // surface the documents the parent is actually expected to upload.
-    const applicableSlots = PFILES_SLOTS.filter((slot) => {
-      if (!slot.conditional) return true;
-      const gate = a[slot.conditional as keyof AppRow] as
-        | string
-        | null
-        | undefined;
-      return !!gate && String(gate).trim().length > 0;
-    });
+    // `isLateEnrollee` is deliberately not supplied: this is an admissions
+    // surface reading the applications row, and late-enrollee status lives on
+    // section_students, which it never joins. The evaluator treats that as NOT
+    // applicable, so the Late Enrolment Form is simply absent from admissions
+    // chase counts — correct, since it is a school form nobody chases anyway.
+    const applicableSlots = PFILES_SLOTS.filter((slot) =>
+      isSlotApplicable(slot, { app: a as unknown as Record<string, unknown> })
+    );
 
     const slots = applicableSlots.map((slot) => {
       const url = (docRow?.[slot.key] as string | null) ?? null;

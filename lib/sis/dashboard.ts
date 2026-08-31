@@ -9,6 +9,7 @@ import {
 } from '@/lib/sis/drill';
 import {
   DOCUMENT_SLOTS,
+  isSlotApplicable,
   resolveStatus,
   resolveBacklogBucket,
   type DocumentGroup,
@@ -277,17 +278,12 @@ async function loadDocumentValidationBacklogUncached(
     const gate = enroleeNumber ? gates.get(enroleeNumber) : null;
 
     for (const slot of DOCUMENT_SLOTS) {
-      // Conditional slots — skip if the gate column is not set on this applicant.
-      if (slot.conditional) {
-        const gateValue =
-          gate?.[
-            slot.conditional as
-              | 'fatherEmail'
-              | 'guardianEmail'
-              | 'stpApplicationType'
-          ] ?? null;
-        if (!gateValue || gateValue.trim() === '') continue;
-      }
+      // Conditional slots — skip the ones that don't apply to this applicant.
+      // `isLateEnrollee` is not supplied: this reads the admissions gate row,
+      // which never joins section_students, and the evaluator treats "cannot
+      // tell" as not applicable. That is the safe direction here — the slot is
+      // omitted from the count rather than counted as permanently missing.
+      if (!isSlotApplicable(slot, { app: gate })) continue;
 
       const url = row[slot.key];
       const rawStatus = row[`${slot.key}Status`];
