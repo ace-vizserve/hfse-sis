@@ -315,15 +315,37 @@ export async function findFilingCoveringDays(
  * are one act, not two, and splitting them would leave the row either refused
  * by the database or silently claiming there is no certificate when there is.
  *
- * ⚠ `evidence_path is null and evidence_url is null` IS IN THE WHERE CLAUSE,
- * not checked beforehand and trusted. Two people can be holding the same
- * certificate — the parent uploading it in the portal while the office scans
- * the paper copy — and the loser of that race must not overwrite the winner.
- * Zero rows back is that race, and the caller says so plainly.
+ * ⚠ THE EVIDENCE CONDITION IS IN THE WHERE CLAUSE, not checked beforehand and
+ * trusted. Two people can be holding the same certificate — the parent
+ * uploading it in the portal while the office scans the paper copy — and the
+ * loser of that race must not overwrite the winner by accident. Zero rows back
+ * is that race, and the caller says so plainly.
+ *
+ * ⚠ `replace` INVERTS THAT CONDITION RATHER THAN DROPPING IT. Mr Ace,
+ * 2026-08-31: re-uploading in the SIS "will override it but theres a warning".
+ * So the first attempt arrives WITHOUT `replace`, is declined because the day
+ * already has proof, and that decline is what the screen turns into the
+ * warning. Only the attempt a person made after reading it carries `replace`,
+ * and that one asserts evidence is STILL there — it is a replacement, so
+ * finding an empty row means the thing being replaced went away and the user
+ * should look again rather than have this land silently.
+ *
+ * ⚠ WHAT IT DOES NOT PROTECT, stated rather than implied: two members of staff
+ * replacing at the same moment. Both passed a warning, both meant it, and the
+ * later write wins. Distinguishing "the certificate I was warned about" from
+ * "a different one that replaced it a second ago" needs a version token
+ * carried out to the browser and back; that is not built, and the failure it
+ * would prevent is two colleagues racing over one child's certificate.
+ *
+ * ⚠ THE REPLACED FILE IS NOT DELETED FROM STORAGE. Overwriting the column
+ * orphans the previous object in the `parent-portal` bucket, and that is the
+ * intended trade: losing a child's medical certificate because somebody
+ * replaced it is worse than an unreferenced file sitting in a bucket. Nothing
+ * in the UI points at it afterwards.
  *
  * ⚠ IT DOES NOT TOUCH `status`, THE LADDER, OR THE REGISTER. A pending filing
  * stays pending and still needs deciding; an approved one already wrote its
- * marks. This only adds the proof the day was missing.
+ * marks. This only changes the proof attached to the day.
  */
 export async function attachEvidenceToFiling(
   service: SupabaseClient,
@@ -331,12 +353,14 @@ export async function attachEvidenceToFiling(
     filingId: string;
     evidencePath: string | null;
     evidenceUrl: string | null;
+    /** Overwrite proof that is already on the filing. See the note above. */
+    replace?: boolean;
   }
 ): Promise<
   | { attached: true; status: string; startDate: string; endDate: string }
   | { attached: false }
 > {
-  const { data, error } = await service
+  const base = service
     .from('student_declarations')
     .update({
       with_medical: true,
@@ -344,10 +368,18 @@ export async function attachEvidenceToFiling(
       evidence_url: args.evidenceUrl,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', args.filingId)
-    .is('evidence_path', null)
-    .is('evidence_url', null)
-    .select('id, status, start_date, end_date');
+    .eq('id', args.filingId);
+
+  // Replacing asserts proof is STILL there; a first attach asserts there is
+  // none. Either way the condition travels with the UPDATE rather than being
+  // read first and believed — see the notes above.
+  const guarded = args.replace
+    ? base.or('evidence_path.not.is.null,evidence_url.not.is.null')
+    : base.is('evidence_path', null).is('evidence_url', null);
+
+  const { data, error } = await guarded.select(
+    'id, status, start_date, end_date'
+  );
   if (error)
     throw new Error(`attaching the certificate failed: ${error.message}`);
 

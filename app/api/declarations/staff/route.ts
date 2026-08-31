@@ -399,6 +399,8 @@ async function attachToExistingFiling(args: {
     endDate: string;
     evidencePath?: string;
     evidenceUrl?: string;
+    /** Set only on the request sent AFTER the person read the warning. */
+    replaceExisting?: boolean;
   };
   actor: { id: string; email: string | null };
 }) {
@@ -419,12 +421,26 @@ async function attachToExistingFiling(args: {
     );
   }
 
-  // Never overwrite proof that is already there. The day is settled; a second
-  // certificate replacing the first would silently discard whichever one the
-  // school actually looked at.
-  if (existing.hasEvidence) {
+  // ⚠ PROOF ALREADY ON THE DAY IS REPLACED, BUT ONLY ON A SECOND, DELIBERATE
+  // ATTEMPT. Mr Ace, 2026-08-31: re-uploading in the SIS "will override it but
+  // theres a warning". This 409 IS that warning — the first request never
+  // carries `replaceExisting`, so it lands here, and the screen turns the
+  // refusal into the question it puts to the person. The request they send
+  // after agreeing carries the flag and passes straight through.
+  //
+  // Modelling it as two requests rather than one overwriting call is what
+  // stops the warning being decorative: anything that skipped the UI, or any
+  // retry of a stale request, would otherwise replace a child's medical
+  // certificate with nobody having been asked.
+  const replacing = existing.hasEvidence;
+  if (replacing && !input.replaceExisting) {
     return NextResponse.json(
-      { error: certificateAlreadyOnFileMessage(target.studentName, existing) },
+      {
+        error: certificateAlreadyOnFileMessage(target.studentName, existing),
+        // The screen keys its warning on this rather than parsing the
+        // sentence, so the wording stays free to change.
+        certificateAlreadyOnFile: true,
+      },
       { status: 409 }
     );
   }
@@ -435,6 +451,7 @@ async function attachToExistingFiling(args: {
       filingId: existing.id,
       evidencePath: input.evidencePath ?? null,
       evidenceUrl: input.evidenceUrl ?? null,
+      replace: replacing,
     });
   } catch (e) {
     console.error(
@@ -447,12 +464,20 @@ async function attachToExistingFiling(args: {
     );
   }
 
-  // Zero rows back means somebody else attached one between the read and the
-  // write — the parent uploading in the portal while the office scans the
-  // paper copy. The winner's certificate stands.
+  // Zero rows back means the row stopped matching between the read and the
+  // write. On a first attach that is somebody else getting there first — the
+  // parent uploading in the portal while the office scans the paper copy — and
+  // the winner's certificate stands. On a replacement it is the opposite: the
+  // certificate being replaced is no longer there, so there is nothing to
+  // warn about any more and landing this silently would be wrong.
   if (!attached.attached) {
     return NextResponse.json(
-      { error: certificateAlreadyOnFileMessage(target.studentName, existing) },
+      {
+        error: replacing
+          ? `The certificate for ${target.studentName} changed while you were looking at it. Open the day again to see what is on file now.`
+          : certificateAlreadyOnFileMessage(target.studentName, existing),
+        certificateAlreadyOnFile: !replacing,
+      },
       { status: 409 }
     );
   }
@@ -475,6 +500,16 @@ async function attachToExistingFiling(args: {
     context: {
       recorded_by_school: true,
       attached_to_existing: true,
+      // ⚠ A REPLACEMENT MUST NOT READ AS A FIRST UPLOAD. Somebody replaced a
+      // certificate the school already held, and the log is the only place
+      // that fact survives — the row now points at the new file and the UI
+      // never mentions the old one again.
+      //
+      // ⚠ Still PRESENCE ONLY: no path and no URL, for either file. That is
+      // migration 109's rule, restated by 125 — `audit_log` is readable by
+      // every is_registrar_or_above() user and can never be corrected, and a
+      // link to a child's medical certificate is exactly what it is about.
+      ...(replacing ? { replaced_existing: true } : {}),
       declaration_type: 'absence',
       with_medical: true,
       evidence_kind: evidenceKind(input.evidencePath, input.evidenceUrl),

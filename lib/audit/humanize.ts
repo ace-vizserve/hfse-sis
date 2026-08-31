@@ -423,10 +423,16 @@ function templateSummary(
         // added to a parent's pending request would read exactly like the
         // office recording a fresh absence — the same action name, the same
         // child, the same days.
+        // ⚠ REPLACING IS ITS OWN SENTENCE. A certificate the school already
+        // held was overwritten and the old file is referenced by nothing
+        // afterwards, so this line is the only surviving record that it
+        // happened at all. "added" would describe a day that had none.
         parts.push(
-          boolish(ctx.attached_to_existing) === true
-            ? 'certificate added to the parent’s filing'
-            : 'recorded by the school office'
+          boolish(ctx.replaced_existing) === true
+            ? 'certificate on the parent’s filing replaced'
+            : boolish(ctx.attached_to_existing) === true
+              ? 'certificate added to the parent’s filing'
+              : 'recorded by the school office'
         );
         const kind = str(ctx.evidence_kind);
         if (kind === 'file') parts.push('certificate uploaded');

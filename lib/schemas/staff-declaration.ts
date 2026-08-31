@@ -110,6 +110,22 @@ const StaffMedicalCertificateShape = z.strictObject({
     .max(DECLARATION_URL_MAX, 'That link is too long.')
     .regex(HTTPS_URL, 'That does not look like a web link.')
     .optional(),
+  /**
+   * Replace a certificate that is ALREADY on the day.
+   *
+   * ⚠ OPT-IN, AND IT DEFAULTS TO ABSENT SO REPLACING CANNOT HAPPEN BY
+   * ACCIDENT. Mr Ace, 2026-08-31: re-uploading in the SIS "will override it
+   * but theres a warning". The warning is the whole point, so the two steps
+   * are modelled as two different requests: the first arrives WITHOUT this
+   * flag, is declined, and that decline is how the screen learns it has
+   * something to warn about. Only the second — sent after a person read the
+   * warning and agreed — carries it.
+   *
+   * A single request that overwrote whatever it found would make the warning
+   * decorative: any caller that skipped the UI, or any retry, would replace a
+   * child's medical certificate silently.
+   */
+  replaceExisting: z.boolean().optional(),
 });
 
 /**
