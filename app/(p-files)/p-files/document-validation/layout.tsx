@@ -7,13 +7,18 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { loadPendingDocValidation } from '@/lib/admissions/document-validation';
-import {
-  countAwaitingVerification,
-  loadExpiringSoon,
-} from '@/lib/p-files/document-validation';
+import { countAwaitingVerification } from '@/lib/p-files/document-validation';
 import { getSessionUser } from '@/lib/supabase/server';
 
-// Document validation — three review queues, now three routes.
+// Document validation — two review queues: whose documents are being reviewed,
+// applicants or enrolled students.
+//
+// There was a third tab, "Expiring soon". It was removed as redundant: the
+// P-Files sidebar already carries Expiring in 30 / 60 / 90 days
+// (`/p-files?expiring=…`, lib/auth/roles.ts), the student's own file shows an
+// expiry on every expiring document, and an expiring passport is not something
+// anyone VALIDATES — it is already valid, it is just running out. This page is
+// for reviewing what a parent has sent in.
 //
 // THE GUARD IS AN OR OF TWO CAPABILITIES, which is why this page keeps plain
 // `requiresRoles` in the nav rather than `requiresCapability` (see the NavItem
@@ -60,9 +65,11 @@ export default async function DocumentValidationLayout({
   // Each queue's page re-reads its own rows; for HFSE's volumes that is one
   // extra list query per view, and the alternative is a tab strip that cannot
   // say whether anything is waiting.
-  const [applicantRows, expiringRows, awaitingCount] = await Promise.all([
+  // One query per tab badge. The expiring-soon count went with its tab — it
+  // was a whole extra list read (`loadExpiringSoon`) on every view of this
+  // page, for a number nothing displays any more.
+  const [applicantRows, awaitingCount] = await Promise.all([
     canReadPre ? loadPendingDocValidation(ayCode) : Promise.resolve([]),
-    canReadPost ? loadExpiringSoon(ayCode, 90) : Promise.resolve([]),
     canReadPost ? countAwaitingVerification(ayCode) : Promise.resolve(0),
   ]);
 
@@ -89,11 +96,6 @@ export default async function DocumentValidationLayout({
             label: 'Enrolled students',
             count: awaitingCount || undefined,
           },
-          {
-            href: '/p-files/document-validation/expiring',
-            label: 'Expiring soon',
-            count: expiringRows.length || undefined,
-          },
         ]
       : []),
   ];
@@ -109,10 +111,10 @@ export default async function DocumentValidationLayout({
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
           {canReadPre && canReadPost
-            ? 'Review documents uploaded by parents — for applicants and for enrolled students — and keep track of travel documents about to expire.'
+            ? 'Review documents uploaded by parents — for applicants and for enrolled students.'
             : canReadPre
               ? 'Review documents uploaded by parents of applicants.'
-              : 'Review documents uploaded by parents and monitor expiring travel documents for enrolled students.'}
+              : 'Review documents uploaded by parents of enrolled students.'}
           {readOnlyEverywhere && ' You have read-only access to these queues.'}
         </p>
       </header>

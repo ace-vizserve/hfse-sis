@@ -190,6 +190,18 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         filterFn: 'arrIncludesSome',
       },
       {
+        accessorKey: 'studentNumber',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Student number</SortableHeader>
+        ),
+        meta: { label: 'Student number' },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {row.original.studentNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'levelApplied',
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
@@ -326,8 +338,10 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         searchPlaceholder="Search student or document…"
         facets={facets}
         toolbarTrailing={modeToggle ?? undefined}
-        // Distinct namespace from the sibling Expiring queue on this same page
-        // so the two tables' filters don't collide in the URL (KD #84).
+        // Namespaced so this queue's filters persist and are shareable without
+        // colliding with the Applicants queue's (KD #84). Kept after the
+        // Expiring queue was removed — the namespace is what makes the URL
+        // state unambiguous, not how many tables happen to exist today.
         url={{ enabled: true, namespace: 'awaiting' }}
         pageSize={25}
         // Level + section render once in the group header (keyed by enroleeNumber); hide the redundant per-row

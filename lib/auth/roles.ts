@@ -166,10 +166,9 @@ const PFILES_NAV: NavSection[] = [
             href: '/p-files/document-validation',
             label: 'Enrolled students',
           },
-          {
-            href: '/p-files/document-validation/expiring',
-            label: 'Expiring soon',
-          },
+          // "Expiring soon" was a third child here. Removed as redundant —
+          // the Expiring in 30/60/90 days links above cover it, and an
+          // expiring document is not awaiting validation.
         ],
         label: 'Document validation',
         badgeKey: 'pfileAwaitingVerification',

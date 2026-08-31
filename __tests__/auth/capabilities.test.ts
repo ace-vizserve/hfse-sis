@@ -299,10 +299,8 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
       'documents_pre_enrolment.validate',
     ],
   },
-  {
-    file: 'app/(p-files)/p-files/document-validation/expiring/page.tsx',
-    capabilities: ['documents_post_enrolment.read'],
-  },
+  // The expiring queue was removed — the sidebar's Expiring in 30/60/90 days
+  // links already cover it, and an expiring document is not awaiting review.
   // Phase 3
   {
     file: 'app/api/sis/ay-setup/route.ts',

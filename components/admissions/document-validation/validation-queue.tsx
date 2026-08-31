@@ -230,6 +230,18 @@ export function ValidationQueue({
         filterFn: 'arrIncludesSome',
       },
       {
+        accessorKey: 'studentNumber',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Student number</SortableHeader>
+        ),
+        meta: { label: 'Student number' },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {row.original.studentNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'levelApplied',
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
@@ -317,45 +329,23 @@ export function ValidationQueue({
     []
   );
 
-  // Status tabs split by application-pipeline stage so registrars can
-  // triage Submitted (fresh upload — first review) vs Ongoing Verification
-  // / Processing (later stages, often re-uploads after a Rejected). All
-  // tab keeps the unfiltered view.
-  const statusTabs: StatusTabConfig<ValidationQueueRow>[] = React.useMemo(
-    () => [
-      { value: 'all', label: 'All', predicate: () => true, isDefault: true },
-      {
-        value: 'submitted',
-        label: 'Submitted',
-        predicate: (r) => r.applicationStatus === 'Submitted',
-      },
-      {
-        value: 'ongoing',
-        label: 'Ongoing',
-        predicate: (r) => r.applicationStatus === 'Ongoing Verification',
-      },
-      {
-        value: 'processing',
-        label: 'Processing',
-        predicate: (r) => r.applicationStatus === 'Processing',
-      },
-    ],
-    []
-  );
+  // There was a status-tab strip here — All / Submitted / Ongoing /
+  // Processing. It filtered `applicationStatus`, which is EXACTLY what the
+  // "App status" facet above already does, so the same column had two
+  // controls in two different shapes: a tab strip that allows one value and a
+  // chip dropdown that allows several. Picking a tab and then a chip left the
+  // table narrowed by rules the reader could not see in one place.
+  //
+  // It also made this queue and the enrolled-students queue stop looking like
+  // siblings — same shell, same columns, same search, but one carried a row of
+  // tabs the other did not. The facet is the more capable of the two and is
+  // shared by both, so the tabs went.
 
-  // Expires-only toggle (passport / pass / parent-pass slots). The
-  // predicate has nothing to do with the viewer so we opt in via
-  // `enabled: true` + `userId: null` per MeScopeConfig JSDoc.
-  const expiresScope: MeScopeConfig<ValidationQueueRow> = React.useMemo(
-    () => ({
-      enabled: true,
-      userId: null,
-      label: 'Expirable only',
-      icon: CalendarClock,
-      predicate: (r) => r.isExpirable,
-    }),
-    []
-  );
+  // An "Expirable only" toggle stood here too, and it went for the same reason
+  // as the status tabs: the enrolled-students queue has no equivalent, so the
+  // two sibling tables offered different controls over the same kind of data.
+  // Nothing is lost — the Document facet lists the passport and pass slots by
+  // name, so narrowing to them is a chip away and says which ones out loud.
 
   // Toolbar: mode toggle. Triage exists to approve or reject one document at a
   // time, so it has nothing to offer a read-only viewer.
@@ -409,8 +399,6 @@ export function ValidationQueue({
         searchKeys={['fullName', 'enroleeNumber', 'slotLabel']}
         searchPlaceholder="Search student or document…"
         facets={facets}
-        statusTabs={statusTabs}
-        meScope={expiresScope}
         toolbarTrailing={modeToggle}
         // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
         url={{ enabled: true, namespace: 'validation' }}
