@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   ]);
   if ('error' in auth) return auth.error;
 
-  const { tab, limit, cursor } = parseActivityParams(
+  const { tab, limit, cursor, since } = parseActivityParams(
     request.nextUrl.searchParams
   );
 
@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
       tab,
       cursor,
       limit,
+      since,
     });
     return NextResponse.json(page);
   } catch (e) {

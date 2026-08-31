@@ -17,7 +17,20 @@ export type ParsedActivityParams = {
   tab: ActivityTab;
   limit: number;
   cursor: ActivityCursor;
+  /** Oldest moment to include, as an ISO instant. Absent means no limit. */
+  since?: string;
+  /** Newest moment to include, as an ISO instant. Absent means no limit. */
+  until?: string;
+  /** Free-text search. Absent or blank means no search. */
+  q?: string;
 };
+
+/** Shared by `since` and `until` — an unreadable bound is dropped, not refused. */
+function parseInstant(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+}
 
 export function parseActivityParams(
   params: URLSearchParams
@@ -48,5 +61,19 @@ export function parseActivityParams(
     if (at && id) cursor = { at, id };
   }
 
-  return { tab, limit, cursor };
+  // The range arrives as ISO instants the BROWSER computed, not as dates. A day
+  // has to start and end where the reader is sitting, and only the browser
+  // knows that; resolving a bare date here would anchor it to UTC, which is
+  // 8am in Singapore — so "today" would lose the whole morning.
+  //
+  // Anything unparseable is dropped rather than rejected. A filter that cannot
+  // be read should show more than the reader asked for, never less, and never
+  // an error page over whatever they had open.
+  const since = parseInstant(params.get('since'));
+  const until = parseInstant(params.get('until'));
+
+  const rawQ = params.get('q')?.trim();
+  const q = rawQ ? rawQ.slice(0, 200) : undefined;
+
+  return { tab, limit, cursor, since, until, q };
 }

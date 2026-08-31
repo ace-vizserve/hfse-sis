@@ -32,6 +32,36 @@ cited now. Nothing was sent to "Tin" as a distinct person in the meantime.
 
 ---
 
+## ✅ ANSWERED — STAR stands for "Sports, Talent, Arts and Rhythm"
+
+Mr Ace, 2026-08-31, in his own words: _"STAR is acronym for Sports, Talent,
+Arts and Rhythm"_. **This settles item #4's wording dispute in favour of Mr
+Hanafi's deployment workbook**, which had "Rhythm" throughout
+(`scripts/backfill/gen-teacher-assignments.ts:199,773`); the competing reading
+recorded here on 2026-08-28 is wrong and is not to be re-raised. **Christina no
+longer owes the wording** — only the rest of the approved subject-name list.
+
+⚠ **BUT THE RENAME ITSELF CANNOT BE DONE ON SCREEN, AND NOT FOR THE REASON THE
+ITEM ASSUMES.** Mr Ace, same day: _"i cant rename MAPEH to STAR for ay2026 in
+SIS subject weights page"_. Two separate blockers, checked 2026-08-31:
+
+1. **`name` is not editable anywhere in the app.** `SubjectCatalogUpdateSchema`
+   (`lib/schemas/subject.ts:75`) accepts exactly three fields —
+   `is_examinable`, `grading_method`, `report_label` — and its `.refine()`
+   rejects a payload naming anything else. The edit sheet offers no name box
+   because no route would take one.
+2. 🔴 **`subjects` IS A GLOBAL CATALOG WITH NO `academic_year_id`**
+   (`lib/sis/subjects/queries.ts:72`), so **"rename it for AY2026" is not
+   expressible** — one row serves every year. A rename would relabel AY2025's
+   records and anything re-rendered from them.
+
+**`report_label` is the one lever that exists today** (it overrides the printed
+name on the report card and falls back to `name`), and it is **equally global**
+— so it changes the wording without answering the per-year question either.
+
+**The decision is the school's and has not been made:** does MAPEH become STAR
+everywhere including closed AY2025, or does the label need to become per-year?
+
 ## A. Build items (Ace)
 
 | #   | Item                                                                            | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Raised by         | Ref                 |

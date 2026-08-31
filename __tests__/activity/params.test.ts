@@ -101,3 +101,33 @@ describe('parseActivityParams — cursor', () => {
     ).toBeNull();
   });
 });
+
+describe('parseActivityParams — since (the period filter)', () => {
+  it('is undefined when absent, which means no period limit', () => {
+    expect(parseActivityParams(search({})).since).toBeUndefined();
+  });
+
+  it('normalizes a valid instant to ISO', () => {
+    expect(
+      parseActivityParams(search({ since: '2026-08-24T01:40:00.000Z' })).since
+    ).toBe('2026-08-24T01:40:00.000Z');
+  });
+
+  it('accepts a plain date and normalizes it', () => {
+    expect(parseActivityParams(search({ since: '2026-08-24' })).since).toBe(
+      '2026-08-24T00:00:00.000Z'
+    );
+  });
+
+  // An unreadable filter must widen the result, never narrow it and never
+  // 500 — this panel opens over whatever the reader was doing.
+  it('drops an unparseable value rather than refusing the request', () => {
+    expect(parseActivityParams(search({ since: 'last-tuesday' })).since).toBe(
+      undefined
+    );
+  });
+
+  it('drops an empty value', () => {
+    expect(parseActivityParams(search({ since: '' })).since).toBeUndefined();
+  });
+});

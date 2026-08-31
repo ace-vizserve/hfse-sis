@@ -43,13 +43,13 @@ export function PageTabNav({ tabs }: { tabs: PageTab[] }) {
 
   return (
     <Tabs value={active} className="w-full">
-      <TabsList variant="segmented">
+      <TabsList>
         {tabs.map((tab) => (
           <TabsTrigger key={tab.href} value={tab.href} asChild>
             <Link href={tab.href} className="inline-flex items-center gap-1.5">
               {tab.label}
               {tab.count != null && (
-                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                <span className="font-mono text-[10px] tabular-nums">
                   {tab.count}
                 </span>
               )}

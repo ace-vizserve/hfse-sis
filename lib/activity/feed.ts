@@ -91,6 +91,51 @@ export function pageEvents(
   };
 }
 
+/**
+ * Narrow the derived list to the reader's filters. Exported for the same
+ * reason `pageEvents` is: this is the whole of the filtering, and it is worth
+ * testing without standing up a mock Supabase client.
+ *
+ * Dates compare as ISO STRINGS, not parsed Dates — every `at` here is a UTC
+ * instant from Postgres, and those sort lexically in the same order they sort
+ * chronologically. `pageEvents` compares its cursor the same way, so filtering
+ * and paging can never disagree about which of two events came first.
+ */
+export function filterEvents(
+  events: ActivityEvent[],
+  filters: { since?: string; until?: string; q?: string }
+): ActivityEvent[] {
+  let out = events;
+
+  if (filters.since) {
+    const since = filters.since;
+    out = out.filter((e) => compareStringsAsc(e.at, since) >= 0);
+  }
+  // `until` is an INSTANT the caller has already pushed to the end of its day
+  // (see the panel's `endOfDayISO`). Keeping the boundary exclusive here and
+  // inclusive there means one rule — "up to and including that date" — rather
+  // than two half-rules that have to agree.
+  if (filters.until) {
+    const until = filters.until;
+    out = out.filter((e) => compareStringsAsc(e.at, until) <= 0);
+  }
+
+  // Search matches WHAT IS ON SCREEN — the actor, the sentence after them, and
+  // any note or outcome shown beneath. Searching fields the reader cannot see
+  // produces hits they cannot explain.
+  const q = filters.q?.trim().toLowerCase();
+  if (q) {
+    out = out.filter((e) =>
+      [e.actorLabel, e.predicate, ...(e.details ?? []).map((d) => d.text)]
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+    );
+  }
+
+  return out;
+}
+
 export type ActivityScope = {
   userId: string;
   role: Role | null;
@@ -98,6 +143,12 @@ export type ActivityScope = {
   cursor: ActivityCursor;
   limit: number;
   today?: string;
+  /** Oldest moment to include, as an ISO instant. Absent means no limit. */
+  since?: string;
+  /** Newest moment to include, as an ISO instant. Absent means no limit. */
+  until?: string;
+  /** Free-text search over the actor, the sentence, and any note shown. */
+  q?: string;
 };
 
 export async function loadActivityPage(
@@ -149,7 +200,28 @@ export async function loadActivityPage(
         (e.flow === 'grade_change' && wantMarkChanges)
     );
 
-  const { events, nextCursor } = pageEvents(all, scope.cursor, scope.limit);
+  // The period filter is applied HERE, to the derived events, not as a `.gte()`
+  // on either source query. An event's `at` is the moment the thing HAPPENED —
+  // when a stage was decided — while the rows those events are derived from
+  // carry the moment the REQUEST was created. Filtering in SQL would therefore
+  // drop a decision made this morning on a filing raised last month, which is
+  // exactly the event someone opening "Today" is looking for. Filtering the
+  // derived list keeps the filter honest against the timestamps on screen.
+  //
+  // ⚠ `waiting` is deliberately NOT filtered, for the same reason it ignores
+  // the tab: what you owe someone does not stop being owed because you narrowed
+  // the log to today.
+  const withinPeriod = filterEvents(all, {
+    since: scope.since,
+    until: scope.until,
+    q: scope.q,
+  });
+
+  const { events, nextCursor } = pageEvents(
+    withinPeriod,
+    scope.cursor,
+    scope.limit
+  );
   return { events, nextCursor, waiting, partial, truncated };
 }
 

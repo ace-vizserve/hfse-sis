@@ -43,13 +43,35 @@
       "Bash(sed -n 471,584p components/grading/grade-lookup-dialog.tsx)",
       "WebFetch(domain:claude.ai)",
       "Bash(node -e \"const m=require\\('./.mcp.json'\\);console.log\\(Object.keys\\(m.mcpServers||{}\\).join\\('\\\\n'\\)\\)\")",
-      "Read(//c/Users/Ace/.claude/plugins/**)"
+      "Read(//c/Users/Ace/.claude/plugins/**)",
+      "PowerShell($sp = \"C:\\\\Users\\\\Ace\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\\\cac48bf0-41e2-4a52-a3e5-1826911152da\\\\scratchpad\"; New-Item -ItemType Directory -Force $sp | Out-Null; Copy-Item \"scripts\\\\backfill\\\\teacher-assignments-preview.sql\" \"$sp\\\\2026-08-26-teacher-assignments-preview.sql\"; Copy-Item \"scripts\\\\backfill\\\\teacher-assignments-apply.sql\" \"$sp\\\\2026-08-26-teacher-assignments-apply.sql\"; Get-ChildItem $sp | Select-Object Name, Length | Format-Table -AutoSize)",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && rm -f scripts/probe-declaration-realtime.ts && git status --short | grep -v \"^??\")",
+      "Bash(curl -s -o /dev/null -w \"  /api/parent/v2/students -> %{http_code}  redirect: %{redirect_url}\\\\n\" --max-time 30 http://localhost:3000/api/parent/v2/students)",
+      "Bash(curl -s -o /dev/null -w \"  OPTIONS -> %{http_code}\\\\n\" -X OPTIONS --max-time 30 -H \"Origin: https://portal.hfse.edu.sg\" -H \"Access-Control-Request-Method: POST\" http://localhost:3000/api/parent/v2/declarations)",
+      "Bash(NODE_PATH=__TRACKED_VAR__/node_modules npx tsx --env-file=.env.local C:/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/d3128641-f409-47de-bad3-5f491c6fedff/scratchpad/file-travel.ts)",
+      "Bash(curl -s -o /dev/null -w \"  /change-requests/act -> %{http_code} redirect: %{redirect_url}\\\\n\" --max-time 30 \"http://localhost:3000/change-requests/act?token=x\")",
+      "Bash(curl -s -o /dev/null -w \"  parent API          -> %{http_code}\\\\n\" --max-time 60 http://localhost:3000/api/parent/v2/students)",
+      "Bash(curl -s -o /dev/null -w \"  preflight           -> %{http_code}\\\\n\" -X OPTIONS --max-time 60 -H \"Origin: https://portal.hfse.edu.sg\" -H \"Access-Control-Request-Method: POST\" http://localhost:3000/api/parent/v2/declarations)",
+      "Bash(curl -s -o /dev/null -w \"  /change-requests/act -> %{http_code}\\\\n\" --max-time 60 \"http://localhost:3000/change-requests/act?token=x\")",
+      "Bash(curl -s -o /dev/null -w \"  /attendance \\(no auth\\) -> %{http_code} %{redirect_url}\\\\n\" --max-time 60 http://localhost:3000/attendance)",
+      "Bash(NODE_PATH=__TRACKED_VAR__/node_modules npx tsx --env-file=.env.local C:/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/d3128641-f409-47de-bad3-5f491c6fedff/scratchpad/check-route-gate.ts)",
+      "Bash(NODE_PATH=__TRACKED_VAR__/node_modules npx tsx --env-file=.env.local C:/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/d3128641-f409-47de-bad3-5f491c6fedff/scratchpad/file-for-visual-check.ts)",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && rm -rf supabase/.temp && git status --short | grep -c \"supabase\"; echo \"removed\")",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && sed -n '/## Deferred/,$p' docs/superpowers/plans/2026-08-29-nextjs-navigation-performance.md)",
+      "Bash(cp \"C:/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/a830dec7-7661-4462-b87c-7b5c9418ef2e/scratchpad/probe-category.ts\" scripts/_tmp-probe-category.ts)",
+      "Bash(perl -pi -e \"s{^import \\\\{ createServiceClient \\\\}.*}{import { createServiceClient } from '../lib/supabase/service';}\" scripts/_tmp-probe-category.ts)",
+      "Bash(cd \"c:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-vizserve projects/hfse-markbook\" && npx tsx --env-file=.env.local scripts/_tmp-probe-category.ts 2>&1 | tail -20; rm -f scripts/_tmp-probe-category.ts; echo \"--- probe deleted ---\")",
+      "Bash(NODE_PATH=\"$\\(pwd\\)/node_modules\" npx tsx --env-file=.env.local \"C:/Users/Ace/AppData/Local/Temp/claude/c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook/9b3903f8-9398-4446-b175-07f4e52f5fc6/scratchpad/probe-uploaded-expiring.ts\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ace\\AppData\\Local\\Temp\\claude\\c--Users-Ace-OneDrive---HFSE-International-School-Desktop-hfse-vizserve-projects-hfse-markbook\\aebe5fa0-94e1-410b-968e-c4a4daa13e23\\scratchpad",
       "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\app\\(p-files)\\p-files\\[enroleeNumber]",
       "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\docs\\training\\sessions",
-      "C:\\Users\\Ace\\.claude\\plans"
+      "C:\\Users\\Ace\\.claude\\plans",
+      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\scripts",
+      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\supabase\\.temp",
+      "c:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\docs\\superpowers\\plans",
+      "C:\\Users\\Ace\\OneDrive - HFSE International School\\Desktop\\hfse-vizserve projects\\hfse-markbook\\scripts"
     ]
   }
 }

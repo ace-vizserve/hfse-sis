@@ -44,5 +44,9 @@ export const queryKeys = {
   pfilesDrill: (target: string, range: DrillRange) =>
     ['pfiles-drill', target, range] as const,
   changeRequestPreview: () => ['change-request-preview'] as const,
-  activityFeed: (tab: string) => ['activity-feed', tab] as const,
+  // `period` is part of the key, not a filter applied to a shared cache — two
+  // periods are two different lists, and an infinite query's pages cannot be
+  // re-sliced without refetching from the first cursor.
+  activityFeed: (tab: string, period = 'all') =>
+    ['activity-feed', tab, period] as const,
 } as const;

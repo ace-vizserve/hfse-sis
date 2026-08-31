@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { loadActivityPage, pageEvents, SOURCE_CAP } from '@/lib/activity/feed';
+import {
+  filterEvents,
+  loadActivityPage,
+  pageEvents,
+  SOURCE_CAP,
+} from '@/lib/activity/feed';
 import type { ActivityEvent } from '@/lib/activity/events';
 
 // `loadActivityPage` resolves display names outside the `service` client it's
@@ -91,6 +96,113 @@ function ev(id: string, at: string): ActivityEvent {
     href: '#',
   };
 }
+
+describe('filterEvents — the date range and search', () => {
+  const all = [
+    ev('a', '2026-08-28T05:00:00.000Z'),
+    ev('b', '2026-08-28T04:00:00.000Z'),
+    ev('c', '2026-08-27T03:00:00.000Z'),
+    ev('d', '2026-08-20T02:00:00.000Z'),
+  ];
+  const ids = (rows: typeof all) => rows.map((e) => e.id);
+
+  it('returns everything when no filter is set', () => {
+    expect(ids(filterEvents(all, {}))).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('keeps only events at or after `since`', () => {
+    expect(
+      ids(filterEvents(all, { since: '2026-08-27T00:00:00.000Z' }))
+    ).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps only events at or before `until`', () => {
+    expect(
+      ids(filterEvents(all, { until: '2026-08-27T23:59:59.999Z' }))
+    ).toEqual(['c', 'd']);
+  });
+
+  it('applies both ends together as one window', () => {
+    expect(
+      ids(
+        filterEvents(all, {
+          since: '2026-08-27T00:00:00.000Z',
+          until: '2026-08-28T04:30:00.000Z',
+        })
+      )
+    ).toEqual(['b', 'c']);
+  });
+
+  // Both boundaries are inclusive. The panel pushes the end date to the last
+  // millisecond of its day, so "up to and including that date" is one rule.
+  it('includes events landing exactly on either boundary', () => {
+    expect(
+      ids(
+        filterEvents(all, {
+          since: '2026-08-28T04:00:00.000Z',
+          until: '2026-08-28T05:00:00.000Z',
+        })
+      )
+    ).toEqual(['a', 'b']);
+  });
+
+  it('can return nothing without that meaning the feed is empty', () => {
+    expect(filterEvents(all, { since: '2026-09-01T00:00:00.000Z' })).toEqual(
+      []
+    );
+  });
+
+  it('preserves newest-first order, so paging still works after it', () => {
+    const kept = filterEvents(all, { since: '2026-08-20T00:00:00.000Z' });
+    const page = pageEvents(kept, null, 2);
+    expect(ids(page.events)).toEqual(['a', 'b']);
+    expect(ids(pageEvents(kept, page.nextCursor, 2).events)).toEqual([
+      'c',
+      'd',
+    ]);
+  });
+
+  describe('search', () => {
+    const rows = [
+      { ...ev('x', '2026-08-28T05:00:00.000Z'), actorLabel: 'Radhika Putrevu' },
+      {
+        ...ev('y', '2026-08-28T04:00:00.000Z'),
+        predicate: 'filed Testing Two Test, absence 21 Aug.',
+      },
+      {
+        ...ev('z', '2026-08-28T03:00:00.000Z'),
+        details: [{ kind: 'note' as const, text: 'Test turn down note' }],
+      },
+    ];
+
+    it('matches the actor', () => {
+      expect(ids(filterEvents(rows, { q: 'radhika' }))).toEqual(['x']);
+    });
+
+    it('matches the sentence after the actor', () => {
+      expect(ids(filterEvents(rows, { q: 'absence 21' }))).toEqual(['y']);
+    });
+
+    it('matches a note shown under the row', () => {
+      expect(ids(filterEvents(rows, { q: 'turn down' }))).toEqual(['z']);
+    });
+
+    it('ignores case and surrounding spaces', () => {
+      expect(ids(filterEvents(rows, { q: '  RADHIKA  ' }))).toEqual(['x']);
+    });
+
+    it('combines with the date range rather than replacing it', () => {
+      expect(
+        ids(
+          filterEvents(rows, {
+            q: 'test',
+            since: '2026-08-28T03:30:00.000Z',
+          })
+        )
+      ).toEqual(['y']);
+    });
+  });
+});
 
 describe('pageEvents', () => {
   const all = [
