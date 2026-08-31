@@ -40,6 +40,15 @@ import { useRefreshTransition } from '@/lib/hooks/use-refresh-transition';
  */
 export const PENDING_DELAY_MS = 250;
 
+/**
+ * Every toast raised without an id shares sileo's single `"sileo-default"`
+ * slot, and dismissing one schedules a delete BY ID 600ms out — which then
+ * lands on whatever is in the slot at the time. A pending toast is the one
+ * kind that reliably has company (the outcome that replaces it, or a toast the
+ * surface raises itself), so it gets a slot nobody else writes to.
+ */
+let pendingToastSeq = 0;
+
 export type WriteActionOptions<T> = {
   /**
    * Shown while the write is in flight, if it takes longer than
@@ -152,23 +161,68 @@ export function useWriteAction(): WriteAction {
         timer = setTimeout(() => {
           if (timer) timersRef.current.delete(timer);
           timer = null;
-          toastId = toast.loading(label);
+          toastId = toast.loading(label, {
+            id: `write-action-${++pendingToastSeq}`,
+          });
           toastsRef.current.add(toastId);
         }, PENDING_DELAY_MS);
         timersRef.current.add(timer);
       }
 
-      const clearPending = () => {
+      /**
+       * Say how it went, and let go of the pending toast.
+       *
+       * THE OUTCOME TAKES OVER THE PENDING TOAST'S SLOT RATHER THAN FOLLOWING
+       * A DISMISS. Two things about sileo make that necessary. Every toast
+       * raised without an id lands in one shared slot; and `dismiss` does not
+       * remove a toast on the spot — it flags it as leaving and schedules a
+       * delete BY ID 600ms later. So "dismiss the pending toast, then show the
+       * outcome" put the outcome into the slot the delete was already aimed
+       * at, and it vanished about half a second after appearing. A six-second
+       * message lasted ~600ms on every write slow enough to show "Saving…"
+       * first, which is most of them.
+       *
+       * Re-using the pending toast's own id replaces it in place instead
+       * (sileo swaps a same-id toast that is not already leaving), so no
+       * delete is ever scheduled and the outcome keeps its full duration.
+       *
+       * `message === null` still dismisses: the surface is reporting the
+       * outcome itself, so nothing is coming to take the slot and a pending
+       * toast has no timeout of its own. THAT is why the pending toast holds a
+       * private id — the surface's own toast sits in the shared slot, so this
+       * dismiss can no longer take it down with us. It used to: an upload that
+       * warned instead of succeeding, or an enrolment reporting "awaiting
+       * class assignment", raised its toast and then had it deleted 600ms
+       * later by this very line.
+       */
+      const settle = (
+        message: string | null,
+        show: (message: string, opts?: { id: string }) => void
+      ) => {
         if (timer) {
           clearTimeout(timer);
           timersRef.current.delete(timer);
           timer = null;
         }
-        if (toastId) {
-          toast.dismiss(toastId);
-          toastsRef.current.delete(toastId);
+        if (message === null) {
+          if (toastId) {
+            toast.dismiss(toastId);
+            toastsRef.current.delete(toastId);
+            toastId = null;
+          }
+          return;
+        }
+        // Stop owning it — the outcome carries its own timeout, so the unmount
+        // cleanup must not dismiss it later either.
+        const slot = toastId;
+        if (slot) {
+          toastsRef.current.delete(slot);
           toastId = null;
         }
+        // No pending toast means no slot to take over, and the outcome is the
+        // only toast in flight — so it can have the shared one.
+        if (slot) show(message, { id: slot });
+        else show(message);
       };
 
       try {
@@ -183,23 +237,21 @@ export function useWriteAction(): WriteAction {
             : (opts.refresh ?? true);
         if (wantsRefresh) await awaitRefresh();
 
-        clearPending();
         const message =
           typeof opts.success === 'function'
             ? opts.success(data)
             : opts.success;
         // `null` — the surface reported the outcome itself, in a tone this
         // helper cannot pick (a warning on an otherwise-successful write).
-        if (message !== null) toast.success(message);
+        settle(message, toast.success);
         return data;
       } catch (err) {
-        clearPending();
         const message =
           typeof opts.error === 'function'
             ? opts.error(err)
             : (opts.error ?? defaultErrorMessage(err));
         // `null` — the surface is showing its own explanation.
-        if (message !== null) toast.error(message);
+        settle(message, toast.error);
         return undefined;
       }
     },

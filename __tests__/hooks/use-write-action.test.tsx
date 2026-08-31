@@ -79,7 +79,92 @@ describe('useWriteAction', () => {
     expect(toastSpies.success).toHaveBeenCalledWith('Saved');
   });
 
-  it('shows the pending toast once the write outlasts the delay, then dismisses it', async () => {
+  // REGRESSION — the outcome toast was living about 600ms instead of six
+  // seconds, on every write slow enough to show "Saving…" first.
+  //
+  // sileo gives every toast that does not name an id the SAME id
+  // ("sileo-default", index.js createToast), and `dismiss` does not take a
+  // toast down on the spot: it marks it leaving and schedules a delete BY ID
+  // 600ms later (index.js dismissToast). Dismissing the pending toast and then
+  // showing the outcome meant the outcome inherited that id, and the pending
+  // toast's leftover timer deleted it half a second after it appeared.
+  //
+  // So the pending toast is handed OVER rather than taken down: showing the
+  // outcome replaces it in place (sileo swaps a live same-id toast), and no
+  // delete is ever scheduled. `dismiss` is only for the case where nothing
+  // follows — see the two `null` tests below.
+  it('hands the pending toast over to the outcome rather than dismissing it', async () => {
+    const work = deferred<{ ok: boolean }>();
+    const { result } = renderHook(() => useWriteAction());
+
+    let done!: Promise<unknown>;
+    act(() => {
+      done = result.current(() => work.promise, {
+        pending: 'Saving…',
+        success: 'Saved',
+      });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_DELAY_MS + 1);
+    });
+    expect(toastSpies.loading).toHaveBeenCalledWith('Saving…', {
+      id: expect.stringMatching(/^write-action-\d+$/),
+    });
+
+    await act(async () => {
+      work.resolve({ ok: true });
+      await done;
+    });
+
+    // Same slot as the pending toast — that is what replaces it in place.
+    expect(toastSpies.success).toHaveBeenCalledWith('Saved', {
+      id: 'toast-1',
+    });
+    expect(toastSpies.dismiss).not.toHaveBeenCalled();
+  });
+
+  // The other half of the same library quirk. When the surface reports the
+  // outcome itself we DO dismiss the pending toast — and that dismiss used to
+  // take the surface's own toast down with it, because both sat in sileo's one
+  // shared slot. The pending toast now holds a private id, so the dismiss can
+  // only reach our own.
+  it('dismisses only its own slot, never a toast the surface raised', async () => {
+    const work = deferred<{ warning: string }>();
+    const { result } = renderHook(() => useWriteAction());
+
+    let done!: Promise<unknown>;
+    act(() => {
+      done = result.current(() => work.promise, {
+        pending: 'Uploading…',
+        success: (body) => {
+          toastSpies.warning(body.warning);
+          return null;
+        },
+      });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_DELAY_MS + 1);
+    });
+    // The pending toast asked for a slot of its own rather than the shared one.
+    expect(toastSpies.loading).toHaveBeenCalledWith('Uploading…', {
+      id: expect.stringMatching(/^write-action-\d+$/),
+    });
+
+    await act(async () => {
+      work.resolve({ warning: 'Merged 3 PDFs' });
+      await done;
+    });
+
+    expect(toastSpies.warning).toHaveBeenCalledWith('Merged 3 PDFs');
+    expect(toastSpies.success).not.toHaveBeenCalled();
+    // Exactly one dismiss, aimed at the pending toast's own id.
+    expect(toastSpies.dismiss).toHaveBeenCalledTimes(1);
+    expect(toastSpies.dismiss).toHaveBeenCalledWith('toast-1');
+  });
+
+  it('shows the pending toast once the write outlasts the delay, then replaces it', async () => {
     const work = deferred<{ ok: boolean }>();
     const { result } = renderHook(() => useWriteAction());
 
@@ -94,15 +179,20 @@ describe('useWriteAction', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(PENDING_DELAY_MS + 1);
     });
-    expect(toastSpies.loading).toHaveBeenCalledWith('Assigning class…');
+    expect(toastSpies.loading).toHaveBeenCalledWith('Assigning class…', {
+      id: expect.stringMatching(/^write-action-\d+$/),
+    });
     expect(toastSpies.success).not.toHaveBeenCalled();
 
     await act(async () => {
       work.resolve({ ok: true });
       await done;
     });
-    expect(toastSpies.dismiss).toHaveBeenCalledWith('toast-1');
-    expect(toastSpies.success).toHaveBeenCalledWith('Assigned');
+    expect(toastSpies.success).toHaveBeenCalledWith('Assigned', {
+      id: 'toast-1',
+    });
+    // Handed over, not taken down — see the regression note above.
+    expect(toastSpies.dismiss).not.toHaveBeenCalled();
   });
 
   it('holds the success toast until the refresh resolves — the whole point', async () => {
@@ -129,7 +219,9 @@ describe('useWriteAction', () => {
       refresh.resolve();
       await done;
     });
-    expect(toastSpies.success).toHaveBeenCalledWith('Saved');
+    expect(toastSpies.success).toHaveBeenCalledWith('Saved', {
+      id: 'toast-1',
+    });
   });
 
   it('runs onResolved before the refresh, so the dialog closes immediately', async () => {
@@ -280,7 +372,7 @@ describe('useWriteAction', () => {
       expect(toastSpies.error).not.toHaveBeenCalled();
     });
 
-    it('dismisses a pending toast that was already showing', async () => {
+    it('hands a pending toast over to the error message', async () => {
       const work = deferred<unknown>();
       const { result } = renderHook(() => useWriteAction());
 
@@ -300,8 +392,35 @@ describe('useWriteAction', () => {
         work.reject(new Error('nope'));
         await done;
       });
+      expect(toastSpies.error).toHaveBeenCalledWith('nope', { id: 'toast-1' });
+      expect(toastSpies.dismiss).not.toHaveBeenCalled();
+    });
+
+    // The other half of the rule: when the surface answers the failure itself,
+    // nothing replaces the pending toast, so it MUST still be taken down.
+    it('dismisses the pending toast when nothing follows it', async () => {
+      const work = deferred<unknown>();
+      const { result } = renderHook(() => useWriteAction());
+
+      let done!: Promise<unknown>;
+      act(() => {
+        done = result.current(() => work.promise, {
+          pending: 'Saving…',
+          success: 'Saved',
+          error: () => null,
+        });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PENDING_DELAY_MS + 1);
+      });
+
+      await act(async () => {
+        work.reject(new Error('handled by a dialog'));
+        await done;
+      });
+
+      expect(toastSpies.error).not.toHaveBeenCalled();
       expect(toastSpies.dismiss).toHaveBeenCalledWith('toast-1');
-      expect(toastSpies.error).toHaveBeenCalledWith('nope');
     });
   });
 });

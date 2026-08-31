@@ -25,6 +25,21 @@ type SonnerAction = { label: string; onClick: () => void };
 
 type ToastOpts = Omit<SileoOptions, 'title' | 'type'> & {
   action?: SonnerAction;
+  /**
+   * Which slot this toast occupies. Sileo reads it (`createToast`) and falls
+   * back to the literal `"sileo-default"` when it is absent — so EVERY toast
+   * raised without one shares a single id. It is not in `SileoOptions`, which
+   * is a gap in the package's types rather than a missing feature: `dismiss`
+   * takes an id and `show` returns one, and neither means anything unless a
+   * toast can carry its own.
+   *
+   * Why it matters: `dismiss` does not remove a toast, it flags it as leaving
+   * and schedules a delete BY ID 600ms later. With one shared id that delete
+   * lands on whatever occupies the slot when it fires — which was reliably the
+   * NEXT toast, not the dismissed one. Give a toast its own id whenever
+   * something else may be raised near it. See `lib/hooks/use-write-action.ts`.
+   */
+  id?: string;
 };
 
 // Convert the sonner-shaped `action` (if present) into sileo's `button`.
