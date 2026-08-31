@@ -61,7 +61,10 @@ export async function POST(
 
   const { data: configRows } = await service
     .from('subject_configs')
-    .select('id, subject_id, academic_year_id, subject:subjects(code, name)')
+    // `code` only. The audit row below records subject CODES, and a code never
+    // changes with a rename — so there is nothing here that a per-year name
+    // would improve, and fetching one would invite somebody to use it.
+    .select('id, subject_id, academic_year_id, subject:subjects(code)')
     .in('id', subjectConfigIds)
     .eq('academic_year_id', section.academic_year_id);
   const configs = (configRows ?? []) as Array<{

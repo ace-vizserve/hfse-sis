@@ -7,6 +7,7 @@ import {
   isSubjectRole,
 } from '@/lib/schemas/teacher-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 
 /** A class this teacher advises — as the adviser of record, or alongside one. */
 export type StaffAdviserAssignment = {
@@ -67,8 +68,8 @@ type RawAssignment = {
   role: string;
   relief_teacher_user_id: string | null;
   subjects:
-    | { code: string; name: string }
-    | { code: string; name: string }[]
+    | { id: string; code: string; name: string }
+    | { id: string; code: string; name: string }[]
     | null;
 };
 
@@ -119,11 +120,22 @@ async function loadStaffAssignmentsUncached(
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
     .select(
-      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, subjects(code, name)'
+      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, subjects(id, code, name)'
     )
     .in('section_id', sectionIds);
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
+
+  // What each subject is called in the year this directory is showing
+  // (migration 137). The staff page lists what a teacher teaches, and it has
+  // to agree with the grading sheet they open from it.
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    (ayRow as { id: string }).id,
+    assignments
+      .map((a) => (Array.isArray(a.subjects) ? a.subjects[0] : a.subjects))
+      .filter((x): x is { id: string; code: string; name: string } => !!x)
+  );
 
   const teachers = await getTeacherList({ excludeDisabled: false });
 
@@ -177,7 +189,7 @@ async function loadStaffAssignmentsUncached(
           assignmentId: a.id,
           subjectId: a.subject_id ?? '',
           subjectCode: sub?.code ?? '',
-          subjectName: sub?.name ?? '',
+          subjectName: sub ? (subjectNames.get(sub.id) ?? sub.name) : '',
           sectionId: a.section_id,
           sectionName: sec?.name ?? '',
           levelCode: sec?.levelCode ?? '',

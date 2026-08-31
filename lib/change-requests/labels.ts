@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   getApproverEmailList,
   getRegistrarEmailList,
@@ -36,7 +37,8 @@ export async function fetchLabels(
       .select(
         `term:terms(label),
          section:sections(name, level:levels(label)),
-         subject:subjects(name)`
+         subject:subjects(name),
+         subject_config:subject_configs(display_name)`
       )
       .eq('id', sheetId)
       .single(),
@@ -56,6 +58,11 @@ export async function fetchLabels(
       level: { label: string | null } | { label: string | null }[] | null;
     } | null;
     subject: { name: string | null } | { name: string | null }[] | null;
+    /** Per (subject, academic year) — where the year's own name lives. */
+    subject_config:
+      | { display_name: string | null }
+      | { display_name: string | null }[]
+      | null;
   } | null;
   const term = sheetData
     ? Array.isArray(sheetData.term)
@@ -73,9 +80,17 @@ export async function fetchLabels(
       ? sheetData.subject[0]
       : sheetData.subject
     : null;
+  const subjectConfig = sheetData
+    ? Array.isArray(sheetData.subject_config)
+      ? sheetData.subject_config[0]
+      : sheetData.subject_config
+    : null;
+  // This label is read by a person — in the change-request queue and in the
+  // emails the flow sends — so it names the subject the way that sheet's YEAR
+  // names it (migration 137).
   const sheetLabel =
     sheetData && subject && section
-      ? `${level?.label ?? ''} ${section.name ?? ''} · ${subject.name ?? ''} · ${term?.label ?? ''}`.trim()
+      ? `${level?.label ?? ''} ${section.name ?? ''} · ${subjectDisplayName({ name: subject.name ?? '' }, subjectConfig)} · ${term?.label ?? ''}`.trim()
       : null;
 
   type StudentRef = {

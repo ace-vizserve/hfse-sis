@@ -8,6 +8,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
 import { logActions } from '@/lib/audit/log-action';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import {
@@ -45,7 +46,10 @@ type SectionRow = {
   id: string;
   name: string | null;
   level: LevelLite | LevelLite[] | null;
-  academic_year: { ay_code: string } | { ay_code: string }[] | null;
+  academic_year:
+    | { id: string; ay_code: string }
+    | { id: string; ay_code: string }[]
+    | null;
 };
 
 type SubjectRow = { id: string; name: string | null };
@@ -100,7 +104,7 @@ async function resolveBatchNames(
     const { data } = await service
       .from('sections')
       .select(
-        'id, name, level:levels(code, label), academic_year:academic_years(ay_code)'
+        'id, name, level:levels(code, label), academic_year:academic_years(id, ay_code)'
       )
       .in('id', sectionIds);
     return (data ?? []) as SectionRow[];
@@ -136,8 +140,29 @@ async function resolveBatchNames(
       });
     }
 
+    // Name each subject the way the SECTION'S OWN academic year names it
+    // (migration 137), so an audit row records the words the operator saw on
+    // screen when they made the assignment. Freezing it at write time is the
+    // point — resolving on read would rewrite history on the next rename.
+    const resolveName = await subjectDisplayNameResolver(
+      service,
+      sectionRows.map((r) => firstOf(r.academic_year)?.id),
+      subjectRows.map((r) => r.id)
+    );
+    // One AY is in play on any real batch (a save is per section list), so the
+    // first section's year answers for all of them.
+    const ayIdForSubjects =
+      sectionRows.map((r) => firstOf(r.academic_year)?.id).find(Boolean) ??
+      null;
+
     for (const row of subjectRows) {
-      if (row.name) subjects.set(row.id, row.name);
+      // `name` is nullable on the row type; the guard above already means we
+      // only get here with a real one.
+      if (!row.name) continue;
+      subjects.set(
+        row.id,
+        resolveName(ayIdForSubjects, { id: row.id, name: row.name })
+      );
     }
   } catch {
     // Swallow — the ids are recorded on every audit row regardless, and a

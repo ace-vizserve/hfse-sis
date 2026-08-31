@@ -2,6 +2,7 @@
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { createClient } from '@/lib/supabase/server';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   loadEffectiveAssignmentsForUser,
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
       `id, teacher_name, is_locked, ww_totals, pt_totals, qa_total, section_id, subject_id,
        term:terms(id, term_number, label),
        subject:subjects(id, code, name, is_examinable),
+       subject_config:subject_configs(display_name),
        section:sections(id, name, level:levels(id, code, label, level_type))`
     )
     .order('id');
@@ -60,7 +62,32 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ sheets });
+  // Each sheet's subject named the way its own academic year names it
+  // (migration 137) — resolved here so the API and the pages it feeds cannot
+  // disagree. Every grading sheet already points at a subject_config, so the
+  // join costs nothing.
+  const one = <T>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+  type SubjectLite = { id: string; code: string; name: string };
+  type ConfigLite = { display_name: string | null };
+  const sheetsOut = (sheets as unknown as Array<Record<string, unknown>>).map(
+    (sh) => {
+      const subj = one(sh.subject as SubjectLite | SubjectLite[] | null);
+      if (!subj) return sh;
+      return {
+        ...sh,
+        subject: {
+          ...subj,
+          name: subjectDisplayName(
+            subj,
+            one(sh.subject_config as ConfigLite | ConfigLite[] | null)
+          ),
+        },
+      };
+    }
+  );
+
+  return NextResponse.json({ sheets: sheetsOut });
 }
 
 // POST /api/grading-sheets

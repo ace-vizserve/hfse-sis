@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // Cross-year student history — keyed on `student_number` (Hard Rule #4:
 // the only stable student ID). Pulls placement + academic + attendance
@@ -207,6 +208,7 @@ export async function getAcademicHistory(
         initial_grade, quarterly_grade, annual_letter_grade,
         grading_sheet:grading_sheets(
           subject:subjects(code, name, is_examinable),
+          subject_config:subject_configs(display_name),
           term:terms(
             term_number,
             academic_year:academic_years(ay_code, label)
@@ -228,6 +230,11 @@ export async function getAcademicHistory(
       subject:
         | { code: string; name: string; is_examinable: boolean }
         | { code: string; name: string; is_examinable: boolean }[]
+        | null;
+      /** Per (subject, academic year) — where that year's own name lives. */
+      subject_config:
+        | { display_name: string | null }
+        | { display_name: string | null }[]
         | null;
       term:
         | {
@@ -270,6 +277,9 @@ export async function getAcademicHistory(
     const subject = Array.isArray(sheet.subject)
       ? sheet.subject[0]
       : sheet.subject;
+    const subjectConfig = Array.isArray(sheet.subject_config)
+      ? sheet.subject_config[0]
+      : sheet.subject_config;
     const term = Array.isArray(sheet.term) ? sheet.term[0] : sheet.term;
     if (!subject || !term) continue;
     const ay = Array.isArray(term.academic_year)
@@ -287,7 +297,10 @@ export async function getAcademicHistory(
     const subjMap = ayEntry.terms.get(term.term_number)!;
     const entry: SubjectEntry = {
       subjectCode: subject.code,
-      subjectName: subject.name,
+      // This list spans academic years, which makes it the surface the
+      // per-year name exists for: the AY2025 rows read MAPEH and the AY2026
+      // rows read STAR, on the same student's history (migration 137).
+      subjectName: subjectDisplayName(subject, subjectConfig),
       isExaminable: subject.is_examinable ?? true,
       initialGrade: r.initial_grade,
       quarterlyGrade: r.quarterly_grade,

@@ -4,6 +4,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // DELETE /api/sections/[id]/subjects/[subjectConfigId]
 //
@@ -38,7 +39,7 @@ export async function DELETE(
 
   const { data: config } = await service
     .from('subject_configs')
-    .select('subject:subjects(code, name)')
+    .select('display_name, subject:subjects(code, name)')
     .eq('id', subjectConfigId)
     .maybeSingle();
   const subj = config
@@ -66,7 +67,12 @@ export async function DELETE(
       context: {
         sectionName: section.name,
         subjectCode: subj?.code ?? null,
-        subjectName: subj?.name ?? null,
+        // Resolved to what the year calls it, ON PURPOSE. An audit row should
+        // record the words the operator saw when they acted — their screen
+        // said STAR, so the row says STAR, permanently. (Resolving on READ
+        // would be the opposite mistake: it would rewrite the row every time
+        // the school renames something.)
+        subjectName: subj ? subjectDisplayName(subj, config) : null,
         subjectConfigId,
       },
     });

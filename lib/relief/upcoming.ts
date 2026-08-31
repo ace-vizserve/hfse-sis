@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { reliefStatus } from '@/lib/relief/display';
+import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
 import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // "What am I booked to cover?" — the substitute's own heads-up.
@@ -60,7 +61,7 @@ type Raw = {
         level: { code: string | null } | { code: string | null }[] | null;
       }>
     | null;
-  subject: { name: string } | { name: string }[] | null;
+  subject: { id: string; name: string } | { id: string; name: string }[] | null;
 };
 
 function one<T>(v: T | T[] | null | undefined): T | null {
@@ -83,7 +84,7 @@ export async function loadUpcomingCoverForUser(
     .select(
       `id, role, relief_started_on, relief_ended_on,
        section:sections!inner(id, name, academic_year_id, level:levels(code)),
-       subject:subjects(name)`
+       subject:subjects(id, name)`
     )
     .eq('relief_teacher_user_id', userId)
     // A row with no start date is already live, so it is not "upcoming" and
@@ -99,7 +100,21 @@ export async function loadUpcomingCoverForUser(
     return [];
   }
 
-  return ((data ?? []) as unknown as Raw[])
+  const rows = (data ?? []) as unknown as Raw[];
+
+  // What each subject is called in the year the COVER is in (migration 137).
+  //
+  // Resolved per row off `section.academic_year_id`, not off the
+  // `academicYearId` parameter — that parameter is optional, and when a caller
+  // omits it these rows can span years. Reading the year from the row is right
+  // either way and cannot silently label a cover with another year's name.
+  const resolveName = await subjectDisplayNameResolver(
+    supabase,
+    rows.map((r) => one(r.section)?.academic_year_id),
+    rows.map((r) => one(r.subject)?.id)
+  );
+
+  return rows
     .flatMap<UpcomingCover>((a) => {
       const section = one(a.section);
       const startedOn = a.relief_started_on;
@@ -117,7 +132,9 @@ export async function loadUpcomingCoverForUser(
           sectionName: level?.code
             ? `${level.code} ${section.name}`
             : section.name,
-          subjectName: one(a.subject)?.name ?? null,
+          subjectName: one(a.subject)
+            ? resolveName(section.academic_year_id, one(a.subject)!)
+            : null,
           role: a.role,
           startedOn,
           endedOn: a.relief_ended_on,

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // POST /api/grading-sheets/bulk-create/preview
 //
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     service
       .from('subject_configs')
       .select(
-        'id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name)'
+        'id, subject_id, display_name, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, subject:subjects(code, name)'
       )
       .eq('academic_year_id', ayId),
     service
@@ -109,6 +110,8 @@ export async function POST(request: NextRequest) {
   type ConfigRow = {
     id: string;
     subject_id: string;
+    /** What this year calls the subject, or null if it was never renamed. */
+    display_name: string | null;
     ww_weight: number;
     pt_weight: number;
     qa_weight: number;
@@ -222,7 +225,10 @@ export async function POST(request: NextRequest) {
       return {
         subjectConfigId: c.id,
         code: subj?.code ?? '—',
-        name: subj?.name ?? '—',
+        // The preview names subjects to a person about to create sheets for
+        // this year, so it uses what the year calls them (migration 137). The
+        // de-dupe below still keys on `code`, which a rename never touches.
+        name: subj ? subjectDisplayName(subj, c) : '—',
         wwSlots: c.ww_max_slots,
         ptSlots: c.pt_max_slots,
         qaMax: c.qa_max,

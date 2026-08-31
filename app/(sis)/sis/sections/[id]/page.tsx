@@ -33,6 +33,7 @@ import { SectionScheduleDialog } from '@/components/sis/section-schedule-dialog'
 import { SectionTrackDialog } from '@/components/sis/section-track-dialog';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { TeacherAssignmentsPanel } from '@/components/sis/section-teachers-tab';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   SectionRosterTable,
   type SectionRosterRow,
@@ -152,7 +153,9 @@ export default async function SisSectionDetailPage({
           if (subjectIds.length === 0) return { data: [] as unknown[] };
           return supabase
             .from('subject_configs')
-            .select('id, subject:subjects(id, code, name, is_examinable)')
+            .select(
+              'id, display_name, subject:subjects(id, code, name, is_examinable)'
+            )
             .eq('academic_year_id', section.academic_year_id)
             .in('subject_id', subjectIds);
         })()
@@ -234,6 +237,8 @@ export default async function SisSectionDetailPage({
 
   type CfgRow = {
     id: string;
+    /** This year's name for the subject, or null if it was never renamed. */
+    display_name: string | null;
     subject:
       | { id: string; code: string; name: string; is_examinable: boolean }
       | { id: string; code: string; name: string; is_examinable: boolean }[]
@@ -265,7 +270,9 @@ export default async function SisSectionDetailPage({
       return {
         subjectConfigId: c.id,
         code: s.code,
-        name: s.name,
+        // Named the way THIS section's academic year names it (migration 137)
+        // — the config is the row being walked, so it is already here.
+        name: subjectDisplayName(s, c),
         isExaminable: s.is_examinable,
       };
     })

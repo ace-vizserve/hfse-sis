@@ -78,6 +78,12 @@ const CLASSIFIED: Record<string, Category[]> = {
   // reason a child's absence needs deciding this week rather than next. It
   // reads `ADVISER_ROLES`, so a co-adviser is admitted exactly as SQL's
   // `is_section_adviser` admits them; nothing here prints a name.
+  // ACT, decided by Mr Ace 2026-08-31 when this guard surfaced the question.
+  // Filing an absence for a class is doing the adviser's job that day, and
+  // that is exactly what cover is for — so a substitute standing in on P4
+  // Diligence may file for it. The code already used the relief-inclusive
+  // loader; this records the rule rather than changing it.
+  'lib/declarations/staff-filing.ts': ['act'],
   'lib/approvals/resolve.ts': ['act'],
   'lib/sidebar/resolve-hidden-modules.ts': ['act'],
   'lib/sidebar/module-visibility.ts': ['act'],

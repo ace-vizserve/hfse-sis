@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   CHANGE_REQUEST_STATUS_CONFIG,
   type ChangeRequestStatus,
@@ -91,6 +92,7 @@ export default async function AdminChangeRequestsPage({
        grading_sheet:grading_sheets!inner(
          section:sections!inner(id, name, academic_year_id),
          subject:subjects(code, name),
+         subject_config:subject_configs(display_name),
          term:terms(label)
        ),
        grade_entry:grade_entries(
@@ -117,6 +119,12 @@ export default async function AdminChangeRequestsPage({
   type RawGradingSheet = {
     section: { id: string; name: string; academic_year_id: string } | null;
     subject: { code: string; name: string } | null;
+    /**
+     * The sheet's own subject_configs row — per (subject, academic year), so
+     * this carries what the school called the subject in the year the sheet
+     * belongs to (migration 137).
+     */
+    subject_config: { display_name: string | null } | null;
     term: { label: string } | null;
   };
   // Left embed (never `!inner`) — a student the join can't resolve must
@@ -148,7 +156,11 @@ export default async function AdminChangeRequestsPage({
       sectionId: gs?.section?.id ?? null,
       sectionName: gs?.section?.name ?? null,
       subjectCode: gs?.subject?.code ?? null,
-      subjectName: gs?.subject?.name ?? null,
+      // The queue names the sheet a change was asked for, so it uses what
+      // that sheet's YEAR calls the subject (migration 137).
+      subjectName: gs?.subject
+        ? subjectDisplayName(gs.subject, gs.subject_config)
+        : null,
       termLabel: gs?.term?.label ?? null,
       studentLabel,
     };

@@ -196,57 +196,24 @@ const RAW_SUBJECT_NAME_IS_CORRECT: Record<string, string> = {
 /**
  * READS THAT SHOULD RESOLVE PER YEAR AND DO NOT YET.
  *
- * Not exemptions. Each of these shows a subject name to a person inside one
- * academic year, so each will read MAPEH on a screen that says STAR until it
- * is converted. They are listed rather than left loose for one reason: the
- * test above must keep failing on anything NEW, and it cannot do that while
- * the known set is unaccounted for.
+ * EMPTY, as of 2026-08-31 — the sweep is finished. Every place in the app that
+ * reads a subject's name now either resolves it for the academic year on
+ * screen, or appears above with a reason why raw is correct.
  *
- * ⚠ THIS LIST IS A CEILING, NOT A BUDGET. The count test below fails if it
- * grows. Converting a file means deleting its line here, not editing it.
+ * It stays here rather than being deleted because the shape of the work is
+ * worth keeping: when the next column goes per-year, this is the list that
+ * makes "how much is left" answerable instead of estimated. It started at 37.
  *
- * The two shapes remaining, since neither is hard — only unfinished:
- *   • A `grading_sheets` select. Every sheet points at a subject_config via
- *     subject_config_id, so `subject_config:subject_configs(display_name)`
- *     joins the year's name with no extra query. That is how the grading list
- *     and sheet pages were converted.
- *   • A standalone `subjects` read. Those take
- *     `subjectDisplayNamesForAy(service, ayId, rows)`, one small overlay read.
+ * ⚠ A CEILING, NOT A BUDGET. The count test below fails if anything is added.
+ * A new raw read should be converted, not listed — the two conversions are
+ * both small:
+ *   • A `grading_sheets` select joins
+ *     `subject_config:subject_configs(display_name)`; every sheet already
+ *     points at a config, so it costs no extra query.
+ *   • A standalone `subjects` read takes `subjectDisplayNamesForAy(...)`, or
+ *     `subjectDisplayNameResolver(...)` when the rows span years.
  */
-const NOT_YET_RESOLVED_PER_YEAR: Record<string, string> = {
-  'app/(classroom)/classroom/[sectionId]/grades/page.tsx':
-    'grading_sheets select — join subject_config:subject_configs(display_name).',
-  'app/(markbook)/markbook/change-requests/page.tsx':
-    'grading_sheets select behind the change-request list.',
-  'app/(markbook)/markbook/grading/requests/page.tsx':
-    'same list, teacher-facing half.',
-  'app/(sis)/sis/sections/[id]/page.tsx':
-    'section_subjects select — the config is already the row being walked.',
-  'app/api/grading-sheets/[id]/route.ts':
-    'already embeds subject_config; needs display_name plus a consumer that ' +
-    'reads it.',
-  'app/api/grading-sheets/route.ts': 'grading_sheets list select.',
-  'app/api/grading-sheets/bulk-create/preview/route.ts':
-    'selects FROM subject_configs already — one field away.',
-  'app/api/sections/[id]/subjects/route.ts':
-    'selects FROM subject_configs already — one field away.',
-  'app/api/sections/[id]/subjects/attach-many/route.ts': 'same shape.',
-  'app/api/sections/[id]/subjects/[subjectConfigId]/route.ts': 'same shape.',
-  'app/api/teacher-assignments/route.ts':
-    'builds a subject-name map for assignment labels; needs the AY overlay.',
-  'app/api/teacher-assignments/by-teacher/route.ts': 'same map, per teacher.',
-  'lib/account/sections.ts':
-    "the account page's list of what a teacher teaches.",
-  'lib/change-requests/labels.ts':
-    'builds the "P4 Diligence · MAPEH · Term 1" label shown in the ' +
-    'change-request queue and its emails. AY-scoped through the sheet.',
-  'lib/home/todos.ts': 'home-page to-do labels.',
-  'lib/relief/cover-board.ts': 'the cover board names the subject covered.',
-  'lib/relief/upcoming.ts': 'the "You\'re covering" panel.',
-  'lib/sis/records-history.ts': "a student's academic history rows.",
-  'lib/sis/staff.ts': 'the staff directory lists what each teacher teaches.',
-  'lib/sis/teacher-detail.ts': 'the teacher page, same list.',
-};
+const NOT_YET_RESOLVED_PER_YEAR: Record<string, string> = {};
 
 describe('every subject-name read is resolved per academic year', () => {
   it(
@@ -265,13 +232,10 @@ describe('every subject-name read is resolved per academic year', () => {
   );
 
   it('the unconverted list only ever shrinks', () => {
-    // A ceiling, not a budget. 20 as of 2026-08-31, after the report card,
-    // the markbook loaders, the grading pages and the classroom panels were
-    // converted. If this number needs to go UP, something was written raw
-    // that should have resolved — convert it instead of raising the cap.
-    expect(Object.keys(NOT_YET_RESOLVED_PER_YEAR).length).toBeLessThanOrEqual(
-      20
-    );
+    // Zero. The sweep finished on 2026-08-31, having started at 37 files.
+    // If this needs to go UP, something was written raw that should have
+    // resolved — convert it instead of raising the cap.
+    expect(Object.keys(NOT_YET_RESOLVED_PER_YEAR).length).toBe(0);
   });
 
   it('nothing is on both lists', () => {

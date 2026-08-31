@@ -7,6 +7,7 @@ import {
   isSubjectRole,
 } from '@/lib/schemas/teacher-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import { hasTermStarted } from '@/lib/sis/current-term';
 import { sgToday } from '@/lib/dates';
 
@@ -22,8 +23,8 @@ type RawAssignment = {
   subject_id: string | null;
   role: AssignmentRole;
   subjects:
-    | { code: string; name: string }
-    | { code: string; name: string }[]
+    | { id: string; code: string; name: string }
+    | { id: string; code: string; name: string }[]
     | null;
   sections: { name: string } | { name: string }[] | null;
 };
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
   const { data: assignmentRows } = await service
     .from('teacher_assignments')
     .select(
-      'id, section_id, subject_id, role, subjects(code, name), sections(name)'
+      'id, section_id, subject_id, role, subjects(id, code, name), sections(name)'
     )
     .eq('teacher_user_id', teacherId)
     .in(
@@ -107,6 +108,16 @@ export async function GET(request: NextRequest) {
     );
 
   const assignments = (assignmentRows ?? []) as RawAssignment[];
+
+  // What each subject is called in the academic year this sheet is editing
+  // (migration 137), so the picker agrees with the grading sheets it creates.
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    ayId,
+    assignments
+      .map((a) => (Array.isArray(a.subjects) ? a.subjects[0] : a.subjects))
+      .filter((x): x is { id: string; code: string; name: string } => !!x)
+  );
 
   // Which posts are already filled — across EVERY teacher, not just this one.
   //
@@ -177,7 +188,7 @@ export async function GET(request: NextRequest) {
         id: a.id,
         subjectId: a.subject_id ?? '',
         subjectCode: sub?.code ?? '',
-        subjectName: sub?.name ?? '',
+        subjectName: sub ? (subjectNames.get(sub.id) ?? sub.name) : '',
         sectionId: a.section_id,
         sectionName: sec?.name ?? '',
         role: a.role,

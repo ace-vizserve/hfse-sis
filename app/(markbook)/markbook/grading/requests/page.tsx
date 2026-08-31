@@ -14,6 +14,7 @@ import {
 } from '@/lib/auth/staff-list';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { MyRequestsTable, type MyRequestRow } from './my-requests-table';
 
 type RequestRow = {
@@ -96,6 +97,7 @@ export default async function MyRequestsPage() {
        grading_sheet:grading_sheets!inner(
          section:sections!inner(name, academic_year_id),
          subject:subjects(code, name),
+         subject_config:subject_configs(display_name),
          term:terms(label)
        ),
        grade_entry:grade_entries(
@@ -119,6 +121,12 @@ export default async function MyRequestsPage() {
   type RawGradingSheet = {
     section: { name: string; academic_year_id: string } | null;
     subject: { code: string; name: string } | null;
+    /**
+     * The sheet's own subject_configs row — per (subject, academic year), so
+     * this carries what the school called the subject in the year the sheet
+     * belongs to (migration 137).
+     */
+    subject_config: { display_name: string | null } | null;
     term: { label: string } | null;
   };
   // Left embed (never `!inner`) — a student the join can't resolve must
@@ -172,7 +180,10 @@ export default async function MyRequestsPage() {
       studentLabel,
       sectionName: gs?.section?.name ?? null,
       subjectCode: gs?.subject?.code ?? null,
-      subjectName: gs?.subject?.name ?? null,
+      // Same list, teacher-facing half — same rule.
+      subjectName: gs?.subject
+        ? subjectDisplayName(gs.subject, gs.subject_config)
+        : null,
       termLabel: gs?.term?.label ?? null,
     };
   });

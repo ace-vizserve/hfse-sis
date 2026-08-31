@@ -42,7 +42,7 @@ function row(over: Record<string, unknown> = {}) {
     relief_started_on: '2026-08-24',
     relief_ended_on: '2026-08-28',
     section: { id: 'sec-1', name: 'Respect', level: { code: 'P1' } },
-    subject: { name: 'MAPEH' },
+    subject: { id: 'sub-mapeh', name: 'MAPEH' },
     ...over,
   };
 }
@@ -144,8 +144,8 @@ describe('grouping', () => {
     // The design decision worth protecting: cover is arranged per absence, not
     // per class, so two classes covered by the same person over the same window
     // are one row.
-    rows.push(row({ id: 'a-1', subject: { name: 'MAPEH' } }));
-    rows.push(row({ id: 'a-2', subject: { name: 'Filipino' } }));
+    rows.push(row({ id: 'a-1', subject: { id: 'sub-mapeh', name: 'MAPEH' } }));
+    rows.push(row({ id: 'a-2', subject: { id: 'sub-fil', name: 'Filipino' } }));
 
     const board = await getCoverBoard('ay-1', TODAY);
 

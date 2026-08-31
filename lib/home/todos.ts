@@ -8,6 +8,7 @@ import {
   type TeachingProfile,
 } from '@/lib/sidebar/module-visibility';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sgToday } from '@/lib/dates';
 
@@ -140,6 +141,8 @@ type RawCrRow = {
   grading_sheet: {
     section: { academic_year_id: string } | null;
     subject: { name: string } | null;
+    /** Per (subject, academic year) — where the year's own name lives. */
+    subject_config: { display_name: string | null } | null;
     term: { label: string } | null;
   } | null;
 };
@@ -166,6 +169,7 @@ async function schoolAdminChangeRequestTodos({
        grading_sheet:grading_sheets!inner(
          section:sections!inner(academic_year_id),
          subject:subjects(name),
+         subject_config:subject_configs(display_name),
          term:terms(label)
        )`
     )
@@ -180,7 +184,12 @@ async function schoolAdminChangeRequestTodos({
   if (error || !data) return [];
 
   return (data as unknown as RawCrRow[]).map((row) => {
-    const subject = row.grading_sheet?.subject?.name ?? 'Unknown subject';
+    // The to-do names a subject to a person, so it uses what that sheet's
+    // YEAR calls it (migration 137) — the config is on the sheet already.
+    const sheet = row.grading_sheet;
+    const subject = sheet?.subject
+      ? subjectDisplayName(sheet.subject, sheet.subject_config)
+      : 'Unknown subject';
     const term = row.grading_sheet?.term?.label ?? '';
     return {
       id: `cr-${row.id}`,

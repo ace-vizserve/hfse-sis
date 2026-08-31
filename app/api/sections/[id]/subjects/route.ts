@@ -4,6 +4,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // POST /api/sections/[id]/subjects
 // Body: { subjectConfigId: string }
@@ -57,7 +58,9 @@ export async function POST(
 
   const { data: config } = await service
     .from('subject_configs')
-    .select('id, subject_id, academic_year_id, subject:subjects(code, name)')
+    .select(
+      'id, subject_id, academic_year_id, display_name, subject:subjects(code, name)'
+    )
     .eq('id', subjectConfigId)
     .maybeSingle();
   if (!config || config.academic_year_id !== section.academic_year_id) {
@@ -145,7 +148,12 @@ export async function POST(
       context: {
         sectionName: section.name,
         subjectCode: subj?.code ?? null,
-        subjectName: subj?.name ?? null,
+        // Resolved to what the year calls it, ON PURPOSE. An audit row should
+        // record the words the operator saw when they acted — their screen
+        // said STAR, so the row says STAR, permanently. (Resolving on READ
+        // would be the opposite mistake: it would rewrite the row every time
+        // the school renames something.)
+        subjectName: subj ? subjectDisplayName(subj, config) : null,
         subjectConfigId,
         grading_sheets_created: sheetsInserted,
       },

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // GET /api/grading-sheets/[id]
 // Returns the full sheet: config, section+level, term, subject, and all
@@ -27,7 +28,7 @@ export async function GET(
        term:terms(id, term_number, label),
        subject:subjects(id, code, name, is_examinable),
        section:sections(id, name, level:levels(id, code, label, level_type)),
-       subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
+       subject_config:subject_configs(display_name, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
     .eq('id', id)
     .single();
@@ -62,5 +63,29 @@ export async function GET(
     return (ai?.index_number ?? 0) - (bi?.index_number ?? 0);
   });
 
-  return NextResponse.json({ sheet, entries: sorted });
+  // Resolve the subject's name for THIS sheet's academic year before the
+  // payload leaves (migration 137). Doing it here rather than leaving it to
+  // each consumer is what stops the API and the page it feeds disagreeing —
+  // and the config carrying the name is the same row the weights come from,
+  // so it costs nothing.
+  const one = <T>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+  type SubjectLite = { id: string; code: string; name: string };
+  type ConfigLite = { display_name: string | null };
+  const raw = sheet as unknown as {
+    subject: SubjectLite | SubjectLite[] | null;
+    subject_config: ConfigLite | ConfigLite[] | null;
+  };
+  const subj = one(raw.subject);
+  const sheetOut = subj
+    ? {
+        ...sheet,
+        subject: {
+          ...subj,
+          name: subjectDisplayName(subj, one(raw.subject_config)),
+        },
+      }
+    : sheet;
+
+  return NextResponse.json({ sheet: sheetOut, entries: sorted });
 }

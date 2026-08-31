@@ -3,6 +3,7 @@ import 'server-only';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { reliefStatus, type ReliefStatus } from '@/lib/relief/display';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // Every cover in the school, grouped the way it was actually arranged.
@@ -63,7 +64,7 @@ type Raw = {
   relief_started_on: string | null;
   relief_ended_on: string | null;
   section: { id: string; name: string; level: { code: string | null } | null };
-  subject: { name: string } | null;
+  subject: { id: string; name: string } | null;
 };
 
 function one<T>(v: T | T[] | null | undefined): T | null {
@@ -113,7 +114,7 @@ export async function getCoverBoard(
         `id, teacher_user_id, relief_teacher_user_id, role,
          relief_started_on, relief_ended_on,
          section:sections!inner(id, name, academic_year_id, level:levels(code)),
-         subject:subjects(name)`
+         subject:subjects(id, name)`
       )
       .not('relief_teacher_user_id', 'is', null)
       .eq('section.academic_year_id', academicYearId),
@@ -127,6 +128,18 @@ export async function getCoverBoard(
     return { active: [], scheduled: [], recentlyEnded: [] };
   }
 
+  // What each subject is called in the year this board covers (migration
+  // 137). The board names a subject to the person covering it, so it must
+  // agree with the grading sheet they are about to open.
+  const rawRows = (rowsRes.data ?? []) as unknown as Raw[];
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    academicYearId,
+    rawRows
+      .map((r) => one(r.subject))
+      .filter((s): s is { id: string; name: string } => !!s)
+  );
+
   const nameOf = (id: string) => names.get(id) ?? id;
   const cutoff = daysBefore(today, RECENTLY_ENDED_DAYS);
 
@@ -135,7 +148,7 @@ export async function getCoverBoard(
   // what they are in real life.
   const groups = new Map<string, CoverGroup>();
 
-  for (const raw of (rowsRes.data ?? []) as unknown as Raw[]) {
+  for (const raw of rawRows) {
     const section = one(raw.section);
     if (!section || !raw.relief_teacher_user_id) continue;
 
@@ -167,7 +180,12 @@ export async function getCoverBoard(
     const label =
       raw.role === 'form_adviser'
         ? `${where} · Form class`
-        : `${where} · ${one(raw.subject)?.name ?? 'Subject'}`;
+        : `${where} · ${
+            one(raw.subject)
+              ? (subjectNames.get(one(raw.subject)!.id) ??
+                one(raw.subject)!.name)
+              : 'Subject'
+          }`;
 
     const existing = groups.get(key);
     if (existing) {

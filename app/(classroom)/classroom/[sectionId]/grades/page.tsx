@@ -9,12 +9,23 @@ import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadReportCard } from '@/lib/classroom/scope';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 type SubjectLite = { id: string; code: string; name: string };
 type SheetRow = {
   id: string;
   is_locked: boolean;
   subject: SubjectLite | SubjectLite[] | null;
+  /**
+   * The sheet's own subject_configs row — per (subject, academic year), so
+   * this is where the name the school used THIS year lives (migration 137).
+   * Reaching it costs nothing: every grading sheet already points at one via
+   * subject_config_id.
+   */
+  subject_config:
+    | { display_name: string | null }
+    | { display_name: string | null }[]
+    | null;
 };
 
 // Grades — the grading sheets for this (section, term). One sheet per
@@ -56,7 +67,9 @@ export default async function ClassroomGradesPage({
   if (selectedTermId) {
     const { data } = await supabase
       .from('grading_sheets')
-      .select('id, is_locked, subject:subjects(id, code, name)')
+      .select(
+        'id, is_locked, subject:subjects(id, code, name), subject_config:subject_configs(display_name)'
+      )
       .eq('section_id', sectionId)
       .eq('term_id', selectedTermId);
     sheets = (data ?? []) as unknown as SheetRow[];
@@ -64,6 +77,9 @@ export default async function ClassroomGradesPage({
 
   const subjectOf = (s: SheetRow) =>
     Array.isArray(s.subject) ? s.subject[0] : s.subject;
+  // See SheetRow — this is where the per-year name comes from.
+  const configOf = (s: SheetRow) =>
+    Array.isArray(s.subject_config) ? s.subject_config[0] : s.subject_config;
 
   if (capability === 'subject') {
     const mySubjectIds = new Set(
@@ -137,7 +153,9 @@ export default async function ClassroomGradesPage({
                   </div>
                   <div>
                     <p className="font-medium text-foreground">
-                      {subj?.name ?? 'Unknown subject'}
+                      {subj
+                        ? subjectDisplayName(subj, configOf(s))
+                        : 'Unknown subject'}
                     </p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
                       {subj?.code ?? '—'}

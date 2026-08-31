@@ -59,6 +59,20 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // ── nothing that reads this table is cached ────────────────────────────
+  // Checked 2026-08-31, not assumed: every reader of `student_declarations`
+  // lives in lib/declarations/ (cell-filings, filing-window, parent, register,
+  // staff, staff-filing) and NOT ONE of them calls `unstable_cache`. So a
+  // staff filing has no cached surface to go stale on, and a tag here would
+  // bust nothing.
+  //
+  // ⚠ The moment a declarations loader IS cached, these two need a real tag —
+  // this exemption is about today's readers, not a property of the routes.
+  'app/api/declarations/staff/route.ts':
+    'inserts student_declarations; no reader of that table is cached.',
+  'app/api/declarations/staff/evidence/route.ts':
+    'uploads the certificate for the same rows; same reason.',
+
   // ── delegate: the bust happens one module down ──────────────────────────
   'app/api/change-requests/act/route.ts':
     'delegates to lib/change-requests/decide.ts, which calls invalidateDrillTags. ' +

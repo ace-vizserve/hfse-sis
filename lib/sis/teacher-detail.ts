@@ -3,6 +3,7 @@ import 'server-only';
 import { cache } from 'react';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import {
@@ -136,6 +137,17 @@ export async function loadTeacherDetail(
 
   const assignments = (assignmentRows ?? []) as AssignmentRaw[];
 
+  // What each subject is called in the year this page is showing (migration
+  // 137) — one small overlay read, so the teacher's own page agrees with the
+  // grading sheets they open from it.
+  const subjectNames = await subjectDisplayNamesForAy(
+    service,
+    ayId,
+    assignments
+      .map((a) => one(a.subject))
+      .filter((x): x is { id: string; name: string } => !!x)
+  );
+
   const classes: TeacherClassRow[] = assignments.map((a) => {
     const section = one(a.section);
     const subject = one(a.subject);
@@ -147,7 +159,11 @@ export async function loadTeacherDetail(
       levelLabel: level?.label ?? '',
       role: a.role,
       subjectId: a.subject_id,
-      subjectName: subject?.name ?? null,
+      // The page lists what this teacher teaches in the year on screen, so
+      // it names each subject the way that year names it (migration 137).
+      subjectName: subject
+        ? (subjectNames.get(subject.id) ?? subject.name)
+        : null,
       cover: a.relief_teacher_user_id
         ? {
             reliefTeacherId: a.relief_teacher_user_id,
