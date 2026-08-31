@@ -444,9 +444,16 @@ export function DocumentCard({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 text-xs text-muted-foreground hover:text-destructive"
+            // Reads as the action it is. It was `text-muted-foreground` with
+            // no icon, next to a View button that had one — so the
+            // consequential control looked like the least important thing on
+            // the card. Ghost is still right (rejecting a document already on
+            // file is secondary to reading it), but the colour has to say what
+            // it does. §9.3: destructive carries blocked / undo.
+            className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => setRejectOpen(true)}
           >
+            <XCircle className="size-3" />
             Reject
           </Button>
         )}

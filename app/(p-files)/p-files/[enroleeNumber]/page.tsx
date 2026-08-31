@@ -316,11 +316,13 @@ export default async function StudentDocumentDetailPage({
                 // moved to the queue above (KD #91's one-document-one-place
                 // pass), so `validate` is the only right it needs.
                 canWrite={canValidateDocs}
-                // ...except for school forms, which are deliberately absent
-                // from that queue (nobody chases a family for a form the
-                // school writes), so the card is the ONLY place their upload
-                // can live. Without this they are visible and un-uploadable.
-                canUpload={canUploadDocs && g.group === 'school'}
+                // Upload / Replace on every card. P-Files IS the document
+                // repository — putting a file on a student's record is the
+                // page's whole purpose, so it belongs on the document, not
+                // only in the attention list at the top. The queue keeps its
+                // copy: that is the prioritised worklist, this is where you
+                // browse. One is not a substitute for the other.
+                canUpload={canUploadDocs}
                 studentName={student.fullName}
                 recipients={student.recipients}
                 lastReminderAt={outreach?.lastReminderAt ?? null}
