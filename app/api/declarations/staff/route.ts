@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { DECLARATION_STATUS_LABELS } from '@/lib/schemas/declarations';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
 import { logAction } from '@/lib/audit/log-action';
@@ -9,14 +11,18 @@ import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { staffMedicalCertificateSchema } from '@/lib/schemas/staff-declaration';
 import {
   filingCoversAnySchoolDay,
-  findOverlappingFilings,
   NO_SCHOOL_DAY_MESSAGE,
 } from '@/lib/declarations/filing-window';
 import {
-  alreadyOnRecordMessage,
   assertCanMarkRegisterForSection,
+  attachEvidenceToFiling,
+  certificateAlreadyOnFileMessage,
+  findFilingCoveringDays,
   isOwnStaffEvidencePath,
   resolveFilingTarget,
+  travelFilingBlocksCertificateMessage,
+  type ExistingFiling,
+  type FilingTarget,
 } from '@/lib/declarations/staff-filing';
 
 // POST /api/declarations/staff
@@ -32,6 +38,22 @@ import {
 // the parent's, already approved, no approval ladder, no register write — is
 // written down once in `lib/declarations/staff-filing.ts`. What follows is only
 // where each one lands in the code.
+//
+// ── ONE ENDPOINT, BECAUSE THE SCREEN ASKS ONE QUESTION ────────────────────
+//
+// Mr Ace: *"the simplest way is just allow the SIS users to upload the MC."*
+// The person using this is holding a certificate for a day and has no idea
+// whether a parent has filed anything, so they are never asked. This route
+// answers it for them:
+//
+//   * nothing on record for those days  → it creates the filing (201);
+//   * a filing already covering them    → the certificate joins THAT row (200);
+//   * that filing already has one       → 409, saying so in a sentence;
+//   * only a family holiday covers them → 409, because a travel row cannot
+//                                         carry a certificate at all.
+//
+// ⚠ THE ATTACH BRANCH IS WHY THIS IS ONE ENDPOINT AND NOT TWO. A second row
+// for one illness is exactly the split record migration 125 exists to end.
 
 export async function POST(request: Request) {
   // ⚠ THE DAILY WRITE ROUTE'S ROLE LIST, COPIED EXACTLY. The rule is "whoever
@@ -171,52 +193,45 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── Is this absence already on record? ───────────────────────────────────
+  // ── Is this day already on record? ───────────────────────────────────────
   //
-  // ⚠ THE UNIQUE INDEX CANNOT ANSWER THIS, AND THE REASON IS WORTH KNOWING.
+  // ⚠ THE ANSWER DECIDES WHAT THIS REQUEST DOES, AND THE CALLER NEVER SEES THE
+  // QUESTION. Mr Ace's ask was one upload control — a member of staff holding
+  // a certificate for a day, with no idea whether a parent has filed anything.
+  // So the server decides: nothing on record and it creates the filing below;
+  // something already covering the day and the certificate joins THAT row.
+  //
+  // ⚠ THE UNIQUE INDEX CANNOT ANSWER THIS.
   // `student_declarations_no_duplicate_filing` keys on `filed_by`, and a staff
   // filing carries the STAFF member's id — so it can never collide with a
-  // parent's row for the same child and dates, nor with a colleague's. The
-  // only collision it does catch is the same person submitting twice, which is
-  // handled at the insert below.
+  // parent's row for the same child and dates. The only collision it catches
+  // is the same person submitting twice, handled at the insert below.
   //
-  // So the real question is asked the way the parent route asks it, against
-  // the same helper: does any live filing already cover these days? A parent
-  // who filed without a certificate and is waiting for the school to decide is
-  // the commonest hit, and it is exactly the case where a SECOND row would be
-  // wrong — there is a filing sitting in the queue that this certificate
-  // belongs to. The person is told which one, and told to open it.
-  //
-  // ⚠ `rejected` and `cancelled` never reach here: `findOverlappingFilings`
-  // does not count them, so the office can record a certificate after a filing
-  // was turned down for the want of exactly that certificate — which is the
-  // most likely reason it was turned down.
-  //
-  // ⚠ Same fail-open posture again: a lookup that throws must not refuse.
+  // ⚠ Same fail-open posture as the calendar check: a lookup that throws must
+  // not turn a certificate away. The cost of letting it through is a second
+  // row somebody can see and merge; the cost of refusing is a wall.
+  let existing: ExistingFiling | null = null;
   try {
-    const clashes = await findOverlappingFilings(service, {
+    existing = await findFilingCoveringDays(service, {
+      studentId: target.studentId,
       startDate: input.startDate,
       endDate: input.endDate,
-      declarationType: 'absence',
-      children: [
-        { studentId: target.studentId, studentName: target.studentName },
-      ],
     });
-    if (clashes.length > 0) {
-      return NextResponse.json(
-        {
-          error: alreadyOnRecordMessage(clashes[0]),
-          alreadyFiled: true,
-          overlapping: clashes,
-        },
-        { status: 409 }
-      );
-    }
   } catch (e) {
     console.error(
-      '[declarations] staff duplicate check failed; letting it through:',
+      '[declarations] staff existing-filing check failed; letting it through:',
       e instanceof Error ? e.message : String(e)
     );
+  }
+
+  if (existing) {
+    return attachToExistingFiling({
+      service,
+      existing,
+      target,
+      input,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+    });
   }
 
   const now = new Date().toISOString();
@@ -271,11 +286,12 @@ export async function POST(request: Request) {
 
   if (error) {
     // ⚠ A 23505 HERE IS THE SAME PERSON'S DOUBLE-TAP AND NOTHING ELSE. The
-    // overlap check above already answered a re-send that arrived after the
-    // first one landed — the first row is `approved`, which that check counts.
-    // What is left is two requests IN FLIGHT AT ONCE, neither able to see the
-    // other, racing to the insert. The loser is answered with a success and
-    // the row that won, exactly as the parent route answers the same race.
+    // existing-filing check above already answered a re-send that arrived
+    // after the first one landed — that row is `approved` and carries its
+    // certificate, so the person is told it is on file. What is left is two
+    // requests IN FLIGHT AT ONCE, neither able to see the other, racing to
+    // the insert. The loser is answered with a success and the row that won,
+    // exactly as the parent route answers the same race.
     //
     // Either way the caller never sees a constraint name or a raw error.
     if (error.code === '23505') {
@@ -362,6 +378,141 @@ export async function POST(request: Request) {
   return NextResponse.json(
     { declaration: describe(saved.id, saved.created_at, target, input, row) },
     { status: 201 }
+  );
+}
+
+/**
+ * The certificate joins a filing that is already there.
+ *
+ * ⚠ THE PERSON WHO UPLOADED IT WAS NOT ASKED ABOUT ANY OF THIS, and that is
+ * the design. They are holding a certificate for a day; whether a parent
+ * already filed is ours to know, not theirs to answer. Every branch below ends
+ * in either "the certificate is on the day" or one plain sentence saying why
+ * it is not.
+ */
+async function attachToExistingFiling(args: {
+  service: SupabaseClient;
+  existing: ExistingFiling;
+  target: FilingTarget;
+  input: {
+    startDate: string;
+    endDate: string;
+    evidencePath?: string;
+    evidenceUrl?: string;
+  };
+  actor: { id: string; email: string | null };
+}) {
+  const { service, existing, target, input, actor } = args;
+
+  // A family holiday carries no certificate and cannot be made to —
+  // `student_declarations_type_shape_chk` forbids evidence on a travel row
+  // outright. The likeliest cause is the wrong dates, and the message says so.
+  if (existing.declarationType === 'travel') {
+    return NextResponse.json(
+      {
+        error: travelFilingBlocksCertificateMessage(
+          target.studentName,
+          existing
+        ),
+      },
+      { status: 409 }
+    );
+  }
+
+  // Never overwrite proof that is already there. The day is settled; a second
+  // certificate replacing the first would silently discard whichever one the
+  // school actually looked at.
+  if (existing.hasEvidence) {
+    return NextResponse.json(
+      { error: certificateAlreadyOnFileMessage(target.studentName, existing) },
+      { status: 409 }
+    );
+  }
+
+  let attached;
+  try {
+    attached = await attachEvidenceToFiling(service, {
+      filingId: existing.id,
+      evidencePath: input.evidencePath ?? null,
+      evidenceUrl: input.evidenceUrl ?? null,
+    });
+  } catch (e) {
+    console.error(
+      '[declarations] attaching to an existing filing failed:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return NextResponse.json(
+      { error: 'Could not save that. Please try again.' },
+      { status: 500 }
+    );
+  }
+
+  // Zero rows back means somebody else attached one between the read and the
+  // write — the parent uploading in the portal while the office scans the
+  // paper copy. The winner's certificate stands.
+  if (!attached.attached) {
+    return NextResponse.json(
+      { error: certificateAlreadyOnFileMessage(target.studentName, existing) },
+      { status: 409 }
+    );
+  }
+
+  // ⚠ THE SAME ACTION AS THE CREATE PATH, for the same reason: a new action
+  // needs a line in `ATTENDANCE_AUDIT_ACTIONS` and that file is off limits
+  // here, so an action nobody can see would be worse than a shared one that
+  // reads correctly. `attached_to_existing` is what tells the two apart, and
+  // `lib/audit/humanize.ts` renders it in words.
+  //
+  // ⚠ THE FILING'S OWN DATES, not the ones typed. The row that changed covers
+  // the range the parent filed, which may be wider than the single day the
+  // certificate was recorded against.
+  await logAction({
+    service,
+    actor,
+    action: 'declaration.approve',
+    entityType: 'student_declaration',
+    entityId: existing.id,
+    context: {
+      recorded_by_school: true,
+      attached_to_existing: true,
+      declaration_type: 'absence',
+      with_medical: true,
+      evidence_kind: evidenceKind(input.evidencePath, input.evidenceUrl),
+      student_id: target.studentId,
+      student_number: target.studentNumber,
+      section_student_id: target.sectionStudentId,
+      section_id: target.sectionId,
+      section_name: target.className ?? target.sectionName,
+      start_date: attached.startDate,
+      end_date: attached.endDate,
+    },
+  });
+
+  return NextResponse.json(
+    {
+      // ⚠ 200, NOT 201. Nothing was created — a row that already existed now
+      // carries proof it was missing.
+      attached: true,
+      declaration: {
+        id: existing.id,
+        studentNumber: target.studentNumber,
+        studentName: target.studentName,
+        className: target.className,
+        declarationType: 'absence' as const,
+        startDate: attached.startDate,
+        endDate: attached.endDate,
+        withMedical: true,
+        hasUpload: input.evidencePath != null,
+        evidenceUrl: input.evidenceUrl ?? null,
+        status: attached.status,
+        statusLabel:
+          DECLARATION_STATUS_LABELS[
+            attached.status as keyof typeof DECLARATION_STATUS_LABELS
+          ] ?? attached.status,
+        recordedBySchool: false,
+      },
+    },
+    { status: 200 }
   );
 }
 

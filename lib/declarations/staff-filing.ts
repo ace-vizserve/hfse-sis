@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
-import type { OverlappingFiling } from '@/lib/declarations/filing-window';
+import { formatDayRange } from '@/lib/declarations/format';
 
 // The school attaching a medical certificate the parent could not file.
 //
@@ -221,36 +221,181 @@ export async function resolveFilingTarget(
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// WHEN THE DAY IS ALREADY ON RECORD, THE CERTIFICATE JOINS IT
+//
+// Mr Ace: *"the simplest way is just allow the SIS users to upload the MC."*
+// ONE control, and the person using it is never asked whether a parent filed
+// — they are holding a certificate for a day, and that is the whole of what
+// they know. So the SERVER decides: no filing yet and it creates one; a filing
+// already covering those days and the certificate is attached to THAT row
+// instead. Two rows for one illness is the thing a second filing would create,
+// and it is exactly the four-disconnected-places problem migration 125 exists
+// to end.
+//
+// ⚠ The route used to answer this case with a 409 telling the office to go and
+// open the filing themselves. That was a branch the person had to understand,
+// on a screen that already knows the answer.
+
+/** A live filing already covering the days a certificate is being recorded for. */
+export type ExistingFiling = {
+  id: string;
+  declarationType: 'absence' | 'travel';
+  /** Only ever `pending` or `approved` — see the query below. */
+  status: string;
+  startDate: string;
+  endDate: string;
+  /** A certificate is already on it — an upload, a link, or both. */
+  hasEvidence: boolean;
+};
+
 /**
- * What a member of staff reads when those days are already on record.
+ * The filing a certificate for these days belongs on, if there is one.
+ *
+ * ⚠ `rejected` and `cancelled` are deliberately NOT counted, the same rule
+ * `findOverlappingFilings` follows: a filing turned down for the want of a
+ * certificate is precisely when the office needs to record one, and attaching
+ * proof to a dead row would put it somewhere nobody reads.
+ *
+ * ⚠ AN ABSENCE WINS OVER A TRAVEL ROW when both cover the day. A certificate
+ * belongs on the absence; the travel row is returned only when it is the only
+ * thing there, so the route can say plainly why it will not take it.
+ *
+ * ⚠ Overlap, not containment — `yyyy-MM-dd` compares correctly as text, the
+ * way every date test in this feature does.
+ */
+export async function findFilingCoveringDays(
+  service: SupabaseClient,
+  args: { studentId: string; startDate: string; endDate: string }
+): Promise<ExistingFiling | null> {
+  const { data, error } = await service
+    .from('student_declarations')
+    .select(
+      'id, declaration_type, status, start_date, end_date, evidence_path, evidence_url'
+    )
+    .eq('student_id', args.studentId)
+    .in('status', ['pending', 'approved'])
+    .lte('start_date', args.endDate)
+    .gte('end_date', args.startDate)
+    .order('start_date', { ascending: true });
+  if (error) throw new Error(`existing filing lookup failed: ${error.message}`);
+
+  const rows = (
+    (data ?? []) as Array<{
+      id: string;
+      declaration_type: 'absence' | 'travel';
+      status: string;
+      start_date: string;
+      end_date: string;
+      evidence_path: string | null;
+      evidence_url: string | null;
+    }>
+  ).map((row) => ({
+    id: row.id,
+    declarationType: row.declaration_type,
+    status: row.status,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    hasEvidence: row.evidence_path != null || row.evidence_url != null,
+  }));
+  if (rows.length === 0) return null;
+
+  return rows.find((r) => r.declarationType === 'absence') ?? rows[0];
+}
+
+/**
+ * Put the certificate on a filing that is already there.
+ *
+ * ⚠ `with_medical` MOVES IN THE SAME STATEMENT, and the reason is
+ * `student_declarations_medical_needs_evidence_chk`: for an absence, saying
+ * `with_medical` is true obliges the row to carry evidence. Read the other
+ * way round — which is how this row got here — a filing with no evidence is
+ * necessarily `with_medical = false`, because the constraint forbids the other
+ * combination from ever existing. So attaching proof and flipping the column
+ * are one act, not two, and splitting them would leave the row either refused
+ * by the database or silently claiming there is no certificate when there is.
+ *
+ * ⚠ `evidence_path is null and evidence_url is null` IS IN THE WHERE CLAUSE,
+ * not checked beforehand and trusted. Two people can be holding the same
+ * certificate — the parent uploading it in the portal while the office scans
+ * the paper copy — and the loser of that race must not overwrite the winner.
+ * Zero rows back is that race, and the caller says so plainly.
+ *
+ * ⚠ IT DOES NOT TOUCH `status`, THE LADDER, OR THE REGISTER. A pending filing
+ * stays pending and still needs deciding; an approved one already wrote its
+ * marks. This only adds the proof the day was missing.
+ */
+export async function attachEvidenceToFiling(
+  service: SupabaseClient,
+  args: {
+    filingId: string;
+    evidencePath: string | null;
+    evidenceUrl: string | null;
+  }
+): Promise<
+  | { attached: true; status: string; startDate: string; endDate: string }
+  | { attached: false }
+> {
+  const { data, error } = await service
+    .from('student_declarations')
+    .update({
+      with_medical: true,
+      evidence_path: args.evidencePath,
+      evidence_url: args.evidenceUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.filingId)
+    .is('evidence_path', null)
+    .is('evidence_url', null)
+    .select('id, status, start_date, end_date');
+  if (error)
+    throw new Error(`attaching the certificate failed: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{
+    status: string;
+    start_date: string;
+    end_date: string;
+  }>;
+  if (rows.length === 0) return { attached: false };
+  return {
+    attached: true,
+    status: rows[0].status,
+    startDate: rows[0].start_date,
+    endDate: rows[0].end_date,
+  };
+}
+
+/**
+ * What a member of staff reads when the day already has its proof.
  *
  * ⚠ WORDED FOR THE OFFICE, NOT FOR A PARENT. `alreadyFiledMessage` in
  * `filing-window.ts` tells a parent to ring the school; saying that to the
- * school is absurd. This says what exists and what to do with the certificate
- * in their hand instead — open the filing that is already there.
- *
- * ⚠ It never names a constraint, a table or a status code. A school admin is
- * not IT.
+ * school is absurd. And it never names a constraint, a table or a status
+ * code — a school admin is not IT.
  */
-export function alreadyOnRecordMessage(existing: OverlappingFiling): string {
-  const range =
-    existing.startDate === existing.endDate
-      ? existing.startDate
-      : `${existing.startDate} to ${existing.endDate}`;
-  // ⚠ THE ARTICLE COMES WITH THE NOUN, not from a template. A first cut built
-  // this as `a ${kind}` and produced "already has a absence on record" on the
-  // commonest path of the two. Nothing type-checks a sentence, and the only
-  // reader is a member of staff who now trusts the message slightly less.
-  const kind =
-    existing.declarationType === 'travel'
-      ? {
-          indefinite: 'a travel declaration',
-          approved: 'an approved travel declaration',
-        }
-      : { indefinite: 'an absence', approved: 'an approved absence' };
+export function certificateAlreadyOnFileMessage(
+  studentName: string,
+  existing: { startDate: string; endDate: string }
+): string {
+  return `${studentName} already has a certificate on file for ${formatRange(existing)}. Nothing was changed.`;
+}
 
-  if (existing.status === 'approved') {
-    return `${existing.studentName} already has ${kind.approved} on record for ${range}. Open that record to add the certificate to it instead of creating a second one.`;
-  }
-  return `${existing.studentName} already has ${kind.indefinite} on record for ${range} that the school has not decided yet. Open it from the declarations queue and attach the certificate there.`;
+/**
+ * What they read when the only thing covering those days is a family holiday.
+ *
+ * ⚠ A travel filing carries no certificate and cannot be made to —
+ * `student_declarations_type_shape_chk` forbids evidence on one outright. So
+ * this is not a rule the code invented to be tidy; it is the shape of the
+ * record, and the likeliest cause of seeing this message is the wrong dates.
+ */
+export function travelFilingBlocksCertificateMessage(
+  studentName: string,
+  existing: { startDate: string; endDate: string }
+): string {
+  return `${studentName} is recorded as away on a family holiday for ${formatRange(existing)}. A medical certificate cannot be added to a holiday — please check the dates.`;
+}
+
+/** `2 Sep 2026`, or `2–4 Sep 2026`. */
+function formatRange(range: { startDate: string; endDate: string }): string {
+  return formatDayRange(range.startDate, range.endDate);
 }

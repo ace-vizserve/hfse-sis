@@ -418,7 +418,16 @@ function templateSummary(
       // is_registrar_or_above() user and can never be corrected, and a URL to
       // a child's medical certificate is exactly what that rule is about.
       if (boolish(ctx.recorded_by_school) === true) {
-        parts.push('recorded by the school office');
+        // ⚠ ATTACHING TO A FILING IS NOT CREATING ONE, and this line is the
+        // only place either is visible. Without the distinction a certificate
+        // added to a parent's pending request would read exactly like the
+        // office recording a fresh absence — the same action name, the same
+        // child, the same days.
+        parts.push(
+          boolish(ctx.attached_to_existing) === true
+            ? 'certificate added to the parent’s filing'
+            : 'recorded by the school office'
+        );
         const kind = str(ctx.evidence_kind);
         if (kind === 'file') parts.push('certificate uploaded');
         else if (kind === 'link') parts.push('certificate link');
