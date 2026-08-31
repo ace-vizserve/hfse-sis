@@ -135,11 +135,21 @@ export async function PATCH(
   const supabase = createServiceClient();
 
   // 1) Confirm the row exists + capture pre-image for the audit diff.
-  const beforeSelect = [
-    cols.statusCol,
-    cols.remarksCol,
-    ...cols.extras.map((e) => e.columnName),
-  ].join(', ');
+  // `classSection` is read further down (2b) to decide whether an Enrolled
+  // flip should say "awaiting class assignment". It is only one of THIS
+  // stage's own columns when the stage IS `class`, so without naming it here
+  // the pre-image never carried it and `preClass` was always undefined —
+  // every Enrolled flip claimed the student was unplaced and sent them to
+  // "Students needing setup", including one already placed through the class
+  // stage beforehand. De-duped so the class stage doesn't select it twice.
+  const beforeSelect = Array.from(
+    new Set([
+      cols.statusCol,
+      cols.remarksCol,
+      ...cols.extras.map((e) => e.columnName),
+      'classSection',
+    ])
+  ).join(', ');
   const { data: before, error: beforeErr } = await supabase
     .from(statusTable)
     .select(beforeSelect)

@@ -214,6 +214,35 @@ describe('findStageCompletionBlockers', () => {
       expect(findStageCompletionBlockers('fees', 'Other…', {})).toEqual([]);
     });
 
+    // The status is free text, so a person can type anything into the
+    // "Other…" box — including a word that happens to name something every
+    // JavaScript object inherits. Indexing the rules map without an own-property
+    // guard resolves those to functions, and the blocker loop then throws on a
+    // value that is not iterable: the dialog crashes mid-render and the save
+    // 500s. This function promises never to throw, so it must answer "nothing
+    // is gated" for all of them.
+    it('treats an inherited object member typed as a status as ungated', () => {
+      for (const status of [
+        'constructor',
+        'hasOwnProperty',
+        'isPrototypeOf',
+        'propertyIsEnumerable',
+        'toString',
+        'valueOf',
+        '__proto__',
+      ]) {
+        for (const stage of ['registration', 'fees', 'application'] as const) {
+          expect(() =>
+            findStageCompletionBlockers(stage, status, {})
+          ).not.toThrow();
+          expect(
+            findStageCompletionBlockers(stage, status, {}),
+            `${stage}/${status}`
+          ).toEqual([]);
+        }
+      }
+    });
+
     it('lets a blank or missing status through', () => {
       for (const status of [null, undefined, '', '   ']) {
         expect(findStageCompletionBlockers('registration', status, {})).toEqual(

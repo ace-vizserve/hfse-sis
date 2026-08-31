@@ -792,7 +792,18 @@ export function findStageCompletionBlockers(
   const trimmed = (status ?? '').trim();
   if (!trimmed) return [];
 
-  const required = STAGE_STATUS_REQUIRED_FIELDS[stageKey]?.[trimmed];
+  // Look the status up with an own-property guard. `status` is FREE TEXT —
+  // the stage editor has an "Other…" escape hatch and the column accepts any
+  // 120 characters — so a plain `byStatus[trimmed]` would resolve inherited
+  // Object members: a status of `constructor` returns a function, whose
+  // `.length` is 1 rather than 0, and the loop below then throws on something
+  // that is not iterable. That would crash the dialog mid-render and turn the
+  // save into a 500, breaking this function's own "never throws" contract.
+  const byStatus = STAGE_STATUS_REQUIRED_FIELDS[stageKey];
+  const required =
+    byStatus && Object.hasOwn(byStatus, trimmed)
+      ? byStatus[trimmed]
+      : undefined;
   if (!required || required.length === 0) return [];
 
   const extras = STAGE_COLUMN_MAP[stageKey]?.extras ?? [];
