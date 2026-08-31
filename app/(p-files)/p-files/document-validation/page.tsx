@@ -52,8 +52,8 @@ export default async function DocumentValidationEnrolledPage() {
       .map((r) => r.enroleeNumber)
   ).size;
 
-  // The table lists every student now, so the empty state keys on there being
-  // nobody at all — not on there being nothing to review.
+  // The table lists only documents waiting for a decision, so no rows means
+  // nothing to review — which is exactly what the empty state says.
   if (awaitingRows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-hairline bg-card p-10 text-center">

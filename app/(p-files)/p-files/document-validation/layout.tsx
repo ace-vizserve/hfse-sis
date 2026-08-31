@@ -6,8 +6,6 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { loadPendingDocValidation } from '@/lib/admissions/document-validation';
-import { countAwaitingVerification } from '@/lib/p-files/document-validation';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // Document validation — two review queues: whose documents are being reviewed,
@@ -61,18 +59,9 @@ export default async function DocumentValidationLayout({
 
   const ayCode = currentAy.ay_code;
 
-  // Counts for the tab badges — the signal that says a queue has work in it.
-  // Each queue's page re-reads its own rows; for HFSE's volumes that is one
-  // extra list query per view, and the alternative is a tab strip that cannot
-  // say whether anything is waiting.
-  // One query per tab badge. The expiring-soon count went with its tab — it
-  // was a whole extra list read (`loadExpiringSoon`) on every view of this
-  // page, for a number nothing displays any more.
-  const [applicantRows, awaitingCount] = await Promise.all([
-    canReadPre ? loadPendingDocValidation(ayCode) : Promise.resolve([]),
-    canReadPost ? countAwaitingVerification(ayCode) : Promise.resolve(0),
-  ]);
-
+  // No counts on the tabs. Each queue's own page already says how much is
+  // waiting, in a sentence. Dropping them also drops two whole list reads per
+  // view of this page.
   const readOnlyEverywhere =
     (!canReadPre || !canValidatePre) && (!canReadPost || !canValidatePost);
 
@@ -85,12 +74,6 @@ export default async function DocumentValidationLayout({
           {
             href: '/p-files/document-validation/applicants',
             label: 'Applicants',
-            // Documents awaiting a DECISION, not rows in the table. The
-            // loader returns every applicant against every slot now, so
-            // `.length` would badge this tab with thousands.
-            count:
-              applicantRows.filter((r) => r.status === 'Uploaded').length ||
-              undefined,
           },
         ]
       : []),
@@ -99,7 +82,6 @@ export default async function DocumentValidationLayout({
           {
             href: '/p-files/document-validation',
             label: 'Enrolled students',
-            count: awaitingCount || undefined,
           },
         ]
       : []),

@@ -473,6 +473,10 @@ export function ValidationQueue({
           // One group is one applicant, and the page counts groups — so the
           // page-size control has to say applicants, not rows.
           unitLabel: 'Applicants',
+          // Every applicant carries every document slot, so opening them all
+          // buries the page. Open as a list of applicants; click one to see
+          // their documents.
+          initiallyCollapsed: true,
           renderGroupHeader: ({ rows, isExpanded, toggle }) => (
             <ValidationGroupHeader
               rows={rows}

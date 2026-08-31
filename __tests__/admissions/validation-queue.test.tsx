@@ -10,7 +10,7 @@
  * CLAIMS the change until the awaited refresh has corrected the badge count
  * rendered on the server behind it.
  */
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -61,10 +61,19 @@ const ROW: ValidationQueueRow = {
   category: 'general',
 };
 
+// Groups now start CLOSED (every applicant carries all their slots, so
+// opening them all buries the page), which puts the document rows — and the
+// buttons these tests exercise — behind one click on the applicant's header.
+function openApplicantGroup(name: string) {
+  const header = screen.getByText(name).closest('[role="button"]');
+  if (!header) throw new Error(`No group header found for ${name}`);
+  fireEvent.click(header);
+}
+
 function approveButton() {
   // Rows are grouped by student (expandable, KD's data-table shell); the
-  // fixture has exactly one document row under one (always-expanded) group
-  // header, so the Approve button is unambiguous without row-scoping.
+  // fixture has exactly one document row under one open group header, so the
+  // Approve button is unambiguous without row-scoping.
   return screen.getByRole('button', { name: /approve/i });
 }
 
@@ -77,6 +86,7 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
     );
 
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    openApplicantGroup('Ada Lovelace');
     await user.click(approveButton());
 
     // Row gone (optimistic) — at this point nothing has been claimed yet.
@@ -98,6 +108,7 @@ describe('ValidationQueue (Tier-1 optimistic)', () => {
       <ValidationQueue rows={[ROW]} ayCode="AY9999" canValidate />
     );
 
+    openApplicantGroup('Ada Lovelace');
     await user.click(approveButton());
 
     await waitFor(() =>

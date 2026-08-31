@@ -169,22 +169,23 @@ async function loadAwaitingVerificationUncached(
 
     const fullName = app.enroleeFullName?.trim() || app.enroleeNumber;
 
-    // EVERY student, EVERY slot — no status filter at all.
+    // ONLY DOCUMENTS THAT NEED VALIDATING — status 'Uploaded'. This is a
+    // review queue: a slot nobody has filled, and a document already decided,
+    // are both things the reviewer cannot act on, and listing them buried the
+    // handful that need a decision under every slot of every student (406
+    // students x 21 slots = 8,526 rows, 2.9MB — over Next's 2MB cache ceiling,
+    // so the page's cache never once stored and every request recomputed).
     //
-    // This used to emit only non-expiring slots sitting at 'Uploaded', which
-    // had two consequences. A student whose documents were all in order did
-    // not appear on the page at all, so the table answered "what is waiting"
-    // and could not answer "where does this student stand". And because the
-    // Expiring Soon queue beside it required status 'Valid', a passport or
-    // pass a parent had just RE-UPLOADED matched neither: measured on
-    // production 2026-08-31, 360 such documents in AY2025 and 122 in AY2026,
-    // every one waiting on a review nobody was ever shown. Renewals are the
-    // whole point of the expiring slots (KD #63/#64).
+    // Where a student STANDS is a different question, answered by their own
+    // P-File and by the completeness table. This page answers "what is waiting
+    // for me".
     //
-    // Only 'Uploaded' rows can be approved or rejected; the rest are there to
-    // be seen. That decision lives on the row's `status`, not on this filter.
+    // Expiring slots are included: a passport a parent has just RE-UPLOADED
+    // sits at 'Uploaded' like any other document, and skipping those was the
+    // gap that hid 360 AY2025 / 122 AY2026 renewals from review (KD #63/#64).
     for (const slot of DOCUMENT_SLOTS) {
       const status = docRow[slot.statusCol] ?? null;
+      if (status !== 'Uploaded') continue;
       const fileUrl = docRow[slot.urlCol] ?? '';
 
       // Carried for the expiring slots so the reviewer can see the date they

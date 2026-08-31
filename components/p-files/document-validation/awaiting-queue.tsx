@@ -420,6 +420,10 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
           // One group is one student, and the page counts groups — so the
           // page-size control has to say students, not rows.
           unitLabel: 'Students',
+          // Every student carries every document slot, so opening them all
+          // buries the page. Open as a list of students; click one to see
+          // their documents.
+          initiallyCollapsed: true,
           renderGroupHeader: ({ rows, isExpanded, toggle }) => (
             <AwaitingGroupHeader
               rows={rows}

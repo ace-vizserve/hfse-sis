@@ -157,17 +157,14 @@ async function loadPendingDocValidationUncached(
 
   const rows: ValidationQueueRow[] = [];
 
-  // EVERY in-flight applicant, EVERY slot.
+  // ONLY DOCUMENTS THAT NEED VALIDATING — status 'Uploaded'. Same rule as the
+  // enrolled-students queue beside it (lib/p-files/document-validation.ts):
+  // an empty slot and an already-decided document are both things the reviewer
+  // cannot act on, and listing every slot of every applicant buried the few
+  // that need a decision.
   //
-  // This walked the DOCUMENTS rows and kept only slots sitting at 'Uploaded',
-  // which meant an applicant with nothing waiting — or with no documents row
-  // at all — never appeared. So the page could say what was queued but could
-  // not answer "where does this applicant stand", which is the question
-  // someone chasing an intake actually has. Iterating applicants instead is
-  // what puts all of them on the page and makes all of them searchable.
-  //
-  // Only 'Uploaded' rows can be approved or rejected; that decision now lives
-  // on the row's `status`, not on this filter.
+  // Where an applicant STANDS is a different question, answered by their
+  // application detail page. This page answers "what is waiting for me".
   for (const [enroleeNumber, app] of appByEnrolee) {
     const appStatus = statusByEnrolee.get(enroleeNumber) ?? null;
     if (!appStatus) continue;
@@ -177,6 +174,7 @@ async function loadPendingDocValidationUncached(
 
     for (const slot of DOCUMENT_SLOTS) {
       const status = docRow[slot.statusCol] ?? null;
+      if (status !== 'Uploaded') continue;
       const fileUrl = docRow[slot.urlCol] ?? '';
       const expiryDateIso = slot.expiryCol
         ? (docRow[slot.expiryCol] ?? null)
