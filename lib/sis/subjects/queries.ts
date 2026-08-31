@@ -52,6 +52,12 @@ export type SubjectConfigRow = {
   // their weights are a documented, unconfirmed assumption. See
   // CatalogSubjectRow.needsAttention below for the consumer.
   weights_confirmed: boolean;
+  // migration 137 — what the school calls this subject in THIS academic year
+  // (MAPEH in AY2025, STAR in AY2026). NULL means fall back to
+  // subjects.report_label, then subjects.name. Never read it directly: pass
+  // the subject and this row to subjectDisplayName()
+  // (lib/sis/subjects/display-name.ts), which is the one resolution rule.
+  display_name: string | null;
 };
 
 // `subject_level_offerings(subject_id, level_id, academic_year_id)` — this
@@ -102,7 +108,7 @@ export async function listSubjectConfigsForAy(
   const { data, error } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name'
     )
     .eq('academic_year_id', academicYearId);
   if (error) {

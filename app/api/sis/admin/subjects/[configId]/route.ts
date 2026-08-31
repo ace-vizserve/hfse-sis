@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import {
   subjectConfigUnchanged,
   subjectDisplayNameUnchanged,
+  subjectNumbersIdentical,
 } from '@/lib/sis/subject-config-unchanged';
 import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -104,14 +105,15 @@ export async function PATCH(
   // only the six numeric fields would make that flag-clearing save look like a
   // no-op and silently drop it — so a false -> true transition still counts as
   // a real change and proceeds.
-  const numbersUnchanged = subjectConfigUnchanged(before, {
+  const submission = {
     ww_weight,
     pt_weight,
     qa_weight,
     ww_max_slots,
     pt_max_slots,
     qa_max,
-  });
+  };
+  const numbersUnchanged = subjectConfigUnchanged(before, submission);
   // The per-year name is compared SEPARATELY (migration 137). It has to
   // participate in the no-op decision or a rename-only save would be swallowed
   // by the guard above and answered `{ ok: true }` with nothing written — but
@@ -131,7 +133,16 @@ export async function PATCH(
   // every entry, for a change that only alters a heading. The audit row is
   // still written: a rename is a real change and this is the only record of
   // when the school started calling it something else.
-  if (numbersUnchanged) {
+  //
+  // ⚠ Gated on subjectNumbersIdentical, NOT on the no-op guard above, and the
+  // difference is `weights_confirmed`. Five production configs still carry the
+  // flag as false (migration 082's stand-in rows). Renaming one through the
+  // full path would flip it true — silently recording that an admin reviewed
+  // weights they never looked at, because they typed a name. A rename is not a
+  // review, so the flagged row stays flagged and the "fix the weights → the
+  // flag clears" loop is untouched: that save carries no name change and lands
+  // below.
+  if (subjectNumbersIdentical(before, submission) && !nameUnchanged) {
     const { error: renameErr } = await service
       .from('subject_configs')
       .update({ display_name: nextDisplayName ?? null })

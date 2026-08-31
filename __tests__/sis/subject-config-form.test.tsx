@@ -141,3 +141,154 @@ describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Edit mode — the per-year subject name (migration 137).
+ *
+ * The school renamed MAPEH to STAR for AY2026 and AY2025 must keep saying
+ * MAPEH, so this box writes to THIS year's subject_configs row and nothing
+ * else. Two behaviours are pinned because both fail silently:
+ *
+ *   • The save carries the SAVED weights, never what is currently typed in the
+ *     weight boxes. Someone can be mid-edit on a weight when they tab out of
+ *     the name field, and a rename must not commit a number they had not
+ *     finished. Sending the stored values is also what puts the route on its
+ *     rename-only path — no grading-sheet resync, no weights_confirmed flip.
+ *   • Clearing the box sends '' so the route can drop the override and go back
+ *     to the catalogue name.
+ */
+const CONFIG_UUID = '33333333-3333-4333-8333-333333333333';
+
+function renderEdit(displayName: string | null) {
+  return renderWithClient(
+    <SubjectConfigForm
+      mode="edit"
+      draft={{
+        configId: CONFIG_UUID,
+        id: SUBJECT_UUID,
+        code: 'MAPEH',
+        name: 'MAPEH',
+        is_examinable: true,
+        grading_method: 'standard_sheet',
+        report_label: null,
+        ayCode: 'AY2026',
+        ww_weight: 20,
+        pt_weight: 60,
+        qa_weight: 20,
+        ww_max_slots: 5,
+        pt_max_slots: 5,
+        qa_max: 30,
+        reportSubjectId: SUBJECT_UUID,
+        display_name: displayName,
+      }}
+      subjects={[]}
+    />
+  );
+}
+
+function nameBox() {
+  return screen.getByLabelText(/name for MAPEH in AY2026/i);
+}
+
+// weightInputs() above indexes the textboxes positionally, and edit mode
+// renders one more of them than create mode does — the per-year name box sits
+// first, ahead of the report label. So the weights start one further along
+// here. (Getting this wrong is not subtle in a good way: the first attempt
+// typed into the report label and saved it to the catalogue route.)
+function editWeightInputs() {
+  const inputs = screen.getAllByRole('textbox');
+  return { ww: inputs[2], pt: inputs[3], qa: inputs[4] };
+}
+
+describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
+  it('starts blank when the subject has no per-year name, showing the catalogue name as the placeholder', () => {
+    renderEdit(null);
+    expect(nameBox()).toHaveValue('');
+    expect(nameBox()).toHaveAttribute('placeholder', 'MAPEH');
+  });
+
+  it('seeds from the stored name when one is already set', () => {
+    renderEdit('STAR');
+    expect(nameBox()).toHaveValue('STAR');
+  });
+
+  it('saves on blur, sending the SAVED weights rather than what is typed in the weight boxes', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit(null);
+
+    // Half-finished weight edit — 7 alone does not sum to 100 and was never
+    // saved. It must not ride along with the rename.
+    const { ww } = editWeightInputs();
+    await user.clear(ww);
+    await user.type(ww, '7');
+    expect(ww).toHaveValue('7');
+
+    await user.type(nameBox(), 'STAR');
+    await user.tab();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
+    expect((init as RequestInit).method).toBe('PATCH');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({
+      display_name: 'STAR',
+      ww_weight: 20,
+      pt_weight: 60,
+      qa_weight: 20,
+      ww_max_slots: 5,
+      pt_max_slots: 5,
+      qa_max: 30,
+    });
+  });
+
+  it('sends an empty name when the box is cleared, so the override is dropped', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit('STAR');
+
+    await user.clear(nameBox());
+    await user.tab();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
+      display_name: '',
+    });
+  });
+
+  it('does not call the API when the name was not touched', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit('STAR');
+
+    await user.click(nameBox());
+    await user.tab();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('puts the box back to the saved name when the save fails', async () => {
+    const user = userEvent.setup();
+    stubFetch(() => Promise.resolve(jsonResponse({ error: 'nope' }, 500)));
+    renderEdit('STAR');
+
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Rhythm');
+    await user.tab();
+
+    await waitFor(() => expect(nameBox()).toHaveValue('STAR'));
+  });
+
+  it('is not offered in create mode — a per-year name needs this year’s row', () => {
+    renderCreate('MAPEH');
+    expect(screen.queryByLabelText(/name for MAPEH in/i)).toBeNull();
+  });
+});

@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 import {
   subjectConfigUnchanged,
   subjectDisplayNameUnchanged,
+  subjectNumbersIdentical,
   type SubjectConfigBefore,
   type SubjectConfigSubmission,
 } from '@/lib/sis/subject-config-unchanged';
@@ -121,6 +122,40 @@ describe('subjectConfigUnchanged — every field participates', () => {
     expect(
       subjectConfigUnchanged({ ...STORED, display_name: 'STAR' }, SAME)
     ).toBe(true);
+  });
+});
+
+/**
+ * subjectNumbersIdentical — the narrower question the rename path asks.
+ *
+ * Measured against production 2026-08-31: 5 of 35 subject_configs still carry
+ * weights_confirmed = false (migration 082's stand-in rows — GP, COMP, ARTD and
+ * PESTD in AY2025, CL in AY2026). Routing a rename on one of those through the
+ * full save would flip the flag true, recording that somebody reviewed weights
+ * they never looked at because they typed a name. So the route gates its
+ * rename-only path on THIS function, and the flag-clearing save — which carries
+ * no name change — still goes the long way.
+ */
+describe('subjectNumbersIdentical', () => {
+  it('is true on a flagged row whose numbers match, where the no-op guard is false', () => {
+    const flagged = { ...STORED, weights_confirmed: false };
+    expect(subjectNumbersIdentical(flagged, SAME)).toBe(true);
+    expect(subjectConfigUnchanged(flagged, SAME)).toBe(false);
+  });
+
+  it('still detects a real number change on a flagged row', () => {
+    expect(
+      subjectNumbersIdentical(
+        { ...STORED, weights_confirmed: false },
+        { ...SAME, qa_max: 50 }
+      )
+    ).toBe(false);
+  });
+
+  it('agrees with the no-op guard once the flag is true', () => {
+    expect(subjectNumbersIdentical(STORED, SAME)).toBe(
+      subjectConfigUnchanged(STORED, SAME)
+    );
   });
 });
 

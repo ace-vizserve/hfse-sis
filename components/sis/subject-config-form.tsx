@@ -77,6 +77,10 @@ export type SubjectConfigFormDraft = SubjectConfigFormSubject & {
   pt_max_slots: number;
   qa_max: number; // max possible QA score (default 30 per Hard Rule #1)
   reportSubjectId: string;
+  // What the school calls this subject in THIS academic year (migration 137).
+  // Null = it is still called by its catalogue name. Edit mode only — a
+  // per-year name needs a per-year row, and create mode has none yet.
+  display_name: string | null;
 };
 
 type SubjectConfigFormProps = {
@@ -171,6 +175,17 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   const [reportLabel, setReportLabel] = useState(initialReportLabel ?? '');
   const lastSavedReportLabelRef = useRef(initialReportLabel ?? '');
 
+  // Name in this academic year (migration 137) — same blur-save shape as the
+  // report label above, and for the same reason: free text can't save on every
+  // keystroke. It writes to a DIFFERENT table though. The report label lives on
+  // `subjects` and applies to every year; this one lives on this year's
+  // `subject_configs` row and applies to this year alone. That is the whole
+  // point of the field, so the two sit in separate groups saying so.
+  const initialDisplayName =
+    mode === 'edit' ? (props.draft.display_name ?? '') : '';
+  const [displayName, setDisplayName] = useState(initialDisplayName);
+  const lastSavedDisplayNameRef = useRef(initialDisplayName);
+
   // Re-seed on identity change (edit: a different draft loaded; create: a
   // different subject picked) — mirrors the pre-extraction dialogs' own
   // re-seed effects.
@@ -187,6 +202,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setGradingMethod(props.draft.grading_method);
       setReportLabel(props.draft.report_label ?? '');
       lastSavedReportLabelRef.current = props.draft.report_label ?? '';
+      setDisplayName(props.draft.display_name ?? '');
+      lastSavedDisplayNameRef.current = props.draft.display_name ?? '';
     } else {
       const d = defaultWeightPercentsForSubjectCode(props.subject.code);
       setWw(String(d.ww));
@@ -199,6 +216,11 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setGradingMethod(props.subject.grading_method);
       setReportLabel(props.subject.report_label ?? '');
       lastSavedReportLabelRef.current = props.subject.report_label ?? '';
+      // Create mode renders no per-year name field, but the state is reset
+      // anyway so switching from an edited subject to a new one can't carry a
+      // stale name into the next mount.
+      setDisplayName('');
+      lastSavedDisplayNameRef.current = '';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId, mode === 'edit' ? props.draft.configId : null]);
@@ -362,11 +384,118 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     void saveCatalogPatch({ report_label: reportLabel });
   }
 
+  // ── Name in this academic year (migration 137) ───────────────────────
+  // Saves on blur through the same PATCH the weights use, because the name
+  // lives on the same `subject_configs` row. Two things about the payload are
+  // deliberate:
+  //
+  //   1. It sends the weights FROM THE SAVED DRAFT, not from the fields on
+  //      screen. Someone can be part-way through retyping a weight when they
+  //      tab out of the name box, and a rename must never commit a number they
+  //      hadn't finished. Sending the stored values makes this save inert on
+  //      every field but the name.
+  //   2. Because those numbers therefore always match what is stored, the
+  //      route takes its rename-only path: it writes the name, logs it, and
+  //      skips the grading-sheet resync entirely. It also leaves
+  //      `weights_confirmed` alone, so renaming a subject whose weights are
+  //      still flagged for review does not quietly mark them reviewed.
+  //
+  // Does NOT call onSaved() — same reasoning as the other auto-saving fields;
+  // the drawer stays open while the admin carries on.
+  const renameMutation = useMutation({
+    mutationFn: ({
+      configId,
+      payload,
+    }: {
+      configId: string;
+      payload: Record<string, unknown>;
+    }) =>
+      apiFetch(
+        `/api/sis/admin/subjects/${configId}`,
+        jsonInit('PATCH', payload)
+      ),
+  });
+
+  async function onDisplayNameBlur() {
+    if (mode !== 'edit') return;
+    const next = displayName.trim();
+    if (next === lastSavedDisplayNameRef.current.trim()) return;
+
+    const result = await run(
+      () =>
+        renameMutation.mutateAsync({
+          configId: props.draft.configId,
+          payload: {
+            ww_weight: props.draft.ww_weight,
+            pt_weight: props.draft.pt_weight,
+            qa_weight: props.draft.qa_weight,
+            ww_max_slots: props.draft.ww_max_slots,
+            pt_max_slots: props.draft.pt_max_slots,
+            qa_max: props.draft.qa_max,
+            // '' clears the override; the route turns it into "use the
+            // catalogue name" rather than storing a blank.
+            display_name: next,
+          },
+        }),
+      {
+        // The box already shows what they typed.
+        pending: false,
+        success: next
+          ? `${subjectCode} is called “${next}” in ${ayCode}`
+          : `${subjectCode} is called “${subjectName}” again in ${ayCode}`,
+        error: (e: unknown) =>
+          e instanceof Error ? e.message : 'Could not save the name',
+      }
+    );
+
+    if (result === undefined) {
+      setDisplayName(lastSavedDisplayNameRef.current);
+      return;
+    }
+    lastSavedDisplayNameRef.current = next;
+    setDisplayName(next);
+  }
+
   const previewValid =
     Number(wwSlots) > 0 && Number(ptSlots) > 0 && Number(qaMax) > 0;
 
   return (
     <div className="space-y-5">
+      {/* Name in this academic year — FIRST, and in its own group.
+
+          It could not sit inside "Subject identity" below: that group's helper
+          says in as many words that its fields apply to every academic year,
+          and this one is the exact opposite claim about the same subject. The
+          school renamed MAPEH to STAR for AY2026 while AY2025 keeps saying
+          MAPEH, so the year in the eyebrow is the field's whole meaning and
+          leads. Edit mode only — a per-year name needs this year's row, and a
+          subject being created has none yet. */}
+      {mode === 'edit' && (
+        <FieldRow
+          eyebrow={`Name in ${ayCode}`}
+          helper={`Only ${ayCode} is affected. Other years keep the name they already have.`}
+        >
+          <Input
+            type="text"
+            placeholder={subjectName}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            onBlur={() => void onDisplayNameBlur()}
+            maxLength={128}
+            aria-label={`Name for ${subjectCode} in ${ayCode}`}
+          />
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            What staff and parents see this subject called in {ayCode}. Leave
+            blank to keep calling it &ldquo;{subjectName}&rdquo;. The subject
+            code stays{' '}
+            <span className="font-mono font-semibold text-foreground">
+              {subjectCode}
+            </span>{' '}
+            either way, so marks, weights and past years are untouched.
+          </p>
+        </FieldRow>
+      )}
+
       {/* Grade type + grading method — global to this subject, not scoped
           to the AY on screen (subjects has no AY dimension). */}
       <FieldRow

@@ -48,7 +48,19 @@ export type SubjectConfigSubmission = {
   qa_max: number;
 };
 
-export function subjectConfigUnchanged(
+/**
+ * Do the six numbers match, ignoring `weights_confirmed` entirely?
+ *
+ * Split out of subjectConfigUnchanged so the route can ask the narrower
+ * question a rename needs: "would this save move anything a grading sheet
+ * stores?". A flagged row (weights_confirmed false) answers `true` here and
+ * `false` from subjectConfigUnchanged, and both answers are right for their own
+ * question — the sheets need nothing, the flag still does.
+ *
+ * ⚠ Do not use this as the no-op guard. On its own it would drop migration
+ * 085's flag-clearing save.
+ */
+export function subjectNumbersIdentical(
   before: SubjectConfigBefore,
   next: SubjectConfigSubmission
 ): boolean {
@@ -58,7 +70,16 @@ export function subjectConfigUnchanged(
     Number(before.qa_weight) === next.qa_weight / 100 &&
     before.ww_max_slots === next.ww_max_slots &&
     before.pt_max_slots === next.pt_max_slots &&
-    before.qa_max === next.qa_max &&
+    before.qa_max === next.qa_max
+  );
+}
+
+export function subjectConfigUnchanged(
+  before: SubjectConfigBefore,
+  next: SubjectConfigSubmission
+): boolean {
+  return (
+    subjectNumbersIdentical(before, next) &&
     // Not optional — see the header. `false` here means the save still has work
     // to do even when every number matches.
     before.weights_confirmed === true

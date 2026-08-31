@@ -83,6 +83,7 @@ function draftFromRow(
     pt_max_slots: cfg.pt_max_slots,
     qa_max: cfg.qa_max,
     reportSubjectId: row.reportSubjectId,
+    display_name: cfg.display_name,
   };
 }
 
