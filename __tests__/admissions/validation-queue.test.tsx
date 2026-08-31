@@ -52,6 +52,10 @@ const ROW: ValidationQueueRow = {
   slotKey: 'birthCert',
   slotLabel: 'Birth certificate',
   fileUrl: 'https://example.test/file.pdf',
+  // The queue lists every slot now; only 'Uploaded' rows carry the
+  // Approve / Reject buttons these tests exercise.
+  status: 'Uploaded',
+  expiryDateIso: null,
   isExpirable: false,
   owner: 'Student',
   category: 'general',

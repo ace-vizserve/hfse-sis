@@ -24,9 +24,22 @@ export type PFileValidationRow = {
   classSection: string | null;
   slotKey: string;
   slotLabel: string;
+  /**
+   * The file, when there is one. EMPTY STRING means no document has been
+   * uploaded for this slot — the queue now lists every student and every slot,
+   * not only the ones with something waiting, so a row can legitimately have
+   * no file. Callers must check before offering a link.
+   */
   fileUrl: string;
+  /**
+   * Raw `{slot}Status` as stored: 'Uploaded', 'Valid', 'Rejected', 'Expired',
+   * 'To follow', or null for a slot nothing has ever been written to. This is
+   * what decides whether the row can be approved or rejected — only 'Uploaded'
+   * is awaiting a decision.
+   */
+  status: string | null;
   owner: PFileValidationOwner;
-  // Only populated for Expiring Soon rows.
+  /** Expiry date for the passport / pass slots; null for the rest. */
   expiryDateIso: string | null;
   // Days until expiry; negative = already expired (should not appear in Expiring Soon).
   daysUntilExpiry: number | null;
@@ -149,16 +162,36 @@ async function loadAwaitingVerificationUncached(
   const rows: PFileValidationRow[] = [];
 
   for (const app of apps) {
-    const docRow = docsByEnrolee.get(app.enroleeNumber);
-    if (!docRow) continue;
+    // A student with no documents row at all still belongs on the page — every
+    // one of their slots is simply empty. Skipping them here is exactly what
+    // hid the students who most need chasing.
+    const docRow = docsByEnrolee.get(app.enroleeNumber) ?? {};
 
     const fullName = app.enroleeFullName?.trim() || app.enroleeNumber;
 
-    for (const slot of NON_EXPIRING_SLOTS) {
-      const status = docRow[slot.statusCol];
-      if (status !== 'Uploaded') continue;
-      const fileUrl = docRow[slot.urlCol];
-      if (!fileUrl) continue;
+    // EVERY student, EVERY slot — no status filter at all.
+    //
+    // This used to emit only non-expiring slots sitting at 'Uploaded', which
+    // had two consequences. A student whose documents were all in order did
+    // not appear on the page at all, so the table answered "what is waiting"
+    // and could not answer "where does this student stand". And because the
+    // Expiring Soon queue beside it required status 'Valid', a passport or
+    // pass a parent had just RE-UPLOADED matched neither: measured on
+    // production 2026-08-31, 360 such documents in AY2025 and 122 in AY2026,
+    // every one waiting on a review nobody was ever shown. Renewals are the
+    // whole point of the expiring slots (KD #63/#64).
+    //
+    // Only 'Uploaded' rows can be approved or rejected; the rest are there to
+    // be seen. That decision lives on the row's `status`, not on this filter.
+    for (const slot of DOCUMENT_SLOTS) {
+      const status = docRow[slot.statusCol] ?? null;
+      const fileUrl = docRow[slot.urlCol] ?? '';
+
+      // Carried for the expiring slots so the reviewer can see the date they
+      // are actually being asked to accept. Null on the rest, which have none.
+      const expiryDateIso = slot.expiryCol
+        ? (docRow[slot.expiryCol] ?? null)
+        : null;
 
       rows.push({
         enroleeNumber: app.enroleeNumber,
@@ -169,8 +202,9 @@ async function loadAwaitingVerificationUncached(
         slotKey: slot.key,
         slotLabel: slot.label,
         fileUrl,
+        status,
         owner: deriveOwner(slot.key),
-        expiryDateIso: null,
+        expiryDateIso,
         daysUntilExpiry: null,
       });
     }
@@ -228,6 +262,9 @@ async function loadExpiringSoonUncached(
         slotKey: slot.key,
         slotLabel: slot.label,
         fileUrl,
+        // This loader only ever selects rows already at 'Valid' (see the
+        // filter above), so the status is known rather than read.
+        status: 'Valid',
         owner: deriveOwner(slot.key),
         expiryDateIso: expiryIso,
         daysUntilExpiry,
@@ -270,5 +307,9 @@ export async function countAwaitingVerification(
   ayCode: string
 ): Promise<number> {
   const rows = await loadAwaitingVerification(ayCode);
-  return rows.length;
+  // Documents AWAITING A DECISION, not rows on the page. The loader now emits
+  // every student against every slot, so `rows.length` is the size of the
+  // table (thousands) rather than the size of the job — which is what this
+  // badge, and the sentence above the table, are both telling someone.
+  return rows.filter((r) => r.status === 'Uploaded').length;
 }

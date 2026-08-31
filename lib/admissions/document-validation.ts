@@ -38,7 +38,15 @@ export type ValidationQueueRow = {
   levelApplied: string | null;
   slotKey: string;
   slotLabel: string;
+  /** Empty string when nothing has been uploaded for this slot. */
   fileUrl: string;
+  /**
+   * Raw `{slot}Status`: 'Uploaded', 'Valid', 'Rejected', 'Expired', or null
+   * for a slot nothing has been written to. Only 'Uploaded' awaits a decision.
+   */
+  status: string | null;
+  /** Expiry for the passport / pass slots; null for the rest. */
+  expiryDateIso: string | null;
   isExpirable: boolean;
   // Who the document belongs to, derived from slotKey prefix. Lets the
   // validation page facet on "Student" vs "Mother / Father / Guardian"
@@ -86,14 +94,17 @@ async function loadPendingDocValidationUncached(
     admissions.from(statusTable).select('enroleeNumber, applicationStatus'),
     // Build the docs SELECT from DOCUMENT_SLOTS so we always read every
     // statusCol + urlCol column. urlCol is required on every slot; no fallback.
-    admissions
-      .from(docsTable)
-      .select(
-        [
-          'enroleeNumber',
-          ...DOCUMENT_SLOTS.flatMap((s) => [s.statusCol, s.urlCol]),
-        ].join(', ')
-      ),
+    admissions.from(docsTable).select(
+      [
+        'enroleeNumber',
+        // Expiry included so the table can show the date a reviewer is
+        // being asked to accept on a renewed passport or pass.
+        ...DOCUMENT_SLOTS.flatMap(
+          (s) =>
+            [s.statusCol, s.urlCol, s.expiryCol].filter(Boolean) as string[]
+        ),
+      ].join(', ')
+    ),
   ]);
 
   if (appsRes.error || statusRes.error || docsRes.error) {
@@ -139,24 +150,37 @@ async function loadPendingDocValidationUncached(
     if (a.enroleeNumber) appByEnrolee.set(a.enroleeNumber, a);
   }
 
+  const docsByEnrolee = new Map<string, DocsRow>();
+  for (const d of docs) {
+    if (d.enroleeNumber) docsByEnrolee.set(d.enroleeNumber, d);
+  }
+
   const rows: ValidationQueueRow[] = [];
 
-  for (const docRow of docs) {
-    const enroleeNumber = docRow.enroleeNumber;
-    if (!enroleeNumber) continue;
-    const app = appByEnrolee.get(enroleeNumber);
-    if (!app) continue;
-
+  // EVERY in-flight applicant, EVERY slot.
+  //
+  // This walked the DOCUMENTS rows and kept only slots sitting at 'Uploaded',
+  // which meant an applicant with nothing waiting — or with no documents row
+  // at all — never appeared. So the page could say what was queued but could
+  // not answer "where does this applicant stand", which is the question
+  // someone chasing an intake actually has. Iterating applicants instead is
+  // what puts all of them on the page and makes all of them searchable.
+  //
+  // Only 'Uploaded' rows can be approved or rejected; that decision now lives
+  // on the row's `status`, not on this filter.
+  for (const [enroleeNumber, app] of appByEnrolee) {
     const appStatus = statusByEnrolee.get(enroleeNumber) ?? null;
     if (!appStatus) continue;
     if (!PENDING_APP_STATUSES.includes(appStatus as PendingAppStatus)) continue;
 
-    for (const slot of DOCUMENT_SLOTS) {
-      const status = docRow[slot.statusCol];
-      if (status !== 'Uploaded') continue;
+    const docRow = docsByEnrolee.get(enroleeNumber) ?? ({} as DocsRow);
 
-      const fileUrl = docRow[slot.urlCol];
-      if (!fileUrl) continue;
+    for (const slot of DOCUMENT_SLOTS) {
+      const status = docRow[slot.statusCol] ?? null;
+      const fileUrl = docRow[slot.urlCol] ?? '';
+      const expiryDateIso = slot.expiryCol
+        ? (docRow[slot.expiryCol] ?? null)
+        : null;
 
       const fullName =
         app.enroleeFullName?.trim() ||
@@ -175,6 +199,8 @@ async function loadPendingDocValidationUncached(
         slotKey: slot.key,
         slotLabel: slot.label,
         fileUrl,
+        status,
+        expiryDateIso,
         isExpirable: slot.expiryCol != null,
         owner: deriveOwner(slot.key),
         category: 'general',

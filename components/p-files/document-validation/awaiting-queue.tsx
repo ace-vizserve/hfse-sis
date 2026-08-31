@@ -228,18 +228,77 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         filterFn: 'arrIncludesSome',
       },
       {
+        accessorKey: 'status',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Status</SortableHeader>
+        ),
+        meta: { label: 'Status' },
+        cell: ({ row }) => {
+          const s = row.original.status;
+          // Not started is the honest label for a slot nothing was ever
+          // written to — "Missing" reads like something went wrong, and for
+          // most of these the family simply has not sent it yet.
+          if (!s)
+            return (
+              <span className="text-xs text-muted-foreground">Not started</span>
+            );
+          const tone =
+            s === 'Valid'
+              ? 'border-brand-mint/40 bg-brand-mint/10 text-foreground'
+              : s === 'Uploaded'
+                ? 'border-brand-amber/50 bg-brand-amber/10 text-foreground'
+                : s === 'Rejected' || s === 'Expired'
+                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                  : 'border-hairline text-muted-foreground';
+          return (
+            <Badge
+              variant="outline"
+              className={`font-mono text-[10px] uppercase tracking-wider ${tone}`}
+            >
+              {s === 'Uploaded' ? 'Needs review' : s}
+            </Badge>
+          );
+        },
+        filterFn: 'arrIncludesSome',
+      },
+      {
+        accessorKey: 'expiryDateIso',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Expiry</SortableHeader>
+        ),
+        meta: { label: 'Expiry' },
+        // The date you are actually being asked to accept when approving a
+        // renewed passport or pass. Blank on every other document — they have
+        // no expiry column at all.
+        cell: ({ row }) => (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {row.original.expiryDateIso
+              ? new Date(row.original.expiryDateIso).toLocaleDateString(
+                  'en-GB',
+                  { day: 'numeric', month: 'short', year: 'numeric' }
+                )
+              : '—'}
+          </span>
+        ),
+      },
+      {
         id: 'preview',
         header: 'Preview',
-        cell: ({ row }) => (
-          <a
-            href={row.original.fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-primary hover:underline"
-          >
-            Open file
-          </a>
-        ),
+        // No file means nothing to open. The table lists every slot now, so
+        // most rows legitimately have none.
+        cell: ({ row }) =>
+          row.original.fileUrl ? (
+            <a
+              href={row.original.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Open file
+            </a>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          ),
       },
       ...(isOfficer
         ? [
@@ -250,6 +309,11 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
               cell: ({ row }: { row: { original: PFileValidationRow } }) => {
                 const key = rowKey(row.original);
                 const busy = actingKey === key;
+                // Only a document a parent has just sent is awaiting a
+                // decision. The table lists every slot now, so most rows have
+                // nothing to approve — an Approve button on a slot with no
+                // file would mark an empty document valid.
+                if (row.original.status !== 'Uploaded') return null;
                 return (
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -283,6 +347,7 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
   const facets: FacetConfig[] = React.useMemo(
     () => [
       { columnId: 'slotLabel', label: 'Document' },
+      { columnId: 'status', label: 'Status' },
       { columnId: 'owner', label: 'Owner' },
       { columnId: 'levelApplied', label: 'Level' },
       { columnId: 'classSection', label: 'Section' },
@@ -334,7 +399,9 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         columns={columns}
         data={rows}
         getRowId={rowKey}
-        searchKeys={['fullName', 'enroleeNumber', 'slotLabel']}
+        // Student number included so every student on the page can be found
+        // by any of the three things anyone actually knows them by.
+        searchKeys={['fullName', 'studentNumber', 'enroleeNumber', 'slotLabel']}
         searchPlaceholder="Search student or document…"
         facets={facets}
         toolbarTrailing={modeToggle ?? undefined}
