@@ -503,3 +503,46 @@ The six items the workbook genuinely cannot settle are now written as a drafted,
 ⚠ **A rejection stops the ladder and later steps stay `waiting` forever.** Nothing may emit an event for them, and the declarations timeline renders them dashed and hollow as _"Never reached"_ rather than as still coming.
 
 **Defects this feature's own review caught, all of which had shipped-looking green tests:** a join to `grade_entries.student` that does not exist (it is `section_student_id`); `getStaffDisplayNameById()` returning ~1,039 accounts — almost all parent portal logins — into two client components' props; `markChangeFieldLabel` rendering the raw column name as _"Ww Scores 0"_ with an off-by-one slot; and a test pinning a `field_changed` value the CHECK constraint forbids, which is what hid the last one.
+
+---
+
+### KD #203
+
+**A subject's NAME is a property of the (subject, academic year) pair — not of the subject** (2026-08-31; **migrations 137 + 138**, both APPLIED). The school renamed MAPEH to STAR ("Sports, Talent, Arts and Rhythm") for AY2026 while AY2025 must keep saying MAPEH. That had nowhere to live: `subjects.name` is editable by no route, and `subjects` has **no `academic_year_id`** — one row serves every year, so any rename would relabel history.
+
+**Where it lives.** `subject_configs` — already the per-AY row, the same place `qa_max` (021) and `weights_confirmed` (085) went. Three columns, all nullable, all with a CHECK refusing a blank string:
+
+| Column               | Question it answers                         | Who reads it                |
+| -------------------- | ------------------------------------------- | --------------------------- |
+| `display_name` (137) | what is this subject CALLED this year       | every screen                |
+| `report_label` (138) | what does the REPORT CARD call it this year | the report card only        |
+| `description` (138)  | what does the name stand for                | the grading sheet page only |
+
+⚠ **`subjects.code` NEVER changes on a rename and every code-keyed list depends on that** — `MAPEH_FAMILY_CODES` (which sets the 20/60/20 weight split), `MOTHER_TONGUE_SUBJECT_CODES`, the deployment importer's `SUBJECT_MAP` / `EQUIVALENT_SUBJECT_CODES`. Mr Ace: _"keep in mind the static list of subjects we have are not affected"_. A renamed subject is the SAME subject with the same code, weights and grades.
+
+⚠ **TWO RESOLVERS, NEVER ONE CHAIN, AND THIS IS THE LOAD-BEARING PART.** `lib/sis/subjects/display-name.ts` exports `subjectDisplayName` (display_name → name) and `subjectReportName` (report_label → display_name → name). They were ONE chain first, and the chain was wrong in a way nothing could catch because it had no callers. The read sweep gave it callers across markbook, classroom and grading — and MAPEH's then-global report label of `'STAR'` immediately started answering for **AY2025 markbook screens**, the year that must keep saying MAPEH. Nothing failed; the screens just disagreed. A report label is by definition narrower than a name, so it may only ever widen the answer for the one surface it names. **Do not "simplify" these back into one function with a flag** — a flag has a default, and the default is wrong on whichever side forgets to pass it. `__tests__/sis/report-label-scope.test.ts` fails if a non-report-card file imports the second one, and caught a real defect on its first run.
+
+⚠ **138 MOVED `report_label` OFF `subjects` AND BACKFILLED NOTHING.** Exactly three subjects carried one and not one should have carried forward: MAPEH's `'STAR'` is what `display_name` now does, and FIL/MANDARIN's `"Mother Tongue (Filipino)"` / `"(Mandarin)"` were a hand-written copy of a heading `resolveReportSubjects` already composes. Carrying them over reproduces the doubling they caused. **All three values are recorded in 138's header** rather than migrated.
+
+**Two live report-card defects this fixed, both measured against production values before and after:**
+
+|        | before                                     | after                      |
+| ------ | ------------------------------------------ | -------------------------- |
+| AY2025 | `Mother Tongue (Mother Tongue)`            | `Mother Tongue`            |
+| AY2026 | `Mother Tongue (Mother Tongue (Filipino))` | `Mother Tongue (Filipino)` |
+
+The AY2025 one had a different cause and needed code: **"Mother Tongue" maps to ITSELF** in `subject_report_map` as well as receiving both languages, so its group always reaches the real-fan-in branch. When the source IS the target the parenthetical says nothing, so it is now dropped. ⚠ Neither had reached a parent — AY2026 publishing is blocked by the form-adviser gap — but both would have on publish.
+
+⚠ **WHY THE LANGUAGES LOOK ODD AT ALL: the school changed how it grades them, and that is the per-year fact this KD exists for.** AY2025 graded one combined Mother Tongue sheet (88 sheets, 53 with marks) while Filipino/Mandarin sat attached with **zero** marks; AY2026 grades the languages separately (31/8 and 10/5) and Mother Tongue has no sheet. Re-runnable: `scripts/probe-mother-tongue-sheets.ts`.
+
+**The read sweep — 37 files, finished.** `__tests__/sis/subject-name-read-sweep.test.ts` walks `app`, `lib` and `components`, finds every select that asks PostgREST for a subject name, and requires each to resolve or appear on an exemption list **with a reason**. It was demonstrated RED twice before green, which is how the inventory was built rather than from an eyeballed grep. Three kinds of exemption, and they are not interchangeable: **identity** (the catalogue routes — the name IS what is being written, and there is no year), **historical** (`lib/audit/assignment-context.ts` — an audit row keeps the words used at the time), and **no year to resolve against**.
+
+⚠ **`lib/markbook/compare.ts` IS EXEMPT AND MUST STAY SO UNTIL SOMEBODY DECIDES OTHERWISE.** It groups the subject trend BY NAME across academic years, so resolving per year would split MAPEH and STAR into **two series** on a cross-year chart — strictly worse than one stale name. Fixing it properly means re-keying the trend on `subject_id` and choosing which year's name labels the series, which is a change to compare mode's behaviour, not part of a rename.
+
+⚠ **AUDIT ROWS RESOLVE AT WRITE TIME, DELIBERATELY.** An audit entry should record the words the operator saw — their screen said STAR, so the row says STAR, permanently. Resolving on READ would be the opposite mistake: it would rewrite history on every future rename.
+
+⚠ **`lib/sis/subjects/display-names-for-ay.ts` CANNOT CARRY `import 'server-only'`.** It had one, and it broke the production build outright: `lib/markbook/drill.ts` is **deliberately dual-use** — client components import its pure column helpers (`defaultColumnsForTarget`, `DRILL_COLUMN_LABELS`) while server loaders import its cached readers — so pulling a server-only module into it puts this one in the client bundle graph. Losing the marker costs nothing real: the module creates no client and holds no secret, taking a `SupabaseClient` as a parameter. **Do not restore it without first moving drill.ts's presentation helpers out.**
+
+⚠ **One hazard the tests caught and it would have been silent:** `subjectDisplayNamesForAy` keyed its map on `s.id` without checking there was one. Given rows with no id, every subject collapsed onto the same `undefined` key and the **last one's name came back for all of them** — one subject wearing another's name. Now skipped rather than assumed away.
+
+**Verification.** `scripts/verify-subject-name-migrations.ts` — read-only, 4/4 through PostgREST with the app's own client. The proof that 138's drop landed is the **inverse shape**: selecting `subjects.report_label` must FAIL, and it does. ⚠ The two CHECK constraints cannot be checked from the client (pg_catalog is unreadable through PostgREST, no `DATABASE_URL`); the SQL-editor query is in the script's header.
