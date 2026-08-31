@@ -51,6 +51,8 @@ import {
   STAGE_STATUS_OPTIONS,
   STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
+  findStageCompletionBlockers,
+  stageCompletionMessage,
   type ApplicationTerminalReason,
   type StageKey,
   type StageUpdateInput,
@@ -244,6 +246,66 @@ export function EditStageDialog({
       setTerminalNotes('');
     }
   }, [isTerminalStatus]);
+
+  // ── Stage completion gate ────────────────────────────────────────────────
+  //
+  // Some statuses can't stand on their own: "Paid" with no invoice number,
+  // "Finished" with no assessment marks. STAGE_STATUS_REQUIRED_FIELDS names
+  // which, and the stage PATCH route refuses a save that lands there — so this
+  // dialog reads THE SAME MAP and says so before the save, rather than letting
+  // someone fill the form in and collect a refusal.
+  //
+  // `watch` (not `getValues`) so the notice clears the moment the missing box
+  // is typed into.
+  const watchedExtras = form.watch('extras');
+
+  // The row as it will stand AFTER the save — which is what the server checks,
+  // because it merges the incoming values over the stored row. Built in the
+  // same order onSubmit builds `extrasPayload`: stored row, this form's values
+  // over it, then the terminal reason/notes the application stage keeps in
+  // component state rather than in the form. Any other order and the dialog
+  // could disagree with the route, which would show Save as available and then
+  // have it refused.
+  const effectiveExtras: Record<string, string | null | undefined> = {
+    ...initialExtras,
+    ...(watchedExtras ?? {}),
+    ...(stageKey === 'application' && isTerminalStatus
+      ? {
+          terminalReason: terminalReason || undefined,
+          terminalNotes: terminalNotes.trim() || undefined,
+        }
+      : {}),
+  };
+
+  const completionBlockers = findStageCompletionBlockers(
+    stageKey,
+    effectiveStatus,
+    effectiveExtras
+  );
+
+  // On the application stage's Cancelled / Withdrawn path the block further
+  // down is already the gate for exactly this — in more specific words, and
+  // owning the controls that actually write the reason (the Stage details
+  // inputs for it are overwritten by that block on submit). Printing a second
+  // red sentence beside it would read as two mechanisms rather than one, so
+  // the general notice stands aside there. Save stays blocked either way: the
+  // footer's condition covers both.
+  const terminalBlockOwnsTheGate =
+    stageKey === 'application' && isTerminalStatus;
+  const showCompletionNotice =
+    completionBlockers.length > 0 && !terminalBlockOwnsTheGate;
+  const completionMessage = showCompletionNotice
+    ? stageCompletionMessage(
+        stageKey,
+        effectiveStatus ?? '',
+        completionBlockers
+      )
+    : '';
+  // Which boxes to mark. The sentence says what is missing; the marker says
+  // where, and both come and go as the status changes.
+  const blockedFieldKeys = new Set(
+    showCompletionNotice ? completionBlockers.map((b) => b.fieldKey) : []
+  );
 
   type StageResponse = {
     changed?: number;
@@ -636,6 +698,9 @@ export function EditStageDialog({
                             <FormItem>
                               <FormLabel className="text-xs">
                                 {e.label}
+                                {blockedFieldKeys.has(e.fieldKey) && (
+                                  <span className="text-destructive"> *</span>
+                                )}
                               </FormLabel>
                               <FormControl>
                                 {e.kind === 'date' ? (
@@ -666,6 +731,12 @@ export function EditStageDialog({
                         />
                       ))}
                     </div>
+                    {showCompletionNotice && (
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        {completionMessage}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -775,10 +846,12 @@ export function EditStageDialog({
                     loading={busy}
                     loadingText="Saving…"
                     disabled={
-                      stageKey === 'application' &&
-                      isTerminalStatus &&
-                      (!terminalReason ||
-                        (terminalReason === 'other' && !terminalNotes.trim()))
+                      completionBlockers.length > 0 ||
+                      (stageKey === 'application' &&
+                        isTerminalStatus &&
+                        (!terminalReason ||
+                          (terminalReason === 'other' &&
+                            !terminalNotes.trim())))
                     }
                   >
                     Save changes
