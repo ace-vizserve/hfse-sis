@@ -470,6 +470,9 @@ export function ValidationQueue({
         expandable={{
           enabled: true,
           groupBy: (row) => row.enroleeNumber,
+          // One group is one applicant, and the page counts groups — so the
+          // page-size control has to say applicants, not rows.
+          unitLabel: 'Applicants',
           renderGroupHeader: ({ rows, isExpanded, toggle }) => (
             <ValidationGroupHeader
               rows={rows}

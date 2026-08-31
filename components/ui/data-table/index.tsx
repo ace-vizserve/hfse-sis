@@ -171,12 +171,12 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     Object.entries(initial.facets ?? {}).map(([id, value]) => ({ id, value }))
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  // Tracks which group KEYS are collapsed — inverted (vs. tracking expanded
-  // keys) so a freshly-seen group defaults to expanded with zero entries,
-  // matching the "declutter via one summary line, not by hiding" intent.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    new Set()
-  );
+  // Group keys whose open/closed state the reader has CHANGED from this
+  // table's default (`expandable.initiallyCollapsed`). Storing the difference
+  // rather than the state itself means a freshly-seen group — a new page, a
+  // new filter result — starts at the default with zero entries, whichever
+  // default that is.
+  const [toggledGroups, setToggledGroups] = useState<Set<string>>(new Set());
   const [exportOpen, setExportOpen] = useState(false);
   // Gates mounting the (dynamically-imported) export sheet — stays false
   // until the user opens it once, then stays true so closing/reopening
@@ -522,6 +522,67 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   // `computeExportScope` above for why the button and the sheet share this.
   const exportScope = computeExportScope();
 
+  // ---- Grouped tables paginate by GROUP, not by row ----
+  // A grouped table's unit is the group (a student), not the row (one of
+  // their documents). So the grouping runs on the SORTED row model — which is
+  // filter + sort but NOT pagination — and the page slices the resulting
+  // groups. Grouping the already-paginated rows instead (what this did
+  // originally) broke two things at once: "50 per page" counted documents, so
+  // it rendered ~3 students, and a student whose documents straddled the page
+  // boundary appeared on both pages with a header counting only the slice in
+  // front of it.
+  //
+  // Not memoized, for the same reason `exportScope` isn't: `table`'s identity
+  // is stable across renders, so it can't be a useMemo dep, and the row model
+  // underneath is already cached by TanStack — this is one pass to bucket the
+  // rows.
+  const paginationState = table.getState().pagination;
+  const groups = expandable?.enabled
+    ? (() => {
+        const rows = table.getSortedRowModel().rows;
+        const out: { key: string; rows: typeof rows }[] = [];
+        const indexByKey = new Map<string, number>();
+        for (const r of rows) {
+          const key = expandable.groupBy(r.original);
+          let idx = indexByKey.get(key);
+          if (idx === undefined) {
+            idx = out.length;
+            indexByKey.set(key, idx);
+            out.push({ key, rows: [] });
+          }
+          out[idx].rows.push(r);
+        }
+        return out;
+      })()
+    : null;
+
+  const groupPageCount =
+    groups && !hidePagination
+      ? Math.max(1, Math.ceil(groups.length / paginationState.pageSize))
+      : 1;
+
+  const visibleGroups =
+    groups === null
+      ? null
+      : hidePagination
+        ? groups
+        : groups.slice(
+            paginationState.pageIndex * paginationState.pageSize,
+            (paginationState.pageIndex + 1) * paginationState.pageSize
+          );
+
+  // Clamp: the table's own row-model clamp counts ROWS, so it can leave a
+  // grouped table parked past its last page — filtering down to fewer groups,
+  // or raising the page size, otherwise renders a blank table with working
+  // "previous" buttons.
+  useEffect(() => {
+    if (!expandable?.enabled || hidePagination) return;
+    if (paginationState.pageIndex > groupPageCount - 1) {
+      table.setPageIndex(groupPageCount - 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupPageCount, paginationState.pageIndex, hidePagination]);
+
   return (
     <div className="flex flex-col gap-3">
       {/* Toolbar */}
@@ -723,63 +784,51 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                     />
                   </TableCell>
                 </TableRow>
-              ) : expandable?.enabled ? (
-                (() => {
-                  const rows = table.getRowModel().rows;
-                  const groups: { key: string; rows: typeof rows }[] = [];
-                  const indexByKey = new Map<string, number>();
-                  for (const r of rows) {
-                    const key = expandable.groupBy(r.original);
-                    let idx = indexByKey.get(key);
-                    if (idx === undefined) {
-                      idx = groups.length;
-                      indexByKey.set(key, idx);
-                      groups.push({ key, rows: [] });
-                    }
-                    groups[idx].rows.push(r);
-                  }
-                  return groups.map((g) => {
-                    const isExpanded = !collapsedGroups.has(g.key);
-                    const toggle = () =>
-                      setCollapsedGroups((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(g.key)) next.delete(g.key);
-                        else next.add(g.key);
-                        return next;
-                      });
-                    return (
-                      <Fragment key={g.key}>
-                        <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={columns.length} className="p-0">
-                            {expandable.renderGroupHeader({
-                              key: g.key,
-                              rows: g.rows.map((r) => r.original),
-                              isExpanded,
-                              toggle,
-                            })}
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded &&
-                          g.rows.map((r) => (
-                            <TableRow
-                              key={r.id}
-                              className="group"
-                              data-state={r.getIsSelected() && 'selected'}
-                            >
-                              {r.getVisibleCells().map((c) => (
-                                <TableCell key={c.id}>
-                                  {flexRender(
-                                    c.column.columnDef.cell,
-                                    c.getContext()
-                                  )}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                      </Fragment>
-                    );
-                  });
-                })()
+              ) : expandable?.enabled && visibleGroups ? (
+                visibleGroups.map((g) => {
+                  const changed = toggledGroups.has(g.key);
+                  const isExpanded = expandable.initiallyCollapsed
+                    ? changed
+                    : !changed;
+                  const toggle = () =>
+                    setToggledGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(g.key)) next.delete(g.key);
+                      else next.add(g.key);
+                      return next;
+                    });
+                  return (
+                    <Fragment key={g.key}>
+                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <TableCell colSpan={columns.length} className="p-0">
+                          {expandable.renderGroupHeader({
+                            key: g.key,
+                            rows: g.rows.map((r) => r.original),
+                            isExpanded,
+                            toggle,
+                          })}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded &&
+                        g.rows.map((r) => (
+                          <TableRow
+                            key={r.id}
+                            className="group"
+                            data-state={r.getIsSelected() && 'selected'}
+                          >
+                            {r.getVisibleCells().map((c) => (
+                              <TableCell key={c.id}>
+                                {flexRender(
+                                  c.column.columnDef.cell,
+                                  c.getContext()
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                    </Fragment>
+                  );
+                })
               ) : (
                 table.getRowModel().rows.map((r) => (
                   <TableRow
@@ -804,6 +853,16 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
             <DataTablePagination
               table={table}
               pageSizeOptions={pageSizeOptions}
+              // Grouped tables page through groups, so the control has to
+              // count and label them — the table's own page count is rows.
+              groupPagination={
+                groups
+                  ? {
+                      pageCount: groupPageCount,
+                      unitLabel: expandable?.unitLabel ?? 'Groups',
+                    }
+                  : undefined
+              }
             />
           </div>
         )}

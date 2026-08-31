@@ -172,11 +172,24 @@ export type SelectionConfig<TRow> = {
 export type ExpandableConfig<TRow> = {
   enabled: boolean;
   /** Rows sharing the same key are grouped under one collapsible parent
-   *  row. Grouping is applied to the CURRENT PAGE's rows only (after
-   *  filter/sort/pagination) — a group can't span two pages. Acceptable
-   *  for the small internal-triage-queue volumes this targets; revisit
-   *  with group-aware pagination if a future consumer needs it. */
+   *  row. Grouping happens BEFORE pagination (on the filtered + sorted row
+   *  model), and the page then slices GROUPS — so a group is never split
+   *  across two pages and a group header always counts every one of its
+   *  rows. The page-size control counts groups too; see `unitLabel`.
+   *
+   *  This replaces the original "group the current page's rows" behavior,
+   *  which paginated documents and grouped afterwards: "50 per page" showed
+   *  ~3 students, and a student whose rows straddled the page boundary had
+   *  their header report only the slice on screen. */
   groupBy: (row: TRow) => string;
+  /** Plural noun for what one group IS, used by the pagination control
+   *  ("Students per page"). Defaults to "Groups". */
+  unitLabel?: string;
+  /** Start every group CLOSED, so the page opens as a scannable list of
+   *  group headers and the reader opens the one they want. Groups stay
+   *  collapsible either way — this only sets the starting state.
+   *  Defaults to false (all open). */
+  initiallyCollapsed?: boolean;
   /** Renders the parent row's content — spans the full column width (a
    *  single `colSpan={columns.length}` cell). Receives the group's member
    *  rows in their already-filtered/sorted order, current expand state,

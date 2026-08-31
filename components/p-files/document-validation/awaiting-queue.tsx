@@ -417,6 +417,9 @@ export function AwaitingQueue({ rows: initialRows, ayCode, isOfficer }: Props) {
         expandable={{
           enabled: true,
           groupBy: (row) => row.enroleeNumber,
+          // One group is one student, and the page counts groups — so the
+          // page-size control has to say students, not rows.
+          unitLabel: 'Students',
           renderGroupHeader: ({ rows, isExpanded, toggle }) => (
             <AwaitingGroupHeader
               rows={rows}
