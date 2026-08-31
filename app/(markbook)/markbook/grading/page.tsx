@@ -26,6 +26,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
 import { BulkCreateSheetsButton } from '@/components/markbook/bulk-create-sheets-button';
 
@@ -39,8 +40,16 @@ type SubjectLite = {
   id: string;
   code: string;
   name: string;
+  report_label: string | null;
   is_examinable: boolean;
 };
+/**
+ * The sheet's own subject_configs row. A config is per-(subject, academic
+ * year), so this is where the name the school used THIS year lives (migration
+ * 137) — every grading sheet already points at one via subject_config_id, so
+ * reaching it costs nothing.
+ */
+type SubjectConfigLite = { display_name: string | null };
 type SectionLite = {
   id: string;
   name: string;
@@ -54,6 +63,7 @@ type SheetRow = {
   teacher_name: string | null;
   term: TermLite | TermLite[] | null;
   subject: SubjectLite | SubjectLite[] | null;
+  subject_config: SubjectConfigLite | SubjectConfigLite[] | null;
   section: SectionLite | SectionLite[] | null;
 };
 
@@ -159,7 +169,8 @@ export default async function GradingListPage({
         .select(
           `id, is_locked, teacher_name,
            term:terms(id, term_number, label),
-           subject:subjects(id, code, name, is_examinable),
+           subject:subjects(id, code, name, report_label, is_examinable),
+           subject_config:subject_configs(display_name),
            section:sections!inner(id, name, academic_year_id, level:levels(id, code, label, level_type))`
         )
         .eq('section.academic_year_id', currentAy.id)
@@ -431,7 +442,9 @@ export default async function GradingListPage({
       section: section?.name ?? '—',
       level: level?.label ?? 'Unknown',
       school_level: level?.level_type ?? 'primary',
-      subject: subject?.name ?? '—',
+      subject: subject
+        ? subjectDisplayName(subject, first(s.subject_config))
+        : '—',
       is_examinable: subject?.is_examinable !== false,
       term: term?.label ?? '—',
       teacher: subjectTeacher?.name ?? s.teacher_name ?? null,

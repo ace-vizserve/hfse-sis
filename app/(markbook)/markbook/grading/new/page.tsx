@@ -6,6 +6,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 import { NewSheetForm } from './new-sheet-form';
 
@@ -69,7 +70,7 @@ export default async function NewGradingSheetPage() {
       .order('name'),
     supabase
       .from('subjects')
-      .select('id, code, name, is_examinable')
+      .select('id, code, name, report_label, is_examinable')
       .order('name'),
     supabase
       .from('subject_level_offerings')
@@ -77,7 +78,10 @@ export default async function NewGradingSheetPage() {
       .eq('academic_year_id', ayId),
     supabase
       .from('subject_configs')
-      .select('subject_id, ww_max_slots, pt_max_slots, qa_max')
+      // display_name is what the school calls this subject in the year being
+      // set up (migration 137) — already the right row, already the right
+      // year, so the picker just has to read it.
+      .select('subject_id, display_name, ww_max_slots, pt_max_slots, qa_max')
       .eq('academic_year_id', ayId),
     getTeacherList(),
   ]);
@@ -97,6 +101,8 @@ export default async function NewGradingSheetPage() {
   type OfferingRow = { subject_id: string; level_id: string };
   type SubjectConfigRow = {
     subject_id: string;
+    /** This year's name for the subject, or null if it was never renamed. */
+    display_name: string | null;
     ww_max_slots: number;
     pt_max_slots: number;
     qa_max: number;
@@ -183,7 +189,22 @@ export default async function NewGradingSheetPage() {
             typeof NewSheetForm
           >[0]['sections']
         }
-        subjects={subjectsRes.data ?? []}
+        // The picker names subjects to a person setting up sheets for THIS
+        // year, so each one arrives already called what the year calls it
+        // (migration 137). `code` is untouched — it is the identity the form
+        // and every static list key on.
+        subjects={(
+          (subjectsRes.data ?? []) as {
+            id: string;
+            code: string;
+            name: string;
+            report_label: string | null;
+            is_examinable: boolean;
+          }[]
+        ).map((s) => ({
+          ...s,
+          name: subjectDisplayName(s, configBySubjectId.get(s.id)),
+        }))}
         configs={mergedConfigs}
         teachers={teachers}
         defaultTermId={defaultTermId}

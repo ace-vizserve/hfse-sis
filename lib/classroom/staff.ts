@@ -3,6 +3,7 @@ import 'server-only';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { createServiceClient } from '@/lib/supabase/service';
 import { reliefStatus } from '@/lib/relief/display';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 
 // Who runs this class — the form adviser, the subject teachers, and anyone
@@ -71,7 +72,13 @@ type AssignmentRow = {
 type SubjectRow = {
   subject_config: {
     subject_id: string;
-    subject: { code: string | null; name: string | null } | null;
+    /** This year's name for the subject, or null if it was never renamed. */
+    display_name: string | null;
+    subject: {
+      code: string | null;
+      name: string;
+      report_label: string | null;
+    } | null;
   } | null;
 };
 
@@ -100,7 +107,10 @@ export async function getSectionStaff(
     service
       .from('section_subjects')
       .select(
-        'subject_config:subject_configs(subject_id, subject:subjects(code, name))'
+        // display_name is this year's name for the subject (migration 137) —
+        // it is on the config row this select already walks through, because
+        // a config IS the per-(subject, year) row.
+        'subject_config:subject_configs(subject_id, display_name, subject:subjects(code, name, report_label))'
       )
       .eq('section_id', sectionId),
     // Falls back to an empty map rather than throwing: a name lookup failing
@@ -182,7 +192,7 @@ export async function getSectionStaff(
       return {
         subjectId: cfg.subject_id,
         code: s?.code ?? null,
-        name: s?.name ?? 'Untitled subject',
+        name: s ? subjectDisplayName(s, cfg) : 'Untitled subject',
         teacherName: nameOf(held?.teacher_user_id),
         teacherId: held?.teacher_user_id ?? null,
         coveringName: liveCoverName(held),

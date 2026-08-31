@@ -7,6 +7,7 @@ import {
 import { loadPriorTermGrades, sumTaken } from '@/lib/markbook/grade-diff';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 // Gathers what `rankAtRisk` needs for one (section, term), across every subject
 // the class takes.
@@ -20,13 +21,19 @@ import { createServiceClient } from '@/lib/supabase/service';
 // here would duplicate the subtlest query in the codebase and let the two
 // copies drift. Ten subjects is ten parallel calls, on a panel opened by hand.
 
-type SubjectLite = { name: string; is_examinable: boolean };
+type SubjectLite = {
+  name: string;
+  report_label: string | null;
+  is_examinable: boolean;
+};
 
 /**
  * Stored as decimals (0.40), printed as percents on the panel's measure pills.
  * One set per subject since migration 080, so they cannot differ by term.
  */
 type ConfigLite = {
+  /** This year's name for the subject, or null if it was never renamed. */
+  display_name: string | null;
   ww_weight: number | string;
   pt_weight: number | string;
   qa_weight: number | string;
@@ -102,7 +109,10 @@ export async function loadSectionAtRisk(
     service
       .from('grading_sheets')
       .select(
-        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable), config:subject_configs(ww_weight, pt_weight, qa_weight)'
+        // display_name rides in on the config embed that was already here for
+        // the weights — a config is the per-(subject, year) row, so this
+        // year's name for the subject is on it (migration 137).
+        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, report_label, is_examinable), config:subject_configs(display_name, ww_weight, pt_weight, qa_weight)'
       )
       .eq('section_id', sectionId)
       .eq('term_id', termId),
@@ -171,10 +181,19 @@ export async function loadSectionAtRisk(
 
   const sheetById = new Map(sheets.map((s) => [s.id, s]));
   const subjectBySheet = new Map(
-    sheets.map((s) => [
-      s.id,
-      firstOf(s.subject) ?? { name: 'Subject', is_examinable: true },
-    ])
+    sheets.map((s) => {
+      const subject = firstOf(s.subject);
+      if (!subject) return [s.id, { name: 'Subject', is_examinable: true }];
+      return [
+        s.id,
+        {
+          // The panel names the subject a teacher should look at, so it uses
+          // the name this year uses (migration 137).
+          name: subjectDisplayName(subject, firstOf(s.config)),
+          is_examinable: subject.is_examinable,
+        },
+      ];
+    })
   );
   const priorsBySheet = new Map(
     sheets.map((s, i) => [s.id, priorsBySubject[i]])

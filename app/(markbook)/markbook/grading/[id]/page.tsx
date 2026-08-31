@@ -43,6 +43,7 @@ import { ScoreEntryGrid } from '@/components/grading/score-entry-grid';
 import { LockToggle } from '@/components/grading/lock-toggle';
 import { TotalsEditor } from '@/components/grading/totals-editor';
 import { listApproversForFlow } from '@/lib/sis/approvers/queries';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { RequestEditButton } from './request-edit-button';
 
 /**
@@ -68,10 +69,16 @@ type Subject = {
   id: string;
   code: string;
   name: string;
+  report_label: string | null;
   is_examinable: boolean;
 };
 type Term = { id: string; term_number: number; label: string };
 type SubjectConfig = {
+  /**
+   * What the school called this subject in this sheet's academic year
+   * (migration 137). Null when the year never renamed it.
+   */
+  display_name: string | null;
   ww_weight: number;
   pt_weight: number;
   qa_weight: number;
@@ -129,9 +136,9 @@ export default async function GradingSheetPage({
     .select(
       `id, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
        term:terms(id, term_number, label),
-       subject:subjects(id, code, name, is_examinable),
+       subject:subjects(id, code, name, report_label, is_examinable),
        section:sections(id, name, level:levels(id, code, label)),
-       subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
+       subject_config:subject_configs(display_name, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
     .eq('id', id)
     .single();
@@ -314,6 +321,10 @@ export default async function GradingSheetPage({
     sheet.subject_config as SubjectConfig | SubjectConfig[] | null
   );
   const isExaminable = subject?.is_examinable !== false;
+  // What this sheet's subject is called in the year the sheet belongs to —
+  // STAR on an AY2026 sheet, MAPEH on an AY2025 one (migration 137). The
+  // config carrying it is the same row the weights come from.
+  const subjectLabel = subject ? subjectDisplayName(subject, config) : null;
 
   // Teacher assignment gate — already fetched concurrently above.
   const isAssignedTeacher =
@@ -435,7 +446,7 @@ export default async function GradingSheetPage({
           </p>
           <div className="flex flex-wrap items-baseline gap-3">
             <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-              {subject?.name ?? 'Subject'}
+              {subjectLabel ?? 'Subject'}
             </h1>
             {sheet.is_locked ? (
               <Badge
@@ -760,7 +771,7 @@ export default async function GradingSheetPage({
           } | null) ?? undefined
         }
         letterDisplay={!isExaminable}
-        subjectName={subject?.name ?? 'This subject'}
+        subjectName={subjectLabel ?? 'This subject'}
         canEditLabels={canEditLabels}
         priorGrades={priorGrades}
         currentTermNumber={term?.term_number ?? 1}
