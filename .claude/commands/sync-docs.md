@@ -7,8 +7,9 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskGet]
 
 Three surfaces are the project's source of truth for "what's been built and what's the contract":
 
-- `.claude/rules/*.md` — stable rules with YAML frontmatter declaring `load: always` or `load: on-demand`. Auto-loaded via `@`-import in CLAUDE.md: `hard-rules.md`, `always-do-first.md`. On-demand (pointer-only in CLAUDE.md, read via Read tool when the frontmatter `description` matches the task): `tech-stack.md`, `project-layout.md`, `env-vars.md`, `key-decisions.md`, `workflow.md`. `key-decisions.md` is a thin index over per-topic files in `docs/key-decisions/` (`platform.md`, `ui.md`, `dashboards.md`, `markbook.md`, `evaluation.md`, `attendance.md`, `admissions.md`, `pfiles.md`, `records.md`, `parent.md`).
+- `.claude/rules/*.md` — stable rules with YAML frontmatter declaring `load: always` or `load: on-demand`. Auto-loaded via `@`-import in CLAUDE.md: `hard-rules.md`, `always-do-first.md`. On-demand (pointer-only in CLAUDE.md, read via Read tool when the frontmatter `description` matches the task): `tech-stack.md`, `project-layout.md`, `env-vars.md`, `key-decisions.md`, `workflow.md`. `key-decisions.md` is a thin index over 16 per-topic files in `docs/key-decisions/`: `platform.md`, `ui.md`, `dashboards.md`, `evaluation.md`, `attendance.md`, `admissions.md`, `pfiles.md`, `records.md`, `classroom.md`, `parent.md`, and six markbook files — `markbook-grading.md`, `markbook-change-requests.md`, `markbook-subjects.md`, `markbook-sow.md`, `markbook-publishing.md`, `markbook-insights.md`. (There is no bare `markbook.md`; it was split by topic.) The index carries only a **File → KDs** table plus the quick-lookup row — deliberately no per-topic prose summary, because that duplicated the topic files it points at and the index is auto-loaded every session.
 - `CLAUDE.md` — slim host: project one-liner, the two `@` imports, on-demand rules pointer table, reference-docs table, and the `## Session context` scratch area
+- `docs/context/23-session-log.md` — the **archive** for `## Session context`. Older entries move here verbatim instead of being deleted; it is a normal on-demand context doc, so it costs nothing until read. See step 2 for when to move an entry.
 - `docs/sprints/development-plan.md` — sprint-by-sprint status, task checkboxes, definition-of-done, deferrals backlog
 
 Both **must** stay in sync with the actual codebase. This command is the maintenance routine that keeps them honest. Run it after any sprint, after merging a meaningful PR, or any time you suspect drift.
@@ -34,7 +35,7 @@ Use Read / Glob / Grep / Bash (`git log --oneline -20`, `git status`, etc.) to i
 
 For each surface, check accuracy:
 
-- **Reference docs table in `CLAUDE.md`:** has any `docs/context/*.md` file moved or been renamed? (Rare; usually skip.)
+- **Reference docs table in `CLAUDE.md`:** has any `docs/context/*.md` file moved, been renamed, or been **added**? (Rare; usually skip.) A genuinely new context doc gets a row — that is the one edit this table accepts, and it is what keeps the doc discoverable. Adding a row is not a licence to reword existing ones.
 - **Hard rules (`.claude/rules/hard-rules.md`):** **NEVER edit these.** Only verify they're still enforced in code. Greps to run:
   - `grep -r "quarterly_grade !== 93" lib/compute/` — formula self-test still present
   - `grep -r "approval_reference" app/api/grading-sheets/` — post-lock gate still wired
@@ -46,7 +47,12 @@ For each surface, check accuracy:
 - **Project layout tree (`docs/rules/project-layout.md`):** does the tree match the actual directory structure? Add new significant folders, remove stale ones. Keep it brief — leaf detail belongs in the dev plan, not here.
 - **Environment variables (`docs/rules/env-vars.md`):** match `.env.local.example` exactly (modulo placeholder values).
 - **Key decisions (`.claude/rules/key-decisions.md` + `docs/key-decisions/*.md`):** has a new architectural choice been made? (e.g. "we added an X table", "we dropped Y service".) If yes, append a new KD with the next unused number to the topic file that best matches its scope; don't renumber existing KDs; don't restructure. Then update the index file (`key-decisions.md`) — add the KD to the topic-files table's KD list and to the quick-lookup row.
-- **Session context (CLAUDE.md `## Session context` block):** prune anything stale or no longer relevant. This block is explicitly ephemeral — if an entry has become stable project policy, promote it into the relevant `.claude/rules/*.md` file and remove it here.
+- **Session context (CLAUDE.md `## Session context` block):** this block is explicitly ephemeral. Each entry goes exactly one of three ways:
+  - **Promote** — it has become stable project policy: move it into the relevant `.claude/rules/*.md` file and remove it here.
+  - **Archive** — the work is shipped, closed or superseded, but its gotchas and do-not-reopen rulings still matter: move it **verbatim** to the top of `docs/context/23-session-log.md`, preserving newest-first order. Keep only the current sprint in `CLAUDE.md`. **Do not summarise on the way out** — the value of these entries is the measured numbers and the specific warnings, and a summary loses exactly that.
+  - **Delete** — it is genuinely stale (contradicted by later work, or a claim since disproven). Quote what you removed in the report so it is recoverable.
+
+  ⚠ **Archiving is the normal outcome and the main lever on the line budget below.** In 2026-08 this block alone reached 95,402 characters — 91% of `CLAUDE.md`, and 2.6× the size at which Claude Code warns a memory file is too large.
 
 **Hard limit: keep `CLAUDE.md` under 80 lines.** Stable rules now live in `.claude/rules/` and are `@`-imported; CLAUDE.md's 80-line budget covers only the intro, imports, reference-docs table, session-context scratch, and cross-reference note. Rule files themselves have no line budget but should stay tight.
 
@@ -65,7 +71,7 @@ This file is allowed to grow; it's the long-form record.
 
 - Use targeted `Edit` calls, not full `Write` rewrites — the diff has to be reviewable.
 - Exception: rewriting a rule file or `CLAUDE.md` end-to-end is OK if structural changes are needed and the diff would be a mess otherwise. Justify in the summary.
-- Stable rules in `.claude/rules/*.md` are immutable except with explicit user approval — they are `@`-imported into every session, so silent edits propagate everywhere. The doc references table in `CLAUDE.md` is also immutable unless a context file actually moved.
+- Stable rules in `.claude/rules/*.md` are immutable except with explicit user approval — they are `@`-imported into every session, so silent edits propagate everywhere. The doc references table in `CLAUDE.md` is also immutable unless a context file actually moved, was renamed, or was newly added (see step 2).
 - Don't invent features. Only document what you can point at in the codebase.
 - Don't delete deferred backlog items just because they're old. Mark them done if they shipped, or leave them as deferred with current reasoning.
 
