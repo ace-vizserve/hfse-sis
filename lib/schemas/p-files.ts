@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
 import { MODULE_VALUES } from '@/lib/p-files/_shared';
+import { proseLength } from '@/lib/rich-text';
 
 const SlotKeyEnum = z.enum(
   DOCUMENT_SLOTS.map((s) => s.key) as [string, ...string[]]
@@ -14,7 +15,15 @@ export const NotifySchema = z.object({
 export const PromiseSchema = z.object({
   slotKey: SlotKeyEnum,
   promisedUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  note: z.string().max(500).optional(),
+  // 500 characters of WRITING. The note is typed in a formatting editor, so
+  // measuring the stored string would let `<strong><em>` eat a note that is
+  // well short of the limit on screen.
+  note: z
+    .string()
+    .refine((value) => proseLength(value) <= 500, {
+      message: 'Keep the note under 500 characters.',
+    })
+    .optional(),
   module: z.enum(MODULE_VALUES).optional(),
 });
 

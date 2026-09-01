@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { proseLength } from '@/lib/rich-text';
+
 // Attendance module — zod schemas for /api/attendance/* write surfaces.
 //
 // Status vocabulary matches the check constraint on `attendance_daily.status`
@@ -75,10 +77,20 @@ export const DailyEntrySchema = z
     // key leaves whatever is on file alone, so the two are not interchangeable.
     // `''` normalises to null so an emptied input clears rather than storing
     // a blank string.
+    // Measured on the words, not on the stored string — the note is typed in
+    // a formatting editor and the tags are not the teacher's writing.
+    //
+    // ⚠ THE DATABASE STILL COUNTS THE STRING. Migration 109's
+    // `char_length(ex_note) <= 300` is a raw-character check, so a note that
+    // is inside the limit here can still be refused by Postgres once the
+    // markup is added. Widening or dropping that constraint is a migration
+    // and is deliberately not done here.
     exNote: z
       .string()
       .trim()
-      .max(EX_NOTE_MAX_LENGTH)
+      .refine((v) => proseLength(v) <= EX_NOTE_MAX_LENGTH, {
+        message: `Keep the note under ${EX_NOTE_MAX_LENGTH} characters.`,
+      })
       .transform((v) => (v === '' ? null : v))
       .optional()
       .nullable(),
