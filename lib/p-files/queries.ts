@@ -6,6 +6,7 @@ import {
   resolveStatus,
   type DocumentStatus,
 } from './document-config';
+import { isEnrolledStatus } from './_shared';
 
 const CACHE_TTL_SECONDS = 600;
 
@@ -51,16 +52,25 @@ export type DashboardSummary = {
 };
 
 /**
- * Enrolment gate for the detail page. Returns true when the student's
- * status row exists AND `applicationStatus IN ('Enrolled', 'Enrolled
- * (Conditional)')`. P-Files is enrolled-only (KD #31) so pre-enrolment
- * applicants are still hidden, but the historical extra requirement
- * that `classSection` also be set has been dropped — P-Files is about
- * documents (passports, medical, vaccination), which aren't tied to
- * having a class assigned. Legacy / imported rows that landed in
- * Enrolled without classSection were 404'ing the page; the page now
- * surfaces a warning banner inline when the student is enrolled but
- * has no class section yet.
+ * Has this student enrolled? True when the status row exists AND
+ * `applicationStatus IN ('Enrolled', 'Enrolled (Conditional)')`. It does NOT
+ * require a `classSection` — placement is a separate step that can trail
+ * enrolment by weeks, and documents (passports, medical, vaccination) aren't
+ * tied to having a class; the page surfaces an inline warning instead.
+ *
+ * WHAT THIS IS FOR CHANGED ON 2026-09-01 (KD #204). It used to be the FOLDER
+ * gate — P-Files was enrolled-only (KD #31), so an applicant simply had no
+ * page. That job now belongs to `studentExistsInAy` below. What survives is
+ * the narrower question this was always really answering: which SIDE of
+ * enrolment a document write belongs to, and therefore which capability it
+ * requires — `documents_pre_enrolment.*` before, `documents_post_enrolment.*`
+ * after. Two routes ask it: the document PATCH (`validate`) and the upload
+ * route (`upload`). Neither refuses the other side outright any more; they
+ * pick a capability and let the holder set decide.
+ *
+ * The I/O wrapper over `isEnrolledStatus` (./_shared) — one string test, so a
+ * caller that already holds the status row can answer without a second read
+ * and still cannot disagree with these two routes.
  */
 export async function isStudentEnrolled(
   ayCode: string,
@@ -76,8 +86,9 @@ export async function isStudentEnrolled(
   if (error) throw error;
   const row = (data as Array<Record<string, unknown>> | null)?.[0] ?? null;
   if (!row) return false;
-  const status = row.applicationStatus;
-  return status === 'Enrolled' || status === 'Enrolled (Conditional)';
+  return isEnrolledStatus(
+    typeof row.applicationStatus === 'string' ? row.applicationStatus : null
+  );
 }
 
 /**
@@ -91,9 +102,10 @@ export async function isStudentEnrolled(
  * and a list that shows applicants while the folder 404s them is worse than
  * either choice on its own.
  *
- * `isStudentEnrolled` is still the right gate for anything that asks "may this
- * be treated as a student's record": it decides which validate capability the
- * document PATCH requires, and it still guards staff upload.
+ * `isStudentEnrolled` above is still the right question for anything that asks
+ * WHICH SIDE of enrolment a document write belongs to — it picks the validate
+ * capability for the document PATCH and the upload capability for the upload
+ * route. It is no longer a gate that refuses applicants outright.
  */
 export async function studentExistsInAy(
   ayCode: string,

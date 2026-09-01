@@ -51,6 +51,7 @@ import {
   getStudentDocumentDetail,
   studentExistsInAy,
 } from '@/lib/p-files/queries';
+import { isEnrolledStatus } from '@/lib/p-files/_shared';
 import {
   compareSlotsByUrgency,
   isActionable,
@@ -178,13 +179,22 @@ export default async function StudentDocumentDetailPage({
   // the upload route (`upload`). Every current holder has all three, so this
   // changes nothing today — but revoking just one in /sis/admin/roles will now
   // hide exactly the controls it should.
+  //
+  // AND WHICH SIDE OF ENROLMENT (2026-09-01, KD #204). This page used to serve
+  // enrolled students only, so reading the post-enrolment capabilities was the
+  // whole truth. It now also serves applicants, and every route behind these
+  // three buttons picks its capability from the student's enrolment state — so
+  // the page has to ask the same question, or an applicant's folder would show
+  // buttons gated on a capability their routes never consult. Derived from the
+  // status row already in hand, not a fourth database read.
   const capabilities = await getCapabilitiesForRole(sessionUser.role);
-  const canValidateDocs = can(
-    capabilities,
-    'documents_post_enrolment.validate'
-  );
-  const canChaseDocs = can(capabilities, 'documents_post_enrolment.chase');
-  const canUploadDocs = can(capabilities, 'documents_post_enrolment.upload');
+  const enrolled = isEnrolledStatus(student.applicationStatus);
+  const side = enrolled
+    ? ('documents_post_enrolment' as const)
+    : ('documents_pre_enrolment' as const);
+  const canValidateDocs = can(capabilities, `${side}.validate`);
+  const canChaseDocs = can(capabilities, `${side}.chase`);
+  const canUploadDocs = can(capabilities, `${side}.upload`);
   // Hero framing only: is there any document work this viewer can do here?
   const canWrite = canValidateDocs || canChaseDocs || canUploadDocs;
 

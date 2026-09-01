@@ -57,9 +57,22 @@ P-Files detail gate relaxation + tabbed document groups + sticky-header refactor
 
 ⚠ **Point 4 is load-bearing and was nearly missed.** Relaxing the list without the folder would have left every applicant row 404ing — the list and the detail page had two different gates. Caught while checking whether docs needed updating, not by a test.
 
-⚠ **`isStudentEnrolled` is NOT dead.** The document PATCH still uses it to choose between `documents_pre_enrolment.validate` and `documents_post_enrolment.validate`, and staff upload still requires it. Do not delete it as newly-unused.
+⚠ **`isStudentEnrolled` is NOT dead.** The document PATCH uses it to choose between `documents_pre_enrolment.validate` and `documents_post_enrolment.validate`, and the upload route now uses it the same way for the two `upload`s. What it stopped being is a gate that refuses applicants outright — it selects a capability, it does not turn anyone away. Do not delete it as newly-unused.
 
-🔴 **STILL OPEN: staff cannot upload pre-enrolment documents.** `documents_pre_enrolment` has no `upload` action at all (`read`/`chase`/`validate` only), and the single upload route requires `documents_post_enrolment.upload` **plus** `isStudentEnrolled`. So `assessmentResult` — a document **the school produces** — has no staff path into an applicant's folder; either the office sends it to the parent to upload, or the slot waits for enrolment. Raised, not decided.
+**Update (2026-09-01) — staff can upload for applicants. The open item below is CLOSED; migration 139, NOT YET APPLIED.**
+
+Mr Ace, asked whether staff should reach every slot for an applicant or only the eight school-produced forms: _"yes let them upload everthing"_. So there is deliberately **no per-slot narrowing** — one rule on both sides of enrolment.
+
+1. **`documents_pre_enrolment` gains an `upload` action**, mirroring the post-enrolment one. The route now gates on holding **either** and narrows by enrolment state, exactly as the document PATCH does with the two `validate`s. The 422 (_"P-Files uploads are only available for enrolled students"_) is gone; refusal is now a 403 that means "you don't hold this side", not "this student is the wrong kind".
+2. **Migration 139 grants it to `p_file_officer`, `school_admin`, `superadmin`** — precisely the three that already hold `documents_post_enrolment.upload`. **Nobody new can upload anything.** What widened is which STUDENTS, not who.
+3. ⚠ **`admissions` is deliberately NOT granted, though it owns the applicant side.** There is nowhere for them to use it: the only upload surface is the P-Files student page, `/p-files` excludes them at ROUTE_ACCESS, and the applicant file's `DocumentsViewer` takes `canValidate`/`canChase` and has no upload path. A grant would be a ticked box wired to no gate. Build the control first — then it is a data edit at `/sis/admin/roles`, no migration.
+4. ⚠ **The student page now picks its capability side per student too**, for all three buttons, not just upload. It hard-coded `documents_post_enrolment.*` from when it served enrolled students only; on an applicant's folder that renders buttons gated on a capability their routes never consult. Derived from the status row already in hand — no extra read.
+5. ⚠ **The enrolment string test now has ONE definition**, `isEnrolledStatus` in `lib/p-files/_shared.ts`; `isStudentEnrolled` is the I/O wrapper over it. Three surfaces ask the question and they must not drift.
+6. ⚠ **A new failure mode the old 422 made unreachable, guarded:** the documents row is created by the parent portal **when a family submits**, so an enrolee who reached these tables another way can have a status row and no documents row. PostgREST reports an UPDATE matching nothing as success, so the file would land in storage, the record would never change, and the screen would say it worked. The update now `.select()`s and returns a 409 (`no_document_row`) instead.
+
+⚠ **Accepted knowingly: a staff upload writes `Valid` and so skips the admissions review queue.** A staff member has already looked at the file, which is what that queue is for — and this is what has always happened after enrolment. Raised with Mr Ace as part of the "everything vs school forms only" question; he chose everything.
+
+Guarded by `__tests__/p-files/pre-enrolment-upload.test.ts` (all 10 assertions demonstrated red against the pre-change tree before being accepted).
 
 ⚠ **Triage mode went with the page.** It was the one thing the queue did that the list does not: sequential review without opening each folder. The pane still exists on the admissions side (`components/admissions/document-validation/triage-pane.tsx`) if it needs restoring onto the filtered list.
 

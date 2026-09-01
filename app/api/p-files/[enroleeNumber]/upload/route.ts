@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import PDFMerger from 'pdf-merger-js';
-import { requireCapability } from '@/lib/auth/require-capability';
+import { requireAnyCapability } from '@/lib/auth/require-capability';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -62,14 +62,26 @@ function extFromPath(path: string): string {
 // path is then overwritten with the new upload. P-Files no longer validates
 // documents — it is a repository, and `{slotKey}Status` is always written
 // as 'Valid' for staff uploads.
+//
+// SERVES APPLICANTS AS WELL AS ENROLLED STUDENTS since 2026-09-01 (KD #204).
+// Enrolment state no longer decides WHETHER an upload is allowed, only which
+// capability it requires — see the block below the size and file-type checks.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  // Exactly the holders of the role array this replaces (p_file_officer +
-  // superadmin), pinned by a test. Staff upload exists only on the
-  // post-enrolment side: an applicant's files arrive from the parent portal.
-  const auth = await requireCapability('documents_post_enrolment.upload');
+  // Gate on holding EITHER side's upload capability; which one is actually
+  // required is decided below, once we know whether this student has enrolled.
+  // The document PATCH does exactly this with the two `validate`s — same
+  // shape, deliberately, so there is one rule to learn rather than two.
+  //
+  // BEFORE 2026-09-01 this asked for `documents_post_enrolment.upload` alone
+  // and there was no pre-enrolment counterpart to ask for. See the enrolment
+  // block further down for why that stopped being tenable.
+  const auth = await requireAnyCapability([
+    'documents_pre_enrolment.upload',
+    'documents_post_enrolment.upload',
+  ]);
   if ('error' in auth) return auth.error;
 
   const { enroleeNumber } = await params;
@@ -184,20 +196,52 @@ export async function POST(
   const ayCode = await requireCurrentAyCode(service);
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
 
-  // ── Enrollment gate ──
-  // P-Files is the post-enrolment document repository (KD #31, KD #71).
-  // Reject uploads against funnel applicants — pre-enrolment doc work
-  // belongs to the parent portal + admissions module, not the P-Files
-  // officer's queue. Rejecting here closes the only write-leak surfaced
-  // in the practical-rule audit (the role gate alone wasn't enough).
-  if (!(await isStudentEnrolled(ayCode, enroleeNumber))) {
-    return NextResponse.json(
-      {
-        error:
-          'P-Files uploads are only available for enrolled students. Pre-enrolment document handling lives in the Admissions module.',
-      },
-      { status: 422 }
-    );
+  // ── Which side of enrolment is this upload on? ──
+  //
+  // This block used to REFUSE every applicant with a 422: "P-Files uploads are
+  // only available for enrolled students." That was right while P-Files was
+  // enrolled-only (KD #31, KD #71) — an applicant had no folder here to upload
+  // into. KD #204 put applicants on the P-Files list and gave them folders,
+  // and the refusal became the thing standing between the office and a
+  // document THE SCHOOL ITSELF PRODUCES: `assessmentResult` ("Assessment
+  // Result and Interview") is never offered by the parent portal, so it had no
+  // way into an applicant's folder at all.
+  //
+  // Replaced by the same rule the document PATCH uses for validation: enrolment
+  // state selects the capability, and the holder set decides. Mr Ace was asked
+  // whether staff should reach every slot for an applicant or only the eight
+  // school-produced forms, and chose every slot ("yes let them upload
+  // everthing", 2026-09-01) — so there is deliberately NO per-slot narrowing
+  // here. One rule on both sides of enrolment.
+  //
+  // ⚠ A staff upload writes `{slotKey}Status = 'Valid'` below, on both sides.
+  // For an applicant that means a staff-uploaded file skips the admissions
+  // review queue — accepted knowingly: a staff member has already looked at
+  // the file, which is what that queue exists to do. It is also what has always
+  // happened after enrolment.
+  const enrolled = await isStudentEnrolled(ayCode, enroleeNumber);
+  const requiredCapability = enrolled
+    ? 'documents_post_enrolment.upload'
+    : 'documents_pre_enrolment.upload';
+
+  if (!auth.capabilities.includes(requiredCapability)) {
+    return enrolled
+      ? NextResponse.json(
+          {
+            error:
+              "This student has enrolled, so their documents belong with the enrolled students' files — which you don't have permission to add to.",
+            code: 'enrolled_documents_pfiles_only',
+          },
+          { status: 403 }
+        )
+      : NextResponse.json(
+          {
+            error:
+              "This applicant hasn't enrolled yet, so their documents belong with the applicants' files — which you don't have permission to add to.",
+            code: 'unenrolled_documents_admissions_only',
+          },
+          { status: 403 }
+        );
   }
 
   // ── Look up current state for this slot to see if we need to archive ──
@@ -365,15 +409,35 @@ export async function POST(
     docFields[`${slotKey}Expiry`] = expiryDate;
   }
 
-  const { error: docError } = await service
+  // `.select()` so we can tell an UPDATE that matched nothing from one that
+  // worked. PostgREST reports both as success, and the difference is not
+  // hypothetical now that applicants upload here: the documents row is created
+  // by the parent portal when a family submits an application, so an enrolee
+  // who reached these tables another way (an import, a walk-in registered by
+  // the office) may have a status row and no documents row. Without this the
+  // file lands in storage, the record never changes, and the screen says the
+  // upload succeeded — the worst of the three outcomes.
+  const { data: updated, error: docError } = await service
     .from(`${prefix}_enrolment_documents`)
     .update(docFields)
-    .eq('enroleeNumber', enroleeNumber);
+    .eq('enroleeNumber', enroleeNumber)
+    .select('"enroleeNumber"');
 
   if (docError) {
     return NextResponse.json(
       { error: `db update failed: ${docError.message}` },
       { status: 500 }
+    );
+  }
+
+  if (((updated as unknown[] | null)?.length ?? 0) === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "This student has no document record for this academic year yet, so there's nowhere to file the upload. Ask an administrator to add them to this year's records, then try again.",
+        code: 'no_document_row',
+      },
+      { status: 409 }
     );
   }
 

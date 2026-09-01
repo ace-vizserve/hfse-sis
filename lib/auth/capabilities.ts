@@ -55,16 +55,30 @@ export const RESOURCES = [
     // `validate` = approve or reject an uploaded file. `chase` = send the parent
     // a reminder or record a promised-by date. Deliberately separate: chasing is
     // routine follow-up, validating is a judgement recorded against the student.
-    actions: ['read', 'chase', 'validate'],
+    //
+    // `upload` ARRIVED 2026-09-01 and is the mirror of the post-enrolment one
+    // beside it. It did not exist while P-Files was enrolled-only: an
+    // applicant's files were assumed to arrive from the parent portal, so the
+    // upload route asked for the post-enrolment capability and additionally
+    // refused anyone who had not enrolled. KD #204 put applicants on the
+    // P-Files list and gave them a folder, which made that assumption visibly
+    // wrong — `assessmentResult` ("Assessment Result and Interview") is a
+    // document the SCHOOL produces, and it had no staff path into an
+    // applicant's folder at all. Mr Ace, asked whether staff should be able to
+    // upload every slot for an applicant or only the school-produced forms:
+    // "yes let them upload everthing" (2026-09-01).
+    actions: ['read', 'chase', 'upload', 'validate'],
   },
   {
     key: 'documents_post_enrolment',
     label: 'Documents — after enrolment',
     description:
       'Renewal documents for enrolled students — passports, passes, medical.',
-    // `upload` exists only on this side: staff upload files for enrolled
-    // students (P-Files is a repository), never for applicants, whose files
-    // arrive from the parent portal.
+    // `upload` = staff put a file into the folder themselves, rather than
+    // waiting for the parent portal. It used to exist ONLY on this side; the
+    // pre-enrolment resource above gained its own on 2026-09-01. The two are
+    // now symmetric, and the upload route picks between them by enrolment
+    // state exactly as the document PATCH picks between the two `validate`s.
     actions: ['read', 'chase', 'upload', 'validate'],
   },
   {
@@ -241,6 +255,10 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
     'documents_pre_enrolment.validate',
+    // Granted 2026-09-01 alongside the same grant to p_file_officer and
+    // superadmin — parity with the post-enrolment `upload` she already holds,
+    // so nobody new can upload anything. See KD #204.
+    'documents_pre_enrolment.upload',
     // No longer read-only oversight on the P-Files side: chase, upload and
     // validate came with the same reassignment. The page's `isOfficer` flag
     // (page.tsx:33-34) is now the narrower gate — worth revisiting, since it
@@ -283,6 +301,7 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   superadmin: [
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
+    'documents_pre_enrolment.upload',
     'documents_pre_enrolment.validate',
     'documents_post_enrolment.read',
     'documents_post_enrolment.chase',
@@ -354,6 +373,12 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
     'documents_pre_enrolment.validate',
+    // STAFF UPLOAD ON THE APPLICANT SIDE (2026-09-01, KD #204). The officer
+    // could already upload into an enrolled student's folder; once applicants
+    // appeared on the P-Files list with folders of their own, the same button
+    // on the same page refused them. Parity grant — the holder set for
+    // `upload` is now identical on both sides of enrolment.
+    'documents_pre_enrolment.upload',
   ],
 
   admissions: [
@@ -362,6 +387,16 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_pre_enrolment.validate',
     // No post-enrolment grant — route.ts:77-86 403s them on an enrolled
     // student (those documents are P-Files' territory).
+    //
+    // DELIBERATELY NOT GRANTED `documents_pre_enrolment.upload` either, though
+    // this is the role that owns applicants and the case for it is real. There
+    // is nowhere for them to use it: the only upload surface is the P-Files
+    // student page, `/p-files` excludes them at ROUTE_ACCESS, and the applicant
+    // file's `DocumentsViewer` takes `canValidate` / `canChase` props and no
+    // upload path at all. Granting it would be a ticked box wired to no gate,
+    // which this file's header calls worse than no box. Give them an upload
+    // control on the applicant file first, then this grant is a data edit at
+    // /sis/admin/roles — no code change.
   ],
 };
 

@@ -262,7 +262,13 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
   },
   {
     file: 'app/api/p-files/[enroleeNumber]/upload/route.ts',
-    capabilities: ['documents_post_enrolment.upload'],
+    capabilities: [
+      // Both sides since 2026-09-01 (KD #204) — the route gates on holding
+      // EITHER and then narrows by enrolment state, the same shape the document
+      // PATCH uses for its two `validate`s.
+      'documents_pre_enrolment.upload',
+      'documents_post_enrolment.upload',
+    ],
   },
   {
     file: 'app/(admissions)/admissions/document-validation/page.tsx',
@@ -685,6 +691,12 @@ const SEED_MIGRATIONS = [
   // the `staff.edit_assignments` sitting beside it: the academic coordinator
   // holds that one and does NOT hold this.
   'supabase/migrations/113_role_permissions_manage_relief.sql',
+  // `documents_pre_enrolment.upload` — a brand-new action on an existing
+  // resource, granted to exactly the three roles that already hold the
+  // post-enrolment one, so the holder set for `upload` is now identical on both
+  // sides of enrolment. KD #204 gave applicants P-Files folders; this gives
+  // staff a way to put a file in one.
+  'supabase/migrations/139_role_permissions_pre_enrolment_upload.sql',
 ];
 
 /** `('role', 'capability')` tuples inside one SQL statement block. */
