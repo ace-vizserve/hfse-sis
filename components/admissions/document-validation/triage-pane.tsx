@@ -11,8 +11,9 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
+import { proseLength } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -38,8 +39,19 @@ export function TriagePane({
   const [index, setIndex] = React.useState(0);
   const [rejectMode, setRejectMode] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState('');
-  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  // The reason box is a formatting editor, so there is no textarea to hold a
+  // ref to — the typing surface is the contenteditable inside it. The wrapper
+  // is what we keep, and `R` focuses whatever it contains.
+  const rejectBoxRef = React.useRef<HTMLDivElement | null>(null);
   const current = rows[index];
+
+  const focusRejectBox = React.useCallback(() => {
+    window.setTimeout(() => {
+      rejectBoxRef.current
+        ?.querySelector<HTMLElement>('[contenteditable="true"]')
+        ?.focus();
+    }, 0);
+  }, []);
 
   // Reset reject state on row change.
   React.useEffect(() => {
@@ -47,12 +59,16 @@ export function TriagePane({
     setRejectReason('');
   }, [current?.enroleeNumber, current?.slotKey]);
 
-  // Keyboard handler: ←/→ navigate, A approve, R focus reject textarea.
+  // Keyboard handler: ←/→ navigate, A approve, R focus the reason box.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        // ⚠ The reason box types into a contenteditable, not a textarea.
+        // Without this, typing the word "approve" into it would approve the
+        // document on the "a" and reopen the reason box on the "r".
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return;
       }
@@ -64,12 +80,12 @@ export function TriagePane({
         void onApprove(current);
       } else if (e.key.toLowerCase() === 'r' && current) {
         setRejectMode(true);
-        setTimeout(() => textareaRef.current?.focus(), 0);
+        focusRejectBox();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [current, rows.length, onApprove]);
+  }, [current, rows.length, onApprove, focusRejectBox]);
 
   const isPdf = current?.fileUrl?.toLowerCase().endsWith('.pdf') ?? false;
 
@@ -113,7 +129,9 @@ export function TriagePane({
 
   const key = `${current.enroleeNumber}::${current.slotKey}`;
   const busy = actingKey === key;
-  const canConfirmReject = rejectReason.trim().length >= REJECT_MIN_CHARS;
+  // Counted as writing, not as markup — see the same note in `reject-dialog`.
+  const rejectReasonLength = proseLength(rejectReason);
+  const canConfirmReject = rejectReasonLength >= REJECT_MIN_CHARS;
 
   return (
     <div className="space-y-4">
@@ -214,20 +232,23 @@ export function TriagePane({
                 disabled={busy}
                 onClick={() => {
                   setRejectMode(true);
-                  setTimeout(() => textareaRef.current?.focus(), 0);
+                  focusRejectBox();
                 }}
               >
                 <XIcon className="mr-2 size-4" />
                 Reject
               </Button>
             ) : (
-              <div className="space-y-2 rounded-lg border border-hairline bg-muted/20 p-3">
-                <Textarea
-                  ref={textareaRef}
+              <div
+                ref={rejectBoxRef}
+                className="space-y-2 rounded-lg border border-hairline bg-muted/20 p-3"
+              >
+                <RichTextEditor
                   value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
+                  onChange={setRejectReason}
                   placeholder="Why are you rejecting this document? The parent will receive this message."
                   rows={4}
+                  aria-label="Reason for rejecting this document"
                 />
                 <div className="flex items-center justify-between text-[11px]">
                   <span
@@ -237,8 +258,7 @@ export function TriagePane({
                         : 'text-muted-foreground'
                     )}
                   >
-                    {rejectReason.trim().length} / {REJECT_MIN_CHARS} min
-                    characters
+                    {rejectReasonLength} / {REJECT_MIN_CHARS} min characters
                   </span>
                 </div>
                 <div className="flex gap-2">
