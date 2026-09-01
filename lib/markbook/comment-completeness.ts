@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 
 // Shared FCA-comment completeness logic — the single source of truth for both
@@ -49,6 +50,14 @@ export type WriteupLite = {
  * return the students whose comment is NOT done (no row, not submitted, or
  * empty). An orphaned roster row (no studentId) is always "missing" — there is
  * no student to attach a write-up to.
+ *
+ * ⚠ EMPTINESS IS DECIDED BY THE PROSE, NOT THE STRING LENGTH. The comment box
+ * stores formatted text, so an adviser who opens it, types nothing and submits
+ * leaves `<p></p>` behind — seven characters, which the `writeup.trim().length
+ * === 0` test this replaces read as a written comment. That published a report
+ * card carrying a blank comment, silently, all the way to a parent. Bare text
+ * from before the editor existed still reads correctly through the same
+ * helper.
  */
 export function missingCommentStudents(
   roster: RosterStudent[],
@@ -60,9 +69,7 @@ export function missingCommentStudents(
   return roster.filter((s) => {
     if (!s.studentId) return true;
     const w = byStudent.get(s.studentId);
-    return (
-      !w || w.submitted !== true || !w.writeup || w.writeup.trim().length === 0
-    );
+    return !w || w.submitted !== true || isEmptyRichText(w.writeup);
   });
 }
 

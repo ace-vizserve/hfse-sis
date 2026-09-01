@@ -59,6 +59,55 @@ describe('missingCommentStudents', () => {
     expect(missingCommentStudents(ROSTER, w)).toHaveLength(0);
   });
 
+  // ── Formatted comments ───────────────────────────────────────────────────
+  // The comment box is a rich-text editor now, so this column holds HTML. An
+  // adviser who opens the box, types nothing and submits stores `<p></p>` —
+  // seven characters, which the old `writeup.trim().length === 0` test read as
+  // a written comment. That published a report card with a BLANK comment on
+  // it, silently, all the way to a parent. Emptiness is decided by the prose,
+  // not by the string length.
+
+  it.each([
+    ['an empty paragraph', '<p></p>'],
+    ['a paragraph holding only a line break', '<p><br></p>'],
+    ['a paragraph holding only spaces', '<p>   </p>'],
+    ['two empty paragraphs', '<p></p><p></p>'],
+    ['an empty bullet', '<ul><li><p></p></li></ul>'],
+  ])('flags a submitted write-up that is only %s', (_label, writeup) => {
+    const w: WriteupLite[] = [
+      { student_id: 'stu1', writeup, submitted: true },
+      { student_id: 'stu2', writeup: '<p>Solid term.</p>', submitted: true },
+    ];
+    const missing = missingCommentStudents(ROSTER, w);
+    expect(missing.map((m) => m.studentId)).toEqual(['stu1']);
+  });
+
+  it('passes a formatted write-up whose prose is only in a mark', () => {
+    // The markup must not be mistaken for the comment, but neither may a
+    // genuinely written comment be reported missing because it is bolded.
+    const w: WriteupLite[] = [
+      {
+        student_id: 'stu1',
+        writeup: '<p><strong>Ravi</strong> has improved.</p>',
+        submitted: true,
+      },
+      {
+        student_id: 'stu2',
+        writeup: '<ul><li><p>Leads group work</p></li></ul>',
+        submitted: true,
+      },
+    ];
+    expect(missingCommentStudents(ROSTER, w)).toHaveLength(0);
+  });
+
+  it('still passes a bare-text write-up written before the editor existed', () => {
+    const w: WriteupLite[] = [
+      { student_id: 'stu1', writeup: 'Great term', submitted: true },
+      { student_id: 'stu2', writeup: 'Solid', submitted: true },
+    ];
+    expect(missingCommentStudents(ROSTER, w)).toHaveLength(0);
+  });
+
   it('always flags an orphaned roster row with no studentId', () => {
     const roster: RosterStudent[] = [
       {
@@ -216,6 +265,29 @@ describe('cumulativeCommentGaps', () => {
     );
     expect(gaps).toHaveLength(1);
     expect(gaps[0].termNumber).toBe(1);
+    expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
+  });
+
+  it('blocks a publish when a submitted comment is an empty editor document', async () => {
+    // THE ONE THAT REACHES A PARENT. `<p></p>` is what an adviser stores by
+    // opening the box, typing nothing and submitting. The gate must refuse it.
+    const service = makeService({
+      rosterRows: ROSTER_ROWS,
+      writeupsByTerm: {
+        t1: [
+          done('A'),
+          { student_id: 'B', writeup: '<p></p>', submitted: true },
+        ],
+      },
+    });
+    const gaps = await cumulativeCommentGaps(
+      service,
+      'sec',
+      TERMS,
+      1,
+      rosterArgFrom(ROSTER_ROWS)
+    );
+    expect(gaps).toHaveLength(1);
     expect(gaps[0].missing.map((m) => m.studentId)).toEqual(['B']);
   });
 
