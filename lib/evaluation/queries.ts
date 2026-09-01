@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -212,8 +213,12 @@ export async function getWriteupProgressByTerm(
 
     for (const row of writeups) {
       // A `submitted` flag with empty content is not a real write-up — match the
-      // publish-readiness "missing" definition so these counts agree.
-      if (!row.writeup || row.writeup.trim().length === 0) continue;
+      // publish-readiness "missing" definition so these counts agree. Emptiness
+      // is decided by the prose via the shared `hasWriteupContent`: the column
+      // holds formatted text, so a submitted-but-never-typed-in write-up is
+      // `<p></p>`, which the `.trim().length === 0` test this replaces counted
+      // as submitted. That inflated this number above the publish gate's.
+      if (!hasWriteupContent(row.writeup)) continue;
       const sectionId = sectionByStudent.get(row.student_id);
       if (sectionId && out[sectionId]) out[sectionId].submitted_count++;
     }

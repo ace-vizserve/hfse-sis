@@ -16,6 +16,7 @@ import {
   fetchRegistrarEmails,
 } from '@/lib/change-requests/labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import type { ChangeRequestStatus } from '@/lib/markbook/change-request-status';
 
@@ -73,10 +74,14 @@ export async function decideChangeRequest(
   // zod schema (ChangeRequestActionSchema) already enforces this before we're
   // called, so this guard is a no-op there; it matters for the email-token
   // path which never runs that schema. Same message + 400 the schema emits.
-  if (
-    action === 'reject' &&
-    !(typeof decision_note === 'string' && decision_note.trim().length > 0)
-  ) {
+  //
+  // ⚠ EMPTINESS MUST BE MEASURED THE WAY THE SCHEMA MEASURES IT. The note is a
+  // formatting editor, so `ChangeRequestActionSchema` uses `isEmptyRichText`
+  // (lib/schemas/change-request.ts). This guard used `.trim().length > 0`,
+  // which waves `<p></p>` through — so the server-side re-check was strictly
+  // WEAKER than the form it exists to backstop, and the email-token path could
+  // land a rejection carrying a blank reason.
+  if (action === 'reject' && isEmptyRichText(decision_note)) {
     return {
       ok: false,
       httpStatus: 400,

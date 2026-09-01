@@ -11,6 +11,7 @@ import {
   getSectionRoster,
   listFormAdviserSectionIds,
 } from '@/lib/evaluation/queries';
+import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 export default async function EvaluationSectionRosterPage({
@@ -98,8 +99,11 @@ export default async function EvaluationSectionRosterPage({
   const canEdit = sessionUser.role !== 'teacher' || !!config?.virtueTheme;
   // Submitted AND non-empty — an emptied write-up is "missing", not submitted
   // (keeps the count consistent with the sections list + publish-readiness).
+  // Emptiness comes from the shared KD #120 helper: the column holds formatted
+  // text, so a submitted-but-never-typed-in write-up is `<p></p>`, which the
+  // `.trim().length > 0` test this replaces counted as written.
   const submittedCount = roster.filter(
-    (r) => r.submitted && !!r.writeup && r.writeup.trim().length > 0
+    (r) => r.submitted && hasWriteupContent(r.writeup)
   ).length;
   const totalCount = roster.length;
 

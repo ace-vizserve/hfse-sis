@@ -1,3 +1,4 @@
+import { isEmptyRichText } from '@/lib/rich-text';
 import type { EnrollmentStatus } from '@/lib/schemas/enrolment';
 
 // Client-safe Evaluation roster/write-up rules module. Single source of
@@ -51,10 +52,27 @@ export function isActiveRosterStatus(
 // ---------------------------------------------------------------------------
 // 3. Submitted + non-empty derivation (KD #120)
 
-/** Non-empty after trim — an all-whitespace write-up doesn't count as
- *  content. */
+/**
+ * Does this write-up hold prose a person actually wrote?
+ *
+ * ⚠ MEASURED ON THE PROSE, NOT THE STRING. The comment box is a formatting
+ * editor, so an adviser who opens it, types nothing and saves leaves `<p></p>`
+ * behind — seven characters, which the `writeup.trim().length > 0` test this
+ * replaces read as a written comment. This helper has the highest fan-out of
+ * the cluster (the dashboard KPI numerator, the drill row status and the chase
+ * worklist all derive from it), and it MUST agree with the report-card publish
+ * gate in `lib/markbook/comment-completeness.ts` — a section the dashboard
+ * calls complete that the gate then refuses to publish is the drift KD #124
+ * exists to prevent. Bare text from before the editor existed still reads
+ * correctly through the same helper.
+ *
+ * The `!writeup` short-circuit is deliberate: `isEmptyRichText` parses HTML,
+ * and this runs once per student per term over a whole academic year, so NULL
+ * and empty-string rows must never reach the parser.
+ */
 export function hasWriteupContent(writeup: string | null | undefined): boolean {
-  return !!writeup && writeup.trim().length > 0;
+  if (!writeup) return false;
+  return !isEmptyRichText(writeup);
 }
 
 /** KD #120: "submitted" requires the submitted flag AND non-empty content —

@@ -11,6 +11,7 @@ import {
   isFcaEligibleTermNumber,
   isSubmittedWriteup,
 } from '@/lib/evaluation/roster-rules';
+import { proseLength } from '@/lib/rich-text';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -301,7 +302,14 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
       const w = writeupByKey.get(
         writeupKey(sectionStudent.student_id, term.id)
       );
-      const draftLen = (w?.writeup ?? '').trim().length;
+      // MEASURED ON THE PROSE, NOT THE STRING — this number is shown to a
+      // person as the "Draft length" column and is exportable, so it has to be
+      // the count of what the adviser typed. Measuring the stored string
+      // instead counted the markup: `<p></p>` on a never-typed-in write-up read
+      // as 7 characters (making it a "draft"), and `<strong>` alone added 17 to
+      // a real one. `proseLength` is the same measure the editor's on-screen
+      // counter and the schema's `.max()` use.
+      const draftLen = proseLength(w?.writeup);
       const hasContent = draftLen > 0;
       // KD #120: 'submitted' requires the submitted flag AND non-empty content
       // — an emptied-but-still-submitted write-up reads as 'missing' (matches
