@@ -9,6 +9,7 @@ import { canOpenStudentRecord, canReadWriteups } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { isWriteupComplete } from '@/lib/classroom/writeups';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { getSectionRoster } from '@/lib/evaluation/queries';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -115,8 +116,12 @@ export default async function ClassroomWriteupsPage({
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {roster.map((r) => {
             const done = isWriteupComplete(r);
-            const hasDraft =
-              !done && !!r.writeup && r.writeup.trim().length > 0;
+            // Asked on the writing, not the string. The write-up is composed
+            // in a formatting editor, so an adviser who opened a student's box
+            // and typed nothing leaves an empty paragraph behind — truthy, and
+            // seven characters long. This row would have read "Draft" for a
+            // student nobody has started.
+            const hasDraft = !done && !isEmptyRichText(r.writeup);
             return (
               <div
                 key={r.section_student_id}

@@ -11,6 +11,7 @@ import type {
   ReportCardPayload,
 } from '@/lib/report-card/build-report-card';
 import { AnnualLetterInput } from '@/components/grading/annual-letter-input';
+import { RichText } from '@/components/ui/rich-text';
 import { subjectReportName } from '@/lib/sis/subjects/display-name';
 
 export function ReportCardDocument({
@@ -354,9 +355,20 @@ export function ReportCardDocument({
                           </span>
                         ) : null}
                       </p>
-                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                        {comment}
-                      </p>
+                      {/* THE ADVISER'S COMMENT, AS THEY WROTE IT.
+                          The write-up is composed in a formatting editor, so
+                          this column holds HTML; printing it as escaped text
+                          would put literal <p> tags on the sheet a parent is
+                          handed. `print` keeps a list off a page boundary and
+                          turns links to ink — a hyperlink is dead on paper.
+                          `whitespace-pre-wrap` is gone with the plain text:
+                          the line breaks are real elements now, and leaving it
+                          on would double every gap. */}
+                      <RichText
+                        html={comment}
+                        print
+                        className="mt-1.5 text-sm leading-relaxed text-ink"
+                      />
                     </div>
                   );
                 })}

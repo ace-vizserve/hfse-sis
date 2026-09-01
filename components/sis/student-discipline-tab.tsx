@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { LabelledRichText } from '@/components/ui/labelled-rich-text';
 import {
   formatRecordDate,
   formatRecordWhen,
@@ -34,19 +35,6 @@ import type { DisciplineRecordRow } from '@/lib/discipline/queries';
 // stable id (Hard Rule #4) and a student's behavioural history does not restart
 // in August. The class on each row is where it happened, so the year reads off
 // the record itself.
-
-function Prose({ label, children }: { label: string; children: string }) {
-  return (
-    <div>
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="whitespace-pre-wrap pt-1 text-sm leading-relaxed text-ink-3">
-        {children}
-      </p>
-    </div>
-  );
-}
 
 export function StudentDisciplineTab({
   records,
@@ -124,10 +112,12 @@ export function StudentDisciplineTab({
             {/* Shown in full rather than behind a click. Leadership opening a
                 permanent record came to read it, not to expand four rows one
                 at a time. */}
-            {record.details && (
-              <Prose label="What happened">{record.details}</Prose>
-            )}
-            {record.remarks && <Prose label="Remarks">{record.remarks}</Prose>}
+            {/* No `&&` guard: the component hides itself, label included, when
+                there is nothing written. An editor opened and left alone
+                stores an empty paragraph, which is truthy — the old guard
+                would have shown a heading over blank space. */}
+            <LabelledRichText label="What happened" html={record.details} />
+            <LabelledRichText label="Remarks" html={record.remarks} />
 
             {record.documentUrl && (
               <a

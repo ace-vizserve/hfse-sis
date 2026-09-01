@@ -11,6 +11,7 @@ import {
 
 import { DisciplineTypeChip } from '@/components/discipline/record-type-chip';
 import { Button } from '@/components/ui/button';
+import { LabelledRichText } from '@/components/ui/labelled-rich-text';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { DisciplineRecordRow } from '@/lib/discipline/queries';
 import {
@@ -211,19 +212,6 @@ function DetailRow({
   );
 }
 
-function Prose({ label, children }: { label: string; children: string }) {
-  return (
-    <div>
-      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="whitespace-pre-wrap pt-1 text-sm leading-relaxed text-ink-3">
-        {children}
-      </p>
-    </div>
-  );
-}
-
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
@@ -282,8 +270,12 @@ function DisciplineDetail({
         <div className="h-px bg-border" />
       )}
 
-      {record.details && <Prose label="What happened">{record.details}</Prose>}
-      {record.remarks && <Prose label="Remarks">{record.remarks}</Prose>}
+      {/* No `&&` guard: the component hides itself, label included, when
+          there is nothing written. An editor opened and left alone stores an
+          empty paragraph, which is truthy — the old guard would have shown a
+          heading over blank space. */}
+      <LabelledRichText label="What happened" html={record.details} />
+      <LabelledRichText label="Remarks" html={record.remarks} />
 
       {record.documentUrl && (
         <div>
