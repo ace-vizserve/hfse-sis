@@ -21,7 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   Field,
   FieldDescription,
@@ -31,6 +31,7 @@ import {
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
+import { toPlainText } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 import type { DeclarationQueueRow } from './declarations-data-table';
 import {
@@ -101,7 +102,14 @@ function DecisionPanel({
     // as a toast that does not say where to look.
     if (action === 'reject' && note.trim().length === 0) {
       setNoteError('Say why, so the parent knows what to do next.');
-      document.getElementById('decision-note')?.focus();
+      // ⚠ The id lands on the editor's WRAPPER, and a plain div cannot take
+      // focus — the caret lives on the `contenteditable` inside it. Focusing
+      // the wrapper would leave the person staring at an error with no cursor
+      // in the box it points at.
+      document
+        .getElementById('decision-note')
+        ?.querySelector<HTMLElement>('[contenteditable="true"]')
+        ?.focus();
       return;
     }
     setNoteError(null);
@@ -349,9 +357,15 @@ function DecisionPanel({
                         here.
                       </p>
                     )}
+                    {/* ⚠ STRIPPED, because the box that WRITES this is the
+                        rich-text field below and it stores HTML. Printed raw,
+                        an approver's note would read “<p>Back Monday.</p>”.
+                        Plain text rather than rendered markup: the note is
+                        quoted inline inside a sentence here, which is no place
+                        for a bullet list. */}
                     {stage.decisionNote && (
                       <p className="mt-1.5 text-[13px] leading-relaxed text-foreground italic">
-                        “{stage.decisionNote}”
+                        “{toPlainText(stage.decisionNote)}”
                       </p>
                     )}
                   </div>
@@ -368,15 +382,18 @@ function DecisionPanel({
         {row.canDecide && (
           <Field data-invalid={noteError ? 'true' : undefined}>
             <FieldLabel htmlFor="decision-note">Add a note</FieldLabel>
-            <Textarea
+            <RichTextEditor
               id="decision-note"
               value={note}
               maxLength={APPROVAL_NOTE_MAX}
               rows={3}
-              aria-invalid={noteError ? 'true' : undefined}
+              // ⚠ The FieldLabel's `htmlFor` reaches a div, which carries no
+              // name for a screen reader, so the field states its own.
+              aria-label="Add a note"
+              aria-invalid={noteError ? true : undefined}
               placeholder="Anything the next person, or the parent, should know."
-              onChange={(e) => {
-                setNote(e.target.value);
+              onChange={(next) => {
+                setNote(next);
                 if (noteError) setNoteError(null);
               }}
             />

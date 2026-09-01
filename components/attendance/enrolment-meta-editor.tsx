@@ -11,8 +11,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
+
+// Both notes fields cap at 200, matching `optionalText(200)` on
+// `academics_notes` / `admin_notes` in `lib/schemas/enrolment.ts` — the two
+// numbers have to agree or the counter promises room the save will refuse.
+const NOTES_MAX = 200;
 
 // Shared editor for the attendance sheet's Details-view roster metadata.
 // One instance mounted per grid (single portal, matches the cell-mark
@@ -87,22 +92,26 @@ export function EnrolmentMetaEditor({
         {canEditAcademics && (
           <div className="space-y-1.5">
             <Label htmlFor="meta-academics-notes">Academics notes</Label>
-            <Textarea
+            <RichTextEditor
               id="meta-academics-notes"
+              // ⚠ The Label's `htmlFor` reaches a div, which carries no name
+              // for a screen reader, so the field states its own.
+              aria-label="Academics notes"
               value={academicsNotes}
-              maxLength={200}
-              onChange={(e) => setAcademicsNotes(e.target.value)}
+              maxLength={NOTES_MAX}
+              onChange={setAcademicsNotes}
             />
           </div>
         )}
         {canEditAdmin && (
           <div className="space-y-1.5">
             <Label htmlFor="meta-admin-notes">Admin notes</Label>
-            <Textarea
+            <RichTextEditor
               id="meta-admin-notes"
+              aria-label="Admin notes"
               value={adminNotes}
-              maxLength={200}
-              onChange={(e) => setAdminNotes(e.target.value)}
+              maxLength={NOTES_MAX}
+              onChange={setAdminNotes}
             />
           </div>
         )}
