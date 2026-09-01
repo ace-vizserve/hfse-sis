@@ -8,10 +8,12 @@ import { SkeletonText } from '@/components/ui/skeleton-layouts';
  *
  * NO archetype: `WriteupRosterClient` is a bespoke editor, not a `DataTable`.
  * Each roster entry is an `<li>` on `md:grid-cols-[240px_1fr_auto]` carrying a
- * four-row `<textarea>`, so a row is roughly 150px, not the ~53px a table row
- * is. The version this replaces drew fifteen `h-14` bars, which is under a
- * third of the real height per student — on a 25-student section that is
- * thousands of pixels of jump.
+ * four-row `RichTextEditor` — a 37px toolbar strip over a 104px content area,
+ * with a character counter beneath — so a row is roughly 205px, not the ~53px
+ * a table row is. The version before last drew fifteen `h-14` bars, under a
+ * third of the real height per student; on a 25-student section that is
+ * thousands of pixels of jump, which is why this file draws the editor's real
+ * shape rather than one bar.
  *
  * It also drew a two-button strip where the header's right side is a single
  * `TermSwitcher` under a "Term" label, and no virtue-theme banner at all.
