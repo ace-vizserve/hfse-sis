@@ -45,7 +45,7 @@ rather than being edited into the reply.
 | 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open |
 | —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                         |
 | —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                     |
-| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**               | Nothing scoped. See _Answers received_                                          |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**               | Nothing scoped. **T12** + _Answers received_. Relief half answered by KD #191   |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -604,6 +604,47 @@ discipline` made the student name a link, and teachers cannot open Records, so
   staff across the four houses. Nothing in the system models this, nobody asked
   for it, and it is recorded here only so it is not discovered late. Do not
   build it.
+
+- **T12 — the teachers' dashboard (lesson planning + SOW). New 2026-08-21,
+  raised by Christina unprompted, and nothing about it is scoped.** Her words
+  and the full write-up are in _Answers received_ → _Christina — a teachers'
+  dashboard, and SOW reopened_. Four things to carry before anyone touches it.
+  1. ⚠ **It reopens SOW, which has been built and removed twice** — migrations
+     058–066, coordinator-authored first (KD #108), rebuilt teacher-owned when
+     field investigation found subject teachers own it (KD #110), then deleted
+     entirely on 2026-05-28 because it had **zero real users**: HFSE teachers
+     keep their SOW in external documents and coordinators check those
+     directly. **Do not re-derive a SOW model from her message.**
+  2. **Her reason is new, and it is the first good one.** Both previous builds
+     were about **authoring** the SOW and **spot-checking** it; neither ever
+     had a **reader**. Hers does — a substitute opening a class they do not
+     normally teach, needing today's topic. ⚠ **The adoption trap is unchanged
+     though:** the work falls on the subject teacher, the benefit falls on
+     someone else and only on the days somebody is sick, which is exactly how
+     the last two went stale. A stale lesson plan is **worse than none** —
+     the relief teaches the wrong thing and trusts it.
+  3. ✅ **The relief half is already answered, and without a teachers'
+     dashboard existing** — KD #191, shipped 2026-08-24. The school-wide board
+     is **SIS Admin only** (`/sis/admin/cover`, `staff.manage_relief`); the
+     teacher's own half is a **"You're covering"** panel on home, the Classroom
+     index and the Markbook and Attendance section lists. **Lesson topics stay
+     out and SOW remains removed — deliberate, not pending.**
+  4. **The next step is a conversation, not a build.** Show her **Classroom**
+     (KD #160 — Overview, Grades, Students, Attendance, Write-ups, Discipline,
+     Timeline, Settings) and both relief surfaces, and ask whether that is the
+     dashboard plus lesson planning, rather than scoping a new module. If SOW
+     is ever revived, the cheap shape is **a link per class/subject/term to
+     where the document already lives**, hung off the "You're covering" panel —
+     no authoring, no sync, no third teardown.
+
+  ⚠ **Not closed, and must not be marked closed by KD #191.** She asked for
+  relief monitoring **inside** a teachers' dashboard; what exists is an
+  administrator's page plus a teacher's own list. Show her both, alongside
+  Classroom, before treating her ask as answered.
+
+  ⚠ **Scope note.** "Lesson planning, scheme of work and teaching and delivery
+  matters" is a **module**, not a feature. Nothing here is scoped, costed or
+  approved.
 
 ### Waiting on the school
 
