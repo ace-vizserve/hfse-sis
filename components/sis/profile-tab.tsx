@@ -143,7 +143,15 @@ export function ProfileTab({
   ];
   const contactFields: Field[] = [
     { label: 'Home phone', value: app.homePhone },
-    { label: 'Home address', value: app.homeAddress, wide: true },
+    // ⚠ `richText`, not `multiline` — this box is a `RichTextEditor` on
+    // `edit-profile-sheet`, so the column holds HTML and printing it escaped
+    // showed a staff member the `<p>` tags around their own address.
+    {
+      label: 'Home address',
+      value: app.homeAddress,
+      wide: true,
+      richText: true,
+    },
     { label: 'Postal code', value: app.postalCode },
     { label: 'Living with', value: app.livingWithWhom },
     { label: 'Contact person', value: app.contactPerson },
@@ -167,17 +175,23 @@ export function ProfileTab({
     { label: 'Student care', value: app.availStudentCare },
     { label: 'Student care program', value: app.studentCareProgram },
     { label: 'Uniform', value: app.availUniform },
+    // ⚠ THESE TWO ARE `richText`; THE MEDICAL BOXES BELOW STAY `multiline`.
+    // The difference is which editor writes them: these two are
+    // `RichTextEditor` on `edit-profile-sheet`, so they hold HTML. The
+    // allergy / dietary / conditions fields come off the application form the
+    // parent filled in and never pass through our editor at all — they are
+    // plain text and must keep the `pre-line` treatment.
     {
       label: 'Additional learning needs',
       value: app.additionalLearningNeeds,
       wide: true,
-      multiline: true,
+      richText: true,
     },
     {
       label: 'Other learning needs',
       value: app.otherLearningNeeds,
       wide: true,
-      multiline: true,
+      richText: true,
     },
     { label: 'Previous school', value: app.previousSchool },
     { label: 'How did you hear about us', value: app.howDidYouKnowAboutHFSEIS },

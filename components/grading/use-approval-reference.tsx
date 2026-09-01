@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { proseLength } from '@/lib/rich-text';
+import { proseLength, toPlainText } from '@/lib/rich-text';
 import {
   CORRECTION_REASONS,
   CORRECTION_REASON_LABELS,
@@ -142,13 +142,22 @@ export function useChangeReference() {
           `/api/change-requests?status=approved&sheet_id=${encodeURIComponent(target.sheetId)}`
         );
         if (cancelled) return;
-        const filtered = (bodyJson.requests ?? []).filter((r) => {
-          if (r.field_changed !== target.field) return false;
-          if (target.field === 'ww_scores' || target.field === 'pt_scores') {
-            return r.slot_index === (target.slotIndex ?? null);
-          }
-          return true;
-        });
+        const filtered = (bodyJson.requests ?? [])
+          .filter((r) => {
+            if (r.field_changed !== target.field) return false;
+            if (target.field === 'ww_scores' || target.field === 'pt_scores') {
+              return r.slot_index === (target.slotIndex ?? null);
+            }
+            return true;
+          })
+          // STRIPPED, ONCE, HERE. `justification` is written in the formatting
+          // editor, and the picker below shows it under `line-clamp-2` inside
+          // a radio button — two lines of preview to tell one approved request
+          // from another, not the place to read the reasoning. (The whole
+          // reasoning is on the change-request page, which this dialog is a
+          // shortcut past.) Flattening at the fetch keeps the parse out of the
+          // list render, which re-runs on every selection change.
+          .map((r) => ({ ...r, justification: toPlainText(r.justification) }));
         setRequests(filtered);
         // If exactly one approved request matches this cell, auto-select it
         // so the registrar can confirm without an extra click. They still

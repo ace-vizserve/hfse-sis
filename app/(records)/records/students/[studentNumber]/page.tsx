@@ -62,7 +62,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { RichText } from '@/components/ui/rich-text';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toPlainText } from '@/lib/rich-text';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import {
   computeAnnualGrade,
@@ -74,6 +76,7 @@ import {
   type AwardThresholds,
 } from '@/lib/compute/awards';
 import { listDisciplineForStudent } from '@/lib/discipline/queries';
+import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import {
   ENROLLED_STATUSES,
@@ -919,6 +922,10 @@ function PlacementSection({
                     isCurrentAy &&
                     isEnrolledStatus(r.enrollmentStatus) &&
                     currentEnroleeNumber !== null;
+                  // Once per row, not twice inside the JSX — stripping parses
+                  // the HTML, and this table lists every enrolment the student
+                  // has ever had.
+                  const withdrawalNotesPlain = toPlainText(r.withdrawalNotes);
 
                   return (
                     <React.Fragment
@@ -1023,11 +1030,17 @@ function PlacementSection({
                                       ]
                                     : r.withdrawalReason}
                                 </span>
-                                {r.withdrawalNotes && (
+                                {/* STRIPPED. This runs on one line inside a
+                                    table sub-row, after a `·`, under
+                                    `line-clamp-1` — the note is quoted beside
+                                    the withdrawal reason, not presented. A
+                                    list here would break the row height for
+                                    every enrolment above and below it. */}
+                                {withdrawalNotesPlain && (
                                   <>
                                     <span className="text-border">·</span>
                                     <span className="line-clamp-1">
-                                      {r.withdrawalNotes}
+                                      {withdrawalNotesPlain}
                                     </span>
                                   </>
                                 )}
@@ -2628,7 +2641,11 @@ function FcaCommentsCard({
   ayCode: string;
   writeups: EvaluationWriteupEntry[];
 }) {
-  const hasAny = writeups.some((w) => w.writeup);
+  // `hasWriteupContent`, not a truthiness test: an adviser who opened the
+  // editor and typed nothing leaves `<p></p>` behind, which is truthy and
+  // would have shown this whole card reading "No comments recorded" on every
+  // term. Same predicate the dashboard and the publish gate use (KD #124).
+  const hasAny = writeups.some((w) => hasWriteupContent(w.writeup));
   if (!hasAny) return null;
 
   return (
@@ -2656,10 +2673,17 @@ function FcaCommentsCard({
                 </span>
               )}
             </p>
-            {w.writeup ? (
-              <p className="text-sm leading-relaxed text-foreground">
-                {w.writeup}
-              </p>
+            {/* RENDERED. This is the adviser's whole term comment about the
+                child, in a card of its own with nothing competing for the
+                width — the surface the formatting editor was put on the
+                write-up page FOR. `RichText` returns null for an empty field,
+                so the "no comments" line is chosen on the same emptiness test
+                the card header already uses. */}
+            {hasWriteupContent(w.writeup) ? (
+              <RichText
+                html={w.writeup}
+                className="text-sm leading-relaxed text-foreground"
+              />
             ) : (
               <p className="text-sm italic text-muted-foreground">
                 No comments recorded

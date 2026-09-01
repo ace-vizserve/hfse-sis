@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import { COUNTRY_NAME_SET } from '@/lib/data/countries';
-import { proseLength } from '@/lib/rich-text';
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+// The rich-text sibling of this file's `optionalText`, borrowed rather than
+// re-declared. Writing a second copy here is the exact mistake that let the
+// two diverge in the first place — see the note on `optionalText` below.
+import { optionalText as optionalRichText } from '@/lib/schemas/enrolment';
 
 // Sprint 10 Phase 2 — schemas for SIS write surfaces.
 //
@@ -17,6 +21,15 @@ import { proseLength } from '@/lib/rich-text';
 
 // Empty string → null. The admissions tables store nulls, not "" — keeps the
 // distinction between "not provided" and "explicitly cleared" honest.
+//
+// ⚠ PLAIN TEXT ONLY — a field edited in a formatting editor needs
+// `optionalRichText` (imported above) instead. This helper measures and empties
+// the RAW STRING, which is right for a name, a phone number or a postal code
+// and wrong for prose: an editor that has been clicked into and left alone
+// holds `<p></p>`, which `s.length === 0` stores rather than nulls, and `.max()`
+// charges the writer for their own `<strong>` tags. Three fields on this schema
+// are prose and are declared with `optionalRichText` for exactly that reason.
+// Do not "tidy" them back onto this helper.
 const optionalText = (max = 500) =>
   z
     .string()
@@ -306,7 +319,9 @@ export const ProfileUpdateSchema = z.object({
   passExpiry: optionalDate,
   // Contact
   homePhone: optionalPhone,
-  homeAddress: optionalText(500),
+  // Prose, typed in a formatting editor (`kind: 'textarea'` in
+  // components/sis/edit-profile-sheet.tsx renders a RichTextEditor).
+  homeAddress: optionalRichText(500),
   postalCode: optionalPostalCode,
   livingWithWhom: optionalText(120),
   contactPerson: optionalText(120),
@@ -321,8 +336,11 @@ export const ProfileUpdateSchema = z.object({
   availStudentCare: optionalYesNo,
   studentCareProgram: optionalText(120),
   availUniform: optionalYesNo,
-  additionalLearningNeeds: optionalText(2000),
-  otherLearningNeeds: optionalText(2000),
+  // Prose, same formatting editor. These two also reach a teacher's safety
+  // panel, so an empty paragraph stored here shows up as a labelled note about
+  // a child that nobody wrote.
+  additionalLearningNeeds: optionalRichText(2000),
+  otherLearningNeeds: optionalRichText(2000),
   previousSchool: optionalText(240),
   howDidYouKnowAboutHFSEIS: optionalText(120),
   otherSource: optionalText(240),
@@ -812,7 +830,12 @@ export function findStageCompletionBlockers(
 
   for (const fieldKey of required) {
     const value = effectiveExtras?.[fieldKey];
-    const filled = value != null && String(value).trim() !== '';
+    // Asked of the words. Some stage extras are prose typed in a formatting
+    // editor (`applicationTerminalNotes` is one), where an untouched box holds
+    // `<p></p>` — non-blank by `String(value).trim()`, so the gate would count
+    // a field nobody filled in as filled. Plain extras (dates, invoice numbers,
+    // grades) read the same through either test.
+    const filled = value != null && !isEmptyRichText(String(value));
     if (filled) continue;
     // Fall back to the raw key rather than throwing if the map ever names a
     // field the column map doesn't carry — the guard test catches that case,
@@ -999,7 +1022,10 @@ export function validateTerminalReason(
         'Reason is required when cancelling or withdrawing an application.',
     };
   }
-  if (reason === 'other' && !notes?.trim()) {
+  // Measured on the prose: the notes box is a formatting editor, so a user who
+  // picked "Other", clicked into the box and typed nothing submits `<p></p>`,
+  // which `!notes?.trim()` waved through as an explanation.
+  if (reason === 'other' && isEmptyRichText(notes)) {
     return {
       ok: false,
       code: 'notes_required',

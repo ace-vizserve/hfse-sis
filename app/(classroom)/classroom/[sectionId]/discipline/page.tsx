@@ -22,6 +22,7 @@ import {
 } from '@/lib/classroom/scope';
 import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import { listDisciplineForSection } from '@/lib/discipline/queries';
+import { toPlainText } from '@/lib/rich-text';
 import { listHouses } from '@/lib/sis/houses';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -214,7 +215,11 @@ export default async function ClassroomDisciplinePage({
                   <TableCell>
                     <DisciplineTypeChip type={record.recordType} />
                   </TableCell>
-                  <TableCell>{record.nature}</TableCell>
+                  {/* STRIPPED. Same call as the school-wide register: this is
+                      a scannable one-line-per-incident table, and the record
+                      with its formatting intact is one click away in the
+                      student sheet on the row's own left-hand cell. */}
+                  <TableCell>{toPlainText(record.nature)}</TableCell>
                   {/* Three states, three treatments. A returned slip is a
                       date. A letter still waiting takes the informational
                       accent — NOT destructive red, because nobody has asked to

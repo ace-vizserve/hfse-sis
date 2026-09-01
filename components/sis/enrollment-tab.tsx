@@ -34,6 +34,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { RichText } from '@/components/ui/rich-text';
 import { StatusBadge } from '@/components/ui/status-badge';
 import {
   ENROLLED_PREREQ_STAGES,
@@ -777,11 +778,18 @@ function ApplicationStatusCard({
               <ExtrasChips fields={applicationCard.extras} />
             </div>
           )}
-        {applicationCard.remarks && (
-          <p className="whitespace-pre-line rounded-lg bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground">
-            {applicationCard.remarks}
-          </p>
-        )}
+        {/* RENDERED. Stage remarks run to 4,000 characters and are written in
+            the formatting editor on the stage dialog — they are the office's
+            account of what happened at this step, and they get a block of
+            their own at the full width of the card. `whitespace-pre-line` is
+            gone with the escaped text: the line breaks are real elements now,
+            and leaving it on would double every gap. `RichText` renders
+            nothing for an empty field, so the tinted box no longer appears
+            for a remark somebody cleared back to `<p></p>`. */}
+        <RichText
+          html={applicationCard.remarks}
+          className="rounded-lg bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground"
+        />
       </CardContent>
     </Card>
   );
@@ -1203,11 +1211,13 @@ function StageStatusTile({
           <ExtrasChips fields={stage.extras} />
         </div>
       )}
-      {stage.remarks && (
-        <p className="ml-1 whitespace-pre-line rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground">
-          {stage.remarks}
-        </p>
-      )}
+      {/* RENDERED — same field, same reasoning as the application card above.
+          This one is smaller (11px, on a stage tile) but it is still a block
+          of its own on its own line, so a list lays out normally here. */}
+      <RichText
+        html={stage.remarks}
+        className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
+      />
       {/* Both links go to placement surfaces, so both gate on the placement
           role, not merely on canEdit — an admissions viewer following either
           would land on a page their role cannot open (KD #173). */}

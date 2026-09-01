@@ -1,3 +1,4 @@
+import { isEmptyRichText } from '@/lib/rich-text';
 import type { StageColumns } from '@/lib/schemas/sis';
 
 /**
@@ -58,9 +59,15 @@ export function resolveEffectiveStageValues(
 
 /** Empty (or whitespace-only) reads as "not filled in", the same way the route
  *  writes `''` as `null`. Non-strings are coerced rather than thrown over — a
- *  save is not the place to blow up on a surprising column type. */
+ *  save is not the place to blow up on a surprising column type.
+ *
+ *  ⚠ "Empty" is measured on the words, because some stage extras are prose
+ *  typed in a formatting editor and a stored `<p></p>` is not something a
+ *  person filled in. This merge feeds `findStageCompletionBlockers`, so the two
+ *  have to agree about what blank means — if this said "filled" and the gate
+ *  said "blank", a record could never be saved. */
 function normaliseBlank(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const text = typeof value === 'string' ? value : String(value);
-  return text.trim() === '' ? null : text;
+  return isEmptyRichText(text) ? null : text;
 }

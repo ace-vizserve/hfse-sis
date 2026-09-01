@@ -13,6 +13,7 @@
 // they are not redefined here.
 
 import type { AuditAction } from '@/lib/audit/log-action';
+import { toPlainText } from '@/lib/rich-text';
 import {
   ATTENDANCE_STATUS_LABELS,
   EX_REASON_LABELS,
@@ -374,7 +375,8 @@ function templateSummary(
       if (cat) parts.push(cat);
       const corr = labelFor('correction_reason', ctx.correction_reason);
       if (corr) parts.push(corr);
-      const reason = str(ctx.rejection_reason ?? ctx.reason);
+      // Rich text — the approver wrote it in the formatting editor.
+      const reason = plainStr(ctx.rejection_reason ?? ctx.reason);
       if (reason) parts.push(reason);
       const ref = str(ctx.approval_reference);
       if (ref) parts.push(`ref ${ref}`);
@@ -576,7 +578,9 @@ function templateSummary(
       if (slot) parts.push(humanizeKey(slot));
       const status = str(ctx.new_status ?? ctx.status);
       if (status) parts.push(status);
-      const reason = str(ctx.rejection_reason ?? ctx.reason);
+      // Rich text — `rejectionReason` is typed in the formatting editor on the
+      // document-validation actions.
+      const reason = plainStr(ctx.rejection_reason ?? ctx.reason);
       if (reason) parts.push(reason);
       return joinParts(parts);
     }
@@ -892,7 +896,8 @@ function templateSummary(
 
       const reason = labelFor('change_reason', ctx.change_reason);
       if (reason) parts.push(reason);
-      const notes = str(ctx.change_notes);
+      // Rich text — the "Notes" box on the assignment-removal dialog.
+      const notes = plainStr(ctx.change_notes);
       if (notes) parts.push(notes);
 
       return joinParts(parts);
@@ -1052,6 +1057,26 @@ function str(v: unknown): string {
   if (typeof v === 'string') return v.trim();
   if (typeof v === 'number' && Number.isFinite(v)) return String(v);
   return '';
+}
+
+/**
+ * `str`, for the handful of context keys that hold something a person typed
+ * in the formatting editor.
+ *
+ * ⚠ A SEPARATE HELPER AND NOT A CHANGE TO `str`. Every summary here is ONE
+ * LINE, parts joined with ` · `, so a rejection reason or a set of change
+ * notes arriving as `<p>…</p><ul><li>…` would put the markup itself on screen.
+ * But `str` is called on dozens of keys per row that were never HTML, and
+ * parsing all of them would make the audit-log page pay for a parse per field
+ * per row. Only the three keys that genuinely hold editor output use this.
+ *
+ * Applied at the call site rather than to the whole context so it stays
+ * obvious which columns are rich text — a new one added to a summary should
+ * have to make the same decision on purpose.
+ */
+function plainStr(v: unknown): string {
+  const raw = str(v);
+  return raw === '' ? '' : toPlainText(raw);
 }
 
 function numish(v: unknown): number | null {
@@ -1227,11 +1252,46 @@ function renderValue(key: string, value: unknown): string {
     'withdrawal_reason',
   ]);
   if (enumKeys.has(key)) return labelFor(key, value);
+  // ⚠ RICH-TEXT ROUTING, AND IT MATTERS MOST HERE. This is the generic tail
+  // of `auditContextSummary` — the path taken by every action that has no
+  // bespoke case above — so an action nobody wrote a branch for still prints
+  // whatever is in its context. Every one of these keys is written in the
+  // formatting editor, so without this the log reads
+  // `Rejection Reason: <p>The original script says 18.</p>`.
+  if (RICH_TEXT_KEYS.has(key)) return toPlainText(raw);
   // date routing
   if (ISO_DATETIME_RE.test(raw)) return fmtMaybeDateTime(raw) || raw;
   if (ISO_DATE_RE.test(raw)) return fmtMaybeDate(raw) || raw;
   return raw;
 }
+
+/**
+ * Context keys whose values come out of the formatting editor.
+ *
+ * ⚠ KEEP THIS IN STEP WITH THE `RichTextEditor` CALL SITES. Every audit
+ * summary is one line; HTML in one is markup on the reader's screen. Adding a
+ * formatting editor to a new field means adding its context key here.
+ *
+ * `note` is deliberately absent: the declaration writers log `note_present` as
+ * a boolean and never the words (migration 109's rule), and no other action
+ * puts a bare `note` in context.
+ */
+const RICH_TEXT_KEYS = new Set([
+  'rejection_reason',
+  'reason',
+  'justification',
+  'correction_justification',
+  'decision_note',
+  'change_notes',
+  'remarks',
+  'nature',
+  'details',
+  'writeup',
+  'ex_note',
+  'withdrawal_notes',
+  'academics_notes',
+  'admin_notes',
+]);
 
 // "Field: old → new" for a scalar field, applying enum/date humanization.
 function scalarDiff(

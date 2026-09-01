@@ -6,6 +6,7 @@ import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { expandSchoolDays } from '@/lib/attendance/school-days';
 import { countVacationTrips } from '@/lib/attendance/vacation-trips';
+import { toPlainText } from '@/lib/rich-text';
 
 // Attendance drill primitives — sibling of `lib/markbook/drill.ts`.
 // Attendance is registrar+ only on the dashboard (KD #55), so we don't need
@@ -381,7 +382,13 @@ async function loadEntryRowsUncached(
       level: ctx.levels.get(section.level_id) ?? null,
       status: e.status as AttendanceEntryRow['status'],
       exReason: e.ex_reason,
-      notes: e.ex_note,
+      // STRIPPED HERE, ONCE PER ROW, AND ON PURPOSE. `ex_note` is written in
+      // the formatting editor on the marking surfaces, so the column holds
+      // HTML — but this row shape only ever feeds the drill sheet's `Note`
+      // column and the CSV it exports, and both need one line. Doing it in the
+      // loader keeps it out of the accessor and the cell renderer, which run
+      // per row per render; it also means the CSV cannot drift from the screen.
+      notes: toPlainText(e.ex_note) || null,
     });
   }
   return out;

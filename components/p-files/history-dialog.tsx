@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { RichText } from '@/components/ui/rich-text';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { DocumentRevision } from '@/lib/p-files/queries';
 
@@ -247,11 +248,14 @@ export function HistoryDialog({
                         </div>
                       )}
 
-                      {rev.note && (
-                        <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-foreground">
-                          {rev.note}
-                        </p>
-                      )}
+                      {/* RENDERED. The note somebody left when they replaced
+                          this document is the only account of WHY, and it sits
+                          in a callout of its own inside a scrolling dialog —
+                          there is room for the list a staff member typed. */}
+                      <RichText
+                        html={rev.note}
+                        className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-foreground"
+                      />
                     </li>
                   );
                 })}

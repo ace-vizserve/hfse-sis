@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { toPlainText } from '@/lib/rich-text';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   ATTENDANCE_STATUS_LABELS,
@@ -241,6 +242,12 @@ export async function StudentAttendanceTab({
                           e.status === 'EX' &&
                           e.exNote != null &&
                           e.exNote !== '';
+                        // ⚠ STRIPPED — this goes into a `title` attribute,
+                        // which shows text and nothing else, so the HTML the
+                        // formatting editor writes would surface as literal
+                        // `<p>` tags in the tooltip. Guarded by `hasNote` so
+                        // only excused days that carry one are parsed.
+                        const notePlain = hasNote ? toPlainText(e.exNote) : '';
                         const reason =
                           e.status === 'EX' && e.exReason
                             ? ` · ${EX_REASON_LABELS[e.exReason]}`
@@ -248,7 +255,7 @@ export async function StudentAttendanceTab({
                         return (
                           <span
                             key={e.id}
-                            title={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}${reason}${hasNote ? ` — ${e.exNote}` : ''}`}
+                            title={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}${reason}${notePlain ? ` — ${notePlain}` : ''}`}
                             className={
                               'inline-flex min-w-13 items-center justify-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] font-semibold ' +
                               STATUS_TONE[e.status]

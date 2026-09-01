@@ -19,6 +19,7 @@ import {
   type ChangeRequestStatus,
 } from '@/lib/markbook/change-request-status';
 import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-dialog';
+import { toPlainText } from '@/lib/rich-text';
 import {
   buildGradeChangeEvents,
   markChangeFieldLabel,
@@ -93,7 +94,18 @@ function statusLabel(s: ChangeRequestStatus): string {
 // stable across renders that don't change either input.
 function buildColumns(
   nameById: ReadonlyMap<string, string>,
-  viewerId: string
+  viewerId: string,
+  /**
+   * Request id → the approver's decision note with the formatting taken off.
+   *
+   * ⚠ A MAP AND NOT A CALL IN THE CELL. The note is written in the formatting
+   * editor, so `decision_note` holds HTML; the Reason cell shows it under
+   * `line-clamp-1` as a one-line "Note: …" trailer, which must be plain. But
+   * stripping means parsing, and a cell renderer runs per row on every sort,
+   * filter, page and tab change — so it is done once, over `data`, in the
+   * component below.
+   */
+  plainDecisionNoteById: ReadonlyMap<string, string>
 ): ColumnDef<MyRequestRow>[] {
   return [
     {
@@ -209,17 +221,20 @@ function buildColumns(
     {
       accessorKey: 'reason_category',
       header: 'Reason',
-      cell: ({ row }) => (
-        <div className="text-xs text-muted-foreground">
-          {row.original.reason_category.replace(/_/g, ' ')}
-          {row.original.decision_note && (
-            <div className="mt-0.5 line-clamp-1 text-[11px]">
-              Note: {row.original.decision_note}
-            </div>
-          )}
-          <ReviewerLine row={row.original} />
-        </div>
-      ),
+      cell: ({ row }) => {
+        const note = plainDecisionNoteById.get(row.original.id) ?? '';
+        return (
+          <div className="text-xs text-muted-foreground">
+            {row.original.reason_category.replace(/_/g, ' ')}
+            {note && (
+              <div className="mt-0.5 line-clamp-1 text-[11px]">
+                Note: {note}
+              </div>
+            )}
+            <ReviewerLine row={row.original} />
+          </div>
+        );
+      },
       // Raw snake_case value isn't presentable — CSV_CONFIG's "Reason" extra
       // exports the humanized version shown on screen.
       meta: { excludeFromExport: true },
@@ -455,9 +470,20 @@ export function MyRequestsTable({
   viewerId: string;
 }) {
   const nameById = useMemo(() => new Map(nameEntries), [nameEntries]);
+  // Once per data change, never per cell render — see the note on the
+  // `plainDecisionNoteById` parameter above.
+  const plainDecisionNoteById = useMemo(
+    () =>
+      new Map(
+        data
+          .filter((r) => r.decision_note)
+          .map((r) => [r.id, toPlainText(r.decision_note)] as const)
+      ),
+    [data]
+  );
   const columns = useMemo(
-    () => buildColumns(nameById, viewerId),
-    [nameById, viewerId]
+    () => buildColumns(nameById, viewerId, plainDecisionNoteById),
+    [nameById, viewerId, plainDecisionNoteById]
   );
 
   // Status is the status-tab dimension (below) — not duplicated as a facet.

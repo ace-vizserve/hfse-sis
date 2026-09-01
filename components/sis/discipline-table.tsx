@@ -10,6 +10,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import type { DisciplineRecordRow } from '@/lib/discipline/queries';
+import { toPlainText } from '@/lib/rich-text';
 import { DISCIPLINE_RECORD_TYPE_LABELS } from '@/lib/schemas/discipline';
 
 // The school-wide disciplinary register (#7). Every incident and letter filed
@@ -56,6 +57,21 @@ export function DisciplineTable({
   records: DisciplineRecordRow[];
   ayCode: string;
 }) {
+  // ⚠ FLATTENED ONCE, HERE. Three things read `nature` — the cell, the
+  // accessor (which is what sorts and what the CSV writes) and the search key
+  // — and every one of them runs per row per render. Stripping in the data
+  // instead of in any of the three keeps them agreeing with each other for
+  // free: a search that matched `<strong>` and a CSV full of tags were the
+  // same defect wearing different clothes.
+  //
+  // Nothing on this page writes a record back, so flattening in place is safe
+  // here. `student-discipline-panel` and `student-discipline-tab` share this
+  // row type and DO render the markup — they get the untouched rows.
+  const rows = React.useMemo(
+    () => records.map((r) => ({ ...r, nature: toPlainText(r.nature) })),
+    [records]
+  );
+
   const columns = React.useMemo<ColumnDef<DisciplineRecordRow, unknown>[]>(
     () => [
       {
@@ -122,6 +138,12 @@ export function DisciplineTable({
       },
       {
         id: 'nature',
+        // STRIPPED, AND THE ROW ARRIVES ALREADY STRIPPED (see `rows` below).
+        // `nature` is written in the formatting editor, so the column holds
+        // HTML. This is the school-wide register — one row per incident, 25
+        // to a page — and it is scanned, not read: the full record with its
+        // formatting intact is one click away on the student's panel. A `<ul>`
+        // in this cell would set the height of the whole row.
         accessorFn: (r) => r.nature,
         header: 'What kind',
         cell: ({ row }) => row.original.nature,
@@ -166,7 +188,7 @@ export function DisciplineTable({
 
   return (
     <DataTable<DisciplineRecordRow>
-      data={records}
+      data={rows}
       columns={columns}
       getRowId={(row) => row.id}
       searchKeys={[

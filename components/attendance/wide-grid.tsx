@@ -79,6 +79,7 @@ import {
   type CellFiling as WideGridCellFiling,
 } from '@/components/attendance/cell-mark-dialog';
 import { countVacationTrips } from '@/lib/attendance/vacation-trips';
+import { toPlainText } from '@/lib/rich-text';
 // Re-exported so the page can build the map without reaching past the grid
 // into the dialog it happens to render.
 export type { CellFiling as WideGridCellFiling } from '@/components/attendance/cell-mark-dialog';
@@ -652,6 +653,33 @@ export function AttendanceWideGrid({
     ? (enrolments.find((e) => e.enrolmentId === activeMetaEnrolmentId) ?? null)
     : null;
 
+  /**
+   * The two roster notes with the formatting taken off, for the sticky
+   * columns.
+   *
+   * ⚠ DERIVED ALONGSIDE, NEVER OVER THE TOP. `academics_notes` and
+   * `admin_notes` are written in the formatting editor, so they are HTML; the
+   * sticky cells show them under `truncate` in a fixed-height row, where they
+   * must be one line. But the very same `enrolments` entry is handed to
+   * `EnrolmentMetaEditor` a few lines below as the editor's starting value —
+   * flattening in place would strip a teacher's formatting the moment they
+   * opened the editor and saved.
+   *
+   * Memoized on `enrolments` so the parse happens once per data change and not
+   * inside the row map, which re-runs on every mark.
+   */
+  const rosterNotesPlain = useMemo(() => {
+    const out = new Map<string, { academics: string; admin: string }>();
+    for (const e of enrolments) {
+      if (!e.academicsNotes && !e.adminNotes) continue;
+      out.set(e.enrolmentId, {
+        academics: toPlainText(e.academicsNotes),
+        admin: toPlainText(e.adminNotes),
+      });
+    }
+    return out;
+  }, [enrolments]);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -1023,7 +1051,8 @@ export function AttendanceWideGrid({
                               setActiveMetaEnrolmentId(e.enrolmentId)
                             }
                           >
-                            {e.academicsNotes ?? '—'}
+                            {rosterNotesPlain.get(e.enrolmentId)?.academics ||
+                              '—'}
                           </button>
                         </TableCell>
                       )}
@@ -1048,7 +1077,7 @@ export function AttendanceWideGrid({
                               setActiveMetaEnrolmentId(e.enrolmentId)
                             }
                           >
-                            {e.adminNotes ?? '—'}
+                            {rosterNotesPlain.get(e.enrolmentId)?.admin || '—'}
                           </button>
                         </TableCell>
                       )}
@@ -1269,8 +1298,16 @@ const CellButton = memo(function CellButton({
 }) {
   const label = status ?? '—';
   const hasNote = status === 'EX' && exNote != null && exNote !== '';
+  // ⚠ STRIPPED, AND ONLY WHEN THERE IS A NOTE. `ex_note` is written in the
+  // formatting editor, so it is HTML — and this is a `title` attribute, which
+  // renders nothing but text: the tooltip would otherwise read `<p>Dental
+  // appointment</p>`. It is behind `hasNote` deliberately. Parsing HTML for
+  // every one of ~1,410 cells would be real work; only excused cells that
+  // actually carry a note pay for it, and this component is memoized on
+  // exactly those props, so it is not re-done on an unrelated grid re-render.
+  const notePlain = hasNote ? toPlainText(exNote) : '';
   const tip = status
-    ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}${hasNote ? ` — ${exNote}` : ''}`
+    ? `${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}${notePlain ? ` — ${notePlain}` : ''}`
     : 'Mark attendance';
 
   return (

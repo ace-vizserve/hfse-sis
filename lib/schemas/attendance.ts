@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { proseLength } from '@/lib/rich-text';
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 
 // Attendance module — zod schemas for /api/attendance/* write surfaces.
 //
@@ -91,7 +91,14 @@ export const DailyEntrySchema = z
       .refine((v) => proseLength(v) <= EX_NOTE_MAX_LENGTH, {
         message: `Keep the note under ${EX_NOTE_MAX_LENGTH} characters.`,
       })
-      .transform((v) => (v === '' ? null : v))
+      // ⚠ EMPTIED ON THE WORDS TOO, NOT JUST ON `''`. This is the ONLY
+      // normaliser on the write path, so when it tested `v === ''` a teacher
+      // who opened the note box, typed nothing and saved stored `<p></p>` —
+      // and every reader downstream (the audit row claiming a note was
+      // attached, the register tooltip, the "does this day already match?"
+      // comparison) then believed a note existed. The max above already
+      // measures the prose; so does this.
+      .transform((v) => (isEmptyRichText(v) ? null : v))
       .optional()
       .nullable(),
   })

@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
+import { RichText } from '@/components/ui/rich-text';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 // Client confirm step for the email one-click approve/reject flow. The
@@ -177,7 +178,16 @@ export function ActConfirm({
       {justification ? (
         <div className="text-sm">
           <p className="font-medium text-foreground">Teacher&apos;s reason</p>
-          <p className="mt-1 text-muted-foreground">{justification}</p>
+          {/* RENDERED, NOT STRIPPED. This is the page an approver lands on
+              from the email, and the teacher's reason is the entire basis for
+              the decision they are about to make — a numbered list of what
+              was re-marked has to arrive as a numbered list. There is room
+              for it: this is a standalone block on a one-decision page, not a
+              table cell. */}
+          <RichText
+            html={justification}
+            className="mt-1 text-muted-foreground"
+          />
         </div>
       ) : null}
 

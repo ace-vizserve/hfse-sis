@@ -2,6 +2,7 @@
 
 import { CalendarRange, Tag } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
+import * as React from 'react';
 
 import { DiscountCodeRowActions } from '@/components/sis/discount-code-row-actions';
 import { CodeChip } from '@/components/ui/code-chip';
@@ -13,6 +14,7 @@ import {
   type DiscountCodeStatus,
 } from '@/components/ui/discount-code-status-badge';
 import { TABLE_COPY } from '@/lib/copy/data-table';
+import { toPlainText } from '@/lib/rich-text';
 import type { DiscountCode } from '@/lib/sis/queries';
 
 // ─── Row type (DiscountCode + derived status + selected AY for actions) ────────
@@ -20,6 +22,16 @@ import type { DiscountCode } from '@/lib/sis/queries';
 export type DiscountCodeRow = DiscountCode & {
   status: DiscountCodeStatus;
   ayCode: string;
+  /**
+   * `details` with the formatting taken off — one line, for the table.
+   *
+   * ⚠ IT IS A SECOND FIELD AND NOT AN OVERWRITE. `details` is written in the
+   * formatting editor, so the stored value is HTML, and the row is handed
+   * whole to `DiscountCodeRowActions` → the edit dialog, whose editor needs
+   * that HTML back. Flattening `details` in place would quietly strip a code's
+   * formatting the next time somebody opened the dialog and saved.
+   */
+  detailsPlain: string;
 };
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -91,12 +103,17 @@ const columns: ColumnDef<DiscountCodeRow>[] = [
   },
   {
     id: 'details',
-    accessorKey: 'details',
+    // STRIPPED, NOT RENDERED — and the accessor is what does it, so the cell,
+    // the sort and the CSV column all read the same one-line value. A table
+    // row is the wrong home for a bullet list: it would push every other row
+    // in the table down to match.
+    accessorFn: (row) => row.detailsPlain,
     header: 'Details',
+    meta: { label: 'Details' },
     cell: ({ row }) =>
-      row.original.details ? (
+      row.original.detailsPlain ? (
         <span className="max-w-md text-xs leading-relaxed text-foreground">
-          {row.original.details}
+          {row.original.detailsPlain}
         </span>
       ) : (
         <span className="text-muted-foreground">—</span>
@@ -131,12 +148,20 @@ export function DiscountCodesDataTable({
   ayLabel,
   toolbarTrailing,
 }: DiscountCodesDataTableProps) {
-  // Derive status once per row — avoids per-render Date allocations inside cells.
-  const rows: DiscountCodeRow[] = codes.map((c) => ({
-    ...c,
-    status: classifyCodeStatus(c.startDate, c.endDate),
-    ayCode,
-  }));
+  // Derive status once per row — avoids per-render Date allocations inside
+  // cells. `detailsPlain` rides along for the same reason and a stronger one:
+  // stripping the formatting means parsing the HTML, which must not happen in
+  // an accessor or a cell renderer that runs per row per render.
+  const rows: DiscountCodeRow[] = React.useMemo(
+    () =>
+      codes.map((c) => ({
+        ...c,
+        status: classifyCodeStatus(c.startDate, c.endDate),
+        ayCode,
+        detailsPlain: toPlainText(c.details),
+      })),
+    [codes, ayCode]
+  );
 
   // Unique enroleeType values for the facet dropdown.
   const enroleeTypes = Array.from(
@@ -150,7 +175,13 @@ export function DiscountCodesDataTable({
       data={rows}
       columns={columns}
       getRowId={(row) => String(row.id)}
-      searchKeys={['discountCode', 'details', (row) => row.enroleeType ?? '']}
+      searchKeys={[
+        'discountCode',
+        // The plain copy — searching the raw column would match `strong` and
+        // miss a phrase split across two formatting tags.
+        'detailsPlain',
+        (row) => row.enroleeType ?? '',
+      ]}
       searchPlaceholder="Search codes, details, or type…"
       statusTabs={[
         {

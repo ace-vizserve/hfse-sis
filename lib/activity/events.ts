@@ -1,4 +1,5 @@
 import type { RequestLadder } from '@/lib/approvals/inbox';
+import { toPlainText } from '@/lib/rich-text';
 
 /**
  * One thing that happened to an approval, in the shape the panel and the
@@ -14,9 +15,37 @@ export type ActivityFlow = 'grade_change' | 'student_declaration';
 /** The three §9.3 tones. There is deliberately no fourth. */
 export type ActivityTone = 'started' | 'went-through' | 'turned-down';
 
+/**
+ * ⚠ `text` IS ALWAYS PLAIN TEXT, INCLUDING FOR `kind: 'note'`.
+ *
+ * A decision note is typed in the formatting editor, so the column holds HTML
+ * — and it is stripped here, at the one place both readers share, rather than
+ * in either of them. Two reasons, and the second is the binding one.
+ *
+ *  1. Both surfaces present the note as a QUOTATION: `“{text}”`. Block markup
+ *     cannot live inside a pair of quote marks — rendering it would mean
+ *     dropping the quotes and redesigning two crafted surfaces to say the same
+ *     thing less clearly.
+ *  2. `ActivityRow` renders the detail as a `<span>` INSIDE the row's `<a>`.
+ *     A `<p>` or a `<ul>` there is invalid nesting, and React would hand back
+ *     a hydration mismatch for it. `ApprovalHistoryDialog` alone could render
+ *     safely; the feed cannot, and one shape must mean one thing.
+ *
+ * Stripped once where the event is built — never in the render — because the
+ * feed pages through hundreds of these.
+ */
 export type ActivityDetail =
   | { kind: 'note'; text: string }
   | { kind: 'outcome'; text: string };
+
+/**
+ * A decision note as one quotable line, or `null` if the approver left the
+ * editor empty (`<p></p>` strips to `''`, which is what it means).
+ */
+function noteDetail(html: string | null | undefined): ActivityDetail | null {
+  const text = toPlainText(html);
+  return text === '' ? null : { kind: 'note', text };
+}
 
 export type ActivityEvent = {
   /**
@@ -153,9 +182,8 @@ export function buildDeclarationEvents(
 
   for (const stage of decided) {
     const details: ActivityDetail[] = [];
-    if (stage.decisionNote) {
-      details.push({ kind: 'note', text: stage.decisionNote });
-    }
+    const note = noteDetail(stage.decisionNote);
+    if (note) details.push(note);
     // The register write lands in the same second as the final approval, so it
     // rides on that row rather than becoming a second row a second later.
     if (stage.stageOrder === lastApprovalOrder) {
@@ -316,6 +344,7 @@ export function buildGradeChangeEvents(
 
   if (input.reviewedAt) {
     const turnedDown = input.status === 'rejected';
+    const note = noteDetail(input.decisionNote);
     events.push({
       id: `grade_change:${input.id}:reviewed`,
       flow: 'grade_change',
@@ -329,9 +358,7 @@ export function buildGradeChangeEvents(
         input.nameById
       ),
       predicate: `${turnedDown ? 'turned down' : 'approved'} the mark change for ${input.studentLabel}.`,
-      details: input.decisionNote
-        ? [{ kind: 'note', text: input.decisionNote }]
-        : null,
+      details: note ? [note] : null,
       href: input.href,
     });
   }
