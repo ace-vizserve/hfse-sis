@@ -46,7 +46,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   buildProfileUpdateSchema,
   CONTRACT_SIGNATORY_OPTIONS,
@@ -800,14 +800,11 @@ function SchemaField({
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
               <FormControl>
-                <Textarea
+                <RichTextEditor
                   rows={3}
                   value={(field.value as string | null) ?? ''}
-                  onChange={(e) =>
-                    field.onChange(
-                      e.target.value === '' ? null : e.target.value
-                    )
-                  }
+                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                  onBlur={field.onBlur}
                   placeholder={cfg.placeholder ?? ''}
                 />
               </FormControl>

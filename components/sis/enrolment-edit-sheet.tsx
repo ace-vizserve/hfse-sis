@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -39,11 +40,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import {
   ENROLLMENT_STATUS_LABELS,
   ENROLLMENT_STATUS_VALUES,
   WITHDRAWAL_REASON_LABELS,
+  WITHDRAWAL_REASON_MAX,
   WITHDRAWAL_REASON_VALUES,
   type EnrollmentStatus,
   type WithdrawalReason,
@@ -435,10 +436,10 @@ export function EnrolmentEditSheet({
 
               <div className="space-y-2">
                 <Label htmlFor="academicsNotes">Academics notes</Label>
-                <Textarea
+                <RichTextEditor
                   id="academicsNotes"
                   value={academicsNotes}
-                  onChange={(e) => setAcademicsNotes(e.target.value)}
+                  onChange={setAcademicsNotes}
                   placeholder="e.g. Needs reading support"
                   maxLength={200}
                   rows={2}
@@ -450,10 +451,10 @@ export function EnrolmentEditSheet({
 
               <div className="space-y-2">
                 <Label htmlFor="adminNotes">Admin notes</Label>
-                <Textarea
+                <RichTextEditor
                   id="adminNotes"
                   value={adminNotes}
-                  onChange={(e) => setAdminNotes(e.target.value)}
+                  onChange={setAdminNotes}
                   placeholder="e.g. Fee balance pending"
                   maxLength={200}
                   rows={2}
@@ -530,11 +531,11 @@ export function EnrolmentEditSheet({
                         <span className="text-destructive"> *</span>
                       )}
                     </label>
-                    <Textarea
+                    <RichTextEditor
                       value={withdrawalNotes}
-                      onChange={(e) => setWithdrawalNotes(e.target.value)}
+                      onChange={setWithdrawalNotes}
                       placeholder="Additional context..."
-                      maxLength={200}
+                      maxLength={WITHDRAWAL_REASON_MAX}
                       rows={2}
                     />
                   </div>
@@ -750,11 +751,11 @@ export function EnrolmentEditSheet({
                   <span className="text-destructive"> *</span>
                 )}
               </label>
-              <Textarea
+              <RichTextEditor
                 value={withdrawalNotes}
-                onChange={(e) => setWithdrawalNotes(e.target.value)}
+                onChange={setWithdrawalNotes}
                 placeholder="Additional context..."
-                maxLength={200}
+                maxLength={WITHDRAWAL_REASON_MAX}
                 rows={3}
               />
             </div>
@@ -828,11 +829,12 @@ export function EnrolmentEditSheet({
             >
               Reason <span className="text-destructive">*</span>
             </label>
-            <Textarea
+            <RichTextEditor
               id="revert-reason"
               value={revertReason}
-              onChange={(e) => setRevertReason(e.target.value)}
+              onChange={setRevertReason}
               placeholder="Why is the late-enrollee tag being removed?"
+              maxLength={WITHDRAWAL_REASON_MAX}
               rows={3}
             />
           </div>

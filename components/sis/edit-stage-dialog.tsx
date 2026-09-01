@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   APPLICATION_TERMINAL_REASON_VALUES,
   APPLICATION_TERMINAL_REASON_LABELS,
@@ -747,13 +747,10 @@ export function EditStageDialog({
                     <FormItem>
                       <FormLabel>Remarks</FormLabel>
                       <FormControl>
-                        <Textarea
+                        <RichTextEditor
                           value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(
-                              e.target.value === '' ? null : e.target.value
-                            )
-                          }
+                          onChange={(v) => field.onChange(v === '' ? null : v)}
+                          onBlur={field.onBlur}
                           rows={4}
                           placeholder="Notes for this stage…"
                           maxLength={4000}
@@ -800,9 +797,9 @@ export function EditStageDialog({
                           <span className="text-destructive"> *</span>
                         )}
                       </label>
-                      <Textarea
+                      <RichTextEditor
                         value={terminalNotes}
-                        onChange={(e) => setTerminalNotes(e.target.value)}
+                        onChange={setTerminalNotes}
                         placeholder="Optional additional context..."
                         maxLength={200}
                         rows={2}
