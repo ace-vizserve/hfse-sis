@@ -43,7 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { proseLength } from '@/lib/rich-text';
 import {
   Dialog,
   DialogContent,
@@ -86,6 +87,9 @@ export function TotalsEditor({
   const [correctionReason, setCorrectionReason] =
     useState<CorrectionReason>('formula_fix');
   const [correctionJustification, setCorrectionJustification] = useState('');
+  // The 20-character floor counts what was written, not the markup — an empty
+  // rich-text box already carries seven characters of `<p></p>`.
+  const justificationLength = proseLength(correctionJustification);
   const pendingCorrection = useRef<
     | ((v: { reason: CorrectionReason; justification: string } | null) => void)
     | null
@@ -356,15 +360,15 @@ export function TotalsEditor({
               <FieldLabel htmlFor="te-correction-justification">
                 Justification
               </FieldLabel>
-              <Textarea
+              <RichTextEditor
                 id="te-correction-justification"
                 value={correctionJustification}
-                onChange={(e) => setCorrectionJustification(e.target.value)}
+                onChange={setCorrectionJustification}
                 placeholder="Explain what was wrong and why the totals are being changed (min 20 characters)"
                 rows={4}
               />
               <p className="text-[11px] text-muted-foreground">
-                {correctionJustification.trim().length}/20 characters minimum
+                {justificationLength}/20 characters minimum
               </p>
             </Field>
           </div>
@@ -379,7 +383,7 @@ export function TotalsEditor({
               Cancel
             </Button>
             <Button
-              disabled={correctionJustification.trim().length < 20}
+              disabled={justificationLength < 20}
               onClick={() => {
                 setCorrectionOpen(false);
                 resolveCorrection({

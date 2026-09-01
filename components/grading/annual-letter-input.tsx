@@ -13,7 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { cn } from '@/lib/utils';
 
 // Inline popover for editing grade_entries.annual_letter_grade (KD #100).
@@ -137,7 +137,9 @@ export function AnnualLetterInput({
           <Pencil className="h-2.5 w-2.5 shrink-0 opacity-50" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" align="center" side="left">
+      {/* Wider than the 16rem this used to be: the note box is now a rich-text
+          field and its toolbar needs the room. */}
+      <PopoverContent className="w-80 p-3" align="center" side="left">
         <div className="space-y-3">
           <div>
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -177,13 +179,13 @@ export function AnnualLetterInput({
               <Label htmlFor={`note-${entryId}`} className="text-xs">
                 Reason for change <span className="text-destructive">*</span>
               </Label>
-              <Textarea
+              <RichTextEditor
                 id={`note-${entryId}`}
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={setNote}
                 placeholder="Why is this Final Grade being changed?"
                 rows={2}
-                className="resize-none text-xs"
+                className="text-xs"
               />
             </div>
           )}

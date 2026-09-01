@@ -23,8 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { proseLength } from '@/lib/rich-text';
 import {
   CORRECTION_REASONS,
   CORRECTION_REASON_LABELS,
@@ -184,9 +185,13 @@ export function useChangeReference() {
     });
   }
 
+  // The 20-character floor counts what the registrar wrote, not the markup —
+  // an empty rich-text box already carries seven characters of `<p></p>`.
+  const justificationLength = proseLength(correctionJustification);
+
   function confirmCorrection() {
     const justification = correctionJustification.trim();
-    if (justification.length < 20) return;
+    if (justificationLength < 20) return;
     setOpen(false);
     resolve({
       mode: 'correction',
@@ -195,7 +200,7 @@ export function useChangeReference() {
     });
   }
 
-  const canConfirmCorrection = correctionJustification.trim().length >= 20;
+  const canConfirmCorrection = justificationLength >= 20;
   const canConfirmRequest = !!selectedRequestId;
 
   const dialog = (
@@ -319,15 +324,15 @@ export function useChangeReference() {
               <FieldLabel htmlFor="correction-justification">
                 Justification
               </FieldLabel>
-              <Textarea
+              <RichTextEditor
                 id="correction-justification"
                 value={correctionJustification}
-                onChange={(e) => setCorrectionJustification(e.target.value)}
+                onChange={setCorrectionJustification}
                 placeholder="Explain what was wrong and what the correct value should be (min 20 characters)"
                 rows={4}
               />
               <p className="text-[11px] text-muted-foreground">
-                {correctionJustification.trim().length}/20 characters minimum
+                {justificationLength}/20 characters minimum
               </p>
             </Field>
             <p className="text-[11px] text-muted-foreground">
