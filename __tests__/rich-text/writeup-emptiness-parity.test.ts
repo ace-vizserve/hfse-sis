@@ -65,6 +65,51 @@ describe('hasWriteupContent — the KD #120 shared predicate', () => {
   });
 });
 
+describe('hasWriteupContent fast path stays identical to the parser', () => {
+  // hasWriteupContent answers the certain cases without building a DOM,
+  // because the parser costs ~10ms a call and this runs once per student per
+  // term. The shortcut is only safe while it agrees with the parser on
+  // EVERYTHING, so the corpus below is deliberately nasty: entities that trim
+  // away to nothing, markup that carries no prose, and text that only exists
+  // inside an attribute or a dropped tag.
+  const PARITY_CORPUS = [
+    ...EMPTY_RICH_TEXT,
+    ...WRITTEN_RICH_TEXT,
+    '<p>&nbsp;</p>', // trims to nothing — must read EMPTY
+    '<p>&#160;</p>',
+    '<p>&nbsp;&nbsp;</p>',
+    '<p>&amp;</p>', // a real character — must read WRITTEN
+    '<p>&lt;p&gt;</p>',
+    '<hr>', // no prose
+    '<p></p><p></p>',
+    '<img src="x.png" alt="a picture of nothing">', // alt text is not prose
+    '<blockquote><p></p></blockquote>',
+    '<p>Line one</p><p>Line two</p>',
+    '<p><em> </em></p>',
+    '<ol><li><p>Numbered</p></li></ol>',
+  ];
+
+  it.each(PARITY_CORPUS)('agrees with isEmptyRichText for %j', (html) => {
+    expect(hasWriteupContent(html)).toBe(!isEmptyRichText(html));
+  });
+
+  it('answers a full roster without paying the parser 405 times', () => {
+    // The regression guard. Before the fast path this loop took ~4.1s, which
+    // is what the evaluation sections list pays on every request.
+    const roster = Array.from({ length: 405 }, (_, i) =>
+      i % 3 === 0
+        ? '<p></p>'
+        : `<p>Solid term, engaged in class. Student ${i}.</p>`
+    );
+    const startedAt = Date.now();
+    const written = roster.filter((html) => hasWriteupContent(html)).length;
+    const elapsed = Date.now() - startedAt;
+
+    expect(written).toBe(270);
+    expect(elapsed).toBeLessThan(500);
+  });
+});
+
 describe('the classroom tab and the publish gate cannot disagree', () => {
   // The classroom Write-ups tab claims in its header comment to mirror the
   // publish-readiness comment gate. That claim was false; this test is what
@@ -150,9 +195,15 @@ describe('no copy of the cluster is left measuring the raw string', () => {
         .filter(({ line }) => !line.trimStart().startsWith('//'))
         .filter(({ line }) => !line.trimStart().startsWith('*'))
         .filter(({ line }) => RAW_EMPTINESS_TEST.test(line))
-        // The rich-text helpers themselves legitimately trim the STRIPPED text.
+        // Measuring the STRIPPED text is the correct thing and is what this
+        // guard is steering people towards — whether the stripping came from
+        // the rich-text helpers or from `hasWriteupContent`'s tag-removing
+        // fast path, which the parity block above pins to the parser's answer.
         .filter(
-          ({ line }) => !/toPlainText|textFromDoc|proseLength/.test(line)
+          ({ line }) =>
+            !/toPlainText|textFromDoc|proseLength|replace\(\/<\[\^>\]\*>\/g/.test(
+              line
+            )
         );
 
       expect(

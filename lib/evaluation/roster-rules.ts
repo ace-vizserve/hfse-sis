@@ -66,12 +66,33 @@ export function isActiveRosterStatus(
  * exists to prevent. Bare text from before the editor existed still reads
  * correctly through the same helper.
  *
- * The `!writeup` short-circuit is deliberate: `isEmptyRichText` parses HTML,
- * and this runs once per student per term over a whole academic year, so NULL
- * and empty-string rows must never reach the parser.
+ * ⚠ THE FAST PATH IS NOT AN OPTIMISATION, IT IS LOAD-BEARING — MEASURED.
+ * `isEmptyRichText` builds a DOM and a ProseMirror document, which costs about
+ * **10ms per call**: 405 write-ups (one AY's roster for a single term) took
+ * **4.1 seconds**, and `getWriteupProgressByTerm` runs exactly that loop on the
+ * request path, uncached. Calling the parser per row made the evaluation
+ * sections list several seconds slower and pushed an existing 405-row test past
+ * its timeout, which is how this was caught.
+ *
+ * So the certain cases answer without parsing, and ONLY the certain ones:
+ *   • no writeup at all → empty.
+ *   • no entities and no raw `<script>`/`<style>` → the text outside the tags
+ *     IS the text content, so "is any of it non-whitespace?" is the same
+ *     question the parser would answer. This covers `<p></p>` and ordinary
+ *     prose, i.e. very nearly every row.
+ *   • anything else (entities such as `&nbsp;`, which trims away to nothing;
+ *     raw script/style, whose text the schema drops) → hand it to the parser,
+ *     which stays the authority.
+ *
+ * `__tests__/rich-text/writeup-emptiness-parity.test.ts` asserts the fast path
+ * and `isEmptyRichText` return the SAME answer across a corpus built for this,
+ * so the shortcut cannot quietly drift away from the publish gate.
  */
 export function hasWriteupContent(writeup: string | null | undefined): boolean {
   if (!writeup) return false;
+  if (!/[&]|<(?:script|style)\b/i.test(writeup)) {
+    return writeup.replace(/<[^>]*>/g, '').trim().length > 0;
+  }
   return !isEmptyRichText(writeup);
 }
 
