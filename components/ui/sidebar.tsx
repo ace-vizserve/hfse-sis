@@ -24,7 +24,23 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '4rem';
-const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
+
+// ⚠ NO KEYBOARD SHORTCUT. The shadcn default is Ctrl/Cmd+B, and since every
+// multi-line field in this app became a formatting editor (KD #205) that is
+// the shortcut for BOLD.
+//
+// Both fired: the editor bolded the selection, the event bubbled to the
+// window listener, and the sidebar slid open or shut underneath. Bolding a
+// word in a write-up moved the whole page.
+//
+// Removed rather than rebound — the sidebar has a visible trigger, so the
+// shortcut was a convenience, while bold is the single most-used key in a box
+// people spend twenty minutes in. If a shortcut is ever wanted back, it must
+// not be one the editor claims: the editor owns Ctrl+B/I/U, Ctrl+Z/Y and
+// Ctrl+Shift+7/8 among others.
+//
+// ⚠ Re-running `shadcn add sidebar` WILL reintroduce it. Guarded by
+// `__tests__/ui/sidebar-no-bold-shortcut.test.tsx`.
 
 type SidebarContext = {
   state: 'expanded' | 'collapsed';
@@ -87,20 +103,6 @@ const SidebarProvider = React.forwardRef<
     const toggleSidebar = React.useCallback(() => {
       return isMobile ? setOpenMobile((o) => !o) : setOpen((o) => !o);
     }, [isMobile, setOpen, setOpenMobile]);
-
-    React.useEffect(() => {
-      const handleKeyDown = (event: KeyboardEvent) => {
-        if (
-          event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-          (event.metaKey || event.ctrlKey)
-        ) {
-          event.preventDefault();
-          toggleSidebar();
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [toggleSidebar]);
 
     const state = open ? 'expanded' : 'collapsed';
 
