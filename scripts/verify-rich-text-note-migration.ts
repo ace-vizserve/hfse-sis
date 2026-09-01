@@ -88,38 +88,66 @@ async function main() {
   console.log('');
   console.log(SQL);
   console.log('');
-  console.log('EXPECT EXACTLY TWO ROWS, both reading <= 4000:');
+  console.log('VERIFIED against production 2026-09-01 — FOUR rows, as below.');
+  console.log('');
+  console.log('The two that 140 owns, both reading <= 4000:');
   console.log('  attendance_daily          attendance_daily_ex_note_len_chk');
   console.log(
     '  approval_request_stages   approval_request_stages_decision_note_len_chk'
   );
   console.log('');
-  console.log('⚠ THE ROW COUNT IS THE REAL CHECK, NOT THE 4000. The');
   console.log(
-    '  approval_request_stages constraint was declared inline in migration 126,'
+    'And two PRE-EXISTING attendance_daily rules that merely mention'
+  );
+  console.log('ex_note. Neither is a length check; both are untouched:');
+  console.log(
+    '  attendance_daily_cleared_has_no_reason_chk   (a cleared mark carries no note)'
   );
   console.log(
-    '  so Postgres named it, and 140 drops it by what it CHECKS rather than by'
+    '  attendance_daily_ex_note_requires_ex_chk     (a note only exists on an EX mark)'
   );
-  console.log(
-    '  what it is called. A miss leaves the old 300 constraint in force'
-  );
-  console.log(
-    '  ALONGSIDE the new one — three rows, not two — and the table goes on'
-  );
-  console.log(
-    '  refusing the note while the migration reports success. Three rows means'
-  );
-  console.log('  140 did not do its job.');
   console.log('');
   console.log(
-    'Also expected: a THIRD row on student_declarations.parent_note still'
+    '⚠ COUNT THE *_len_chk ROWS, NOT ALL THE ROWS. An earlier version of this'
   );
   console.log(
-    'reading <= 300 if you widen the query to that table — that one is'
+    '  note said "expect exactly two rows" — wrong, because the query filters'
   );
   console.log(
-    'deliberately untouched (a parent types it in the external portal, plain).'
+    '  on ilike %ex_note% and so catches every constraint that NAMES the'
+  );
+  console.log(
+    '  column. Four rows is the correct answer, and reading four as a failure'
+  );
+  console.log('  would be the false alarm this paragraph exists to prevent.');
+  console.log('');
+  console.log(
+    '⚠ WHAT WOULD ACTUALLY MEAN FAILURE: more than ONE length check on either'
+  );
+  console.log(
+    '  table, or one still reading <= 300. The approval_request_stages'
+  );
+  console.log(
+    '  constraint was declared inline in migration 126, so Postgres named it,'
+  );
+  console.log(
+    '  and 140 drops it by what it CHECKS rather than by what it is called. A'
+  );
+  console.log(
+    '  miss would leave the old 300 rule in force ALONGSIDE the new one, and'
+  );
+  console.log(
+    '  the table would go on refusing the note while the migration reported'
+  );
+  console.log(
+    '  success. Production returned exactly one per table, so the drop worked.'
+  );
+  console.log('');
+  console.log(
+    'Also untouched by design: student_declarations.parent_note keeps its <= 300'
+  );
+  console.log(
+    '(a parent types it in the external portal, in a plain box, with no markup).'
   );
 }
 
