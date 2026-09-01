@@ -7,6 +7,7 @@ import type {
   MasterfilePayload,
   MasterfileStudentRow,
 } from '@/lib/markbook/masterfile';
+import { toPlainText } from '@/lib/rich-text';
 
 // HFSE Masterfile → Excel report-book export (KD #95).
 //
@@ -65,10 +66,30 @@ function statusLabel(status: string): string {
   return 'Active';
 }
 
+/**
+ * The Teacher's Comments cell — one line per term, prose only.
+ *
+ * ⚠ THE WRITE-UP IS FORMATTED TEXT AND ARRIVES AS HTML. A spreadsheet cell
+ * renders nothing, so the registrar would read `<p><strong>…` verbatim.
+ * `toPlainText` is the single stripper for every boundary like this one; it is
+ * safe on the bare sentences written before the editor existed, which parse to
+ * one paragraph and come back unchanged.
+ *
+ * A term whose comment strips to nothing is DROPPED rather than printed as an
+ * empty "T2: ". An adviser who opens the box, types nothing and saves leaves
+ * `<p></p>` behind — seven characters that no string test reads as blank. The
+ * loader already excludes those (`lib/markbook/masterfile.ts`), and this is the
+ * same rule applied where the cell is actually written, so neither export can
+ * announce a comment that nobody wrote.
+ *
+ * Feeds BOTH export formats — the xlsx sheet and the flat CSV table.
+ */
 function commentsText(row: MasterfileStudentRow): string {
   if (!row.commentsByTerm || row.commentsByTerm.length === 0) return '';
   return row.commentsByTerm
-    .map((c) => `T${c.termNumber}: ${c.text}`)
+    .map((c) => ({ termNumber: c.termNumber, prose: toPlainText(c.text) }))
+    .filter((c) => c.prose !== '')
+    .map((c) => `T${c.termNumber}: ${c.prose}`)
     .join('\n\n');
 }
 

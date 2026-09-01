@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 
-import { buildMasterfileWorkbook } from '@/lib/markbook/masterfile-export';
+import {
+  buildMasterfileWorkbook,
+  flattenMasterfileRows,
+  masterfileToCsv,
+} from '@/lib/markbook/masterfile-export';
 import type {
   MasterfilePayload,
   MasterfileStudentRow,
@@ -324,5 +328,122 @@ describe('buildMasterfileWorkbook', () => {
     expect(withdrawnRow[totalsStart]).toBe(0); // total school days
     expect(withdrawnRow[totalsStart + 1]).toBe(0); // total present
     expect(withdrawnRow[totalsStart + 2]).toBe(0); // total late
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FCA write-up is formatted text now — it arrives as HTML. A spreadsheet
+// cell cannot render it, so the registrar would read the tags. Both export
+// formats share one `commentsText()` helper, and both are asserted here so a
+// fix to one path can't silently skip the other.
+// ---------------------------------------------------------------------------
+
+const COMMENTS_COL = EXPECTED_TOTAL_COLS - 1;
+
+function payloadWithComments(
+  comments: MasterfileStudentRow['commentsByTerm']
+): MasterfilePayload {
+  const payload = makePayload();
+  payload.rows[0].commentsByTerm = comments;
+  return payload;
+}
+
+/** The active student's Teacher's Comments cell, as the xlsx sheet holds it. */
+function xlsxComment(payload: MasterfilePayload): string {
+  const { aoa } = readBack(payload);
+  return String(aoa[2][COMMENTS_COL] ?? '');
+}
+
+/** The same cell out of the CSV branch. */
+function csvComment(payload: MasterfilePayload): string {
+  const table = flattenMasterfileRows(payload);
+  return String(table.rows[0][table.headers.length - 1] ?? '');
+}
+
+describe("the Teacher's Comments cell reads as prose, not markup", () => {
+  it('strips formatting out of the xlsx cell', () => {
+    const payload = payloadWithComments([
+      {
+        termNumber: 1,
+        text: '<p><strong>Alice</strong> is <em>improving</em>.</p>',
+        submitted: true,
+      },
+    ]);
+    expect(xlsxComment(payload)).toBe('T1: Alice is improving.');
+  });
+
+  it('strips formatting out of the CSV cell', () => {
+    const payload = payloadWithComments([
+      {
+        termNumber: 1,
+        text: '<p><strong>Alice</strong> is <em>improving</em>.</p>',
+        submitted: true,
+      },
+    ]);
+    expect(csvComment(payload)).toBe('T1: Alice is improving.');
+  });
+
+  it('flattens a bullet list into readable lines rather than <li> tags', () => {
+    const payload = payloadWithComments([
+      {
+        termNumber: 2,
+        text: '<ul><li><p>Leads group work</p></li><li><p>Written fluency</p></li></ul>',
+        submitted: true,
+      },
+    ]);
+    const cell = xlsxComment(payload);
+    expect(cell).not.toContain('<');
+    expect(cell).toBe('T2: Leads group work\nWritten fluency');
+  });
+
+  it('keeps the terms apart when more than one comment exists', () => {
+    const payload = payloadWithComments([
+      { termNumber: 1, text: '<p>Settling in.</p>', submitted: true },
+      { termNumber: 2, text: '<p>Much stronger.</p>', submitted: true },
+    ]);
+    expect(xlsxComment(payload)).toBe('T1: Settling in.\n\nT2: Much stronger.');
+    expect(csvComment(payload)).toBe('T1: Settling in.\n\nT2: Much stronger.');
+  });
+
+  it('drops a term whose comment is an empty editor document', () => {
+    // An adviser who opens the box, types nothing and saves leaves `<p></p>`.
+    // Without this the registrar's cell reads "T2: " — a term that looks
+    // commented but isn't.
+    const payload = payloadWithComments([
+      { termNumber: 1, text: '<p>Settling in.</p>', submitted: true },
+      { termNumber: 2, text: '<p></p>', submitted: false },
+    ]);
+    expect(xlsxComment(payload)).toBe('T1: Settling in.');
+    expect(csvComment(payload)).toBe('T1: Settling in.');
+  });
+
+  it('leaves the cell empty when every comment is a blank document', () => {
+    const payload = payloadWithComments([
+      { termNumber: 1, text: '<p><br></p>', submitted: false },
+    ]);
+    expect(xlsxComment(payload)).toBe('');
+    expect(csvComment(payload)).toBe('');
+  });
+
+  it('passes through text written before the editor existed', () => {
+    // Every AY2025 write-up is a bare sentence, not HTML.
+    const payload = payloadWithComments([
+      { termNumber: 1, text: 'Doing well.', submitted: true },
+    ]);
+    expect(xlsxComment(payload)).toBe('T1: Doing well.');
+    expect(csvComment(payload)).toBe('T1: Doing well.');
+  });
+
+  it('does not leak an escaped tag into the CSV text', () => {
+    const payload = payloadWithComments([
+      {
+        termNumber: 1,
+        text: '<p><strong>Bold</strong> claim.</p>',
+        submitted: true,
+      },
+    ]);
+    const csv = masterfileToCsv(flattenMasterfileRows(payload));
+    expect(csv).not.toContain('<strong>');
+    expect(csv).toContain('Bold claim.');
   });
 });

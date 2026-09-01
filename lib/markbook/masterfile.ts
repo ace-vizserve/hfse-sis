@@ -17,6 +17,7 @@ import {
   type SubjectAwardLabel,
 } from '@/lib/compute/awards';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -679,6 +680,18 @@ async function loadMasterfileUncached(
   // commentsByStudent: studentId -> termId -> { text, submitted }.
   // Only non-empty entries are stored; submitted reflects the adviser's
   // finalise flag (KD #129). Empty writeups are excluded (text="" = Missing).
+  //
+  // ⚠ "EMPTY" IS MEASURED WITH `isEmptyRichText`, NOT `.trim()`. The write-up
+  // is formatted text now, so an adviser who opens the box, types nothing and
+  // saves leaves `<p></p>` — seven characters that `.trim()` counts as a
+  // written comment. Every consumer of `commentsByTerm` (the export cell, the
+  // dashboard completeness percentage, the Comments quick view's
+  // Submitted/Draft/Missing status) trusts this list to hold only real prose,
+  // so the check belongs here rather than in each of them.
+  //
+  // `text` stays as STORED — the HTML, not the stripped prose. Read-only
+  // surfaces are going to render it; the one boundary that cannot (the
+  // Masterfile export) strips at the cell.
   const commentsByStudent = new Map<
     string,
     Map<string, { text: string; submitted: boolean }>
@@ -696,7 +709,8 @@ async function loadMasterfileUncached(
       submitted: boolean | null;
     }>) {
       const text = (w.writeup ?? '').trim();
-      if (!text) continue;
+      // The cheap test first: a NULL or blank column never reaches the parser.
+      if (!text || isEmptyRichText(text)) continue;
       let byTerm = commentsByStudent.get(w.student_id);
       if (!byTerm) {
         byTerm = new Map<string, { text: string; submitted: boolean }>();
