@@ -4,7 +4,11 @@ import { Resend } from 'resend';
 
 import { env } from '@/lib/env';
 import { signActionToken } from '@/lib/change-requests/action-token';
-import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import {
+  escapeHtml,
+  escapeLines,
+  renderEmailFrame,
+} from '@/lib/notifications/email-frame';
 import { toPlainText } from '@/lib/rich-text';
 
 // ⚠ RICH-TEXT FIELDS ARE STRIPPED BEFORE THEY ARE ESCAPED.
@@ -171,7 +175,7 @@ export async function notifyRequestFiled(
     ${summaryTable(req)}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Justification:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(toPlainText(req.justification))}</span>
+      <span style="color:#475569;">${escapeLines(toPlainText(req.justification))}</span>
     </p>
   `;
 
@@ -244,7 +248,7 @@ export async function notifyRequestApproved(
     ${summaryTable(req)}
     ${
       decisionNote
-        ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;"><strong>Note:</strong> ${escapeHtml(decisionNote)}</p>`
+        ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;"><strong>Note:</strong> ${escapeLines(decisionNote)}</p>`
         : ''
     }
   `;
@@ -277,7 +281,7 @@ export async function notifyRequestRejected(
     ${summaryTable(req)}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Reason given:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(decisionNote)}</span>
+      <span style="color:#475569;">${escapeLines(decisionNote)}</span>
     </p>
   `;
   const html = renderEmailFrame({

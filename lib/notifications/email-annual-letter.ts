@@ -2,7 +2,11 @@ import 'server-only';
 
 import { Resend } from 'resend';
 
-import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import {
+  escapeHtml,
+  escapeLines,
+  renderEmailFrame,
+} from '@/lib/notifications/email-frame';
 import { toPlainText } from '@/lib/rich-text';
 
 // ⚠ `reason` IS RICH TEXT AND IS STRIPPED BEFORE IT IS ESCAPED. It comes from
@@ -109,7 +113,7 @@ export async function notifyAnnualLetterChanged(
     ${tableHtml}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Reason given:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(toPlainText(payload.reason))}</span>
+      <span style="color:#475569;">${escapeLines(toPlainText(payload.reason))}</span>
     </p>
     <p style="font-size:13px;line-height:20px;color:#94A3B8;margin:0;">
       This notification was sent to all school administrators. This change is logged in the Markbook audit log.

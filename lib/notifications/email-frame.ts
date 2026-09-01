@@ -54,6 +54,22 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Escape text that came out of a formatting editor, keeping its line breaks.
+ *
+ * These fields are written in a rich-text box and stripped to plain text with
+ * `toPlainText` before they reach an email. That leaves the paragraphs and
+ * bullets as `\n`-separated lines — and a newline in HTML source collapses to
+ * a single space, so a three-bullet rejection reason would arrive at a parent
+ * as one run-on sentence.
+ *
+ * Pass ALREADY-STRIPPED text. Escaping happens here, so the `<br />` this adds
+ * is the only markup that survives.
+ */
+export function escapeLines(s: string): string {
+  return escapeHtml(s).replace(/\n/g, '<br />');
+}
+
 // Encode the two characters that matter inside an HTML attribute value.
 // HTML spec requires `&` to be `&amp;` in attribute values; Outlook's
 // strict parser misparses query-string ampersands without it. We also

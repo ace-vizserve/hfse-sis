@@ -2,7 +2,11 @@ import 'server-only';
 
 import { Resend } from 'resend';
 
-import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import {
+  escapeHtml,
+  escapeLines,
+  renderEmailFrame,
+} from '@/lib/notifications/email-frame';
 import { toPlainText } from '@/lib/rich-text';
 
 // ⚠ `rejectionReason` IS THE ONLY RICH-TEXT VALUE IN THIS FILE and is stripped
@@ -203,7 +207,7 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
         could not be accepted for the following reason:
       </p>
       <blockquote style="margin:0 0 16px;padding:12px 16px;border-left:4px solid #e2e8f0;background:#f8fafc;color:#334155;font-size:15px;line-height:24px;">
-        ${escapeHtml(rejectionReason)}
+        ${escapeLines(rejectionReason)}
       </blockquote>
       <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
         Please re-upload a corrected document so we can continue processing the enrolment.
