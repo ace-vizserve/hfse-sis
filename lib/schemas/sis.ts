@@ -5,7 +5,7 @@ import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 // The rich-text sibling of this file's `optionalText`, borrowed rather than
 // re-declared. Writing a second copy here is the exact mistake that let the
 // two diverge in the first place — see the note on `optionalText` below.
-import { optionalText as optionalRichText } from '@/lib/schemas/enrolment';
+import { optionalRichText } from '@/lib/schemas/enrolment';
 
 // Sprint 10 Phase 2 — schemas for SIS write surfaces.
 //

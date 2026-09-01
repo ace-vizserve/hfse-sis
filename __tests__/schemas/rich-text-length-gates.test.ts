@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DecideApprovalSchema } from '@/lib/schemas/approval-flows';
-import { optionalText } from '@/lib/schemas/enrolment';
+import { optionalRichText, optionalText } from '@/lib/schemas/enrolment';
 import { DocumentValidationSchema } from '@/lib/schemas/sis';
 
 // THE LENGTH GATES THAT WERE STILL COUNTING MARKUP.
@@ -23,10 +23,12 @@ it('an empty editor document is non-empty by the string test these replaced', ()
   expect(EMPTY_DOC.trim().length > 0).toBe(true);
 });
 
-describe('optionalText — the shared cap behind nine fields', () => {
-  // Enrolment academics/admin notes, withdrawal notes, stage remarks, home
-  // address, learning needs, discount details, assignment change notes.
-  const cap200 = optionalText(200);
+describe('optionalRichText — the shared cap behind nine prose fields', () => {
+  // Enrolment academics/admin notes, withdrawal notes, the late-enrollee
+  // revert reason, stage remarks, home address, learning needs, discount
+  // details, assignment change notes. All nine are edited with the formatting
+  // editor; its plain sibling `optionalText` is asserted separately below.
+  const cap200 = optionalRichText(200);
 
   it('measures the writing, not the tags', () => {
     // 200 characters of prose wrapped in marks is a valid 200-character note.
@@ -53,6 +55,37 @@ describe('optionalText — the shared cap behind nine fields', () => {
     expect(cap200.parse('<p>Moved to the afternoon class.</p>')).toBe(
       '<p>Moved to the afternoon class.</p>'
     );
+  });
+});
+
+describe('optionalText — the plain sibling, and it must stay plain', () => {
+  // `bus_no` and `classroom_officer_role` are `<Input>` fields. They were
+  // briefly swept into the rich-text helper along with the prose ones, which
+  // was harmless — the two agree exactly on plain text — but wrong in a way
+  // that misleads: it tells the next reader the column holds HTML, and pays
+  // for an HTML parse to answer a question about a bus number.
+  //
+  // Choosing a helper is a claim about how the field is EDITED. This guards
+  // the claim rather than the behaviour, which is why it asserts the raw
+  // string is what gets measured.
+  const cap10 = optionalText(10);
+
+  it('measures the raw string, because for an <Input> that is the writing', () => {
+    expect(cap10.safeParse('abcdefghij').success).toBe(true);
+    expect(cap10.safeParse('abcdefghijk').success).toBe(false);
+  });
+
+  it('does not treat markup as formatting to be discounted', () => {
+    // 12 raw characters. A rich-text helper would call this 2 and accept it.
+    expect(cap10.safeParse('<p>ab</p>').success).toBe(true);
+    expect(cap10.safeParse('<p><b>ab</b></p>').success).toBe(false);
+  });
+
+  it('clears on an empty string only', () => {
+    expect(cap10.parse('')).toBeNull();
+    // Not blanked: for a plain input this is just an odd bus number, and
+    // silently nulling it would be the helper guessing.
+    expect(cap10.parse('<p></p>')).toBe('<p></p>');
   });
 });
 

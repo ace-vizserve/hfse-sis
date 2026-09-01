@@ -151,18 +151,37 @@ describe('discipline record', () => {
     nature: 'Pushing in the canteen queue',
   };
 
-  it("the one-line 'what kind of thing' box counts words, not tags", () => {
+  // ⚠ `nature` IS NOT RICH TEXT, and these two cases pin that down.
+  //
+  // It sits beside `details` and `remarks` in the same form and the same
+  // table, and it was swept into the prose helpers with them — reasonably,
+  // since all three are free text with a `.max()`. But it is a single-line
+  // `<Input>` in `discipline-record-form.tsx`, a short label like "Pushing in
+  // the canteen queue", and it is printed raw as a heading on three screens.
+  //
+  // The sweep was harmless in behaviour — the two helpers agree exactly on
+  // plain text — and wrong in what it claimed: it told the next reader this
+  // column holds HTML. Choosing a helper is a claim about how a field is
+  // EDITED, so check the form, not the neighbouring field.
+  it('counts the raw string, because it is a plain one-line input', () => {
     const html = heavilyMarkedUp(DISCIPLINE_NATURE_MAX);
     expect(html.length).toBeGreaterThan(DISCIPLINE_NATURE_MAX);
     expect(
       DisciplineRecordSchema.safeParse({ ...base, nature: html }).success
+    ).toBe(false);
+  });
+
+  it('accepts a plain label at exactly the cap', () => {
+    const label = 'a'.repeat(DISCIPLINE_NATURE_MAX);
+    expect(
+      DisciplineRecordSchema.safeParse({ ...base, nature: label }).success
     ).toBe(true);
   });
 
-  it('a required box left empty in the editor is still empty', () => {
-    // `<p></p>` is seven characters and no words. The field is required.
-    const r = DisciplineRecordSchema.safeParse({ ...base, nature: '<p></p>' });
-    expect(r.success).toBe(false);
+  it('still refuses a genuinely empty required label', () => {
+    expect(
+      DisciplineRecordSchema.safeParse({ ...base, nature: '   ' }).success
+    ).toBe(false);
   });
 
   it('keeps its default for details, so the form and route types still differ', () => {

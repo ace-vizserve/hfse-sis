@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { optionalText } from '@/lib/schemas/enrolment';
+import { isEmptyRichText } from '@/lib/rich-text';
+import { optionalRichText } from '@/lib/schemas/enrolment';
 
 // Why a teacher was taken off a class.
 //
@@ -88,12 +89,17 @@ export const AssignmentRemovalSchema = z
       .enum(ASSIGNMENT_CHANGE_REASON_VALUES)
       .nullable()
       .optional(),
-    change_notes: optionalText(ASSIGNMENT_CHANGE_NOTES_MAX).optional(),
+    change_notes: optionalRichText(ASSIGNMENT_CHANGE_NOTES_MAX).optional(),
   })
   .superRefine((data, ctx) => {
     // 'Other' explains nothing on its own, so it carries its own requirement
     // regardless of the term gate.
-    if (data.change_reason === 'other' && !data.change_notes?.trim()) {
+    //
+    // Asked on the writing, not the string: the note is typed in a formatting
+    // editor, and one opened and left alone holds an empty paragraph — truthy,
+    // seven characters, and `.trim()` waves it straight through. That is
+    // exactly the "explains nothing" case this rule exists to refuse.
+    if (data.change_reason === 'other' && isEmptyRichText(data.change_notes)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['change_notes'],

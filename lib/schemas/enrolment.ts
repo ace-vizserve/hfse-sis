@@ -2,21 +2,48 @@ import { z } from 'zod';
 
 import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 
-// Trimmed, length-capped free text where '' means "cleared" rather than "blank
-// string". Exported because sibling schema modules need the identical coercion
-// (lib/schemas/teacher-assignment.ts) — a second copy would drift.
+// TWO HELPERS, AND WHICH ONE A FIELD GETS IS A CLAIM ABOUT HOW IT IS EDITED.
+// Check the form before choosing. Getting it wrong is quiet in both
+// directions, which is why they are split rather than merged behind a flag.
 //
-// THE CAP IS ON WHAT THE PERSON TYPED, NOT ON THE STRING WE STORE. Every field
-// built on this helper is a formatting editor now — the enrolment academics and
-// admin notes, withdrawal notes, the stage remarks, a student's home address
-// and learning needs, the discount details, teacher-assignment change notes —
-// so the column holds HTML. Measuring the raw string would spend seven of a
-// 200-character budget on the empty paragraph alone, and more on every bold
-// word, while the counter on screen shows the writing.
-//
-// That gap is not a rounding error, it is a broken screen: the counter reads
-// 200 / 200 with Save enabled, and the save comes back "too long".
+// Both are trimmed, length-capped free text where '' means "cleared" rather
+// than "blank string". Exported because sibling schema modules need the
+// identical coercion (teacher-assignment.ts, sis.ts) — a second copy drifts.
+
+/**
+ * PLAIN, SINGLE-LINE VALUES: a bus number, a role label, a name.
+ *
+ * Measures the raw string, because for a field edited with an `<Input>` the
+ * raw string IS what the person typed. Do not "upgrade" one of these to the
+ * rich-text helper on the strength of it being free text — that would tell the
+ * next reader the column holds HTML and pay for an HTML parse to answer a
+ * question about a bus number.
+ */
 export const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `Keep this under ${max} characters`)
+    .transform((s) => (s.length === 0 ? null : s))
+    .nullable();
+
+/**
+ * PROSE WRITTEN IN THE FORMATTING EDITOR: the enrolment academics and admin
+ * notes, withdrawal notes, stage remarks, a student's home address and
+ * learning needs, discount details, teacher-assignment change notes.
+ *
+ * THE CAP IS ON WHAT THE PERSON TYPED, NOT ON THE STRING WE STORE. The column
+ * holds HTML, so measuring the raw string spends seven of a 200-character
+ * budget on the empty paragraph alone and more on every bold word — while the
+ * counter on screen shows only the writing. That is not a rounding error, it
+ * is a broken screen: the counter reads 200 / 200 with Save enabled, and the
+ * save comes back "too long".
+ *
+ * The empty check is `isEmptyRichText` for the matching reason — an editor
+ * clicked into and left alone holds `<p></p>`, and if that did not clear the
+ * field, the field could never be blanked again.
+ */
+export const optionalRichText = (max: number) =>
   z
     .string()
     .trim()
@@ -105,13 +132,14 @@ export const EnrolmentMetadataSchema = z
     // the mid-term prompt, which send only their own field) validate. The route
     // only writes these when present (`'bus_no' in parsed.data`), so omitting
     // them leaves the stored values untouched.
+    // Plain `<Input>` fields — a bus number and a role label, no editor.
     bus_no: optionalText(40).optional(),
     classroom_officer_role: optionalText(80).optional(),
     enrollment_status: z.enum(ENROLLMENT_STATUS_VALUES).optional(),
     // Structured withdrawal reason — required on the → withdrawn boundary.
     withdrawal_reason: z.enum(WITHDRAWAL_REASON_VALUES).nullable().optional(),
     // Freetext notes (replaces the old unstructured `reason` field).
-    withdrawal_notes: optionalText(WITHDRAWAL_REASON_MAX).optional(),
+    withdrawal_notes: optionalRichText(WITHDRAWAL_REASON_MAX).optional(),
     // Explicit late-enrollee term override (null = derive from enrollment_date).
     late_enrollee_term_number: z
       .number()
@@ -123,13 +151,13 @@ export const EnrolmentMetadataSchema = z
     // Audit-only reason captured when a late enrollee is converted back to a
     // normal (active) enrollee. Required-ness is enforced in the route (it
     // depends on the row's current status). optionalText: '' → null.
-    lateRevertReason: optionalText(WITHDRAWAL_REASON_MAX).optional(),
+    lateRevertReason: optionalRichText(WITHDRAWAL_REASON_MAX).optional(),
     // Free-text notes for the attendance-sheet Details view (migration 093).
     // Per-field write gating lives in the PATCH route, not here:
     // academics_notes -> academic_coordinator | school_admin | superadmin;
     // admin_notes -> school_admin | superadmin only.
-    academics_notes: optionalText(200).optional(),
-    admin_notes: optionalText(200).optional(),
+    academics_notes: optionalRichText(200).optional(),
+    admin_notes: optionalRichText(200).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.enrollment_status === 'withdrawn' && !data.withdrawal_reason) {

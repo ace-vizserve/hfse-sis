@@ -120,18 +120,26 @@ export const DisciplineRecordSchema = z
     // the filer would be told their one short line is too long with nothing on
     // screen to explain it. The limits were written about what a person types,
     // so that is what is measured.
+    // ⚠ `nature` IS NOT RICH TEXT, AND MUST NOT BE MEASURED AS IF IT WERE.
+    // Unlike `details` and `remarks` above, it is a single-line `<Input>` in
+    // `discipline-record-form.tsx` — a short label like "Pushing in the
+    // canteen queue" — and it is printed raw as a heading on three screens.
+    // It holds no markup, so the plain string IS what the filer typed.
+    //
+    // It briefly went through the prose helpers during the rich-text sweep,
+    // which was harmless (the two agree exactly on plain text) but wrong in a
+    // way that misleads: it told the next reader this column holds HTML, and
+    // it paid for an HTML parse on every validation to answer a question about
+    // a one-line label. Converting a field here is a claim about how it is
+    // EDITED — check the form before making it.
     nature: z
       .string({ error: 'Say briefly what kind of thing this was.' })
       .trim()
-      // Emptiness is a prose question too: an editor opened and left alone
-      // stores `<p></p>`, which is not blank as a string but is blank as a
-      // sentence, and this field is required.
-      .refine((value) => !isEmptyRichText(value), {
-        message: 'Say briefly what kind of thing this was.',
-      })
-      .refine((value) => proseLength(value) <= DISCIPLINE_NATURE_MAX, {
-        message: `Keep this under ${DISCIPLINE_NATURE_MAX} characters — the full story goes in the details below.`,
-      }),
+      .min(1, 'Say briefly what kind of thing this was.')
+      .max(
+        DISCIPLINE_NATURE_MAX,
+        `Keep this under ${DISCIPLINE_NATURE_MAX} characters — the full story goes in the details below.`
+      ),
 
     details: z
       .string()
