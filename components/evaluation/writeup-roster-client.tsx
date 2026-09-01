@@ -8,8 +8,13 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { isEmptyRichText } from '@/lib/rich-text';
 import type { EvaluationRosterStudent } from '@/lib/evaluation/queries';
+
+/** The adviser's cap, matching `EvaluationWriteupUpsertSchema`. */
+const WRITEUP_MAX = 10_000;
 
 type RowState = {
   student_id: string;
@@ -26,7 +31,7 @@ type RowState = {
   error: string | null;
 };
 
-// Adviser write-up roster. One <textarea> per student with explicit
+// Adviser write-up roster. One formatting editor per student with explicit
 // **Save as draft** and **Submit / Resubmit** buttons — no autosave. Nothing
 // is persisted until a button is clicked (manual, predictable). Save as draft
 // stores the text as a draft (and demotes a finalised write-up back to draft);
@@ -46,18 +51,30 @@ export function WriteupRosterClient({
   canEdit: boolean;
 }) {
   const [rows, setRows] = useState<RowState[]>(() =>
-    roster.map((r) => ({
-      student_id: r.student_id,
-      index_number: r.index_number,
-      student_number: r.student_number,
-      student_name: r.student_name,
-      writeup: r.writeup ?? '',
-      savedWriteup: r.writeup ?? '',
-      submitted: r.submitted,
-      submittedAt: r.submitted_at,
-      saving: false,
-      error: null,
-    }))
+    roster.map((r) => {
+      // NORMALISE ONCE, HERE, AND EVERY LATER "HAS THIS BEEN WRITTEN?" TEST
+      // STAYS A CHEAP STRING CHECK.
+      //
+      // The column holds HTML now, so a blank write-up can arrive from the
+      // database as `<p></p>` — non-empty by `.trim().length`, which is what
+      // the roster summary, the workflow pill and the Save button all use.
+      // Parsing on every render instead would mean re-parsing 30 students'
+      // write-ups on every keystroke. The editor itself never emits `<p></p>`,
+      // so once the incoming value is clean, everything downstream stays clean.
+      const writeup = isEmptyRichText(r.writeup) ? '' : (r.writeup ?? '');
+      return {
+        student_id: r.student_id,
+        index_number: r.index_number,
+        student_number: r.student_number,
+        student_name: r.student_name,
+        writeup,
+        savedWriteup: writeup,
+        submitted: r.submitted,
+        submittedAt: r.submitted_at,
+        saving: false,
+        error: null,
+      };
+    })
   );
 
   type SaveVars = { studentId: string; text: string; submit: boolean };
@@ -205,31 +222,37 @@ export function WriteupRosterClient({
                 />
               </div>
 
-              {/* Textarea + save state */}
+              {/* Write-up + save state */}
               <div className="min-w-0">
-                <textarea
+                <RichTextEditor
                   value={r.writeup}
-                  onChange={(e) =>
+                  onChange={(next) =>
                     setRows((prev) =>
                       prev.map((row) =>
                         row.student_id === r.student_id
-                          ? { ...row, writeup: e.target.value, error: null }
+                          ? { ...row, writeup: next, error: null }
                           : row
                       )
                     )
                   }
                   disabled={!canEdit}
                   rows={4}
+                  maxLength={WRITEUP_MAX}
+                  // NOTHING HERE AUTOSAVES — the adviser must press Save as
+                  // draft or Submit. This is the one field in the app where a
+                  // browser dying mid-sentence costs twenty minutes of work,
+                  // so the draft is kept locally and offered back on return.
+                  // Keyed by term AND student: two students on one roster must
+                  // never share a draft.
+                  draftKey={`evaluation-writeup:${termId}:${r.student_id}`}
                   placeholder={
                     canEdit
                       ? 'One holistic paragraph through the lens of this term’s virtue theme…'
                       : 'Read-only — virtue theme not set.'
                   }
-                  className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-70"
+                  aria-label={`Write-up for ${r.student_name}`}
                 />
                 <div className="mt-1 flex items-center gap-2 font-mono text-[10px] tabular-nums text-muted-foreground">
-                  <span>{r.writeup.length} chars</span>
-                  <span className="text-border">·</span>
                   <SaveState
                     saving={r.saving}
                     error={r.error}

@@ -68,11 +68,27 @@ export default function Loading() {
                 <SkeletonText variant="micro" className="w-[54%]" />
                 <Skeleton className="h-5 w-[96px] rounded-full" />
               </div>
-              {/* rows={4} textarea. */}
-              <div
-                aria-hidden
-                className="h-[104px] w-full rounded-md border border-input bg-transparent"
-              />
+              {/* rows={4} RichTextEditor: a 37px toolbar strip over a 104px
+                  content area, with the character counter under it. Drawn as
+                  the real shape rather than one bar, because getting this
+                  height wrong is thousands of pixels of jump on a 25-student
+                  section — which is what the version before this one did. */}
+              <div className="min-w-0">
+                <div
+                  aria-hidden
+                  className="w-full overflow-hidden rounded-md border border-input bg-transparent"
+                >
+                  <div className="flex items-center gap-1 border-b border-input bg-muted/40 px-1.5 py-1">
+                    {Array.from({ length: 8 }).map((_, j) => (
+                      <Skeleton key={j} className="size-7 rounded-md" />
+                    ))}
+                  </div>
+                  <div className="h-[104px] w-full" />
+                </div>
+                <div className="mt-1 flex justify-end">
+                  <SkeletonText variant="micro" className="w-[64px]" />
+                </div>
+              </div>
               <div className="flex items-start gap-2">
                 <Skeleton className="h-8 w-[108px]" />
                 <Skeleton className="h-8 w-[80px]" />
