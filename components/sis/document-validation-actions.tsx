@@ -28,7 +28,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 type Props = {
   ayCode: string;
@@ -243,8 +243,11 @@ export function DocumentValidationActions({
                   <FormItem>
                     <FormLabel>Reason for rejection</FormLabel>
                     <FormControl>
-                      <Textarea
-                        {...field}
+                      <RichTextEditor
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        disabled={field.disabled}
                         rows={5}
                         placeholder="e.g. Photo is blurry and the name is cut off at the top edge. Please re-upload a clearer scan."
                         maxLength={2000}

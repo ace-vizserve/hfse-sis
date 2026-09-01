@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   DISCOUNT_ENROLEE_TYPES,
   DiscountCodeSchema,
@@ -282,13 +282,10 @@ export function EditDiscountCodeDialog({
                 <FormItem>
                   <FormLabel>Details</FormLabel>
                   <FormControl>
-                    <Textarea
+                    <RichTextEditor
                       value={field.value ?? ''}
-                      onChange={(e) =>
-                        field.onChange(
-                          e.target.value === '' ? null : e.target.value
-                        )
-                      }
+                      onChange={(v) => field.onChange(v === '' ? null : v)}
+                      onBlur={field.onBlur}
                       rows={3}
                       placeholder="Internal notes on who this code is for, how much it's worth, etc."
                       maxLength={2000}

@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   ASSIGNMENT_CHANGE_NOTES_MAX,
   ASSIGNMENT_CHANGE_REASON_LABELS,
@@ -124,10 +124,10 @@ export function AssignmentRemovalDialog({
               <FieldLabel htmlFor="assignment-change-notes">
                 {notesRequired ? 'Notes' : 'Notes (optional)'}
               </FieldLabel>
-              <Textarea
+              <RichTextEditor
                 id="assignment-change-notes"
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={setNotes}
                 maxLength={ASSIGNMENT_CHANGE_NOTES_MAX}
                 rows={3}
                 disabled={busy}
