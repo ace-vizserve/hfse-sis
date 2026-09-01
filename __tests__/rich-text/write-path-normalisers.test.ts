@@ -8,6 +8,8 @@ import {
   validateTerminalReason,
 } from '@/lib/schemas/sis';
 
+import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
+
 /**
  * The profile schema is a full object — the route narrows it to the fields the
  * form actually changed before parsing. Mirror that here so a test about one
@@ -21,7 +23,6 @@ function parseProfileField<K extends keyof typeof ProfileUpdateSchema.shape>(
     [field]: value,
   }) as Record<K, string | null>;
 }
-import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
 
 // The WRITE path, which is where the `<p></p>` problem starts.
 //
@@ -101,7 +102,9 @@ describe('the three prose profile fields are emptied on the words', () => {
   it('leaves the plain fields measuring the plain string', () => {
     // A regression guard for the helper split: `previousSchool` is NOT prose
     // and must keep the raw-string behaviour.
-    expect(parseProfileField('previousSchool', '   ').previousSchool).toBeNull();
+    expect(
+      parseProfileField('previousSchool', '   ').previousSchool
+    ).toBeNull();
   });
 });
 
