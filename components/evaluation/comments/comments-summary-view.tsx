@@ -39,6 +39,7 @@ import {
   type CommentStatus,
 } from '@/lib/markbook/academic-summary-views';
 import type { MasterfilePayload } from '@/lib/markbook/masterfile';
+import { toPlainText } from '@/lib/rich-text';
 
 // Comments three-tier page — relocated from Academic Summary (see
 // docs/superpowers/plans/2026-07-22-academic-summary-module-redesign.md,
@@ -67,7 +68,16 @@ type StatusFilter = CommentStatus | 'all';
 // Row type for the DataTable — augments CommentRow with a stable synthetic
 // id. `getRowId` on the shared shell only receives the row (no index), so the
 // index-derived uniqueness has to be baked into the row data itself.
-type CommentTableRow = CommentRow & { _rowId: string };
+//
+// `plainText` is the write-up with its formatting stripped. The write-up is
+// stored as HTML now, and this table does three things with it that HTML
+// breaks: it sorts, it filters, and it exports to CSV — plus a `line-clamp`
+// that would clamp two lines of tags. `text` stays as stored for any surface
+// that later renders the formatting.
+type CommentTableRow = CommentRow & {
+  _rowId: string;
+  plainText: string | null;
+};
 
 function pct(n: number, total: number): string {
   return total > 0 ? `${Math.round((n / total) * 100)}% of required` : '—';
@@ -148,13 +158,28 @@ export function CommentsSummaryView({
   // headline above.
   const [termNumber, setTermNumber] = useState<number | null>(null);
   const [status, setStatus] = useState<StatusFilter>('all');
+  // Stripping formatted text is a parse through the TipTap schema, so it is
+  // done once per distinct write-up and cached, never inside an `accessorFn`
+  // or a cell (both run for every visible row on every render). The cache is
+  // keyed on the stored HTML itself — identical text strips identically — and
+  // is rebuilt when a new payload arrives.
+  const plainTextCache = useMemo(() => new Map<string, string>(), [payload]);
   const tableRows: CommentTableRow[] = useMemo(() => {
     const rows = buildCommentRows(payload, { termNumber, status });
-    return rows.map((r, i) => ({
-      ...r,
-      _rowId: `${r.studentNumber ?? r.studentName}-${r.termNumber}-${i}`,
-    }));
-  }, [payload, termNumber, status]);
+    return rows.map((r, i) => {
+      let plainText: string | null = null;
+      if (r.text != null) {
+        const cached = plainTextCache.get(r.text);
+        plainText = cached ?? toPlainText(r.text);
+        if (cached === undefined) plainTextCache.set(r.text, plainText);
+      }
+      return {
+        ...r,
+        _rowId: `${r.studentNumber ?? r.studentName}-${r.termNumber}-${i}`,
+        plainText,
+      };
+    });
+  }, [payload, termNumber, status, plainTextCache]);
 
   // Section-id lookup: name → id (for deep-linking to the evaluation section
   // editor at /evaluation/sections/{sectionId}).
@@ -274,7 +299,12 @@ export function CommentsSummaryView({
       },
       {
         id: 'comment',
-        accessorFn: (r) => r.text ?? '',
+        // ⚠ PLAIN TEXT, NOT THE STORED HTML. This accessor is the column's
+        // value everywhere — the table's own filtering and the CSV export both
+        // resolve it (`buildScreenFields` → `resolveColumnValue`), so the
+        // registrar's downloaded file would otherwise hold a column of tags.
+        // Already stripped on the row (see `tableRows`), so this is a read.
+        accessorFn: (r) => r.plainText ?? '',
         header: 'Comment',
         enableSorting: false,
         cell: ({ row }) => {
@@ -284,13 +314,13 @@ export function CommentsSummaryView({
             : '/evaluation/sections';
           return (
             <div className="flex flex-col gap-1">
-              {row.original.text == null ? (
+              {row.original.plainText == null ? (
                 <span className="font-mono text-[11px] text-muted-foreground">
                   —
                 </span>
               ) : (
                 <p className="line-clamp-2 max-w-100 text-sm text-muted-foreground">
-                  {row.original.text}
+                  {row.original.plainText}
                 </p>
               )}
               <IdentifierLink href={evalHref}>

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { subjectDisplayNamesForAy } from '@/lib/sis/subjects/display-names-for-ay';
 import {
   isEnrolledForTerm,
@@ -248,7 +249,15 @@ export async function computePublishReadiness(
     const w = writeupsByStudent.get(s.studentId);
     // Submitted AND non-empty — an emptied write-up is "missing", not submitted
     // (without this it double-counts as both missing and submitted, skewing drafted).
-    return w?.submitted === true && !!w.writeup && w.writeup.trim().length > 0;
+    //
+    // ⚠ MUST ASK THE SAME QUESTION AS `missingCommentStudents` ABOVE, and the
+    // question is about prose, not string length. The comment box stores HTML,
+    // so an adviser who submits an empty one leaves `<p></p>` behind: counted
+    // here as submitted while the line above counts them as missing, which is
+    // the double-count this comment already warns about — and `drafted` is
+    // `required − missing − submitted`, so it would go NEGATIVE on the
+    // registrar's checklist.
+    return w?.submitted === true && !isEmptyRichText(w.writeup);
   }).length;
   // Drafted = required − missing − submitted; over the same required roster so
   // it can never go negative.

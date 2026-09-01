@@ -33,6 +33,7 @@ import {
   type ChangeRequestStatus,
 } from '@/lib/markbook/change-request-status';
 import { TABLE_COPY } from '@/lib/copy/data-table';
+import { toPlainText } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -467,12 +468,27 @@ export function ChangeRequestsDataTable({
     });
   }
 
-  // Augment rows with a computed fieldLabel for faceting
+  // Augment rows with a computed fieldLabel for faceting, plus the plain-text
+  // reading of the two formatted-text fields.
+  //
+  // ⚠ THE JUSTIFICATION AND THE DECISION NOTE ARE HTML NOW, AND BOTH ARE READ
+  // TWICE — once by the cell, once by the toolbar search. Stripping is a parse
+  // through the TipTap schema, so it happens HERE, once per row per data
+  // change, and never inside a cell renderer or a `searchKeys` function: those
+  // run on every visible row on every keystroke.
+  //
+  // Search matters as much as display. `searchKeys` used to name the raw
+  // `justification` column, so typing "strong" matched every request whose
+  // author had bolded a word — the tag, not a thing anyone wrote.
   const augmentedRows = React.useMemo(
     () =>
       dateFilteredRows.map((r) => ({
         ...r,
         fieldLabel: fieldLabel(r.field_changed, r.slot_index),
+        justificationText: toPlainText(r.justification),
+        // '' rather than null when a note is present but blank, so the "is
+        // there a note?" test below is one check on the prose.
+        decisionNoteText: toPlainText(r.decision_note),
       })),
     [dateFilteredRows]
   );
@@ -618,12 +634,16 @@ export function ChangeRequestsDataTable({
             <div className="font-mono text-[10px] uppercase tracking-wider">
               {row.original.reason_category.replace(/_/g, ' ')}
             </div>
+            {/* Prose, not markup — `line-clamp` on an HTML string would put
+                the tags on screen. Formatting is deliberately not rendered
+                here: this is a scannable list, and the full write-up is in
+                the History dialog. */}
             <div className="mt-0.5 line-clamp-2">
-              {row.original.justification}
+              {row.original.justificationText}
             </div>
-            {row.original.decision_note && (
+            {row.original.decisionNoteText && (
               <div className="mt-1 line-clamp-1 text-[11px]">
-                Note: {row.original.decision_note}
+                Note: {row.original.decisionNoteText}
               </div>
             )}
             <ReviewerLine row={row.original} />
@@ -828,7 +848,7 @@ export function ChangeRequestsDataTable({
       data={augmentedRows}
       columns={columns}
       getRowId={(row) => row.id}
-      searchKeys={['requested_by_email', 'justification']}
+      searchKeys={['requested_by_email', (r) => r.justificationText]}
       searchPlaceholder="Search teacher, justification…"
       facets={FACETS}
       statusTabs={STATUS_TABS}
