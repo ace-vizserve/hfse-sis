@@ -35,7 +35,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   STUDENT_ORDER_DESCRIPTIONS,
   STUDENT_ORDER_LABELS,
@@ -159,21 +159,20 @@ export function ClassroomSettingsForm({
           <Label htmlFor="classroom-note" className="sr-only">
             Private note about this class
           </Label>
-          <Textarea
+          {/* The cap is a counter now, not a hard stop: the box holds
+              formatting, so slicing the string would cut a tag in half. The
+              same `MAX_NOTE_LENGTH` prose count is what the schema rejects on
+              save, so the counter and the refusal always agree. */}
+          <RichTextEditor
             id="classroom-note"
             value={content}
-            onChange={(e) =>
-              setContent(e.target.value.slice(0, MAX_NOTE_LENGTH))
-            }
+            onChange={setContent}
             placeholder="Jot anything worth remembering about this class — a seating quirk, who to follow up with, a reminder for next term…"
             maxLength={MAX_NOTE_LENGTH}
-            className="min-h-[160px]"
+            rows={7}
+            draftKey={`classroom-note:${sectionId}`}
             disabled={saving}
           />
-          <p className="mt-1.5 text-right font-mono text-[10px] text-muted-foreground">
-            {content.length.toLocaleString('en-SG')} /{' '}
-            {MAX_NOTE_LENGTH.toLocaleString('en-SG')}
-          </p>
         </CardContent>
         <CardFooter className="justify-end gap-3">
           {dirty && !saving && (

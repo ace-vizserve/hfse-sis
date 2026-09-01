@@ -19,15 +19,17 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import type { DisciplineRecordRow } from '@/lib/discipline/queries';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import {
+  DISCIPLINE_DETAILS_MAX,
   DISCIPLINE_RECORD_TYPE_HINTS,
   DISCIPLINE_RECORD_TYPE_LABELS,
   DISCIPLINE_RECORD_TYPE_VALUES,
+  DISCIPLINE_REMARKS_MAX,
   DisciplineRecordSchema,
   type DisciplineRecordFormValues,
 } from '@/lib/schemas/discipline';
@@ -131,6 +133,15 @@ export function DisciplineRecordForm({
 
   const recordType = form.watch('record_type');
   const isLetter = recordType === 'letter';
+
+  // "What happened" is the one long field on this form, so it is the one that
+  // hurts to lose. The key has to name the exact record: keyed on the record
+  // id when correcting, and on the class + student when filing a new one, so
+  // two half-typed incidents on two different children never see each other's
+  // draft.
+  const detailsDraftKey = `discipline-details:${
+    record ? record.id : `new:${sectionId}:${studentNumber}`
+  }`;
 
   // Switching to Incident must clear the acknowledgement, not merely hide it.
   // The zod refine and a CHECK both refuse an acknowledged incident, so a value
@@ -404,10 +415,13 @@ export function DisciplineRecordForm({
             <FormItem>
               <FormLabel>What happened</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
+                <RichTextEditor
                   value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
                   rows={4}
+                  maxLength={DISCIPLINE_DETAILS_MAX}
+                  draftKey={detailsDraftKey}
                   placeholder="Describe it as you would on the form."
                 />
               </FormControl>
@@ -423,13 +437,12 @@ export function DisciplineRecordForm({
             <FormItem>
               <FormLabel>Remarks</FormLabel>
               <FormControl>
-                <Textarea
+                <RichTextEditor
                   value={field.value ?? ''}
-                  onChange={(e) => field.onChange(orNull(e.target.value))}
+                  onChange={(v) => field.onChange(orNull(v))}
                   onBlur={field.onBlur}
-                  name={field.name}
-                  ref={field.ref}
                   rows={3}
+                  maxLength={DISCIPLINE_REMARKS_MAX}
                   placeholder="Anything to add, including what happens next."
                 />
               </FormControl>
