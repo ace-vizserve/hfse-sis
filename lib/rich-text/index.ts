@@ -39,7 +39,22 @@ function parse(html: string | null | undefined): JSONContent {
  * and comes back out unchanged.
  */
 export function toPlainText(html: string | null | undefined): string {
-  const doc = parse(html);
+  return textFromDoc(parse(html));
+}
+
+/**
+ * The same stripper, starting from a ProseMirror document instead of an HTML
+ * string.
+ *
+ * The live editor already holds a document, so the on-screen character counter
+ * uses this rather than re-parsing `editor.getHTML()` on every keystroke — a
+ * 10,000-character write-up would parse the whole field on each key.
+ *
+ * ⚠ Both entry points MUST end in the same place. If the counter and the Zod
+ * `.max()` measured differently, a teacher would watch the counter read 200 of
+ * 200 and then be told the note is too long.
+ */
+export function textFromDoc(doc: JSONContent): string {
   if (!doc.content?.length) return '';
 
   const text = generateText(doc, RICH_TEXT_EXTENSIONS, {
