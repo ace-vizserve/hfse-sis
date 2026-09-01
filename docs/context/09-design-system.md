@@ -143,12 +143,28 @@ Every UI element has a shadcn equivalent — use it. Never use raw HTML `<button
 | `Switch`                                                                                                                     | Binary on/off toggles that take effect immediately                                                          |
 | `Table` + `TableHeader` + `TableBody` + `TableRow` + `TableHead` + `TableCell`                                               | Tabular data                                                                                                |
 | `Tabs` + `TabsList` + `TabsTrigger` + `TabsContent`                                                                          | Page-level sub-navigation, content switching                                                                |
-| `Textarea`                                                                                                                   | Multi-line input                                                                                            |
+| `RichTextEditor`                                                                                                             | **Every multi-line input.** Formatting editor (TipTap) — see the note below                                 |
+| `RichText` + `LabelledRichText`                                                                                              | Read-only display of anything written in `RichTextEditor` — the app's only HTML sink                        |
+| `Textarea`                                                                                                                   | ~~Multi-line input~~ **RETIRED** — nothing imports it; use `RichTextEditor`                                 |
 | `Toaster` (`sonner.tsx` — sileo facade)                                                                                      | Toast feedback — mounted once in `app/layout.tsx`; call sites `import { toast } from 'sonner'` (KD #21/#58) |
 | `Toggle`                                                                                                                     | Pressed/unpressed view toggles                                                                              |
 | `Tooltip`                                                                                                                    | Short reveal-on-hover help                                                                                  |
 
 **Plus `@tanstack/react-table`** for filterable/sortable/paginated tables. See §8 for the canonical wrapper pattern.
+
+#### 4.1.1 Multi-line text is always the formatting editor
+
+All 35 multi-line fields in the app are `RichTextEditor`, **toolbar shown on every one of them, short confirm boxes included.** That was an explicit product decision: one control, one behaviour, nothing to remember about which field is which. Do not add a "toolbar only on the long fields" variant, and do not hide the toolbar until focus — that is the same idea wearing a hat.
+
+Toolbar: bold · italic · underline · strikethrough · bulleted, numbered and tick-box lists · one heading level · quote · divider · link · clear formatting · undo/redo · expand. **Deliberately excluded: text colour, highlight, font family and size, tables, images, text alignment.** Colour breaches Hard Rule #7, prints grey on the school's printer, and reads as a judgement the school did not intend. `__tests__/ui/rich-text-editor.test.tsx` asserts their absence, so adding one is a decision rather than a drift.
+
+Three things that follow from this, and bite if forgotten:
+
+1. **These columns hold HTML.** Anything that renders one goes through `RichText`; anything that exports, emails or ships one to the parent portal goes through `toPlainText`. A table cell under `line-clamp` wants plain text — a `<ul>` wrecks the row height.
+2. **"Empty" is `isEmptyRichText`, never `.trim().length === 0`.** An editor clicked into and left alone stores `<p></p>` — seven truthy characters. This has already produced real defects: a report card that would publish with a blank adviser comment, and a rejection that reached a parent with no reason.
+3. **Length limits measure `proseLength`, never the string.** The counter on screen shows what was typed; a `.max()` on the raw string would refuse a note the counter called fine.
+
+⚠ `Textarea` stays in `components/ui/` as the shadcn primitive but nothing imports it, and `__tests__/ui/textarea-retired.test.ts` keeps it that way. A surface that genuinely wants an unstyled plain box should remove itself from that list deliberately.
 
 ### 4.2 Legacy wrappers — avoid on new work
 
