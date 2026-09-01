@@ -19,10 +19,17 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 const DEFAULT_HORIZON_DAYS = 14;
 const MAX_HORIZON_DAYS = 90;
+
+/**
+ * The cap `PromiseSchema` enforces in `lib/schemas/p-files.ts`, which counts
+ * the writing and not the formatting. Keep the two numbers the same — a
+ * counter that disagreed with the refusal would be worse than none.
+ */
+const PROMISE_NOTE_MAX = 500;
 
 function isoDateOffset(days: number): string {
   const d = new Date();
@@ -150,13 +157,13 @@ export function PromiseDialog({
             >
               Note (optional)
             </Label>
-            <Textarea
+            <RichTextEditor
               id="promiseNote"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={setNote}
               placeholder="e.g. Mother confirmed via WhatsApp she's renewing the passport this week"
               rows={3}
-              maxLength={500}
+              maxLength={PROMISE_NOTE_MAX}
             />
           </div>
         </div>

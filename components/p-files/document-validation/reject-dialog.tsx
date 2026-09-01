@@ -12,7 +12,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { proseLength } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 
 const REJECT_MIN_CHARS = 20;
@@ -42,7 +43,12 @@ export function RejectDialog({
     }
   }, [open]);
 
-  const canConfirm = reason.trim().length >= REJECT_MIN_CHARS;
+  // Counted as writing, not as markup. The reason is typed in a formatting
+  // editor now, so `reason.length` would let a single bolded word clear a
+  // twenty-character minimum meant to stop one-word rejections reaching a
+  // parent.
+  const reasonLength = proseLength(reason);
+  const canConfirm = reasonLength >= REJECT_MIN_CHARS;
 
   async function handleConfirm() {
     if (!canConfirm) return;
@@ -65,11 +71,12 @@ export function RejectDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
-          <Textarea
+          <RichTextEditor
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={setReason}
             placeholder="Why are you rejecting this document?"
             rows={4}
+            aria-label="Reason for rejecting this document"
           />
           <p
             className={cn(
@@ -77,7 +84,7 @@ export function RejectDialog({
               canConfirm ? 'text-brand-mint' : 'text-muted-foreground'
             )}
           >
-            {reason.trim().length} / {REJECT_MIN_CHARS} min characters
+            {reasonLength} / {REJECT_MIN_CHARS} min characters
           </p>
         </div>
         <AlertDialogFooter>

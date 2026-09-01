@@ -28,8 +28,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { PASS_TYPES, type SlotMeta } from '@/lib/p-files/document-config';
+
+/**
+ * How long a replacement note is meant to be — the same 500 characters the
+ * document-promise note allows, so the two notes on this module read as one
+ * rule. It is guidance, not a gate: the counter turns red past it, and the
+ * upload route stores whatever was typed. There is no schema for this note to
+ * import the number from.
+ */
+const REPLACEMENT_NOTE_MAX = 500;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_TOTAL_SIZE = 30 * 1024 * 1024; // 30 MB
@@ -466,13 +475,14 @@ export function UploadDialog({
                     Optional
                   </span>
                 </Label>
-                <Textarea
+                <RichTextEditor
                   id={`note-${slotKey}`}
                   value={note}
-                  onChange={(e) => setNote(e.target.value)}
+                  onChange={setNote}
                   disabled={busy}
                   placeholder="Why is this being replaced? e.g. Parent emailed an updated passport."
                   rows={2}
+                  maxLength={REPLACEMENT_NOTE_MAX}
                 />
                 <p className="text-[11px] text-muted-foreground">
                   Shown in the History dialog alongside the archived file.
