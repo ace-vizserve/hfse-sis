@@ -3,6 +3,13 @@ import 'server-only';
 import { Resend } from 'resend';
 
 import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import { toPlainText } from '@/lib/rich-text';
+
+// ⚠ `reason` IS RICH TEXT AND IS STRIPPED BEFORE IT IS ESCAPED. It comes from
+// the "Reason for change" editor on the Final Grade control, so the column
+// holds HTML; escaping alone would show administrators the tags. The seven
+// values in the summary table are scalars (a student name, a subject code, the
+// grade before and after) and are escaped exactly as before.
 
 // Server-only. Sends a notification to all school_admin + superadmin users
 // (excluding the actor) when annual_letter_grade is changed on a non-examinable
@@ -102,7 +109,7 @@ export async function notifyAnnualLetterChanged(
     ${tableHtml}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Reason given:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(payload.reason)}</span>
+      <span style="color:#475569;">${escapeHtml(toPlainText(payload.reason))}</span>
     </p>
     <p style="font-size:13px;line-height:20px;color:#94A3B8;margin:0;">
       This notification was sent to all school administrators. This change is logged in the Markbook audit log.

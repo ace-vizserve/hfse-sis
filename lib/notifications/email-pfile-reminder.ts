@@ -3,6 +3,13 @@ import 'server-only';
 import { Resend } from 'resend';
 
 import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import { toPlainText } from '@/lib/rich-text';
+
+// ⚠ `rejectionReason` IS THE ONLY RICH-TEXT VALUE IN THIS FILE and is stripped
+// before it is escaped. The officer types it in the rich-text editor on the
+// reject dialog, so the column holds HTML; escaping alone would send a parent
+// a blockquote full of tags. Every other value here — slot label, student
+// name, class, the formatted expiry date — is a scalar this app composed.
 
 // Server-only. Best-effort renewal-reminder email to the parent(s) tied
 // to a P-Files document slot. Mirrors the send/dev-redirect pattern of
@@ -176,7 +183,10 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
   );
 
   if (kind === 'rejection') {
-    const rejectionReason = ctx.rejectionReason ?? '(no reason provided)';
+    // Stripped first, then defaulted: an editor opened and left alone stores
+    // `<p></p>`, which `??` would happily print as an empty quote block.
+    const rejectionReason =
+      toPlainText(ctx.rejectionReason) || '(no reason provided)';
     const sectionLabel =
       ctx.level && ctx.section
         ? `${ctx.level} ${ctx.section}`

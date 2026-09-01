@@ -5,6 +5,19 @@ import { Resend } from 'resend';
 import { env } from '@/lib/env';
 import { signActionToken } from '@/lib/change-requests/action-token';
 import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
+import { toPlainText } from '@/lib/rich-text';
+
+// ⚠ RICH-TEXT FIELDS ARE STRIPPED BEFORE THEY ARE ESCAPED.
+//
+// `justification` and `decision_note` are written in the rich-text editor, so
+// the column holds HTML. `escapeHtml` alone would show the approver the markup
+// — an HOD would open this and read `<p><strong>Please review</strong> — the
+// score was 78.</p>` instead of the sentence. `toPlainText` first, `escapeHtml`
+// second: strip the tags, then make the remaining words safe to inline.
+//
+// Only those two fields. Everything else on `RequestSummary` is a scalar the
+// editor never touched (a grade value, a column key, an email address) and is
+// escaped exactly as before.
 
 // Server-only. Four email notifications for the change-request workflow.
 // All functions are best-effort: they silently no-op when RESEND_API_KEY is
@@ -158,7 +171,7 @@ export async function notifyRequestFiled(
     ${summaryTable(req)}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Justification:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(req.justification)}</span>
+      <span style="color:#475569;">${escapeHtml(toPlainText(req.justification))}</span>
     </p>
   `;
 
@@ -217,6 +230,11 @@ export async function notifyRequestApproved(
   if (recipients.length === 0) return { sent: 0, failed: 0 };
 
   const subject = `Grade change approved — ${req.student_label ?? 'student'}`;
+  // ⚠ THE "IS THERE A NOTE?" TEST READS THE PROSE, NOT THE COLUMN. An
+  // approver who opened the note box and typed nothing stores `<p></p>` —
+  // truthy, seven characters — so testing `req.decision_note` would print an
+  // empty "Note:" heading under every such approval.
+  const decisionNote = toPlainText(req.decision_note);
   const bodyHtml = `
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       Your grade change request has been approved by
@@ -225,8 +243,8 @@ export async function notifyRequestApproved(
     </p>
     ${summaryTable(req)}
     ${
-      req.decision_note
-        ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;"><strong>Note:</strong> ${escapeHtml(req.decision_note)}</p>`
+      decisionNote
+        ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;"><strong>Note:</strong> ${escapeHtml(decisionNote)}</p>`
         : ''
     }
   `;
@@ -248,6 +266,9 @@ export async function notifyRequestRejected(
   if (!t || !teacherEmail) return { sent: 0, failed: 0 };
 
   const subject = `Grade change request declined — ${req.student_label ?? 'student'}`;
+  // Same reason as the approval email: an empty rich-text document is not a
+  // reason, so it falls through to the placeholder rather than printing blank.
+  const decisionNote = toPlainText(req.decision_note) || '(no reason provided)';
   const bodyHtml = `
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       Your grade change request was declined by
@@ -256,7 +277,7 @@ export async function notifyRequestRejected(
     ${summaryTable(req)}
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       <strong>Reason given:</strong><br/>
-      <span style="color:#475569;">${escapeHtml(req.decision_note ?? '(no reason provided)')}</span>
+      <span style="color:#475569;">${escapeHtml(decisionNote)}</span>
     </p>
   `;
   const html = renderEmailFrame({
