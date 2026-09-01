@@ -9,6 +9,7 @@ import {
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
+import { proseLength } from '@/lib/rich-text';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import {
   CORRECTION_REASONS,
@@ -345,7 +346,12 @@ export async function PATCH(
         );
       }
       const justification = (body.correction_justification ?? '').trim();
-      if (justification.length < 20) {
+      // Counted on the words. The justification is written in a formatting
+      // editor, so the raw string opens with `<p>` and closes with `</p>` —
+      // against that, this floor silently drops to thirteen typed characters,
+      // and the two client gates (use-approval-reference, totals-editor) now
+      // measure prose, so the server would have been the laxer of the three.
+      if (proseLength(justification) < 20) {
         return NextResponse.json(
           { error: 'correction_justification must be at least 20 characters' },
           { status: 400 }

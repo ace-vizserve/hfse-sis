@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { COUNTRY_NAME_SET } from '@/lib/data/countries';
+import { proseLength } from '@/lib/rich-text';
 
 // Sprint 10 Phase 2 — schemas for SIS write surfaces.
 //
@@ -1395,11 +1396,23 @@ export const DocumentValidationSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('Valid') }),
   z.object({
     status: z.literal('Rejected'),
+    // MEASURED ON THE WORDS, BOTH ENDS, AND THE FLOOR IS THE ONE THAT MATTERS.
+    //
+    // This reason is emailed to a parent, and the 20-character floor exists so
+    // they get something they can act on rather than "no". The reason is typed
+    // in a formatting editor now, so the stored string opens with `<p>` and
+    // closes with `</p>` — seven characters of budget the parent never sees.
+    // Against the raw string the floor would quietly fall to thirteen typed
+    // characters, and one bolded word would clear it outright.
     rejectionReason: z
       .string()
       .trim()
-      .min(20, 'Please explain in at least 20 characters')
-      .max(2000, 'Keep this under 2000 characters'),
+      .refine((s) => proseLength(s) >= 20, {
+        message: 'Please explain in at least 20 characters',
+      })
+      .refine((s) => proseLength(s) <= 2000, {
+        message: 'Keep this under 2000 characters',
+      }),
   }),
 ]);
 

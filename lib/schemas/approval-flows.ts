@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+
 // Ordered, configurable approval flows — the vocabulary shared by the engine,
 // the config screen and the decide route.
 //
@@ -171,16 +173,23 @@ export const APPROVAL_STAGE_LABEL_MAX = 80;
 export const DecideApprovalSchema = z
   .object({
     action: z.enum(['approve', 'reject']),
+    // Measured on the words. The note is written in a formatting editor, so
+    // the stored string carries tags the approver never typed and cannot see;
+    // counting those would refuse a note the on-screen counter calls fine.
     note: z
       .string()
       .trim()
-      .max(
-        APPROVAL_NOTE_MAX,
-        `Keep the note to ${APPROVAL_NOTE_MAX} characters or fewer.`
-      )
+      .refine((s) => proseLength(s) <= APPROVAL_NOTE_MAX, {
+        message: `Keep the note to ${APPROVAL_NOTE_MAX} characters or fewer.`,
+      })
       .optional(),
   })
-  .refine((v) => v.action !== 'reject' || (v.note?.trim().length ?? 0) > 0, {
+  // ⚠ AND THE "GIVE A REASON" RULE HAS TO ASK THE SAME QUESTION. An approver
+  // who clicks into the note box and types nothing leaves `<p></p>` behind —
+  // seven characters, which `.trim().length > 0` waves through. That is
+  // precisely the rejection-with-no-reason this rule was written to refuse,
+  // and the parent would have been shown an empty reason.
+  .refine((v) => v.action !== 'reject' || !isEmptyRichText(v.note), {
     message:
       'Say why you are turning this down. The parent is shown this as the reason.',
     path: ['note'],

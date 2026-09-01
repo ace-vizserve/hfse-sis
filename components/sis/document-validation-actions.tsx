@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { proseLength } from '@/lib/rich-text';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -54,12 +55,20 @@ const ENROLLED_STATUSES = new Set(['Enrolled', 'Enrolled (Conditional)']);
 
 // Local schema — the route-side DocumentValidationSchema is a discriminated
 // union; here we only need the Reject reason validated client-side.
+// Both bounds measure PROSE, matching the server twin. The reason is written
+// in a formatting editor, so against the raw string the 20-character floor —
+// which exists so the parent is told something they can act on — would fall to
+// thirteen typed characters, and one bolded word would clear it outright.
 const RejectFormSchema = z.object({
   rejectionReason: z
     .string()
     .trim()
-    .min(20, 'Please explain in at least 20 characters')
-    .max(2000, 'Keep this under 2000 characters'),
+    .refine((s) => proseLength(s) >= 20, {
+      message: 'Please explain in at least 20 characters',
+    })
+    .refine((s) => proseLength(s) <= 2000, {
+      message: 'Keep this under 2000 characters',
+    }),
 });
 
 type RejectFormInput = z.infer<typeof RejectFormSchema>;

@@ -1,14 +1,29 @@
 import { z } from 'zod';
 
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+
 // Trimmed, length-capped free text where '' means "cleared" rather than "blank
 // string". Exported because sibling schema modules need the identical coercion
 // (lib/schemas/teacher-assignment.ts) — a second copy would drift.
+//
+// THE CAP IS ON WHAT THE PERSON TYPED, NOT ON THE STRING WE STORE. Every field
+// built on this helper is a formatting editor now — the enrolment academics and
+// admin notes, withdrawal notes, the stage remarks, a student's home address
+// and learning needs, the discount details, teacher-assignment change notes —
+// so the column holds HTML. Measuring the raw string would spend seven of a
+// 200-character budget on the empty paragraph alone, and more on every bold
+// word, while the counter on screen shows the writing.
+//
+// That gap is not a rounding error, it is a broken screen: the counter reads
+// 200 / 200 with Save enabled, and the save comes back "too long".
 export const optionalText = (max: number) =>
   z
     .string()
     .trim()
-    .max(max)
-    .transform((s) => (s.length === 0 ? null : s))
+    .refine((s) => proseLength(s) <= max, {
+      message: `Keep this under ${max} characters`,
+    })
+    .transform((s) => (isEmptyRichText(s) ? null : s))
     .nullable();
 
 export const ENROLLMENT_STATUS_VALUES = [
