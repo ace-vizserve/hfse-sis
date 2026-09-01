@@ -8,6 +8,7 @@ import {
 import { loadLaddersBySubject } from '@/lib/approvals/inbox';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { DECLARATION_SUBJECT_TYPE } from '@/lib/declarations/approval';
+import { toPlainText } from '@/lib/rich-text';
 
 type Service = ReturnType<typeof createServiceClient>;
 
@@ -197,6 +198,12 @@ export type ParentDeclarationView = {
   /**
    * Why the school turned it down, in the approver's own words. `null` for
    * every other status — a pending or approved filing has no reason to give.
+   *
+   * ⚠ PLAIN TEXT, ALWAYS. The approver writes this note in the rich-text
+   * editor on the decision sheet, so the stored value is HTML — but the only
+   * reader of this type is the parent portal, a SEPARATE app we do not own and
+   * cannot redeploy, which renders the string as text. It is stripped in
+   * `listParentDeclarations` below.
    */
   decisionReason: string | null;
   filedAt: string;
@@ -287,10 +294,21 @@ export async function listParentDeclarations(
       hasUpload: Boolean(r.evidence_path),
       destinationCountry: (r.destination_country as string | null) ?? null,
       destinationCity: (r.destination_city as string | null) ?? null,
+      // ⚠ NOT stripped, and must not be: `parent_note` is typed by the parent
+      // in the external portal's own plain text box and stored verbatim. It
+      // never passes through our editor, so there is no markup to remove and
+      // running it through the stripper would only risk mangling what a family
+      // wrote about their child.
       parentNote: (r.parent_note as string | null) ?? null,
       status,
       statusLabel: DECLARATION_STATUS_LABELS[status],
-      decisionReason: rejectionReasonFor(ladders.get(r.id as string) ?? null),
+      // Stripped here rather than inside `rejectionReasonFor`, which stays a
+      // pure "which stage holds the reason" answer that staff surfaces can
+      // reuse. An empty editor (`<p></p>`) strips to '' and reads as no reason
+      // given, which is what it is.
+      decisionReason:
+        toPlainText(rejectionReasonFor(ladders.get(r.id as string) ?? null)) ||
+        null,
       filedAt: r.created_at as string,
     };
   });

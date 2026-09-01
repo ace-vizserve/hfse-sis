@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 // Client confirm step for the email one-click approve/reject flow. The
 // approver is NOT logged in, so the result of their click must render
@@ -190,16 +190,17 @@ export function ActConfirm({
             Reason for declining{' '}
             <span className="text-destructive">(required)</span>
           </label>
-          <Textarea
+          <RichTextEditor
             id="decision-note"
             value={note}
-            onChange={(e) => {
-              setNote(e.target.value);
+            onChange={(v) => {
+              setNote(v);
               if (noteError) setNoteError(null);
             }}
             aria-invalid={noteError ? true : undefined}
             placeholder="Let the teacher know why this request was declined."
             disabled={submitting}
+            maxLength={1000}
           />
           {noteError ? (
             <p className="text-sm text-destructive">{noteError}</p>

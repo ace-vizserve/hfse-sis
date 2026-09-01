@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 type Action = 'approve' | 'reject';
 
@@ -40,7 +40,6 @@ export function ChangeRequestDecisionButtons({
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action>('approve');
   const [note, setNote] = useState('');
-  const noteRef = useRef<HTMLTextAreaElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
   const lastNonceRef = useRef<string | null>(null);
 
@@ -52,7 +51,7 @@ export function ChangeRequestDecisionButtons({
 
   // Controlled-open: when the parent sets controlledOpen with a fresh
   // nonce, open the dialog and auto-focus per action. Reject focuses the
-  // textarea because rejectNeedsNote disables the Confirm button until a
+  // note box because rejectNeedsNote disables the Confirm button until a
   // note is typed; auto-focusing Confirm would land on a disabled button.
   useEffect(() => {
     if (!controlledOpen) return;
@@ -68,7 +67,12 @@ export function ChangeRequestDecisionButtons({
     if (!open) return;
     const t = window.setTimeout(() => {
       if (action === 'reject') {
-        noteRef.current?.focus();
+        // The rich-text box has no focusable element of its own — the
+        // editable surface lives inside the wrapper carrying the id.
+        document
+          .getElementById('decision-note')
+          ?.querySelector<HTMLElement>('[contenteditable="true"]')
+          ?.focus();
       } else {
         confirmRef.current?.focus();
       }
@@ -178,17 +182,17 @@ export function ChangeRequestDecisionButtons({
                 ({action === 'reject' ? 'required' : 'optional'})
               </span>
             </FieldLabel>
-            <Textarea
+            <RichTextEditor
               id="decision-note"
-              ref={noteRef}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={setNote}
               placeholder={
                 action === 'reject'
                   ? 'Explain why this request is being declined.'
                   : 'Optional note to the teacher and registrar.'
               }
               rows={4}
+              maxLength={1000}
             />
           </Field>
           <DialogFooter>

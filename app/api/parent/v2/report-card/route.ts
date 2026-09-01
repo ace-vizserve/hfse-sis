@@ -4,6 +4,7 @@ import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
+import { toPlainText } from '@/lib/rich-text';
 import {
   computeActivePublishedTermNumbers,
   filterPayloadToActiveTerms,
@@ -230,10 +231,33 @@ export async function GET(request: Request) {
   // A draft never reaches a parent. The builder carries `submitted` through so
   // the staff preview can flag one; this is the deliverable, so drop them.
   // (`earlierComments` applies the same rule internally.)
+  //
+  // ⚠ THE WRITE-UP LEAVES AS PLAIN TEXT, AND MUST. `comment` is
+  // `evaluation_writeups.writeup`, which the adviser now writes in the
+  // rich-text editor, so the column holds HTML. The portal that reads this
+  // field is a SEPARATE app we neither own nor deploy, and it renders the
+  // string as text — ship the HTML and every parent sees `<p><strong>` around
+  // their child's comment, with no release on our side able to fix it.
+  //
+  // Deliberately NOT accompanied by a `commentHtml` sibling. Giving the portal
+  // the formatting back is a decision for whoever owns it; this change only
+  // keeps today's contract true.
+  //
+  // ⚠ An earlier comment that strips to nothing is DROPPED rather than sent
+  // empty. `selectEarlierComments` rejects a blank write-up by trimming the
+  // stored string, which `<p></p>` passes, so the emptiness test has to happen
+  // on this side of the stripper too.
   const payload = {
     ...narrowed,
-    comments: narrowed.comments.filter((c) => c.submitted),
-    earlierComments,
+    comments: narrowed.comments
+      .filter((c) => c.submitted)
+      .map((c) => ({
+        ...c,
+        comment: c.comment == null ? null : toPlainText(c.comment),
+      })),
+    earlierComments: earlierComments
+      .map((c) => ({ ...c, comment: toPlainText(c.comment) }))
+      .filter((c) => c.comment !== ''),
   };
 
   return NextResponse.json({ payload }, { headers: cors });

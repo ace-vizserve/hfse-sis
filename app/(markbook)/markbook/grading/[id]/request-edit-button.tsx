@@ -19,7 +19,7 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   Form,
   FormControl,
@@ -53,7 +53,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import {
   CHANGE_REQUEST_FIELDS,
   ChangeRequestFormSchema,
@@ -193,10 +192,6 @@ export function RequestEditButton({
   const isSameValue =
     proposedValueTrimmed !== '' &&
     String(proposedValueTrimmed) === String(currentValueDisplay).trim();
-
-  // Live char count for the justification field (Issue 8). Reuses the
-  // existing watch so we don't add another subscription.
-  const justificationChars = (form.watch('justification') ?? '').trim().length;
 
   const busy = form.formState.isSubmitting;
 
@@ -459,27 +454,18 @@ export function RequestEditButton({
                     <FormItem>
                       <FormLabel>Justification</FormLabel>
                       <FormControl>
-                        <Textarea
-                          {...field}
+                        <RichTextEditor
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
                           placeholder="Explain in at least 20 characters why this change is needed."
                           rows={5}
+                          maxLength={2000}
                         />
                       </FormControl>
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-muted-foreground">
-                          Tell the approver why this change matters.
-                        </span>
-                        <span
-                          className={cn(
-                            'tabular-nums',
-                            justificationChars >= 20
-                              ? 'text-brand-mint'
-                              : 'text-muted-foreground'
-                          )}
-                        >
-                          {justificationChars} / 20 minimum
-                        </span>
-                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Tell the approver why this change matters.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
