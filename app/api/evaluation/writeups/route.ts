@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { EvaluationWriteupUpsertSchema } from '@/lib/schemas/evaluation';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { proseLength } from '@/lib/rich-text';
 
 // PATCH /api/evaluation/writeups — upsert one writeup by (term, student).
 //
@@ -161,7 +162,10 @@ export async function PATCH(request: NextRequest) {
         term_id: termId,
         section_id: sectionId,
         student_id: studentId,
-        length: nextWriteup?.length ?? 0,
+        // How much the adviser WROTE. The column holds HTML now, so the
+        // string length would log the tags too — a one-line bolded comment
+        // reading as a long one in the history.
+        length: proseLength(nextWriteup),
         submitted: nextSubmitted,
         ...(submit === false && wasSubmitted ? { un_submitted: true } : {}),
         ...(submit === true ? { submitted_at: nextSubmittedAt } : {}),

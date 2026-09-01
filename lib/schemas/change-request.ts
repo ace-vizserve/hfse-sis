@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+
 export const CHANGE_REQUEST_FIELDS = [
   'ww_scores',
   'pt_scores',
@@ -59,11 +61,21 @@ export const ChangeRequestFormSchema = z
     reason_category: z.enum(REASON_CATEGORIES, {
       message: 'Pick a reason',
     }),
+    // BOTH ENDS MEASURE THE EXPLANATION, NOT THE MARKUP. The box is a
+    // formatting editor, so an empty one already stores seven characters and a
+    // single bolded word clears twenty without explaining anything. The floor
+    // exists to stop "typo" being filed as a reason, so it has to count the
+    // words. (`change_requests.justification` also carries a database CHECK of
+    // 20 raw characters — left as it is; it can only ever be laxer than this.)
     justification: z
       .string()
       .trim()
-      .min(20, 'Please explain in at least 20 characters')
-      .max(2000, 'Justification is too long'),
+      .refine((value) => proseLength(value) >= 20, {
+        message: 'Please explain in at least 20 characters',
+      })
+      .refine((value) => proseLength(value) <= 2000, {
+        message: 'Justification is too long',
+      }),
     primary_approver_id: z.string().uuid('Pick a primary approver'),
     secondary_approver_id: z.string().uuid('Pick a secondary approver'),
   })
@@ -89,12 +101,22 @@ export type ChangeRequestFormInput = z.infer<typeof ChangeRequestFormSchema>;
 export const ChangeRequestActionSchema = z
   .object({
     action: z.enum(['approve', 'reject', 'cancel', 'undo_rejection']),
-    decision_note: z.string().trim().max(1000).optional(),
+    // The approver's own words, counted as words — see `justification` above.
+    decision_note: z
+      .string()
+      .trim()
+      .refine((value) => proseLength(value) <= 1000, {
+        message: 'Keep the decision note under 1,000 characters.',
+      })
+      .optional(),
   })
   .refine(
     (data) =>
       data.action !== 'reject' ||
-      (typeof data.decision_note === 'string' && data.decision_note.length > 0),
+      (typeof data.decision_note === 'string' &&
+        // An editor opened and left alone is not a reason for a rejection,
+        // however many characters `<p></p>` happens to be.
+        !isEmptyRichText(data.decision_note)),
     {
       message: 'A decision note is required when rejecting a request',
       path: ['decision_note'],

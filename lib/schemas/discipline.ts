@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+
 // Disciplinary records — action item #7 from the 2026-07-31 academics training.
 //
 // Every message here is written for a school admin, not a developer. The two
@@ -112,31 +114,39 @@ export const DisciplineRecordSchema = z
       .regex(ISO_TIME, 'Enter the time as HH:MM, or leave it blank.')
       .nullish(),
 
+    // THE THREE WRITTEN FIELDS COUNT WORDS, NOT FORMATTING. They are typed in
+    // a formatting editor, so the stored value is HTML: `<strong><em><u>`
+    // alone would eat a fifth of the 200 characters allowed for `nature`, and
+    // the filer would be told their one short line is too long with nothing on
+    // screen to explain it. The limits were written about what a person types,
+    // so that is what is measured.
     nature: z
       .string({ error: 'Say briefly what kind of thing this was.' })
       .trim()
-      .min(1, 'Say briefly what kind of thing this was.')
-      .max(
-        DISCIPLINE_NATURE_MAX,
-        `Keep this under ${DISCIPLINE_NATURE_MAX} characters — the full story goes in the details below.`
-      ),
+      // Emptiness is a prose question too: an editor opened and left alone
+      // stores `<p></p>`, which is not blank as a string but is blank as a
+      // sentence, and this field is required.
+      .refine((value) => !isEmptyRichText(value), {
+        message: 'Say briefly what kind of thing this was.',
+      })
+      .refine((value) => proseLength(value) <= DISCIPLINE_NATURE_MAX, {
+        message: `Keep this under ${DISCIPLINE_NATURE_MAX} characters — the full story goes in the details below.`,
+      }),
 
     details: z
       .string()
       .trim()
-      .max(
-        DISCIPLINE_DETAILS_MAX,
-        `That is longer than ${DISCIPLINE_DETAILS_MAX} characters. Shorten it, or link to the full report instead.`
-      )
+      .refine((value) => proseLength(value) <= DISCIPLINE_DETAILS_MAX, {
+        message: `That is longer than ${DISCIPLINE_DETAILS_MAX} characters. Shorten it, or link to the full report instead.`,
+      })
       .default(''),
 
     remarks: z
       .string()
       .trim()
-      .max(
-        DISCIPLINE_REMARKS_MAX,
-        `Keep remarks under ${DISCIPLINE_REMARKS_MAX} characters.`
-      )
+      .refine((value) => proseLength(value) <= DISCIPLINE_REMARKS_MAX, {
+        message: `Keep remarks under ${DISCIPLINE_REMARKS_MAX} characters.`,
+      })
       .nullish(),
 
     // A link to the paperwork — the incident report, the letter that went home,
