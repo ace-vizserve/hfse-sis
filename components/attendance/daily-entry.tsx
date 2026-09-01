@@ -60,7 +60,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
@@ -736,21 +736,27 @@ function DailyPanel({
                         of anything, and Submit already refuses one. Saying so
                         on the row names WHICH student, which the submit bar
                         cannot. */}
-                    <Textarea
+                    {/* ⚠ ONE EDITOR PER EXCUSED ROW, NOT PER ROW. This whole
+                        block is behind `m?.status === 'EX'`, so a class of 30
+                        mounts an editor only for the handful actually marked
+                        excused. Do not lift the field out of that condition —
+                        a rich-text field is a full editor instance, not a
+                        `<textarea>`, and 30 of them on one screen is a
+                        different page. */}
+                    <RichTextEditor
                       rows={2}
                       value={m.exNote ?? ''}
                       disabled={!m.exReason}
                       maxLength={EX_NOTE_MAX_LENGTH}
-                      onChange={(ev) =>
+                      onChange={(next) =>
                         setMark(e.enrolmentId, {
                           status: 'EX',
                           exReason: m.exReason ?? null,
-                          exNote: ev.target.value,
+                          exNote: next,
                         })
                       }
                       placeholder={EX_NOTE_PLACEHOLDER}
                       aria-label={`Note for ${e.studentName}`}
-                      className="min-h-0 w-full resize-none px-2 py-1.5 text-[12px] leading-snug"
                     />
 
                     {/* The certificate for this day — the same control the

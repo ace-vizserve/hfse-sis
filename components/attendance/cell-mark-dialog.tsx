@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import {
@@ -263,9 +263,9 @@ export function CellMarkDialog({
   filing = null,
   onPick,
 }: CellMarkDialogProps) {
-  // Draft note, committed on blur or Enter rather than per keystroke — the
-  // grid writes to an append-only ledger, so a write per character would be
-  // a row per character.
+  // Draft note, committed on blur rather than per keystroke — the grid writes
+  // to an append-only ledger, so a write per character would be a row per
+  // character.
   const [noteDraft, setNoteDraft] = useState(exNote ?? '');
   useEffect(() => setNoteDraft(exNote ?? ''), [exNote]);
 
@@ -408,8 +408,6 @@ export function CellMarkDialog({
       },
     },
   ];
-
-  const noteLeft = EX_NOTE_MAX_LENGTH - noteDraft.length;
 
   const pendingWord =
     pendingOverride === 'clear'
@@ -613,37 +611,28 @@ export function CellMarkDialog({
                           the excused mark — typing here first would write the
                           very reasonless EX the disclosure above exists to
                           prevent. */}
-                    <Textarea
+                    {/* ⚠ ENTER NO LONGER SAVES. It used to commit the note,
+                        which cost the teacher any way of writing a second
+                        line; in a formatted field Enter starts a new
+                        paragraph, and the blur save below is unchanged and is
+                        what the help line has always described. */}
+                    <RichTextEditor
                       rows={3}
                       value={noteDraft}
                       disabled={!excusedComplete}
                       maxLength={EX_NOTE_MAX_LENGTH}
-                      onChange={(e) => setNoteDraft(e.target.value)}
+                      onChange={setNoteDraft}
                       onBlur={commitNote}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          commitNote();
-                        }
-                      }}
                       placeholder={EX_NOTE_PLACEHOLDER}
                       aria-label={`Note for ${studentName} on ${dateLabel}`}
-                      className="min-h-0 resize-none border-0 bg-muted px-3 py-2 text-[13px] leading-snug shadow-none"
                     />
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-[11px] text-muted-foreground">
-                        {excusedComplete
-                          ? // The one thing about this field that is not
-                            // obvious: it saves on blur, not as you type.
-                            'Saves when you click away.'
-                          : 'Choose a reason to mark this student excused.'}
-                      </span>
-                      {excusedComplete && (
-                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                          {noteLeft} left
-                        </span>
-                      )}
-                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {excusedComplete
+                        ? // The one thing about this field that is not
+                          // obvious: it saves on blur, not as you type.
+                          'Saves when you click away.'
+                        : 'Choose a reason to mark this student excused.'}
+                    </span>
                   </div>
 
                   {/* The certificate for this day — the slot this band was

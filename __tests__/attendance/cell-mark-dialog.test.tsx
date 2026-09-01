@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellMarkDialog } from '@/components/attendance/cell-mark-dialog';
 
@@ -94,17 +94,25 @@ describe('the excused mark needs a reason', () => {
 
     // The note saves as part of the excused mark, so accepting one before a
     // reason exists would write the very row this guard prevents.
+    //
+    // ⚠ Asserted on `contenteditable`, not on `disabled`. The field is a
+    // rich-text editor now, and a locked one is a non-editable element — it
+    // has no `disabled` property at all, so the old assertion read `undefined`
+    // and would have gone on passing for a field anyone could type in.
     const note = screen.getByLabelText(NOTE_LABEL);
-    expect((note as HTMLTextAreaElement).disabled).toBe(true);
+    expect(note.getAttribute('contenteditable')).toBe('false');
     expect(
       screen.getByText('Choose a reason to mark this student excused.')
     ).toBeTruthy();
   });
 
-  it('takes a note once the mark is complete', () => {
+  it('takes a note once the mark is complete', async () => {
     setup({ status: 'EX', exReason: 'mc' });
-    const note = screen.getByLabelText(NOTE_LABEL);
-    expect((note as HTMLTextAreaElement).disabled).toBe(false);
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(NOTE_LABEL).getAttribute('contenteditable')
+      ).toBe('true')
+    );
     expect(screen.getByText('Saves when you click away.')).toBeTruthy();
   });
 
