@@ -2,7 +2,9 @@
 
 ## Overview
 
-The P-Files module is the **document repository** for enrolled students' validated records. Admissions staff come here to retrieve the current passport, birth certificate, medical exam, parent/guardian passes, etc., for any student. It is **not** a review queue — document validation (approve/reject) lives in the future Records module, where admissions staff manage the full student record.
+The P-Files module is the **document repository for everyone in an academic year** — applicants and enrolled students alike — and the place their documents are reviewed. Staff come here to retrieve the current passport, birth certificate, medical exam, parent/guardian passes, and to approve or reject what a parent has sent.
+
+⚠ **Two things this doc used to say are no longer true (KD #204, 2026-09-01).** It was enrolled-students-only, and it was "**not** a review queue — document validation lives in the future Records module". Both are superseded: applicants and students share one documents row and one 21-slot list (several slots, like Assessment Result and Interview, are pre-enrolment by nature), and review is now a **filter on the one list** (`/p-files?status=uploaded`, "Needs review") rather than a separate page. The dedicated `/p-files/document-validation` queue was deleted — it was this same list loaded a second way, which is why a student with nothing pending had no row and could not be found by search. A **Type** column tags each row `Enrolled` / `Applicant`.
 
 P-Files lives alongside the other Records modules as a separate route group (`/(p-files)/`) in the same Next.js app, sharing auth and Supabase infrastructure.
 

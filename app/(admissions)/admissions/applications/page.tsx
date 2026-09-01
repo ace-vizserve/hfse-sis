@@ -147,10 +147,7 @@ export default async function AdmissionsApplicationsPage({
   const isCurrentAy = selectedAy === currentAy.ay_code;
   const chaseStatus = parseChaseStatus(statusParam);
 
-  const allStudents = await listStudents(selectedAy, 'created_at_desc');
-  let applications = allStudents.filter((s) =>
-    isActiveFunnelStatus(s.applicationStatus)
-  );
+  let applications = await listStudents(selectedAy, 'created_at_desc');
 
   // Optional chase pre-filter — when ?status=to-follow|rejected|uploaded is
   // set, narrow the table to applicants whose docs row has at least one

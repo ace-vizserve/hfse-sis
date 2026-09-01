@@ -236,12 +236,17 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     fallbackIcon: FolderOpen,
     iconByHref: {
       '/p-files': ICON_DASHBOARD,
-      '/p-files/document-validation': ICON_DOC_VALIDATION,
       '/p-files/audit-log': ICON_AUDIT_LOG,
-      // P-Files only surfaces the renewal lens for enrolled students:
-      // already-expired + the 30/60/90-day expiring window. Initial-chase
-      // statuses (To follow, Rejected, Uploaded/Pending review) belong on
-      // Admissions per the un-enrolled vs enrolled scope split.
+      // Two lenses for enrolled students: what is waiting for a decision
+      // ('uploaded') and what has lapsed ('expired' + the 30/60/90-day
+      // window). The remaining initial-chase statuses (To follow, Rejected)
+      // stay on Admissions per the un-enrolled vs enrolled scope split.
+      //
+      // 'Needs review' takes the SHARED approval-inbox glyph rather than the
+      // document-validation one: it is the same job as every other "work
+      // waiting on your decision" row in the app, and reusing that name is
+      // what stops the two copies drifting apart.
+      '/p-files?status=uploaded': ICON_APPROVAL_INBOX,
       //
       // The three windows share one glyph ON PURPOSE — they are one page at
       // three horizons, and the number in the label is what tells them apart.

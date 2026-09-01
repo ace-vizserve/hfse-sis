@@ -41,3 +41,30 @@ P-Files detail gate relaxation + tabbed document groups + sticky-header refactor
 **Update (2026-08-05) — the chase counts finally caught up (KD #180).** Point (1) above relaxed the roster and the detail page, but `lib/sis/document-chase-queue.ts` and its drill kept filtering on `classSection IS NOT NULL`, so an enrolled-but-unplaced student rendered fine yet appeared in **no** chase count — nobody followed up their expiring or rejected documents. Harmless while unplaced students were a Directus-drift accident; not harmless once class assignment became a normal separate step (step 11 of the admission process). Both now delegate to one shared pure predicate, `lib/sis/chase-lens.ts::inChaseLensScope`, which is status-only for the p-files lens — the same rule this KD set for the roster. Expect the chase tiles to step up by the count of unplaced students.
 
 **Update (2026-07-30) — one document, one place.** Every actionable document rendered **twice** on this page: once in the action queue and again as a card below, with different button labels for the same three dialogs — "Notify" up top and "Notify parent" beneath, "Promise" / "Mark as promised", "Upload" / "Replace". Five actionable documents produced ten rows, and the duplicate labels read as different features. Resolved by giving each half one job: **the queue is where you work, the cards are the record.** The tabbed group structure above is unchanged; only the duplication and the label drift are gone. Companion to KD #168, which fixed the same "can't read it at a glance" complaint on the completeness table.
+
+### KD #204
+
+**P-Files holds everyone in the year, and document validation is a filter rather than a page (2026-09-01).** Mr Ace: _"just list them all in p-files thats fine they are sharing same documents anyways regardless if theyre enrolled or not."_
+
+**This relaxes the enrolled-only scope KD #31 set and KD #91 narrowed to status-only.** The justification is in the schema, not in preference: both audiences already share **one** `ay{YY}_enrolment_documents` row and **one** 21-slot `DOCUMENT_SLOTS` list, and several of those slots are pre-enrolment by nature — `assessmentResult` ("Assessment Result and Interview"), `birthCert`, `lastSchoolRecommendation`. The two validation queues read the _same three tables_ through two loaders that differed only by an `applicationStatus` filter; `createAdmissionsClient()` is literally `return createServiceClient()`. Nothing was ever duplicated or moved between files — the split was drawn in the UI over one table.
+
+**What changed.**
+
+1. `getDocumentDashboardData` no longer filters to enrolled; it keeps anyone with an `_enrolment_status` row. A **Type** column tags each row `Enrolled` / `Applicant` and is facet-filterable. Deliberately two values, not the `applicationStatus` vocabulary — Cancelled / Withdrawn / Rejected read as `Applicant` (enrolments that did not complete); the exact stage lives on the student's own file.
+2. `PFilesStatusFilter` gains `'uploaded'`, surfaced as **Needs review** (`/p-files?status=uploaded`). The option, the predicate and the `uploaded` count all already existed — only the P-Files type narrowing withheld them.
+3. `/p-files/document-validation` **deleted** (both tabs, layout, loading, `awaiting-queue`, `triage-pane`). Its badge moved to the Needs review link, which it already counted (it summed both audiences).
+4. The folder gate moved from `isStudentEnrolled` to a new **`studentExistsInAy`**.
+
+⚠ **Point 4 is load-bearing and was nearly missed.** Relaxing the list without the folder would have left every applicant row 404ing — the list and the detail page had two different gates. Caught while checking whether docs needed updating, not by a test.
+
+⚠ **`isStudentEnrolled` is NOT dead.** The document PATCH still uses it to choose between `documents_pre_enrolment.validate` and `documents_post_enrolment.validate`, and staff upload still requires it. Do not delete it as newly-unused.
+
+🔴 **STILL OPEN: staff cannot upload pre-enrolment documents.** `documents_pre_enrolment` has no `upload` action at all (`read`/`chase`/`validate` only), and the single upload route requires `documents_post_enrolment.upload` **plus** `isStudentEnrolled`. So `assessmentResult` — a document **the school produces** — has no staff path into an applicant's folder; either the office sends it to the parent to upload, or the slot waits for enrolment. Raised, not decided.
+
+⚠ **Triage mode went with the page.** It was the one thing the queue did that the list does not: sequential review without opening each folder. The pane still exists on the admissions side (`components/admissions/document-validation/triage-pane.tsx`) if it needs restoring onto the filtered list.
+
+⚠ **Every P-Files number now counts applicants too.** "N students" on the trust strip, the completeness percentages, the KPI tiles. That is the intended behaviour, not drift.
+
+The completeness table was also removed from the `/p-files` dashboard body — it is the entire content of the focused views, one click away, and rendering it in both places made the dashboard a second copy of a page that already exists.
+
+Guarded by `__tests__/p-files/needs-review-filter.test.tsx` (demonstrated red before green). `12-p-files-module.md`.

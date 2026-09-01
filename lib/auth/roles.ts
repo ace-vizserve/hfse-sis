@@ -114,7 +114,21 @@ const PFILES_NAV: NavSection[] = [
     // post-enrolment document capabilities while the page kept its
     // role-literal write gate. See KD #173.
     label: 'Quick filters',
-    items: [{ href: '/p-files?status=expired', label: 'Expired documents' }],
+    items: [
+      // The daily review job. Same list, filtered to students holding a
+      // document a parent has sent that nobody has decided on yet — the
+      // question /p-files/document-validation was built to answer, answered
+      // here without a second loader, and searchable, because this list
+      // carries every student whether or not they have anything pending.
+      {
+        href: '/p-files?status=uploaded',
+        label: 'Needs review',
+        // Inherited from the deleted Document validation row. The count already
+        // summed enrolled + applicant, which is exactly what this link shows.
+        badgeKey: 'pfileAwaitingVerification',
+      },
+      { href: '/p-files?status=expired', label: 'Expired documents' },
+    ],
   },
   {
     // Renewal-outreach windows — officer+ only (p_file_officer / school_admin
@@ -142,40 +156,13 @@ const PFILES_NAV: NavSection[] = [
       },
     ],
   },
-  {
-    // Workflow shortcut — dedicated validation queue for enrolled students.
-    // Badge = count of Uploaded non-expiring slots awaiting officer review.
-    // Triage mode available to p-file / superadmin; school_admin sees
-    // read-only watchlist; the actual validate/notify CTAs are gated by
-    // `canWrite` on the detail + completeness rows.
-    label: 'Quicklinks',
-    items: [
-      {
-        href: '/p-files/document-validation',
-        // Three queues, three routes. Each child is deliberately left without
-        // its own `requiresCapability`: this page's guard is an OR of two
-        // capabilities (see the NavItem comment above), and the pages
-        // themselves redirect a viewer who holds only one of them. Naming a
-        // single capability on a child here would contradict that.
-        children: [
-          {
-            href: '/p-files/document-validation/applicants',
-            label: 'Applicants',
-          },
-          {
-            href: '/p-files/document-validation',
-            label: 'Enrolled students',
-          },
-          // "Expiring soon" was a third child here. Removed as redundant —
-          // the Expiring in 30/60/90 days links above cover it, and an
-          // expiring document is not awaiting validation.
-        ],
-        label: 'Document validation',
-        badgeKey: 'pfileAwaitingVerification',
-        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
-      },
-    ],
-  },
+  // The "Quicklinks · Document validation" group stood here, with Applicants
+  // and Enrolled students as children. Both were the SAME list this module
+  // already renders, loaded a second way: one loader per audience emitting a
+  // row per uploaded DOCUMENT, which is why a student with nothing pending had
+  // no row and could not be found by search. Removed 2026-09-01 — the two
+  // queues are now `?status=uploaded` filtered by the Type tag, and its badge
+  // moved to that link (it already summed both audiences).
   {
     label: 'Admin',
     items: [{ href: '/p-files/audit-log', label: 'Audit Log' }],

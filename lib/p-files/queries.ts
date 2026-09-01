@@ -24,6 +24,9 @@ export type StudentCompleteness = {
   fullName: string;
   level: string | null;
   section: string | null;
+  /** 'Submitted' | 'Processing' | 'Enrolled' | 'Withdrawn' | … — the column
+   *  and facet that tell applicants from enrolled students in the one list. */
+  applicationStatus: string | null;
   total: number;
   complete: number;
   expired: number;
@@ -75,6 +78,36 @@ export async function isStudentEnrolled(
   if (!row) return false;
   const status = row.applicationStatus;
   return status === 'Enrolled' || status === 'Enrolled (Conditional)';
+}
+
+/**
+ * Is this enrolee in this AY's admissions tables at all — applicant or
+ * enrolled?
+ *
+ * This is what the P-Files FOLDER gates on now (2026-09-01). The list stopped
+ * being enrolled-only on Mr Ace's instruction — applicants and students share
+ * one documents row and one 21-slot list, several of which (Assessment Result
+ * and Interview, Birth Certificate, Good Moral) are pre-enrolment by nature —
+ * and a list that shows applicants while the folder 404s them is worse than
+ * either choice on its own.
+ *
+ * `isStudentEnrolled` is still the right gate for anything that asks "may this
+ * be treated as a student's record": it decides which validate capability the
+ * document PATCH requires, and it still guards staff upload.
+ */
+export async function studentExistsInAy(
+  ayCode: string,
+  enroleeNumber: string
+): Promise<boolean> {
+  const service = createServiceClient();
+  const prefix = prefixFor(ayCode);
+  const { data, error } = await service
+    .from(`${prefix}_enrolment_status`)
+    .select('"enroleeNumber"')
+    .eq('enroleeNumber', enroleeNumber)
+    .limit(1);
+  if (error) throw error;
+  return ((data as unknown[] | null)?.length ?? 0) > 0;
 }
 
 // ── Raw fetch ─────────────────────────────────────────────────────────────
@@ -187,6 +220,10 @@ function computeForStudent(
     fullName,
     level,
     section,
+    // Carried onto the row now that the list holds applicants and enrolled
+    // students together — it is the column that tells them apart, and the
+    // facet that filters between them.
+    applicationStatus: str(statusRow ?? {}, 'applicationStatus'),
     total,
     complete,
     expired,
@@ -209,16 +246,18 @@ export async function getDocumentDashboardData(ayCode: string): Promise<{
   );
   const docsByEnrolee = new Map(docs.map((d) => [str(d, 'enroleeNumber'), d]));
 
-  // Filter to enrolled students only (KD #91 — status-only gate; classSection IS NOT
-  // NULL was relaxed so legacy/imported Enrolled rows without a section still appear).
-  const enrolledApps = apps.filter((a) => {
-    const s = statusByEnrolee.get(str(a, 'enroleeNumber'));
-    if (!s) return false;
-    const appStatus = str(s, 'applicationStatus') ?? '';
-    return appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)';
-  });
+  // Everyone in the year — applicants and enrolled alike. This RELAXES KD #91's
+  // enrolled-only gate on Mr Ace's instruction (2026-09-01): applicants and
+  // students share one documents row and one 21-slot list, so P-Files is simply
+  // where those documents are worked on, before and after enrolment.
+  //
+  // A row with no status row at all is still skipped — that is a person the
+  // admissions tables do not know about, not an applicant.
+  const withStatus = apps.filter((a) =>
+    statusByEnrolee.has(str(a, 'enroleeNumber'))
+  );
 
-  const students = enrolledApps.map((app) => {
+  const students = withStatus.map((app) => {
     const statusRow = statusByEnrolee.get(str(app, 'enroleeNumber'));
     const docRow = docsByEnrolee.get(str(app, 'enroleeNumber'));
     return computeForStudent(app, statusRow, docRow);

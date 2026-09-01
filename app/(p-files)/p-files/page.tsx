@@ -68,10 +68,20 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Canonical set of status-filter values the sidebar Quicklinks use as
-// `?status=...`. P-Files only chases the renewal lens for enrolled
-// students — initial-chase statuses (To follow, Rejected, Pending review)
-// belong on Admissions, so 'expired' is the only focused-view target here.
-const STATUS_FILTER_VALUES: readonly StatusFilter[] = ['all', 'expired'];
+// `?status=...`. Two lenses for enrolled students: 'uploaded' is what is
+// waiting for a decision, 'expired' is what has lapsed. The remaining
+// initial-chase statuses (To follow, Rejected) stay on Admissions.
+//
+// 'uploaded' is what the dedicated /p-files/document-validation queue was
+// for. This list answers it better for one reason: that loader emitted a row
+// per uploaded DOCUMENT, so a student with none had no row at all and could
+// not be found by search — which is how a student with an expired passport
+// became unsearchable on the very page meant to surface them.
+const STATUS_FILTER_VALUES: readonly StatusFilter[] = [
+  'all',
+  'expired',
+  'uploaded',
+];
 
 function parseStatusFilter(raw: string | undefined): StatusFilter | undefined {
   if (!raw) return undefined;
@@ -106,6 +116,12 @@ const STATUS_VIEW_META: Record<
     title: 'Students with expired documents',
     description:
       'Passport, pass, or guardian docs whose expiry date has passed. Chase parents to re-upload current documents.',
+  },
+  uploaded: {
+    eyebrow: 'P-Files · Needs review',
+    title: 'Students with documents waiting for review',
+    description:
+      'Documents a parent has sent that nobody has approved or rejected yet. Open a student to approve or reject each one.',
   },
 };
 
@@ -547,19 +563,10 @@ export default async function PFilesDashboard({
         </CardContent>
       </Card>
 
-      <CompletenessCsvButton ayCode={selectedAy} />
-      {/* `key` forces a fresh mount when the sidebar Quicklink flips
-          `?status=...` so the table's local statusFilter state actually
-          re-initialises from the new initialStatusFilter prop. Without
-          the key, useState only consumes the prop on first mount and
-          ignores subsequent URL changes. */}
-      <DocumentCompletenessTable
-        module="p-files"
-        key={`${selectedAy}:${initialStatusFilter ?? 'all'}`}
-        students={students}
-        ayCode={isCurrentAy ? undefined : selectedAy}
-        initialStatusFilter={initialStatusFilter}
-      />
+      {/* The completeness table is NOT here. It is the whole of the focused
+          views (?status=uploaded | expired, ?expiring=30|60|90), which are one
+          click away in the sidebar — rendering it twice made the dashboard a
+          second copy of a page that already exists. */}
 
       {/* Trust strip */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

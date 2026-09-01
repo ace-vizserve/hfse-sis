@@ -539,17 +539,17 @@ describe('the guard map is really looking at something', () => {
     expect(walkPages(join(REPO_ROOT, 'app')).length).toBeGreaterThanOrEqual(40);
   });
 
-  it('found the two capability-guarded pages by name', () => {
+  it('found the capability-guarded page by name', () => {
     expect(GUARD_BY_ROUTE.has('/admissions/document-validation')).toBe(true);
-    expect(GUARD_BY_ROUTE.has('/p-files/document-validation')).toBe(true);
   });
 
-  it('reads the P-Files OR-guard as either capability', () => {
-    const guard = GUARD_BY_ROUTE.get('/p-files/document-validation')!;
-    expect([...guard.requiredAnyOf].sort()).toEqual([
-      'documents_post_enrolment.read',
-      'documents_pre_enrolment.read',
-    ]);
+  // `/p-files/document-validation` was the second one, and its OR-of-two-
+  // capabilities guard was asserted here. The page was deleted 2026-09-01:
+  // both its queues were the P-Files list loaded a second way, and they are
+  // now `?status=uploaded` on `/p-files`, which is guarded by the module's
+  // own ROUTE_ACCESS row rather than a page-level capability check.
+  it('no longer expects a P-Files document-validation guard', () => {
+    expect(GUARD_BY_ROUTE.has('/p-files/document-validation')).toBe(false);
   });
 
   it('at least one nav item declares requiresCapability', () => {

@@ -49,7 +49,7 @@ import {
 } from '@/lib/p-files/document-config';
 import {
   getStudentDocumentDetail,
-  isStudentEnrolled,
+  studentExistsInAy,
 } from '@/lib/p-files/queries';
 import {
   compareSlotsByUrgency,
@@ -97,28 +97,34 @@ export default async function StudentDocumentDetailPage({
   const selectedAy =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
 
-  // Auto-flip + the enrollment whitelist run in parallel — both are
-  // gating the detail render and have no shared state. Cached 60s.
-  // P-Files is enrolled-only (KD #31). Hide pre-enrolment applicants from
-  // the detail surface entirely — they belong on /admissions during the
-  // initial-chase phase. Whitelist: Enrolled / Enrolled (Conditional)
-  // — per KD #91 classSection is no longer required (legacy Directus rows
-  // without classSection render with an amber alert instead of 404).
-  const [, enrolled] = await Promise.all([
+  // Auto-flip + the presence check run in parallel — both gate the detail
+  // render and share no state. Cached 60s.
+  //
+  // ANYONE IN THIS YEAR'S ADMISSIONS TABLES HAS A FOLDER — applicant or
+  // enrolled (2026-09-01, Mr Ace). This RELAXES the enrolled-only gate KD #31
+  // set and KD #91 narrowed to status-only: the same documents row and the
+  // same 21 slots serve both sides of enrolment, and several slots (Assessment
+  // Result and Interview, Birth Certificate, Good Moral) are pre-enrolment by
+  // nature. The list stopped filtering to enrolled at the same time, so
+  // leaving this gate alone would have 404'd every applicant row on it.
+  //
+  // `isStudentEnrolled` is NOT dead: the document PATCH still uses it to pick
+  // which validate capability to require, and staff upload still requires it.
+  const [, exists] = await Promise.all([
     freshenAyDocuments(selectedAy),
-    isStudentEnrolled(selectedAy, enroleeNumber),
+    studentExistsInAy(selectedAy, enroleeNumber),
   ]);
 
   // Lenient AY resolution (mirrors /admissions/applications/[enroleeNumber]).
   // The enroleeNumber identifies WHO; ?ay is only a hint for which year's tables
-  // to read. If this enrolee isn't enrolled in the hinted AY — e.g. the operator
-  // switched AY, leaving a stale ?ay — don't 404: find the AY where they ARE
-  // enrolled and self-correct the URL. enroleeNumber is AY-scoped (Hard Rule #4),
+  // to read. If this enrolee isn't in the hinted AY — e.g. the operator
+  // switched AY, leaving a stale ?ay — don't 404: find the AY they ARE in
+  // and self-correct the URL. enroleeNumber is AY-scoped (Hard Rule #4),
   // so it resolves to a single AY.
-  if (!enrolled) {
+  if (!exists) {
     const otherAys = ayCodes.filter((ay) => ay !== selectedAy);
     const found = await Promise.all(
-      otherAys.map((ay) => isStudentEnrolled(ay, enroleeNumber))
+      otherAys.map((ay) => studentExistsInAy(ay, enroleeNumber))
     );
     const idx = found.findIndex(Boolean);
     if (idx === -1) notFound();

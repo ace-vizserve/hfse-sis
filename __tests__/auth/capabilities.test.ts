@@ -271,36 +271,17 @@ const MIGRATED_SITES: Array<{ file: string; capabilities: Capability[] }> = [
       'documents_pre_enrolment.validate',
     ],
   },
-  // The three queues became three routes, so the checks that were one page's
-  // `canReadPre`/`canReadPost` pair are now spread across a shared layout (the
-  // OR that admits you to the surface at all) and each queue's own page (the
-  // single capability that queue needs). A hidden tab used to be enough; a
-  // route can be typed, so each one guards itself.
-  {
-    file: 'app/(p-files)/p-files/document-validation/layout.tsx',
-    capabilities: [
-      'documents_pre_enrolment.read',
-      'documents_post_enrolment.read',
-      'documents_pre_enrolment.validate',
-      'documents_post_enrolment.validate',
-    ],
-  },
-  {
-    file: 'app/(p-files)/p-files/document-validation/page.tsx',
-    capabilities: [
-      'documents_post_enrolment.read',
-      'documents_post_enrolment.validate',
-    ],
-  },
-  {
-    file: 'app/(p-files)/p-files/document-validation/applicants/page.tsx',
-    capabilities: [
-      'documents_pre_enrolment.read',
-      'documents_pre_enrolment.validate',
-    ],
-  },
-  // The expiring queue was removed — the sidebar's Expiring in 30/60/90 days
-  // links already cover it, and an expiring document is not awaiting review.
+  // `/p-files/document-validation` had three entries here — a shared layout
+  // carrying the OR-of-two-capabilities guard, plus one page per queue. All
+  // three were deleted 2026-09-01: both queues were the P-Files completeness
+  // list loaded a second way (a row per uploaded DOCUMENT, which is why a
+  // student with nothing pending had no row and could not be searched for).
+  // The work now lives at `/p-files?status=uploaded`, guarded by the P-Files
+  // ROUTE_ACCESS row rather than a page-level capability check.
+  //
+  // The expiring queue had already gone the same way — the sidebar's Expiring
+  // in 30/60/90 days links cover it, and an expiring document is not awaiting
+  // review.
   // Phase 3
   {
     file: 'app/api/sis/ay-setup/route.ts',

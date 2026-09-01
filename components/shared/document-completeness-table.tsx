@@ -53,8 +53,18 @@ export type AdmissionsStatusFilter =
   | 'rejected'
   | 'uploaded'
   | 'expired';
-/** P-Files renewal: only 'expired' + 'all'. */
-export type PFilesStatusFilter = 'all' | 'expired';
+/**
+ * P-Files: the renewal lens ('expired') plus the review lens ('uploaded').
+ *
+ * 'uploaded' was admissions-only until the P-Files document-validation queue
+ * turned out to be this same list with a different loader — the count is
+ * already on every row (`StudentCompleteness.uploaded`) and the predicate
+ * already existed; only the option was withheld. Widening it is what lets a
+ * student with nothing awaiting review still be FOUND here, which the
+ * dedicated queue could not do: that loader emitted rows per uploaded
+ * document, so a student with none had no row and no search could match them.
+ */
+export type PFilesStatusFilter = 'all' | 'expired' | 'uploaded';
 
 // ─── Outstanding-document chips ───────────────────────────────────────────────
 // The exceptions, named in words. This is the column the officer actually
@@ -193,6 +203,24 @@ function pfilesBulkTargets(
   return out;
 }
 
+// ─── Enrolled vs applicant ───────────────────────────────────────────────────
+// Two values, on purpose. P-Files lists everyone in the year — applicants and
+// enrolled students share one documents row and one 21-slot list — so the only
+// distinction the list needs to draw is which of the two you are looking at.
+//
+// Anything that is not one of the two enrolled statuses reads as 'Applicant',
+// including Cancelled / Withdrawn / Rejected: they are people whose enrolment
+// did not complete, and splitting them out here would put the application
+// pipeline's whole vocabulary into a documents list. The exact stage is on the
+// student's own file.
+const ENROLLED_APPLICATION_STATUSES = ['Enrolled', 'Enrolled (Conditional)'];
+
+function enrolmentTag(applicationStatus: string | null | undefined): string {
+  return ENROLLED_APPLICATION_STATUSES.includes(applicationStatus ?? '')
+    ? 'Enrolled'
+    : 'Applicant';
+}
+
 // ─── Common row base (fields shared by both row types) ───────────────────────
 
 type CommonRow = {
@@ -200,6 +228,9 @@ type CommonRow = {
   studentNumber: string | null;
   fullName: string;
   level: string | null;
+  /** Both row types carry it. On P-Files it is what tells an applicant from
+   *  an enrolled student now that one list holds both. */
+  applicationStatus?: string | null;
   total: number;
   complete: number;
   expired: number;
@@ -365,6 +396,37 @@ function buildColumns(
     },
   ];
 
+  // P-Files only, and deliberately TWO values rather than the raw
+  // applicationStatus: the list holds applicants and enrolled students
+  // together, and the only thing a reviewer needs at a glance is which one
+  // they are looking at. The full stage is on the student's own file.
+  if (module === 'p-files') {
+    columns.push({
+      id: 'appStatus',
+      accessorFn: (row) => enrolmentTag(row.applicationStatus),
+      header: ({ column }) => (
+        <SortableHeader column={column}>Type</SortableHeader>
+      ),
+      meta: { label: 'Type' },
+      cell: ({ row }) => {
+        const tag = enrolmentTag(row.original.applicationStatus);
+        return (
+          <Badge
+            variant="outline"
+            className={
+              tag === 'Enrolled'
+                ? 'h-5.5 border-brand-mint/60 bg-brand-mint/15 px-2 text-[11px] font-medium text-ink'
+                : 'h-5.5 border-hairline px-2 text-[11px] font-medium text-muted-foreground'
+            }
+          >
+            {tag}
+          </Badge>
+        );
+      },
+      filterFn: facetFilterFn,
+    });
+  }
+
   // One strip in place of the 13 per-slot columns. Sorts on completeness, so
   // "worst first" is a single click on the header.
   columns.push({
@@ -502,6 +564,15 @@ export function DocumentCompletenessTable(props: Props) {
     ].sort();
   }, [module, students]);
 
+  // Built from the rows present, so a year with no applicants yet does not
+  // offer an Applicant filter that matches nothing.
+  const enrolmentTags = React.useMemo(() => {
+    if (module !== 'p-files') return [];
+    return [
+      ...new Set(students.map((s) => enrolmentTag(s.applicationStatus))),
+    ].sort();
+  }, [module, students]);
+
   const slotHeaders = React.useMemo(() => {
     const seen = new Map<string, string>();
     for (const s of students) {
@@ -599,7 +670,13 @@ export function DocumentCompletenessTable(props: Props) {
           { value: 'uploaded', label: TABLE_COPY.awaitingValidation },
           { value: 'expired', label: TABLE_COPY.lapsedReupload },
         ]
-      : [{ value: 'expired', label: TABLE_COPY.lapsedReupload }];
+      : [
+          // Same two lenses the officer actually works in: what is waiting for
+          // a decision, and what has lapsed. Ordered review-first — it is the
+          // daily job; expiry is the periodic one.
+          { value: 'uploaded', label: TABLE_COPY.awaitingValidation },
+          { value: 'expired', label: TABLE_COPY.lapsedReupload },
+        ];
 
   return (
     <Card>
@@ -620,6 +697,15 @@ export function DocumentCompletenessTable(props: Props) {
           searchPlaceholder="Search by name or number…"
           facets={[
             { columnId: 'level', label: 'Level', valueOptions: levels },
+            ...(module === 'p-files' && enrolmentTags.length > 1
+              ? [
+                  {
+                    columnId: 'appStatus',
+                    label: 'Type',
+                    valueOptions: enrolmentTags,
+                  },
+                ]
+              : []),
             ...(module === 'p-files' && sections.length > 0
               ? [
                   {
@@ -643,12 +729,17 @@ export function DocumentCompletenessTable(props: Props) {
               value: opt.value,
               label: opt.label,
               predicate: (row: CommonRow) => {
+                // Both modules count these two the same way, so they are read
+                // off CommonRow rather than through a module branch. `uploaded`
+                // is optional on CommonRow only because older admissions rows
+                // predate it — `?? 0` keeps a missing count meaning "none",
+                // never "match everything".
                 if (opt.value === 'expired') return row.expired > 0;
+                if (opt.value === 'uploaded') return (row.uploaded ?? 0) > 0;
                 if (module === 'admissions') {
                   const a = row as AdmissionsCompleteness;
                   if (opt.value === 'to-follow') return a.toFollow > 0;
                   if (opt.value === 'rejected') return a.rejected > 0;
-                  if (opt.value === 'uploaded') return a.uploaded > 0;
                 }
                 return false;
               },
