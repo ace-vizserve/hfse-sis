@@ -235,7 +235,28 @@ export function RichTextEditor({
     // A bare "hfse.edu.sg" is what people type. Without a protocol the schema
     // treats it as a relative path and the link goes nowhere.
     const href = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
-    editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+
+    // WITH NOTHING SELECTED THERE IS NO TEXT TO TURN INTO A LINK, so applying
+    // the mark alone would look like the button did nothing. Clicking Link
+    // with the caret parked somewhere is the ordinary case, not the odd one —
+    // people expect the address itself to be inserted, so insert it.
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'text',
+          text: raw,
+          marks: [{ type: 'link', attrs: { href } }],
+        })
+        // Leave the caret AFTER the link, or the next thing typed joins it.
+        .unsetMark('link')
+        .run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+    }
+
     setLinkOpen(false);
     setLinkDraft('');
   }
