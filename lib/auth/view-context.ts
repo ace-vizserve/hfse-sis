@@ -50,6 +50,35 @@ export const getViewContext = cache(async (): Promise<ViewContext | null> => {
   // exactly one — `getEntitledRoles` ignores `hasAssignments` for both, so
   // reading assignments for them would be a query whose answer is discarded.
   // That skip is what keeps this free on the two largest groups of accounts.
+  //
+  // ⚠ WHO PAYS THIS, AND WHY IT IS ACCEPTED RATHER THAN OPTIMISED (ruled
+  // 2026-09-02, Phase 2 review). Since every module layout now calls
+  // `getViewContext()` (to feed the "Switch view" popover), every
+  // `school_admin`, `academic_coordinator`, `superadmin`, `p_file_officer` and
+  // `admissions` account pays one `teacher_assignments` select on every module
+  // page view — five of the six roles, everyone but `teacher` and a parent.
+  //
+  // The Phase 1 memo (`loadEffectiveAssignmentsForUserMemo`, keyed on `userId`
+  // via React `cache()`) does NOT amortise this away, and that is not a defect
+  // in the memo: it dedupes calls made with the same `userId` WITHIN one
+  // request, but this request's other two consumers —
+  // `lib/sidebar/resolve-hidden-modules.ts` and `lib/classroom/queries.ts` —
+  // both short-circuit on `role === 'teacher'` BEFORE reading, i.e. they read
+  // for the exact complement of the roles above. So for a `school_admin`
+  // navigating the SIS module, nobody else in that request has already made
+  // this call for the memo to fold this one into — it is a genuinely new
+  // query, not a duplicate of an existing one.
+  //
+  // A cross-REQUEST cache (`unstable_cache` or similar) was considered and
+  // deliberately rejected: the loader's relief-cover window
+  // (`lib/auth/teacher-assignments.ts`'s `sgToday()`) is time-of-day
+  // dependent, and freezing that behind a cache TTL would be a correctness
+  // hazard (a colleague's cover window ending mid-day, or starting, while a
+  // stale answer is still being served) traded for saving one small, indexed,
+  // low-row-count query. Accepted as the cost of the switcher existing at all:
+  // Phase 1 already removed two-to-three `teacher_assignments` reads per
+  // navigation from the classroom path (see its report), so the app is net
+  // ahead even with this one added back for non-teacher roles.
   const couldGainTeacherLens = user.role !== null && user.role !== 'teacher';
 
   let hasAssignments = false;

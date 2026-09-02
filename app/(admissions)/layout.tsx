@@ -22,7 +22,7 @@ import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-coun
 import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import type { SidebarModule } from '@/lib/sidebar/registry';
-import { getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Cache Components (next.config.ts) requires each segment to prerender into a
@@ -36,10 +36,10 @@ export default async function AdmissionsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  const view = await getViewContext();
+  if (!view) redirect('/login');
 
-  const { id, email, role } = sessionUser;
+  const { id, email, role, entitled, activeRole } = view;
   // `p_file_officer` is admitted to this route group for exactly ONE page —
   // the applicant file at /admissions/applications/[enroleeNumber], which their
   // own document-validation queue links to (KD #173). ROUTE_ACCESS still blocks
@@ -139,6 +139,8 @@ export default async function AdmissionsLayout({
         badges={badges}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
+        entitled={entitled}
+        activeRole={activeRole}
       />
       <SidebarInset>
         <AyBanner />

@@ -78,6 +78,8 @@ function renderSidebar(counts?: Record<string, string>) {
         email="test@hfse.test"
         userId="user-1"
         counts={counts}
+        entitled={['p_file_officer']}
+        activeRole="p_file_officer"
       />
     </SidebarProvider>
   );

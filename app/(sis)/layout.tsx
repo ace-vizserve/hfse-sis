@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { ModuleSidebar } from '@/components/module-sidebar';
 import {
   SIDEBAR_GROUPS_COOKIE,
@@ -34,10 +34,10 @@ export default async function SisLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  const view = await getViewContext();
+  if (!view) redirect('/login');
 
-  const { id, email, role } = sessionUser;
+  const { id, email, role, entitled, activeRole } = view;
   // THE INVARIANT: a route-GROUP layout is the UNION of its group's
   // ROUTE_ACCESS rows, never the intersection. The layout runs before the page,
   // so it must admit every role allowed on ANY path in the group — otherwise it
@@ -135,6 +135,8 @@ export default async function SisLayout({
         counts={sidebarCounts}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
+        entitled={entitled}
+        activeRole={activeRole}
       />
       <SidebarInset>
         <AyBanner />

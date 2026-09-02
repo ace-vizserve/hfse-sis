@@ -67,6 +67,23 @@ type ModuleSidebarProps = {
   // a client-side read renders the default and then pops groups open.
   // Omitted (first ever visit) means "collapsed except the current page's group".
   expandedGroups?: readonly string[];
+  // The account's other views and which one is being rendered right now —
+  // threaded down to the profile popover's "Switch view" section (role
+  // switcher, Phase 2). Both come from `getViewContext()` server-side; `role`
+  // above keeps deciding nav visibility and everything else in this
+  // component, unchanged.
+  //
+  // ⚠ REQUIRED, DELIBERATELY NOT OPTIONAL. An earlier version defaulted a
+  // missing pair to `role ? [role] : []` / `role`, so a layout that forgot to
+  // pass them degraded silently to "one entitled view" — the switcher just
+  // vanishes, nothing throws, nothing tests red. Required means a layout that
+  // hasn't adopted `getViewContext()` fails to compile instead. It also means
+  // `activeRole: null` here can only be `getViewContext()` truthfully saying
+  // "no view" (a parent, in practice never reaching this component) — a
+  // fallback chain could not tell that apart from "the prop was never wired
+  // up" at all.
+  entitled: readonly Role[];
+  activeRole: Role | null;
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
@@ -159,6 +176,8 @@ export function ModuleSidebar({
   hiddenModules,
   capabilities,
   expandedGroups,
+  entitled,
+  activeRole,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -179,7 +198,6 @@ export function ModuleSidebar({
   );
 
   const quickAction = role ? config.quickActionByRole[role] : undefined;
-  const profileRole: Role | null = role ?? null;
 
   // Initial resolve only. After this the viewer's own toggles are authoritative
   // — forcing the active group open on every render would make clicking to
@@ -264,7 +282,11 @@ export function ModuleSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">
-        <SidebarProfile email={email} role={profileRole} />
+        <SidebarProfile
+          email={email}
+          entitled={entitled}
+          activeRole={activeRole}
+        />
       </SidebarFooter>
 
       <SidebarRail />

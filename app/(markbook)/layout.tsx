@@ -18,7 +18,7 @@ import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-coun
 import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
-import { getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Cache Components (next.config.ts) requires each segment to prerender into a
@@ -32,10 +32,10 @@ export default async function MarkbookLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  const view = await getViewContext();
+  if (!view) redirect('/login');
 
-  const { id, email, role } = sessionUser;
+  const { id, email, role, entitled, activeRole } = view;
   if (!role) redirect('/login');
   if (role === 'p_file_officer') redirect('/p-files');
 
@@ -75,6 +75,8 @@ export default async function MarkbookLayout({
         badges={sidebarBadges}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
+        entitled={entitled}
+        activeRole={activeRole}
       />
       <SidebarInset>
         <AyBanner />

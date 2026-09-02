@@ -73,6 +73,8 @@ function renderSidebar() {
         email="test@hfse.test"
         userId="user-1"
         expandedGroups={['organisation']}
+        entitled={['superadmin']}
+        activeRole="superadmin"
       />
     </SidebarProvider>
   );

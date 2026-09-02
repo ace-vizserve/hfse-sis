@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { ModuleSidebar } from '@/components/module-sidebar';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
@@ -33,10 +33,10 @@ export default async function RecordsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  const view = await getViewContext();
+  if (!view) redirect('/login');
 
-  const { id, email, role } = sessionUser;
+  const { id, email, role, entitled, activeRole } = view;
   if (
     role !== 'academic_coordinator' &&
     role !== 'school_admin' &&
@@ -99,6 +99,8 @@ export default async function RecordsLayout({
         badges={badges}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
+        entitled={entitled}
+        activeRole={activeRole}
       />
       <SidebarInset>
         <AyBanner />
