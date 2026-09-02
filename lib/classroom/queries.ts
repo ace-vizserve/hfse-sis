@@ -13,10 +13,8 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Role } from '@/lib/auth/roles';
-import {
-  loadEffectiveAssignmentsForUser,
-  type EffectiveAssignmentRow,
-} from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
+import type { EffectiveAssignmentRow } from '@/lib/auth/teacher-assignments';
 import {
   capabilityForSection,
   resolveClassroomScope,
@@ -57,10 +55,13 @@ export async function loadClassroomAccess(
   userId: string,
   sectionId: string
 ): Promise<ClassroomAccess> {
+  // The memo, not a fresh query. Every classroom page calls this independently
+  // of the layout on purpose (see the header), so one navigation into a section
+  // asked the same question three or four times over; the memo makes the
+  // belt-and-braces re-check free rather than merely cheap. Same loader, same
+  // data, same conditions — lib/auth/assignments-cache.ts.
   const assignments =
-    role === 'teacher'
-      ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
-      : [];
+    role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);
   return {
     capability: capabilityForSection(scope, sectionId),

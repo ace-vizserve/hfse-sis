@@ -59,6 +59,18 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // ── writes no database row at all ──────────────────────────────────────
+  // The active-role lens (role switcher, Phase 1). This route's entire effect
+  // is a cookie on the response — it touches no table, so there is no cached
+  // surface it could make stale. The lens itself is never cached: every read
+  // re-derives it from the session JWT plus a REQUEST-SCOPED assignments memo
+  // (React `cache()`, not `unstable_cache` — see lib/auth/assignments-cache.ts)
+  // and re-validates the cookie against entitlement, so a switch takes effect
+  // on the very next request with nothing to bust.
+  'app/api/account/active-role/route.ts':
+    'Sets a cookie and nothing else — no table is written, and the lens it ' +
+    'names is re-derived per request rather than cached.',
+
   // ── nothing that reads this table is cached ────────────────────────────
   // Checked 2026-08-31, not assumed: every reader of `student_declarations`
   // lives in lib/declarations/ (cell-filings, filing-window, parent, register,

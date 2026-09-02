@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
 import type { Role } from '@/lib/auth/roles';
 import {
   hiddenModulesForTeacher,
@@ -9,7 +9,6 @@ import {
   type TeachingProfile,
 } from '@/lib/sidebar/module-visibility';
 import type { SidebarModule } from '@/lib/sidebar/registry';
-import { createServiceClient } from '@/lib/supabase/service';
 
 export type TeacherNavScope = {
   hiddenModules: SidebarModule[];
@@ -38,10 +37,10 @@ export async function resolveTeacherNavScope(
     return { hiddenModules: [], profile: NO_TEACHING_PROFILE };
   }
   try {
-    const assignments = await loadEffectiveAssignmentsForUser(
-      createServiceClient(),
-      userId
-    );
+    // Request-scoped memo, not a fresh query: a single navigation asks this
+    // same question from the palette, this resolver and the classroom layout.
+    // Same loader, same data, same conditions — see lib/auth/assignments-cache.ts.
+    const assignments = await loadEffectiveAssignmentsForUserMemo(userId);
     return {
       hiddenModules: hiddenModulesForTeacher(role, assignments),
       profile: teachingProfileFor(role, assignments),

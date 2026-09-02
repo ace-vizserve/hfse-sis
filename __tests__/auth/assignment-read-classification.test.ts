@@ -84,6 +84,19 @@ const CLASSIFIED: Record<string, Category[]> = {
   // Diligence may file for it. The code already used the relief-inclusive
   // loader; this records the rule rather than changing it.
   'lib/declarations/staff-filing.ts': ['act'],
+  // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
+  // relief-inclusive half of the pair, so the act/name decision is made here
+  // rather than deferred to callers — which is why it is `act` and not
+  // `plumbing` like lib/auth/teacher-assignments.ts, which offers both.
+  'lib/auth/assignments-cache.ts': ['act'],
+  // The active-role lens. It reads assignments for ONE boolean — does this
+  // account have teaching work — and decides nothing about access: the lens is
+  // presentation only, and `__tests__/auth/active-role-never-authorises.test.ts`
+  // keeps it out of every gate. Filed under `act` for the relief direction,
+  // which is the question this list exists to force: a colleague standing in on
+  // someone's class has teaching work TODAY and should be offered the teacher
+  // view for the length of the cover, so substantive-only would be wrong here.
+  'lib/auth/view-context.ts': ['act'],
   'lib/approvals/resolve.ts': ['act'],
   'lib/sidebar/resolve-hidden-modules.ts': ['act'],
   'lib/sidebar/module-visibility.ts': ['act'],
@@ -195,6 +208,11 @@ const READ_PATTERNS = [
   /from\(['"]teacher_assignments['"]\)/,
   /\bloadAssignmentsForUser\b/,
   /\bloadEffectiveAssignmentsForUser\b/,
+  // The request-scoped memo (lib/auth/assignments-cache.ts) is a SEPARATE
+  // pattern because the word boundary above stops matching at `…ForUserM`.
+  // Without this line a caller could reach the relief-inclusive loader through
+  // the memo and never be classified — the exact hole this file exists to close.
+  /\bloadEffectiveAssignmentsForUserMemo\b/,
   /\bisSubjectTeacher\b/,
   /\bsubjectTeacherPairs\b/,
   /\bloadClassroomAccess\b/,
