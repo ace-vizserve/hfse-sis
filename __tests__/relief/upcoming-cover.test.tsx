@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
@@ -67,6 +67,23 @@ describe('the panel', () => {
 });
 
 describe('the loader', () => {
+  // ⚠ THE CLOCK IS PINNED FOR THE WHOLE BLOCK, and it has to be.
+  //
+  // `loadUpcomingCoverForUser` drops a cover that has already started, so every
+  // test here is implicitly relative to "today". Three tests used to pin the
+  // clock themselves and two did not — and the two that did not passed only
+  // because the real date happened to be earlier than the fixture's default
+  // `relief_started_on`. On 2026-09-03 the calendar caught up with the fixture,
+  // the loader correctly called those rows live, and both tests failed on a
+  // date rather than on a change. Pinning here rather than moving the fixture
+  // date, which would only push the same failure into the future.
+  beforeEach(() => {
+    vi.setSystemTime(new Date(`${TODAY}T02:00:00Z`));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   // A thin PostgREST stub: records the filters and returns whatever rows the
   // test hands it.
   function stub(rows: unknown[], error: { message: string } | null = null) {
@@ -123,18 +140,15 @@ describe('the loader', () => {
     // ⚠ Belt and braces on purpose. If this ever returned a live cover the
     // teacher would see the same class twice — once as theirs to work on and
     // once as "starts later" — and believe the later one.
-    vi.setSystemTime(new Date(`${TODAY}T02:00:00Z`));
     const { client } = stub([
       row({ id: 'live', relief_started_on: '2026-08-01' }),
       row({ id: 'future', relief_started_on: '2026-09-03' }),
     ]);
     const out = await loadUpcomingCoverForUser(client, 'user-1');
     expect(out.map((c) => c.assignmentId)).toEqual(['future']);
-    vi.useRealTimers();
   });
 
   it('drops one whose window has already passed', async () => {
-    vi.setSystemTime(new Date(`${TODAY}T02:00:00Z`));
     const { client } = stub([
       row({
         id: 'gone',
@@ -143,7 +157,6 @@ describe('the loader', () => {
       }),
     ]);
     expect(await loadUpcomingCoverForUser(client, 'user-1')).toEqual([]);
-    vi.useRealTimers();
   });
 
   it('sorts soonest first', async () => {
