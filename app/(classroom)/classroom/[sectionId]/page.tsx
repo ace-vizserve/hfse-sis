@@ -44,7 +44,9 @@ import {
   getSectionRoster,
   getWriteupProgressByTerm,
 } from '@/lib/evaluation/queries';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { showWrongViewNotice } from '@/components/auth/wrong-view-notice';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 // Overview — the class at a glance for the selected term. A compact
 // per-term summary + links out to the other tabs; the full roster lives on
@@ -64,19 +66,34 @@ export default async function ClassroomOverviewPage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
   // Belt-and-braces re-check (see the layout for the section-level gate);
   // Overview itself has no RLS-restricted data, but capability drives which
   // stat cards below are meaningful to show.
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    role,
+    activeRole,
     userId,
     sectionId
   );
-  if (!capability) notFound();
+  // ⚠ RENDERS NOTHING RATHER THAN 404-ing WHEN THE LAYOUT IS ALREADY EXPLAINING.
+  // The layout above this reached the same answer and is showing the
+  // wrong-view notice in place of `{children}`. Whether React ever invokes
+  // this component in that case is a Next.js rendering-order detail I did not
+  // want the fix to depend on: if it does and this threw `notFound()`, the
+  // throw would win and the viewer would get the 404 the notice exists to
+  // replace. Returning `null` is inert either way.
+  //
+  // For everyone else — every real teacher, every admin who does not teach —
+  // the layout has already 404'd, so this line is unreachable for them and the
+  // `notFound()` below still stands as the belt-and-braces guard it always was.
+  if (!capability) {
+    return showWrongViewNotice(view) ? null : notFound();
+  }
 
   const supabase = await createClient();
   const { data: section } = await supabase

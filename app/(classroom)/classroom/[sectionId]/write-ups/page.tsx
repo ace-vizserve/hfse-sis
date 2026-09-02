@@ -11,7 +11,8 @@ import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { isWriteupComplete } from '@/lib/classroom/writeups';
 import { isEmptyRichText } from '@/lib/rich-text';
 import { getSectionRoster } from '@/lib/evaluation/queries';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 // Write-ups — adviser/oversight only. Belt-and-braces: this page checks
 // canReadWriteups ITSELF (see lib/classroom/queries.ts and the attendance
@@ -35,12 +36,14 @@ export default async function ClassroomWriteupsPage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    role,
+    activeRole,
     userId,
     sectionId
   );

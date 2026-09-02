@@ -186,7 +186,15 @@ export function ModuleSidebar({
   const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
   const itemCounts = counts ?? EMPTY_COUNTS;
 
-  const sections = resolveSectionsForRole(module, role, capabilities);
+  // `role` still decides which rows the viewer is ALLOWED to see; `activeRole`
+  // decides which Markbook tree is worth showing them. Both go in — see the
+  // ruling on `resolveSectionsForRole`.
+  const sections = resolveSectionsForRole(
+    module,
+    role,
+    capabilities,
+    activeRole
+  );
   // Children are candidates too. A child route is a longer href than its
   // parent, and `findActiveHref` picks the longest match, so standing on
   // `/sis/admin/staff/accounts` highlights the child rather than the parent.

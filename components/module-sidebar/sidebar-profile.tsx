@@ -3,8 +3,6 @@
 import { Check, ChevronsUpDown, LogOut, Loader2, UserCog } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { toast } from 'sonner';
 
 import {
   Popover,
@@ -12,41 +10,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import type { Role } from '@/lib/auth/roles';
-import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { useViewSwitch } from '@/components/view-switch/use-view-switch';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-
-const ROLE_LABEL: Record<Role, string> = {
-  teacher: 'Teacher',
-  academic_coordinator: 'Academic Coordinator',
-  school_admin: 'School Admin',
-  superadmin: 'Superadmin',
-  p_file_officer: 'P-File Officer',
-  admissions: 'Admissions',
-};
-
-/**
- * The route's error codes are pinned by `__tests__/auth/active-role-route.test.ts`
- * and must stay machine-shaped there — this maps them to what a school
- * administrator is allowed to read. `not_entitled` is the reachable one: entitlement
- * is recomputed on every request, so an admin whose last class was pulled while
- * the popover was open sees this instead of the raw code. Anything unrecognised
- * (a network failure, a 500, `invalid_body` — which this UI should never trigger
- * itself) gets the same neutral fallback rather than a guess.
- */
-function switchErrorMessage(err: unknown, target: Role): string {
-  if (err instanceof ApiError && err.body && typeof err.body === 'object') {
-    const code = (err.body as Record<string, unknown>).error;
-    if (code === 'not_entitled') {
-      return `You no longer have a ${ROLE_LABEL[target]} view.`;
-    }
-    if (code === 'unauthenticated') {
-      return 'Your session has expired. Sign in again.';
-    }
-  }
-  return 'Could not switch views. Try again.';
-}
 
 type SidebarProfileProps = {
   email: string;
@@ -73,7 +41,7 @@ export function SidebarProfile({
   activeRole,
 }: SidebarProfileProps) {
   const router = useRouter();
-  const [switchingTo, setSwitchingTo] = useState<Role | null>(null);
+  const { switchingTo, switchView } = useViewSwitch(activeRole);
   const initials = deriveInitials(email);
   // The caption follows the VIEW being rendered, not the account's own role —
   // that is what keeps the current view on screen without opening the popover.
@@ -87,46 +55,13 @@ export function SidebarProfile({
     router.refresh();
   }
 
-  // Posts the chosen view, then leaves for `/` rather than refreshing this
-  // page in place. Mr Ace, 2026-09-02: "i think redirect the user to index
-  // route" — switching lenses while deep in a page that belongs to the OTHER
-  // job can leave the viewer somewhere the new view's nav offers no way back
-  // from, and `/` is coherent in either view. Because the whole point is
-  // leaving this page, there is no surface left behind to refresh — the
-  // arriving page IS the feedback, so this does not go through
-  // `useWriteAction` (same reasoning as new-sheet-form.tsx's exemption in
-  // __tests__/ui/write-feedback-coverage.test.ts). The local `switchingTo`
-  // flag stands in for its "hold a pending flag across the write" guidance,
-  // and disables every OTHER row so a double-click cannot fire two switches —
-  // the row just clicked stays focusable-but-inert rather than `disabled`, so
-  // a failed switch doesn't drop keyboard focus out to `<body>`.
-  //
-  // `/` has no sidebar and so no caption to confirm the switch landed — the
-  // success toast is that confirmation, raised BEFORE navigating so it
-  // survives the trip (`Toaster` is mounted in the root layout).
-  //
-  // `switchingTo` is cleared on both outcomes, not left for unmount to sort
-  // out: `/` bounces `p_file_officer` and `admissions` straight back to their
-  // own module (KD #173), where this layout instance can be the one that
-  // survives the round trip rather than remounting — leaving every row
-  // disabled forever if only the failure path cleared it.
-  async function switchView(next: Role) {
-    if (next === activeRole || switchingTo) return;
-    setSwitchingTo(next);
-    try {
-      await apiFetch(
-        '/api/account/active-role',
-        jsonInit('POST', { role: next })
-      );
-      toast.success(`Now viewing as ${ROLE_LABEL[next]}`);
-      router.push('/');
-      router.refresh();
-    } catch (err) {
-      toast.error(switchErrorMessage(err, next));
-    } finally {
-      setSwitchingTo(null);
-    }
-  }
+  // The switch itself lives in `useViewSwitch` — three surfaces perform it now
+  // and they must not drift. This one passes NO destination, so it lands on
+  // `/`, which is Mr Ace's original instruction (2026-09-02: "i think redirect
+  // the user to index route"): switching lenses from the profile menu can
+  // happen anywhere, including deep in a page belonging to the OTHER job, and
+  // `/` is the one place coherent in either view. The wrong-view notice is the
+  // deliberate exception and passes one — see components/auth/wrong-view-notice.tsx.
 
   return (
     <Popover>

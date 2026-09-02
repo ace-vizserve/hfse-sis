@@ -8,7 +8,8 @@ import {
   canOpenStudentRecord,
   canReadReportCard,
 } from '@/lib/classroom/scope';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 type EnrolmentRow = {
   id: string;
@@ -34,12 +35,14 @@ export default async function ClassroomStudentsPage({
 }) {
   const { sectionId } = await params;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    role,
+    activeRole,
     userId,
     sectionId
   );

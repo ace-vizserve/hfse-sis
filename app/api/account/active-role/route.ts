@@ -1,15 +1,39 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { ACTIVE_ROLE_COOKIE } from '@/lib/auth/active-role';
+import {
+  DEFAULT_SWITCH_DESTINATION,
+  safeInAppPath,
+} from '@/lib/auth/in-app-path';
 import type { Role } from '@/lib/auth/roles';
 import { getViewContext } from '@/lib/auth/view-context';
 
-// POST /api/account/active-role   body: { role: Role }
+// POST /api/account/active-role   body: { role: Role, next?: string }
 //
 // Switches which lens the viewer sees the app through — see
 // lib/auth/active-role.ts for the rule, and for why `activeRole` renders while
-// `role` still authorises. Nothing consumes the lens yet; this is the writer
-// half of the foundation.
+// `role` still authorises.
+//
+// ⚠ `next` NARROWS THE "ALWAYS GO TO `/`" RULE — IT DOES NOT REVERSE IT.
+// Mr Ace's original instruction stands for the profile popover: switching
+// lenses while deep inside a page that belongs to the OTHER job can strand
+// you, and `/` is coherent in either view. The one place that is wrong is the
+// "not one of your classes" notice, where the viewer is being told to switch
+// BECAUSE of the page they are on — bouncing them to `/` there would make them
+// find their way back to a page they had already reached. So a request with no
+// `next` behaves exactly as before, and the response shape is unchanged for it.
+//
+// ⚠ AND `next` IS AN OPEN-REDIRECT SURFACE. It is a destination chosen by the
+// client, so it is validated HERE, server-side, and the caller is expected to
+// navigate to the value this route echoes back rather than to its own input —
+// that is what makes the server the authority rather than a second opinion.
+// The check itself lives in lib/auth/in-app-path.ts with its own tests.
+//
+// A `next` that fails the check is dropped to `/` rather than 400'd: the
+// SWITCH is valid and should still happen, and refusing it would leave the
+// viewer stuck in the view they are trying to leave — a worse outcome than a
+// slightly surprising landing page, and one an attacker could trigger
+// deliberately.
 //
 // ⚠ NO `requireRole` HERE, and that is not an oversight. Every other route
 // gates on "is your role in this list"; the gate here is narrower than any
@@ -41,6 +65,7 @@ export async function POST(request: NextRequest) {
     parsed = false;
   }
   const requested = (body as { role?: unknown } | null)?.role;
+  const requestedNext = (body as { next?: unknown } | null)?.next;
 
   if (!parsed || typeof requested !== 'string') {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
@@ -50,7 +75,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'not_entitled' }, { status: 400 });
   }
 
-  const response = NextResponse.json({ activeRole: requested });
+  // Absent `next` keeps the original response shape byte for byte, which is
+  // what the profile popover and `__tests__/auth/active-role-route.test.ts`
+  // both already expect. Only a caller that ASKED for a destination is told
+  // about one.
+  const destination =
+    requestedNext === undefined
+      ? null
+      : (safeInAppPath(requestedNext) ?? DEFAULT_SWITCH_DESTINATION);
+
+  const response = NextResponse.json(
+    destination === null
+      ? { activeRole: requested }
+      : { activeRole: requested, next: destination }
+  );
   response.cookies.set(ACTIVE_ROLE_COOKIE, requested, {
     httpOnly: true,
     sameSite: 'lax',

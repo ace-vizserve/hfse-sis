@@ -8,7 +8,8 @@ import { subjectTeacherPairs } from '@/lib/auth/teacher-assignments';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadReportCard } from '@/lib/classroom/scope';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 type SubjectLite = { id: string; code: string; name: string };
@@ -43,12 +44,14 @@ export default async function ClassroomGradesPage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
   const { capability, substantiveCapability, assignments } =
-    await loadClassroomAccess(role, userId, sectionId);
+    await loadClassroomAccess(activeRole, userId, sectionId);
   if (!capability) notFound();
 
   const supabase = await createClient();

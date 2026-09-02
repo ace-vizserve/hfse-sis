@@ -733,6 +733,16 @@ const SIS_NAV: NavSection[] = [
 // renders only its own tree so links don't duplicate the switcher.
 // Markbook varies by role; P-Files and SIS render one list regardless of role
 // (access is gated by proxy.ts + ROUTE_ACCESS).
+//
+// ⚠ "BY ROLE" HERE MEANS THE ROLE BEING LOOKED THROUGH, NOT ONLY THE ACCOUNT'S.
+// `resolveSectionsForRole` (lib/auth/nav-visibility.ts) indexes this map with
+// the active-role lens, so a `school_admin` who also teaches renders the
+// `teacher` tree while in the Teacher view — and then intersects the result
+// with `isRouteAllowed(href, realRole)` so a lens can never advertise a link
+// the proxy would bounce. That intersection lives there, not here; this map
+// stays four plain hand-written trees. Keep them that way: do not merge them,
+// and do not add a fifth key for a "teaching admin", which is a lens, not a
+// role. (role-switcher Phase 3a, 2026-09-02.)
 export const NAV_BY_MODULE: {
   markbook: Partial<Record<Role, NavSection[]>>;
   'p-files': NavSection[];

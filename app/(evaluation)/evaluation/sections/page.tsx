@@ -10,7 +10,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { EvaluationSectionsList } from '@/components/evaluation/sections-list';
-import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -180,12 +179,14 @@ export default async function EvaluationSectionsPickerPage() {
     return ca.localeCompare(cb) || a.name.localeCompare(b.name);
   });
 
+  // Still scopes on the account role — lensing this page is Phase 3b's job.
+  //
+  // The comment that used to sit here claimed the row destination came from
+  // "the shared classroom scope resolver" so it could not drift from
+  // Classroom. It did not: `resolveClassroomScope` was imported and never
+  // called, and `isTeacher` below (plus the `listFormAdviserSectionIds` filter
+  // further up) decides everything. Import and claim both removed.
   const isTeacher = sessionUser.role === 'teacher';
-  // Row destination is decided from the shared classroom scope resolver
-  // (Phase 8, design doc 2026-07-28-classroom-workspace-design.md) rather
-  // than a fresh inline role check, so it can't drift from how Classroom
-  // itself decides teacher-vs-oversight. The adviser-only section scoping
-  // above is unrelated and PRESERVED as-is.
 
   const levels = Array.from(
     new Map(

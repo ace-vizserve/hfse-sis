@@ -192,3 +192,82 @@ describe('POST /api/account/active-role', () => {
     expect(await empty.json()).toEqual({ error: 'invalid_body' });
   });
 });
+
+/**
+ * The `next` destination — added so the wrong-view notice can return the
+ * viewer to the page they were already on instead of dumping them at `/`.
+ *
+ * `lib/auth/in-app-path.ts` has the exhaustive attack table
+ * (`__tests__/auth/in-app-path.test.ts`); what is asserted HERE is that the
+ * route actually applies it, that it applies it to the value the CLIENT sent,
+ * and that the switch still succeeds when the destination is refused.
+ */
+describe('POST /api/account/active-role — the destination', () => {
+  it('says nothing about a destination when none was asked for', async () => {
+    // The profile popover sends no `next` and still lands on `/`. The response
+    // shape for it is unchanged, which is what keeps the "always go to `/`"
+    // rule intact everywhere except the one surface that opted out.
+    signedInAsTeachingAdmin();
+
+    const res = await POST(post({ role: 'teacher' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ activeRole: 'teacher' });
+  });
+
+  it('echoes back an in-app destination, query string included', async () => {
+    signedInAsTeachingAdmin();
+
+    const res = await POST(
+      post({ role: 'teacher', next: '/attendance/sec-1?term_id=t2' })
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      activeRole: 'teacher',
+      next: '/attendance/sec-1?term_id=t2',
+    });
+  });
+
+  it.each([
+    ['an absolute URL', 'https://evil.example/steal'],
+    ['a protocol-relative URL', '//evil.example'],
+    ['the backslash spelling of one', '/\\evil.example'],
+    [
+      'a scheme behind a stripped tab',
+      `/${String.fromCharCode(9)}https://evil.example`,
+    ],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['a relative path', 'classroom'],
+    ['a non-string', 42],
+  ])('refuses %s and sends them to / instead', async (_label, next) => {
+    signedInAsTeachingAdmin();
+
+    const res = await POST(post({ role: 'teacher', next }));
+
+    // 200, not 400, and deliberately: the SWITCH is legitimate. Refusing it
+    // would strand the viewer in the view they are trying to leave — an
+    // outcome an attacker could trigger on purpose — so the destination is
+    // dropped to `/` and the switch goes through.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ activeRole: 'teacher', next: '/' });
+    expect(res.cookies.get(ACTIVE_ROLE_COOKIE)?.value).toBe('teacher');
+  });
+
+  it('checks entitlement before it ever looks at the destination', async () => {
+    // A destination must not become a way to make an unentitled switch look
+    // like it did something.
+    getSessionUserMock.mockResolvedValue({
+      id: 'admin-2',
+      email: 'admin2@hfse.test',
+      role: 'school_admin',
+    });
+    assignmentsMock.mockResolvedValue([]); // teaches nothing → no teacher lens
+
+    const res = await POST(post({ role: 'teacher', next: '/classroom/sec-1' }));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'not_entitled' });
+    expect(res.cookies.get(ACTIVE_ROLE_COOKIE)?.value).toBeUndefined();
+  });
+});

@@ -20,7 +20,13 @@ import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import {
+  showWrongViewNotice,
+  WrongViewNotice,
+} from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -44,15 +50,17 @@ export default async function TermSheetSummaryPage({
   // page derives its whole table from the same per-student marks, read through
   // the service client (RLS-bypassing), so it needs its own check rather than
   // inheriting one from the route group's layout.
-  const session = await getSessionUser();
-  if (!session) redirect('/login');
+  // `activeRole`, not `role` — a page renders through the lens, and this one
+  // must agree with the register it summarises (../page.tsx).
+  const viewer = await getViewContext();
+  if (!viewer) redirect('/login');
   const { capability } = await loadClassroomAccess(
-    session.role,
-    session.id,
+    viewer.activeRole,
+    viewer.id,
     sectionId
   );
-  if (!canReadAttendance(capability)) notFound();
-
+  // Section first, gate second — the notice has to be able to name the class.
+  // See app/(classroom)/classroom/[sectionId]/layout.tsx for the full note.
   const supabase = await createClient();
 
   const { data: sectionRaw } = await supabase
@@ -63,6 +71,25 @@ export default async function TermSheetSummaryPage({
   if (!sectionRaw) notFound();
   const section = sectionRaw as SectionRow;
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
+
+  // Same gate and same wording as the register this summarises — the two must
+  // not answer the same question differently.
+  if (!canReadAttendance(capability)) {
+    if (showWrongViewNotice(viewer)) {
+      return (
+        <PageShell>
+          <WrongViewNotice
+            view={viewer}
+            heading="Not one of your classes."
+            body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and ${section.name} isn't a class you advise, so its attendance summary isn't yours to read.`}
+            backHref="/attendance/sections"
+            backLabel="Back to sections"
+          />
+        </PageShell>
+      );
+    }
+    notFound();
+  }
 
   const { data: termsRaw } = await supabase
     .from('terms')

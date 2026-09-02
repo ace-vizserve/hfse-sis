@@ -7,8 +7,8 @@ import {
 } from '@/lib/classroom/queries';
 import { TIMELINE_ROW_LIMIT } from '@/lib/classroom/timeline';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
+import { getViewContext } from '@/lib/auth/view-context';
 import { sgToday } from '@/lib/dates';
-import { getSessionUser } from '@/lib/supabase/server';
 
 // Timeline — "what happened in this class," a filtered view of audit_log.
 // Every capability may open this tab (Phase 5 brief) — unlike Attendance and
@@ -28,11 +28,17 @@ export default async function ClassroomTimelinePage({
 }) {
   const { sectionId } = await params;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability } = await loadClassroomAccess(
+    activeRole,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
 
   const [rows, staffEntries] = await Promise.all([

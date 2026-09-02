@@ -234,9 +234,23 @@ const READ_PATTERNS = [
 // counting those as readers would force fake classifications for files that
 // answer nothing. Strip comments before matching. A pattern sitting after a
 // `//` on a live line is commented-out code and is correctly ignored too.
-function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-}
+//
+// 🔴 THE LOCAL TWO-REGEX STRIPPER THAT USED TO SIT HERE WAS UNSAFE FOR THIS
+// GUARD IN PARTICULAR, because this guard asserts ABSENCE: an unclassified
+// reader is a build failure, so source the stripper wrongly deletes becomes a
+// silent PASS — a new `teacher_assignments` reader would slip through
+// unclassified, and CLAUDE.md leans on this guard repeatedly to keep a
+// substitute out of an adviser's write-ups.
+//
+// It stripped `/* … */` before `// …`, so a `/*` inside a LINE comment opened
+// a block comment running to the next `*/`. Measured on the neighbouring
+// guard's scan set, that cost `lib/auth/capabilities.ts` 57 code lines and one
+// classroom layout 64 — including the call the other guard was counting.
+// No live false pass here today; swapped before there is one.
+import {
+  assertScannableFiles,
+  stripComments,
+} from '@/__tests__/_utils/strip-comments';
 
 const ROOT = process.cwd();
 const SEARCH_DIRS = ['lib', 'app', 'components'];
@@ -273,6 +287,74 @@ describe('every read of teacher_assignments is classified', () => {
     // If a refactor renamed the table or the helpers, the patterns above would
     // silently match nothing and every assertion below would pass vacuously.
     expect(discovered.length).toBeGreaterThan(40);
+  });
+
+  it('the scanner read every file that mentions the table', () => {
+    // The OTHER way this guard can pass vacuously, and the one the sanity
+    // check above cannot see. If the scanner desyncs partway through a file
+    // (an unterminated string — see `scanComments`), everything after that
+    // point is dropped from the text `discoverReaders` matches against, so a
+    // real read sitting below the desync is never discovered and never
+    // classified. Absence guard, silent deletion: a clean pass.
+    //
+    // ⚠ SCOPED BY `READ_PATTERNS` AGAINST THE RAW SOURCE — not by the literal
+    // string `teacher_assignments`, which is the mistake the first version of
+    // this check made. Most entries in READ_PATTERNS are HELPER NAMES
+    // (`loadEffectiveAssignmentsForUser`, `loadClassroomAccess`,
+    // `resolveClassroomScope`, `teachingProfileFor` …) and a file reaching the
+    // table through one of them need never contain the table's name at all.
+    // Measured at the time of writing: 32 files match a pattern and are
+    // classified while containing no literal `teacher_assignments` — including
+    // `lib/classroom/queries.ts`,
+    // `app/(classroom)/classroom/[sectionId]/layout.tsx` and
+    // `app/api/classroom/[sectionId]/notes/route.ts`. A substring scope
+    // excluded every one of them, i.e. excluded most of the surface this guard
+    // actually polices.
+    //
+    // RAW, not stripped, on purpose: the whole question is whether stripping
+    // can lose something, so the candidate set must be chosen before any
+    // stripping happens. It is therefore a superset of `discovered` (which
+    // matches the same patterns against stripped text) — prose-only mentions
+    // come along, which costs nothing here since the assertion is only "can
+    // the scanner read this file to the end".
+    //
+    // ⚠ AND STILL NOT THE WHOLE lib/app/components WALK, deliberately. Six
+    // files in this repo desync today — `lib/csv.ts`,
+    // `lib/markbook/{masterfile,academic-overview}-export.ts` and
+    // `lib/notifications/email-frame.ts` on a regex literal containing a
+    // quote; `components/attendance/drills/chart-drill-cards.tsx` and
+    // `components/classroom/classroom-settings-form.tsx` on an apostrophe in
+    // JSX prose — and not one of them matches a READ_PATTERN. Asserting over
+    // the whole walk would turn this guard red for an apostrophe in unrelated
+    // prose, which is how a guard gets deleted rather than fixed.
+    //
+    // ⚠ THE SIBLING GUARD `__tests__/sis/enrolled-statuses.test.ts` SCOPES BY
+    // RAW SUBSTRING, AND THAT IS NOT AN INCONSISTENCY: its offender pattern is
+    // `.eq('enrollment_status', 'active')`, which necessarily contains the
+    // column name, so substring and pattern-match select the same files there.
+    // Here they do not, because helpers hide the table's name.
+    const candidates: Array<{ path: string; source: string }> = [];
+    for (const dir of SEARCH_DIRS) {
+      for (const file of walk(join(ROOT, dir))) {
+        const source = readFileSync(file, 'utf8');
+        if (READ_PATTERNS.some((p) => p.test(source))) {
+          candidates.push({
+            path: relative(ROOT, file).split(sep).join('/'),
+            source,
+          });
+        }
+      }
+    }
+
+    // Ties the two sets together so they cannot quietly drift apart: every
+    // file the guard discovered as a reader must be one this check confirmed
+    // the scanner could read. Without this, a future change to either
+    // selection could leave part of `discovered` unverified again.
+    const candidatePaths = new Set(candidates.map((c) => c.path));
+    expect(discovered.filter((f) => !candidatePaths.has(f))).toEqual([]);
+    expect(candidates.length).toBeGreaterThanOrEqual(discovered.length);
+
+    assertScannableFiles(candidates);
   });
 
   it('has no unclassified reader', () => {

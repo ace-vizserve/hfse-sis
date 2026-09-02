@@ -51,6 +51,16 @@ export const ADVISER_ONLY_MODULES: readonly SidebarModule[] = [
  * modules from the people who most need them, which is the failure mode this
  * function has to avoid more than it has to avoid showing a dead tile.
  *
+ * ⚠ SO THIS ONE TAKES THE REAL ROLE, NOT THE ACTIVE-ROLE LENS, and the
+ * `role !== 'teacher'` guard below must survive any future pass through this
+ * file. A `school_admin` who also advises a class can look at the app as a
+ * teacher; if that lens reached this function she would lose whichever of
+ * Attendance / Evaluation her assignment rows do not cover — from the module
+ * switcher, the home page, the account shortcuts and the palette at once,
+ * while her account role can open all of them. Narrowing an admin is the one
+ * thing this function must never do. Its sibling `teachingProfileFor` below
+ * DOES take the lens, for the reason stated there.
+ *
  * Being a form adviser ANYWHERE is enough. Per-section capability is Classroom's
  * job; this is a coarse "is this module ever useful to you" question, and a
  * teacher who advises one class and teaches subjects in five still needs
@@ -117,6 +127,17 @@ export function hiddenModulesForTeacher(
  *    deriving anything from them would strip the people who need it most);
  *  - "anywhere" spans academic years, inheriting the no-AY-filter caveat
  *    documented on `hiddenModulesForTeacher`.
+ *
+ * ⚠ BUT IT IS KEYED ON A DIFFERENT ROLE FROM ITS SIBLING, and this is the one
+ * place the two part company. `resolveTeacherNavScope` passes `hiddenModulesForTeacher`
+ * the REAL role and passes THIS the VIEW role (`activeRole`). The asymmetry is
+ * not an oversight: hiding a module is a narrowing that must never touch an
+ * admin, while the profile is an ADDITIVE answer about the job in front of you
+ * — a teaching admin looking through the Teacher lens is doing adviser or
+ * subject work, and an empty profile would leave her home page with none of
+ * the actions that view exists to offer. The `role !== 'teacher'` guard below
+ * therefore stays exactly as it is; what changed is only which role reaches
+ * it. Ruled 2026-09-02 (role-switcher Phase 3a).
  */
 export type TeachingProfile = {
   /**

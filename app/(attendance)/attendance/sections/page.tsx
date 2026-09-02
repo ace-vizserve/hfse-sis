@@ -9,7 +9,6 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
-import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { Badge } from '@/components/ui/badge';
@@ -36,12 +35,23 @@ type LevelLite = {
 export default async function AttendanceSectionsListPage() {
   const session = await getSessionUser();
   const role = session?.role ?? null;
+  // ⚠ THIS PAGE STILL SCOPES ON THE ACCOUNT ROLE, AND IT IS THE REASON THE
+  // WRONG-VIEW NOTICE EXISTS. A teaching admin in the Teacher view is a
+  // `school_admin` here, so `isTeacherOnly` is false and she is shown every
+  // section in the school — each row linking to a register that her lensed
+  // `/attendance/[sectionId]` now refuses. Lensing this page is Phase 3b's
+  // job (it needs its own review: it drives the heading, the empty state, the
+  // KPI label, `showAdviser` and the adviser-only section query, not just the
+  // row destination). Until then the notice on the register is what stops that
+  // being a bare 404.
+  //
+  // The comment that used to sit here claimed the row destination came from
+  // "the shared classroom scope resolver" so it could not drift from
+  // Classroom. It did not: `resolveClassroomScope` was imported and never
+  // called, and `isTeacherOnly` below decides everything. The import is gone
+  // and so is the claim — a wrong comment about where a decision lives costs
+  // more than no comment at all.
   const isTeacherOnly = role === 'teacher';
-  // Row destination is decided from the shared classroom scope resolver
-  // (Phase 8, design doc 2026-07-28-classroom-workspace-design.md) rather
-  // than a fresh inline role check, so it can't drift from how Classroom
-  // itself decides teacher-vs-oversight. The adviser-only section scoping
-  // just below is unrelated and PRESERVED as-is.
 
   const supabase = await createClient();
 

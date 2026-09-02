@@ -4,7 +4,8 @@ import { Sunrise, Sun, Moon } from 'lucide-react';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
@@ -27,19 +28,38 @@ import { RecentActionsPanel } from '@/components/home/recent-actions-panel';
 // across every module. See
 // docs/superpowers/specs/2026-07-24-home-role-overview-design.md.
 export default async function Home() {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  const viewer = await getViewContext();
+  if (!viewer) redirect('/login');
 
-  const { role, email, id: userId } = sessionUser;
+  const { role, email, id: userId, activeRole } = viewer;
 
   // One assignment read, two answers: which modules are dead ends for this
   // teacher (the home page must agree with the switchers), and which of the two
   // teaching jobs they hold — an adviser and a subject teacher share the
   // `teacher` role but do different work, so the actions and to-dos below are
   // filtered per job, not per role (KD #160).
+  //
+  // ⚠ TWO ROLES GO IN, DELIBERATELY. `hiddenModules` is keyed on the real
+  // `role` — hiding a module only ever narrows a teacher, and must never take
+  // Attendance away from an admin who happens to be looking as one. `profile`
+  // is keyed on `activeRole`: in the Teacher view a teaching admin IS doing
+  // adviser or subject work, and leaving it on her account role would give her
+  // a Teacher home page with none of the teacher actions on it. The full
+  // ruling is on `resolveTeacherNavScope`.
+  //
+  // 🔴 AND TODAY THAT SECOND HALF IS DORMANT — it is wired, it is correct, and
+  // it changes nothing on screen yet. Both consumers select their ROWS by the
+  // real role before `profile` is ever consulted: `getQuickActions` indexes
+  // `QUICK_ACTIONS[role]`, and `getHomeTodos` filters on
+  // `source.roles.includes(role)`. Every row carrying a `requires:` or reading
+  // `profile.*` sits under a `teacher`-only key, so a `school_admin` never
+  // reaches one whatever her profile says. Lensing those two tables is Phase
+  // 3b's job and needs its own review — do not do it from here, and do not
+  // conclude from the quiet home page that this argument is wrong.
   const { hiddenModules, profile } = await resolveTeacherNavScope(
-    sessionUser.role,
-    userId
+    role,
+    userId,
+    activeRole
   );
 
   // Same forced-redirect rules as before — unchanged from the plain-picker

@@ -15,9 +15,9 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
-import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { createClient } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
@@ -30,9 +30,9 @@ type LevelLite = {
 };
 
 export default async function ClassroomListPage() {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, role, activeRole } = view;
 
   const supabase = await createClient();
 
@@ -40,11 +40,28 @@ export default async function ClassroomListPage() {
   // assignments; oversight roles skip the query (resolveClassroomScope
   // ignores assignments for them) and admissions/p_file_officer never
   // reach this page at all (ROUTE_ACCESS excludes them).
+  //
+  // ⚠ Both the guard and the resolver key on `activeRole`, not `role` — a page
+  // renders through the lens ("role authorises, activeRole renders"). For a
+  // school_admin who also advises a class, the Teacher view now lists HER
+  // classes; the Admin view still lists all 32. The guard has to move with the
+  // resolver: leaving it on `role` would hand the resolver an empty array and
+  // resolve her to "no classes at all". The real `role` is still destructured
+  // above, because the copy below has to know what she could switch back to.
+  //
+  // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`.
+  // For the only viewer who now takes this branch and did not before — a
+  // teaching admin in the Teacher view — `getViewContext()` above has already
+  // issued exactly this query to decide her entitlement, so the direct call
+  // was a guaranteed duplicate of a read sitting one line up. Same loader,
+  // same data, same conditions (lib/auth/assignments-cache.ts); the memo keys
+  // on the userId string, which is why the service client has to be built
+  // inside it rather than passed in.
   const assignments =
-    role === 'teacher'
-      ? await loadEffectiveAssignmentsForUser(createServiceClient(), userId)
+    activeRole === 'teacher'
+      ? await loadEffectiveAssignmentsForUserMemo(userId)
       : [];
-  const scope = resolveClassroomScope(role, assignments);
+  const scope = resolveClassroomScope(activeRole, assignments);
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -121,14 +138,20 @@ export default async function ClassroomListPage() {
 
   const totalStudents = rows.reduce((n, r) => n + r.active, 0);
 
-  const emptyTitle =
-    !scope.isOversight && role === 'teacher'
-      ? 'No classes assigned yet.'
-      : 'No classes yet.';
-  const emptyBody =
-    !scope.isOversight && role === 'teacher'
-      ? "You don't have any classes assigned this year. Ask your coordinator to add you as a form adviser or subject teacher."
-      : 'Classes appear here once sections are created and a roster is synced.';
+  // Every string on this page follows the VIEW, not the account role. The
+  // heading used to be an unconditional "Your classes." shown to a coordinator
+  // standing over all 32 of them; these two used to key on `role`, which would
+  // now contradict the list underneath them — a teaching admin in the Teacher
+  // view with nothing assigned would be told "Classes appear here once
+  // sections are created", which is not her problem and not her fix.
+  const isTeacherView = !scope.isOversight && activeRole === 'teacher';
+  const heading = scope.isOversight ? 'All classes.' : 'Your classes.';
+  const emptyTitle = isTeacherView
+    ? 'No classes assigned yet.'
+    : 'No classes yet.';
+  const emptyBody = isTeacherView
+    ? "You don't have any classes assigned this year. Ask your coordinator to add you as a form adviser or subject teacher."
+    : 'Classes appear here once sections are created and a roster is synced.';
 
   return (
     <PageShell>
@@ -138,7 +161,7 @@ export default async function ClassroomListPage() {
             Classroom
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Your classes.
+            {heading}
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Everything about a class — roster, attendance, grading, and

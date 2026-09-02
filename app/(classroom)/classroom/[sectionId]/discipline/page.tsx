@@ -24,7 +24,8 @@ import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import { listDisciplineForSection } from '@/lib/discipline/queries';
 import { toPlainText } from '@/lib/rich-text';
 import { listHouses } from '@/lib/sis/houses';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 type RosterRow = {
   index_number: number;
@@ -53,13 +54,19 @@ export default async function ClassroomDisciplinePage({
 }) {
   const { sectionId } = await params;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
   // Same floor as the API and the tab: any capability on this section at all.
   // Filing is open to whoever was in charge at the venue, so reading is too.
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability } = await loadClassroomAccess(
+    activeRole,
+    userId,
+    sectionId
+  );
   if (!canReadRoster(capability)) notFound();
 
   const supabase = await createClient();

@@ -1,7 +1,13 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import {
+  showWrongViewNotice,
+  WrongViewNotice,
+} from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadReportCard } from '@/lib/classroom/scope';
@@ -21,12 +27,12 @@ export default async function ReportCardPreview({
 }) {
   const { studentId } = await params;
   const { term: termParam } = await searchParams;
-  const [supabase, sessionUser] = await Promise.all([
+  const [supabase, viewer] = await Promise.all([
     createClient(),
-    getSessionUser(),
+    getViewContext(),
   ]);
-  if (!sessionUser) redirect('/login');
-  const role = sessionUser.role;
+  if (!viewer) redirect('/login');
+  const role = viewer.role;
   const canManage =
     role === 'academic_coordinator' ||
     role === 'school_admin' ||
@@ -63,15 +69,42 @@ export default async function ReportCardPreview({
   // Runs after buildReportCard because the section is only known from the
   // payload's primary enrolment — which is also the right section to gate on
   // for a mid-year transfer: access follows the student's CURRENT adviser.
+  //
+  // ⚠ Keyed on `activeRole` — a page renders through the lens. In the Teacher
+  // view a teaching admin gets the card for the classes she is the adviser of
+  // record for and 404s on the rest; the Admin view is unchanged. `role` above
+  // still decides `canManage`, which is an oversight privilege and stays with
+  // the account.
   const { substantiveCapability } = await loadClassroomAccess(
-    role,
-    sessionUser.id,
+    viewer.activeRole,
+    viewer.id,
     payload.section.id
   );
   // substantiveCapability, not capability. The card names the regular adviser
   // and carries the comment they wrote, so it stays theirs while they are away;
   // a substitute covering the class gets 404 here.
-  if (!canReadReportCard(substantiveCapability)) notFound();
+  //
+  // ⚠ Reachable by CLICKING, not just by typing a URL: the report-card roster
+  // (components/markbook/report-cards/report-cards-roster-table.tsx) is not
+  // lensed, so in the Teacher view it still lists every student the account
+  // role can see and links each one here. The notice names the student rather
+  // than the class — "Aria Tan" is what she clicked, and telling her about a
+  // section she may not have thought about would be answering a question she
+  // did not ask.
+  if (!canReadReportCard(substantiveCapability)) {
+    if (showWrongViewNotice(viewer)) {
+      return (
+        <WrongViewNotice
+          view={viewer}
+          heading="Not one of your students."
+          body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and you're not the form adviser for ${payload.student.full_name}, so their report card isn't yours to open.`}
+          backHref="/markbook/report-cards"
+          backLabel="Back to report cards"
+        />
+      );
+    }
+    notFound();
+  }
 
   // Which term to view: the URL param wins; otherwise the canonical resolver
   // (KD #116) decides. It used to read `.eq('is_current', true)` and fall back

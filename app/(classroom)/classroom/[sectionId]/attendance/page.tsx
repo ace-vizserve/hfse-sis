@@ -15,7 +15,8 @@ import { getSectionAttendanceSummary } from '@/lib/attendance/queries';
 import { canReadAttendance } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 // Attendance — adviser/oversight only. Belt-and-braces: this page checks
 // canReadAttendance ITSELF (not just the layout, which only asserts "any
@@ -36,11 +37,18 @@ export default async function ClassroomAttendancePage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note; the shape is identical on every
+  // classroom tab.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability } = await loadClassroomAccess(
+    activeRole,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
   if (!canReadAttendance(capability)) notFound();
 

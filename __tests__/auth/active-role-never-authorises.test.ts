@@ -89,9 +89,37 @@ function read(relativePath: string): string {
 // Same approach as __tests__/auth/assignment-read-classification.test.ts: prose
 // about the rule is welcome, code acting on it is not. A match sitting after a
 // `//` is commented-out code and is correctly ignored too.
-function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-}
+//
+// 🔴 THE TWO-REGEX VERSION THAT USED TO LIVE HERE WAS BLINDING THIS GUARD, and
+// this file is the one where that matters most: every assertion below says the
+// lens is ABSENT, so any code the stripper deletes by mistake reads as a pass.
+// The old version stripped `/* … */` before `// …`, so a `/*` sitting inside a
+// LINE comment opened a block comment that ran to the next `*/`.
+//
+// ⚠ MEASURED, because the first version of this note guessed and got it wrong.
+// Counting non-blank lines surviving each stripper, over the six gates plus
+// two files that merely contain the pattern:
+//
+//     lib/auth/capabilities.ts   199 → 142   (57 code lines dropped)
+//     lib/auth/roles.ts          767 → 767   (NONE — see below)
+//     the other four gates       unchanged
+//
+// So `lib/auth/capabilities.ts` — which holds `can()`, the function that
+// returns the capability yes/no — was the real victim among the gates, and
+// `lib/auth/roles.ts` was NOT, despite carrying six `//`-comments containing a
+// `/*`. Containing the pattern is not sufficient: a swallowing block only
+// forms when a later `*/` exists to close it, and roles.ts happens never to
+// pair one. The worst hit anywhere was
+// `app/(classroom)/classroom/[sectionId]/layout.tsx` (144 → 80, 64 lines),
+// which is what dropped the sibling guard's call count from 14 to 13.
+//
+// Found while fixing the same bug in
+// `__tests__/auth/view-role-call-sites.test.ts`. Swapped for the one-pass
+// scanner, which is state-tracked and correct in both directions.
+import {
+  assertScannableFiles,
+  stripComments,
+} from '@/__tests__/_utils/strip-comments';
 
 // The cookie's name and its constant count as the lens too: a gate could read
 // the raw cookie itself and never write `activeRole` once.
@@ -103,8 +131,35 @@ describe('activeRole never reaches an authorization gate', () => {
     // A sanity check on the list itself: `isRouteAllowed` and `can()` are the
     // two functions that return the yes/no, and both live one file upstream of
     // the callers people think of as "the gate".
-    expect(read('lib/auth/roles.ts')).toMatch(/export function isRouteAllowed/);
-    expect(read('lib/auth/capabilities.ts')).toMatch(/export function can\(/);
+    //
+    // ⚠ ASSERTED ON THE STRIPPED TEXT, NOT THE RAW FILE, and that distinction
+    // is the entire point of the check. Every real assertion below runs on
+    // stripped source; a sanity check run on the RAW file proves the symbol
+    // exists on disk while saying nothing about whether the scanner could
+    // still see it. That is exactly how the old stripper passed for the wrong
+    // reason — it deleted 57 lines of `capabilities.ts` and this check, reading
+    // the raw file, cheerfully confirmed `can()` was there.
+    expect(stripComments(read('lib/auth/roles.ts'))).toMatch(
+      /export function isRouteAllowed/
+    );
+    expect(stripComments(read('lib/auth/capabilities.ts'))).toMatch(
+      /export function can\(/
+    );
+  });
+
+  it('the scanner read every gate and every route to the end', () => {
+    // The other half of "not vacuous": a file the scanner desynced on (an
+    // unterminated string, or a regex literal containing a quote) has its tail
+    // silently dropped, and for an ABSENCE guard a dropped tail is a PASS.
+    // Checked over this guard's own scan set — the six gates plus every API
+    // route — so the coverage claim below is about text that was actually read.
+    const routes = globSync(['app/api/**/route.ts'], { cwd: ROOT });
+    assertScannableFiles(
+      [...GATES, ...routes].map((path) => ({
+        path: path.split('\\').join('/'),
+        source: read(path),
+      }))
+    );
   });
 
   it('does not gate the surfaces Phase 3 threads the lens through', () => {

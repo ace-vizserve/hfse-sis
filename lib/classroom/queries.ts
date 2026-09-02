@@ -7,6 +7,16 @@
 // capability it hasn't itself checked. See lib/classroom/scope.ts for why
 // that check exists at all, and the "Authorization" section of the Phase 4
 // brief for why the layout's own check isn't sufficient on its own.
+//
+// ⚠ `role` IS A PARAMETER AND MUST STAY ONE. Pages and layouts pass
+// `activeRole` (the active-role lens — what to SHOW); the five
+// `app/api/classroom/**` routes pass the real JWT `role` (what to ALLOW).
+// Those routes fetch with the SERVICE client, so RLS is not behind this call —
+// this is the whole boundary. If this function read `getViewContext()` itself,
+// a cookie would be deciding route access, and
+// `__tests__/auth/active-role-never-authorises.test.ts` would not catch it:
+// that guard bans a route from naming the lens, and a route delegating to a
+// helper never names it. Ruled 2026-09-02 (role-switcher Phase 3a).
 
 import 'server-only';
 
@@ -50,6 +60,10 @@ export type ClassroomAccess = {
   assignments: EffectiveAssignmentRow[];
 };
 
+/**
+ * @param role The role to resolve access FOR — `activeRole` from a page or
+ *   layout, the real JWT `role` from an API route. See the header.
+ */
 export async function loadClassroomAccess(
   role: Role | null,
   userId: string,
@@ -60,6 +74,13 @@ export async function loadClassroomAccess(
   // asked the same question three or four times over; the memo makes the
   // belt-and-braces re-check free rather than merely cheap. Same loader, same
   // data, same conditions — lib/auth/assignments-cache.ts.
+  //
+  // The `=== 'teacher'` test is on the role PASSED IN, which is the point: a
+  // teaching admin viewing a class through the Teacher lens now takes this
+  // branch and gets her real per-section capability, where before she fell
+  // through to the oversight one. For her the memo also stops being a
+  // formality — `getViewContext()` has already made this exact call earlier in
+  // the same request to decide her entitlement, so this one folds into it.
   const assignments =
     role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);

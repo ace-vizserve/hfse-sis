@@ -104,11 +104,23 @@ const EXEMPT = [
  * own explanation. A guard that punishes you for describing the bug you fixed
  * teaches people to stop writing the explanation.
  */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '') // block comments, incl. JSDoc
-    .replace(/(^|[^:])\/\/.*$/gm, '$1'); // line comments, sparing "://" in URLs
-}
+// 🔴 THE LOCAL TWO-REGEX STRIPPER IS GONE — same defect as every other guard
+// in this repo carried, and unsafe here for the same reason: this test asserts
+// ABSENCE, so source the stripper wrongly deletes is a silent PASS, and what
+// slips through is a reader that drops late enrollees.
+//
+// It stripped `/* … */` before `// …`, so a `/*` inside a LINE comment opened
+// a block comment that ran to the next `*/`, deleting everything between.
+//
+// ⚠ ITS `(^|[^:])\/\/` RULE — sparing `://` in URLs — is NOT lost, it is
+// subsumed. That regex existed to stop a URL inside a string being read as a
+// comment; the one-pass scanner tracks string literals properly, so a URL in a
+// string is never a comment start in the first place, and a bare `//` in code
+// still is. Strictly wider coverage, not a trade.
+import {
+  assertScannableFiles,
+  stripComments,
+} from '@/__tests__/_utils/strip-comments';
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -147,5 +159,47 @@ describe('no production reader silently drops late enrollees', () => {
         `late enrollees. Use ENROLLED_STATUSES with .in(...) — or add the file to ` +
         `EXEMPT above with a reason if active-only is genuinely intended.`
     ).toEqual([]);
+  });
+
+  it('the scanner read every file that mentions enrollment_status', () => {
+    // The vacuity check this guard never had. A file the scanner desyncs on
+    // has its tail dropped before the offender pattern is ever matched
+    // against it — so an `.eq('enrollment_status', 'active')` sitting below
+    // the desync point simply is not there, and the guard passes.
+    //
+    // ⚠ Scoped to files that mention the column, not to the whole walk. Six
+    // files in this repo desync today and not one of them mentions
+    // `enrollment_status` (four on a regex literal containing a quote, two on
+    // an apostrophe in JSX prose — listed in
+    // `__tests__/auth/assignment-read-classification.test.ts`). Asserting over
+    // the whole walk would fail this guard for reasons unrelated to what it
+    // protects, which is how guards end up deleted rather than fixed.
+    //
+    // ⚠ THE SIBLING GUARD SCOPES BY ITS PATTERN LIST, NOT BY A SUBSTRING, AND
+    // THE DIFFERENCE IS DELIBERATE RATHER THAN AN INCONSISTENCY.
+    // `assignment-read-classification` polices a dozen HELPER NAMES
+    // (`loadClassroomAccess`, `resolveClassroomScope`, …), so a file can reach
+    // `teacher_assignments` without ever containing that string — a substring
+    // scope there missed 32 real files. This guard's offender pattern is
+    // `.eq('enrollment_status', 'active')`, which cannot be written without
+    // the column name in it, so substring and pattern-match select exactly the
+    // same files. Raw substring is the simpler spelling of the identical set,
+    // and it is only correct HERE because of that property.
+    const candidates: Array<{ path: string; source: string }> = [];
+    for (const root of ROOTS) {
+      const dir = path.join(process.cwd(), root);
+      if (!fs.existsSync(dir)) continue;
+      for (const file of walk(dir)) {
+        const source = fs.readFileSync(file, 'utf8');
+        if (source.includes('enrollment_status')) {
+          candidates.push({
+            path: path.relative(process.cwd(), file).split(path.sep).join('/'),
+            source,
+          });
+        }
+      }
+    }
+    expect(candidates.length).toBeGreaterThan(10);
+    assertScannableFiles(candidates);
   });
 });

@@ -69,6 +69,14 @@ export const getViewContext = cache(async (): Promise<ViewContext | null> => {
   // this call for the memo to fold this one into — it is a genuinely new
   // query, not a duplicate of an existing one.
   //
+  // ⚠ AMENDED BY PHASE 3a, and only in the direction that helps. Those two
+  // short-circuits now test the role their PAGE call sites pass, which is
+  // `activeRole` — so for a teaching admin actually working in the Teacher
+  // lens they no longer skip, and their read folds into this one via the memo
+  // instead of being a second query. The paragraph above still describes the
+  // common case exactly: an admin in the Admin lens, where `activeRole` is the
+  // account role and nothing downstream reads assignments at all.
+  //
   // A cross-REQUEST cache (`unstable_cache` or similar) was considered and
   // deliberately rejected: the loader's relief-cover window
   // (`lib/auth/teacher-assignments.ts`'s `sgToday()`) is time-of-day

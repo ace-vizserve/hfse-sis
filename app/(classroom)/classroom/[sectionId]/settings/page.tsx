@@ -1,8 +1,9 @@
 import { notFound, redirect } from 'next/navigation';
 
 import { ClassroomSettingsForm } from '@/components/classroom/classroom-settings-form';
+import { getViewContext } from '@/lib/auth/view-context';
 import { getClassroomNote, loadClassroomAccess } from '@/lib/classroom/queries';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 // Settings — the two Phase 6 preferences, and nothing policy-shaped (no
 // grading/attendance/lock/ranking behaviour lives here — see the design
@@ -17,11 +18,17 @@ export default async function ClassroomSettingsPage({
 }) {
   const { sectionId } = await params;
 
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
-  const { id: userId, role } = sessionUser;
+  // `activeRole`, not `role` — a page renders through the lens. See the
+  // section layout for the full note.
+  const view = await getViewContext();
+  if (!view) redirect('/login');
+  const { id: userId, activeRole } = view;
 
-  const { capability } = await loadClassroomAccess(role, userId, sectionId);
+  const { capability } = await loadClassroomAccess(
+    activeRole,
+    userId,
+    sectionId
+  );
   if (!capability) notFound();
 
   // Cookie-scoped client, deliberately — RLS (migration 094) is what

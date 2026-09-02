@@ -52,7 +52,13 @@ import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import {
+  showWrongViewNotice,
+  WrongViewNotice,
+} from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -74,9 +80,9 @@ export default async function SectionAttendancePage({
   const sp = await searchParams;
   const view: 'sheet' | 'daily' = sp.view === 'daily' ? 'daily' : 'sheet';
 
-  const session = await getSessionUser();
-  if (!session) redirect('/login');
-  const role = session.role;
+  const viewer = await getViewContext();
+  if (!viewer) redirect('/login');
+  const role = viewer.role;
 
   // Per-SECTION form-adviser gate, not per-person. Attendance is adviser work
   // at the DB (`is_adviser_for_section`, 005_rls_teacher_scoping.sql) and in the
@@ -89,8 +95,52 @@ export default async function SectionAttendancePage({
   // question is never "is this user an adviser somewhere" — it's "in THIS
   // section." `resolveClassroomScope` answers that, and resolves adviser over
   // subject when they hold both here.
-  const { capability } = await loadClassroomAccess(role, session.id, sectionId);
-  if (!canReadAttendance(capability)) notFound();
+  //
+  // ⚠ Keyed on `activeRole` — a page renders through the lens. A teaching admin
+  // in the Teacher view reaches this register only for a class she actually
+  // advises, and 404s on the rest; in the Admin view she reaches all of them as
+  // before. The narrowing is one-way and cannot cost her a save: the write
+  // route (`assertAdviserForSections`) and RLS both still run on her real role.
+  const { capability } = await loadClassroomAccess(
+    viewer.activeRole,
+    viewer.id,
+    sectionId
+  );
+  // The section is read BEFORE the gate so the wrong-view notice can name the
+  // class — see the note in app/(classroom)/classroom/[sectionId]/layout.tsx.
+  // A section id that does not exist stays a plain 404 in every view.
+  const supabase = await createClient();
+
+  const { data: sectionRaw } = await supabase
+    .from('sections')
+    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
+    .eq('id', sectionId)
+    .maybeSingle();
+  if (!sectionRaw) notFound();
+  const section = sectionRaw as SectionRow;
+  const level = Array.isArray(section.level) ? section.level[0] : section.level;
+
+  // ⚠ THIS IS THE GATE THE CRITICAL WAS ABOUT. In the Teacher view a teaching
+  // admin's Attendance sidebar is still the ADMIN's (only Markbook's nav is
+  // lensed), and `/attendance/sections` lists every section in the school
+  // because it scopes on her real role — so every row on that list linked
+  // straight into this 404. It is a setting she chose and can undo, so say so.
+  if (!canReadAttendance(capability)) {
+    if (showWrongViewNotice(viewer)) {
+      return (
+        <PageShell>
+          <WrongViewNotice
+            view={viewer}
+            heading="Not one of your classes."
+            body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and ${section.name} isn't a class you advise, so its attendance isn't yours to take.`}
+            backHref="/attendance/sections"
+            backLabel="Back to sections"
+          />
+        </PageShell>
+      );
+    }
+    notFound();
+  }
 
   const canWriteNc =
     role === 'academic_coordinator' ||
@@ -105,17 +155,6 @@ export default async function SectionAttendancePage({
     role === 'superadmin';
   const canEditAcademics = canEditBusCare; // same gate as bus_no/classroom_officer_role
   const canEditAdmin = role === 'school_admin' || role === 'superadmin';
-
-  const supabase = await createClient();
-
-  const { data: sectionRaw } = await supabase
-    .from('sections')
-    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
-    .eq('id', sectionId)
-    .maybeSingle();
-  if (!sectionRaw) notFound();
-  const section = sectionRaw as SectionRow;
-  const level = Array.isArray(section.level) ? section.level[0] : section.level;
 
   // Terms — pick a term from ?term_id or default to current.
   const { data: termsRaw } = await supabase

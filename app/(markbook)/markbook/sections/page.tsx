@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { createClient } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
 import {
   capabilityForSection,
   resolveClassroomScope,
@@ -36,15 +36,16 @@ type LevelLite = {
 
 export default async function SectionsListPage() {
   const supabase = await createClient();
-  const sessionUser = await getSessionUser();
-  const role = sessionUser?.role ?? null;
+  const view = await getViewContext();
+  const role = view?.role ?? null;
+  const activeRole = view?.activeRole ?? null;
 
   // Cover booked for this teacher that has not started yet (migration 123).
   // Caller's client on purpose: the row-read policy is deliberately unwindowed,
   // so seeing your own booking needs no service-role escalation.
   const upcomingCover =
-    role === 'teacher' && sessionUser
-      ? await loadUpcomingCoverForUser(supabase, sessionUser.id)
+    role === 'teacher' && view
+      ? await loadUpcomingCoverForUser(supabase, view.id)
       : [];
   const canManage =
     role === 'academic_coordinator' ||
@@ -58,14 +59,26 @@ export default async function SectionsListPage() {
   // ANY assignment (adviser or subject teacher) — wider than
   // Attendance/Evaluation, which are adviser-only because their underlying
   // data is adviser-only at the RLS level (see lib/classroom/scope.ts).
+  //
+  // ⚠ Keyed on `activeRole`, not `role` — a page renders through the lens
+  // ("role authorises, activeRole renders", lib/auth/active-role.ts). A
+  // school_admin who also teaches sees her own sections in the Teacher view
+  // and every section in the Admin view. The guard above the resolver has to
+  // move with it, or the resolver is handed an empty array and answers "no
+  // classes at all". `role` is untouched everywhere else on this page — it
+  // still decides `canManage` below, which is an oversight privilege, not a
+  // teaching one.
+  //
+  // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`:
+  // `getViewContext()` at the top of this page has already made this exact
+  // call for the one viewer who now takes this branch and did not before — a
+  // teaching admin in the Teacher view. See lib/auth/assignments-cache.ts for
+  // why it keys on the userId string rather than on the client.
   const assignments =
-    role === 'teacher' && sessionUser
-      ? await loadEffectiveAssignmentsForUser(
-          createServiceClient(),
-          sessionUser.id
-        )
+    activeRole === 'teacher' && view
+      ? await loadEffectiveAssignmentsForUserMemo(view.id)
       : [];
-  const scope = resolveClassroomScope(role, assignments);
+  const scope = resolveClassroomScope(activeRole, assignments);
   // `[]` (scoped, no assigned classes) is distinct from `null` (unscoped) —
   // must yield zero rows, never fall through to unfiltered.
   const noScopedClasses =
@@ -267,7 +280,7 @@ export default async function SectionsListPage() {
       <MarkbookSectionsDataTable
         rows={rows}
         levels={levels}
-        role={sessionUser?.role ?? null}
+        role={view?.role ?? null}
         termStarted={termStarted}
         ayId={ay?.id ?? ''}
         isOversight={scope.isOversight}
