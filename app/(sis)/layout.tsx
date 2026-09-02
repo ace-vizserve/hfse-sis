@@ -16,6 +16,7 @@ import {
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getStaffCount } from '@/lib/auth/staff-list';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
@@ -125,6 +126,16 @@ export default async function SisLayout({
     sidebarCounts.staffCount = String(staffCount);
   }
 
+  // Modules the current VIEW cannot open (role-switcher Phase 3b). Nobody
+  // CLICKS their way to this layout in the Teacher view — `/sis` does not admit
+  // a teacher, so its tile is already gone wherever she came from — but a
+  // bookmark still lands here, and when it does the switcher should offer the
+  // way back to teaching rather than more tiles that view cannot fill. The
+  // module you are IN is never hidden, so this can never strand anyone
+  // (components/module-sidebar/sidebar-header.tsx). Empty for every account
+  // with a single view, which is every account but the six that also teach.
+  const hiddenModules = await resolveHiddenModules(role, id, activeRole);
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <ModuleSidebar
@@ -133,6 +144,7 @@ export default async function SisLayout({
         email={email}
         userId={id}
         counts={sidebarCounts}
+        hiddenModules={hiddenModules}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
         entitled={entitled}

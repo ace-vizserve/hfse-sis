@@ -1,5 +1,5 @@
 import { can, type Capability } from '@/lib/auth/capabilities';
-import { isRouteAllowed, type Role } from '@/lib/auth/roles';
+import { hrefPathname, isRouteAllowed, type Role } from '@/lib/auth/roles';
 import {
   isHiddenModuleHref,
   NO_TEACHING_PROFILE,
@@ -161,13 +161,28 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
 //     is visible and gets reported, while a dead-end action is the bug this
 //     ground exists to prevent. Same trade-off, same reasoning, as
 //     lib/auth/nav-visibility.ts.
+//
+// ⚠ WHICH ROLE PICKS THE ROWS, AND WHICH ROLE CHECKS THEM (role-switcher Phase
+// 3b, 2026-09-02). `viewRole` picks — the table is indexed with the lens, so a
+// school_admin in the Teacher view is offered a teacher's actions. Everything
+// that CHECKS a row keeps reading the real `role`: `isRouteAllowed` because the
+// proxy will, `capabilities` because the destination page will, `hiddenModules`
+// because its assignment half is keyed on the account. `role` authorises,
+// `viewRole` renders.
+//
+// Phase 3a wired `profile` to the lens and it changed nothing on screen,
+// because every row carrying a `requires:` sits under the `teacher` key and a
+// school_admin never reached one. This is the line that makes it live: without
+// it the argument above is inert, and with it a teaching admin's home page
+// finally offers the marks and write-ups she actually owes.
 export function getQuickActions(
   role: Role,
   hiddenModules: readonly SidebarModule[] = [],
   profile: TeachingProfile = NO_TEACHING_PROFILE,
-  capabilities: readonly Capability[] = []
+  capabilities: readonly Capability[] = [],
+  viewRole: Role = role
 ): QuickAction[] {
-  const actions = QUICK_ACTIONS[role]
+  const actions = QUICK_ACTIONS[viewRole]
     .filter((a) => {
       if (a.requires === 'adviser' && !profile.advises) return false;
       if (
@@ -181,7 +196,13 @@ export function getQuickActions(
     })
     .filter(
       (a) =>
-        isRouteAllowed(a.href, role) &&
+        // `hrefPathname`, not the raw href. No row in this table carries a
+        // query string TODAY, so this is inert — and it is exactly the gap that
+        // let `/p-files?status=uploaded` through in the sidebar, where the rows
+        // do carry one. `isRouteAllowed` default-ALLOWS a pathname no rule
+        // matches, so the day a CTA gains a `?status=` filter the unstripped
+        // version stops gating and says nothing about it.
+        isRouteAllowed(hrefPathname(a.href), role) &&
         !isHiddenModuleHref(a.href, hiddenModules) &&
         (!a.requiresCapability || can(capabilities, a.requiresCapability))
     )
@@ -195,7 +216,23 @@ export function getQuickActions(
   // Deliberately teacher-only: an oversight role reaching zero actions would
   // mean the table itself is wrong, and papering over that with a fallback
   // would hide it.
-  if (actions.length === 0 && role === 'teacher') {
+  //
+  // ⚠ IT MOVED ONTO `viewRole`, AND THAT IS THE FAITHFUL READING OF THE RULE
+  // ABOVE, NOT A WIDENING (role-switcher Phase 3b — the brief asked for this to
+  // be decided explicitly rather than left to fall out). The rule is "if the
+  // table we just read produced nothing, was it the teacher table?", and the
+  // table we just read is `QUICK_ACTIONS[viewRole]`. Keyed on `role` it would
+  // now answer about a table nobody consulted. The concern it protects is
+  // untouched: in the Admin view `viewRole` IS the oversight role, so an empty
+  // admin row set still surfaces as an empty row set rather than being papered
+  // over.
+  //
+  // Unreachable for a teaching admin in practice, and worth saying so: she
+  // holds the Teacher lens only because she holds assignment rows
+  // (`getEntitledRoles`), her `hiddenModules` never narrow her, and a failed
+  // profile read grants both jobs. This is the net under a case that should not
+  // arise, not a path anyone is expected to take.
+  if (actions.length === 0 && viewRole === 'teacher') {
     return [NO_ASSIGNMENTS_FALLBACK];
   }
   return actions;

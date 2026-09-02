@@ -7,6 +7,7 @@ import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
 import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { ModuleSidebar } from '@/components/module-sidebar';
 import {
@@ -70,6 +71,16 @@ export default async function PFilesLayout({
   // holding a role, so the count answers that itself and returns 0 otherwise.
   const declarationCount = await getDeclarationWaitingCount(service, role, id);
 
+  // Modules the current VIEW cannot open (role-switcher Phase 3b). Nobody
+  // CLICKS their way to this layout in the Teacher view — `/p-files` does not
+  // admit a teacher, so its tile is already gone wherever she came from — but a
+  // bookmark still lands here, and when it does the switcher should offer the
+  // way back to teaching rather than more tiles that view cannot fill. The
+  // module you are IN is never hidden, so this can never strand anyone
+  // (components/module-sidebar/sidebar-header.tsx). Empty for every account
+  // with a single view, which is every account but the six that also teach.
+  const hiddenModules = await resolveHiddenModules(role, id, activeRole);
+
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <ModuleSidebar
@@ -78,6 +89,7 @@ export default async function PFilesLayout({
         email={email}
         userId={id}
         badges={badges}
+        hiddenModules={hiddenModules}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
         entitled={entitled}

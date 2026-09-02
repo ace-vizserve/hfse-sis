@@ -15,11 +15,14 @@ import { describe, it, expect } from 'vitest';
 import {
   ADVISER_ONLY_MODULES,
   hiddenModulesForTeacher,
+  hiddenModulesForView,
   isHiddenModuleHref,
+  moduleAdmitsRole,
   teachingProfileFor,
 } from '@/lib/sidebar/module-visibility';
+import { MODULE_ORDER, SIDEBAR_REGISTRY } from '@/lib/sidebar/registry';
 import type { AssignmentRow } from '@/lib/auth/teacher-assignments';
-import type { Role } from '@/lib/auth/roles';
+import { isRouteAllowed, ROLES, type Role } from '@/lib/auth/roles';
 
 function assignment(
   role: 'form_adviser' | 'subject_teacher',
@@ -269,5 +272,105 @@ describe('teachingProfileFor', () => {
         teachesSubject: false,
       });
     }
+  });
+});
+
+// ─── the route-shaped narrowing (role-switcher Phase 3b) ────────────────────
+//
+// ⚠ READ THIS BEFORE COMPARING IT WITH `hiddenModulesForTeacher` ABOVE. They
+// look alike and answer different questions, which is why they are two
+// functions and not one with a flag:
+//
+//   • that one is ASSIGNMENT-shaped. It reads the database, asks "is Attendance
+//     ever USEFUL to someone who advises no class", and narrows the `teacher`
+//     ROLE only — narrowing an admin is the one thing it must never do.
+//   • this one is ROUTE-shaped. It is pure, asks "does `/sis` ADMIT a teacher at
+//     all", and narrows a LENS rather than an account. It may take a tile from
+//     an admin, because what it takes is a tile that view cannot fill.
+//
+// Getting them the wrong way round type-checks and runs, so both directions are
+// asserted rather than one happy path.
+describe('moduleAdmitsRole — the shared front-door question', () => {
+  it('answers exactly what the module switcher asks', () => {
+    // Not an independent reimplementation: the point is that the lens and the
+    // switcher (components/module-sidebar/sidebar-header.tsx) ask ONE function,
+    // so they cannot drift into hiding a tile whose sidebar still works, or
+    // offering one whose sidebar is blank.
+    for (const m of MODULE_ORDER) {
+      expect(moduleAdmitsRole(m, 'superadmin'), m).toBe(
+        isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, 'superadmin')
+      );
+    }
+  });
+
+  it('refuses a teacher the four office modules', () => {
+    for (const m of ['sis', 'records', 'p-files', 'admissions'] as const) {
+      expect(moduleAdmitsRole(m, 'teacher'), m).toBe(false);
+    }
+  });
+
+  it('and admits them the four teaching ones', () => {
+    for (const m of [
+      'classroom',
+      'markbook',
+      'attendance',
+      'evaluation',
+    ] as const) {
+      expect(moduleAdmitsRole(m, 'teacher'), m).toBe(true);
+    }
+  });
+});
+
+describe('hiddenModulesForView — what the LENS takes away', () => {
+  it('removes the four a teacher cannot open, in switcher order', () => {
+    expect(hiddenModulesForView('school_admin', 'teacher')).toEqual([
+      'admissions',
+      'records',
+      'p-files',
+      'sis',
+    ]);
+  });
+
+  it('⚠ and never the two the ASSIGNMENT rule owns', () => {
+    // Attendance and Evaluation admit a teacher, so this rule has nothing to
+    // say about them. Whether a particular teacher can use them is
+    // `hiddenModulesForTeacher`'s question, and it is asked of the REAL role.
+    const hidden = hiddenModulesForView('school_admin', 'teacher');
+    expect(hidden).not.toContain('attendance');
+    expect(hidden).not.toContain('evaluation');
+    expect(hidden).not.toContain('markbook');
+    expect(hidden).not.toContain('classroom');
+  });
+
+  it('takes nothing when the view is the account role', () => {
+    for (const role of ROLES) {
+      expect(hiddenModulesForView(role, role), `${role}`).toEqual([]);
+      // The default argument is the same statement, made by omission — every
+      // caller that has no lens to offer must get today's behaviour.
+      expect(hiddenModulesForView(role), `${role} (implicit)`).toEqual([]);
+    }
+  });
+
+  it('takes nothing from a plain teacher, who has only one view', () => {
+    expect(hiddenModulesForView('teacher', 'teacher')).toEqual([]);
+  });
+
+  it('names only modules the ACCOUNT could otherwise have reached', () => {
+    // Listing a module the real role cannot open either would be true and
+    // useless — the switcher filters those on the real role before it consults
+    // this list — and it would read as though the lens had taken something
+    // away when it had not.
+    const hidden = hiddenModulesForView('p_file_officer', 'teacher');
+    expect(hidden).toContain('p-files');
+    expect(hidden).not.toContain('records');
+    expect(hidden).not.toContain('sis');
+  });
+
+  it('handles a null role without inventing a narrowing', () => {
+    // A parent. `getEntitledRoles` gives them no lens at all, so this pair
+    // cannot arise — but the type allows it and returning a list here would
+    // mean hiding modules from someone who has none.
+    expect(hiddenModulesForView(null, null)).toEqual([]);
+    expect(hiddenModulesForView(null, 'teacher')).toEqual([]);
   });
 });

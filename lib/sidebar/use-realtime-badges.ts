@@ -54,7 +54,21 @@ const PFILE_BADGE_ROLES: Role[] = [
 export function useRealtimeBadges(
   role: Role | null,
   userId: string,
-  initial: SidebarBadges
+  initial: SidebarBadges,
+  // The role whose ROWS the sidebar is rendering — `resolveNavView`'s
+  // `rowsRole`. Defaults to `role`, so every account with a single view behaves
+  // exactly as before.
+  //
+  // ⚠ ONLY `changeRequests` TAKES IT, AND THAT IS THE WHOLE POINT OF PASSING IT
+  // SEPARATELY RATHER THAN SHADOWING `role`. That badge hangs off a row the LENS
+  // chose — "My Requests" in the teacher tree, "Change Requests" in the
+  // oversight one — and those two rows point at different pages with different
+  // scopes, so a count keyed on the account role describes the wrong page. The
+  // other two badges are account-level: `pfileAwaitingVerification` gates on
+  // which roles see the P-Files sidebar at all, and `declarations` has no role
+  // branch anywhere (RLS decides it). Shadowing `role` would have quietly moved
+  // all three. (role-switcher Phase 3b, 2026-09-02.)
+  rowsRole: Role | null = role
 ): SidebarBadges {
   const router = useRouter();
   const [badges, setBadges] = useState<SidebarBadges>(initial);
@@ -75,8 +89,12 @@ export function useRealtimeBadges(
     });
   }, [initial]);
 
+  // ⚠ The live recount MUST use the same scope as the SSR count that seeded it
+  // (`getSidebarChangeRequestCount` in the module layout, which is passed the
+  // same `rowsRole`), or the badge is correct on first paint and wrong the
+  // moment any change request is inserted or updated.
   const liveChangeRequestCount = useChangeRequestCount(
-    role,
+    rowsRole,
     userId,
     initial.changeRequests ?? null
   );

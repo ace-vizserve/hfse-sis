@@ -4,6 +4,7 @@ import {
   NAV_BY_MODULE,
   ROLES,
   ROUTE_ACCESS,
+  hrefPathname,
   isRouteAllowed,
   type NavItem,
   type NavSection,
@@ -136,7 +137,12 @@ function itemsForRole(role: Role): Array<{ module: string; item: NavItem }> {
   return out;
 }
 
-const pathOf = (href: string) => href.split('?')[0];
+// ⚠ Was a local `href.split('?')[0]`, which is NOT what the app does — it keeps
+// a `#` fragment, and a pathname with one matches no ROUTE_ACCESS row, so
+// `isRouteAllowed` default-allows it. This guard exists to prove nav and
+// ROUTE_ACCESS agree; stripping differently from the app is the one way it could
+// pass while they did not. See `hrefPathname` in lib/auth/roles.ts.
+const pathOf = hrefPathname;
 
 describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
   describe('A. no dead links — every visible item is route-allowed', () => {

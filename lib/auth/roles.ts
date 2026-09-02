@@ -1190,6 +1190,36 @@ export function getRoleFromClaims(
   return ROLES.includes(raw as Role) ? (raw as Role) : null;
 }
 
+/**
+ * The pathname half of a nav href — what `isRouteAllowed` below must be given.
+ *
+ * ⚠ PASSING A RAW HREF FAILS SILENTLY, AND IN THE PERMISSIVE DIRECTION.
+ * `isRouteAllowed` matches a pathname against `ROUTE_ACCESS` prefixes and
+ * returns `true` for anything no rule matches, so `/p-files?status=uploaded`
+ * matches neither `/p-files` nor `/p-files/…`, falls off the end of the table,
+ * and is allowed for EVERY role. Eleven nav rows carry a `?status=` or
+ * `?expiring=` filter (the P-Files quick filters, the Admissions chase
+ * quicklinks) — precisely the set a wrong answer waves through. Found
+ * 2026-09-02 by the role × view sweep in
+ * `__tests__/sidebar/nav-lens-all-modules.test.ts`, which caught an
+ * `admissions` account being offered `/p-files?status=uploaded`.
+ *
+ * ⚠ IT LIVES HERE, NEXT TO THE FUNCTION IT PROTECTS, BECAUSE FIVE COPIES OF IT
+ * HAD ALREADY APPEARED AND THEY DID NOT AGREE. Three split on `[?#]` and two on
+ * `?` alone (`lib/auth/nav-visibility.ts`, `lib/sidebar/module-visibility.ts`,
+ * `lib/sis/command-palette-nav.ts`'s `pathnameOnly`, and two test-local
+ * `pathOf`s). The fragment is the difference that bites once: `/x#y` keeps its
+ * fragment under a `?`-only split and then matches no rule at all. One
+ * spelling, one behaviour.
+ *
+ * `components/module-sidebar.tsx`'s `parseHrefWithQuery` is deliberately NOT
+ * folded in — it returns BOTH halves because active-state matching compares the
+ * query params too, which is a different job from gating.
+ */
+export function hrefPathname(href: string): string {
+  return href.split(/[?#]/)[0];
+}
+
 export function isRouteAllowed(pathname: string, role: Role | null): boolean {
   const rule = ROUTE_ACCESS.find((r) =>
     r.exact

@@ -12,10 +12,7 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar';
 import type { Capability } from '@/lib/auth/capabilities';
-import {
-  flattenNavItems,
-  resolveSectionsForRole,
-} from '@/lib/auth/nav-visibility';
+import { flattenNavItems, resolveNavView } from '@/lib/auth/nav-visibility';
 import {
   type NavItem,
   type Role,
@@ -183,17 +180,33 @@ export function ModuleSidebar({
   const searchParams = useSearchParams();
   const config = SIDEBAR_REGISTRY[module];
 
-  const liveBadges = useRealtimeBadges(role, userId, badges ?? EMPTY_BADGES);
   const itemCounts = counts ?? EMPTY_COUNTS;
 
   // `role` still decides which rows the viewer is ALLOWED to see; `activeRole`
-  // decides which Markbook tree is worth showing them. Both go in — see the
-  // ruling on `resolveSectionsForRole`.
-  const sections = resolveSectionsForRole(
+  // decides which of them are worth showing them. Both go in — see the ruling
+  // on `resolveNavView`.
+  //
+  // ⚠ `rowsRole` COMES BACK WITH THE ROWS, AND THE CTA AND THE BADGES BELOW
+  // BOTH READ IT. They used to read `role`, which meant a teaching admin in the
+  // Teacher view saw the admin's "Review change requests" CTA above a teacher's
+  // menu, and an approval-queue number beside the teacher tree's "My Requests"
+  // row — a badge describing a different page from the one it links to. One
+  // answer, three consumers; see `resolveNavView` for the full account.
+  const { rowsRole, sections } = resolveNavView(
     module,
     role,
     capabilities,
     activeRole
+  );
+
+  // `rowsRole` scopes the change-request count so it matches the row it hangs
+  // off; `role` still gates the P-Files channel, which is an account-level
+  // question about a module the lens cannot enter anyway.
+  const liveBadges = useRealtimeBadges(
+    role,
+    userId,
+    badges ?? EMPTY_BADGES,
+    rowsRole
   );
   // Children are candidates too. A child route is a longer href than its
   // parent, and `findActiveHref` picks the longest match, so standing on
@@ -205,7 +218,13 @@ export function ModuleSidebar({
     new URLSearchParams(searchParams?.toString() ?? '')
   );
 
-  const quickAction = role ? config.quickActionByRole[role] : undefined;
+  // ⚠ `rowsRole`, NOT `role`. This CTA is the full-width button at the top of
+  // the rail, and it belongs to the same menu as the rows under it. Markbook
+  // deliberately defines no `teacher` entry (its target, "My Sheets", is already
+  // the second nav row), so in the Teacher view the button correctly disappears
+  // instead of offering a teaching admin the approver's "Review change
+  // requests" above a two-row teacher menu.
+  const quickAction = rowsRole ? config.quickActionByRole[rowsRole] : undefined;
 
   // Initial resolve only. After this the viewer's own toggles are authoritative
   // — forcing the active group open on every render would make clicking to

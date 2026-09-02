@@ -2,8 +2,12 @@ import type {
   AssignmentRow,
   EffectiveAssignmentRow,
 } from '@/lib/auth/teacher-assignments';
-import type { Role } from '@/lib/auth/roles';
-import { SIDEBAR_REGISTRY, type SidebarModule } from '@/lib/sidebar/registry';
+import { hrefPathname, isRouteAllowed, type Role } from '@/lib/auth/roles';
+import {
+  MODULE_ORDER,
+  SIDEBAR_REGISTRY,
+  type SidebarModule,
+} from '@/lib/sidebar/registry';
 import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 
 // Which modules the switcher should hide from a teacher whose ASSIGNMENTS make
@@ -58,8 +62,11 @@ export const ADVISER_ONLY_MODULES: readonly SidebarModule[] = [
  * Attendance / Evaluation her assignment rows do not cover — from the module
  * switcher, the home page, the account shortcuts and the palette at once,
  * while her account role can open all of them. Narrowing an admin is the one
- * thing this function must never do. Its sibling `teachingProfileFor` below
- * DOES take the lens, for the reason stated there.
+ * thing this function must never do. Its siblings `hiddenModulesForView` and
+ * `teachingProfileFor` below DO take the lens, for the reasons stated there —
+ * and note that `hiddenModulesForView` narrows a lens on a ROUTE question,
+ * never an account on an assignment one, which is why it can hide a tile from
+ * an admin without breaking the rule above.
  *
  * Being a form adviser ANYWHERE is enough. Per-section capability is Classroom's
  * job; this is a coarse "is this module ever useful to you" question, and a
@@ -106,6 +113,73 @@ export function hiddenModulesForTeacher(
 }
 
 /**
+ * Could a viewer holding this role open this module's front door at all?
+ *
+ * The exact question `components/module-sidebar/sidebar-header.tsx` asks to
+ * decide which switcher tiles to draw, extracted so the lens and the switcher
+ * cannot answer it differently. `isRouteAllowed` defaults to ALLOW for a
+ * prefix with no rule, which would silently make every module enterable by
+ * everyone — direction C of
+ * `__tests__/auth/nav-route-consistency-all-modules.test.ts` is what stops a
+ * new module from relying on that.
+ */
+export function moduleAdmitsRole(
+  module: SidebarModule,
+  role: Role | null
+): boolean {
+  return isRouteAllowed(SIDEBAR_REGISTRY[module].primaryHref, role);
+}
+
+/**
+ * Modules to drop from the switcher because the VIEW cannot enter them.
+ *
+ * ⚠ A DIFFERENT AXIS FROM `hiddenModulesForTeacher` ABOVE, AND THE TWO MUST
+ * NOT BE MERGED. That one asks an ASSIGNMENT question ("is Attendance ever
+ * useful to someone who advises no class"), reads the database, and narrows
+ * the `teacher` role only. This one asks a ROUTE question ("does `/sis` admit
+ * a teacher at all"), is pure, and narrows nobody's account — it narrows a
+ * LENS. A teaching admin in the Teacher view keeps every Attendance and
+ * Evaluation tile her assignments would have taken away, because her account
+ * still runs those modules; what she loses is SIS, Records, P-Files and
+ * Admissions, which `teacher` cannot open in any view.
+ *
+ * WHY HIDING IS THE ANSWER RATHER THAN AN EMPTY SIDEBAR. Every module but
+ * Markbook filters its rows per item on `requiresRoles`, and
+ * `lib/auth/nav-visibility.ts` drops a group once its items are all filtered
+ * out. Look at `/sis` through a teacher lens and every row goes, every group
+ * goes, and the sidebar renders as a header over nothing — silently, because
+ * an empty `NavSection[]` is a legal return value. Removing the tile keeps
+ * people off a destination that has nothing to say to them, which is the same
+ * job the assignment-shaped narrowing above already does. (Ruled 2026-09-02,
+ * role-switcher Phase 3b.) The matching half — what happens if she arrives by
+ * a bookmark anyway — lives in `nav-visibility.ts`, which falls back to the
+ * real role's tree rather than rendering the blank one.
+ *
+ * PURE, SO IT SURVIVES A FAILED ASSIGNMENT READ. `resolveTeacherNavScope`'s
+ * fail-open promise is about the database read; this half never touches it,
+ * and returning `[]` on that catch would put back a tile the lens has already
+ * decided leads nowhere.
+ *
+ * Returns `[]` whenever the view IS the account role, which is every account
+ * but the six that also teach — so nothing about a plain teacher, or an admin
+ * who does not teach, can change here.
+ */
+export function hiddenModulesForView(
+  role: Role | null,
+  viewRole: Role | null = role
+): SidebarModule[] {
+  if (viewRole === role) return [];
+  // Only modules the REAL role could otherwise have reached. Naming one the
+  // account cannot open either would be true but meaningless — the switcher
+  // filters those on `isRouteAllowed(primaryHref, role)` before it ever
+  // consults this list — and it would make the returned list read as though
+  // the lens had taken something away when it had not.
+  return MODULE_ORDER.filter(
+    (m) => moduleAdmitsRole(m, role) && !moduleAdmitsRole(m, viewRole)
+  );
+}
+
+/**
  * Which of the two teaching jobs this person actually holds.
  *
  * `hiddenModulesForTeacher` above answers a MODULE-shaped question ("is
@@ -128,8 +202,8 @@ export function hiddenModulesForTeacher(
  *  - "anywhere" spans academic years, inheriting the no-AY-filter caveat
  *    documented on `hiddenModulesForTeacher`.
  *
- * ⚠ BUT IT IS KEYED ON A DIFFERENT ROLE FROM ITS SIBLING, and this is the one
- * place the two part company. `resolveTeacherNavScope` passes `hiddenModulesForTeacher`
+ * ⚠ BUT IT IS KEYED ON A DIFFERENT ROLE FROM ITS ASSIGNMENT-SHAPED SIBLING,
+ * and this is where the two part company. `resolveTeacherNavScope` passes `hiddenModulesForTeacher`
  * the REAL role and passes THIS the VIEW role (`activeRole`). The asymmetry is
  * not an oversight: hiding a module is a narrowing that must never touch an
  * admin, while the profile is an ADDITIVE answer about the job in front of you
@@ -201,7 +275,10 @@ export function isHiddenModuleHref(
   hidden: readonly SidebarModule[]
 ): boolean {
   if (hidden.length === 0) return false;
-  const path = href.split(/[?#]/)[0];
+  // The shared spelling, not a local one — see `hrefPathname` in
+  // lib/auth/roles.ts for the five copies this replaced and the `#` they
+  // disagreed on.
+  const path = hrefPathname(href);
   return hidden.some((m) => {
     const base = SIDEBAR_REGISTRY[m].primaryHref;
     return path === base || path.startsWith(`${base}/`);

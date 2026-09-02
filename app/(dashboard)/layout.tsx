@@ -47,9 +47,14 @@ export default async function DashboardLayout({
   const { role, entitled, activeRole } = viewer;
   if (!role) redirect('/login');
 
-  // Real role, deliberately — hiding a module only ever narrows a teacher.
-  // See the ruling on `resolveTeacherNavScope`.
-  const hiddenModules = await resolveHiddenModules(role, viewer.id);
+  // Both roles go in, and they answer different halves. The real `role` drives
+  // the assignment-shaped narrowing, which only ever narrows a teacher and must
+  // never take Attendance off an admin. `activeRole` drives the route-shaped
+  // one: `/sis`, `/records`, `/p-files` and `/admissions` do not admit a
+  // teacher, so the topbar switcher stops offering those tiles while a teaching
+  // admin is in the Teacher view — and gives them straight back when she
+  // switches home. See the ruling on `resolveTeacherNavScope`.
+  const hiddenModules = await resolveHiddenModules(role, viewer.id, activeRole);
 
   return (
     <div className="flex min-h-screen flex-col">

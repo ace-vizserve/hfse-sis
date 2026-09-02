@@ -34,8 +34,21 @@ vi.mock('@/lib/auth/roles', async (importOriginal) => {
               ],
             },
             {
-              href: '/sis/admin/roles',
-              label: 'Role permissions',
+              // ⚠ `/sis/admin/school-config`, NOT `/sis/admin/roles` — and the
+              // change is worth recording. This fixture used to point the
+              // parent at `/sis/admin/roles`, which ROUTE_ACCESS gives to
+              // `superadmin` ALONE, while every test below exercised it as
+              // `school_admin`. It passed because `resolveSectionsForRole` used
+              // to filter non-Markbook rows on `requiresRoles` only; the
+              // role-switcher Phase 3b intersection with `isRouteAllowed` broke
+              // it, correctly — the fixture was modelling a nav row that offers
+              // a school_admin a page the proxy would bounce her from, which is
+              // the KD #173 dead end. School config admits her, so the
+              // parent-and-children shape these tests are actually about
+              // survives, and the dead-link case is asserted deliberately at
+              // the bottom of this file instead of by accident here.
+              href: '/sis/admin/school-config',
+              label: 'School config',
               children: [
                 {
                   href: '/sis/admin/roles/matrix',
@@ -43,6 +56,12 @@ vi.mock('@/lib/auth/roles', async (importOriginal) => {
                   requiresRoles: ['superadmin'],
                 },
               ],
+            },
+            {
+              // Superadmin-only, kept so the intersection has something real to
+              // remove. See the last test in this file.
+              href: '/sis/admin/roles',
+              label: 'Role permissions',
             },
           ],
         },
@@ -83,17 +102,30 @@ describe('child visibility', () => {
 
   it('drops `children` entirely when every child is filtered out, so the parent renders as a plain link', () => {
     const sections = resolveSectionsForRole('sis', 'school_admin', []);
-    const roles = sections[0].items.find((i) => i.label === 'Role permissions');
-    expect(roles).toBeTruthy();
+    const config = sections[0].items.find((i) => i.label === 'School config');
+    expect(config).toBeTruthy();
     // Not an empty array — absent. An expander that opens onto nothing is worse
     // than no expander.
-    expect(roles?.children).toBeUndefined();
+    expect(config?.children).toBeUndefined();
   });
 
   it('keeps a role-gated child for the role that holds it', () => {
     const sections = resolveSectionsForRole('sis', 'superadmin', []);
-    const roles = sections[0].items.find((i) => i.label === 'Role permissions');
-    expect(roles?.children?.map((c) => c.label)).toEqual(['Matrix']);
+    const config = sections[0].items.find((i) => i.label === 'School config');
+    expect(config?.children?.map((c) => c.label)).toEqual(['Matrix']);
+  });
+
+  it('drops a parent whose href the viewer’s role cannot open at all', () => {
+    // The half `requiresRoles` cannot express. "Role permissions" declares no
+    // roles, so the item-level filter admits everybody — and ROUTE_ACCESS gives
+    // `/sis/admin/roles` to superadmin alone, deliberately (a capability
+    // controlling the capability editor could be revoked and lock its holder
+    // out). Before role-switcher Phase 3b this row rendered for a school_admin
+    // and the proxy bounced her off it.
+    const labels = (role: 'school_admin' | 'superadmin') =>
+      resolveSectionsForRole('sis', role, [])[0].items.map((i) => i.label);
+    expect(labels('school_admin')).not.toContain('Role permissions');
+    expect(labels('superadmin')).toContain('Role permissions');
   });
 });
 
@@ -105,7 +137,7 @@ describe('flattenNavItems', () => {
     expect(flat.map((i) => i.href)).toContain('/sis/admin/staff/accounts');
     expect(flat.map((i) => i.href)).toContain('/sis/admin/roles/matrix');
     // Parents are still present.
-    expect(flat.map((i) => i.href)).toContain('/sis/admin/roles');
+    expect(flat.map((i) => i.href)).toContain('/sis/admin/school-config');
   });
 
   it('omits a child the viewer cannot see, so the KD #173 guards never check a link that is not rendered', () => {

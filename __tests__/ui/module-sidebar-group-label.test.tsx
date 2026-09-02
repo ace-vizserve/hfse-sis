@@ -72,14 +72,24 @@ vi.mock('@/lib/auth/roles', async (importOriginal) => {
 function renderSidebar(counts?: Record<string, string>) {
   return render(
     <SidebarProvider>
+      {/* ⚠ `school_admin`, NOT `p_file_officer` — and the swap is worth
+          recording. This fixture rendered the RECORDS sidebar as a
+          p_file_officer, a pairing the app cannot produce (`/records` refuses
+          them at ROUTE_ACCESS and app/(records)/layout.tsx redirects them
+          away). It worked because `resolveSectionsForRole` used to filter
+          non-Markbook rows on `requiresRoles` alone; the role-switcher Phase 3b
+          intersection with `isRouteAllowed` empties it, correctly — every row
+          in this fixture points into `/records`. The role is incidental to what
+          these tests are about (group-label markup and count chips), so it is
+          now one that can actually open the module. */}
       <ModuleSidebar
         module="records"
-        role="p_file_officer"
+        role="school_admin"
         email="test@hfse.test"
         userId="user-1"
         counts={counts}
-        entitled={['p_file_officer']}
-        activeRole="p_file_officer"
+        entitled={['school_admin']}
+        activeRole="school_admin"
       />
     </SidebarProvider>
   );

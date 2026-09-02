@@ -54,7 +54,12 @@ import {
   flattenNavItems,
   resolveSectionsForRole,
 } from '@/lib/auth/nav-visibility';
-import { ROLES, isRouteAllowed, type Role } from '@/lib/auth/roles';
+import {
+  ROLES,
+  hrefPathname,
+  isRouteAllowed,
+  type Role,
+} from '@/lib/auth/roles';
 import { getQuickActions } from '@/lib/home/quick-actions';
 import { HOME_TODO_SOURCES } from '@/lib/home/todos';
 import { visibleNavEntries } from '@/lib/sis/command-palette-nav';
@@ -381,9 +386,12 @@ for (const file of walkPages(join(REPO_ROOT, 'app'))) {
 
 type Link = { source: string; label: string; href: string };
 
-function pathOf(href: string): string {
-  return href.split(/[?#]/)[0];
-}
+// The production spelling, imported rather than restated — this guard compares
+// nav hrefs against a route→guard map, so a test-local copy that disagreed with
+// the app's stripping would check a different string than the app gates on. Five
+// copies of this rule existed and two of them split on `?` alone; see
+// `hrefPathname` in lib/auth/roles.ts.
+const pathOf = hrefPathname;
 
 /** Mirrors the module switcher: a role that cannot open a module's root never
  *  sees that sidebar at all, so its items are not "advertised" to them. */

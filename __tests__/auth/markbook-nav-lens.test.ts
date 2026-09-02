@@ -130,14 +130,42 @@ describe('the lens can never advertise a link the proxy would bounce', () => {
   });
 });
 
-describe('only Markbook is keyed on the lens', () => {
-  it('the other modules still filter per item on the real role', () => {
-    // Phase 3a's remit is the Markbook nav. Every other module resolves its
-    // rows from `requiresRoles`, which mirrors ROUTE_ACCESS, and passing a
-    // lens through those would be a separate decision about eight sidebars.
+describe('Markbook is no longer the only module keyed on the lens', () => {
+  // ⚠ THIS BLOCK ASSERTED THE OPPOSITE UNTIL 2026-09-02. Phase 3a's remit was
+  // the Markbook nav alone, and the asymmetry was pinned here so it stayed
+  // visible. Mr Ace's call in Phase 3b was that it read as half-finished — a
+  // teaching admin saw a teacher's Markbook menu beside an admin's Attendance
+  // and SIS menus — so the lens now reaches every sidebar. Kept as a test
+  // rather than deleted, in the direction that is now true, so the reversal is
+  // recorded where the old claim was.
+  //
+  // The whole-sidebar behaviour, including the blank-sidebar guard, lives in
+  // __tests__/sidebar/nav-lens-all-modules.test.ts. This is the seam.
+  it('a module the view CAN open now follows it', () => {
     // Not named `module` — `@next/next/no-assign-module-variable` forbids it
     // even in a test.
-    for (const sidebarModule of ['sis', 'attendance', 'records'] as const) {
+    for (const sidebarModule of ['attendance', 'evaluation'] as const) {
+      const teacherView = resolveSectionsForRole(
+        sidebarModule,
+        'school_admin',
+        undefined,
+        'teacher'
+      );
+      expect(teacherView).toEqual(
+        resolveSectionsForRole(sidebarModule, 'teacher', undefined)
+      );
+      expect(teacherView).not.toEqual(
+        resolveSectionsForRole(sidebarModule, 'school_admin', undefined)
+      );
+    }
+  });
+
+  it('a module the view CANNOT open keeps the account role’s tree', () => {
+    // `/sis` and `/records` refuse a teacher, so there is no teacher tree to
+    // render — filtering would empty every group. The tile is hidden instead
+    // (lib/sidebar/module-visibility.ts), and anyone who arrives by a bookmark
+    // gets the nav their account has always had rather than a blank rail.
+    for (const sidebarModule of ['sis', 'records', 'p-files'] as const) {
       expect(
         resolveSectionsForRole(
           sidebarModule,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getQuickActions, QUICK_ACTIONS } from '@/lib/home/quick-actions';
-import { isRouteAllowed, type Role } from '@/lib/auth/roles';
+import { hrefPathname, isRouteAllowed, type Role } from '@/lib/auth/roles';
 import {
   DEFAULT_ROLE_CAPABILITIES,
   type Capability,
@@ -250,5 +250,111 @@ describe('QUICK_ACTIONS table', () => {
     // must not share one label.
     expect(schoolAdmin.href).not.toBe(superadmin.href);
     expect(schoolAdmin.label).not.toBe(superadmin.label);
+  });
+});
+
+// ─── the active-role lens (role-switcher Phase 3b) ──────────────────────────
+//
+// Phase 3a passed the teaching PROFILE in and it changed nothing on screen,
+// because the table was still indexed `QUICK_ACTIONS[role]` and every row
+// carrying a `requires:` sits under the `teacher` key. These pin the line that
+// closed that gap — and the three checks that deliberately did NOT move with
+// it.
+describe('getQuickActions — the row follows the view', () => {
+  it('gives a teaching admin in the Teacher view a teacher’s actions', () => {
+    const actions = getQuickActions(
+      'school_admin',
+      [],
+      BOTH,
+      CAPS_OF('school_admin'),
+      'teacher'
+    );
+    expect(actions.map((a) => a.label)).toEqual([
+      'Enter grades',
+      'Mark attendance',
+      'Write evaluation',
+    ]);
+    expect(actions.map((a) => a.label)).not.toContain('Manage staff');
+  });
+
+  it('and the profile is what decides which of them, at last', () => {
+    // The concrete payoff of Phase 3a's dormant argument: an admin who advises
+    // a class but teaches no subject is not offered "Enter grades", exactly as
+    // a plain teacher in the same position is not.
+    expect(
+      getQuickActions(
+        'school_admin',
+        [],
+        ADVISER,
+        CAPS_OF('school_admin'),
+        'teacher'
+      ).map((a) => a.label)
+    ).toEqual(['Mark attendance', 'Write evaluation']);
+  });
+
+  it('and her own actions back the moment she switches home', () => {
+    const explicit = getQuickActions(
+      'school_admin',
+      [],
+      BOTH,
+      CAPS_OF('school_admin'),
+      'school_admin'
+    );
+    expect(explicit).toEqual(
+      getQuickActions('school_admin', [], BOTH, CAPS_OF('school_admin'))
+    );
+    expect(explicit.map((a) => a.label)).toContain('Manage staff');
+  });
+
+  it('⚠ but every CHECK on a row still reads her real role', () => {
+    // `isRouteAllowed`, the capability gate and `hiddenModules` all keep the
+    // account role, because they answer what the proxy and the destination page
+    // will answer when she gets there. `role` authorises, `viewRole` renders.
+    for (const action of getQuickActions(
+      'school_admin',
+      [],
+      BOTH,
+      CAPS_OF('school_admin'),
+      'teacher'
+    )) {
+      expect(
+        isRouteAllowed(hrefPathname(action.href), 'school_admin'),
+        `${action.label} points at ${action.href}, which the proxy refuses a school_admin`
+      ).toBe(true);
+    }
+  });
+
+  it('the no-assignments fallback follows the TABLE that was read', () => {
+    // Ruled explicitly in Phase 3b rather than left to fall out. The rule is
+    // "if the table we just read produced nothing, was it the teacher table?" —
+    // and the table read is `QUICK_ACTIONS[viewRole]`. An oversight view
+    // reaching zero still surfaces as zero, which is the concern the fallback
+    // was written to protect: a wrong table should be visible, not papered over.
+    expect(
+      getQuickActions(
+        'school_admin',
+        [],
+        NEITHER,
+        CAPS_OF('school_admin'),
+        'teacher'
+      )
+    ).toEqual([{ label: 'Open Classroom', href: '/classroom' }]);
+    expect(
+      getQuickActions('teacher', [], NEITHER, CAPS_OF('teacher'), 'teacher')
+    ).toEqual([{ label: 'Open Classroom', href: '/classroom' }]);
+  });
+
+  it('changes nothing for a plain teacher, or for an admin who does not teach', () => {
+    for (const [role, profile] of [
+      ['teacher', BOTH],
+      ['school_admin', NEITHER],
+      ['academic_coordinator', NEITHER],
+      ['superadmin', NEITHER],
+    ] as const) {
+      expect(
+        getQuickActions(role, [], profile, CAPS_OF(role), role),
+        `${role} saw a different row set once the lens argument was passed`
+      ).toEqual(getQuickActions(role, [], profile, CAPS_OF(role)));
+    }
   });
 });

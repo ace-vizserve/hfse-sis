@@ -47,15 +47,19 @@ export default async function Home() {
   // a Teacher home page with none of the teacher actions on it. The full
   // ruling is on `resolveTeacherNavScope`.
   //
-  // 🔴 AND TODAY THAT SECOND HALF IS DORMANT — it is wired, it is correct, and
-  // it changes nothing on screen yet. Both consumers select their ROWS by the
-  // real role before `profile` is ever consulted: `getQuickActions` indexes
-  // `QUICK_ACTIONS[role]`, and `getHomeTodos` filters on
-  // `source.roles.includes(role)`. Every row carrying a `requires:` or reading
-  // `profile.*` sits under a `teacher`-only key, so a `school_admin` never
-  // reaches one whatever her profile says. Lensing those two tables is Phase
-  // 3b's job and needs its own review — do not do it from here, and do not
-  // conclude from the quiet home page that this argument is wrong.
+  // ✅ AND THAT SECOND HALF IS NO LONGER DORMANT (Phase 3b). It was wired and
+  // correct in 3a and still changed nothing on screen, because both consumers
+  // picked their ROWS by the real role before `profile` was ever consulted —
+  // `getQuickActions` indexed `QUICK_ACTIONS[role]` and `getHomeTodos` filtered
+  // `source.roles.includes(role)`, and every row carrying a `requires:` or
+  // reading `profile.*` sits under a `teacher`-only key. Both now take the view
+  // as a fifth/sixth argument, so a teaching admin's home page finally shows the
+  // marks and write-ups she owes instead of an admin's approvals.
+  //
+  // ⚠ `hiddenModules` now carries a second, route-shaped narrowing too — the
+  // modules the VIEW cannot open — which is why `activeRole` matters to it as
+  // well. The assignment half is still keyed on the real `role` and still must
+  // be. Full ruling on `resolveTeacherNavScope`.
   const { hiddenModules, profile } = await resolveTeacherNavScope(
     role,
     userId,
@@ -97,7 +101,8 @@ export default async function Home() {
             role,
             hiddenModules,
             profile,
-            capabilities
+            capabilities,
+            activeRole ?? role
           )}
         />
         <p className="mt-8 text-sm text-muted-foreground">
@@ -108,23 +113,39 @@ export default async function Home() {
     );
   }
 
+  // The lens, with the account role as the floor. `activeRole` is `null` only
+  // for a viewer with no staff lens at all — a parent — and one never reaches
+  // this page; naming `role` here rather than carrying `null` downstream keeps
+  // that impossible case from having to be modelled in two row tables.
+  const view = activeRole ?? role;
+
+  // Every branch from here down names `view`, not `role`. The panel titles, the
+  // rows in them and the cover panel all describe the job on screen, and a
+  // Teacher view showing "To-do — approvals assigned to you" over a list of
+  // marks due would be describing the other one.
   const todoTitle =
-    role === 'teacher'
+    view === 'teacher'
       ? 'Needs your attention'
-      : role === 'school_admin'
+      : view === 'school_admin'
         ? 'To-do — approvals assigned to you'
         : 'To-do';
 
   const [quickActions, recentActions, baseTodos, reportCardGaps, events] =
     await Promise.all([
       Promise.resolve(
-        getQuickActions(role, hiddenModules, profile, capabilities)
+        getQuickActions(role, hiddenModules, profile, capabilities, view)
       ),
       getRecentActions(email),
-      getHomeTodos(role, ay.ay_code, userId, profile, capabilities),
-      role === 'academic_coordinator' ||
-      role === 'school_admin' ||
-      role === 'superadmin'
+      getHomeTodos(role, ay.ay_code, userId, profile, capabilities, view),
+      // ⚠ ON THE VIEW TOO, THOUGH THE BRIEF DID NOT NAME IT — because it is
+      // appended to the SAME panel `getHomeTodos` just filled, and leaving it
+      // on the account role would put one oversight row ("N report cards have
+      // no adviser comment") at the bottom of an otherwise teacher-shaped list.
+      // Half-lensing one panel is the defect this phase exists to remove, not a
+      // smaller version of it.
+      view === 'academic_coordinator' ||
+      view === 'school_admin' ||
+      view === 'superadmin'
         ? reportCardGapsTodo(ay.ay_code)
         : Promise.resolve(null),
       getUpcomingCalendarEvents(ay.ay_code, 2, 14),
@@ -133,10 +154,17 @@ export default async function Home() {
   // Cover this teacher is booked to take but cannot open yet (migration 123).
   // ⚠ Read with the CALLER'S client on purpose — the row-read policy is
   // deliberately unwindowed, so a teacher can see their own booking without
-  // anything here reaching for the service client. Teachers only: nobody else
-  // is ever the substitute.
+  // anything here reaching for the service client.
+  //
+  // ⚠ ON THE VIEW, AND RLS IS WHAT MAKES THAT SAFE. The old `role === 'teacher'`
+  // test was an optimisation, not a gate: the query runs through the caller's
+  // own client against a policy that already scopes it to their own bookings,
+  // so a viewer with no cover gets an empty array whatever role is named here.
+  // A teaching admin standing in for a colleague is exactly who this panel is
+  // for, and in the Admin view she still does not see it — the same read, one
+  // view later, is the whole feature.
   const upcomingCover =
-    role === 'teacher'
+    view === 'teacher'
       ? await loadUpcomingCoverForUser(await createClient(), userId)
       : [];
 

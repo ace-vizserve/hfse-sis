@@ -17,7 +17,7 @@ import {
 
 import { can, type Capability } from '@/lib/auth/capabilities';
 import type { Role } from '@/lib/auth/roles';
-import { isRouteAllowed } from '@/lib/auth/roles';
+import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
 import { isHiddenModuleHref } from '@/lib/sidebar/module-visibility';
 import type { SidebarModule } from '@/lib/sidebar/registry';
 
@@ -304,20 +304,18 @@ export const NAV_ENTRIES: NavEntry[] = [
   },
 ];
 
-// isRouteAllowed()'s ROUTE_ACCESS matching is pathname-only (exact match or
-// prefix + "/") — a raw href with a query string (e.g. "?view=accounts")
-// never matches its own route's row and silently falls through to a
-// broader/less-specific one. Strip the query before gating so every entry's
-// visibility reflects the route it actually points at, not an accident of
-// which catch-all rule the unstripped string happens to hit.
-export function pathnameOnly(href: string): string {
-  const qIndex = href.indexOf('?');
-  return qIndex === -1 ? href : href.slice(0, qIndex);
-}
+// ⚠ `pathnameOnly` USED TO LIVE HERE AND IS NOW `hrefPathname` IN
+// lib/auth/roles.ts, next to the function it protects. Its reasoning was
+// correct and is preserved there; what was wrong was that four other copies of
+// the same rule existed elsewhere and this one split on `?` ALONE while three
+// of them split on `[?#]`. A fragment left on the string matches no
+// ROUTE_ACCESS row, which is the permissive direction. Nothing outside this
+// file ever imported the old name (checked), so it is gone rather than
+// re-exported. (role-switcher Phase 3b review, 2026-09-02.)
 
 // Filter nav entries by role gate. isRouteAllowed lives in lib/auth/roles
 // so the palette uses the SAME gate as the proxy + sidebar — called on the
-// query-stripped pathname (see pathnameOnly() above). An entry with an
+// query-stripped pathname (see `hrefPathname` there). An entry with an
 // explicit `requiresRoles` (only "Staff accounts" today) bypasses the
 // href lookup entirely.
 //
@@ -333,7 +331,7 @@ export function visibleNavEntries(
     (entry) =>
       (entry.requiresRoles
         ? !!role && entry.requiresRoles.includes(role)
-        : isRouteAllowed(pathnameOnly(entry.href), role)) &&
+        : isRouteAllowed(hrefPathname(entry.href), role)) &&
       !isHiddenModuleHref(entry.href, hiddenModules) &&
       (!entry.requiresCapability || can(capabilities, entry.requiresCapability))
   );

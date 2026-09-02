@@ -43,8 +43,15 @@ export default async function SectionsListPage() {
   // Cover booked for this teacher that has not started yet (migration 123).
   // Caller's client on purpose: the row-read policy is deliberately unwindowed,
   // so seeing your own booking needs no service-role escalation.
+  //
+  // ⚠ ON `activeRole`, NOT `role` (role-switcher Phase 3b). RLS scopes these
+  // rows to the viewer's own bookings, so the role test is an optimisation —
+  // skip a query that would come back empty — not a gate, and a teaching admin
+  // standing in for a colleague is precisely who has cover booked. Twin of the
+  // identical wrapper on app/(classroom)/classroom/page.tsx; the two show the
+  // same panel and must not disagree about who sees it.
   const upcomingCover =
-    role === 'teacher' && view
+    activeRole === 'teacher' && view
       ? await loadUpcomingCoverForUser(supabase, view.id)
       : [];
   const canManage =

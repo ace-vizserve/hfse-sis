@@ -61,9 +61,14 @@ export default async function ClassroomLayout({
     getDeclarationWaitingCount(service, role, id),
   ]);
 
-  // Hide switcher tiles this teacher can never use (subject-teacher-only
-  // users have no Attendance or Evaluation work). No-op for every other role.
-  const hiddenModules = await resolveHiddenModules(role, id);
+  // Two narrowings, one list. ASSIGNMENTS: a subject-teacher-only user has no
+  // Attendance or Evaluation work, so those tiles are dead ends for them — that
+  // half reads the real `role` and always will. THE VIEW: `/sis`, `/records`,
+  // `/p-files` and `/admissions` do not admit a teacher, so a teaching admin in
+  // the Teacher view is not offered a tile whose sidebar that view cannot fill.
+  // No-op for every account with a single view. See
+  // lib/sidebar/module-visibility.ts.
+  const hiddenModules = await resolveHiddenModules(role, id, activeRole);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
