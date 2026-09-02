@@ -1,10 +1,18 @@
 ﻿import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 
-// GET /api/users/teachers — list Supabase auth users whose app_metadata.role
-// is 'teacher'. Used by the assignments UI to populate the teacher picker.
-// Registrar+ only.
+// GET /api/users/teachers — the people who may be recorded as teaching a
+// class. Used by the section Teachers tab to refresh its picker after a write
+// (components/sis/section-teachers-tab.tsx). Registrar+ only.
+//
+// ⚠ ANY STAFF ROLE, not just `teacher`, and the path name is now a little
+// behind the meaning. It has to match what POST /api/teacher-assignments will
+// actually accept — a picker narrower than its route offers no way to fix the
+// six school_admin accounts that already hold classes, and a picker WIDER than
+// its route would just serve 400s. The security property is unchanged and
+// lives in `getAssignableStaffList`: parents share this Supabase project
+// (KD #1) and carry no role, so they are excluded exactly as before.
 export async function GET() {
   const auth = await requireRole([
     'academic_coordinator',
@@ -13,7 +21,7 @@ export async function GET() {
   ]);
   if ('error' in auth) return auth.error;
 
-  const list = await getTeacherList();
+  const list = await getAssignableStaffList();
   const teachers = list.map((u) => ({
     id: u.id,
     email: u.email,

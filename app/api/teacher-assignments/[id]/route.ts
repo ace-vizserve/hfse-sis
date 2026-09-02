@@ -143,15 +143,23 @@ export async function PATCH(
       );
     }
 
-    // The substitute must be an actual TEACHER account.
+    // The substitute must be a STAFF account — any staff role.
     //
-    // `getTeacherList()`, not `getStaffDisplayNameById()`. The latter returns
-    // every auth user with an email — which in this database means the ~1,000
-    // parent portal accounts as well as staff. Validating against it would let
-    // a parent's uuid be written here, and the RLS helpers in migration 117
-    // would then hand that parent read on the class's students, grading sheets
-    // and attendance. There is no FK across schemas, so this is the only place
-    // the check can happen.
+    // Kept in step with POST /api/relief/book, which books cover across every
+    // class a teacher holds while this books it for one. They are the same
+    // question asked at two grains, and letting them disagree would mean a
+    // teaching admin could cover a whole absence but not a single lesson.
+    //
+    // ⚠ `getAssignableStaffList()`, not `getStaffDisplayNameById()`. The
+    // latter returns every auth user with an email — which in this database
+    // means the ~1,000 parent portal accounts as well as staff (KD #1).
+    // Validating against it would let a parent's uuid be written here, and the
+    // RLS helpers in migration 117 would then hand that parent read on the
+    // class's students, grading sheets and attendance. There is no FK across
+    // schemas, so this is the only place the check can happen. Widening from
+    // teachers to staff does not weaken it: the helper filters `role !== null`
+    // and a parent carries no role at all, which is the property that was
+    // always doing the work here.
     //
     // DISABLED ACCOUNTS ARE EXCLUDED, deliberately disagreeing with the POST on
     // the parent route, which passes `excludeDisabled: false`. The two answer
@@ -159,13 +167,19 @@ export async function PATCH(
     // record, who may be disabled while on long leave and is still the name on
     // the report card; here it is "who is actually taking the lesson?" — and a
     // disabled account cannot sign in to enter a mark or take the register.
-    const { getTeacherList } = await import('@/lib/auth/staff-list');
-    const teachers = await getTeacherList();
-    if (!teachers.some((t) => t.id === reliefTeacherId)) {
+    const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
+    const assignable = await getAssignableStaffList();
+    if (!assignable.some((t) => t.id === reliefTeacherId)) {
+      // Not "refresh the list and try again", for the reason POST
+      // /api/teacher-assignments spells out: the list this check reads is
+      // cached on the SERVER for five minutes and shared by everyone, so a
+      // refresh in the browser cannot change the answer. The account is what
+      // has to change. Same cache, same helper, same 400 — the three gates say
+      // the same thing.
       return NextResponse.json(
         {
           error:
-            'Choose a teacher with an active account. Refresh the list and try again.',
+            'Choose a member of staff with an active account. Check that person on the Staff page, then try again.',
         },
         { status: 400 }
       );

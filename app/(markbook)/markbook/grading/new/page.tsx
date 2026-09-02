@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { PageShell } from '@/components/ui/page-shell';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
@@ -83,7 +83,10 @@ export default async function NewGradingSheetPage() {
       // year, so the picker just has to read it.
       .select('subject_id, display_name, ww_max_slots, pt_max_slots, qa_max')
       .eq('academic_year_id', ayId),
-    getTeacherList(),
+    // The "Who teaches this sheet?" picker. Any staff account: six of the
+    // people who actually teach a class here are on a school_admin account,
+    // and a teacher-only list left them unpickable on the sheet they own.
+    getAssignableStaffList(),
   ]);
 
   for (const [key, res] of [

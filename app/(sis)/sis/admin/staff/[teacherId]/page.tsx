@@ -25,7 +25,7 @@ import {
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 import {
   ASSIGNMENT_ROLE_LABELS,
   isAdviserRole,
@@ -70,9 +70,13 @@ export default async function TeacherClassesPage({
   // editable — staffing next year before it starts is the normal way to do it.
   const viewOnly = ayCode < currentAyCode;
 
-  const [teacher, allTeachers, capabilities] = await Promise.all([
+  const [teacher, coverCandidates, capabilities] = await Promise.all([
     getTeacherDetail(teacherId, ayCode),
-    getTeacherList(),
+    // Everyone this page can offer as a substitute. Any staff role, matching
+    // what POST /api/relief/book and PATCH /api/teacher-assignments/[id] will
+    // accept — teaching admins cover lessons here, and a teacher-only list
+    // could not record it.
+    getAssignableStaffList(),
     getSessionUser().then((u) =>
       u?.role ? getCapabilitiesForRole(u.role) : []
     ),
@@ -88,7 +92,10 @@ export default async function TeacherClassesPage({
   const canManageRelief = !viewOnly && can(capabilities, 'staff.manage_relief');
   const canEditAssignments =
     !viewOnly && can(capabilities, 'staff.edit_assignments');
-  const reliefOptions = allTeachers.map((t) => ({ id: t.id, name: t.name }));
+  const reliefOptions = coverCandidates.map((t) => ({
+    id: t.id,
+    name: t.name,
+  }));
 
   // Both role families (migration 124). A co-adviser or co-teacher really does
   // hold the class, so dropping them here left a co-teacher's own page empty.

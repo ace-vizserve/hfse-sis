@@ -140,22 +140,34 @@ function buildColumns(
     },
     {
       id: 'assignments',
+      // Keyed on whether this page HAS teaching data for the row, not on the
+      // row's role. Anyone on staff can hold a class now, so `role !==
+      // 'teacher'` is no longer a reason to say there is nothing to show.
+      //
+      // ⚠ IT STILL SHOWS A DASH FOR MOST NON-TEACHER STAFF, AND THAT IS A
+      // KNOWN GAP, NOT A CLAIM. `assignmentsByUserId` is built from
+      // `loadStaffAssignments`, whose roster is still teacher-only — see the
+      // note above `loadStaffAssignmentsUncached` in lib/sis/staff.ts for why
+      // widening that roster is a product call nobody has made. A dash means
+      // "not shown here"; printing "No assignments" for a school_admin who
+      // advises a form class would be a statement, and a false one. When that
+      // roster widens, this column follows with no further edit.
       accessorFn: (row) => {
         const a = assignmentsByUserId[row.id];
-        if (row.role !== 'teacher') return '';
-        if (!a) return 'No assignments';
+        if (!a) return '';
+        // Already answers 'No assignments' for an empty pair of lists.
         return assignmentSummaryText(a.adviserSections, a.subjectAssignments);
       },
       header: 'Assignments',
       cell: ({ row }) => {
-        if (row.original.role !== 'teacher') {
+        const a = assignmentsByUserId[row.original.id];
+        if (!a) {
           return <span className="text-sm text-muted-foreground">—</span>;
         }
-        const a = assignmentsByUserId[row.original.id];
         return (
           <AssignmentChips
-            adviserSections={a?.adviserSections ?? []}
-            subjectAssignments={a?.subjectAssignments ?? []}
+            adviserSections={a.adviserSections}
+            subjectAssignments={a.subjectAssignments}
           />
         );
       },
@@ -241,21 +253,32 @@ function buildColumns(
               isSelf={row.original.id === currentUserId}
               canManage={canManage}
             />
-            {row.original.role === 'teacher' && (
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  onManageAssignments({
-                    userId: row.original.id,
-                    name: row.original.display_name,
-                    email: row.original.email,
-                  });
-                }}
-              >
-                <GraduationCap className="size-3.5" />
-                Manage teaching assignments
-              </DropdownMenuItem>
-            )}
+            {/* Offered on EVERY staff row, not only the ones whose role is
+                `teacher`. Anyone on staff can hold a class — six school_admin
+                accounts already do in the live year, four of them as the form
+                adviser of record — and this row action, which opens the
+                assignment sheet for the person in the row, is the one place in
+                the app those rows can be maintained.
+
+                ⚠ This reads the ROLE OF THE ROW, the person being listed, not
+                the viewer's. It is not a lens site and the lens must not be
+                applied to it. Every row on this page is a staff account
+                already (`listStaffUsers` filters to real roles), so there is
+                no parent to exclude here; the parent check that matters is on
+                the write path, in POST /api/teacher-assignments. */}
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                onManageAssignments({
+                  userId: row.original.id,
+                  name: row.original.display_name,
+                  email: row.original.email,
+                });
+              }}
+            >
+              <GraduationCap className="size-3.5" />
+              Manage teaching assignments
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DeleteUserMenuItem
               user={row.original}

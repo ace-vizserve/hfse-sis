@@ -13,7 +13,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { getViewContext } from '@/lib/auth/view-context';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { Button } from '@/components/ui/button';
@@ -386,7 +386,14 @@ export default async function GradingListPage({
 
   // Hoisted so it can serve both the teacherById lookup inside the block
   // and the dropdown options below — one auth-admin call, not two.
-  let teacherList: Awaited<ReturnType<typeof getTeacherList>> = [];
+  //
+  // ⚠ ASSIGNABLE STAFF, NOT `getTeacherList()`. This list is used to turn a
+  // `teacher_assignments.teacher_user_id` into a name, and the loop below
+  // `continue`s past any id it cannot find — so a class held by a school_admin
+  // (six of them in the live year, four as form adviser) rendered with an
+  // empty Subject teacher / Form adviser cell and was missing from the filter
+  // dropdowns that are built from the same list.
+  let teacherList: Awaited<ReturnType<typeof getAssignableStaffList>> = [];
 
   if (visibleSectionIds.length > 0) {
     const service = createServiceClient();
@@ -396,7 +403,13 @@ export default async function GradingListPage({
         .select('section_id, subject_id, teacher_user_id, role')
         .in('role', ['subject_teacher', 'form_adviser'])
         .in('section_id', visibleSectionIds),
-      getTeacherList(),
+      // `excludeDisabled: false` — the SAME reason this is the assignable-staff
+      // list and not the teacher list, one notch over. This is a name lookup,
+      // and the loop below drops any id it cannot name, so excluding disabled
+      // accounts blanks the cell for a class whose teacher has since left or
+      // is on long leave. They are still the name of record on that sheet.
+      // `loadFormAdvisersBySection` passes `false` for exactly this reason.
+      getAssignableStaffList({ excludeDisabled: false }),
     ]);
     teacherList = resolvedTeachers;
     const teacherById = new Map(teacherList.map((t) => [t.id, t]));

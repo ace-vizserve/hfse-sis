@@ -5,7 +5,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
 import { getCoverBoard, RECENTLY_ENDED_DAYS } from '@/lib/relief/cover-board';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
@@ -49,9 +49,13 @@ export default async function CoverPage() {
   if (!ayId) redirect('/sis');
 
   const today = sgToday();
+  // Anyone on staff can stand in, not only accounts whose role is `teacher` —
+  // this list has to match what POST /api/relief/book will accept. Active
+  // accounts only (the helper's default): a substitute who cannot sign in
+  // cannot take the register.
   const [board, teachers] = await Promise.all([
     getCoverBoard(ayId, today),
-    getTeacherList(),
+    getAssignableStaffList(),
   ]);
 
   return (

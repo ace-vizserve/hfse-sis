@@ -267,41 +267,51 @@ export async function POST(request: NextRequest) {
     ? (parsed.data as AssignmentBulkCreate).assignments
     : [parsed.data as AssignmentCreate];
 
-  // Every name on the list must be an actual TEACHER account.
+  // Every name on the list must be a STAFF account — any staff role, not only
+  // `teacher`.
   //
-  // `getTeacherList()`, not `getStaffDisplayNameById()`. The latter returns
-  // every auth user with an email, which in this database means the ~1,000
-  // parent portal accounts as well as staff — so validating against it would
-  // let a parent's id be recorded as a teacher, and the RLS helpers in
-  // migration 005 would then hand that parent read access to the class's
-  // students and grades. Migration 003 declares no FK to auth.users and says
-  // in as many words that "the service role enforces validity when writing
-  // assignments": this is that enforcement, and until now it did not exist.
+  // ⚠ THE ROLE IS NOT THE POINT. THE PARENT ACCOUNTS ARE. Neither this list
+  // nor its predecessor may ever become `getStaffDisplayNameById()`: the
+  // latter returns every auth user with an email, which in this database means
+  // the ~1,000 parent portal accounts as well as staff (KD #1), so validating
+  // against it would let a parent's id be recorded as teaching a class, and
+  // the RLS helpers in migration 005 would then hand that parent read access
+  // to that class's students and grades. Migration 003 declares no FK to
+  // auth.users and says in as many words that "the service role enforces
+  // validity when writing assignments": this line is that enforcement.
+  //
+  // `getAssignableStaffList()` keeps exactly that property while dropping the
+  // one that was never a security rule. It filters `role !== null`, and a
+  // parent carries no role at all — so parents stay out for precisely the
+  // reason they always did, while a school_admin who advises a form class can
+  // now be recorded as doing so. Six of them already are, written straight to
+  // the database by the deployment import because this gate refused them, and
+  // four hold a form class whose FCA write-ups gate report-card publishing
+  // (KD #138 / #145). Until now nobody could maintain those rows on screen.
   //
   // `excludeDisabled: false` because the Accounts tab offers "Manage teaching
-  // assignments" on any row whose role is teacher, disabled or not
+  // assignments" on any staff row, disabled or not
   // (components/sis/staff-accounts-client.tsx). Recording who holds a class is
   // a separate question from whether that person can sign in today, and
-  // tightening it here would break a path that works. The parent-vs-teacher
-  // distinction, which is the security property, is unaffected: `getTeacherList`
-  // filters `role === 'teacher'` BEFORE it filters on disabled, and a parent
-  // carries `role: null`.
-  const { getTeacherList } = await import('@/lib/auth/staff-list');
-  const teachers = await getTeacherList({ excludeDisabled: false });
-  const teacherIds = new Set(teachers.map((t) => t.id));
-  if (rows.some((r) => !teacherIds.has(r.teacher_user_id))) {
+  // tightening it here would break a path that works. The staff-vs-parent
+  // distinction is unaffected: the helper filters on role BEFORE it filters on
+  // disabled.
+  const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
+  const assignable = await getAssignableStaffList({ excludeDisabled: false });
+  const assignableIds = new Set(assignable.map((t) => t.id));
+  if (rows.some((r) => !assignableIds.has(r.teacher_user_id))) {
     // Not "refresh the list and try again": the list this check reads is
     // cached on the server for five minutes and shared by everyone, so a
     // refresh in the browser cannot change the answer. The account is what has
     // to change — and POST /api/sis/admin/users now busts the `teacher-emails`
     // tag, so an account created on the Staff page is assignable immediately
     // rather than up to five minutes later. (PATCH and DELETE on that same
-    // resource still do not: changing an existing account's role to teacher
-    // keeps the five-minute wait.)
+    // resource still do not: giving an existing account a role keeps the
+    // five-minute wait.)
     return NextResponse.json(
       {
         error:
-          'Only someone with a teacher account can be given a class. Check that person on the Staff page, then try again.',
+          'Only someone with a staff account can be given a class. Check that person on the Staff page, then try again.',
       },
       { status: 400 }
     );
@@ -449,8 +459,8 @@ export async function POST(request: NextRequest) {
   // unique index answers "…Nothing was saved" — which by then is false.
   //
   // Names first, in two reads for the whole batch. The teacher names are free:
-  // the account check above already loaded the teacher list.
-  const teacherNames = new Map(teachers.map((t) => [t.id, t.name]));
+  // the account check above already loaded the assignable-staff list.
+  const teacherNames = new Map(assignable.map((t) => [t.id, t.name]));
   const { sections, subjects } = await resolveBatchNames(service, created);
 
   // One audit row per assignment, not one per batch. Each assignment is removed

@@ -15,8 +15,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockGetTeacherList = vi.fn();
 const mockFrom = vi.fn();
 
+// `loadStaffAssignments` (the subject of this file) reads `getTeacherList`;
+// `loadFormAdvisersBySection` in the same module reads `getAssignableStaffList`.
+// Both must exist on the mock or the module import throws, even though only the
+// first is exercised here.
 vi.mock('@/lib/auth/staff-list', () => ({
   getTeacherList: (...args: unknown[]) => mockGetTeacherList(...args),
+  getAssignableStaffList: (...args: unknown[]) => mockGetTeacherList(...args),
 }));
 
 vi.mock('@/lib/supabase/service', () => ({

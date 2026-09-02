@@ -122,9 +122,15 @@ const getTeacherListMock = vi.fn(async (_opts?: unknown) => [
     disabled: false,
   },
 ]);
+// Both helpers answer from the same stub. They differ only in which accounts
+// they let through (`role === 'teacher'` vs `role !== null`), which is not a
+// distinction a round-trip budget can see — but the relief-book route reads
+// the assignable-staff one and the staff loaders read both, so both have to
+// exist on the mock or the import throws.
 vi.mock('@/lib/auth/staff-list', () => ({
   getStaffDisplayNameById: () => getStaffDisplayNameByIdMock(),
   getTeacherList: (opts?: unknown) => getTeacherListMock(opts),
+  getAssignableStaffList: (opts?: unknown) => getTeacherListMock(opts),
 }));
 
 // `createServiceClient()` is called directly inside the call graph of

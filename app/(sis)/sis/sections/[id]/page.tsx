@@ -4,7 +4,7 @@ import { ArrowUpRight, UserCheck, UserMinus, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList } from '@/lib/auth/staff-list';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
@@ -168,7 +168,12 @@ export default async function SisSectionDetailPage({
           .eq('level_id', level.id)
           .neq('id', id)
       : Promise.resolve({ data: [] as unknown[] }),
-    getTeacherList(),
+    // Any staff account, not just the ones whose role is `teacher` — this
+    // feeds the Teachers tab's picker, and it has to offer whoever POST
+    // /api/teacher-assignments will accept. Four form classes in the live year
+    // have their adviser on a school_admin account; a teacher-only list here
+    // meant a co-teacher change on one of them could not be made at all.
+    getAssignableStaffList(),
     supabase
       .from('teacher_assignments')
       .select(

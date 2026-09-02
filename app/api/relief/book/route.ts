@@ -69,18 +69,39 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The substitute must be a real TEACHER account. `getTeacherList()`, never
-  // `getStaffDisplayNameById()` — the latter returns every auth user with an
-  // email, which in this database is ~1,000 parent portal accounts, and there
-  // is no FK across schemas to stop one being written here.
+  // The substitute must be a STAFF account — any staff role. Teaching admins
+  // cover lessons here in practice, and until now this gate refused to record
+  // it, so the arrangement happened off-system.
+  //
+  // ⚠ `getAssignableStaffList()`, NEVER `getStaffDisplayNameById()`. The
+  // latter returns every auth user with an email, which in this database is
+  // ~1,000 parent portal accounts (KD #1), and there is no FK across schemas
+  // to stop one being written here — a parent's uuid in this column would give
+  // them the covering teacher's read on the class through the migration-117
+  // RLS helpers. Widening from teachers to staff does not touch that: the
+  // helper filters `role !== null`, and a parent carries no role at all.
+  //
+  // Disabled accounts stay out (the helper's default), deliberately
+  // disagreeing with POST /api/teacher-assignments, which passes
+  // `excludeDisabled: false`. The two answer different questions: there it is
+  // "whose class is this?" — the name of record, who may be on long leave and
+  // is still the name on the report card; here it is "who is actually taking
+  // the lesson?", and a disabled account cannot sign in to enter a mark or
+  // take the register.
   if (!ending) {
-    const { getTeacherList } = await import('@/lib/auth/staff-list');
-    const teachers = await getTeacherList();
-    if (!teachers.some((t) => t.id === reliefId)) {
+    const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
+    const assignable = await getAssignableStaffList();
+    if (!assignable.some((t) => t.id === reliefId)) {
+      // Not "refresh the list and try again", for the reason POST
+      // /api/teacher-assignments spells out: the list this check reads is
+      // cached on the SERVER for five minutes and shared by everyone, so a
+      // refresh in the browser cannot change the answer. The account is what
+      // has to change. Same cache, same helper, same 400 — the three gates say
+      // the same thing.
       return NextResponse.json(
         {
           error:
-            'Choose a teacher with an active account. Refresh the list and try again.',
+            'Choose a member of staff with an active account. Check that person on the Staff page, then try again.',
         },
         { status: 400 }
       );

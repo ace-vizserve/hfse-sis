@@ -51,14 +51,19 @@ vi.mock('@/lib/cache/invalidate-drill-tags', () => ({
   invalidateDrillTags: (...args: unknown[]) => invalidateMock(...args),
 }));
 
-// The teacher accounts that exist. NOT_A_TEACHER is deliberately absent so a
-// body naming it stands in for the parent uuid this check exists to keep out.
+// The staff accounts that exist. PARENT_ACCOUNT is deliberately absent from
+// the list below: it stands in for the ~1,000 parent portal uuids that share
+// this Supabase project and that this check exists to keep out.
 const TEACHER_A = '11111111-1111-4111-8111-111111111111';
 const TEACHER_B = '22222222-2222-4222-8222-222222222222';
 // A real teacher whose account has been disabled — still assignable on purpose,
 // see the `excludeDisabled: false` test at the bottom of this file.
 const TEACHER_DISABLED = '33333333-3333-4333-8333-333333333333';
-const NOT_A_TEACHER = '99999999-9999-4999-8999-999999999999';
+// A school_admin who also teaches. Six real accounts look exactly like this in
+// AY2026 and four of them are a form adviser of record; until this phase the
+// route refused them and their rows could only be written in SQL.
+const TEACHING_ADMIN = '44444444-4444-4444-8444-444444444444';
+const PARENT_ACCOUNT = '99999999-9999-4999-8999-999999999999';
 
 const SECTION_1 = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SECTION_2 = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -69,7 +74,10 @@ const ENGLISH = 'dddddddd-4444-4444-8444-444444444444';
 const seqId = (n: number) =>
   `0000${String(n).padStart(4, '0')}-0000-4000-8000-000000000000`;
 
-const ALL_TEACHER_ACCOUNTS = [
+// Everyone `getAssignableStaffList()` would return: every account holding a
+// staff role, of any kind. The teaching admin is in here and the parent is not
+// — which is the whole shape of the rule the route enforces.
+const ALL_ASSIGNABLE_ACCOUNTS = [
   { id: TEACHER_A, email: 'a@hfse.test', name: 'Ms Tan', disabled: false },
   { id: TEACHER_B, email: 'b@hfse.test', name: 'Mr Lim', disabled: false },
   {
@@ -78,20 +86,37 @@ const ALL_TEACHER_ACCOUNTS = [
     name: 'Mrs Ong',
     disabled: true,
   },
+  {
+    id: TEACHING_ADMIN,
+    email: 'kohsuat.hoon@hfse.test',
+    name: 'Ms Koh',
+    disabled: false,
+  },
 ];
 
 // Honours `excludeDisabled` the way the real helper does, so the route's choice
 // of argument is a behaviour the tests can see rather than a call signature.
-const getTeacherListMock = vi.fn(
+const getAssignableStaffListMock = vi.fn(
   async (options: { excludeDisabled?: boolean } = {}) => {
     const excludeDisabled = options.excludeDisabled ?? true;
-    return ALL_TEACHER_ACCOUNTS.filter((t) => !excludeDisabled || !t.disabled);
+    return ALL_ASSIGNABLE_ACCOUNTS.filter(
+      (t) => !excludeDisabled || !t.disabled
+    );
   }
 );
 
+// `getTeacherList` is still exported by the real module and still means
+// "role === 'teacher'". It is mocked here to THROW: the route must not reach
+// for it, and a silent fallback to a narrower list would let the teaching
+// admin be refused again with every other assertion still green.
 vi.mock('@/lib/auth/staff-list', () => ({
-  getTeacherList: (options?: { excludeDisabled?: boolean }) =>
-    getTeacherListMock(options),
+  getAssignableStaffList: (options?: { excludeDisabled?: boolean }) =>
+    getAssignableStaffListMock(options),
+  getTeacherList: () => {
+    throw new Error(
+      'POST /api/teacher-assignments must validate against getAssignableStaffList, not getTeacherList'
+    );
+  },
 }));
 
 /** Every batch handed to `.insert()`, in order. Length > 1 means it looped. */
@@ -185,7 +210,7 @@ beforeEach(() => {
   insertError = null;
   logActionMock.mockClear();
   invalidateMock.mockClear();
-  getTeacherListMock.mockClear();
+  getAssignableStaffListMock.mockClear();
 });
 
 describe('staffing several classes at once', () => {
@@ -478,30 +503,73 @@ describe('a batch with something wrong in it', () => {
     expect(error).toMatch(/subject/i);
   });
 
-  it('refuses an id that is not a teacher account', async () => {
-    // getStaffDisplayNameById() would have accepted this: it returns every auth
-    // user with an email, which in this database is ~1,000 parent accounts. A
-    // parent recorded as a teacher gains RLS read on that class's students and
-    // grades.
-    const error = await reject([{ ...good, teacher_user_id: NOT_A_TEACHER }]);
-    expect(error).toMatch(/teacher account/i);
+  it('refuses a parent account — the security property, unchanged', async () => {
+    // THIS IS THE ONE THAT MATTERS. Widening the rule from "must be a teacher"
+    // to "must be staff" must not widen it to "must be an auth user":
+    // getStaffDisplayNameById() would accept this id, because it returns every
+    // auth user with an email, which in this database is ~1,000 parent portal
+    // accounts (KD #1). A parent recorded against a class gains RLS read on
+    // that class's students and their grades, and there is no FK to stop the
+    // write. A parent carries `role: null`, which is exactly what
+    // getAssignableStaffList filters on.
+    const error = await reject([{ ...good, teacher_user_id: PARENT_ACCOUNT }]);
+    expect(error).toMatch(/staff account/i);
     // Not "refresh the list": the list is cached on the SERVER for five
     // minutes and shared by everyone, so refreshing the page cannot change the
     // answer. Telling an admin to do something that cannot work is worse than
     // telling them nothing.
     expect(error).not.toMatch(/refresh the list/i);
+    // And it must not still be stating the rule that no longer exists.
+    expect(error).not.toMatch(/teacher account/i);
   });
 
-  it('checks EVERY row against the teacher list, not just the first', async () => {
+  it('checks EVERY row against the staff list, not just the first', async () => {
     // The check has to hold for the whole batch. A version that looked only at
     // row 0 passed every other test in this file, because they all name a bad
-    // teacher in a one-row body — so this one puts a real teacher first and the
+    // account in a one-row body — so this one puts a real teacher first and the
     // parent uuid second.
     const error = await reject([
       good,
-      { ...good, teacher_user_id: NOT_A_TEACHER, section_id: SECTION_2 },
+      { ...good, teacher_user_id: PARENT_ACCOUNT, section_id: SECTION_2 },
     ]);
-    expect(error).toMatch(/teacher account/i);
+    expect(error).toMatch(/staff account/i);
+  });
+
+  it('accepts a school_admin who teaches — the point of the whole phase', async () => {
+    // Six such accounts hold AY2026 classes and four are the form adviser of
+    // record. Those rows were written straight to the database by the
+    // deployment import because this route refused them, which is why a
+    // co-teacher change on one of those classes could not be made in the app.
+    const res = (await POST(
+      req({
+        teacher_user_id: TEACHING_ADMIN,
+        section_id: SECTION_1,
+        subject_id: MATHS,
+        role: 'subject_teacher',
+      }) as never
+    )) as Response;
+
+    expect(res.status).toBe(200);
+    expect(writtenRows()).toHaveLength(1);
+    expect(writtenRows()[0].teacher_user_id).toBe(TEACHING_ADMIN);
+  });
+
+  it('accepts a school_admin as the form adviser of record', async () => {
+    // `teacher_assignments.role` is a different axis from the account's RBAC
+    // role, and this is where the two are most easily conflated: being a
+    // school_admin says nothing about whether the person may be the FCA, and
+    // FCA write-ups hard-gate report-card publishing (KD #138 / #145).
+    const res = (await POST(
+      req({
+        teacher_user_id: TEACHING_ADMIN,
+        section_id: SECTION_1,
+        subject_id: null,
+        role: 'form_adviser',
+      }) as never
+    )) as Response;
+
+    expect(res.status).toBe(200);
+    expect(writtenRows()[0].role).toBe('form_adviser');
   });
 
   it('says nothing was saved when the database refuses the batch', async () => {
@@ -658,10 +726,10 @@ describe('adding one assignment', () => {
     expect(body.error).not.toMatch(/expected|received|uuid|string|undefined/i);
   });
 
-  it('checks the teacher account on the single path too', async () => {
+  it('checks the account on the single path too', async () => {
     const res = (await POST(
       req({
-        teacher_user_id: NOT_A_TEACHER,
+        teacher_user_id: PARENT_ACCOUNT,
         section_id: SECTION_1,
         subject_id: MATHS,
         role: 'subject_teacher',
@@ -682,13 +750,13 @@ describe('who may write', () => {
     );
   });
 
-  it('still lets a disabled teacher be recorded against a class', async () => {
-    // A deliberate decision, and until now an unpinned one: the Accounts tab
-    // offers "Manage teaching assignments" on any teacher row, disabled or not,
-    // and who HELD a class is a separate question from who can sign in today.
-    // The route asks for the list with `excludeDisabled: false` to allow it.
-    // The security property is untouched — the list is teachers only, and a
-    // parent account carries no role at all.
+  it('still lets a disabled staff account be recorded against a class', async () => {
+    // A deliberate decision: the Accounts tab offers "Manage teaching
+    // assignments" on any staff row, disabled or not, and who HELD a class is a
+    // separate question from who can sign in today. The route asks for the list
+    // with `excludeDisabled: false` to allow it. The security property is
+    // untouched — the helper filters on role BEFORE it filters on disabled, and
+    // a parent account carries no role at all.
     const res = (await POST(
       req({
         teacher_user_id: TEACHER_DISABLED,
@@ -700,16 +768,21 @@ describe('who may write', () => {
 
     expect(res.status).toBe(200);
     expect(writtenRows()).toHaveLength(1);
-    expect(getTeacherListMock).toHaveBeenCalledWith({ excludeDisabled: false });
+    expect(getAssignableStaffListMock).toHaveBeenCalledWith({
+      excludeDisabled: false,
+    });
   });
 
-  it('checks teachers against the teacher list, never the whole auth table', () => {
+  it('checks against the staff list, never the whole auth table', () => {
+    // A grep, because the failure it guards is someone reaching for the more
+    // convenient helper. `getStaffDisplayNameById` returns EVERY auth user with
+    // an email, ~1,000 of which are parent portal accounts on this project.
     const code = source(ROUTE)
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .split('\n')
       .map((line) => line.replace(/\/\/.*/, ''))
       .join('\n');
-    expect(code).toContain('getTeacherList');
+    expect(code).toContain('getAssignableStaffList');
     expect(code).not.toContain('getStaffDisplayNameById');
   });
 });

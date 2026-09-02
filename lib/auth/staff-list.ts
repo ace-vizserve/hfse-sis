@@ -150,8 +150,11 @@ function _loadAllStaff(): Promise<_StaffRecord[]> {
  * Returns Array (not Map) because Next 16's unstable_cache JSON-serializes
  * Maps as `{}`. Callers iterate or build their own Map.
  *
- * Used by surfaces that need a "pick a teacher" combobox — e.g. the
- * teacher_name dropdown on /markbook/grading/new.
+ * Used by surfaces asking "whose JOB is teaching?" — the teaching headcount
+ * chip on the Staff page, the Assignments cut's roster.
+ *
+ * ⚠ NOT the list of people who may be RECORDED as teaching a class. That is
+ * `getAssignableStaffList()` below, and the two are deliberately different.
  */
 export async function getTeacherList(
   options: Options = {}
@@ -160,6 +163,86 @@ export async function getTeacherList(
   const all = await _loadAllStaff();
   return all
     .filter((u) => u.role === 'teacher' && (!excludeDisabled || !u.disabled))
+    .map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      disabled: u.disabled,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Returns every account that holds a staff role — ANY role, not just
+ * `teacher`. Same shape, same sort and same `excludeDisabled` option as
+ * `getTeacherList()`, and the same 5-minute `teacher-emails` cache, so this
+ * costs no extra read.
+ *
+ * This is the list of people who may be **recorded as teaching**: written into
+ * `teacher_assignments.teacher_user_id`, offered in a class's Teachers tab, or
+ * booked as a substitute. HFSE staffs classes that way in practice — six
+ * `school_admin` accounts hold AY2026 assignments and four of them are the
+ * form adviser of record for a class, which FCA write-ups and report-card
+ * publishing depend on (KD #138 / #145). Those rows were written by the
+ * deployment import in SQL, because the two API routes that guard the column
+ * would have refused them. Mr Ace's rule: "any role can be a teacher
+ * basically", and asked directly who should become assignable he chose any
+ * staff account.
+ *
+ * ⚠ THIS IS NOT `getStaffDisplayNameById()`, AND THAT IS THE WHOLE POINT OF
+ * THE HELPER EXISTING. Parents authenticate against this same Supabase project
+ * (KD #1): of ~1,039 auth users, roughly 1,000 are parent portal accounts.
+ * `teacher_assignments` declares no FK to `auth.users` — migration 003 says in
+ * as many words that the service role enforces validity when writing
+ * assignments — so a parent's uuid written into that column would be accepted
+ * by the database, and the migration-005 RLS helpers would then hand that
+ * parent read access to the class's students and their grades.
+ *
+ * **"Must be a teacher" was never the security property. "Must not be a
+ * parent" is.**
+ *
+ * ⚠ AND THAT IS WHY THE FILTER IS `ROLES` MEMBERSHIP, NOT `role !== null`.
+ * The two are not the same test, and the gap between them is owned by code we
+ * do not control. `loadAllStaffUncached` above resolves a role as
+ * `appMeta.role ?? userMeta.role ?? null`, and **the parent portal is a
+ * separate repo** that creates the parent accounts. The day it writes any
+ * string at all into `user_metadata.role` — `'parent'`, `'user'`, a tenant tag
+ * — a `!== null` test admits **every one of the ~1,000 parent accounts** into
+ * a table with no foreign key, and the RLS helpers do the rest. A `ROLES`
+ * membership test admits none of them, whatever that string turns out to be.
+ * It also closes `role: ''`, which survives `??` and passes `!== null` today.
+ *
+ * Same reasoning, same answer as `lib/approvals/config.ts`, which asked this
+ * exact question about a different picker ("the candidates are ANY STAFF
+ * ACCOUNT", Mr Ace 2026-08-27) and built its list from the ROLES-narrowed
+ * `listStaffUsers` for the same stated reason. Match it; do not re-widen this
+ * to `!= null` without moving that one too.
+ *
+ * ⚠ A stale role string — say `registrar`, from before the migration-092
+ * rename (KD #155) — is therefore NOT assignable, and that is correct rather
+ * than a gap. Such an account is already inert app-wide: `getUserRole` and
+ * `getRoleFromClaims` narrow to `ROLES` too, so it resolves to `null`, holds
+ * no capability, and `proxy.ts` routes it to the parent portal. Making it
+ * assignable here would recover nothing; fixing the account is what recovers
+ * the person.
+ *
+ * ⚠ Deliberately a SIBLING of `getTeacherList()`, never a widening of it.
+ * Several surfaces genuinely do mean "someone whose job is teaching" — the
+ * "N teaching" headcount, the Assignments roster — and re-pointing those would
+ * change what those pages say rather than what they permit.
+ */
+export async function getAssignableStaffList(
+  options: Options = {}
+): Promise<StaffMember[]> {
+  const excludeDisabled = options.excludeDisabled ?? true;
+  const all = await _loadAllStaff();
+  return all
+    .filter(
+      (u) =>
+        u.role != null &&
+        (ROLES as readonly string[]).includes(u.role) &&
+        (!excludeDisabled || !u.disabled)
+    )
     .map((u) => ({
       id: u.id,
       email: u.email,

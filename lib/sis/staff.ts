@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
-import { getTeacherList } from '@/lib/auth/staff-list';
+import { getAssignableStaffList, getTeacherList } from '@/lib/auth/staff-list';
 import {
   type AssignmentRole,
   isAdviserRole,
@@ -73,6 +73,21 @@ type RawAssignment = {
     | null;
 };
 
+// The roster behind the Assignments cut of /sis/admin/staff.
+//
+// ⚠ STILL `getTeacherList()`, deliberately, and it is the one place in this
+// file that stays that way. This builds a LIST OF PEOPLE to show, not a list
+// of people who may be recorded as teaching, and `staff-table.tsx` prints a
+// `role="teacher"` chip on every row on the strength of it. Widening it to all
+// staff would fill the page with p_file_officer and admissions accounts that
+// hold nothing, and make that chip a lie.
+//
+// ⚠ THE CONSEQUENCE, KNOWN AND ACCEPTED: the six school_admin accounts that
+// hold AY2026 classes do not appear in this cut. They are maintained from the
+// Accounts cut instead, whose "Manage teaching assignments" row action now
+// offers on any staff row and opens the same sheet. Deciding what this roster
+// should mean — teachers, or everyone who holds a class — is a product call
+// nobody has made yet.
 async function loadStaffAssignmentsUncached(
   ayCode: string
 ): Promise<StaffRow[]> {
@@ -239,13 +254,25 @@ async function loadFormAdvisersBySectionUncached(
     .eq('role', 'form_adviser')
     .in('section_id', sectionIds);
 
-  const teachers = await getTeacherList({ excludeDisabled: false });
-  const teacherMap = new Map(teachers.map((t) => [t.id, t.name]));
+  // ⚠ ASSIGNABLE STAFF, NOT `getTeacherList()`, and this was a live defect.
+  //
+  // This is a NAME LOOKUP, not a permission check: it turns the adviser's
+  // user id into something to print. The loop below drops any row whose id it
+  // cannot name, so filtering to `role === 'teacher'` meant the four AY2026
+  // form classes whose adviser is on a school_admin account came back with no
+  // adviser at all — on the section lists in Markbook, Attendance, Evaluation,
+  // Classroom and Records, and on the SIS home page. The adviser was recorded
+  // correctly the whole time; only these screens said otherwise.
+  //
+  // `excludeDisabled: false` for the same reason it always was: whoever holds
+  // the class is the name of record whether or not they can sign in today.
+  const staff = await getAssignableStaffList({ excludeDisabled: false });
+  const nameById = new Map(staff.map((t) => [t.id, t.name]));
 
   const result: Record<string, AdviserEntry> = {};
   for (const row of rows ?? []) {
     if (!result[row.section_id]) {
-      const name = teacherMap.get(row.teacher_user_id);
+      const name = nameById.get(row.teacher_user_id);
       if (name) {
         result[row.section_id] = { userId: row.teacher_user_id, name };
       }

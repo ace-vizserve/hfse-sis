@@ -48,14 +48,17 @@ const TEACHER_B = '22222222-2222-4222-8222-222222222222';
 // A real teacher whose account has been disabled. Excluded on purpose here —
 // see the test at the bottom for why this route disagrees with its sibling.
 const TEACHER_DISABLED = '33333333-3333-4333-8333-333333333333';
-// Deliberately not a teacher account. Stands in for the ~1,000 parent portal
-// uuids that `getStaffDisplayNameById` would happily have accepted.
+// Deliberately not a staff account at all. Stands in for the ~1,000 parent
+// portal uuids that `getStaffDisplayNameById` would happily have accepted.
 const NOT_A_TEACHER = '99999999-9999-4999-8999-999999999999';
+// A school_admin who also teaches, and who may therefore cover a lesson. Six
+// accounts look like this in the live year.
+const TEACHING_ADMIN = '44444444-4444-4444-8444-444444444444';
 
 const ASSIGNMENT = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SECTION = 'bbbbbbbb-2222-4222-8222-222222222222';
 
-const getTeacherListMock = vi.fn(
+const getAssignableStaffListMock = vi.fn(
   async (options: { excludeDisabled?: boolean } = {}) => {
     const excludeDisabled = options.excludeDisabled ?? true;
     return [
@@ -67,12 +70,26 @@ const getTeacherListMock = vi.fn(
         name: 'Mrs Ong',
         disabled: true,
       },
+      {
+        id: TEACHING_ADMIN,
+        email: 'kohsuat.hoon@hfse.test',
+        name: 'Ms Koh',
+        disabled: false,
+      },
     ].filter((t) => !excludeDisabled || !t.disabled);
   }
 );
+// `getTeacherList` throws rather than returning a narrower list: reaching for
+// it here would refuse the teaching admin again, and a silent fallback would
+// leave every other assertion in this file green.
 vi.mock('@/lib/auth/staff-list', () => ({
-  getTeacherList: (options?: { excludeDisabled?: boolean }) =>
-    getTeacherListMock(options),
+  getAssignableStaffList: (options?: { excludeDisabled?: boolean }) =>
+    getAssignableStaffListMock(options),
+  getTeacherList: () => {
+    throw new Error(
+      'PATCH /api/teacher-assignments/[id] must validate against getAssignableStaffList, not getTeacherList'
+    );
+  },
   getStaffDisplayNameById: () => Promise.resolve([]),
 }));
 
@@ -146,7 +163,7 @@ beforeEach(() => {
   logActionMock.mockClear();
   invalidateMock.mockClear();
   requireCapabilityMock.mockClear();
-  getTeacherListMock.mockClear();
+  getAssignableStaffListMock.mockClear();
   existingAssignment = {
     id: ASSIGNMENT,
     teacher_user_id: TEACHER_A,
@@ -177,15 +194,35 @@ describe('putting someone on cover', () => {
     expect(requireCapabilityMock).toHaveBeenCalledWith('staff.manage_relief');
   });
 
-  it('refuses an id that is not a teacher account', async () => {
-    // The check that matters most on this route. There is no FK across schemas,
-    // so nothing else stops a parent uuid landing in the column — and the RLS
+  it('refuses an id that is not a staff account', async () => {
+    // The check that matters most on this route, and the one the widening from
+    // teachers to staff must not touch. There is no FK across schemas, so
+    // nothing else stops a parent uuid landing in the column — and the RLS
     // helpers in migration 117 would then hand that parent read on the class's
     // students, grading sheets and attendance.
     const res = await patch({ relief_teacher_user_id: NOT_A_TEACHER });
 
     expect(res.status).toBe(400);
     expect(updateCalls).toEqual([]);
+    await expect(res.json()).resolves.toEqual({
+      error:
+        'Choose a member of staff with an active account. Check that person on the Staff page, then try again.',
+    });
+  });
+
+  it('accepts a school_admin as the substitute', async () => {
+    // Teaching admins take lessons here. Refusing them meant the arrangement
+    // happened off-system, with the register still showing the absent teacher.
+    const res = await patch({ relief_teacher_user_id: TEACHING_ADMIN });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls).toEqual([
+      {
+        relief_teacher_user_id: TEACHING_ADMIN,
+        relief_started_on: null,
+        relief_ended_on: null,
+      },
+    ]);
   });
 
   it('refuses a teacher covering their own class', async () => {
@@ -212,7 +249,7 @@ describe('putting someone on cover', () => {
     expect(updateCalls).toEqual([]);
     // Called with no options at all, so `excludeDisabled` takes its default of
     // true. Passing `false` here would silently start admitting them.
-    expect(getTeacherListMock.mock.calls[0]![0]).toBeUndefined();
+    expect(getAssignableStaffListMock.mock.calls[0]![0]).toBeUndefined();
   });
 
   it('404s when the assignment is gone', async () => {
@@ -251,7 +288,7 @@ describe('taking someone off cover', () => {
 
   it('does not check the teacher list when clearing', async () => {
     await patch({ relief_teacher_user_id: null });
-    expect(getTeacherListMock).not.toHaveBeenCalled();
+    expect(getAssignableStaffListMock).not.toHaveBeenCalled();
   });
 });
 
@@ -404,12 +441,12 @@ describe('the cover window (migration 123)', () => {
 });
 
 describe('the route itself', () => {
-  it('validates against getTeacherList, never getStaffDisplayNameById', () => {
+  it('validates against getAssignableStaffList, never getStaffDisplayNameById', () => {
     // The latter returns every auth user with an email — which in this database
     // means the parent portal accounts too. A grep, because the failure it
     // guards is someone reaching for the more convenient helper.
     const code = source(ROUTE);
-    expect(code).toMatch(/getTeacherList/);
+    expect(code).toMatch(/getAssignableStaffList/);
     expect(code).not.toMatch(/getStaffDisplayNameById/);
   });
 });
