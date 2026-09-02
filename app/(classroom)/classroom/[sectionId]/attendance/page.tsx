@@ -15,6 +15,8 @@ import { getSectionAttendanceSummary } from '@/lib/attendance/queries';
 import { canReadAttendance } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
+import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import { getViewContext } from '@/lib/auth/view-context';
 import { createClient } from '@/lib/supabase/server';
 
@@ -49,8 +51,20 @@ export default async function ClassroomAttendancePage({
     userId,
     sectionId
   );
-  if (!capability) notFound();
-  if (!canReadAttendance(capability)) notFound();
+  // ⚠ REACHABLE, unlike the `!capability` gate the layout answers first: a
+  // viewer holding only `subject` capability on this class PASSES the layout
+  // and is turned away here. In the Teacher view that is a teaching admin who
+  // teaches a subject in a class she does not advise — a setting she chose, so
+  // say so instead of 404ing. (role-switcher Phase 3c.)
+  if (!capability || !canReadAttendance(capability)) {
+    return wrongViewNoticeOrNotFound({
+      view,
+      heading: 'The form adviser takes this register.',
+      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and attendance for this class belongs to its form adviser rather than to its subject teachers.`,
+      backHref: `/classroom/${sectionId}`,
+      backLabel: 'Back to the class',
+    });
+  }
 
   const supabase = await createClient();
   const { data: section } = await supabase

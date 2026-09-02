@@ -135,6 +135,7 @@ export function CommandPalette({
   role,
   capabilities,
   hiddenModules = [],
+  viewRole,
 }: {
   role: Role | null;
   /** What this viewer may actually DO, resolved server-side from
@@ -148,6 +149,15 @@ export function CommandPalette({
    *  otherwise Cmd+K still offers the module the tiles just stopped showing.
    *  See lib/sidebar/module-visibility.ts. */
   hiddenModules?: readonly SidebarModule[];
+  /**
+   * The active-role lens (`getViewContext().activeRole`), for the six accounts
+   * that hold one. Narrows the entry list further — see `visibleNavEntries`,
+   * which INTERSECTS it with `role` rather than swapping one for the other.
+   *
+   * Omitted means "no lens": the value falls back to `role` inside the filter,
+   * which is what every plain teacher and every admin who does not teach gets.
+   */
+  viewRole?: Role | null;
 }) {
   const router = useRouter();
   const { open, setOpen } = useCommandPaletteContext();
@@ -157,6 +167,12 @@ export function CommandPalette({
   // feeds the queryKey/enabled so we don't fire a request per character.
   const [debouncedQuery, setDebouncedQuery] = React.useState('');
 
+  // ⚠ THE REAL ROLE, NOT THE LENS, and deliberately so. This decides whether to
+  // CALL `/api/sis/search`, and that route answers on the JWT role — lensing
+  // the switch here would either fire a request the server refuses or hide a
+  // group the server would happily fill. It is also inert for the accounts that
+  // hold a lens: `teacher` is in the list, so a teaching admin keeps student
+  // search in both views. (role-switcher Phase 3c.)
   const canSearchStudents = !!role && STUDENT_SEARCH_ROLES.includes(role);
 
   // Cmd+K (or Ctrl+K) toggles the palette globally — second entry point on
@@ -218,8 +234,9 @@ export function CommandPalette({
   const loading = searchEnabled && studentsQuery.isFetching;
 
   const visibleNav = React.useMemo(
-    () => visibleNavEntries(role, capabilities, hiddenModules),
-    [role, capabilities, hiddenModules]
+    () =>
+      visibleNavEntries(role, capabilities, hiddenModules, viewRole ?? role),
+    [role, capabilities, hiddenModules, viewRole]
   );
 
   const navByGroup = React.useMemo(() => {

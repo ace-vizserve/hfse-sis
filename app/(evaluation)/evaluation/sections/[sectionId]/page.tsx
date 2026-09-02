@@ -2,17 +2,24 @@ import { ArrowLeft, Sparkle } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import {
+  showWrongViewNotice,
+  WrongViewNotice,
+} from '@/components/auth/wrong-view-notice';
 import { TermSwitcher } from '@/components/evaluation/term-switcher';
 import { WriteupRosterClient } from '@/components/evaluation/writeup-roster-client';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import { getViewContext } from '@/lib/auth/view-context';
+import { canEditWriteups } from '@/lib/evaluation/edit-gate';
 import {
   getEvaluationTermConfig,
   getSectionRoster,
   listFormAdviserSectionIds,
 } from '@/lib/evaluation/queries';
 import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 export default async function EvaluationSectionRosterPage({
   params,
@@ -21,8 +28,13 @@ export default async function EvaluationSectionRosterPage({
   params: Promise<{ sectionId: string }>;
   searchParams: Promise<{ term_id?: string }>;
 }) {
-  const sessionUser = await getSessionUser();
+  const sessionUser = await getViewContext();
   if (!sessionUser) redirect('/login');
+  // ⚠ AN ACCESS GATE, SO IT KEEPS THE REAL ROLE — PERMANENTLY. Same ruling as
+  // the sibling picker page: a role allowlist that redirects is authorisation,
+  // and authorisation reads the account ("role authorises, activeRole
+  // renders"). Every role a lens can name is already on this list, so reading
+  // the lens here could only ever refuse someone the account admits.
   if (
     sessionUser.role !== 'teacher' &&
     sessionUser.role !== 'academic_coordinator' &&
@@ -31,6 +43,19 @@ export default async function EvaluationSectionRosterPage({
   ) {
     redirect('/');
   }
+
+  // The lens, with the account role as the floor. Everything below is a
+  // rendering decision (role-switcher Phase 3c).
+  //
+  // ⚠ NAMED `activeRole`, NOT `view`, and the name is load-bearing rather than
+  // cosmetic. `__tests__/auth/view-role-call-sites.test.ts` classifies a call
+  // to a scope helper by reading its FIRST ARGUMENT out of the source, and it
+  // recognises the lens by the identifier. A binding called `view` holding the
+  // lens is invisible to it — the guard reported this exact call as "resolving
+  // scope from the account role", which was wrong about the behaviour and right
+  // about the convention. Same spelling as
+  // app/(markbook)/markbook/sections/page.tsx, which got here first.
+  const activeRole = sessionUser.activeRole ?? sessionUser.role;
 
   const { sectionId } = await params;
   const sp = await searchParams;
@@ -47,9 +72,37 @@ export default async function EvaluationSectionRosterPage({
 
   // Teachers must be the section's form adviser — subject teachers have no
   // role in this module after the purpose fix (KD evaluation purpose spec).
-  if (sessionUser.role === 'teacher') {
+  //
+  // ⚠ ON THE LENS (role-switcher Phase 3c), and the refusal changed shape with
+  // it. Narrowing only: `listFormAdviserSectionIds` reads this viewer's own
+  // adviser rows, which are a strict subset of the school-wide access her
+  // account role already had, and the write route
+  // (app/api/evaluation/writeups/route.ts) still gates on the REAL role — so
+  // nothing she can still open here is anything she cannot still save.
+  //
+  // The bare `redirect('/evaluation/sections')` is now reserved for a REAL
+  // teacher, for whom there is no other view and nothing to explain. Someone
+  // holding a second lens gets told which setting did this and offered the one
+  // click that undoes it — the same treatment the attendance register, the
+  // report card and the classroom layout already give (Phase 3a).
+  if (activeRole === 'teacher') {
     const adviserSet = await listFormAdviserSectionIds(sessionUser.id);
-    if (!adviserSet.has(sectionId)) redirect('/evaluation/sections');
+    if (!adviserSet.has(sectionId)) {
+      if (showWrongViewNotice(sessionUser)) {
+        return (
+          <PageShell>
+            <WrongViewNotice
+              view={sessionUser}
+              heading="Not one of your classes."
+              body={`You're viewing as ${ROLE_LABEL[sessionUser.activeRole!]}, and you're not the form adviser for ${section.name}, so its write-ups aren't yours to author.`}
+              backHref="/evaluation/sections"
+              backLabel="Back to sections"
+            />
+          </PageShell>
+        );
+      }
+      redirect('/evaluation/sections');
+    }
   }
 
   // T1–T3 only; T4 excluded (no FCA comment on the final card, KD #49).
@@ -96,7 +149,13 @@ export default async function EvaluationSectionRosterPage({
 
   // Teachers are locked until Joann sets the virtue theme; registrar+ can
   // always edit (write-up fields gate per canEdit in WriteupRosterClient).
-  const canEdit = sessionUser.role !== 'teacher' || !!config?.virtueTheme;
+  //
+  // ⚠ ON THE LENS, AND THE DIRECTION MATTERS — one of the three page↔route
+  // pairs Phase 3c had to verify. The rule and the reasoning both moved into
+  // `lib/evaluation/edit-gate.ts` so a test can call them; the short version is
+  // that the route has no virtue-theme condition at all, so this page has
+  // always refused MORE than the route and lensing makes it refuse more again.
+  const canEdit = canEditWriteups(activeRole, !!config?.virtueTheme);
   // Submitted AND non-empty — an emptied write-up is "missing", not submitted
   // (keeps the count consistent with the sections list + publish-readiness).
   // Emptiness comes from the shared KD #120 helper: the column holds formatted
@@ -181,7 +240,9 @@ export default async function EvaluationSectionRosterPage({
             Virtue theme not set for {selectedTerm.label}.
           </p>
           <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
-            {sessionUser.role === 'teacher' ? (
+            {/* On the lens, so the sentence matches what `canEdit` above
+                actually did to the fields on this screen. */}
+            {activeRole === 'teacher' ? (
               <>
                 Write-up fields are locked until the academic coordinator sets
                 the theme in SIS Admin.

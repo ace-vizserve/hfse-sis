@@ -33,7 +33,38 @@ export default async function ReportCardPreview({
   ]);
   if (!viewer) redirect('/login');
   const role = viewer.role;
+  // The lens, with the account role as the floor.
+  const view = viewer.activeRole ?? role;
+  // ⚠ ON THE LENS (role-switcher Phase 3c, §3 ruling). `canManage` is the
+  // oversight half of this page: the publication panel, the "All report cards"
+  // back-link, and the editable final-grade box on a non-examinable subject
+  // (`AnnualLetterInput`, inside ReportCardDocument). In the Teacher view the
+  // page is already the adviser's — the gate below admits her only for classes
+  // she is the adviser of record for — so keeping those three would be an
+  // office toolbar on a teacher's document.
+  //
+  // The back-link is the clearest case: `/markbook/report-cards` is
+  // coordinator-and-above and is not in the Teacher view's Markbook sidebar at
+  // all, so in that view it now sends her back to her own class instead, which
+  // is where she came from.
+  //
+  // Narrowing only. `PublicationStatus` reads a table whose RLS is
+  // `is_registrar_or_above()` and the letter-grade box saves through a route
+  // that gates on the REAL role, so this can hide a control she may still use
+  // after switching back — never offer one that would fail.
+  //
+  // ⚠ ONE EXCEPTION, DELIBERATE: the two diagnostic branches below
+  // (`no_current_ay`, `not_enrolled_this_ay`) keep the ACCOUNT role. They are
+  // an existence-oracle guard, not a control — the question they answer is
+  // "may this person be told the difference between a real student and a
+  // probed uuid", which is about the account, and narrowing it in one view
+  // would leak nothing but would silently change a security-shaped decision
+  // for no product reason.
   const canManage =
+    view === 'academic_coordinator' ||
+    view === 'school_admin' ||
+    view === 'superadmin';
+  const canSeeDiagnostics =
     role === 'academic_coordinator' ||
     role === 'school_admin' ||
     role === 'superadmin';
@@ -45,10 +76,10 @@ export default async function ReportCardPreview({
     // make this page an existence oracle: a probed uuid could be told apart as
     // "real student, not enrolled this AY" versus "no such student", before the
     // capability check below ever runs. Everyone else just gets a 404.
-    if (canManage && result.error.kind === 'no_current_ay') {
+    if (canSeeDiagnostics && result.error.kind === 'no_current_ay') {
       return <div className="text-destructive">No current academic year.</div>;
     }
-    if (canManage && result.error.kind === 'not_enrolled_this_ay') {
+    if (canSeeDiagnostics && result.error.kind === 'not_enrolled_this_ay') {
       return (
         <div className="text-sm text-muted-foreground">
           Student is not enrolled in the current academic year (
@@ -72,9 +103,9 @@ export default async function ReportCardPreview({
   //
   // ⚠ Keyed on `activeRole` — a page renders through the lens. In the Teacher
   // view a teaching admin gets the card for the classes she is the adviser of
-  // record for and 404s on the rest; the Admin view is unchanged. `role` above
-  // still decides `canManage`, which is an oversight privilege and stays with
-  // the account.
+  // record for and 404s on the rest; the Admin view is unchanged. `canManage`
+  // above now follows the lens too (Phase 3c) — what stays with the ACCOUNT is
+  // `canSeeDiagnostics`, and only that.
   const { substantiveCapability } = await loadClassroomAccess(
     viewer.activeRole,
     viewer.id,
@@ -84,13 +115,35 @@ export default async function ReportCardPreview({
   // and carries the comment they wrote, so it stays theirs while they are away;
   // a substitute covering the class gets 404 here.
   //
-  // ⚠ Reachable by CLICKING, not just by typing a URL: the report-card roster
-  // (components/markbook/report-cards/report-cards-roster-table.tsx) is not
-  // lensed, so in the Teacher view it still lists every student the account
-  // role can see and links each one here. The notice names the student rather
-  // than the class — "Aria Tan" is what she clicked, and telling her about a
-  // section she may not have thought about would be answering a question she
-  // did not ask.
+  // ⚠ Reachable by TYPING or by an old bookmark. The roster that used to link
+  // here indiscriminately is lensed as of Phase 3c, so in the Teacher view it
+  // now lists only her own students — but a saved URL, a link in an email and
+  // the browser's own history all still arrive. The notice names the student
+  // rather than the class: "Aria Tan" is what she clicked, and telling her
+  // about a section she may not have thought about would be answering a
+  // question she did not ask.
+  //
+  // ⚠ `backHref` IS `/classroom`, AND IT IS NEITHER OF THE TWO OBVIOUS
+  // CANDIDATES — both of which lead somewhere worse.
+  //
+  //   • NOT `/markbook/report-cards`, which it used to be. That roster is
+  //     coordinator-and-above; its nav row and its palette entry are both gone
+  //     in this view, so sending her there hands back the surface the view has
+  //     just taken away, and completes a loop: notice → roster → another
+  //     student → the same notice.
+  //
+  //   • NOT `/classroom/<this student's section>/students` either, which is
+  //     what the lensed back-link at the foot of this page uses. That link runs
+  //     only AFTER the gate above has PASSED, i.e. only for a section she
+  //     advises. Here the gate has just FAILED, so in the ordinary case she
+  //     holds no capability on that section at all — and the classroom layout
+  //     refuses a null capability with a notice of its own. It would be a
+  //     second refusal one click after the first.
+  //
+  // `/classroom` is her own list of classes, lensed, and never empty for
+  // somebody holding the Teacher lens — she holds it because she holds
+  // assignment rows. It is also the destination the classroom layout's own
+  // wrong-view notice already uses, so the two refusals now agree.
   if (!canReadReportCard(substantiveCapability)) {
     if (showWrongViewNotice(viewer)) {
       return (
@@ -98,8 +151,8 @@ export default async function ReportCardPreview({
           view={viewer}
           heading="Not one of your students."
           body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and you're not the form adviser for ${payload.student.full_name}, so their report card isn't yours to open.`}
-          backHref="/markbook/report-cards"
-          backLabel="Back to report cards"
+          backHref="/classroom"
+          backLabel="Back to your classes"
         />
       );
     }

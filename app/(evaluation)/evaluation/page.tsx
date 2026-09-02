@@ -55,7 +55,8 @@ import {
   getSubmissionVelocityRange,
 } from '@/lib/evaluation/dashboard';
 import { buildAllRowSets } from '@/lib/evaluation/drill';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { createClient } from '@/lib/supabase/server';
 
 // Evaluation module landing page. The real work happens on /evaluation/sections
 // (Bite 4) — this page is a light orientation surface describing what the
@@ -73,14 +74,31 @@ export default async function EvaluationHub({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
-  const sessionUser = await getSessionUser();
+  const sessionUser = await getViewContext();
   if (!sessionUser) redirect('/login');
   const resolvedSearch = await searchParams;
 
+  // The lens, with the account role as the floor (role-switcher Phase 3c).
+  // `sessionUser.role` still authorises — nothing below this line is a gate,
+  // and every loader re-checks.
+  const view = sessionUser.activeRole ?? sessionUser.role;
+
+  // ⚠ ON THE LENS, NOT THE ACCOUNT ROLE. `canToggle` is the oversight switch
+  // for this whole page: the chase KPIs, the registrar priority panel, the
+  // comparison toolbar and the two hub cards that point at
+  // /evaluation/virtue-themes and /sis/calendar. Phase 3b already took both of
+  // those rows out of the Teacher view's Evaluation sidebar, so leaving this on
+  // the account role would leave the page arguing with its own nav — and it is
+  // the §3 ruling besides: in the Teacher view, controls that exist only for
+  // oversight roles are hidden.
+  //
+  // It also saves work. Four loaders below are gated on it, so a teaching admin
+  // in the Teacher view no longer pays for school-wide reads she is not being
+  // shown.
   const canToggle =
-    sessionUser.role === 'academic_coordinator' ||
-    sessionUser.role === 'school_admin' ||
-    sessionUser.role === 'superadmin';
+    view === 'academic_coordinator' ||
+    view === 'school_admin' ||
+    view === 'superadmin';
 
   // Current AY → its T1-T3 terms + window state. Cheap query + used only
   // by the toggle strip on this page.
@@ -141,7 +159,12 @@ export default async function EvaluationHub({
   // Role-aware PriorityPanel payload — teacher gets pending writeups across
   // their advisory sections; registrar gets pending writeups school-wide.
   // Run in parallel — neither depends on the other.
-  const isTeacher = sessionUser.role === 'teacher';
+  // ⚠ ON THE LENS. This is what makes the hub a teacher's hub: her own pending
+  // write-up count, the lede that names it, and the roster card described as
+  // "My sections" rather than school-wide oversight.
+  // `getEvaluationTeacherPriority` is keyed on her user id, so the rows are her
+  // own adviser sections and nothing wider.
+  const isTeacher = view === 'teacher';
   const [teacherPriority, registrarPriority] = await Promise.all([
     isTeacher && ayCode
       ? getEvaluationTeacherPriority({ ayCode, teacherUserId: sessionUser.id })

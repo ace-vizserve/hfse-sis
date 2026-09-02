@@ -146,6 +146,19 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Markbook — Report Cards',
     group: 'Modules',
     icon: FileTextIcon,
+    // 🔴 A LIVE DEAD END FOR EVERY TEACHER UNTIL 2026-09-03, and the palette was
+    // the only surface carrying it — the Markbook teacher nav tree has never
+    // held this row. `ROUTE_ACCESS` admits teachers on the broad `/markbook`
+    // prefix, and the page's own guard is `ALLOWED_ROLES.has(role)` reading a
+    // `Set`, which then `notFound()`s them. Exactly the shape of the audit-log
+    // entry below, and exactly KD #173.
+    //
+    // ⚠ `link-capability-consistency.test.ts` COULD NOT SEE IT, and that is a
+    // documented limit rather than a bug in it: its role-guard reader models
+    // `if (role !== 'a' && role !== 'b') bounce` and deliberately skips
+    // anything else. A `Set.has()` lookup is not that shape, so the page reads
+    // as unguarded. Found by the Phase 3c palette sweep instead.
+    requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     href: '/records/academic-summary',
@@ -158,6 +171,15 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Markbook — Change Requests',
     group: 'Modules',
     icon: InboxIcon,
+    // 🔴 The same live dead end as Report Cards above, found in the same sweep.
+    // This is the APPROVER'S inbox; a teacher's own filed requests live at
+    // `/markbook/grading/requests`, which is the row her nav tree actually
+    // carries ("My Requests"). The page redirects her to `/`.
+    //
+    // Its guard is `if (!role || (role !== 'a' && role !== 'b' && role !== 'c'))`
+    // — the `||` puts it outside the modelled shape in
+    // `link-capability-consistency.test.ts`, for the reason that test states.
+    requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     href: '/markbook/audit-log',
@@ -322,16 +344,47 @@ export const NAV_ENTRIES: NavEntry[] = [
 // FAILS CLOSED on a missing `capabilities` argument — `can()` returns false for
 // `undefined`, so a caller that forgets to thread capabilities hides the gated
 // entries rather than offering ones that bounce on arrival.
+//
+// ⚠ `viewRole` IS THE ACTIVE-ROLE LENS, AND IT INTERSECTS — IT NEVER REPLACES
+// `role`. Both halves of the palette are lensed (role-switcher Phase 3c): the
+// `hiddenModules` list arrives already narrowed by `hiddenModulesForView`, and
+// the per-entry role gate below now has to admit the REAL role AND the view.
+//
+// Why an intersection rather than "gate on the view":
+//
+//   • the real role must stay in the test because it is what the proxy will
+//     apply on arrival — dropping it would let a lens ADVERTISE a page the
+//     account cannot open, which is KD #173's dead end wearing a new hat;
+//   • the view must be in the test because `isHiddenModuleHref` only removes
+//     whole MODULES. `/markbook/audit-log`, `/markbook/change-requests` and
+//     `/sis/admin/staff/accounts` live inside modules a teacher view can still
+//     open, so the module filter alone leaves them on offer while Phase 3b has
+//     already taken their sidebar rows away.
+//
+// That is the "modules are offered in FIVE places" invariant on
+// `isHiddenModuleHref` — the palette is the fifth, and it was the one left
+// disagreeing with the other four after Phase 3b. `capabilities` is
+// deliberately NOT lensed here (nor anywhere): it is the real role's grant set
+// and answers "will the page keep you once you arrive", which a chosen view
+// cannot change.
+//
+// Defaults to `role`, so every caller that does not pass it — and every plain
+// teacher, whose entitled set is exactly `['teacher']` — behaves as before.
 export function visibleNavEntries(
   role: Role | null,
   capabilities: readonly Capability[] | undefined,
-  hiddenModules: readonly SidebarModule[] = []
+  hiddenModules: readonly SidebarModule[] = [],
+  viewRole: Role | null = role
 ): NavEntry[] {
+  const admits = (entry: NavEntry, r: Role | null): boolean =>
+    entry.requiresRoles
+      ? !!r && entry.requiresRoles.includes(r)
+      : isRouteAllowed(hrefPathname(entry.href), r);
+
   return NAV_ENTRIES.filter(
     (entry) =>
-      (entry.requiresRoles
-        ? !!role && entry.requiresRoles.includes(role)
-        : isRouteAllowed(hrefPathname(entry.href), role)) &&
+      admits(entry, role) &&
+      admits(entry, viewRole) &&
       !isHiddenModuleHref(entry.href, hiddenModules) &&
       (!entry.requiresCapability || can(capabilities, entry.requiresCapability))
   );

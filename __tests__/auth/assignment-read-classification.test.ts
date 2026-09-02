@@ -143,6 +143,15 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/(evaluation)/evaluation/sections/[sectionId]/page.tsx': ['evaluation'],
   'app/(classroom)/classroom/[sectionId]/write-ups/page.tsx': ['evaluation'],
   'app/(markbook)/markbook/report-cards/[studentId]/page.tsx': ['evaluation'],
+  // The report-card ROSTER, lensed in Phase 3c so the Teacher view lists only
+  // the classes the viewer advises. Same category as its detail-page sibling
+  // above, and for the same reason: it scopes on
+  // `substantiveCapabilityForSection`, so a substitute covering a class does
+  // NOT get its report cards. The card names the regular adviser and carries
+  // the comment they wrote — it stays theirs while they are away. The two
+  // files must not drift apart: a roster wider than the detail page it links
+  // to is a list of rows that refuse you.
+  'app/(markbook)/markbook/report-cards/page.tsx': ['evaluation'],
   'app/(evaluation)/evaluation/sections/page.tsx': ['evaluation', 'name'],
 
   // ── name of record ──────────────────────────────────────────────────────

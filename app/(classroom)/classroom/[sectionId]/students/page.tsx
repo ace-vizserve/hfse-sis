@@ -1,4 +1,6 @@
-import { notFound, redirect } from 'next/navigation';
+// `notFound` is no longer imported here: the refusal below goes through
+// `wrongViewNoticeOrNotFound`, which throws it on the no-second-view path.
+import { redirect } from 'next/navigation';
 
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
@@ -8,6 +10,8 @@ import {
   canOpenStudentRecord,
   canReadReportCard,
 } from '@/lib/classroom/scope';
+import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import { getViewContext } from '@/lib/auth/view-context';
 import { createClient } from '@/lib/supabase/server';
 
@@ -46,7 +50,18 @@ export default async function ClassroomStudentsPage({
     userId,
     sectionId
   );
-  if (!capability) notFound();
+  // Unreachable today — the layout refuses this first. Converted with its six
+  // siblings so the Classroom tabs answer a wrong view the same way; see
+  // `wrongViewNoticeOrNotFound` for why all seven moved together.
+  if (!capability) {
+    return wrongViewNoticeOrNotFound({
+      view,
+      heading: 'Not one of your classes.',
+      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this isn't a class you teach or advise.`,
+      backHref: '/classroom',
+      backLabel: 'Back to your classes',
+    });
+  }
 
   const supabase = await createClient();
   // The class's own name, for the details drawer's header — a teacher who

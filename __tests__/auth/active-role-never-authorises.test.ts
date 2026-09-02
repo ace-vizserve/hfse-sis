@@ -69,8 +69,18 @@ const GATES = [
 //
 // So if you arrived here because a page or a scope resolver reads the lens:
 // that is the feature working, not a hole in this test. Ruled 2026-09-02.
+//
+// ⚠ TWO MORE JOINED THE LIST IN PHASE 3c, and they are the reason this list
+// exists rather than being a comment. `lib/evaluation/edit-gate.ts` and
+// `lib/markbook/grading-gates.ts` are page decisions LIFTED OUT of their pages
+// so their direction could be tested — they take the lens as a parameter, by
+// design, exactly as `resolveClassroomScope` does. A helper extracted from a
+// page keeps the page's classification; what it must not do is start deciding
+// what a ROUTE accepts, which `view-role-call-sites.test.ts` asserts for both.
 const NOT_GATES_BY_DESIGN = [
   'lib/classroom/scope.ts',
+  'lib/evaluation/edit-gate.ts',
+  'lib/markbook/grading-gates.ts',
   'app/**/page.tsx',
   'app/**/layout.tsx',
 ];

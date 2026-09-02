@@ -54,15 +54,48 @@ let reliefRows: AssignmentRow[] = [];
 let sheetLocked = false;
 
 // Spy proving no write reached grade_entries when the gate rejects.
-const entryUpdate = vi.fn(() => ({
-  eq: () => Promise.resolve({ data: null, error: null }),
-}));
+//
+// ⚠ THE CHAIN GOES `.update().eq().select().single()`, not `.update().eq()`.
+// The shorter shape was enough while every test using it asserted the spy was
+// NEVER called — nothing ever consumed the return value. The oversight suite at
+// the foot of this file lets a write through on purpose, so the mock now models
+// the real chain; `single()` answers with the row the handler expects to get
+// back. `.eq()` still resolves on its own for any caller that stops there.
+const entryUpdate = vi.fn(() => {
+  const result = Promise.resolve({
+    data: {
+      id: ENTRY_ID,
+      grading_sheet_id: SHEET_ID,
+      ww_scores: [null, null],
+      pt_scores: [null, null, null],
+      qa_score: null,
+      letter_grade: null,
+      is_na: true,
+    },
+    error: null,
+  });
+  return {
+    eq: () => ({
+      select: () => ({ single: () => result }),
+      then: (...args: Parameters<Promise<unknown>['then']>) =>
+        result.then(...args),
+    }),
+  };
+});
+
+// Which role the JWT carries for the request under test. `'teacher'` for every
+// case in the first suite; the second suite raises it to `'school_admin'` to
+// pin what the route does for an OVERSIGHT account — see the header there.
+//
+// Read inside the returned function rather than in the factory body, so the
+// value is whatever the test staged, exactly like `assignmentRows` below.
+let actingRole: 'teacher' | 'school_admin' = 'teacher';
 
 vi.mock('@/lib/auth/require-role', () => ({
   requireRole: vi.fn(() =>
     Promise.resolve({
       user: { id: TEACHER_ID, email: 'adviser@hfse.test' },
-      role: 'teacher',
+      role: actingRole,
     })
   ),
 }));
@@ -198,6 +231,7 @@ describe('PATCH grade entry — subject-teacher gate', () => {
     entryUpdate.mockClear();
     sheetLocked = false;
     reliefRows = [];
+    actingRole = 'teacher';
   });
 
   it('403s a form class adviser on an UNLOCKED sheet in their own section', async () => {
@@ -360,6 +394,97 @@ describe('PATCH grade entry — subject-teacher gate', () => {
 
     await expect(res.json()).resolves.toMatchObject({
       error: 'sheet is locked',
+    });
+  });
+});
+
+/**
+ * THE MISSING LEG OF THE PAGE↔ROUTE DIRECTION ARGUMENT.
+ *
+ * `__tests__/markbook/grading-lens-direction.test.ts` proves the Teacher lens
+ * can only ever make `/markbook/grading/[id]` MORE restrictive than the same
+ * page renders for the account role. On its own that proves the page cannot
+ * become more permissive than ITSELF. The argument reaches the route through
+ * one further premise:
+ *
+ *   > the page already agreed with the route before the lens existed, and the
+ *   > route's answer is CONSTANT with respect to the view — it decides on the
+ *   > JWT role, which no lens can touch.
+ *
+ * Nothing checked that premise, and it is the leg the whole thing stands on.
+ * This suite checks it, in the only place it can be checked honestly: by
+ * driving the REAL handler with an OVERSIGHT role and showing it accepts
+ * exactly the requests the Teacher view has just refused.
+ *
+ * ⚠ THE ASYMMETRY IS THE POINT, not a defect. The route runs its
+ * subject-teacher check under `if (role === 'teacher')`, so for a
+ * `school_admin` it does not run at all. The page in the Teacher view refuses
+ * anyway. Page stricter than route is safe; the reverse is editable inputs and
+ * a 403 on save, which is a regression this codebase has shipped before.
+ */
+describe('the route accepts what the Teacher view refuses', () => {
+  beforeEach(() => {
+    entryUpdate.mockClear();
+    sheetLocked = false;
+    reliefRows = [];
+    assignmentRows = [];
+    actingRole = 'school_admin';
+  });
+
+  it('an UNLOCKED sheet: oversight passes the subject-teacher gate holding no assignment', async () => {
+    // The page's Teacher view calls this read-only —
+    // `readOnly = viewRole === 'teacher' && !isAssignedTeacher`. The route does
+    // not even ask: the assignment check is teacher-only.
+    const res = await invoke({ qa_score: 25 });
+
+    expect(res.status).not.toBe(403);
+    // Stops at the ordinary slot-label rule (KD #105), which applies to every
+    // role identically — NOT at the assignment gate. Distinguishing the two is
+    // what shows the gate was passed rather than skipped by accident.
+    await expect(res.json()).resolves.toMatchObject({ code: 'label_required' });
+  });
+
+  it('an UNLOCKED sheet: oversight actually reaches the write', async () => {
+    // `is_na` is not a score, so it is not intercepted by the label rule above
+    // and reaches `grade_entries.update`. The strongest form of the premise:
+    // the route does not merely decline to 403, it performs the write the
+    // Teacher view was refusing to offer.
+    await invoke({ is_na: true });
+
+    expect(entryUpdate).toHaveBeenCalled();
+  });
+
+  it('a LOCKED sheet: oversight is not turned away by the teacher lock', async () => {
+    // The Teacher view makes a locked sheet read-only for her
+    // (`isLocked && !canManage`). The route's lock branch refuses only
+    // `role === 'teacher'`; for oversight it falls through to the post-lock
+    // correction rule, which is a DIFFERENT refusal with a different message.
+    sheetLocked = true;
+
+    const res = await invoke({ qa_score: 25 });
+
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).not.toBe('sheet is locked');
+    expect(body.error).toMatch(/post-lock edits require exactly one of/);
+  });
+
+  it('and a real teacher in the identical situation IS turned away', async () => {
+    // Non-vacuous, and it pins the asymmetry rather than assuming it: the same
+    // request, the same sheet, the same absence of an assignment — refused,
+    // because the JWT role is `teacher`. If the route ever stopped branching on
+    // role, this test goes red and the direction argument needs re-deriving.
+    //
+    // The refusal is the ASSIGNMENT gate rather than the lock gate, because the
+    // assignment check runs first — which is the same gate the oversight case
+    // above walked straight past.
+    actingRole = 'teacher';
+    sheetLocked = true;
+
+    const res = await invoke({ qa_score: 25 });
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'not assigned to this sheet',
     });
   });
 });

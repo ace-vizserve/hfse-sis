@@ -11,7 +11,9 @@ import {
   Scale,
   Users,
 } from 'lucide-react';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
+import { gradingSheetGates } from '@/lib/markbook/grading-gates';
+import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   loadPriorTermGrades,
@@ -128,12 +130,24 @@ export default async function GradingSheetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const sessionUser = await getSessionUser();
+  const sessionUser = await getViewContext();
   const role: Role | null = sessionUser?.role ?? null;
-  const canManage =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
+  // The lens, with the account role as the floor (role-switcher Phase 3c).
+  // `role` still authorises: every write on this page goes through
+  // PATCH /api/grading-sheets/[id]/… , which reads the JWT role and has never
+  // seen this value.
+  const view: Role | null = sessionUser?.activeRole ?? role;
+
+  // ⚠ THE FIVE GATE FLAGS ARE RESOLVED IN ONE PLACE FURTHER DOWN, once the
+  // sheet's lock state and this viewer's assignment are both known —
+  // `gradingSheetGates` in lib/markbook/grading-gates.ts. They used to be four
+  // separate expressions scattered across two hundred lines, and they are not
+  // independent: `readOnly` reads `canManage`, `requireApproval` reads it the
+  // other way round, and `isMonitoringOnly` exists only to explain a `readOnly`
+  // the lock banner cannot. Phase 3c put the active-role lens through all of
+  // them, which made the property that matters a property of the SET — that
+  // switching to the Teacher view can only ever take editing away — so they
+  // moved somewhere a test can call them.
   const supabase = await createClient();
 
   // Fetch sheet first (needed for notFound gate), then parallelize the rest
@@ -173,16 +187,22 @@ export default async function GradingSheetPage({
     });
   }
 
-  // `readOnly` is computed further down, once `isAssignedTeacher` is known —
-  // it depends on the teacher's assignment, not just the lock state.
-  const requireApproval = sheet.is_locked && canManage;
+  // Every gate flag is computed further down in one call, once
+  // `isSubjectTeacherForSheet` is known — they depend on the viewer's
+  // assignment, not just the lock state.
 
   // Fetch teacher's assignments concurrently with entries/requests — only
   // needed for the subject-teacher gate; skip for non-teacher roles.
+  //
+  // ⚠ ON THE LENS, AND IT HAS TO BE, or the two flags below are decided from an
+  // empty array: `isAssignedTeacher` would be false for every teaching admin in
+  // the Teacher view, so she would be told she is "monitoring only" on a sheet
+  // she teaches. This is the read that makes the rest of the page honest, not a
+  // gate — RLS still scopes it to her own rows through the cookie client.
   const assignmentsPromise: Promise<
     Awaited<ReturnType<typeof loadEffectiveAssignmentsForUser>>
   > =
-    role === 'teacher' && sessionUser
+    view === 'teacher' && sessionUser
       ? loadEffectiveAssignmentsForUser(supabase, sessionUser.id)
       : Promise.resolve([]);
 
@@ -332,28 +352,47 @@ export default async function GradingSheetPage({
   // config carrying it is the same row the weights come from.
   const subjectLabel = subject ? subjectDisplayName(subject, config) : null;
 
-  // Teacher assignment gate — already fetched concurrently above.
-  const isAssignedTeacher =
-    role === 'teacher' && sessionUser && section?.id && subject?.id
+  // ── THE GATE FLAGS, ALL FIVE, IN ONE CALL ──────────────────────────────
+  //
+  // The raw assignment fact first: does this viewer hold a subject_teacher row
+  // (or a relief row covering one) for this sheet's section × subject?
+  // `rawAssignments` is empty unless the lens is `teacher`, so this is false
+  // for an oversight view either way — the role condition itself lives in
+  // `gradingSheetGates`, which is where it can be tested.
+  const isSubjectTeacherForSheet =
+    sessionUser && section?.id && subject?.id
       ? isSubjectTeacher(rawAssignments, section.id, subject.id)
       : false;
 
-  // Score entry is read-only when the sheet is locked, OR when the viewer is a
-  // teacher who is not this sheet's assigned subject teacher — a form class
-  // adviser sees every subject in their section for monitoring, but only the
-  // subject teacher encodes. Mirrors the server gate in
-  // PATCH /api/grading-sheets/[id]/entries/[entryId]; the grid used to key off
-  // the lock alone, so an adviser was shown editable inputs.
-  const readOnly =
-    (sheet.is_locked && !canManage) ||
-    (role === 'teacher' && !isAssignedTeacher);
-
-  // A teacher viewing a sheet they don't teach — in practice the form class
-  // adviser, who reads every subject in their own section. The locked-sheet
-  // banner below only renders when the sheet IS locked, so without this an
-  // adviser on an unlocked sheet would get silently dead inputs and no reason
-  // why.
-  const isMonitoringOnly = role === 'teacher' && !isAssignedTeacher;
+  // ⚠ ON THE LENS, AND THIS IS THE BIGGEST CHANGE PHASE 3c MAKES TO A SCREEN.
+  // `canManage` draws every oversight control on this sheet — the totals
+  // editor, the lock toggle, the audit-log link, the per-cell change-request
+  // list, the "View change requests" destination and the editable final-grade
+  // box on a non-examinable sheet — and it also decides whether a LOCKED sheet
+  // stays editable. The §3 ruling is that a Teacher view hides controls that
+  // exist only for oversight roles, and this is the largest instance of it.
+  //
+  // ⚠ ONE OF THE THREE PAGE↔ROUTE PAIRS THIS PHASE HAD TO VERIFY, and the
+  // direction holds. The route (PATCH …/entries/[entryId]) runs its
+  // subject-teacher check under `if (role === 'teacher')` on the REAL JWT role,
+  // so for a teaching admin it does not run at all and the save is accepted.
+  // These flags, on the lens, REFUSE MORE than that — never less. In the
+  // Teacher view a locked sheet becomes read-only with the change-request
+  // button beside it, exactly as it looks to the adviser sitting next to her;
+  // an unlocked sheet stays editable only where she is its subject teacher.
+  // Pinned over every role × view pair by
+  // `__tests__/markbook/grading-lens-direction.test.ts`.
+  const {
+    canManage,
+    isAssignedTeacher,
+    readOnly,
+    requireApproval,
+    isMonitoringOnly,
+  } = gradingSheetGates({
+    viewRole: view,
+    isLocked: sheet.is_locked,
+    isSubjectTeacherForSheet,
+  });
 
   // Designated approvers for the locked-sheet change-request flow. Teachers
   // pick primary + secondary from this list when filing a request; the

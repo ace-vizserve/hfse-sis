@@ -83,6 +83,14 @@ export default async function SectionAttendancePage({
   const viewer = await getViewContext();
   if (!viewer) redirect('/login');
   const role = viewer.role;
+  // The lens, with the account role as the floor. Used by the four
+  // oversight-control flags further down; `role` itself no longer decides
+  // anything on this page.
+  //
+  // Named `viewRole`, not `view`: `view` is already taken on this page by the
+  // sheet-vs-daily tab, and two different "views" one screen apart is exactly
+  // how the wrong one gets read.
+  const viewRole = viewer.activeRole ?? role;
 
   // Per-SECTION form-adviser gate, not per-person. Attendance is adviser work
   // at the DB (`is_adviser_for_section`, 005_rls_teacher_scoping.sql) and in the
@@ -120,11 +128,16 @@ export default async function SectionAttendancePage({
   const section = sectionRaw as SectionRow;
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
 
-  // ⚠ THIS IS THE GATE THE CRITICAL WAS ABOUT. In the Teacher view a teaching
-  // admin's Attendance sidebar is still the ADMIN's (only Markbook's nav is
-  // lensed), and `/attendance/sections` lists every section in the school
-  // because it scopes on her real role — so every row on that list linked
-  // straight into this 404. It is a setting she chose and can undo, so say so.
+  // ⚠ THIS IS THE GATE THE CRITICAL WAS ABOUT, AND ITS ORIGINAL CAUSE IS NOW
+  // CLOSED. When this notice was written, `/attendance/sections` scoped on the
+  // account role and listed every section in the school in the Teacher view, so
+  // every row on it linked straight into this 404. Phase 3c lensed that page,
+  // and the Attendance sidebar with it, so the CLICKABLE path here is gone.
+  //
+  // The notice stays, and should: a bookmark, a typed URL, a link in an old
+  // email and the unlensed report-card roster all still reach this line, and
+  // for someone holding a second view a 404 with no explanation is a setting
+  // she chose and cannot see. It is no longer load-bearing; it is the net.
   if (!canReadAttendance(capability)) {
     if (showWrongViewNotice(viewer)) {
       return (
@@ -142,19 +155,37 @@ export default async function SectionAttendancePage({
     notFound();
   }
 
+  // ⚠ ALL FOUR ARE NOW KEYED ON THE LENS (role-switcher Phase 3c, §3 ruling:
+  // in the Teacher view, controls that exist only for oversight roles are
+  // hidden). Everything above this line — the gate, the notice, the register
+  // itself — already renders as a teacher's by the time we get here; leaving
+  // these four on the account role left an office toolbar sitting on top of it.
+  // "The view changes what you see" includes buttons.
+  //
+  // ⚠ NARROWING ONLY, AND THE WRITE ROUTES DO NOT MOVE. Every one of these is
+  // re-decided server-side on the REAL JWT role — `POST /api/attendance` for
+  // the No-class mark, and the roster-metadata PATCH for the three field
+  // groups — so hiding a control here can never cost her a save she would
+  // otherwise have made, and showing one again is a single click on "Switch
+  // view".
+  //
+  // `role` (the account) survives on this page for exactly one purpose: it is
+  // the floor `viewRole` falls back to when no lens is set. Nothing else reads
+  // it — the gate above resolves from `viewer.activeRole`, and the notice
+  // beside it prints `viewer.activeRole` too.
   const canWriteNc =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
+    viewRole === 'academic_coordinator' ||
+    viewRole === 'school_admin' ||
+    viewRole === 'superadmin';
   // Roster-metadata edit gates for the Details view (Task 2's per-field PATCH
   // gating): Bus/Care + Academics share the same gate as canWriteNc; Admin is
   // narrower (school_admin/superadmin only).
   const canEditBusCare =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
+    viewRole === 'academic_coordinator' ||
+    viewRole === 'school_admin' ||
+    viewRole === 'superadmin';
   const canEditAcademics = canEditBusCare; // same gate as bus_no/classroom_officer_role
-  const canEditAdmin = role === 'school_admin' || role === 'superadmin';
+  const canEditAdmin = viewRole === 'school_admin' || viewRole === 'superadmin';
 
   // Terms — pick a term from ?term_id or default to current.
   const { data: termsRaw } = await supabase

@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { getRoleFromClaims } from '@/lib/auth/roles';
+import { getViewContext } from '@/lib/auth/view-context';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
@@ -109,19 +110,40 @@ export default async function GradingListPage({
   const claims = claimsData?.claims ?? null;
   const userId = (claims?.sub as string | undefined) ?? null;
   const role = getRoleFromClaims(claims);
-  const canCreate =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
 
-  // Current AY — needed before we can scope the sheets query, so awaited
-  // up front rather than batched with the others.
-  const { data: ayData } = await supabase
-    .from('academic_years')
-    .select('id, ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
+  // ── THE LENS AND THE ACADEMIC YEAR, ONE WAVE ──────────────────────────
+  // Neither reads the other, and `getViewContext()` costs a real
+  // `teacher_assignments` select for every non-teacher account — awaiting it on
+  // its own line blocked the AY query behind it for nothing. The AY genuinely
+  // has to resolve before the sheets query below can be scoped, so it stays
+  // ahead of that wave; it just no longer waits on the lens first.
+  //
+  // The lens takes the account role as its floor (role-switcher Phase 3c).
+  const [viewer, { data: ayData }] = await Promise.all([
+    getViewContext(),
+    supabase
+      .from('academic_years')
+      .select('id, ay_code')
+      .eq('is_current', true)
+      .maybeSingle(),
+  ]);
+  const view = viewer?.activeRole ?? role;
   const currentAy = (ayData as { id: string; ay_code: string } | null) ?? null;
+
+  // ⚠ ON THE LENS. `canCreate` draws the two oversight controls on this page —
+  // "New grading sheet" and the multi-select "Lock selected" — and the §3
+  // ruling is that in the Teacher view controls that exist only for oversight
+  // roles are hidden. Leaving it on the account role while "My sheets" below
+  // follows the view would give a teaching admin a teacher's table under an
+  // approver's toolbar, which is the half-lensed screen this phase removes.
+  //
+  // Both routes behind those controls still gate on the REAL role, so this can
+  // only ever hide a button she is still allowed to press after switching back
+  // — never offer one that would 403.
+  const canCreate =
+    view === 'academic_coordinator' ||
+    view === 'school_admin' ||
+    view === 'superadmin';
 
   // Three independent, RLS-scoped queries run in parallel.
   const advisorPromise = userId
@@ -642,7 +664,15 @@ export default async function GradingListPage({
           // "My sheets" is teacher-scoped — registrars + admins manage
           // every section, so the toggle has no useful narrowing for
           // them. Pass null to hide it.
-          currentUserId={role === 'teacher' ? userId : null}
+          //
+          // ⚠ ON THE LENS (role-switcher Phase 3c). This page already computes
+          // the covered-slot and adviser sets from this viewer's own assignment
+          // rows a hundred lines up, for every role — it was only the account
+          // role at this one line that threw the answer away, so a teaching
+          // admin got the school-wide table with no way to narrow it to the
+          // sheets she personally teaches. Client-side filter over rows the
+          // server already returned, so nothing about what she may read moves.
+          currentUserId={view === 'teacher' ? userId : null}
           // Multi-select + "Lock selected" — same role set as the single
           // lock route (registrar / school_admin / superadmin).
           canLock={canCreate}

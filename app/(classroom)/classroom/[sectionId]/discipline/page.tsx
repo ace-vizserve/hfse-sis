@@ -1,5 +1,7 @@
 import { FileText } from 'lucide-react';
-import { notFound, redirect } from 'next/navigation';
+// `notFound` is no longer imported here: the refusal below goes through
+// `wrongViewNoticeOrNotFound`, which throws it on the no-second-view path.
+import { redirect } from 'next/navigation';
 
 import {
   FileDisciplineRecordButton,
@@ -24,6 +26,8 @@ import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import { listDisciplineForSection } from '@/lib/discipline/queries';
 import { toPlainText } from '@/lib/rich-text';
 import { listHouses } from '@/lib/sis/houses';
+import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import { getViewContext } from '@/lib/auth/view-context';
 import { createClient } from '@/lib/supabase/server';
 
@@ -67,7 +71,19 @@ export default async function ClassroomDisciplinePage({
     userId,
     sectionId
   );
-  if (!canReadRoster(capability)) notFound();
+  // `canReadRoster` is "holds any capability at all", which is the same floor
+  // the layout has already applied — so nothing reaches this today. Converted
+  // with its six siblings so the Classroom tabs answer a wrong view the same
+  // way; see `wrongViewNoticeOrNotFound` for why all seven moved together.
+  if (!canReadRoster(capability)) {
+    return wrongViewNoticeOrNotFound({
+      view,
+      heading: 'Not one of your classes.',
+      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this isn't a class you teach or advise.`,
+      backHref: '/classroom',
+      backLabel: 'Back to your classes',
+    });
+  }
 
   const supabase = await createClient();
   const [records, { data: sectionRow }, { data: rosterRows }] =

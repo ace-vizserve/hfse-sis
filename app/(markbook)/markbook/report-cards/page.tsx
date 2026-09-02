@@ -10,7 +10,16 @@ import {
   Share2,
   Users,
 } from 'lucide-react';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import {
+  showWrongViewNotice,
+  WrongViewNotice,
+} from '@/components/auth/wrong-view-notice';
+import { SwitchViewButton } from '@/components/view-switch/switch-view-button';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import { getViewContext } from '@/lib/auth/view-context';
+import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { canReadReportCard } from '@/lib/classroom/scope';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -104,11 +113,27 @@ export default async function ReportCardsListPage({
 }: {
   searchParams: Promise<{ section_id?: string }>;
 }) {
-  const sessionUser = await getSessionUser();
+  const sessionUser = await getViewContext();
   if (!sessionUser) redirect('/login');
+  // ⚠ AN ACCESS GATE, SO IT KEEPS THE REAL ROLE. It decides whether the viewer
+  // may be on this page at all, and `teacher` is not on the list — which is
+  // precisely why the lensing below has exactly one audience: the six accounts
+  // that administer AND teach. A plain teacher never gets here in any view.
   if (!sessionUser.role || !ALLOWED_ROLES.has(sessionUser.role)) {
     notFound();
   }
+
+  // The lens, with the account role as the floor (role-switcher Phase 3c
+  // review). Everything below this line is a rendering decision.
+  //
+  // ⚠ NAMED `activeRole`, NOT `view`. `__tests__/auth/view-role-call-sites.test.ts`
+  // classifies the `resolveClassroomScope(…)` call below by reading its first
+  // argument out of the source and recognising the lens by identifier — a
+  // binding called `view` is invisible to it, and the guard duly reported this
+  // page as resolving scope from the account role. Same spelling as
+  // app/(markbook)/markbook/sections/page.tsx.
+  const activeRole = sessionUser.activeRole ?? sessionUser.role;
+  const isTeacherView = activeRole === 'teacher';
 
   const q = await searchParams;
   const supabase = await createClient();
@@ -126,7 +151,70 @@ export default async function ReportCardsListPage({
         .eq('academic_year_id', ay.id)
     : { data: [] };
 
-  const sectionsList = (sections ?? []) as SectionWithLevel[];
+  let sectionsList = (sections ?? []) as SectionWithLevel[];
+
+  // ── THE LENS ────────────────────────────────────────────────────────────
+  // Until this change, `/markbook/report-cards` was the ONE surface where the
+  // Teacher view still showed school-wide data: every section in the picker,
+  // every section in the publications overview, and a roster listing every
+  // student — each row linking to a card the lensed detail page then refused.
+  //
+  // ⚠ THROUGH `loadClassroomAccess`, AND NOT BY LOADING ASSIGNMENTS HERE.
+  // This is an `evaluation`-classified surface in
+  // `__tests__/auth/assignment-read-classification.test.ts`, and that guard
+  // forbids a file in that category from even NAMING the relief-inclusive
+  // loader — not because reading it would be wrong here, but because having the
+  // rows in scope is what makes the mistake available. It caught the first
+  // version of this block, which loaded them directly and then filtered
+  // correctly. Going through the shared helper is also what stops this roster
+  // and the detail page it links to from drifting: they now ask the same
+  // function the same question.
+  //
+  // ⚠ `substantiveCapability`, NOT `capability` — exactly what the detail page
+  // gates on. Wider and a listed row leads to a refusal again; narrower and a
+  // card she is supposed to write disappears. "Substantive" also means a
+  // SUBSTITUTE covering the class does not get the roster: the card names the
+  // regular adviser and carries the comment they wrote, so it stays theirs
+  // while they are away.
+  //
+  // The per-section loop costs ONE query, not one per section — the assignments
+  // read underneath is memoized per request, and `getViewContext()` above has
+  // already made it for the one viewer who reaches this branch.
+  const advisedSectionIds = new Set<string>();
+  if (isTeacherView) {
+    for (const s of sectionsList) {
+      const { substantiveCapability } = await loadClassroomAccess(
+        activeRole,
+        sessionUser.id,
+        s.id
+      );
+      if (canReadReportCard(substantiveCapability)) {
+        advisedSectionIds.add(s.id);
+      }
+    }
+    sectionsList = sectionsList.filter((s) => advisedSectionIds.has(s.id));
+  }
+
+  // A `?section_id=` she does not advise — a bookmark, or a hand-edited URL.
+  // The picker can no longer offer one, so this is the same "you chose a view"
+  // case the detail page answers, and it gets the same answer rather than a
+  // silently empty roster.
+  if (isTeacherView && q.section_id && !advisedSectionIds.has(q.section_id)) {
+    if (showWrongViewNotice(sessionUser)) {
+      return (
+        <PageShell>
+          <WrongViewNotice
+            view={sessionUser}
+            heading="Not one of your classes."
+            body={`You're viewing as ${ROLE_LABEL[sessionUser.activeRole!]}, and you're not the form adviser for that class, so its report cards aren't yours to manage.`}
+            backHref="/markbook/report-cards"
+            backLabel="Back to your classes"
+          />
+        </PageShell>
+      );
+    }
+    notFound();
+  }
 
   const pickerSections = sectionsList.map((s) => {
     const lvl = first(s.level as LevelLite | LevelLite[] | null);
@@ -179,26 +267,57 @@ export default async function ReportCardsListPage({
           </p>
           <div className="flex items-baseline gap-3">
             <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-              Report cards.
+              {isTeacherView ? 'Your report cards.' : 'Report cards.'}
             </h1>
             {ay && <Badge variant="outline">{ay.ay_code}</Badge>}
           </div>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Preview each student&apos;s report card before printing, and control
-            when parents can view them. Pick a section to begin.
+            {isTeacherView
+              ? 'Preview a report card for any student in the classes you are the form adviser for. Pick a class to begin.'
+              : "Preview each student's report card before printing, and control when parents can view them. Pick a section to begin."}
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {pickerSections.length > 0 && termList.length > 0 && (
-            <BulkPublishDialog
-              sections={pickerSections}
-              terms={termList}
-              defaultTermId={currentTermId}
-            />
-          )}
+          {/* Publishing to parents is an oversight control (§3 ruling) — it is
+              gone in the Teacher view, along with the per-section publish
+              window panel further down. The route behind it is
+              requireRole-gated to the same three roles, so this hides a button
+              she may still press after switching back, never one that would
+              fail. */}
+          {!isTeacherView &&
+            pickerSections.length > 0 &&
+            termList.length > 0 && (
+              <BulkPublishDialog
+                sections={pickerSections}
+                terms={termList}
+                defaultTermId={currentTermId}
+              />
+            )}
           <SectionPicker sections={pickerSections} selectedId={q.section_id} />
         </div>
       </header>
+
+      {/* She holds the Teacher lens because she holds assignment rows, but they
+          may all be subject-teacher rows — a report card is adviser work, so
+          that is an empty list rather than an error. Third state on the same
+          pattern as /attendance/sections and /evaluation/sections. */}
+      {isTeacherView && pickerSections.length === 0 && (
+        <Card className="items-center gap-4 py-12 text-center">
+          <div className="space-y-1">
+            <p className="font-serif text-lg font-semibold text-foreground">
+              No classes to show.
+            </p>
+            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+              You&apos;re viewing as {ROLE_LABEL[activeRole!]}, which shows only
+              the classes you are the form adviser for.
+            </p>
+          </div>
+          <SwitchViewButton
+            target={sessionUser.role}
+            activeRole={sessionUser.activeRole}
+          />
+        </Card>
+      )}
 
       {/* No section picked — current-term KPIs + cross-section publications overview */}
       {!q.section_id && (
@@ -222,6 +341,7 @@ export default async function ReportCardsListPage({
             selectedSectionName={selectedSectionName}
             selectedLevelId={selectedLevelId}
             termList={termList}
+            canPublish={!isTeacherView}
           />
         </Suspense>
       )}
@@ -439,12 +559,19 @@ async function SectionReportCardsBody({
   selectedSectionName,
   selectedLevelId,
   termList,
+  canPublish,
 }: {
   sectionId: string;
   selectedLabel: string | null;
   selectedSectionName: string | null;
   selectedLevelId: string | null;
   termList: TermLite[];
+  /**
+   * False in the Teacher view — controlling when parents can see a card is an
+   * oversight job (§3 ruling). Passed down rather than re-derived here so the
+   * panel and the bulk dialog in the header cannot disagree about it.
+   */
+  canPublish: boolean;
 }) {
   const supabase = await createClient();
 
@@ -571,8 +698,8 @@ async function SectionReportCardsBody({
         </div>
       </div>
 
-      {/* Publish window panel */}
-      {selectedLabel && termList.length > 0 && (
+      {/* Publish window panel — oversight only, see `canPublish`. */}
+      {canPublish && selectedLabel && termList.length > 0 && (
         <PublishWindowPanel
           sectionId={sectionId}
           sectionName={selectedSectionName ?? selectedLabel}

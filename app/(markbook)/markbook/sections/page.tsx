@@ -37,8 +37,12 @@ type LevelLite = {
 export default async function SectionsListPage() {
   const supabase = await createClient();
   const view = await getViewContext();
-  const role = view?.role ?? null;
-  const activeRole = view?.activeRole ?? null;
+  // ⚠ `role` IS DELIBERATELY NOT DESTRUCTURED. As of Phase 3c nothing on this
+  // page decides anything from the account role — the section scope, the cover
+  // panel and `canManage` all read the lens — and leaving an unused binding
+  // called `role` in scope is how the next edit reaches for the wrong one.
+  // Twin of the same note on app/(classroom)/classroom/page.tsx.
+  const activeRole = view?.activeRole ?? view?.role ?? null;
 
   // Cover booked for this teacher that has not started yet (migration 123).
   // Caller's client on purpose: the row-read policy is deliberately unwindowed,
@@ -54,10 +58,19 @@ export default async function SectionsListPage() {
     activeRole === 'teacher' && view
       ? await loadUpcomingCoverForUser(supabase, view.id)
       : [];
+  // ⚠ ON THE LENS AS OF PHASE 3c (§3 ruling) — Phase 3b left this on `role`
+  // and said so; the ruling since made is that a Teacher view hides controls
+  // that exist only for oversight roles. Here that is one control: the "Manage
+  // in SIS Admin" button, which points at `/sis/sections`. Phase 3b already
+  // removed the whole SIS tile from this view, so leaving the button was the
+  // switcher and the page disagreeing about the same module.
+  //
+  // Narrowing only — `/sis/sections` still admits her real role, so switching
+  // back restores the button and nothing behind it changed.
   const canManage =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
+    activeRole === 'academic_coordinator' ||
+    activeRole === 'school_admin' ||
+    activeRole === 'superadmin';
 
   // Scoping (Phase 8) — Markbook was the one teaching-module list with no
   // teacher scoping at all; Attendance/Evaluation already narrow to a
@@ -72,9 +85,14 @@ export default async function SectionsListPage() {
   // school_admin who also teaches sees her own sections in the Teacher view
   // and every section in the Admin view. The guard above the resolver has to
   // move with it, or the resolver is handed an empty array and answers "no
-  // classes at all". `role` is untouched everywhere else on this page — it
-  // still decides `canManage` below, which is an oversight privilege, not a
-  // teaching one.
+  // classes at all".
+  //
+  // This paragraph used to end "`role` is untouched everywhere else on this
+  // page — it still decides `canManage` below". That stopped being true in the
+  // same change that wrote it: Phase 3c moved `canManage` onto the lens too
+  // (see the §3 note above it), and `role` is no longer bound on this page at
+  // all. Corrected rather than deleted, because a page where EVERY decision
+  // reads the lens is worth saying out loud — it is why the binding is gone.
   //
   // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`:
   // `getViewContext()` at the top of this page has already made this exact

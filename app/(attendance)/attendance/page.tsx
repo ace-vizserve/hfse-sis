@@ -49,7 +49,8 @@ import {
 } from '@/lib/dashboard/range';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import { getViewContext } from '@/lib/auth/view-context';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { Role } from '@/lib/auth/roles';
 
@@ -58,6 +59,23 @@ import type { Role } from '@/lib/auth/roles';
 // Term comes from the canonical resolver (KD #116) rather than `is_current`,
 // which is routinely left unmaintained — the same trap that pinned every report
 // card to Term 1 (KD #164).
+//
+// ⚠ THE `'teacher'` LITERAL BELOW IS DELIBERATE AND MUST STAY A LITERAL.
+//
+// Phase 3c briefly made it a `viewRole` parameter, on the reasoning that a
+// `school_admin` who advises a class now reaches this function too (through the
+// lens) and the two halves of the decision should be spelled the same way. That
+// was the wrong direction and it was reverted before shipping. The sole call
+// site is already inside `if (view === 'teacher')` — the BRANCH CONDITION is
+// the lens — so the argument could only ever be the literal it replaced, while
+// the parameter turned a hard-coded safe value into a caller-supplied one.
+//
+// And the value is not inert. `resolveClassroomScope` returns
+// `sectionIds: null` — meaning EVERY SECTION IN THE SCHOOL — for any oversight
+// role, and everything under here reads through the service client, so a future
+// caller passing `'school_admin'` would get exactly the school-wide read
+// `loadAdvisedSections` exists to prevent. The function is named
+// `…ForTeacher`; it resolves a teacher's dashboard; the literal says so.
 async function loadAdviserDashboardForTeacher(
   userId: string
 ): Promise<AdviserDashboard | null> {
@@ -125,8 +143,12 @@ export default async function AttendanceDashboard({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
-  const session = await getSessionUser();
+  const session = await getViewContext();
   if (!session) redirect('/login');
+  // The lens, with the account role as the floor. `session.role` still
+  // authorises — the loaders below all re-check, and the write routes and RLS
+  // never see this value.
+  const view = session.activeRole ?? session.role;
 
   // A teacher used to be bounced straight to the section picker, so the module
   // had no landing surface for the person who uses it every morning. They get
@@ -140,13 +162,33 @@ export default async function AttendanceDashboard({
   // How many parent-filed declarations are waiting for THIS person to decide.
   // Rendered as a panel rather than on the notification bell — see
   // components/attendance/declarations-waiting-panel.tsx for why.
+  //
+  // ⚠ THE COUNT KEEPS THE REAL ROLE. It is an approval-inbox scope
+  // (`countInboxActionable`) — "how many filings are waiting on YOU to decide"
+  // — and that is an account-level fact the approval routes will answer the
+  // same way whichever view is on screen. Lensing it would put a number on the
+  // panel that its own queue at /attendance/declarations disagrees with.
   const declarationsWaiting = await countDeclarationsWaiting(
     session.id,
     session.role
   );
 
-  if (session.role === 'teacher') {
+  // ⚠ THE BRANCH THAT DECIDES WHICH ATTENDANCE MODULE THIS IS, AND IT IS NOW
+  // KEYED ON THE LENS (role-switcher Phase 3c). A teaching admin in the Teacher
+  // view gets her own adviser dashboard — the classes she actually takes the
+  // register for — instead of the school-wide registrar dashboard below, which
+  // is what "viewing as Teacher" is supposed to mean. In the Admin view she
+  // gets the registrar dashboard exactly as before, and a plain teacher's
+  // entitled set is `['teacher']`, so nothing about a teacher changes.
+  //
+  // It narrows in one direction only: the adviser dashboard is built from her
+  // own assignment rows, which are a strict subset of the school-wide read
+  // below.
+  if (view === 'teacher') {
     const teacherView = await loadAdviserDashboardForTeacher(session.id);
+    // Advises nothing in this view → the section picker, which now scopes the
+    // same way and says so. A subject-teacher-only account lands on its empty
+    // state rather than on a dashboard with no classes on it.
     if (!teacherView) redirect('/attendance/sections');
     return (
       <PageShell>

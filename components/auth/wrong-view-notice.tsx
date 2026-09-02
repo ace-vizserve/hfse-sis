@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { Eye } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
@@ -110,5 +111,45 @@ export function WrongViewNotice({
         </Link>
       </div>
     </Card>
+  );
+}
+
+/**
+ * The whole refusal in one line: the notice for anyone who can switch, a plain
+ * 404 for everybody else.
+ *
+ * ⚠ IT THROWS ON THE 404 PATH. `notFound()` does not return, so this either
+ * gives back an element or unwinds — which is why the call site reads
+ * `return wrongViewNoticeOrNotFound(...)` and never needs an `if` around it.
+ *
+ * Added in Phase 3c for the seven Classroom tabs, which each re-check their own
+ * `canReadX` under the section layout and each used to answer a wrong view with
+ * a bare `notFound()`. Six of those gates are unreachable today because the
+ * layout refuses first; the Attendance and Write-ups tabs are NOT — a viewer
+ * holding only `subject` capability on the class passes the layout and is
+ * turned away here, which in the Teacher view is exactly the "you chose a
+ * setting" case this notice exists for. They are all converted together so a
+ * future change to the layout's own gate cannot quietly reopen the other five.
+ *
+ * The tabs render INSIDE the section layout, which has already drawn the class
+ * name and the subnav above them — so their copy says "this class" rather than
+ * repeating a name the reader is looking at.
+ */
+export function wrongViewNoticeOrNotFound({
+  view,
+  heading,
+  body,
+  backHref,
+  backLabel,
+}: WrongViewNoticeProps): React.ReactElement {
+  if (!showWrongViewNotice(view)) notFound();
+  return (
+    <WrongViewNotice
+      view={view}
+      heading={heading}
+      body={body}
+      backHref={backHref}
+      backLabel={backLabel}
+    />
   );
 }

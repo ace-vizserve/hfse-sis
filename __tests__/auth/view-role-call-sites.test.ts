@@ -51,8 +51,34 @@ import {
 
 const ROOT = process.cwd();
 
-/** The two helpers whose first argument is the decision. */
-const SCOPE_HELPERS = ['loadClassroomAccess', 'resolveClassroomScope'] as const;
+/**
+ * The helpers whose FIRST ARGUMENT is the decision.
+ *
+ * ⚠ `canEditWriteups` JOINED THIS LIST IN PHASE 3c, and it is the case the
+ * header above warned about arriving: a page that delegates its gate into a
+ * `lib/` helper is invisible to this guard unless the helper is named here.
+ * Its signature is `canEditWriteups(viewRole, hasVirtueTheme)` — same shape as
+ * the two classroom helpers, so the existing classification works on it
+ * unchanged, and adding it also buys the assertion nothing else makes: that no
+ * API route ever passes it the lens.
+ */
+const SCOPE_HELPERS = [
+  'loadClassroomAccess',
+  'resolveClassroomScope',
+  'canEditWriteups',
+] as const;
+
+/**
+ * Lens-consuming helpers whose first argument is NOT a bare role, so
+ * `callSitesIn` cannot classify them — but which still must never be handed the
+ * lens by an API route.
+ *
+ * `gradingSheetGates({ viewRole, isLocked, … })` takes an options object. It is
+ * named here rather than left out, because "this helper reads the lens" is a
+ * fact the next reader needs whether or not a regex can parse its call sites,
+ * and the route-side assertion below is written against the OBJECT form.
+ */
+const OBJECT_ARG_LENS_HELPERS = ['gradingSheetGates'] as const;
 
 function read(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), 'utf8');
@@ -142,7 +168,13 @@ describe('pages render through the lens', () => {
     // form `callSitesIn` cannot read while this still passed. Raising it means
     // DELETING a lensed page fails here — which is the point: that is a
     // decision, and it should be made deliberately by editing this number.
-    expect(sites.length).toBe(14);
+    //
+    // 14 → 16 in Phase 3c, two new sites:
+    //   `/evaluation/sections/[sectionId]` now calls `canEditWriteups(…)`
+    //   instead of writing the comparison inline;
+    //   `/markbook/report-cards` now calls `resolveClassroomScope(…)` to narrow
+    //   its picker, overview and roster to the classes the viewer advises.
+    expect(sites.length).toBe(16);
     expect(new Set(sites.map((s) => s.helper))).toEqual(new Set(SCOPE_HELPERS));
   });
 
@@ -178,6 +210,40 @@ describe('API routes authorise on the real role', () => {
     expectEveryCallWasParsed(ROUTE_FILES, 'API routes');
   });
 
+  it('no route calls an options-object lens helper at all', () => {
+    // `gradingSheetGates({ viewRole, … })` cannot be classified by first
+    // argument, so it is checked the blunt way: an API route has no business
+    // calling it in ANY form. It answers "what does this screen offer", and a
+    // route answers "what will I accept" — the two are different questions and
+    // the route's is decided on the JWT role.
+    const offenders: string[] = [];
+    for (const file of ROUTE_FILES) {
+      const text = stripComments(read(file));
+      for (const helper of OBJECT_ARG_LENS_HELPERS) {
+        if (new RegExp(`\\b${helper}\\(`).test(text)) {
+          offenders.push(`${posix(file)} calls ${helper}(`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'An API route is calling a helper that reads the active-role lens. ' +
+        'These helpers decide what a SCREEN shows; a route decides what it ' +
+        'ACCEPTS, on the JWT role.'
+    ).toEqual([]);
+  });
+
+  it('the options-object helper is not vacuous — it exists and is used', () => {
+    // Without this the assertion above would keep passing after a rename,
+    // while checking a symbol nothing calls any more.
+    const pageUses = PAGE_FILES.some((f) =>
+      OBJECT_ARG_LENS_HELPERS.some((h) =>
+        new RegExp(`\\b${h}\\(`).test(stripComments(read(f)))
+      )
+    );
+    expect(pageUses).toBe(true);
+  });
+
   it('no route passes the lens, directly or through a property', () => {
     const offenders = sites
       .filter((s) => NAMES_THE_LENS.test(s.firstArg))
@@ -211,11 +277,21 @@ describe('the scanner can actually read what it is given', () => {
 });
 
 describe('the helpers stay callable from both sides', () => {
-  it('neither reads the lens itself', () => {
-    // The failure the two suites above cannot see: if either helper started
-    // calling `getViewContext()` internally, every route would keep passing a
-    // real role and still be answered from the cookie.
-    for (const file of ['lib/classroom/scope.ts', 'lib/classroom/queries.ts']) {
+  it('none of them reads the lens itself', () => {
+    // The failure the two suites above cannot see: if any of these helpers
+    // started calling `getViewContext()` internally, every route would keep
+    // passing a real role and still be answered from the cookie.
+    //
+    // The two Phase 3c modules are held to the same rule. `gradingSheetGates`
+    // names its parameter `viewRole`, which is a PARAMETER and not the lens —
+    // so it is matched on the import and on the exact identifier `activeRole`,
+    // exactly as the classroom pair is.
+    for (const file of [
+      'lib/classroom/scope.ts',
+      'lib/classroom/queries.ts',
+      'lib/evaluation/edit-gate.ts',
+      'lib/markbook/grading-gates.ts',
+    ]) {
       const source = stripComments(read(file));
       expect(source, `${file} must not import the lens`).not.toMatch(
         /@\/lib\/auth\/(view-context|active-role)/
