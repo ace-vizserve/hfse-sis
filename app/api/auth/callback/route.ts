@@ -37,7 +37,18 @@ export async function GET(request: NextRequest) {
       const service = createServiceClient();
       await logAction({
         service,
-        actor: { id: data.user.id, email: data.user.email ?? null },
+        actor: {
+          id: data.user.id,
+          email: data.user.email ?? null,
+          // ⚠ READ STRAIGHT OFF `app_metadata`, NOT FROM A GATE, because this
+          // fires BEFORE any gate — signing in IS the action, so there is no
+          // `requireRole` above it to have already answered. This is the role
+          // the account held at the moment it signed in, which is exactly the
+          // question the column asks. Null for an account with no role yet
+          // (a parent, or a staff account still being set up).
+          role:
+            (data.user.app_metadata as { role?: string } | null)?.role ?? null,
+        },
         action: 'user.login',
         entityType: 'user_account',
         entityId: data.user.id,

@@ -184,7 +184,11 @@ export async function POST(request: NextRequest) {
   // own id is in the context.
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: ending ? 'assignment.relief.end' : 'assignment.relief.start',
     entityType: 'teacher_assignment',
     entityId: assignmentIds[0],

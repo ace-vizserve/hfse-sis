@@ -58,7 +58,11 @@ export async function POST(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'attendance.event.create',
     entityType: 'calendar_event',
     entityId: data.id,
@@ -134,7 +138,11 @@ export async function PATCH(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'attendance.event.update',
     entityType: 'calendar_event',
     entityId: id,
@@ -176,7 +184,11 @@ export async function DELETE(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'attendance.event.delete',
     entityType: 'calendar_event',
     entityId: id,

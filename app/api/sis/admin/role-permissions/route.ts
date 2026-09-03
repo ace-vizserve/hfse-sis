@@ -137,7 +137,11 @@ export async function PATCH(request: Request) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'role.permissions.update',
     entityType: 'role_permissions',
     entityId: role,

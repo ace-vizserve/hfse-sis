@@ -710,7 +710,11 @@ export async function PATCH(
   if (changes.length > 0) {
     await logAction({
       service: supabase,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'sis.stage.update',
       entityType: 'enrolment_status',
       entityId: enroleeNumber,
@@ -802,7 +806,11 @@ export async function PATCH(
       ) {
         await logAction({
           service: supabase,
-          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          actor: {
+            id: auth.user.id,
+            email: auth.user.email ?? null,
+            role: auth.role,
+          },
           action: 'student.sync',
           entityType: 'sync_batch',
           entityId: enroleeNumber,
@@ -966,7 +974,11 @@ export async function PATCH(
               };
               await logAction({
                 service: supabase,
-                actor: { id: auth.user.id, email: auth.user.email ?? null },
+                actor: {
+                  id: auth.user.id,
+                  email: auth.user.email ?? null,
+                  role: auth.role,
+                },
                 action: 'student.withdrawal.cascade',
                 entityType: 'section_student',
                 entityId: enroleeNumber,

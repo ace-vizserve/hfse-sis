@@ -31,6 +31,8 @@ type LoggedAction = {
   action: string;
   entityId: string;
   entityType: string;
+  // Who acted, and in what capacity (migration 141).
+  actor: { id: string; email: string | null; role: string | null };
   context: Record<string, unknown>;
 };
 const logActionMock = vi.fn(async (_entry: LoggedAction) => undefined);
@@ -306,6 +308,17 @@ describe('what survives the change', () => {
     await patch({ relief_teacher_user_id: null });
     expect(logActionMock.mock.calls[0]![0]).toMatchObject({
       action: 'assignment.relief.end',
+    });
+  });
+
+  it('records the capacity the person acted in, not just who they were', async () => {
+    // migration 141. `requireCapability` returns the role and every call site
+    // used to throw it away, so the log could say WHO arranged a cover and
+    // never in what capacity — and it could not be reconstructed later, since
+    // looking somebody up returns the job they hold TODAY.
+    await patch({ relief_teacher_user_id: TEACHER_B });
+    expect(logActionMock.mock.calls[0]![0].actor).toMatchObject({
+      role: 'school_admin',
     });
   });
 

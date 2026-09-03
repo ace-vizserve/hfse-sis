@@ -159,6 +159,38 @@ describe('decideChangeRequest', () => {
     expect(captured.primary_reviewed_by).toBe(PRIMARY_APPROVER);
     expect(captured.primary_decision).toBe('approved');
     expect(logActionMock).toHaveBeenCalledTimes(1);
+    // migration 141 — the audit row carries the capacity, not just the person.
+    expect(logActionMock.mock.calls[0][0]).toMatchObject({
+      actor: { id: PRIMARY_APPROVER, role: 'school_admin' },
+    });
+  });
+
+  it('refuses a scraped-but-empty role before it can reach the audit log', async () => {
+    // The signed-link approval route has no session to gate on, so it reaches
+    // for `app_metadata.role` with a `?? ''` fallback. That '' resolves to no
+    // capabilities and fails closed HERE — which is why a blank never actually
+    // reaches `audit_log` through this path. `toAuditRow` still collapses ''
+    // to null (its own tests pin that); this records that the coercion is a
+    // backstop, not the only thing standing between a blank and the table.
+    const service = makeService({
+      existing: { data: baseRow(), error: null },
+      updated: { data: baseRow({ status: 'approved' }), error: null },
+    });
+
+    const result = await decideChangeRequest({
+      service,
+      requestId: 'req-1',
+      action: 'approve',
+      actingUser: {
+        id: PRIMARY_APPROVER,
+        email: 'approver@hfse.test',
+        role: '',
+      },
+      via: 'email_token',
+    });
+
+    expect(result.httpStatus).toBe(403);
+    expect(logActionMock).not.toHaveBeenCalled();
   });
 
   it('second approver co-signs (secondary_* only, status untouched)', async () => {

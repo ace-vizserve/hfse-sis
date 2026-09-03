@@ -201,7 +201,11 @@ export async function PATCH(
       for (const row of totalsDiff) {
         await logAction({
           service,
-          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          actor: {
+            id: auth.user.id,
+            email: auth.user.email ?? null,
+            role: auth.role,
+          },
           action: actionForAudit,
           entityType: 'grading_sheet',
           entityId: sheetId,

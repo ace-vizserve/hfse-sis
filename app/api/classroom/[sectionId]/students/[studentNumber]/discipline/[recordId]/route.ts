@@ -153,7 +153,7 @@ export async function PATCH(
     step = 'audit';
     await logAction({
       service,
-      actor: { id: user.id, email: user.email ?? null },
+      actor: { id: user.id, email: user.email ?? null, role },
       action: 'discipline.record.update',
       entityType: 'student_discipline_record',
       entityId: recordId,

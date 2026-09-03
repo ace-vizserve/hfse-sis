@@ -200,7 +200,11 @@ export async function PATCH(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: reliefTeacherId
       ? 'assignment.relief.start'
       : 'assignment.relief.end',
@@ -298,7 +302,11 @@ export async function DELETE(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'assignment.delete',
     entityType: 'teacher_assignment',
     entityId: id,

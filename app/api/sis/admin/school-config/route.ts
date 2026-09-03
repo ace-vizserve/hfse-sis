@@ -137,7 +137,11 @@ export async function PATCH(request: NextRequest) {
   if (Object.keys(diff).length > 0) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'school_config.update',
       entityType: 'school_config',
       entityId: '1',

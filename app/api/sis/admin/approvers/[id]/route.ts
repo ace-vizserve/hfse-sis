@@ -48,7 +48,11 @@ export async function DELETE(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'approver.revoke',
     entityType: 'approver_assignment',
     entityId: id,

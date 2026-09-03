@@ -81,7 +81,11 @@ export async function PATCH(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'section.schedule.update',
     entityType: 'section',
     entityId: sectionId,

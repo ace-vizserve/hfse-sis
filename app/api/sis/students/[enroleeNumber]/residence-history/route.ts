@@ -108,7 +108,11 @@ export async function PATCH(
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'sis.profile.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,

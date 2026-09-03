@@ -72,7 +72,11 @@ export async function PATCH(
 
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'approval_stage.update',
       entityType: 'approval_stage',
       entityId: id,
@@ -127,7 +131,11 @@ export async function DELETE(
     await deactivateStage(service, id);
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'approval_stage.delete',
       entityType: 'approval_stage',
       entityId: id,

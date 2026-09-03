@@ -170,7 +170,11 @@ export async function PATCH(
 
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'subject_config.update',
       entityType: 'subject_config',
       entityId: configId,
@@ -325,7 +329,11 @@ export async function PATCH(
   if (sync.error) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'subject_config.update',
       entityType: 'subject_config',
       entityId: configId,
@@ -356,7 +364,11 @@ export async function PATCH(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'subject_config.update',
     entityType: 'subject_config',
     entityId: configId,

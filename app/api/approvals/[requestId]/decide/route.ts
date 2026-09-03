@@ -273,7 +273,7 @@ export async function POST(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email },
+    actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
     action: action === 'approve' ? 'declaration.approve' : 'declaration.reject',
     entityType: 'student_declaration',
     entityId: subject.subject_id,

@@ -361,7 +361,15 @@ export async function decideChangeRequest(
 
   await logAction({
     service,
-    actor: { id: actingUser.id, email: actingUser.email ?? null },
+    // ⚠ THE ROLE CAN BE AN EMPTY STRING HERE, AND ONLY HERE. The signed-link
+    // approval route has no session to gate on, so it scrapes the role out of
+    // `app_metadata` with a `?? ''` fallback. `toAuditRow` turns that ''
+    // into a null — "we never found a role" is a null, never a blank string.
+    actor: {
+      id: actingUser.id,
+      email: actingUser.email ?? null,
+      role: actingUser.role,
+    },
     action: auditAction,
     entityType: 'grade_change_request',
     entityId: id,

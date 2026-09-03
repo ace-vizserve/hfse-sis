@@ -129,7 +129,11 @@ export async function PATCH(
   if (role !== undefined && role !== beforeRole) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'user.role.update',
       entityType: 'user_account',
       entityId: id,
@@ -144,7 +148,11 @@ export async function PATCH(
   if (disabled !== undefined && disabled !== beforeDisabled) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: disabled ? 'user.disable' : 'user.enable',
       entityType: 'user_account',
       entityId: id,
@@ -155,7 +163,11 @@ export async function PATCH(
   if (displayName !== undefined || email !== undefined) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'user.info.update',
       entityType: 'user_account',
       entityId: id,
@@ -174,7 +186,11 @@ export async function PATCH(
   } else if (password !== undefined) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'user.info.update',
       entityType: 'user_account',
       entityId: id,
@@ -269,7 +285,11 @@ export async function DELETE(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'user.delete',
     entityType: 'user_account',
     entityId: id,

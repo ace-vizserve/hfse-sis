@@ -95,7 +95,7 @@ export default async function AttendanceAuditLogPage({
   let q = supabase
     .from('audit_log')
     .select(
-      'id, actor_email, action, entity_type, entity_id, context, created_at',
+      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
     .in('action', ATTENDANCE_AUDIT_ACTIONS);
@@ -127,6 +127,7 @@ export default async function AttendanceAuditLogPage({
   type RawRow = {
     id: string;
     actor_email: string;
+    actor_role: string | null;
     action: string;
     entity_type: string;
     entity_id: string | null;
@@ -142,6 +143,7 @@ export default async function AttendanceAuditLogPage({
     at: r.created_at,
     actor_email: r.actor_email,
     actor_display: actorMap.get(r.actor_email) ?? r.actor_email,
+    actor_role: r.actor_role,
     action: r.action,
     entity_type: r.entity_type,
     entity_id: r.entity_id,

@@ -37,6 +37,7 @@ import {
   auditActionLabel,
   auditActionTone,
   auditContextSummary,
+  auditRoleLabel,
 } from '@/lib/audit/humanize';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +61,10 @@ export type MergedRow = {
   id: string;
   at: string;
   actor: string;
+  /** The role that authorised the action (migration 141). Null for a system
+   *  write, and for every row logged before the column existed — those are not
+   *  the same thing as "no role", but neither can be shown as one. */
+  actorRole?: string | null;
   action: string;
   entity_type: string;
   entity_id: string | null;
@@ -128,7 +133,21 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
       <SortableHeader column={column}>Who</SortableHeader>
     ),
     meta: { label: 'Who' },
-    cell: ({ row }) => <span className="text-xs">{row.original.actor}</span>,
+    // Email on top, the capacity they acted in underneath. The role is what
+    // the column could never answer before: looking somebody up today returns
+    // the job they hold today, and this says which one they held at the time.
+    // Nothing is shown where it was not recorded — an older entry stays a
+    // plain email rather than sprouting a guessed label.
+    cell: ({ row }) => (
+      <div>
+        <span className="text-xs">{row.original.actor}</span>
+        {row.original.actorRole && (
+          <p className="text-[10px] text-muted-foreground">
+            {auditRoleLabel(row.original.actorRole)}
+          </p>
+        )}
+      </div>
+    ),
     filterFn: (row, id, value) => {
       if (!value || (Array.isArray(value) && value.length === 0)) return true;
       return Array.isArray(value)

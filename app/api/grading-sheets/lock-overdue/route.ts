@@ -87,7 +87,9 @@ export async function POST(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: null, email: 'system:grading-deadline' },
+    // No person, so no role — the cron sweep already writes `actor_id: null`
+    // and `actor_role` follows it. Naming a role here would invent one.
+    actor: { id: null, email: 'system:grading-deadline', role: null },
     action: 'sheet.lock_overdue_batch',
     entityType: 'grading_sheet',
     entityId: null,

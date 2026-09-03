@@ -130,7 +130,11 @@ export async function PATCH(
   if (datesChanged) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'ay.term_dates.update',
       entityType: 'term',
       entityId: termId,
@@ -151,7 +155,11 @@ export async function PATCH(
   if (virtueChanged) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'ay.term_virtue.update',
       entityType: 'term',
       entityId: termId,
@@ -168,7 +176,11 @@ export async function PATCH(
   if (gradingLockChanged) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'ay.term_grading_lock.update',
       entityType: 'term',
       entityId: termId,

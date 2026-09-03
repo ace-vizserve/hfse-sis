@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { logAction } from '@/lib/audit/log-action';
 import { ACTIVE_ROLE_COOKIE } from '@/lib/auth/active-role';
 import {
   DEFAULT_SWITCH_DESTINATION,
@@ -7,6 +8,7 @@ import {
 } from '@/lib/auth/in-app-path';
 import type { Role } from '@/lib/auth/roles';
 import { getViewContext } from '@/lib/auth/view-context';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/account/active-role   body: { role: Role, next?: string }
 //
@@ -83,6 +85,45 @@ export async function POST(request: NextRequest) {
     requestedNext === undefined
       ? null
       : (safeInAppPath(requestedNext) ?? DEFAULT_SWITCH_DESTINATION);
+
+  // ── THE SWITCH ITSELF IS AN AUDIT EVENT ──────────────────────────────────
+  //
+  // Mr Ace's reason for wanting the role on audit rows at all: "best for audit
+  // trail as well since they switched roles." This is the entry that makes the
+  // rest legible — "Koh changed to Teacher view at 09:14" sits above the marks
+  // she then entered, and explains them.
+  //
+  // ⚠ THIS IS WHY NO OTHER ROUTE LOGS THE VIEW, and the reason is structural,
+  // not stylistic. Recording the active view on every audit row would put the
+  // lens inside 111 call sites, most of them API routes, and
+  // `__tests__/auth/active-role-never-authorises.test.ts` bans an API route
+  // from naming it — for the good reason that no test can tell "reads the lens
+  // to log it" apart from "reads the lens to decide". This route is the one
+  // documented exemption, because it OWNS the cookie. One entry here says the
+  // same thing without punching a hole in the guard.
+  //
+  // `from` is the RESOLVED lens (`getViewContext`), not the raw cookie: a
+  // cookie naming a view the account no longer earns has not been what they
+  // were looking at, and the log should say what they saw.
+  //
+  // `actor.role` is the account's REAL role, as everywhere else — the view is
+  // the thing that changed and it is in the context, on both sides.
+  //
+  // Awaited rather than fired-and-forgotten: `logAction` never throws (it
+  // swallows and console.errors its own failures), so awaiting cannot fail the
+  // switch, and not awaiting inside a route handler risks the write being cut
+  // off when the response ends.
+  await logAction({
+    service: createServiceClient(),
+    actor: { id: view.id, email: view.email, role: view.role },
+    action: 'user.view.switch',
+    entityType: 'user_account',
+    entityId: view.id,
+    context: {
+      from_view: view.activeRole,
+      to_view: requested,
+    },
+  });
 
   const response = NextResponse.json(
     destination === null

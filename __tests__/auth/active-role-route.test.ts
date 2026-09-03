@@ -38,6 +38,19 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
+// The audit write. `createServiceClient()` reads env vars that are not set
+// under vitest and throws without them, so the module is stubbed; `logAction`
+// is stubbed alongside it so the switch entry can be asserted on directly.
+const serviceClient = { __service: true };
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceClient: () => serviceClient,
+}));
+
+const logActionMock = vi.fn();
+vi.mock('@/lib/audit/log-action', () => ({
+  logAction: (...args: unknown[]) => logActionMock(...args),
+}));
+
 import { POST } from '@/app/api/account/active-role/route';
 import { ACTIVE_ROLE_COOKIE } from '@/lib/auth/active-role';
 
@@ -174,6 +187,87 @@ describe('POST /api/account/active-role', () => {
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'unauthenticated' });
+  });
+
+  // ── The switch itself is an audit event (migration 141) ─────────────────
+  //
+  // Mr Ace's reason for wanting the actor's role recorded at all: "best for
+  // audit trail as well since they switched roles." This entry is what makes
+  // the rest legible — the marks entered at 09:20 read differently once the
+  // log says the person moved into the Teacher view at 09:14.
+
+  it('logs the view switch with both views and the account role', async () => {
+    signedInAsTeachingAdmin();
+    incomingCookie.value = 'school_admin';
+
+    await POST(post({ role: 'teacher' }));
+
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    const entry = logActionMock.mock.calls[0][0] as {
+      service: unknown;
+      actor: { id: string; email: string; role: string | null };
+      action: string;
+      entityType: string;
+      entityId: string;
+      context: Record<string, unknown>;
+    };
+    expect(entry.action).toBe('user.view.switch');
+    expect(entry.entityType).toBe('user_account');
+    expect(entry.entityId).toBe('user-1');
+    expect(entry.service).toBe(serviceClient);
+    // The account's REAL role, not the view — the view is the thing that
+    // changed and it is in the context, on both sides.
+    expect(entry.actor).toEqual({
+      id: 'user-1',
+      email: 'admin@hfse.test',
+      role: 'school_admin',
+    });
+    expect(entry.context).toEqual({
+      from_view: 'school_admin',
+      to_view: 'teacher',
+    });
+  });
+
+  it('records the RESOLVED lens as the view left, not the raw cookie', async () => {
+    // A cookie naming a view the account no longer earns was never what the
+    // person was looking at — `resolveActiveRole` had already been ignoring
+    // it — so the log must say what they actually saw.
+    signedInAsTeachingAdmin();
+    incomingCookie.value = 'superadmin';
+
+    await POST(post({ role: 'teacher' }));
+
+    const entry = logActionMock.mock.calls[0][0] as {
+      context: Record<string, unknown>;
+    };
+    expect(entry.context.from_view).not.toBe('superadmin');
+    expect(entry.context.from_view).toBe('school_admin');
+  });
+
+  it('writes nothing when the switch is refused', async () => {
+    // A refused request is not a switch. Logging it would put an event in an
+    // append-only table for something that did not happen.
+    getSessionUserMock.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@hfse.test',
+      role: 'school_admin',
+    });
+    assignmentsMock.mockResolvedValue([]);
+
+    const res = await POST(post({ role: 'teacher' }));
+
+    expect(res.status).toBe(400);
+    expect(logActionMock).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when there is no session and nothing for a bad body', async () => {
+    getSessionUserMock.mockResolvedValue(null);
+    await POST(post({ role: 'teacher' }));
+    expect(logActionMock).not.toHaveBeenCalled();
+
+    signedInAsTeachingAdmin();
+    await POST(post(null, 'not json at all'));
+    expect(logActionMock).not.toHaveBeenCalled();
   });
 
   it('tells a malformed body apart from an unentitled one', async () => {

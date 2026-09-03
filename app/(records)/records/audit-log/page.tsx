@@ -97,7 +97,7 @@ export default async function SisAuditLogPage({
   let q = supabase
     .from('audit_log')
     .select(
-      'id, actor_email, action, entity_type, entity_id, context, created_at',
+      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
       { count: 'exact' }
     )
     .in('action', RECORDS_AUDIT_ALLOWLIST);
@@ -114,6 +114,7 @@ export default async function SisAuditLogPage({
     (data ?? []) as Array<{
       id: string;
       actor_email: string;
+      actor_role: string | null;
       action: string;
       entity_type: string;
       entity_id: string | null;
@@ -124,6 +125,7 @@ export default async function SisAuditLogPage({
     id: `new-${r.id}`,
     at: r.created_at,
     actor: r.actor_email,
+    actorRole: r.actor_role,
     action: r.action,
     entity_type: r.entity_type,
     entity_id: r.entity_id,

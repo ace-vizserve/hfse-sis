@@ -13,6 +13,8 @@
 // they are not redefined here.
 
 import type { AuditAction } from '@/lib/audit/log-action';
+import { ROLE_LABEL } from '@/lib/auth/role-labels';
+import type { Role } from '@/lib/auth/roles';
 import { toPlainText } from '@/lib/rich-text';
 import {
   ATTENDANCE_STATUS_LABELS,
@@ -236,6 +238,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'user.enable': 'User enabled',
   'user.delete': 'User deleted',
   'user.login': 'Signed in',
+  // Somebody who does two jobs changed which one they are looking at the app
+  // as. "Changed view" rather than "switched role": nobody's role changed, and
+  // 'user.role.update' two rows up is the entry that means that.
+  'user.view.switch': 'Changed view',
 
   // Environment / seeding (KD #52) — the test-AY Environment switcher +
   // seeder were removed once the test AYs themselves were gone from the
@@ -291,6 +297,9 @@ export function auditActionTone(
   if (
     a.includes('login') ||
     a.includes('session') ||
+    // Exact, not `includes('switch')` — nothing else here changes a lens, and
+    // a substring match would sweep up any future `*.switch` action.
+    a === 'user.view.switch' ||
     a.includes('seed') ||
     a.includes('topup') ||
     a.includes('sync') ||
@@ -771,6 +780,18 @@ function templateSummary(
       if (to) return humanizeKey(to);
       return null;
     }
+    // "Teacher view → School Admin view". A real sentence rather than raw
+    // context, and it says "view" out loud in both halves so nobody reads the
+    // line as a permission change — it is a lens, and the person's actual role
+    // is unchanged and sits in the row's own actor_role.
+    case 'user.view.switch': {
+      const to = str(ctx.to_view);
+      if (!to) return null;
+      const from = str(ctx.from_view);
+      // A first switch has nothing to move FROM — say where they landed.
+      if (!from || from === to) return `${auditRoleLabel(to)} view`;
+      return `${auditRoleLabel(from)} view${ARROW}${auditRoleLabel(to)} view`;
+    }
 
     // Grading sheets ---------------------------------------------------------
     case 'sheet.create':
@@ -1157,6 +1178,18 @@ function studentLead(ctx: Record<string, unknown>): string {
 
 // Convert snake_case / camelCase identifier → Title Case, honouring the
 // friendly-label overrides above.
+// What a role is CALLED — used both for the `user.view.switch` summary and by
+// the audit tables for the new `actor_role` line under the Who column, so the
+// two never disagree. Uses the same map the switcher itself renders
+// (`ROLE_LABEL`), so "Switch to School Admin view" in the popover and "School
+// Admin view" in the log are the same words; `humanizeKey` alone would turn
+// `p_file_officer` into "P File Officer". Falls back for a value the map does
+// not know, so a role added later still reads as English rather than
+// snake_case.
+export function auditRoleLabel(role: string): string {
+  return ROLE_LABEL[role as Role] ?? humanizeKey(role);
+}
+
 function humanizeKey(key: string): string {
   const friendly = FRIENDLY_KEY_LABELS[key];
   if (friendly) return friendly;

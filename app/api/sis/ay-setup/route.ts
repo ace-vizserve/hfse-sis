@@ -88,7 +88,11 @@ export async function POST(request: Request) {
   if (!alreadyExisted) {
     await logAction({
       service: supabase,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'ay.create',
       entityType: 'academic_year',
       entityId: ayId,
@@ -185,7 +189,11 @@ export async function PATCH(request: Request) {
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'ay.switch_current',
     entityType: 'academic_year',
     entityId: (target as { id: string }).id,
@@ -266,7 +274,11 @@ export async function DELETE(request: Request) {
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'ay.delete',
     entityType: 'academic_year',
     entityId: ayId,

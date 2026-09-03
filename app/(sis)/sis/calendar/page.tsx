@@ -103,7 +103,11 @@ export default async function SisCalendarPage({
     if (totalInserted > 0) {
       await logAction({
         service: createServiceClient(),
-        actor: { id: sessionUser.id, email: sessionUser.email ?? null },
+        actor: {
+          id: sessionUser.id,
+          email: sessionUser.email ?? null,
+          role: sessionUser.role,
+        },
         action: 'attendance.calendar.autoseed',
         entityType: 'school_calendar',
         entityId: ay?.id ?? null,

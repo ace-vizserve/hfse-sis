@@ -230,7 +230,11 @@ export async function POST(request: Request) {
       existing,
       target,
       input,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
     });
   }
 
@@ -350,7 +354,11 @@ export async function POST(request: Request) {
   // about.
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'declaration.approve',
     entityType: 'student_declaration',
     entityId: saved.id,
@@ -402,7 +410,9 @@ async function attachToExistingFiling(args: {
     /** Set only on the request sent AFTER the person read the warning. */
     replaceExisting?: boolean;
   };
-  actor: { id: string; email: string | null };
+  // Carries the role as well as the identity: this helper writes its own audit
+  // row, and `logAction` needs the capacity the write was authorised under.
+  actor: { id: string; email: string | null; role: string | null };
 }) {
   const { service, existing, target, input, actor } = args;
 

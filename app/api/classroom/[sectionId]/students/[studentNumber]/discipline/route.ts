@@ -241,7 +241,7 @@ export async function POST(
     step = 'audit';
     await logAction({
       service,
-      actor: { id: user.id, email: user.email ?? null },
+      actor: { id: user.id, email: user.email ?? null, role },
       action: 'discipline.record.file',
       entityType: 'student_discipline_record',
       entityId: result.id,

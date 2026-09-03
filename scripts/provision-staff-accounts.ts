@@ -543,7 +543,11 @@ async function main() {
           reset++;
           await logAction({
             service,
-            actor: { id: actor.id, email: actor.email ?? actorEmail },
+            actor: {
+              id: actor.id,
+              email: actor.email ?? actorEmail,
+              role: actorRole,
+            },
             action: 'user.info.update',
             entityType: 'user_account',
             entityId: found.id,
@@ -649,7 +653,11 @@ async function main() {
 
     await logAction({
       service,
-      actor: { id: actor.id, email: actor.email ?? actorEmail },
+      actor: {
+        id: actor.id,
+        email: actor.email ?? actorEmail,
+        role: actorRole,
+      },
       action: 'user.create',
       entityType: 'user_account',
       entityId: data.user.id,

@@ -113,7 +113,11 @@ export async function POST(request: NextRequest) {
       : 'pfile.reminder.bulk';
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action,
     entityType: 'enrolment_document',
     entityId: `${ayCode}:bulk`,

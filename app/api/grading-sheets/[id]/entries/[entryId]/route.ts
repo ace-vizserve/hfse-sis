@@ -680,7 +680,11 @@ export async function PATCH(
     for (const row of diffRows) {
       await logAction({
         service,
-        actor: { id: auth.user.id, email: auth.user.email ?? null },
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
         action: actionForAudit,
         entityType:
           sheet.is_locked && appliedChangeRequest
@@ -717,7 +721,11 @@ export async function PATCH(
     // still log one grade_change_applied row so the trail is complete.
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: actionForAudit,
       entityType: 'grade_change_request',
       entityId: appliedChangeRequest.id,

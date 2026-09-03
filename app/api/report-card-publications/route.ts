@@ -229,7 +229,11 @@ export async function POST(request: NextRequest) {
   if (!windowUnchanged || (notification && notification.sent > 0)) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'publication.create',
       entityType: 'report_card_publication',
       entityId: data.id,

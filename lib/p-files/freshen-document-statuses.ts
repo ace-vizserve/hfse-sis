@@ -163,7 +163,14 @@ async function freshenAyDocumentsUncached(
     try {
       await logAction({
         service,
-        actor: { id: null, email: '(system:freshen)' },
+        // ⚠ NULL, AND NOT THE VIEWER'S ROLE, EVEN THOUGH ONE IS AVAILABLE.
+        // This runs inside an `unstable_cache` block on somebody's page load:
+        // a user triggered it, but the SYSTEM did it, and they neither asked
+        // for it nor could have stopped it. Stamping their role on the row
+        // would write a lie into an append-only table (Hard Rule #6) — it
+        // would read as "a school admin expired these documents". The
+        // `actor_id` here has always been null for the same reason.
+        actor: { id: null, email: '(system:freshen)', role: null },
         action: 'sis.documents.auto-expire',
         entityType: 'enrolment_document',
         entityId: null,
@@ -187,7 +194,14 @@ async function freshenAyDocumentsUncached(
     try {
       await logAction({
         service,
-        actor: { id: null, email: '(system:freshen)' },
+        // ⚠ NULL, AND NOT THE VIEWER'S ROLE, EVEN THOUGH ONE IS AVAILABLE.
+        // This runs inside an `unstable_cache` block on somebody's page load:
+        // a user triggered it, but the SYSTEM did it, and they neither asked
+        // for it nor could have stopped it. Stamping their role on the row
+        // would write a lie into an append-only table (Hard Rule #6) — it
+        // would read as "a school admin expired these documents". The
+        // `actor_id` here has always been null for the same reason.
+        actor: { id: null, email: '(system:freshen)', role: null },
         action: 'sis.documents.auto-revive',
         entityType: 'enrolment_document',
         entityId: null,

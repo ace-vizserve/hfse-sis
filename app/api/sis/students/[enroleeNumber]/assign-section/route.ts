@@ -322,7 +322,11 @@ export async function POST(
   // ── 6. Step C — audit ────────────────────────────────────────────────
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'sis.student.assign_section',
     entityType: 'enrolment_status',
     entityId: enroleeNumber,

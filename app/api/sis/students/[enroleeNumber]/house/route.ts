@@ -115,7 +115,11 @@ export async function PATCH(
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'sis.house.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,

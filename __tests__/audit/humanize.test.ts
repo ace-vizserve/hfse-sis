@@ -561,3 +561,55 @@ describe('teacher assignment entries', () => {
     expect(summary).toContain('Class restructured or merged');
   });
 });
+
+// The view switch (migration 141). A bespoke branch, because the generic
+// fallback would print the raw context keys — the session log records that the
+// summary once emitted raw HTML for an action with no branch of its own.
+describe('view switch entries', () => {
+  it('reads as a sentence, in the same words the switcher uses', () => {
+    const summary = auditContextSummary('user.view.switch', {
+      from_view: 'school_admin',
+      to_view: 'teacher',
+    });
+    expect(summary).toBe('School Admin view → Teacher view');
+  });
+
+  it('names a role the way the school does, not the way the database does', () => {
+    const summary = auditContextSummary('user.view.switch', {
+      from_view: 'teacher',
+      to_view: 'p_file_officer',
+    });
+    expect(summary).toContain('P-File Officer');
+    expect(summary).not.toContain('p_file_officer');
+  });
+
+  it('says where they landed when there is nothing to move from', () => {
+    // A first switch has no previous lens — `from_view` is null.
+    expect(
+      auditContextSummary('user.view.switch', {
+        from_view: null,
+        to_view: 'teacher',
+      })
+    ).toBe('Teacher view');
+  });
+
+  it('is labelled "Changed view", never "role changed"', () => {
+    // Nobody's role changed. `user.role.update` is the entry that means that,
+    // and the two must not read alike in a log a school admin scans.
+    expect(auditActionLabel('user.view.switch')).toBe('Changed view');
+    expect(auditActionLabel('user.role.update')).toBe('User role changed');
+  });
+
+  it('is toned as a passive event, like a sign-in', () => {
+    expect(auditActionTone('user.view.switch')).toBe('info');
+  });
+
+  it('never emits raw context', () => {
+    const summary = auditContextSummary('user.view.switch', {
+      from_view: 'school_admin',
+      to_view: 'teacher',
+    });
+    expect(summary).not.toContain('{');
+    expect(summary).not.toContain('from_view');
+  });
+});

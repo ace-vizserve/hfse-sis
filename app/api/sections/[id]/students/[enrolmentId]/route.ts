@@ -488,7 +488,11 @@ export async function PATCH(
         admissionsCascade = { enroleeNumber, ayCode };
         await logAction({
           service,
-          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          actor: {
+            id: auth.user.id,
+            email: auth.user.email ?? null,
+            role: auth.role,
+          },
           action: 'student.withdrawal.cascade',
           entityType: 'enrolment_status',
           entityId: enroleeNumber,
@@ -582,7 +586,11 @@ export async function PATCH(
         };
         await logAction({
           service,
-          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          actor: {
+            id: auth.user.id,
+            email: auth.user.email ?? null,
+            role: auth.role,
+          },
           action: 'student.reenrolment.cascade',
           entityType: 'enrolment_status',
           entityId: reEnroleeNumber,
@@ -604,7 +612,11 @@ export async function PATCH(
   // accurate (the cascade sets it when it discovers an existing terminal reason).
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'enrolment.metadata.update',
     entityType: 'section_student',
     entityId: enrolmentId,

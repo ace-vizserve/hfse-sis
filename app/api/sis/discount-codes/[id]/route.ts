@@ -131,7 +131,11 @@ export async function PATCH(
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action:
       op === 'expire' ? 'sis.discount_code.expire' : 'sis.discount_code.update',
     entityType: 'discount_code',

@@ -76,7 +76,11 @@ export async function POST(
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'student.section.transfer',
     entityType: 'section_student',
     entityId: enroleeNumber,

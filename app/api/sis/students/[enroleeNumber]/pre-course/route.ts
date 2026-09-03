@@ -107,7 +107,11 @@ export async function PATCH(
   const service = createServiceClient();
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'sis.precourse.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,

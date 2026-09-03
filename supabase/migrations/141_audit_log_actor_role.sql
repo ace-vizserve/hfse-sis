@@ -1,0 +1,67 @@
+-- 141 — THE AUDIT LOG RECORDS THE CAPACITY SOMEBODY ACTED IN.
+--
+-- ── what the log could not answer ────────────────────────────────────────
+--
+-- `audit_log` has had exactly two actor columns since 006: `actor_id` and
+-- `actor_email`. No migration since has added a third (043 widened
+-- `entity_id`, 052 added indexes, 133 added an RPC for the actor dropdown).
+--
+-- So the log can say WHO did something and never in WHAT CAPACITY. That gap
+-- cannot be closed after the fact either: looking a person up today returns
+-- the role they hold TODAY, and a role change is itself a logged, mutable
+-- event. An account that was a teacher in March and a school admin in August
+-- reads as a school admin for the whole year.
+--
+-- The role switcher makes the question routine rather than academic. Staff who
+-- also teach now move between an admin view and a teacher view, and "Ms Koh
+-- edited this" is a materially different fact depending on which hat she had
+-- on. The value is already sitting in scope — `requireRole()` and
+-- `requireCapability()` both return it and every writer threw it away.
+--
+-- ── the column ───────────────────────────────────────────────────────────
+--
+-- `actor_role` is the role that AUTHORISED the action: the JWT claim the gate
+-- checked, not the view the person happened to be looking through. It is the
+-- fact with consequences — a lens can only ever show somebody less than their
+-- account role already reaches, so the role is what explains why the write was
+-- allowed.
+--
+-- Nullable, because a genuine "no role" exists and must stay distinguishable:
+-- a nightly lock sweep and the document-status freshener run with no person
+-- behind them at all, and already write `actor_id = null`.
+--
+-- ── why there is NO BACKFILL ─────────────────────────────────────────────
+--
+-- The value is unknown for every existing row, and it is unknowable. Filling
+-- it from each actor's CURRENT role would be inventing a fact — it would be
+-- wrong for exactly the people this column exists to describe (anyone whose
+-- role has changed since), and worse, it would be wrong INVISIBLY, in an
+-- append-only table (Hard Rule #6) that nothing can go back and correct.
+--
+-- A null here reads as "we did not record this", which is true. A guessed
+-- value reads as evidence. Old rows keep their null forever.
+--
+-- ── what is deliberately NOT touched ─────────────────────────────────────
+--
+-- * `grade_audit_log` — append-only historical (Hard Rule #6), keeps its
+--   free-text `changed_by` and gains nothing here.
+-- * Migration 133's `audit_actor_emails` RPC — it projects `actor_email` only
+--   and needs no change. If the actor dropdown should ever filter by role,
+--   add a SECOND rpc; 133's own header explains why altering that one is a
+--   deploy-ordering hazard.
+-- * RLS — unchanged. The read policy is per-table, so the new column is
+--   readable by exactly the people who could already read the row, and writes
+--   still arrive only through the service-role client.
+--
+-- ── deploy ordering ──────────────────────────────────────────────────────
+--
+-- Safe in either order, unlike 138. Adding a nullable column breaks no code
+-- that does not select it, and the app writing `actor_role` before the column
+-- exists would be refused by PostgREST — so run this FIRST and the transition
+-- is invisible.
+
+alter table public.audit_log
+  add column if not exists actor_role text;
+
+comment on column public.audit_log.actor_role is
+  'The role that authorised this action, cached at write time (the JWT claim the gate checked, never the active view). Null for system-run actions and for every row written before migration 141 — no backfill, because the value is unknowable after the fact.';

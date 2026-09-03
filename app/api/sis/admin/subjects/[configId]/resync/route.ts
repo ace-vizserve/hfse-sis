@@ -67,7 +67,11 @@ export async function POST(
   // want a record of later.
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'subject_config.update',
     entityType: 'subject_config',
     entityId: configId,

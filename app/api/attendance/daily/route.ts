@@ -452,7 +452,7 @@ export async function PATCH(request: NextRequest) {
   if (results.length > 0) {
     await logActions(
       service,
-      { id: auth.user.id, email: auth.user.email ?? null },
+      { id: auth.user.id, email: auth.user.email ?? null, role: auth.role },
       auditRows
     );
 

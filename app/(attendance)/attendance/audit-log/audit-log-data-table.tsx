@@ -23,6 +23,7 @@ import {
   auditActionLabel,
   auditActionTone,
   auditContextSummary,
+  auditRoleLabel,
 } from '@/lib/audit/humanize';
 
 // Map the humanizer's tone bucket → an existing Badge variant.
@@ -50,6 +51,9 @@ export type AttendanceAuditRow = {
   at: string;
   actor_email: string;
   actor_display: string;
+  /** The role that authorised the action (migration 141). Null for a system
+   *  write, and for every row logged before the column existed. */
+  actor_role?: string | null;
   action: string;
   entity_type: string;
   entity_id: string | null;
@@ -144,6 +148,13 @@ const COLUMNS: ColumnDef<AttendanceAuditRow>[] = [
         {row.original.actor_display !== row.original.actor_email && (
           <p className="font-mono text-[10px] text-muted-foreground">
             {row.original.actor_email}
+          </p>
+        )}
+        {/* The capacity they acted in. Absent where it was never recorded —
+            an older entry stays as it was rather than gaining a guess. */}
+        {row.original.actor_role && (
+          <p className="text-[10px] text-muted-foreground">
+            {auditRoleLabel(row.original.actor_role)}
           </p>
         )}
       </div>

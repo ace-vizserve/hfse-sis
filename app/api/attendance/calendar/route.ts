@@ -76,7 +76,11 @@ export async function POST(request: NextRequest) {
     }
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'attendance.calendar.upsert',
       entityType: 'school_calendar',
       entityId: termId,
@@ -167,7 +171,11 @@ export async function POST(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'attendance.calendar.upsert',
     entityType: 'school_calendar',
     entityId: termId,
@@ -212,7 +220,11 @@ export async function DELETE(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'attendance.calendar.delete',
     entityType: 'school_calendar',
     entityId: termId,

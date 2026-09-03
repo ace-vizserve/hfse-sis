@@ -747,7 +747,7 @@ describe('budget: logActions (30 rows)', () => {
       (client) =>
         logActions(
           client as unknown as SupabaseClient,
-          { id: 'actor-1', email: 'actor@hfse.test' },
+          { id: 'actor-1', email: 'actor@hfse.test', role: 'teacher' },
           rows
         ),
       { audit_log: [] }

@@ -113,7 +113,8 @@ export async function POST(request: NextRequest) {
 
   await logAction({
     service,
-    actor: { id: null, email: 'system:auto-sync' },
+    // No person, so no role — this batch already writes `actor_id: null`.
+    actor: { id: null, email: 'system:auto-sync', role: null },
     action: 'sis.student.auto_sync_batch',
     entityType: 'academic_year',
     entityId: ayCode,

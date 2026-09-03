@@ -74,7 +74,11 @@ export async function POST(request: Request) {
 
   await logAction({
     service: supabase,
-    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
     action: 'sis.discount_code.create',
     entityType: 'discount_code',
     entityId: String(id),

@@ -476,7 +476,7 @@ export async function POST(request: NextRequest) {
   // replaces for the batch path.
   await logActions(
     service,
-    { id: auth.user.id, email: auth.user.email ?? null },
+    { id: auth.user.id, email: auth.user.email ?? null, role: auth.role },
     created.map((assignment) => {
       const teacherName = teacherNames.get(assignment.teacher_user_id);
       const sectionName = sections.get(assignment.section_id)?.displayName;

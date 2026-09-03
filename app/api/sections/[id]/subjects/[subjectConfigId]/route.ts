@@ -60,7 +60,11 @@ export async function DELETE(
   if ((count ?? 0) > 0) {
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'section.subject.remove',
       entityType: 'section',
       entityId: sectionId,

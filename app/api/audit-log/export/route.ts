@@ -28,6 +28,7 @@ export async function GET(req: Request) {
   type NewRow = {
     id: string;
     actor_email: string;
+    actor_role: string | null;
     action: string;
     entity_type: string;
     entity_id: string | null;
@@ -61,7 +62,7 @@ export async function GET(req: Request) {
       service
         .from('audit_log')
         .select(
-          'id, actor_email, action, entity_type, entity_id, context, created_at'
+          'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at'
         )
         .gte('created_at', fromIso)
         .lte('created_at', toIso)
@@ -83,6 +84,11 @@ export async function GET(req: Request) {
     timestamp_utc: string;
     source: 'audit_log' | 'grade_audit_log';
     actor_email: string;
+    // The capacity the actor was acting in (migration 141). Blank for a system
+    // write, for anything older than the column, and for every `grade_audit_log`
+    // row — that table has only a free-text `changed_by` and, being append-only
+    // historical (Hard Rule #6), is not gaining a role.
+    actor_role: string;
     action: string;
     entity_type: string;
     entity_id: string | null;
@@ -100,6 +106,7 @@ export async function GET(req: Request) {
       timestamp_utc: r.created_at,
       source: 'audit_log',
       actor_email: r.actor_email,
+      actor_role: r.actor_role ?? '',
       action: r.action,
       entity_type: r.entity_type,
       entity_id: r.entity_id,
@@ -116,6 +123,7 @@ export async function GET(req: Request) {
       timestamp_utc: r.changed_at,
       source: 'grade_audit_log',
       actor_email: r.changed_by,
+      actor_role: '',
       action: isTotals ? 'totals.update' : 'entry.update',
       entity_type: isTotals ? 'grading_sheet' : 'grade_entry',
       entity_id: r.grade_entry_id,
@@ -152,6 +160,7 @@ export async function GET(req: Request) {
       'timestamp_utc',
       'source',
       'actor_email',
+      'actor_role',
       'action',
       'entity_type',
       'entity_id',
@@ -162,6 +171,7 @@ export async function GET(req: Request) {
       r.timestamp_utc,
       r.source,
       r.actor_email,
+      r.actor_role,
       r.action,
       r.entity_type,
       r.entity_id,

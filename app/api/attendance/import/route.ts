@@ -426,7 +426,11 @@ export async function POST(request: NextRequest) {
     if (!dryRun) {
       await logAction({
         service,
-        actor: { id: auth.user.id, email: auth.user.email ?? null },
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
         action: 'attendance.import.bulk',
         entityType: 'attendance_daily',
         entityId: matched.id,

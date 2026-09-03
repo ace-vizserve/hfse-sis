@@ -114,7 +114,11 @@ export async function PUT(request: NextRequest) {
   if (changed)
     await logAction({
       service,
-      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
       action: 'subject_level_offering.toggle',
       entityType: 'subject_level_offering',
       entityId: subject_id,

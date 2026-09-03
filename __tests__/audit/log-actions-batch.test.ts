@@ -32,7 +32,11 @@ import {
 
 type Payload = Record<string, unknown>;
 
-const ACTOR = { id: 'actor-1', email: 'actor@hfse.test' };
+const ACTOR = {
+  id: 'actor-1',
+  email: 'actor@hfse.test',
+  role: 'academic_coordinator',
+};
 
 function rows(n: number) {
   return Array.from({ length: n }, (_, i) => ({
@@ -44,14 +48,24 @@ function rows(n: number) {
 }
 
 /**
- * The row shape as it stood BEFORE the batch writer existed — copied verbatim
- * from the object literal `logAction` inlined at `lib/audit/log-action.ts:257`
- * (commit 94ab2e00). This is the reference the extraction is judged against:
- * if `toAuditRow` ever shapes a row differently, the equality test below goes
- * red rather than the difference reaching `audit_log` unnoticed.
+ * The row shape `toAuditRow` is judged against — an independent restatement of
+ * it, so a change to the real function shows up here as a difference rather
+ * than reaching `audit_log` unnoticed.
+ *
+ * It began as the object literal `logAction` inlined at
+ * `lib/audit/log-action.ts:257` before the batch writer existed (commit
+ * 94ab2e00), which is why it was called `legacyShape`.
+ *
+ * ⚠ UPDATED DELIBERATELY, 2026-09-03, for `actor_role` (migration 141) — the
+ * role that authorised the write, which every one of the 111 call sites used
+ * to discard. This assertion is the whole reason the file exists, so the
+ * reference was WIDENED rather than the equality check weakened or dropped.
+ * Anyone adding a further column must do the same: restate the new field here
+ * by hand, including the `'' → null` coercion, which is a real rule and not a
+ * formatting detail (see `toAuditRow`).
  */
-function legacyShape(
-  actor: { id: string | null; email: string | null },
+function referenceShape(
+  actor: { id: string | null; email: string | null; role: string | null },
   row: {
     action: AuditAction;
     entityType: AuditEntityType;
@@ -62,6 +76,7 @@ function legacyShape(
   return {
     actor_id: actor.id,
     actor_email: actor.email ?? '(unknown)',
+    actor_role: actor.role === '' ? null : actor.role,
     action: row.action,
     entity_type: row.entityType,
     entity_id: row.entityId ?? null,
@@ -105,16 +120,41 @@ function recordingClient(opts: { failFirstInsert?: string } = {}) {
 }
 
 describe('logActions — batched audit writes', () => {
-  it('shapes 30 rows byte-identically to the pre-batch single-row writer', () => {
+  it('shapes 30 rows byte-identically to the reference row', () => {
     const input = rows(30);
-    const legacy = input.map((row) => legacyShape(ACTOR, row));
+    const reference = input.map((row) => referenceShape(ACTOR, row));
     const batched = input.map((row) => toAuditRow(ACTOR, row));
 
-    expect(batched).toEqual(legacy);
+    expect(batched).toEqual(reference);
     expect(batched).toHaveLength(30);
     // toEqual is structural; JSON pins ordering and value types too, which is
     // what "byte-identical" means once PostgREST serialises the body.
-    expect(JSON.stringify(batched)).toBe(JSON.stringify(legacy));
+    expect(JSON.stringify(batched)).toBe(JSON.stringify(reference));
+  });
+
+  // ── actor_role (migration 141) ────────────────────────────────────────────
+
+  it('carries the role that authorised the write', () => {
+    const [row] = rows(1);
+    expect(toAuditRow(ACTOR, row).actor_role).toBe('academic_coordinator');
+  });
+
+  it('stores a system write as null, not as a blank', () => {
+    const [row] = rows(1);
+    const system = { id: null, email: 'system:auto-sync', role: null };
+    expect(toAuditRow(system, row).actor_role).toBeNull();
+  });
+
+  it("collapses an empty-string role to null — '' is never stored", () => {
+    // The signed-token approval path (lib/change-requests/decide.ts) reaches
+    // for `app_metadata.role` with a `?? ''` fallback, so "" means "no role
+    // found". Left as-is it would be a third state nobody queries for:
+    // `actor_role is null` would miss it, and the actor filter would offer a
+    // blank option.
+    const [row] = rows(1);
+    const scraped = { id: 'u1', email: 'approver@hfse.test', role: '' };
+    expect(toAuditRow(scraped, row).actor_role).toBeNull();
+    expect(toAuditRow(scraped, row).actor_role).not.toBe('');
   });
 
   it('writes 30 rows as ONE insert against audit_log', async () => {

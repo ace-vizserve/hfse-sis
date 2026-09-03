@@ -183,6 +183,18 @@ export const ALL_AUDIT_ACTIONS = [
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
+  // Somebody with two jobs changed which view they are looking at the app
+  // through. Written from app/api/account/active-role/route.ts — the one route
+  // that owns the lens — so the log can line "switched to Teacher view at
+  // 09:14" up against everything done afterwards.
+  //
+  // ⚠ THIS IS WHY THERE IS NO `actor_view` COLUMN. Recording the view on every
+  // audit row would mean 111 call sites reading the lens, most of them API
+  // routes, and `__tests__/auth/active-role-never-authorises.test.ts` bans an
+  // API route from naming it — a guard no test can replace, because nothing
+  // can tell "reads the lens to log it" from "reads the lens to decide". One
+  // entry from the one route that already holds the value says the same thing.
+  'user.view.switch',
 ] as const;
 
 export type AuditAction = (typeof ALL_AUDIT_ACTIONS)[number];
@@ -236,11 +248,29 @@ export type AuditEntityType =
   // name — not a uuid. entity_id is `text` since migration 043.
   | 'role_permissions';
 
+// WHO acted, and in what capacity.
+//
+// ⚠ `role` IS REQUIRED, AND THAT IS THE ENFORCEMENT. Nothing enumerates the
+// 111 `logAction` call sites, so an optional field would give silent gaps
+// forever — a route added next year would simply not pass one and nobody would
+// find out. Required means TypeScript names every site that does not supply it.
+//
+// It is the role that AUTHORISED the write — the JWT claim `requireRole()` /
+// `requireCapability()` checked — and NEVER the active view. See
+// migration 141's header, and the `user.view.switch` note above for why the
+// view is logged once, at the switch, rather than on every row.
+//
+// `null` is a real answer, not a placeholder: a nightly sweep or a background
+// freshener has no person behind it. It must not be spelled `''` — see
+// `toAuditRow`.
+type AuditActor = { role: string | null } & (
+  | Pick<User, 'id' | 'email'>
+  | { id: string | null; email: string | null }
+);
+
 type LogActionParams = {
   service: SupabaseClient;
-  actor:
-    | Pick<User, 'id' | 'email'>
-    | { id: string | null; email: string | null };
+  actor: AuditActor;
   action: AuditAction;
   entityType: AuditEntityType;
   entityId?: string | null;
@@ -250,6 +280,7 @@ type LogActionParams = {
 export type AuditRow = {
   actor_id: string | null;
   actor_email: string;
+  actor_role: string | null;
   action: AuditAction;
   entity_type: AuditEntityType;
   entity_id: string | null;
@@ -261,12 +292,20 @@ export type AuditRow = {
 // two paths cannot drift — `__tests__/audit/log-actions-batch.test.ts` pins 30
 // rows byte-identical between them.
 export function toAuditRow(
-  actor: Pick<LogActionParams, 'actor'>['actor'],
+  actor: AuditActor,
   row: Omit<LogActionParams, 'service' | 'actor'>
 ): AuditRow {
   return {
     actor_id: actor.id,
     actor_email: actor.email ?? '(unknown)',
+    // ⚠ EMPTY STRING COLLAPSES TO NULL, and the coercion belongs here rather
+    // than at the one call site that can produce it. The signed-token approval
+    // path (`lib/change-requests/decide.ts`) scrapes its role out of
+    // `app_metadata` with a `?? ''` fallback, so "" means "we never found
+    // one". Stored as-is it would be a third state nobody filters for: not a
+    // role, but not null either, so `actor_role is null` would miss it and a
+    // dropdown would offer a blank option. One funnel, one rule.
+    actor_role: actor.role === '' ? null : actor.role,
     action: row.action,
     entity_type: row.entityType,
     entity_id: row.entityId ?? null,
@@ -344,7 +383,7 @@ export async function logAction(params: LogActionParams): Promise<void> {
 // fallow-ignore-next-line unused-export
 export async function logActions(
   service: SupabaseClient,
-  actor: { id: string; email: string | null },
+  actor: { id: string; email: string | null; role: string | null },
   rows: Array<Omit<LogActionParams, 'service' | 'actor'>>
 ): Promise<void> {
   if (rows.length === 0) return;

@@ -60,7 +60,11 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const actor = { id: auth.user.id, email: auth.user.email ?? null };
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
 
   // ── Close: plain single-row flip ──────────────────────────────────────────
   if (!accepting) {
