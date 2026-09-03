@@ -95,8 +95,7 @@ function renderSidebar(expandedGroups?: string[]) {
         userId="user-1"
         badges={{ unsyncedStudents: 5, levelMismatches: 4 }}
         expandedGroups={expandedGroups}
-        entitled={['superadmin']}
-        activeRole="superadmin"
+        roles={['superadmin']}
       />
     </SidebarProvider>
   );

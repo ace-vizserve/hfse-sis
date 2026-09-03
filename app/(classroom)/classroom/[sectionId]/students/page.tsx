@@ -1,6 +1,4 @@
-// `notFound` is no longer imported here: the refusal below goes through
-// `wrongViewNoticeOrNotFound`, which throws it on the no-second-view path.
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { ClassroomRosterTable } from '@/components/classroom/classroom-roster-table';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
@@ -10,10 +8,7 @@ import {
   canOpenStudentRecord,
   canReadReportCard,
 } from '@/lib/classroom/scope';
-import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type EnrolmentRow = {
   id: string;
@@ -39,29 +34,19 @@ export default async function ClassroomStudentsPage({
 }) {
   const { sectionId } = await params;
 
-  // `activeRole`, not `role` — a page renders through the lens. See the
-  // section layout for the full note.
-  const view = await getViewContext();
+  // The one role in force — see the section layout for the full note.
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    activeRole,
+    role,
     userId,
     sectionId
   );
-  // Unreachable today — the layout refuses this first. Converted with its six
-  // siblings so the Classroom tabs answer a wrong view the same way; see
-  // `wrongViewNoticeOrNotFound` for why all seven moved together.
-  if (!capability) {
-    return wrongViewNoticeOrNotFound({
-      view,
-      heading: 'Not one of your classes.',
-      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this isn't a class you teach or advise.`,
-      backHref: '/classroom',
-      backLabel: 'Back to your classes',
-    });
-  }
+  // Unreachable today — the layout refuses this first. Kept as the tab's own
+  // gate so a future change to the layout cannot quietly open it.
+  if (!capability) notFound();
 
   const supabase = await createClient();
   // The class's own name, for the details drawer's header — a teacher who

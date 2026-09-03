@@ -50,7 +50,7 @@ import {
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient } from '@/lib/supabase/server';
-import { getViewContext } from '@/lib/auth/view-context';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { Role } from '@/lib/auth/roles';
 
@@ -143,12 +143,11 @@ export default async function AttendanceDashboard({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
-  const session = await getViewContext();
+  const session = await getSessionUser();
   if (!session) redirect('/login');
-  // The lens, with the account role as the floor. `session.role` still
-  // authorises — the loaders below all re-check, and the write routes and RLS
-  // never see this value.
-  const view = session.activeRole ?? session.role;
+  // Named `view`, not `role`, only because this page reads it as "which
+  // attendance module am I" in the branch below.
+  const view = session.role;
 
   // A teacher used to be bounced straight to the section picker, so the module
   // had no landing surface for the person who uses it every morning. They get
@@ -163,27 +162,19 @@ export default async function AttendanceDashboard({
   // Rendered as a panel rather than on the notification bell — see
   // components/attendance/declarations-waiting-panel.tsx for why.
   //
-  // ⚠ THE COUNT KEEPS THE REAL ROLE. It is an approval-inbox scope
-  // (`countInboxActionable`) — "how many filings are waiting on YOU to decide"
-  // — and that is an account-level fact the approval routes will answer the
-  // same way whichever view is on screen. Lensing it would put a number on the
-  // panel that its own queue at /attendance/declarations disagrees with.
+  // An approval-inbox scope (`countInboxActionable`) — "how many filings are
+  // waiting on YOU to decide" — answered the same way the approval routes and
+  // the queue at /attendance/declarations answer it.
   const declarationsWaiting = await countDeclarationsWaiting(
     session.id,
     session.role
   );
 
-  // ⚠ THE BRANCH THAT DECIDES WHICH ATTENDANCE MODULE THIS IS, AND IT IS NOW
-  // KEYED ON THE LENS (role-switcher Phase 3c). A teaching admin in the Teacher
-  // view gets her own adviser dashboard — the classes she actually takes the
-  // register for — instead of the school-wide registrar dashboard below, which
-  // is what "viewing as Teacher" is supposed to mean. In the Admin view she
-  // gets the registrar dashboard exactly as before, and a plain teacher's
-  // entitled set is `['teacher']`, so nothing about a teacher changes.
-  //
-  // It narrows in one direction only: the adviser dashboard is built from her
-  // own assignment rows, which are a strict subset of the school-wide read
-  // below.
+  // ⚠ THE BRANCH THAT DECIDES WHICH ATTENDANCE MODULE THIS IS. A teacher gets
+  // the adviser dashboard — the classes she actually takes the register for —
+  // and everyone else gets the school-wide registrar dashboard below. A
+  // teaching admin working as a teacher gets the first, because switching
+  // changes her role.
   if (view === 'teacher') {
     const teacherView = await loadAdviserDashboardForTeacher(session.id);
     // Advises nothing in this view → the section picker, which now scopes the

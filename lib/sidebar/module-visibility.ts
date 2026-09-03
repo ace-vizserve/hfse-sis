@@ -55,18 +55,13 @@ export const ADVISER_ONLY_MODULES: readonly SidebarModule[] = [
  * modules from the people who most need them, which is the failure mode this
  * function has to avoid more than it has to avoid showing a dead tile.
  *
- * ⚠ SO THIS ONE TAKES THE REAL ROLE, NOT THE ACTIVE-ROLE LENS, and the
- * `role !== 'teacher'` guard below must survive any future pass through this
- * file. A `school_admin` who also advises a class can look at the app as a
- * teacher; if that lens reached this function she would lose whichever of
- * Attendance / Evaluation her assignment rows do not cover — from the module
- * switcher, the home page, the account shortcuts and the palette at once,
- * while her account role can open all of them. Narrowing an admin is the one
- * thing this function must never do. Its siblings `hiddenModulesForView` and
- * `teachingProfileFor` below DO take the lens, for the reasons stated there —
- * and note that `hiddenModulesForView` narrows a lens on a ROUTE question,
- * never an account on an assignment one, which is why it can hide a tile from
- * an admin without breaking the rule above.
+ * ⚠ THE `role !== 'teacher'` GUARD BELOW MUST SURVIVE ANY FUTURE PASS THROUGH
+ * THIS FILE. Narrowing an admin is the one thing this function must never do:
+ * an admin who does not teach holds no assignment rows, so deriving anything
+ * from them would strip Attendance and Evaluation from the module switcher,
+ * the home page, the account shortcuts and the palette at once, while her role
+ * can open all four. A `school_admin` who also teaches switches to the
+ * `teacher` role to do that work, and is then narrowed as any teacher is.
  *
  * Being a form adviser ANYWHERE is enough. Per-section capability is Classroom's
  * job; this is a coarse "is this module ever useful to you" question, and a
@@ -131,55 +126,6 @@ export function moduleAdmitsRole(
 }
 
 /**
- * Modules to drop from the switcher because the VIEW cannot enter them.
- *
- * ⚠ A DIFFERENT AXIS FROM `hiddenModulesForTeacher` ABOVE, AND THE TWO MUST
- * NOT BE MERGED. That one asks an ASSIGNMENT question ("is Attendance ever
- * useful to someone who advises no class"), reads the database, and narrows
- * the `teacher` role only. This one asks a ROUTE question ("does `/sis` admit
- * a teacher at all"), is pure, and narrows nobody's account — it narrows a
- * LENS. A teaching admin in the Teacher view keeps every Attendance and
- * Evaluation tile her assignments would have taken away, because her account
- * still runs those modules; what she loses is SIS, Records, P-Files and
- * Admissions, which `teacher` cannot open in any view.
- *
- * WHY HIDING IS THE ANSWER RATHER THAN AN EMPTY SIDEBAR. Every module but
- * Markbook filters its rows per item on `requiresRoles`, and
- * `lib/auth/nav-visibility.ts` drops a group once its items are all filtered
- * out. Look at `/sis` through a teacher lens and every row goes, every group
- * goes, and the sidebar renders as a header over nothing — silently, because
- * an empty `NavSection[]` is a legal return value. Removing the tile keeps
- * people off a destination that has nothing to say to them, which is the same
- * job the assignment-shaped narrowing above already does. (Ruled 2026-09-02,
- * role-switcher Phase 3b.) The matching half — what happens if she arrives by
- * a bookmark anyway — lives in `nav-visibility.ts`, which falls back to the
- * real role's tree rather than rendering the blank one.
- *
- * PURE, SO IT SURVIVES A FAILED ASSIGNMENT READ. `resolveTeacherNavScope`'s
- * fail-open promise is about the database read; this half never touches it,
- * and returning `[]` on that catch would put back a tile the lens has already
- * decided leads nowhere.
- *
- * Returns `[]` whenever the view IS the account role, which is every account
- * but the six that also teach — so nothing about a plain teacher, or an admin
- * who does not teach, can change here.
- */
-export function hiddenModulesForView(
-  role: Role | null,
-  viewRole: Role | null = role
-): SidebarModule[] {
-  if (viewRole === role) return [];
-  // Only modules the REAL role could otherwise have reached. Naming one the
-  // account cannot open either would be true but meaningless — the switcher
-  // filters those on `isRouteAllowed(primaryHref, role)` before it ever
-  // consults this list — and it would make the returned list read as though
-  // the lens had taken something away when it had not.
-  return MODULE_ORDER.filter(
-    (m) => moduleAdmitsRole(m, role) && !moduleAdmitsRole(m, viewRole)
-  );
-}
-
-/**
  * Which of the two teaching jobs this person actually holds.
  *
  * `hiddenModulesForTeacher` above answers a MODULE-shaped question ("is
@@ -202,16 +148,6 @@ export function hiddenModulesForView(
  *  - "anywhere" spans academic years, inheriting the no-AY-filter caveat
  *    documented on `hiddenModulesForTeacher`.
  *
- * ⚠ BUT IT IS KEYED ON A DIFFERENT ROLE FROM ITS ASSIGNMENT-SHAPED SIBLING,
- * and this is where the two part company. `resolveTeacherNavScope` passes `hiddenModulesForTeacher`
- * the REAL role and passes THIS the VIEW role (`activeRole`). The asymmetry is
- * not an oversight: hiding a module is a narrowing that must never touch an
- * admin, while the profile is an ADDITIVE answer about the job in front of you
- * — a teaching admin looking through the Teacher lens is doing adviser or
- * subject work, and an empty profile would leave her home page with none of
- * the actions that view exists to offer. The `role !== 'teacher'` guard below
- * therefore stays exactly as it is; what changed is only which role reaches
- * it. Ruled 2026-09-02 (role-switcher Phase 3a).
  */
 export type TeachingProfile = {
   /**

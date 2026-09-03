@@ -64,23 +64,16 @@ type ModuleSidebarProps = {
   // a client-side read renders the default and then pops groups open.
   // Omitted (first ever visit) means "collapsed except the current page's group".
   expandedGroups?: readonly string[];
-  // The account's other views and which one is being rendered right now —
-  // threaded down to the profile popover's "Switch view" section (role
-  // switcher, Phase 2). Both come from `getViewContext()` server-side; `role`
-  // above keeps deciding nav visibility and everything else in this
-  // component, unchanged.
+  // Every role the account holds (`sessionUser.roles`), threaded down to the
+  // profile popover's "Switch view" section. `role` above — the one in force —
+  // keeps deciding nav visibility and everything else in this component.
   //
   // ⚠ REQUIRED, DELIBERATELY NOT OPTIONAL. An earlier version defaulted a
-  // missing pair to `role ? [role] : []` / `role`, so a layout that forgot to
-  // pass them degraded silently to "one entitled view" — the switcher just
-  // vanishes, nothing throws, nothing tests red. Required means a layout that
-  // hasn't adopted `getViewContext()` fails to compile instead. It also means
-  // `activeRole: null` here can only be `getViewContext()` truthfully saying
-  // "no view" (a parent, in practice never reaching this component) — a
-  // fallback chain could not tell that apart from "the prop was never wired
-  // up" at all.
-  entitled: readonly Role[];
-  activeRole: Role | null;
+  // missing value to `role ? [role] : []`, so a layout that forgot to pass it
+  // degraded silently to "one role" — the switcher just vanishes, nothing
+  // throws, nothing tests red. Required means such a layout fails to compile
+  // instead.
+  roles: readonly Role[];
 };
 
 // Stable empty default. Inlining `badges ?? {}` would create a fresh
@@ -173,8 +166,7 @@ export function ModuleSidebar({
   hiddenModules,
   capabilities,
   expandedGroups,
-  entitled,
-  activeRole,
+  roles,
 }: ModuleSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -182,22 +174,10 @@ export function ModuleSidebar({
 
   const itemCounts = counts ?? EMPTY_COUNTS;
 
-  // `role` still decides which rows the viewer is ALLOWED to see; `activeRole`
-  // decides which of them are worth showing them. Both go in — see the ruling
-  // on `resolveNavView`.
-  //
   // ⚠ `rowsRole` COMES BACK WITH THE ROWS, AND THE CTA AND THE BADGES BELOW
-  // BOTH READ IT. They used to read `role`, which meant a teaching admin in the
-  // Teacher view saw the admin's "Review change requests" CTA above a teacher's
-  // menu, and an approval-queue number beside the teacher tree's "My Requests"
-  // row — a badge describing a different page from the one it links to. One
-  // answer, three consumers; see `resolveNavView` for the full account.
-  const { rowsRole, sections } = resolveNavView(
-    module,
-    role,
-    capabilities,
-    activeRole
-  );
+  // BOTH READ IT rather than re-deriving it. One answer, three consumers; see
+  // `resolveNavView` for the full account.
+  const { rowsRole, sections } = resolveNavView(module, role, capabilities);
 
   // `rowsRole` scopes the change-request count so it matches the row it hangs
   // off; `role` still gates the P-Files channel, which is an account-level
@@ -309,11 +289,7 @@ export function ModuleSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">
-        <SidebarProfile
-          email={email}
-          entitled={entitled}
-          activeRole={activeRole}
-        />
+        <SidebarProfile email={email} roles={roles} role={role} />
       </SidebarFooter>
 
       <SidebarRail />

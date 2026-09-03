@@ -74,7 +74,7 @@ const ENGLISH = 'dddddddd-4444-4444-8444-444444444444';
 const seqId = (n: number) =>
   `0000${String(n).padStart(4, '0')}-0000-4000-8000-000000000000`;
 
-// Everyone `getAssignableStaffList()` would return: every account holding a
+// Everyone `getTeacherList()` would return: every account holding a
 // staff role, of any kind. The teaching admin is in here and the parent is not
 // — which is the whole shape of the rule the route enforces.
 const ALL_ASSIGNABLE_ACCOUNTS = [
@@ -96,7 +96,7 @@ const ALL_ASSIGNABLE_ACCOUNTS = [
 
 // Honours `excludeDisabled` the way the real helper does, so the route's choice
 // of argument is a behaviour the tests can see rather than a call signature.
-const getAssignableStaffListMock = vi.fn(
+const getTeacherListMock = vi.fn(
   async (options: { excludeDisabled?: boolean } = {}) => {
     const excludeDisabled = options.excludeDisabled ?? true;
     return ALL_ASSIGNABLE_ACCOUNTS.filter(
@@ -110,13 +110,8 @@ const getAssignableStaffListMock = vi.fn(
 // for it, and a silent fallback to a narrower list would let the teaching
 // admin be refused again with every other assertion still green.
 vi.mock('@/lib/auth/staff-list', () => ({
-  getAssignableStaffList: (options?: { excludeDisabled?: boolean }) =>
-    getAssignableStaffListMock(options),
-  getTeacherList: () => {
-    throw new Error(
-      'POST /api/teacher-assignments must validate against getAssignableStaffList, not getTeacherList'
-    );
-  },
+  getTeacherList: (options?: { excludeDisabled?: boolean }) =>
+    getTeacherListMock(options),
 }));
 
 /** Every batch handed to `.insert()`, in order. Length > 1 means it looped. */
@@ -210,7 +205,7 @@ beforeEach(() => {
   insertError = null;
   logActionMock.mockClear();
   invalidateMock.mockClear();
-  getAssignableStaffListMock.mockClear();
+  getTeacherListMock.mockClear();
 });
 
 describe('staffing several classes at once', () => {
@@ -511,7 +506,7 @@ describe('a batch with something wrong in it', () => {
     // accounts (KD #1). A parent recorded against a class gains RLS read on
     // that class's students and their grades, and there is no FK to stop the
     // write. A parent carries `role: null`, which is exactly what
-    // getAssignableStaffList filters on.
+    // getTeacherList filters on.
     const error = await reject([{ ...good, teacher_user_id: PARENT_ACCOUNT }]);
     expect(error).toMatch(/staff account/i);
     // Not "refresh the list": the list is cached on the SERVER for five
@@ -768,7 +763,7 @@ describe('who may write', () => {
 
     expect(res.status).toBe(200);
     expect(writtenRows()).toHaveLength(1);
-    expect(getAssignableStaffListMock).toHaveBeenCalledWith({
+    expect(getTeacherListMock).toHaveBeenCalledWith({
       excludeDisabled: false,
     });
   });
@@ -782,7 +777,7 @@ describe('who may write', () => {
       .split('\n')
       .map((line) => line.replace(/\/\/.*/, ''))
       .join('\n');
-    expect(code).toContain('getAssignableStaffList');
+    expect(code).toContain('getTeacherList');
     expect(code).not.toContain('getStaffDisplayNameById');
   });
 });

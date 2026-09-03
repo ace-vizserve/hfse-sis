@@ -2,9 +2,8 @@ import { redirect } from 'next/navigation';
 
 import { CommandPaletteTrigger } from '@/components/sis/command-palette';
 import { TopbarModuleSwitcher } from '@/components/topbar-module-switcher';
-import { TopbarViewSwitcher } from '@/components/view-switch/topbar-view-switcher';
-import { getViewContext } from '@/lib/auth/view-context';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
+import { getSessionUser } from '@/lib/supabase/server';
 
 // Cache Components (next.config.ts) requires each segment to prerender into a
 // static shell or declare that it blocks. This layout reads cookies() to gate on
@@ -35,26 +34,15 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // `getViewContext`, not `getSessionUser`: these two pages had no profile
-  // popover and therefore no way to change view at all, so a teaching admin
-  // who landed on `/` was stuck in whichever view she arrived in. That was
-  // tolerable while nothing pointed at the control; it stopped being tolerable
-  // when the wrong-view notice started telling people to switch. `role` still
-  // drives everything below that it drove before.
-  const viewer = await getViewContext();
+  const viewer = await getSessionUser();
   if (!viewer) redirect('/login');
 
-  const { role, entitled, activeRole } = viewer;
+  const { role } = viewer;
   if (!role) redirect('/login');
 
-  // Both roles go in, and they answer different halves. The real `role` drives
-  // the assignment-shaped narrowing, which only ever narrows a teacher and must
-  // never take Attendance off an admin. `activeRole` drives the route-shaped
-  // one: `/sis`, `/records`, `/p-files` and `/admissions` do not admit a
-  // teacher, so the topbar switcher stops offering those tiles while a teaching
-  // admin is in the Teacher view — and gives them straight back when she
-  // switches home. See the ruling on `resolveTeacherNavScope`.
-  const hiddenModules = await resolveHiddenModules(role, viewer.id, activeRole);
+  // Tiles that would be dead ends for this person — only ever narrows a
+  // teacher. See the ruling on `resolveTeacherNavScope`.
+  const hiddenModules = await resolveHiddenModules(role, viewer.id);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -63,9 +51,6 @@ export default async function DashboardLayout({
         <div className="ml-auto w-full max-w-sm">
           <CommandPaletteTrigger placeholder="Search students or navigate…" />
         </div>
-        {/* Renders nothing for an account with one view — which is every
-            account but the six that also teach. */}
-        <TopbarViewSwitcher entitled={entitled} activeRole={activeRole} />
       </header>
       <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
         {children}

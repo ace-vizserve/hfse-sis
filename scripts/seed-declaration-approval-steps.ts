@@ -47,6 +47,7 @@
 //   npx tsx --env-file=.env.local scripts/seed-declaration-approval-steps.ts --apply
 //
 // Without `--apply` it reports what it would do and writes nothing.
+import { getUserRoleSet } from '../lib/auth/roles';
 import { createServiceClient } from '../lib/supabase/service';
 
 const APPLY = process.argv.includes('--apply');
@@ -113,14 +114,14 @@ async function main() {
         missing.push(`${email} — no account`);
         continue;
       }
-      const role =
-        (user.app_metadata as { role?: string } | null)?.role ??
-        (user.user_metadata as { role?: string } | null)?.role ??
-        null;
+      // Every role the account holds — the question is whether this person is
+      // staff at all, and an account that holds two is no less staff for it.
+      const roles = getUserRoleSet(user);
       // ⚠ A role-less account is a PARENT. auth.users is shared with roughly
       // five hundred of them, and naming one here would make a parent the
       // approver of their own child's absence.
-      if (!role) missing.push(`${email} — has no staff role (parent account?)`);
+      if (roles.length === 0)
+        missing.push(`${email} — has no staff role (parent account?)`);
     }
   }
   if (missing.length > 0) {

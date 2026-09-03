@@ -105,7 +105,6 @@ vi.mock('@/lib/supabase/service', () => ({
 }));
 
 import {
-  getAssignableStaffList,
   getStaffCount,
   getStaffDisplayEntries,
   getStaffDisplayNameById,
@@ -113,19 +112,22 @@ import {
   narrowStaffNamesToRows,
 } from '@/lib/auth/staff-list';
 
-describe('getAssignableStaffList', () => {
+describe('getTeacherList', () => {
   // Who may be RECORDED as teaching a class: written into
   // `teacher_assignments.teacher_user_id`, or booked as a substitute. Anyone
   // on staff, because HFSE staffs classes that way — six school_admin accounts
   // hold AY2026 assignments and four are the form adviser of record.
 
-  it('includes staff whose role is not teacher', async () => {
-    const ids = (await getAssignableStaffList()).map((u) => u.id);
-    // user-3 is a school_admin. `getTeacherList()` leaves them out; this is the
-    // whole reason the sibling exists.
-    expect(ids).toContain('user-3');
+  it('is the accounts HOLDING the teacher role, whatever else they hold', async () => {
+    const ids = (await getTeacherList()).map((u) => u.id);
+    // The list means "holds `teacher`", not "is only a teacher" — an account
+    // whose roles are ['school_admin','teacher'] belongs here, because a
+    // teaching assignment now requires the role rather than implying it.
     expect(ids).toContain('user-1');
     expect(ids).toContain('user-2');
+    // user-3 is a school_admin who has NOT been granted the teacher role.
+    // Nobody can be recorded as teaching until somebody grants it.
+    expect(ids).not.toContain('user-3');
   });
 
   it('EXCLUDES parent accounts — the security property, stated as a test', async () => {
@@ -133,7 +135,7 @@ describe('getAssignableStaffList', () => {
     // carry no role at all. `teacher_assignments` has no FK to auth.users, so
     // this filter is the only thing keeping a parent uuid out of a column that
     // would hand them RLS read on a class's students and grades.
-    const ids = (await getAssignableStaffList({ excludeDisabled: false })).map(
+    const ids = (await getTeacherList({ excludeDisabled: false })).map(
       (u) => u.id
     );
     expect(ids).not.toContain('parent-1');
@@ -145,8 +147,8 @@ describe('getAssignableStaffList', () => {
     // Matches getTeacherList's option exactly. POST /api/teacher-assignments
     // passes `false` — who HOLDS a class is a different question from who can
     // sign in today — while the relief routes take the default.
-    const active = await getAssignableStaffList();
-    const all = await getAssignableStaffList({ excludeDisabled: false });
+    const active = await getTeacherList();
+    const all = await getTeacherList({ excludeDisabled: false });
 
     expect(active.map((u) => u.id)).not.toContain('user-4-disabled');
     expect(all.map((u) => u.id)).toContain('user-4-disabled');
@@ -154,7 +156,7 @@ describe('getAssignableStaffList', () => {
   });
 
   it('is a superset of getTeacherList, sorted the same way', async () => {
-    const teachers = await getAssignableStaffList({ excludeDisabled: false });
+    const teachers = await getTeacherList({ excludeDisabled: false });
     const teachersOnly = await getTeacherList({ excludeDisabled: false });
 
     for (const t of teachersOnly) {
@@ -179,7 +181,7 @@ describe('getAssignableStaffList', () => {
     // Same question, same answer as lib/approvals/config.ts, which built its
     // "any staff account" picker on the ROLES-narrowed `listStaffUsers` for
     // this reason.
-    const ids = (await getAssignableStaffList({ excludeDisabled: false })).map(
+    const ids = (await getTeacherList({ excludeDisabled: false })).map(
       (u) => u.id
     );
     expect(ids).not.toContain('parent-3-with-a-role-string');
@@ -188,7 +190,7 @@ describe('getAssignableStaffList', () => {
   it('EXCLUDES an account whose role is an empty string', async () => {
     // `''` survives `??`, so it reaches the filter as a non-null value and
     // passes a `!== null` test. It is not a role.
-    const ids = (await getAssignableStaffList({ excludeDisabled: false })).map(
+    const ids = (await getTeacherList({ excludeDisabled: false })).map(
       (u) => u.id
     );
     expect(ids).not.toContain('parent-4-blank-role');
@@ -201,7 +203,7 @@ describe('getAssignableStaffList', () => {
     // holds no capability, and proxy.ts routes it to the parent portal. Making
     // it assignable here would recover nothing. Fixing the account is what
     // recovers the person.
-    const ids = (await getAssignableStaffList({ excludeDisabled: false })).map(
+    const ids = (await getTeacherList({ excludeDisabled: false })).map(
       (u) => u.id
     );
     expect(ids).not.toContain('user-5-legacy-role');
@@ -209,15 +211,15 @@ describe('getAssignableStaffList', () => {
     await expect(getStaffCount()).resolves.toBe(3);
   });
 
-  it('matches getStaffCount exactly on the active roster', async () => {
-    // Now that both narrow to ROLES and both drop disabled accounts, they are
-    // answering the same question and must not drift apart. The mixed roster
-    // above — two teachers, a school_admin, a disabled teacher, a legacy role,
-    // and four parents of three different shapes — is what makes that
-    // agreement worth asserting.
-    await expect(getAssignableStaffList()).resolves.toHaveLength(
-      await getStaffCount()
-    );
+  it('is a SUBSET of staff — never larger, and never empty by accident', async () => {
+    // These two answer different questions and must not be confused again:
+    // `getStaffCount()` is everyone with a real role, `getTeacherList()` is the
+    // subset holding `teacher`. The roster above — two teachers, a school_admin
+    // without the role, a disabled teacher, a legacy role and four parents of
+    // three different shapes — makes the relationship worth pinning.
+    const teachers = await getTeacherList();
+    expect(teachers.length).toBeGreaterThan(0);
+    expect(teachers.length).toBeLessThan(await getStaffCount());
   });
 });
 

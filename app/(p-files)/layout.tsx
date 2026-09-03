@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getViewContext } from '@/lib/auth/view-context';
+import { getSessionUser } from '@/lib/supabase/server';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
@@ -33,10 +33,10 @@ export default async function PFilesLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const view = await getViewContext();
+  const view = await getSessionUser();
   if (!view) redirect('/login');
 
-  const { id, email, role, entitled, activeRole } = view;
+  const { id, email, role, roles } = view;
   if (
     role !== 'p_file_officer' &&
     role !== 'school_admin' &&
@@ -71,15 +71,13 @@ export default async function PFilesLayout({
   // holding a role, so the count answers that itself and returns 0 otherwise.
   const declarationCount = await getDeclarationWaitingCount(service, role, id);
 
-  // Modules the current VIEW cannot open (role-switcher Phase 3b). Nobody
-  // CLICKS their way to this layout in the Teacher view — `/p-files` does not
-  // admit a teacher, so its tile is already gone wherever she came from — but a
-  // bookmark still lands here, and when it does the switcher should offer the
-  // way back to teaching rather than more tiles that view cannot fill. The
-  // module you are IN is never hidden, so this can never strand anyone
-  // (components/module-sidebar/sidebar-header.tsx). Empty for every account
-  // with a single view, which is every account but the six that also teach.
-  const hiddenModules = await resolveHiddenModules(role, id, activeRole);
+  // Always empty here, and cheaply so — the only tiles this hides are the ones
+  // a subject-teacher-only account cannot use, and `/p-files` does not admit a
+  // teacher at all. Called anyway so all eight layouts read the same and none
+  // has to carry that rule in its head. It also costs no query:
+  // `resolveHiddenModules` returns early for a non-teacher role. See
+  // lib/sidebar/module-visibility.ts.
+  const hiddenModules = await resolveHiddenModules(role, id);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -92,8 +90,7 @@ export default async function PFilesLayout({
         hiddenModules={hiddenModules}
         capabilities={capabilities}
         expandedGroups={expandedGroups}
-        entitled={entitled}
-        activeRole={activeRole}
+        roles={roles}
       />
       <SidebarInset>
         <AyBanner />

@@ -163,11 +163,12 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'read. Every one of them reads name/level, not the schedule, so this is ' +
     'very likely fine; it needs one look at the section index before anybody ' +
     'busts sis:${ay} on a timetable edit.',
-  'app/api/sis/admin/users/[id]/route.ts':
-    'OPEN — the sibling POST busts `teacher-emails`, and this PATCH/DELETE does ' +
-    'not, which is a real asymmetry: renaming or removing a staff account leaves ' +
-    'the cached teacher-email list stale. Deliberately not fixed blind — the ' +
-    'account routes touch auth.users and deserve their own pass.',
+  // ⚠ `app/api/sis/admin/users/[id]/route.ts` USED TO BE EXEMPT AND IS NOT ANY
+  // MORE — the asymmetry it named ("the sibling POST busts `teacher-emails`
+  // and this PATCH/DELETE does not") is closed. Both handlers now bust the tag
+  // unconditionally on success. What forced the pass it was waiting for: an
+  // account can hold several roles now, and granting one is a routine edit
+  // whose entire purpose is that the person turns up in the teacher pickers.
 };
 
 function writeRoutes(): string[] {

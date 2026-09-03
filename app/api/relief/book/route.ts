@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   // cover lessons here in practice, and until now this gate refused to record
   // it, so the arrangement happened off-system.
   //
-  // ⚠ `getAssignableStaffList()`, NEVER `getStaffDisplayNameById()`. The
+  // ⚠ `getTeacherList()`, NEVER `getStaffDisplayNameById()`. The
   // latter returns every auth user with an email, which in this database is
   // ~1,000 parent portal accounts (KD #1), and there is no FK across schemas
   // to stop one being written here — a parent's uuid in this column would give
@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
   // the lesson?", and a disabled account cannot sign in to enter a mark or
   // take the register.
   if (!ending) {
-    const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
-    const assignable = await getAssignableStaffList();
+    const { getTeacherList } = await import('@/lib/auth/staff-list');
+    const assignable = await getTeacherList();
     if (!assignable.some((t) => t.id === reliefId)) {
       // Not "refresh the list and try again", for the reason POST
       // /api/teacher-assignments spells out: the list this check reads is

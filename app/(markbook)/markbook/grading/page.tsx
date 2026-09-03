@@ -12,8 +12,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { getRoleFromClaims } from '@/lib/auth/roles';
-import { getViewContext } from '@/lib/auth/view-context';
-import { getAssignableStaffList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole, isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { Button } from '@/components/ui/button';
@@ -111,35 +110,17 @@ export default async function GradingListPage({
   const userId = (claims?.sub as string | undefined) ?? null;
   const role = getRoleFromClaims(claims);
 
-  // ── THE LENS AND THE ACADEMIC YEAR, ONE WAVE ──────────────────────────
-  // Neither reads the other, and `getViewContext()` costs a real
-  // `teacher_assignments` select for every non-teacher account — awaiting it on
-  // its own line blocked the AY query behind it for nothing. The AY genuinely
-  // has to resolve before the sheets query below can be scoped, so it stays
-  // ahead of that wave; it just no longer waits on the lens first.
-  //
-  // The lens takes the account role as its floor (role-switcher Phase 3c).
-  const [viewer, { data: ayData }] = await Promise.all([
-    getViewContext(),
-    supabase
-      .from('academic_years')
-      .select('id, ay_code')
-      .eq('is_current', true)
-      .maybeSingle(),
-  ]);
-  const view = viewer?.activeRole ?? role;
+  const { data: ayData } = await supabase
+    .from('academic_years')
+    .select('id, ay_code')
+    .eq('is_current', true)
+    .maybeSingle();
+  const view = role;
   const currentAy = (ayData as { id: string; ay_code: string } | null) ?? null;
 
-  // ⚠ ON THE LENS. `canCreate` draws the two oversight controls on this page —
-  // "New grading sheet" and the multi-select "Lock selected" — and the §3
-  // ruling is that in the Teacher view controls that exist only for oversight
-  // roles are hidden. Leaving it on the account role while "My sheets" below
-  // follows the view would give a teaching admin a teacher's table under an
-  // approver's toolbar, which is the half-lensed screen this phase removes.
-  //
-  // Both routes behind those controls still gate on the REAL role, so this can
-  // only ever hide a button she is still allowed to press after switching back
-  // — never offer one that would 403.
+  // `canCreate` draws the two oversight controls on this page — "New grading
+  // sheet" and the multi-select "Lock selected". Both routes behind them gate
+  // on the same role server-side.
   const canCreate =
     view === 'academic_coordinator' ||
     view === 'school_admin' ||
@@ -393,7 +374,7 @@ export default async function GradingListPage({
   // (six of them in the live year, four as form adviser) rendered with an
   // empty Subject teacher / Form adviser cell and was missing from the filter
   // dropdowns that are built from the same list.
-  let teacherList: Awaited<ReturnType<typeof getAssignableStaffList>> = [];
+  let teacherList: Awaited<ReturnType<typeof getTeacherList>> = [];
 
   if (visibleSectionIds.length > 0) {
     const service = createServiceClient();
@@ -409,7 +390,7 @@ export default async function GradingListPage({
       // accounts blanks the cell for a class whose teacher has since left or
       // is on long leave. They are still the name of record on that sheet.
       // `loadFormAdvisersBySection` passes `false` for exactly this reason.
-      getAssignableStaffList({ excludeDisabled: false }),
+      getTeacherList({ excludeDisabled: false }),
     ]);
     teacherList = resolvedTeachers;
     const teacherById = new Map(teacherList.map((t) => [t.id, t]));

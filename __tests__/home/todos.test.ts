@@ -193,102 +193,65 @@ describe('getHomeTodos', () => {
 
 // ─── the active-role lens (role-switcher Phase 3b) ──────────────────────────
 //
-// Phase 3a threaded the teaching PROFILE down to this function and it changed
-// nothing, because the row table was still indexed by the account role and
-// every profile-reading row sits under a `teacher`-only `roles` list. These pin
-// the line that closed that gap — and the one that must not move with it.
-describe('getHomeTodos — the panel follows the view', () => {
+// One role picks the rows AND checks them. A switch is a real role change now,
+// so a teaching admin working as a teacher arrives here as `'teacher'` and gets
+// a teacher's panel — the marks and write-ups she owes, and not the approvals
+// her admin role owes, because the two cannot both be in force.
+describe('getHomeTodos — one role picks the rows and checks them', () => {
   const BOTH_JOBS = {
     advises: true,
     advisesSubstantively: true,
     teachesSubject: true,
   };
 
-  it('gives a teaching admin in the Teacher view a teacher’s panel', async () => {
+  it('a teacher gets a teacher’s panel and no approvals on it', async () => {
     const todos = await getHomeTodos(
-      'school_admin',
-      'AY2026',
-      'admin-1',
-      BOTH_JOBS,
-      CAPS.school_admin,
-      'teacher'
-    );
-    expect(todos).toEqual([MARKBOOK_ROW, EVALUATION_ROW]);
-    // The other half of the same claim: her approvals are NOT also on it. A
-    // panel carrying both would be describing two jobs at once, which is the
-    // "half-lensed" shape this phase exists to remove.
-    expect(todos.some((t) => t.kind === 'change-request')).toBe(false);
-  });
-
-  it('and her own panel back the moment she switches home', async () => {
-    const admin = await getHomeTodos(
-      'school_admin',
-      'AY2026',
-      'admin-1',
-      BOTH_JOBS,
-      CAPS.school_admin,
-      'school_admin'
-    );
-    const implicit = await getHomeTodos(
-      'school_admin',
-      'AY2026',
-      'admin-1',
-      BOTH_JOBS,
-      CAPS.school_admin
-    );
-    expect(admin).toEqual(implicit);
-    expect(admin.some((t) => t.kind === 'change-request')).toBe(true);
-  });
-
-  it('⚠ but the CAPABILITY check still reads her real grants', async () => {
-    // The invariant, stated as the thing that would break. `capabilities` is
-    // the account's grant set because the destination page will ask the
-    // account's question when she arrives — a view cannot grant or revoke one.
-    // A superadmin looking as a school_admin still gets the row her REAL
-    // capabilities allow, and loses it when they are taken away.
-    const withoutDocRead = CAPS.school_admin.filter(
-      (c: Capability) => c !== 'documents_pre_enrolment.read'
-    );
-    const todos = await getHomeTodos(
-      'superadmin',
-      'AY2026',
-      'super-1',
-      NO_TEACHING_PROFILE,
-      withoutDocRead,
-      'school_admin'
-    );
-    expect(todos.some((t) => t.id === 'admissions-doc-validation')).toBe(false);
-    // Not vacuous: with the grant in place the same call does offer it.
-    const withDocRead = await getHomeTodos(
-      'superadmin',
-      'AY2026',
-      'super-1',
-      NO_TEACHING_PROFILE,
-      CAPS.school_admin,
-      'school_admin'
-    );
-    expect(withDocRead.some((t) => t.id === 'admissions-doc-validation')).toBe(
-      true
-    );
-  });
-
-  it('changes nothing for a plain teacher', async () => {
-    const implicit = await getHomeTodos(
       'teacher',
       'AY2026',
       'teacher-1',
       BOTH_JOBS,
       CAPS.teacher
     );
-    const explicit = await getHomeTodos(
-      'teacher',
+    expect(todos).toEqual([MARKBOOK_ROW, EVALUATION_ROW]);
+    expect(todos.some((t) => t.kind === 'change-request')).toBe(false);
+  });
+
+  it('a school_admin gets the approvals', async () => {
+    const admin = await getHomeTodos(
+      'school_admin',
       'AY2026',
-      'teacher-1',
+      'admin-1',
       BOTH_JOBS,
-      CAPS.teacher,
-      'teacher'
+      CAPS.school_admin
     );
-    expect(explicit).toEqual(implicit);
-    expect(implicit).toEqual([MARKBOOK_ROW, EVALUATION_ROW]);
+    expect(admin.some((t) => t.kind === 'change-request')).toBe(true);
+  });
+
+  it('⚠ and the CAPABILITY check reads that same role’s grants', async () => {
+    // The invariant, stated as the thing that would break. `capabilities`
+    // answers what the destination page will ask on arrival, so a row whose
+    // grant has been taken away must not be offered.
+    const withoutDocRead = CAPS.school_admin.filter(
+      (c: Capability) => c !== 'documents_pre_enrolment.read'
+    );
+    const todos = await getHomeTodos(
+      'school_admin',
+      'AY2026',
+      'admin-1',
+      NO_TEACHING_PROFILE,
+      withoutDocRead
+    );
+    expect(todos.some((t) => t.id === 'admissions-doc-validation')).toBe(false);
+    // Not vacuous: with the grant in place the same call does offer it.
+    const withDocRead = await getHomeTodos(
+      'school_admin',
+      'AY2026',
+      'admin-1',
+      NO_TEACHING_PROFILE,
+      CAPS.school_admin
+    );
+    expect(withDocRead.some((t) => t.id === 'admissions-doc-validation')).toBe(
+      true
+    );
   });
 });

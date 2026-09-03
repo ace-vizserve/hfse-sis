@@ -2,10 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Phase 2 of the role switcher (see .superpowers/sdd/role-switcher/): the
-// "Switch view" section inside the profile popover that already hosts
-// Account / Sign out. Renders only when the viewer holds more than one
-// entitled role (six accounts today); everyone else's popover is unchanged.
+// The "Switch view" section inside the profile popover that already hosts
+// Account / Sign out. Renders only when the account holds more than one role;
+// everyone else's popover is unchanged.
 
 const { pushMock, refreshMock, toastSuccess, toastError } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -23,7 +22,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const fetchMock = vi.fn(async (..._args: unknown[]) => ({
-  activeRole: 'teacher',
+  role: 'teacher',
 }));
 vi.mock('@/lib/query/fetcher', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/query/fetcher')>();
@@ -41,9 +40,19 @@ vi.mock('sonner', async () => ({
   },
 }));
 
+// ⚠ `refreshSession` IS PART OF THE SWITCH, NOT INCIDENTAL PLUMBING.
+// Changing role writes `app_metadata.active_role`, and `getClaims()` verifies
+// the token locally rather than re-minting it — so without this call the very
+// next request is served in the OLD role for up to an hour. The switch awaits
+// it before navigating; a mock that omitted it would let this suite pass over a
+// switch that visibly does nothing.
+const refreshSessionMock = vi.fn(async () => ({ data: {}, error: null }));
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
-    auth: { signOut: vi.fn().mockResolvedValue(undefined) },
+    auth: {
+      signOut: vi.fn().mockResolvedValue(undefined),
+      refreshSession: () => refreshSessionMock(),
+    },
   }),
 }));
 
@@ -69,8 +78,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin']}
-        activeRole="school_admin"
+        roles={['school_admin']}
+        role="school_admin"
       />
     );
     await openPopover();
@@ -84,8 +93,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="school_admin"
+        roles={['school_admin', 'teacher']}
+        role="school_admin"
       />
     );
     await openPopover();
@@ -101,8 +110,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="teacher"
+        roles={['school_admin', 'teacher']}
+        role="teacher"
       />
     );
     // The trigger's own caption, before opening anything. Uppercase is a CSS
@@ -123,8 +132,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="school_admin"
+        roles={['school_admin', 'teacher']}
+        role="school_admin"
       />
     );
     const user = await openPopover();
@@ -143,8 +152,11 @@ describe('SidebarProfile — switch view section', () => {
     // `/` has no sidebar of its own, so the toast is what confirms the switch
     // landed — raised before the navigation, not after.
     await waitFor(() =>
-      expect(toastSuccess).toHaveBeenCalledWith('Now viewing as Teacher')
+      expect(toastSuccess).toHaveBeenCalledWith('Now working as Teacher')
     );
+    // The session is re-minted BEFORE the navigation, or the page we land on is
+    // rendered in the role we just left.
+    expect(refreshSessionMock).toHaveBeenCalled();
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/'));
     expect(refreshMock).toHaveBeenCalled();
   });
@@ -153,8 +165,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="school_admin"
+        roles={['school_admin', 'teacher']}
+        role="school_admin"
       />
     );
     const user = await openPopover();
@@ -175,8 +187,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="school_admin"
+        roles={['school_admin', 'teacher']}
+        role="school_admin"
       />
     );
     const user = await openPopover();
@@ -185,7 +197,7 @@ describe('SidebarProfile — switch view section', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'You no longer have a Teacher view.'
+        'You no longer have the Teacher role.'
       )
     );
     expect(toastError).not.toHaveBeenCalledWith(
@@ -202,8 +214,8 @@ describe('SidebarProfile — switch view section', () => {
     render(
       <SidebarProfile
         email="admin@hfse.test"
-        entitled={['school_admin', 'teacher']}
-        activeRole="school_admin"
+        roles={['school_admin', 'teacher']}
+        role="school_admin"
       />
     );
     const user = await openPopover();

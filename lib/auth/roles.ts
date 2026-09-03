@@ -1176,18 +1176,145 @@ export const ROUTE_ACCESS: Array<{
   },
 ];
 
+// ─── Reading the role off an account ─────────────────────────────────────────
+//
+// AN ACCOUNT MAY HOLD SEVERAL ROLES; EXACTLY ONE IS IN FORCE AT A TIME.
+//
+//     app_metadata.role        = ['school_admin', 'teacher']  // what it MAY be
+//     app_metadata.active_role = 'teacher'                    // what it IS now
+//
+// Because there is still one role in force at any moment, RLS,
+// `current_user_role()`, `ROUTE_ACCESS`, `requireRole`, `requireCapability` and
+// every per-role view keep working untouched — they ask for "the role" and get
+// one. These two helpers are the ONLY place the shape is interpreted; nothing
+// else should reach for `app_metadata.role` directly.
+//
+// ⚠ THREE SHAPES ARE LIVE AT ONCE, AND ALL THREE MUST KEEP WORKING.
+// Every account provisioned before this change stores `role` as a plain string
+// with no `active_role`, and there is no backfill — accounts move to the array
+// as they are edited. So:
+//   * `active_role`, when it names a real role, wins.
+//   * else a scalar `role` string (the 44 accounts as they stand today).
+//   * else the first valid entry of a `role` array (an account that was granted
+//     roles but has never switched).
+// A value that is not in `ROLES` resolves to `null`, exactly as before — and
+// `null` means PARENT in this app (KD #1/#11: parents share this Supabase
+// project), so widening this chain is how you hand a parent a staff role.
+//
+// ⚠ `active_role` IS READ FROM `app_metadata` ONLY, never `user_metadata`.
+// `user_metadata` is writable by the account holder through Supabase's own
+// client; `app_metadata` is not. The `role` fallback into `user_metadata` is
+// pre-existing behaviour and is left exactly as it was, but the new key does
+// not inherit it.
+//
+// ⚠ THE ARRAY TRAP, WHICH MIGRATION 142 ENCODES ON THE SQL SIDE TOO: once
+// `role` is an array, a naive read hands back the literal text
+// `["school_admin","teacher"]` rather than nothing, so a coalesce that does not
+// check the type resolves every account to a role that does not exist — i.e. to
+// non-staff. Both sides check the type before trusting the value.
+
+type RoleMetadata = Record<string, unknown> | null | undefined;
+
+function readMetaKey(meta: RoleMetadata, key: string): unknown {
+  if (!meta || typeof meta !== 'object') return undefined;
+  return (meta as Record<string, unknown>)[key];
+}
+
+/** A value narrowed to a real role, or `null`. The one membership test. */
+function asRole(value: unknown): Role | null {
+  return typeof value === 'string' &&
+    (ROLES as readonly string[]).includes(value)
+    ? (value as Role)
+    : null;
+}
+
+/**
+ * The single role in force for this account right now — what authorises.
+ *
+ * Pass the raw metadata objects; both may be missing. The `role` fallback from
+ * `app_metadata` into `user_metadata` reproduces the original
+ * `appMeta.role ?? userMeta.role` exactly, including the case that made it
+ * matter: an `app_metadata.role` of `''` does NOT fall through to
+ * `user_metadata`, it resolves to `null`.
+ */
+export function resolveActiveRoleFromMetadata(
+  appMeta: RoleMetadata,
+  userMeta?: RoleMetadata
+): Role | null {
+  const active = asRole(readMetaKey(appMeta, 'active_role'));
+  if (active) return active;
+
+  const raw = readMetaKey(appMeta, 'role') ?? readMetaKey(userMeta, 'role');
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const role = asRole(entry);
+      if (role) return role;
+    }
+    return null;
+  }
+  return asRole(raw);
+}
+
+/**
+ * Every role this account may hold, in stored order — what a role switcher
+ * offers, and the set a switch request is checked against.
+ *
+ * For the 44 accounts that still store a scalar string this is a one-element
+ * list, so "does this account have a choice" (`length > 1`) is false for all of
+ * them and no switcher appears — the pre-change behaviour, unchanged.
+ *
+ * `active_role` is folded in at the end even if it is somehow absent from the
+ * array, so the role currently in force is always something the account can
+ * switch back out of. Without that, removing a role from an account that is
+ * currently using it would strand the person in a role their own switcher no
+ * longer lists.
+ */
+export function resolveRoleSetFromMetadata(
+  appMeta: RoleMetadata,
+  userMeta?: RoleMetadata
+): Role[] {
+  const out: Role[] = [];
+  const add = (value: unknown) => {
+    const role = asRole(value);
+    if (role && !out.includes(role)) out.push(role);
+  };
+
+  const raw = readMetaKey(appMeta, 'role') ?? readMetaKey(userMeta, 'role');
+  if (Array.isArray(raw)) {
+    for (const entry of raw) add(entry);
+  } else {
+    add(raw);
+  }
+  add(readMetaKey(appMeta, 'active_role'));
+  return out;
+}
+
 export function getUserRole(user: User | null | undefined): Role | null {
-  const raw = user?.app_metadata?.role ?? user?.user_metadata?.role;
-  return ROLES.includes(raw as Role) ? (raw as Role) : null;
+  return resolveActiveRoleFromMetadata(user?.app_metadata, user?.user_metadata);
+}
+
+/** Every role `user` may hold — see `resolveRoleSetFromMetadata`. */
+export function getUserRoleSet(user: User | null | undefined): Role[] {
+  return resolveRoleSetFromMetadata(user?.app_metadata, user?.user_metadata);
 }
 
 export function getRoleFromClaims(
   claims: Record<string, unknown> | null | undefined
 ): Role | null {
-  const appMeta = claims?.app_metadata as Record<string, unknown> | undefined;
-  const userMeta = claims?.user_metadata as Record<string, unknown> | undefined;
-  const raw = appMeta?.role ?? userMeta?.role;
-  return ROLES.includes(raw as Role) ? (raw as Role) : null;
+  return resolveActiveRoleFromMetadata(
+    claims?.app_metadata as RoleMetadata,
+    claims?.user_metadata as RoleMetadata
+  );
+}
+
+/** Every role the signed-in account may hold — see `resolveRoleSetFromMetadata`. */
+export function getRoleSetFromClaims(
+  claims: Record<string, unknown> | null | undefined
+): Role[] {
+  return resolveRoleSetFromMetadata(
+    claims?.app_metadata as RoleMetadata,
+    claims?.user_metadata as RoleMetadata
+  );
 }
 
 /**

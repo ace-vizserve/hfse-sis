@@ -15,8 +15,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { createClient } from '@/lib/supabase/server';
-import { getViewContext } from '@/lib/auth/view-context';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
 import { compareLevelLabels } from '@/lib/sis/levels';
@@ -30,14 +29,9 @@ type LevelLite = {
 };
 
 export default async function ClassroomListPage() {
-  const view = await getViewContext();
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  // ⚠ `role` IS DELIBERATELY NOT DESTRUCTURED. Nothing on this page decides
-  // anything from the account role any more — the scope, the headings, the
-  // empty states and the cover panel all read the lens — and leaving an unused
-  // binding here would invite the next reader to reach for it. Authorisation
-  // for this page happens before it renders, in ROUTE_ACCESS and the layout.
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   const supabase = await createClient();
 
@@ -46,26 +40,14 @@ export default async function ClassroomListPage() {
   // ignores assignments for them) and admissions/p_file_officer never
   // reach this page at all (ROUTE_ACCESS excludes them).
   //
-  // ⚠ Both the guard and the resolver key on `activeRole`, not `role` — a page
-  // renders through the lens ("role authorises, activeRole renders"). For a
-  // school_admin who also advises a class, the Teacher view now lists HER
-  // classes; the Admin view still lists all 32. The guard has to move with the
-  // resolver: leaving it on `role` would hand the resolver an empty array and
-  // resolve her to "no classes at all".
-  //
-  // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`.
-  // For the only viewer who now takes this branch and did not before — a
-  // teaching admin in the Teacher view — `getViewContext()` above has already
-  // issued exactly this query to decide her entitlement, so the direct call
-  // was a guaranteed duplicate of a read sitting one line up. Same loader,
-  // same data, same conditions (lib/auth/assignments-cache.ts); the memo keys
-  // on the userId string, which is why the service client has to be built
-  // inside it rather than passed in.
+  // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`:
+  // a single navigation asks this same question from the palette, the sidebar
+  // resolver and the classroom layout. Same loader, same data, same conditions
+  // (lib/auth/assignments-cache.ts); the memo keys on the userId string, which
+  // is why the service client has to be built inside it rather than passed in.
   const assignments =
-    activeRole === 'teacher'
-      ? await loadEffectiveAssignmentsForUserMemo(userId)
-      : [];
-  const scope = resolveClassroomScope(activeRole, assignments);
+    role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
+  const scope = resolveClassroomScope(role, assignments);
 
   const { data: ay } = await supabase
     .from('academic_years')
@@ -142,13 +124,12 @@ export default async function ClassroomListPage() {
 
   const totalStudents = rows.reduce((n, r) => n + r.active, 0);
 
-  // Every string on this page follows the VIEW, not the account role. The
-  // heading used to be an unconditional "Your classes." shown to a coordinator
-  // standing over all 32 of them; these two used to key on `role`, which would
-  // now contradict the list underneath them — a teaching admin in the Teacher
-  // view with nothing assigned would be told "Classes appear here once
-  // sections are created", which is not her problem and not her fix.
-  const isTeacherView = !scope.isOversight && activeRole === 'teacher';
+  // Every string on this page follows the list underneath it. The heading used
+  // to be an unconditional "Your classes." shown to a coordinator standing over
+  // all 32 of them, and a teacher with nothing assigned used to be told
+  // "Classes appear here once sections are created", which is not her problem
+  // and not her fix.
+  const isTeacherView = !scope.isOversight && role === 'teacher';
   const heading = scope.isOversight ? 'All classes.' : 'Your classes.';
   const emptyTitle = isTeacherView
     ? 'No classes assigned yet.'
@@ -193,7 +174,7 @@ export default async function ClassroomListPage() {
           returns null when nothing is booked, which is the common case, so a
           placeholder here would flash and then collapse the layout under it. */}
       <Suspense fallback={null}>
-        <UpcomingCover userId={userId} viewRole={activeRole} className="mt-6" />
+        <UpcomingCover userId={userId} role={role} className="mt-6" />
       </Suspense>
 
       <div className="@container/main">
@@ -238,25 +219,21 @@ export default async function ClassroomListPage() {
  * and the table read, and prising that apart would mean restructuring the data
  * flow rather than adding a boundary.
  *
- * ⚠ THE ROLE TEST TAKES THE VIEW, AND RLS IS WHY THAT IS SAFE (role-switcher
- * Phase 3b). It reads through the CALLER'S client against a policy that already
- * scopes the rows to the viewer's own bookings, so this branch is an
- * optimisation — skip a query whose answer is empty — and never a gate. A
- * teaching admin covering a colleague's class is exactly who is booked to take
- * cover; she just could not see it, in any view. Now she sees it in the Teacher
- * view and not in the Admin one, which is the same rule the rest of the page
- * follows.
+ * ⚠ THE ROLE TEST IS AN OPTIMISATION, NOT A GATE, AND RLS IS WHY THAT IS SAFE.
+ * It reads through the CALLER'S client against a policy that already scopes the
+ * rows to the viewer's own bookings, so the branch only skips a query whose
+ * answer would be empty.
  */
 async function UpcomingCover({
   userId,
-  viewRole,
+  role,
   className,
 }: {
   userId: string;
-  viewRole: string | null;
+  role: string | null;
   className?: string;
 }) {
-  if (viewRole !== 'teacher') return null;
+  if (role !== 'teacher') return null;
   const supabase = await createClient();
   const covers = await loadUpcomingCoverForUser(supabase, userId);
   return <UpcomingCoverPanel covers={covers} className={className} />;

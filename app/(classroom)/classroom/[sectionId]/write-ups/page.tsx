@@ -11,10 +11,7 @@ import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { isWriteupComplete } from '@/lib/classroom/writeups';
 import { isEmptyRichText } from '@/lib/rich-text';
 import { getSectionRoster } from '@/lib/evaluation/queries';
-import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Write-ups — adviser/oversight only. Belt-and-braces: this page checks
 // canReadWriteups ITSELF (see lib/classroom/queries.ts and the attendance
@@ -38,14 +35,13 @@ export default async function ClassroomWriteupsPage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  // `activeRole`, not `role` — a page renders through the lens. See the
-  // section layout for the full note.
-  const view = await getViewContext();
+  // The one role in force — see the section layout for the full note.
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    activeRole,
+    role,
     userId,
     sectionId
   );
@@ -55,17 +51,8 @@ export default async function ClassroomWriteupsPage({
   //
   // ⚠ REACHABLE past the layout, for two different people: a subject teacher on
   // this class, and a substitute covering its adviser. Both pass the layout's
-  // "any capability" floor. For anyone holding a second view that is a setting
-  // rather than a dead end (role-switcher Phase 3c).
-  if (!capability || !canReadWriteups(substantiveCapability)) {
-    return wrongViewNoticeOrNotFound({
-      view,
-      heading: 'The form adviser writes these.',
-      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this class's write-ups stay with its own form adviser — including while somebody else is covering the class.`,
-      backHref: `/classroom/${sectionId}`,
-      backLabel: 'Back to the class',
-    });
-  }
+  // "any capability" floor.
+  if (!capability || !canReadWriteups(substantiveCapability)) notFound();
 
   const supabase = await createClient();
   const { data: section } = await supabase

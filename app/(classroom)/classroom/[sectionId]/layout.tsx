@@ -3,17 +3,11 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 import { ClassroomSubnav } from '@/components/classroom/classroom-subnav';
-import {
-  showWrongViewNotice,
-  WrongViewNotice,
-} from '@/components/auth/wrong-view-notice';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
 import { loadClassroomAccess, getTermsForAy } from '@/lib/classroom/queries';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = {
   id: string;
@@ -52,9 +46,9 @@ export default async function ClassroomSectionLayout({
 }) {
   const { sectionId } = await params;
 
-  const view = await getViewContext();
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   // Authorization, layer 1 (section-level): ROUTE_ACCESS only gates the
   // `/classroom` prefix, not individual classes — a teacher must not be
@@ -63,38 +57,16 @@ export default async function ClassroomSectionLayout({
   // (a subject-teacher capability passes it) — those pages re-check
   // canReadAttendance/canReadWriteups themselves. See lib/classroom/queries.ts.
   //
-  // ⚠ `activeRole`, NOT `role` — and this is the page half of the rule
-  // "role authorises, activeRole renders." ROUTE_ACCESS and the proxy have
-  // already admitted this viewer to `/classroom` on their real role by the
-  // time this runs; what the lens decides is which of the classes they are
-  // ALREADY entitled to is worth rendering, and in what capacity. For a
-  // teaching admin in the Teacher view that is `adviser` for her own class
-  // instead of `oversight` over all of them — which is what makes the
-  // CAPABILITY_COPY line below finally true for her.
-  //
-  // It narrows in one direction only: her assignment rows are a strict subset
-  // of the oversight her account role already had, so the worst this can do is
-  // 404 a class she does not teach while she is looking as a teacher. The five
-  // `app/api/classroom/**` routes keep passing the real `role`, so nothing she
-  // can still see is anything she cannot still save.
+  // A teaching admin working as a teacher holds `adviser` on her own class
+  // rather than `oversight` over all of them, because the switch changes
+  // `role` itself — which is what makes the CAPABILITY_COPY line below true
+  // for her.
   const { capability, substantiveCapability } = await loadClassroomAccess(
-    activeRole,
+    role,
     userId,
     sectionId
   );
 
-  // ⚠ THE SECTION IS FETCHED BEFORE THE CAPABILITY GATE NOW, not after, and
-  // the order is load-bearing rather than incidental. The wrong-view notice
-  // has to be able to say WHICH class ("3/A isn't a class you teach or
-  // advise") — a notice that cannot name the thing you clicked is barely
-  // better than the 404 it replaces. It also puts the two failures in the
-  // right order: a section id that does not exist is a genuine 404 in every
-  // view, and should not be answered with "switch your view to see it".
-  //
-  // The cost is one indexed single-row read for a viewer who is about to be
-  // refused, which is not a page anyone loads in a loop. RLS still applies —
-  // this is the cookie client, and it is the viewer's REAL role that decides
-  // whether the row comes back, so the lens cannot widen what is readable here.
   const supabase = await createClient();
   const { data: section } = await supabase
     .from('sections')
@@ -106,26 +78,8 @@ export default async function ClassroomSectionLayout({
   if (!section) notFound();
   const row = section as SectionRow;
 
-  // No capability HERE, in THIS view. For anyone with a second view to switch
-  // into, that is a setting rather than a dead end, and saying so is the whole
-  // of components/auth/wrong-view-notice.tsx. Everyone else — every real
-  // teacher, every admin who does not teach — still gets a plain 404.
-  if (!capability) {
-    if (showWrongViewNotice(view)) {
-      return (
-        <PageShell>
-          <WrongViewNotice
-            view={view}
-            heading="Not one of your classes."
-            body={`You're viewing as ${ROLE_LABEL[view.activeRole!]}, and ${row.name} isn't a class you teach or advise.`}
-            backHref="/classroom"
-            backLabel="Back to your classes"
-          />
-        </PageShell>
-      );
-    }
-    notFound();
-  }
+  // No assignment on this class in the role they are working in.
+  if (!capability) notFound();
 
   const level = Array.isArray(row.level) ? row.level[0] : row.level;
   const ay = Array.isArray(row.academic_year)

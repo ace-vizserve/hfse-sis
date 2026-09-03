@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { PageShell } from '@/components/ui/page-shell';
-import { getAssignableStaffList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
@@ -86,7 +86,7 @@ export default async function NewGradingSheetPage() {
     // The "Who teaches this sheet?" picker. Any staff account: six of the
     // people who actually teach a class here are on a school_admin account,
     // and a teacher-only list left them unpickable on the sheet they own.
-    getAssignableStaffList(),
+    getTeacherList(),
   ]);
 
   for (const [key, res] of [

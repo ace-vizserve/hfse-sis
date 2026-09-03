@@ -1,10 +1,27 @@
 import { cache } from 'react';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { getRoleFromClaims, type Role } from '@/lib/auth/roles';
+import {
+  getRoleFromClaims,
+  getRoleSetFromClaims,
+  type Role,
+} from '@/lib/auth/roles';
 
 /** Lightweight user identity from JWT claims — no network round-trip. */
-export type SessionUser = { id: string; email: string; role: Role | null };
+export type SessionUser = {
+  id: string;
+  email: string;
+  /** The one role in force — what authorises. */
+  role: Role | null;
+  /**
+   * Every role this account may hold, `role` included. One entry for the
+   * accounts that still store a single role, which is all of them until one is
+   * edited — so `roles.length > 1` is the test for "this person has a choice".
+   *
+   * Read off the same claims as `role`, so it costs nothing extra.
+   */
+  roles: Role[];
+};
 
 /**
  * Extract user identity from the session JWT via `getClaims()`.
@@ -26,6 +43,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     id: String(claims.sub),
     email: String(claims.email ?? ''),
     role: getRoleFromClaims(claims),
+    roles: getRoleSetFromClaims(claims),
   };
 });
 

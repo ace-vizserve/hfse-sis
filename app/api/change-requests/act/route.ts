@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { getUserRole } from '@/lib/auth/roles';
 import { verifyActionToken } from '@/lib/change-requests/action-token';
 import { decideChangeRequest } from '@/lib/change-requests/decide';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -56,7 +57,18 @@ export async function POST(request: NextRequest) {
       );
     }
     email = data.user.email ?? null;
-    role = (data.user.app_metadata as { role?: string } | null)?.role ?? '';
+    // ⚠ THE ROLE IN FORCE, NOT EVERY ROLE THE ACCOUNT HOLDS — this value
+    // AUTHORISES (it is handed to `decideChangeRequest`, which looks up its
+    // capabilities), and the whole point of the array/active_role shape is that
+    // exactly one role is in force at a time. Reading the set here would give a
+    // two-role account the union of both roles' rights, which is the one thing
+    // the shape exists to prevent.
+    //
+    // The consequence, accepted: an approver who is currently working as a
+    // teacher is refused by this link until they switch back, exactly as the
+    // in-app Approve button would refuse them. `?? ''` is kept — an empty
+    // string resolves to no capabilities, which is the safe direction.
+    role = getUserRole(data.user) ?? '';
   } catch {
     return NextResponse.json(
       { ok: false, error: 'Could not verify the approver account.' },

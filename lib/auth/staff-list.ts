@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
-import { ROLES } from '@/lib/auth/roles';
+import { ROLES, resolveRoleSetFromMetadata, type Role } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 import { listAllAuthUsers } from '@/lib/supabase/paginate';
 
@@ -26,10 +26,30 @@ type Options = {
 // 5-minute window regardless of how many helpers are called on the same page.
 // ---------------------------------------------------------------------------
 
+// ⚠ `roles`, NOT `role`, AND IT IS ALREADY NARROWED TO REAL ROLES.
+//
+// An account may hold more than one role now (`app_metadata.role` is an array
+// with `app_metadata.active_role` naming the one in force). Every helper in
+// this file answers a question about the ACCOUNT — "whose job is teaching",
+// "who may be recorded as teaching a class", "who gets the approver email" —
+// not about the person reading the page, so every one of them asks what the
+// account MAY be, not which role it happens to be using at this instant. A
+// list that flipped depending on what a different member of staff was doing
+// right now would be a bug nobody could reproduce.
+//
+// For the accounts that still store a single role string — which is all of them
+// until one is edited — this is a one-element list and every helper below
+// behaves exactly as it did before.
+//
+// `resolveRoleSetFromMetadata` applies the `ROLES` membership test itself, so
+// an empty list means "not staff": `'registrar'` (the pre-migration-092 name),
+// `''`, and any string the separate parent-portal repo might one day write into
+// `user_metadata.role` all arrive here as `[]`. See `getTeacherList` below for
+// why that membership test is the security property and not a formality.
 type _StaffRecord = {
   id: string;
   email: string;
-  role: string | null;
+  roles: Role[];
   name: string;
   disabled: boolean;
 };
@@ -100,14 +120,15 @@ async function loadAllStaffUncached(): Promise<_StaffRecord[]> {
     for (const u of users) {
       if (!u.email) continue;
       const appMeta = (u.app_metadata ?? {}) as {
-        role?: string;
+        role?: unknown;
+        active_role?: unknown;
         disabled?: boolean;
       };
       const userMeta = (u.user_metadata ?? {}) as StaffUserMetadata;
-      const role = appMeta.role ?? userMeta.role ?? null;
+      const roles = resolveRoleSetFromMetadata(appMeta, userMeta);
       const disabled = appMeta.disabled === true;
       const name = resolveStaffName(userMeta, u.email);
-      out.push({ id: u.id, email: u.email, role, name, disabled });
+      out.push({ id: u.id, email: u.email, roles, name, disabled });
     }
     return out;
   } catch (e) {
@@ -143,18 +164,44 @@ function _loadAllStaff(): Promise<_StaffRecord[]> {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns auth users with `app_metadata.role === 'teacher'`. Sorted by
- * display name. 5-min cache shared with the `teacher-emails` tag so any
- * user-list invalidation hits both layers.
+ * Returns auth users who hold the `teacher` role — including an account that
+ * holds it alongside another one, and whichever of the two it is currently
+ * working in. Sorted by display name. 5-min cache shared with the
+ * `teacher-emails` tag so any user-list invalidation hits both layers.
  *
  * Returns Array (not Map) because Next 16's unstable_cache JSON-serializes
  * Maps as `{}`. Callers iterate or build their own Map.
  *
- * Used by surfaces asking "whose JOB is teaching?" — the teaching headcount
- * chip on the Staff page, the Assignments cut's roster.
+ * ⚠ THIS IS THE ONE LIST, AND IT ANSWERS BOTH QUESTIONS. "Whose job is
+ * teaching" and "who may be recorded as teaching a class" used to be two
+ * helpers, because an account held exactly one role forever and six
+ * `school_admin` accounts who genuinely teach could not hold `teacher` at all.
+ * An account now holds a LIST of roles, so the answer to both is the same:
+ * Mr Ace's rule is that **a teaching assignment requires the teacher role**,
+ * and an admin who teaches is granted it.
  *
- * ⚠ NOT the list of people who may be RECORDED as teaching a class. That is
- * `getAssignableStaffList()` below, and the two are deliberately different.
+ * ⚠ THE FILTER IS `ROLES` MEMBERSHIP, AND THE SECURITY PROPERTY DEPENDS ON IT.
+ * Parents authenticate against this same Supabase project (KD #1): of ~1,039
+ * auth users, roughly 1,000 are parent portal accounts. `teacher_assignments`
+ * declares no FK to `auth.users` — migration 003 says in as many words that the
+ * service role enforces validity when writing assignments — so a parent's uuid
+ * written into that column would be accepted by the database, and the
+ * migration-005 RLS helpers would then hand that parent read access to the
+ * class's students and their grades. `loadAllStaffUncached` above still
+ * resolves roles from `appMeta.role ?? userMeta.role`, and **the parent portal
+ * is a separate repo**: the day it writes any string at all into
+ * `user_metadata.role`, a `!= null` test would admit every one of those
+ * accounts. `resolveRoleSetFromMetadata` turns an unrecognised value into an
+ * EMPTY list, so `roles.includes('teacher')` admits none of them whatever that
+ * string turns out to be. Do not relax it.
+ *
+ * ⚠ A stale role string — say `registrar`, from before the migration-092
+ * rename (KD #155) — is therefore NOT assignable, and that is correct rather
+ * than a gap. Such an account is already inert app-wide: `getUserRole` and
+ * `getRoleFromClaims` narrow to `ROLES` too, so it resolves to `null`, holds
+ * no capability, and `proxy.ts` routes it to the parent portal. Making it
+ * assignable here would recover nothing; fixing the account recovers the
+ * person.
  */
 export async function getTeacherList(
   options: Options = {}
@@ -162,86 +209,8 @@ export async function getTeacherList(
   const excludeDisabled = options.excludeDisabled ?? true;
   const all = await _loadAllStaff();
   return all
-    .filter((u) => u.role === 'teacher' && (!excludeDisabled || !u.disabled))
-    .map((u) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      disabled: u.disabled,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Returns every account that holds a staff role — ANY role, not just
- * `teacher`. Same shape, same sort and same `excludeDisabled` option as
- * `getTeacherList()`, and the same 5-minute `teacher-emails` cache, so this
- * costs no extra read.
- *
- * This is the list of people who may be **recorded as teaching**: written into
- * `teacher_assignments.teacher_user_id`, offered in a class's Teachers tab, or
- * booked as a substitute. HFSE staffs classes that way in practice — six
- * `school_admin` accounts hold AY2026 assignments and four of them are the
- * form adviser of record for a class, which FCA write-ups and report-card
- * publishing depend on (KD #138 / #145). Those rows were written by the
- * deployment import in SQL, because the two API routes that guard the column
- * would have refused them. Mr Ace's rule: "any role can be a teacher
- * basically", and asked directly who should become assignable he chose any
- * staff account.
- *
- * ⚠ THIS IS NOT `getStaffDisplayNameById()`, AND THAT IS THE WHOLE POINT OF
- * THE HELPER EXISTING. Parents authenticate against this same Supabase project
- * (KD #1): of ~1,039 auth users, roughly 1,000 are parent portal accounts.
- * `teacher_assignments` declares no FK to `auth.users` — migration 003 says in
- * as many words that the service role enforces validity when writing
- * assignments — so a parent's uuid written into that column would be accepted
- * by the database, and the migration-005 RLS helpers would then hand that
- * parent read access to the class's students and their grades.
- *
- * **"Must be a teacher" was never the security property. "Must not be a
- * parent" is.**
- *
- * ⚠ AND THAT IS WHY THE FILTER IS `ROLES` MEMBERSHIP, NOT `role !== null`.
- * The two are not the same test, and the gap between them is owned by code we
- * do not control. `loadAllStaffUncached` above resolves a role as
- * `appMeta.role ?? userMeta.role ?? null`, and **the parent portal is a
- * separate repo** that creates the parent accounts. The day it writes any
- * string at all into `user_metadata.role` — `'parent'`, `'user'`, a tenant tag
- * — a `!== null` test admits **every one of the ~1,000 parent accounts** into
- * a table with no foreign key, and the RLS helpers do the rest. A `ROLES`
- * membership test admits none of them, whatever that string turns out to be.
- * It also closes `role: ''`, which survives `??` and passes `!== null` today.
- *
- * Same reasoning, same answer as `lib/approvals/config.ts`, which asked this
- * exact question about a different picker ("the candidates are ANY STAFF
- * ACCOUNT", Mr Ace 2026-08-27) and built its list from the ROLES-narrowed
- * `listStaffUsers` for the same stated reason. Match it; do not re-widen this
- * to `!= null` without moving that one too.
- *
- * ⚠ A stale role string — say `registrar`, from before the migration-092
- * rename (KD #155) — is therefore NOT assignable, and that is correct rather
- * than a gap. Such an account is already inert app-wide: `getUserRole` and
- * `getRoleFromClaims` narrow to `ROLES` too, so it resolves to `null`, holds
- * no capability, and `proxy.ts` routes it to the parent portal. Making it
- * assignable here would recover nothing; fixing the account is what recovers
- * the person.
- *
- * ⚠ Deliberately a SIBLING of `getTeacherList()`, never a widening of it.
- * Several surfaces genuinely do mean "someone whose job is teaching" — the
- * "N teaching" headcount, the Assignments roster — and re-pointing those would
- * change what those pages say rather than what they permit.
- */
-export async function getAssignableStaffList(
-  options: Options = {}
-): Promise<StaffMember[]> {
-  const excludeDisabled = options.excludeDisabled ?? true;
-  const all = await _loadAllStaff();
-  return all
     .filter(
-      (u) =>
-        u.role != null &&
-        (ROLES as readonly string[]).includes(u.role) &&
-        (!excludeDisabled || !u.disabled)
+      (u) => u.roles.includes('teacher') && (!excludeDisabled || !u.disabled)
     )
     .map((u) => ({
       id: u.id,
@@ -259,7 +228,9 @@ export async function getAssignableStaffList(
 export async function getApproverEmailList(): Promise<string[]> {
   const all = await _loadAllStaff();
   return all
-    .filter((u) => u.role === 'school_admin' || u.role === 'superadmin')
+    .filter(
+      (u) => u.roles.includes('school_admin') || u.roles.includes('superadmin')
+    )
     .map((u) => u.email);
 }
 
@@ -270,7 +241,7 @@ export async function getApproverEmailList(): Promise<string[]> {
 export async function getRegistrarEmailList(): Promise<string[]> {
   const all = await _loadAllStaff();
   return all
-    .filter((u) => u.role === 'academic_coordinator')
+    .filter((u) => u.roles.includes('academic_coordinator'))
     .map((u) => u.email);
 }
 
@@ -317,12 +288,7 @@ export async function getStaffDisplayNameById(): Promise<
  */
 export async function getStaffCount(): Promise<number> {
   const all = await _loadAllStaff();
-  return all.filter(
-    (u) =>
-      !u.disabled &&
-      u.role != null &&
-      (ROLES as readonly string[]).includes(u.role)
-  ).length;
+  return all.filter((u) => !u.disabled && u.roles.length > 0).length;
 }
 
 /**
@@ -361,6 +327,12 @@ export function narrowStaffNamesToRows<T>(
  * be a real staff role (auth.users is shared with role-less parent accounts,
  * KD #11). Every role is present in the result, including ones nobody holds —
  * a card reading "0 people" is information, not a gap.
+ *
+ * ⚠ SOMEONE WHO HOLDS TWO ROLES IS COUNTED ON BOTH CARDS, and that is the
+ * honest answer to what the card asks. The figure exists to make an edit's
+ * reach concrete, and editing the Teacher permissions really does reach a
+ * teaching admin — on the days they are working as a teacher. It does mean the
+ * six figures can sum to more than the staff headcount.
  */
 export async function getStaffCountsByRole(): Promise<Record<string, number>> {
   const all = await _loadAllStaff();
@@ -369,9 +341,8 @@ export async function getStaffCountsByRole(): Promise<Record<string, number>> {
   );
   for (const user of all) {
     if (user.disabled) continue;
-    if (user.role == null) continue;
-    if (!(user.role in counts)) continue;
-    counts[user.role] += 1;
+    // `roles` is already narrowed to real roles, so every entry has a card.
+    for (const role of user.roles) counts[role] += 1;
   }
   return counts;
 }

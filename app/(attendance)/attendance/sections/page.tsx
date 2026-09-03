@@ -5,11 +5,7 @@ import { DeclarationsWaitingPanel } from '@/components/attendance/declarations-w
 import { countInboxActionable } from '@/lib/approvals/inbox';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { showWrongViewNotice } from '@/components/auth/wrong-view-notice';
-import { SwitchViewButton } from '@/components/view-switch/switch-view-button';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
@@ -37,29 +33,13 @@ type LevelLite = {
 };
 
 export default async function AttendanceSectionsListPage() {
-  const session = await getViewContext();
+  const session = await getSessionUser();
   const role = session?.role ?? null;
-  // ✅ THIS PAGE NOW SCOPES ON THE LENS (role-switcher Phase 3c), and that
-  // closes the gap the wrong-view notice was built to apologise for. Until
-  // this change a teaching admin in the Teacher view was a `school_admin`
-  // here, so `isTeacherOnly` was false and she was shown every section in the
-  // school — each row linking to a register her lensed
-  // `/attendance/[sectionId]` then refused. The notice still exists for the
-  // routes nothing on screen narrows (a bookmark, a link in an old email), but
-  // it is no longer the thing standing between a listed row and a 404.
-  //
   // ONE FLAG, FIVE DECISIONS, deliberately kept as one: the adviser-only
   // section query, the heading, the empty state, the KPI label and
   // `showAdviser` all mean "am I looking at this as a class teacher". Splitting
   // them would let the list narrow while the heading still said "Pick a
   // section."
-  //
-  // `role` (the account) survives here as the floor `isTeacherOnly` falls back
-  // to when no lens is set, and for nothing else — the declarations count below
-  // reads `session.role` straight off the context rather than this binding. It
-  // stays on the account either way: "how many filings are waiting on YOU to
-  // decide" is an approval-inbox question, and the queue at
-  // /attendance/declarations would disagree with a lensed number.
   //
   // The comment that used to sit here claimed the row destination came from
   // "the shared classroom scope resolver" so it could not drift from
@@ -67,12 +47,7 @@ export default async function AttendanceSectionsListPage() {
   // called, and `isTeacherOnly` below decides everything. The import and the
   // claim are both gone — a wrong comment about where a decision lives costs
   // more than no comment at all.
-  const isTeacherOnly = (session?.activeRole ?? role) === 'teacher';
-  // Is this narrowing the result of a VIEW the person chose, rather than of
-  // the account they hold? Drives one extra line on the empty state — without
-  // it a teaching admin who advises no class reads "the registrar has not
-  // assigned you", which is true but unhelpful when she is the office.
-  const narrowedByView = session ? showWrongViewNotice(session) : false;
+  const isTeacherOnly = role === 'teacher';
 
   const supabase = await createClient();
 
@@ -341,31 +316,10 @@ export default async function AttendanceSectionsListPage() {
               {isTeacherOnly ? 'No sections assigned' : 'No sections yet'}
             </div>
             <div className="text-sm text-muted-foreground">
-              {/* Three states, not two. The middle one is new and exists
-                  because this page now narrows on the VIEW: a school admin who
-                  advises no class sees an empty list here the moment she
-                  switches to Teacher, and "the registrar has not assigned you"
-                  reads as nonsense to the person who IS the office.
-                  ⚠ The role name is built from ROLE_LABEL rather than written
-                  as "Teacher", because the lens is whatever `activeRole` says —
-                  hard-coding it would be a caption that lies the moment a
-                  second lens exists. */}
-              {isTeacherOnly && narrowedByView
-                ? `You're viewing as ${ROLE_LABEL[session!.activeRole!]}, which shows only the classes you are the form adviser for.`
-                : isTeacherOnly
-                  ? 'The registrar has not assigned you as a form adviser for any section yet.'
-                  : 'Run the seed SQL or ask the registrar to create sections for the current AY.'}
+              {isTeacherOnly
+                ? 'The registrar has not assigned you as a form adviser for any section yet.'
+                : 'Run the seed SQL or ask the registrar to create sections for the current AY.'}
             </div>
-            {/* Paired with the switch, like every other lens refusal in the
-                app. Telling somebody which setting narrowed the page and then
-                leaving them to find the switcher is half a message — and this
-                button comes back to this same page afterwards. */}
-            {isTeacherOnly && narrowedByView && session?.role && (
-              <SwitchViewButton
-                target={session.role}
-                activeRole={session.activeRole}
-              />
-            )}
           </CardContent>
         </Card>
       )}

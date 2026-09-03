@@ -41,7 +41,7 @@ import {
 import { resolve } from 'node:path';
 
 import { logAction } from '../lib/audit/log-action';
-import { getUserRole } from '../lib/auth/roles';
+import { getUserRoleSet } from '../lib/auth/roles';
 import { InviteUserSchema } from '../lib/schemas/user-admin';
 import { createServiceClient } from '../lib/supabase/service';
 import { listAllAuthUsers } from '../lib/supabase/paginate';
@@ -438,9 +438,7 @@ async function main() {
   // actor_id, and confirm they are a superadmin — the same gate the
   // /api/sis/admin/users route enforces.
   const superadmins = existing
-    .filter(
-      (u) => (u.app_metadata as { role?: string } | null)?.role === 'superadmin'
-    )
+    .filter((u) => getUserRoleSet(u).includes('superadmin'))
     .map((u) => u.email)
     .filter((e): e is string => !!e)
     .sort();
@@ -456,8 +454,10 @@ async function main() {
     );
     process.exit(1);
   }
-  const actorRole = (actor.app_metadata as { role?: string } | null)?.role;
-  if (actorRole !== 'superadmin') {
+  // The account's roles, not just the one it is working under: a superadmin
+  // who also teaches is still a superadmin when this script runs.
+  const actorRole = getUserRoleSet(actor).join(' + ') || null;
+  if (!getUserRoleSet(actor).includes('superadmin')) {
     console.error(
       `Actor "${actorEmail}" has role "${actorRole ?? 'none'}" — creating staff\n` +
         `accounts is superadmin-only.\n${listSuperadmins()}`
@@ -504,12 +504,21 @@ async function main() {
     // row can be a parent-portal record (null role) or hold the wrong role —
     // in which case a silent skip leaves the person with no access, which
     // reads as success. Compare the roles and refuse to be quiet about it.
-    // getUserRole is the app's own resolver (app_metadata.role ??
-    // user_metadata.role, validated against ROLES) so this can't drift.
+    // getUserRoleSet is the app's own resolver (the `role` array or string,
+    // validated against ROLES) so this can't drift.
+    //
+    // ⚠ ASKS WHETHER THE ACCOUNT HOLDS THE ROSTERED ROLE, NOT WHETHER IT IS
+    // THE ONLY ONE. An account may hold two now, and a teaching admin whose
+    // roster line says `teacher` is correctly provisioned — reporting her as a
+    // mismatch would send someone to "fix" an account that is already right.
     const found = byEmail.get(email);
     if (found) {
-      const foundRole = getUserRole(found);
-      if (foundRole === entry.role) {
+      const foundRoles = getUserRoleSet(found);
+      const foundRole = foundRoles.join(' + ') || null;
+      // `entry.role` is a plain string on the roster (validated at creation
+      // time by InviteUserSchema, not at declaration), so the comparison is
+      // widened rather than the roster type narrowed.
+      if ((foundRoles as readonly string[]).includes(entry.role)) {
         // Carry the password forward from the workbook that first issued it
         // so this run's handout is complete. The account itself is NOT
         // touched — no reset, no re-role.
@@ -632,12 +641,17 @@ async function main() {
       continue;
     }
 
-    // Byte-identical to app/api/sis/admin/users/route.ts:59-66.
+    // Matches app/api/sis/admin/users/route.ts's createUser call: `role` is the
+    // list of roles the account may hold and `active_role` the one in force.
+    // The roster gives one role per line, so both are that role.
     const { data, error } = await service.auth.admin.createUser({
       email: parsed.data.email,
       password: parsed.data.password,
       email_confirm: true,
-      app_metadata: { role: parsed.data.role },
+      app_metadata: {
+        role: parsed.data.role,
+        active_role: parsed.data.role[0],
+      },
       user_metadata: { display_name: parsed.data.displayName },
     });
 
@@ -663,7 +677,7 @@ async function main() {
       entityId: data.user.id,
       context: {
         email: parsed.data.email,
-        role: parsed.data.role,
+        role: parsed.data.role.join(', '),
         display_name: parsed.data.displayName ?? null,
         provisioned_by: 'scripts/provision-staff-accounts.ts',
       },

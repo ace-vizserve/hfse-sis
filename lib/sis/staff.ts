@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
-import { getAssignableStaffList, getTeacherList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import {
   type AssignmentRole,
   isAdviserRole,
@@ -266,7 +266,7 @@ async function loadFormAdvisersBySectionUncached(
   //
   // `excludeDisabled: false` for the same reason it always was: whoever holds
   // the class is the name of record whether or not they can sign in today.
-  const staff = await getAssignableStaffList({ excludeDisabled: false });
+  const staff = await getTeacherList({ excludeDisabled: false });
   const nameById = new Map(staff.map((t) => [t.id, t.name]));
 
   const result: Record<string, AdviserEntry> = {};

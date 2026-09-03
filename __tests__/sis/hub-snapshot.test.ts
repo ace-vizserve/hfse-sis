@@ -12,6 +12,7 @@ function makeUser(role: AdminUserRow['role']): AdminUserRow {
     id: 'x',
     email: 'x@x.com',
     role,
+    roles: role ? [role] : [],
     display_name: 'X',
     disabled: false,
     created_at: '2026-01-01T00:00:00Z',

@@ -1,13 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import {
-  showWrongViewNotice,
-  WrongViewNotice,
-} from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadReportCard } from '@/lib/classroom/scope';
@@ -29,45 +23,29 @@ export default async function ReportCardPreview({
   const { term: termParam } = await searchParams;
   const [supabase, viewer] = await Promise.all([
     createClient(),
-    getViewContext(),
+    getSessionUser(),
   ]);
   if (!viewer) redirect('/login');
   const role = viewer.role;
-  // The lens, with the account role as the floor.
-  const view = viewer.activeRole ?? role;
-  // ⚠ ON THE LENS (role-switcher Phase 3c, §3 ruling). `canManage` is the
-  // oversight half of this page: the publication panel, the "All report cards"
-  // back-link, and the editable final-grade box on a non-examinable subject
-  // (`AnnualLetterInput`, inside ReportCardDocument). In the Teacher view the
-  // page is already the adviser's — the gate below admits her only for classes
-  // she is the adviser of record for — so keeping those three would be an
-  // office toolbar on a teacher's document.
-  //
-  // The back-link is the clearest case: `/markbook/report-cards` is
-  // coordinator-and-above and is not in the Teacher view's Markbook sidebar at
-  // all, so in that view it now sends her back to her own class instead, which
-  // is where she came from.
+  // `canManage` is the oversight half of this page: the publication panel, the
+  // "All report cards" back-link, and the editable final-grade box on a
+  // non-examinable subject (`AnnualLetterInput`, inside ReportCardDocument).
+  // A form adviser gets the document without any of them, and the back-link
+  // sends her to her own class instead, which is where she came from.
   //
   // Narrowing only. `PublicationStatus` reads a table whose RLS is
   // `is_registrar_or_above()` and the letter-grade box saves through a route
-  // that gates on the REAL role, so this can hide a control she may still use
-  // after switching back — never offer one that would fail.
-  //
-  // ⚠ ONE EXCEPTION, DELIBERATE: the two diagnostic branches below
-  // (`no_current_ay`, `not_enrolled_this_ay`) keep the ACCOUNT role. They are
-  // an existence-oracle guard, not a control — the question they answer is
-  // "may this person be told the difference between a real student and a
-  // probed uuid", which is about the account, and narrowing it in one view
-  // would leak nothing but would silently change a security-shaped decision
-  // for no product reason.
+  // that gates on the same role server-side.
   const canManage =
-    view === 'academic_coordinator' ||
-    view === 'school_admin' ||
-    view === 'superadmin';
-  const canSeeDiagnostics =
     role === 'academic_coordinator' ||
     role === 'school_admin' ||
     role === 'superadmin';
+  // Same three roles, kept as its own name because it answers a different
+  // question: the two diagnostic branches below (`no_current_ay`,
+  // `not_enrolled_this_ay`) are an existence-oracle guard — "may this person
+  // be told the difference between a real student and a probed uuid" — not a
+  // control, and merging the two names would hide that distinction.
+  const canSeeDiagnostics = canManage;
 
   const result = await buildReportCard(supabase, studentId);
   if (!result.ok) {
@@ -101,63 +79,15 @@ export default async function ReportCardPreview({
   // payload's primary enrolment — which is also the right section to gate on
   // for a mid-year transfer: access follows the student's CURRENT adviser.
   //
-  // ⚠ Keyed on `activeRole` — a page renders through the lens. In the Teacher
-  // view a teaching admin gets the card for the classes she is the adviser of
-  // record for and 404s on the rest; the Admin view is unchanged. `canManage`
-  // above now follows the lens too (Phase 3c) — what stays with the ACCOUNT is
-  // `canSeeDiagnostics`, and only that.
   const { substantiveCapability } = await loadClassroomAccess(
-    viewer.activeRole,
+    role,
     viewer.id,
     payload.section.id
   );
   // substantiveCapability, not capability. The card names the regular adviser
   // and carries the comment they wrote, so it stays theirs while they are away;
   // a substitute covering the class gets 404 here.
-  //
-  // ⚠ Reachable by TYPING or by an old bookmark. The roster that used to link
-  // here indiscriminately is lensed as of Phase 3c, so in the Teacher view it
-  // now lists only her own students — but a saved URL, a link in an email and
-  // the browser's own history all still arrive. The notice names the student
-  // rather than the class: "Aria Tan" is what she clicked, and telling her
-  // about a section she may not have thought about would be answering a
-  // question she did not ask.
-  //
-  // ⚠ `backHref` IS `/classroom`, AND IT IS NEITHER OF THE TWO OBVIOUS
-  // CANDIDATES — both of which lead somewhere worse.
-  //
-  //   • NOT `/markbook/report-cards`, which it used to be. That roster is
-  //     coordinator-and-above; its nav row and its palette entry are both gone
-  //     in this view, so sending her there hands back the surface the view has
-  //     just taken away, and completes a loop: notice → roster → another
-  //     student → the same notice.
-  //
-  //   • NOT `/classroom/<this student's section>/students` either, which is
-  //     what the lensed back-link at the foot of this page uses. That link runs
-  //     only AFTER the gate above has PASSED, i.e. only for a section she
-  //     advises. Here the gate has just FAILED, so in the ordinary case she
-  //     holds no capability on that section at all — and the classroom layout
-  //     refuses a null capability with a notice of its own. It would be a
-  //     second refusal one click after the first.
-  //
-  // `/classroom` is her own list of classes, lensed, and never empty for
-  // somebody holding the Teacher lens — she holds it because she holds
-  // assignment rows. It is also the destination the classroom layout's own
-  // wrong-view notice already uses, so the two refusals now agree.
-  if (!canReadReportCard(substantiveCapability)) {
-    if (showWrongViewNotice(viewer)) {
-      return (
-        <WrongViewNotice
-          view={viewer}
-          heading="Not one of your students."
-          body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and you're not the form adviser for ${payload.student.full_name}, so their report card isn't yours to open.`}
-          backHref="/classroom"
-          backLabel="Back to your classes"
-        />
-      );
-    }
-    notFound();
-  }
+  if (!canReadReportCard(substantiveCapability)) notFound();
 
   // Which term to view: the URL param wins; otherwise the canonical resolver
   // (KD #116) decides. It used to read `.eq('is_current', true)` and fall back

@@ -88,8 +88,7 @@ function renderSidebar(counts?: Record<string, string>) {
         email="test@hfse.test"
         userId="user-1"
         counts={counts}
-        entitled={['school_admin']}
-        activeRole="school_admin"
+        roles={['school_admin']}
       />
     </SidebarProvider>
   );

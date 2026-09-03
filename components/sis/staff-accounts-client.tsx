@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import {
+  ChevronDown,
   Copy,
   GraduationCap,
   KeyRound,
@@ -55,18 +56,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ROLES, type Role } from '@/lib/auth/roles';
 import { TABLE_COPY } from '@/lib/copy/data-table';
 import type { AdminUserRow } from '@/lib/sis/users/queries';
@@ -121,21 +120,26 @@ function buildColumns(
     },
     {
       id: 'role',
-      accessorFn: (row) => row.role ?? '',
-      header: 'Role',
+      // Sorts and exports on every role the account holds, not just the one it
+      // is working under — the column is titled Roles and shows all of them.
+      accessorFn: (row) => row.roles.join(', '),
+      header: 'Roles',
+      meta: { label: 'Roles' },
       cell: ({ row }) => (
-        <RoleSelect
+        <RolePicker
           user={row.original}
           isSelf={row.original.id === currentUserId}
           canManage={canManage}
         />
       ),
+      // Filtering by Teacher finds a school_admin who also teaches. Anything
+      // else would hide the very people this column now exists to show.
       filterFn: (row, _id, value) => {
         if (!value || (Array.isArray(value) && value.length === 0)) return true;
-        const roleVal = row.original.role ?? '';
+        const held: string[] = row.original.roles;
         return Array.isArray(value)
-          ? value.includes(roleVal)
-          : roleVal === value;
+          ? value.some((v: string) => held.includes(v))
+          : held.includes(value as string);
       },
     },
     {
@@ -296,7 +300,12 @@ function buildColumns(
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function RoleSelect({
+// Most people do one job, so the control has to stay quiet for the 38 accounts
+// that hold one role while making the second one visible on the six that hold
+// two. It keeps the shape and size of the Select it replaces — the column reads
+// unchanged at a glance — and adds a count only when there is something to
+// count. Ticking a role saves immediately, exactly as picking one did.
+function RolePicker({
   user,
   isSelf,
   canManage,
@@ -305,8 +314,8 @@ function RoleSelect({
   isSelf: boolean;
   canManage: boolean;
 }) {
-  const roleMutation = useMutation({
-    mutationFn: (next: Role) =>
+  const rolesMutation = useMutation({
+    mutationFn: (next: Role[]) =>
       apiFetch(
         `/api/sis/admin/users/${user.id}`,
         jsonInit('PATCH', { role: next })
@@ -316,43 +325,79 @@ function RoleSelect({
   const run = useWriteAction();
   const [busy, setBusy] = useState(false);
 
-  async function setRole(next: Role) {
-    if (next === user.role) return;
+  const held = user.roles;
+
+  async function toggleRole(role: Role, add: boolean) {
+    const next = add ? [...held, role] : held.filter((r) => r !== role);
+    // The server refuses an empty list too — this is the half that explains
+    // why, before the person loses their click. An account with no role reads
+    // as a parent everywhere in the app, so it is a lockout, not a tidy-up.
+    if (next.length === 0) return;
     setBusy(true);
-    await run(() => roleMutation.mutateAsync(next), {
+    await run(() => rolesMutation.mutateAsync(next), {
       pending: `Updating ${user.email}…`,
-      success: `Role updated: ${user.email} → ${ROLE_LABEL[next]}`,
+      success: add
+        ? `${user.email} is now also a ${ROLE_LABEL[role]}`
+        : `${ROLE_LABEL[role]} removed from ${user.email}`,
       error: (e: unknown) => (e instanceof Error ? e.message : 'update failed'),
     });
     setBusy(false);
   }
 
+  const disabledReason = !canManage
+    ? 'Only superadmins can change staff roles'
+    : isSelf
+      ? 'You cannot change your own roles here'
+      : undefined;
+
   return (
-    <Select
-      value={user.role ?? undefined}
-      onValueChange={(v) => void setRole(v as Role)}
-      disabled={busy || isSelf || !canManage}
-    >
-      <SelectTrigger
-        className="h-8 w-[160px]"
-        title={
-          !canManage
-            ? 'Only superadmins can change staff roles'
-            : isSelf
-              ? 'You cannot change your own role here'
-              : undefined
-        }
-      >
-        <SelectValue placeholder="— no role —" />
-      </SelectTrigger>
-      <SelectContent>
-        {ROLES.map((r) => (
-          <SelectItem key={r} value={r}>
-            {ROLE_LABEL[r]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={busy || isSelf || !canManage}
+          title={disabledReason ?? held.map((r) => ROLE_LABEL[r]).join(', ')}
+          // Mirrors SelectTrigger's treatment — same border, shadow, hover,
+          // focus ring and open state — so replacing the Select does not change
+          // how the column looks or behaves under the keyboard.
+          className="flex h-8 w-[172px] items-center justify-between gap-1 rounded-md border border-hairline bg-background px-3 text-[13px] shadow-input transition-all hover:border-hairline-strong hover:bg-muted/40 focus-visible:border-brand-indigo/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-60 data-[state=open]:border-brand-indigo/60 data-[state=open]:ring-2 data-[state=open]:ring-brand-indigo/20"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-foreground">
+              {held.length > 0 ? ROLE_LABEL[held[0]] : 'No role'}
+            </span>
+            {held.length > 1 && (
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                +{held.length - 1}
+              </span>
+            )}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px]">
+        {ROLES.map((r) => {
+          const checked = held.includes(r);
+          const isLast = checked && held.length === 1;
+          return (
+            <DropdownMenuCheckboxItem
+              key={r}
+              checked={checked}
+              disabled={isLast || busy}
+              title={
+                isLast
+                  ? 'Give this account another role before removing this one'
+                  : undefined
+              }
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(v) => void toggleRole(r, v === true)}
+            >
+              {ROLE_LABEL[r]}
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -802,7 +847,7 @@ export function StaffAccountsClient({
         data={users}
         columns={columns}
         getRowId={(row) => row.id}
-        searchKeys={['email', 'display_name', (row) => row.role ?? '']}
+        searchKeys={['email', 'display_name', (row) => row.roles.join(' ')]}
         searchPlaceholder="Search email, name, or role…"
         statusTabs={[
           {
@@ -825,7 +870,7 @@ export function StaffAccountsClient({
         facets={[
           {
             columnId: 'role',
-            label: 'Role',
+            label: 'Roles',
             valueOptions: ROLES.map((r) => r),
           },
         ]}
@@ -905,14 +950,24 @@ function InviteUserDialog({
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [role, setRole] = useState<Role>('teacher');
+  const [roles, setRoles] = useState<Role[]>(['teacher']);
   const [password, setPassword] = useState('');
 
   function resetForm() {
     setEmail('');
     setDisplayName('');
-    setRole('teacher');
+    setRoles(['teacher']);
     setPassword('');
+  }
+
+  // Kept in ROLES order however they were ticked, so the account's first role —
+  // the one it starts working in — doesn't depend on click order.
+  function toggleRole(role: Role, add: boolean) {
+    setRoles((current) =>
+      add
+        ? ROLES.filter((r) => r === role || current.includes(r))
+        : current.filter((r) => r !== role)
+    );
   }
 
   function fillPassword() {
@@ -935,12 +990,12 @@ function InviteUserDialog({
   }
 
   const createMutation = useMutation({
-    mutationFn: (vars: { email: string; role: Role }) =>
+    mutationFn: (vars: { email: string; roles: Role[] }) =>
       apiFetch(
         '/api/sis/admin/users',
         jsonInit('POST', {
           email: vars.email,
-          role: vars.role,
+          role: vars.roles,
           displayName: displayName.trim() || undefined,
           password,
         })
@@ -960,9 +1015,14 @@ function InviteUserDialog({
       toast.error('Password must be at least 8 characters');
       return;
     }
+    if (roles.length === 0) {
+      toast.error('Pick at least one role');
+      return;
+    }
 
     setSaving(true);
-    await run(() => createMutation.mutateAsync({ email: trimmedEmail, role }), {
+    const payload = { email: trimmedEmail, roles };
+    await run(() => createMutation.mutateAsync(payload), {
       pending: `Creating the account for ${trimmedEmail}…`,
       // The "account + teacher assignment" job used to span two pages
       // (KD #154 / SIS Admin IA Phase 4). When the new account is a teacher,
@@ -972,7 +1032,7 @@ function InviteUserDialog({
       // and `null` returned to stop a second, plainer one landing on top.
       success: () => {
         const message = `Account created for ${trimmedEmail}. Share the password securely.`;
-        if (role === 'teacher') {
+        if (roles.includes('teacher')) {
           toast.success(message, {
             action: {
               label: 'Now assign their classes →',
@@ -1048,21 +1108,31 @@ function InviteUserDialog({
           <div className="space-y-1.5">
             <Label>
               <span className="inline-flex items-center gap-1.5">
-                <Shield className="size-3.5" /> Role
+                <Shield className="size-3.5" /> Roles
               </span>
             </Label>
-            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Laid out flat rather than behind a dropdown: the dialog has the
+                room, and seeing all six at once is what makes it obvious a
+                second one can be picked. */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-hairline p-3">
+              {ROLES.map((r) => (
+                <label
+                  key={r}
+                  className="flex cursor-pointer items-center gap-2 text-[13px] text-foreground"
+                >
+                  <Checkbox
+                    checked={roles.includes(r)}
+                    onCheckedChange={(v) => toggleRole(r, v === true)}
+                  />
+                  {ROLE_LABEL[r]}
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Most people have one. Pick two if this person does both jobs —
+              they choose which one they are working in, and can change it from
+              their own account.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="invite-password">
@@ -1120,7 +1190,9 @@ function InviteUserDialog({
           <Button
             type="button"
             onClick={submit}
-            disabled={saving || !email || password.length < 8}
+            disabled={
+              saving || !email || password.length < 8 || roles.length === 0
+            }
           >
             {saving ? (
               <Loader2 className="size-3.5 animate-spin" />

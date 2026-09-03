@@ -27,97 +27,55 @@ import {
   resolveNavView,
   resolveSectionsForRole,
 } from '@/lib/auth/nav-visibility';
-import { getEntitledRoles } from '@/lib/auth/active-role';
 import { NAV_BY_MODULE, ROLES, type NavSection } from '@/lib/auth/roles';
 import { applyChangeRequestCountScope } from '@/lib/sidebar/use-change-request-count';
 import { MODULE_ORDER, SIDEBAR_REGISTRY } from '@/lib/sidebar/registry';
 
 describe('rowsRole always names the tree that was actually returned', () => {
-  it('holds for every module × reachable role × view', () => {
+  it('holds for every module × role', () => {
     // The invariant the whole fix rests on. If `rowsRole` and `sections` could
     // ever disagree, the CTA and the badge would be keyed on a menu that is not
     // on screen — which is the original defect, moved rather than fixed.
     const mismatches: string[] = [];
     for (const sidebarModule of MODULE_ORDER) {
       for (const role of ROLES) {
-        for (const viewRole of getEntitledRoles(role, true)) {
-          const { rowsRole, sections } = resolveNavView(
-            sidebarModule,
-            role,
-            undefined,
-            viewRole
+        const { rowsRole, sections } = resolveNavView(
+          sidebarModule,
+          role,
+          undefined
+        );
+        const expected = resolveSectionsForRole(sidebarModule, role, undefined);
+        if (rowsRole !== role) {
+          mismatches.push(`${sidebarModule}: ${role} got rowsRole ${rowsRole}`);
+        }
+        if (JSON.stringify(sections) !== JSON.stringify(expected)) {
+          mismatches.push(
+            `${sidebarModule}: ${role} rendered rows that are not ${rowsRole}'s`
           );
-          const expected = resolveSectionsForRole(
-            sidebarModule,
-            role,
-            undefined,
-            rowsRole
-          );
-          if (JSON.stringify(sections) !== JSON.stringify(expected)) {
-            mismatches.push(
-              `${sidebarModule}: ${role} as ${viewRole} rendered rows that are not ${rowsRole}'s`
-            );
-          }
         }
       }
     }
     expect(mismatches).toEqual([]);
   });
-
-  it('and follows the tree into the blank-sidebar fallback, not the lens', () => {
-    // The one case where `rowsRole` must NOT be the view. If the net rescues a
-    // sidebar by rendering the account role's rows, a teacher-scoped badge over
-    // them would be the same lie pointing the other way.
-    const { rowsRole, sections } = resolveNavView(
-      'markbook',
-      'school_admin',
-      undefined,
-      'p_file_officer' // no markbook tree — the net fires
-    );
-    expect(rowsRole).toBe('school_admin');
-    expect(sections).toEqual(
-      resolveSectionsForRole('markbook', 'school_admin', undefined)
-    );
-  });
 });
 
 describe('the quick-action CTA follows the rows', () => {
-  it('a teaching admin in the Teacher view is offered no Markbook CTA', () => {
-    const { rowsRole } = resolveNavView(
-      'markbook',
-      'school_admin',
-      undefined,
-      'teacher'
-    );
+  it('a teacher is offered no Markbook CTA', () => {
+    const { rowsRole } = resolveNavView('markbook', 'teacher', undefined);
     expect(rowsRole).toBe('teacher');
     // Markbook defines no `teacher` quick action on purpose — its target ("My
     // Sheets") is already the second nav row, so a CTA would duplicate it. That
-    // absence is what removes the approver's button from her Teacher view.
+    // absence is what keeps the approver's button off a teacher's rail, and it
+    // is what a teaching admin loses the moment she switches to Teacher.
     expect(SIDEBAR_REGISTRY.markbook.quickActionByRole.teacher).toBeUndefined();
   });
 
-  it('and gets the approver CTA back in the Admin view', () => {
-    const { rowsRole } = resolveNavView(
-      'markbook',
-      'school_admin',
-      undefined,
-      'school_admin'
-    );
+  it('and an approver gets the approver CTA', () => {
+    const { rowsRole } = resolveNavView('markbook', 'school_admin', undefined);
     expect(rowsRole).toBe('school_admin');
     expect(
       SIDEBAR_REGISTRY.markbook.quickActionByRole.school_admin?.label
     ).toBe('Review change requests');
-  });
-
-  it('nothing changes for an account with a single view', () => {
-    for (const role of ROLES) {
-      for (const sidebarModule of MODULE_ORDER) {
-        expect(
-          resolveNavView(sidebarModule, role, undefined, role).rowsRole,
-          `${role} on ${sidebarModule}`
-        ).toBe(role);
-      }
-    }
   });
 });
 

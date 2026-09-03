@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
-import { createClient } from '@/lib/supabase/server';
-import { getViewContext } from '@/lib/auth/view-context';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,41 +35,25 @@ type LevelLite = {
 
 export default async function SectionsListPage() {
   const supabase = await createClient();
-  const view = await getViewContext();
-  // ⚠ `role` IS DELIBERATELY NOT DESTRUCTURED. As of Phase 3c nothing on this
-  // page decides anything from the account role — the section scope, the cover
-  // panel and `canManage` all read the lens — and leaving an unused binding
-  // called `role` in scope is how the next edit reaches for the wrong one.
-  // Twin of the same note on app/(classroom)/classroom/page.tsx.
-  const activeRole = view?.activeRole ?? view?.role ?? null;
+  const view = await getSessionUser();
+  const role = view?.role ?? null;
 
   // Cover booked for this teacher that has not started yet (migration 123).
   // Caller's client on purpose: the row-read policy is deliberately unwindowed,
-  // so seeing your own booking needs no service-role escalation.
-  //
-  // ⚠ ON `activeRole`, NOT `role` (role-switcher Phase 3b). RLS scopes these
-  // rows to the viewer's own bookings, so the role test is an optimisation —
-  // skip a query that would come back empty — not a gate, and a teaching admin
-  // standing in for a colleague is precisely who has cover booked. Twin of the
-  // identical wrapper on app/(classroom)/classroom/page.tsx; the two show the
-  // same panel and must not disagree about who sees it.
+  // so seeing your own booking needs no service-role escalation. The role test
+  // is an optimisation — skip a query that would come back empty — not a gate.
+  // Twin of the identical wrapper on app/(classroom)/classroom/page.tsx; the
+  // two show the same panel and must not disagree about who sees it.
   const upcomingCover =
-    activeRole === 'teacher' && view
+    role === 'teacher' && view
       ? await loadUpcomingCoverForUser(supabase, view.id)
       : [];
-  // ⚠ ON THE LENS AS OF PHASE 3c (§3 ruling) — Phase 3b left this on `role`
-  // and said so; the ruling since made is that a Teacher view hides controls
-  // that exist only for oversight roles. Here that is one control: the "Manage
-  // in SIS Admin" button, which points at `/sis/sections`. Phase 3b already
-  // removed the whole SIS tile from this view, so leaving the button was the
-  // switcher and the page disagreeing about the same module.
-  //
-  // Narrowing only — `/sis/sections` still admits her real role, so switching
-  // back restores the button and nothing behind it changed.
+  // One control: the "Manage in SIS Admin" button, which points at
+  // `/sis/sections` — a module a teacher cannot open at all.
   const canManage =
-    activeRole === 'academic_coordinator' ||
-    activeRole === 'school_admin' ||
-    activeRole === 'superadmin';
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
 
   // Scoping (Phase 8) — Markbook was the one teaching-module list with no
   // teacher scoping at all; Attendance/Evaluation already narrow to a
@@ -80,30 +63,15 @@ export default async function SectionsListPage() {
   // Attendance/Evaluation, which are adviser-only because their underlying
   // data is adviser-only at the RLS level (see lib/classroom/scope.ts).
   //
-  // ⚠ Keyed on `activeRole`, not `role` — a page renders through the lens
-  // ("role authorises, activeRole renders", lib/auth/active-role.ts). A
-  // school_admin who also teaches sees her own sections in the Teacher view
-  // and every section in the Admin view. The guard above the resolver has to
-  // move with it, or the resolver is handed an empty array and answers "no
-  // classes at all".
-  //
-  // This paragraph used to end "`role` is untouched everywhere else on this
-  // page — it still decides `canManage` below". That stopped being true in the
-  // same change that wrote it: Phase 3c moved `canManage` onto the lens too
-  // (see the §3 note above it), and `role` is no longer bound on this page at
-  // all. Corrected rather than deleted, because a page where EVERY decision
-  // reads the lens is worth saying out loud — it is why the binding is gone.
-  //
   // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`:
-  // `getViewContext()` at the top of this page has already made this exact
-  // call for the one viewer who now takes this branch and did not before — a
-  // teaching admin in the Teacher view. See lib/auth/assignments-cache.ts for
+  // a single navigation asks this same question from the palette, the sidebar
+  // resolver and the classroom layout. See lib/auth/assignments-cache.ts for
   // why it keys on the userId string rather than on the client.
   const assignments =
-    activeRole === 'teacher' && view
+    role === 'teacher' && view
       ? await loadEffectiveAssignmentsForUserMemo(view.id)
       : [];
-  const scope = resolveClassroomScope(activeRole, assignments);
+  const scope = resolveClassroomScope(role, assignments);
   // `[]` (scoped, no assigned classes) is distinct from `null` (unscoped) —
   // must yield zero rows, never fall through to unfiltered.
   const noScopedClasses =

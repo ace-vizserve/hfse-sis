@@ -5,7 +5,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getAssignableStaffList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
 import { getCoverBoard, RECENTLY_ENDED_DAYS } from '@/lib/relief/cover-board';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
@@ -55,7 +55,7 @@ export default async function CoverPage() {
   // cannot take the register.
   const [board, teachers] = await Promise.all([
     getCoverBoard(ayId, today),
-    getAssignableStaffList(),
+    getTeacherList(),
   ]);
 
   return (

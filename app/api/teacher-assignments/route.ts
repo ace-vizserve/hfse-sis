@@ -280,14 +280,12 @@ export async function POST(request: NextRequest) {
   // auth.users and says in as many words that "the service role enforces
   // validity when writing assignments": this line is that enforcement.
   //
-  // `getAssignableStaffList()` keeps exactly that property while dropping the
-  // one that was never a security rule. It filters `role !== null`, and a
-  // parent carries no role at all — so parents stay out for precisely the
-  // reason they always did, while a school_admin who advises a form class can
-  // now be recorded as doing so. Six of them already are, written straight to
-  // the database by the deployment import because this gate refused them, and
-  // four hold a form class whose FCA write-ups gate report-card publishing
-  // (KD #138 / #145). Until now nobody could maintain those rows on screen.
+  // ⚠ A TEACHING ASSIGNMENT REQUIRES THE TEACHER ROLE — Mr Ace's rule, and it
+  // is enforceable again now that an account holds a LIST of roles. The six
+  // `school_admin` accounts that genuinely teach (four of them the form adviser
+  // of record for a class, which FCA write-ups and report-card publishing
+  // depend on — KD #138 / #145) are granted `teacher` alongside their admin
+  // role, so `getTeacherList()` includes them and this gate admits them.
   //
   // `excludeDisabled: false` because the Accounts tab offers "Manage teaching
   // assignments" on any staff row, disabled or not
@@ -296,8 +294,8 @@ export async function POST(request: NextRequest) {
   // tightening it here would break a path that works. The staff-vs-parent
   // distinction is unaffected: the helper filters on role BEFORE it filters on
   // disabled.
-  const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
-  const assignable = await getAssignableStaffList({ excludeDisabled: false });
+  const { getTeacherList } = await import('@/lib/auth/staff-list');
+  const assignable = await getTeacherList({ excludeDisabled: false });
   const assignableIds = new Set(assignable.map((t) => t.id));
   if (rows.some((r) => !assignableIds.has(r.teacher_user_id))) {
     // Not "refresh the list and try again": the list this check reads is

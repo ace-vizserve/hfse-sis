@@ -31,12 +31,12 @@ describe('stripComments — the bug it was written for', () => {
     // was counting.
     const source = [
       '// see `app/api/classroom/**` for the routes',
-      'loadClassroomAccess(activeRole, userId, sectionId);',
+      'loadClassroomAccess(role, userId, sectionId);',
       '/* a real block comment */',
       'const after = 1;',
     ].join('\n');
     const stripped = stripComments(source);
-    expect(stripped).toContain('loadClassroomAccess(activeRole');
+    expect(stripped).toContain('loadClassroomAccess(role');
     expect(stripped).toContain('const after = 1;');
     expect(stripped).not.toContain('a real block comment');
   });
@@ -46,10 +46,10 @@ describe('stripComments — the bug it was written for', () => {
     // in the URL would eat the closing delimiter and everything after it.
     const source = [
       '/* see https://example.invalid for why */',
-      'resolveClassroomScope(activeRole, assignments);',
+      'resolveClassroomScope(role, assignments);',
     ].join('\n');
     const stripped = stripComments(source);
-    expect(stripped).toContain('resolveClassroomScope(activeRole');
+    expect(stripped).toContain('resolveClassroomScope(role');
     expect(stripped).not.toContain('example.invalid');
   });
 
@@ -169,7 +169,7 @@ describe('assertScannableFiles', () => {
     // The counterweight to the list above. If `scanComments` ever started
     // returning a non-code mode for everything, that test would still pass
     // while every guard in the repo began failing for no reason.
-    for (const path of ['lib/auth/roles.ts', 'lib/auth/active-role.ts']) {
+    for (const path of ['lib/auth/roles.ts', 'lib/auth/staff-list.ts']) {
       const source = readFileSync(join(ROOT, path), 'utf8');
       expect(scanComments(source).endMode, path).toBe('code');
     }

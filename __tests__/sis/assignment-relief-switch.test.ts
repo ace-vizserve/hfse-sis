@@ -60,7 +60,7 @@ const TEACHING_ADMIN = '44444444-4444-4444-8444-444444444444';
 const ASSIGNMENT = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SECTION = 'bbbbbbbb-2222-4222-8222-222222222222';
 
-const getAssignableStaffListMock = vi.fn(
+const getTeacherListMock = vi.fn(
   async (options: { excludeDisabled?: boolean } = {}) => {
     const excludeDisabled = options.excludeDisabled ?? true;
     return [
@@ -85,13 +85,8 @@ const getAssignableStaffListMock = vi.fn(
 // it here would refuse the teaching admin again, and a silent fallback would
 // leave every other assertion in this file green.
 vi.mock('@/lib/auth/staff-list', () => ({
-  getAssignableStaffList: (options?: { excludeDisabled?: boolean }) =>
-    getAssignableStaffListMock(options),
-  getTeacherList: () => {
-    throw new Error(
-      'PATCH /api/teacher-assignments/[id] must validate against getAssignableStaffList, not getTeacherList'
-    );
-  },
+  getTeacherList: (options?: { excludeDisabled?: boolean }) =>
+    getTeacherListMock(options),
   getStaffDisplayNameById: () => Promise.resolve([]),
 }));
 
@@ -165,7 +160,7 @@ beforeEach(() => {
   logActionMock.mockClear();
   invalidateMock.mockClear();
   requireCapabilityMock.mockClear();
-  getAssignableStaffListMock.mockClear();
+  getTeacherListMock.mockClear();
   existingAssignment = {
     id: ASSIGNMENT,
     teacher_user_id: TEACHER_A,
@@ -251,7 +246,7 @@ describe('putting someone on cover', () => {
     expect(updateCalls).toEqual([]);
     // Called with no options at all, so `excludeDisabled` takes its default of
     // true. Passing `false` here would silently start admitting them.
-    expect(getAssignableStaffListMock.mock.calls[0]![0]).toBeUndefined();
+    expect(getTeacherListMock.mock.calls[0]![0]).toBeUndefined();
   });
 
   it('404s when the assignment is gone', async () => {
@@ -290,7 +285,7 @@ describe('taking someone off cover', () => {
 
   it('does not check the teacher list when clearing', async () => {
     await patch({ relief_teacher_user_id: null });
-    expect(getAssignableStaffListMock).not.toHaveBeenCalled();
+    expect(getTeacherListMock).not.toHaveBeenCalled();
   });
 });
 
@@ -454,12 +449,12 @@ describe('the cover window (migration 123)', () => {
 });
 
 describe('the route itself', () => {
-  it('validates against getAssignableStaffList, never getStaffDisplayNameById', () => {
+  it('validates against getTeacherList, never getStaffDisplayNameById', () => {
     // The latter returns every auth user with an email — which in this database
     // means the parent portal accounts too. A grep, because the failure it
     // guards is someone reaching for the more convenient helper.
     const code = source(ROUTE);
-    expect(code).toMatch(/getAssignableStaffList/);
+    expect(code).toMatch(/getTeacherList/);
     expect(code).not.toMatch(/getStaffDisplayNameById/);
   });
 });

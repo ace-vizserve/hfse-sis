@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
+import { getUserRoleSet } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -252,11 +253,14 @@ export async function PATCH(
           await service.auth.admin.listUsers({ perPage: 200 });
         const recipients = users
           .filter((u) => {
-            const role = (u.app_metadata as Record<string, unknown>)?.role as
-              | string
-              | undefined;
+            // Every role the account holds, not the one it is using right now:
+            // this picks who to TELL about a corrected final grade, and an
+            // admin who also teaches still needs to know about it on the days
+            // she is teaching.
+            const roles = getUserRoleSet(u);
             return (
-              (role === 'school_admin' || role === 'superadmin') &&
+              (roles.includes('school_admin') ||
+                roles.includes('superadmin')) &&
               u.email &&
               u.email !== auth.user.email
             );

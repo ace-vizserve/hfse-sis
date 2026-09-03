@@ -52,13 +52,7 @@ import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
-import {
-  showWrongViewNotice,
-  WrongViewNotice,
-} from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
 type SectionRow = {
@@ -80,17 +74,12 @@ export default async function SectionAttendancePage({
   const sp = await searchParams;
   const view: 'sheet' | 'daily' = sp.view === 'daily' ? 'daily' : 'sheet';
 
-  const viewer = await getViewContext();
+  const viewer = await getSessionUser();
   if (!viewer) redirect('/login');
-  const role = viewer.role;
-  // The lens, with the account role as the floor. Used by the four
-  // oversight-control flags further down; `role` itself no longer decides
-  // anything on this page.
-  //
-  // Named `viewRole`, not `view`: `view` is already taken on this page by the
-  // sheet-vs-daily tab, and two different "views" one screen apart is exactly
-  // how the wrong one gets read.
-  const viewRole = viewer.activeRole ?? role;
+  // Named `viewerRole`, not `role` alone and certainly not `view`: `view` is
+  // already taken on this page by the sheet-vs-daily tab, and two different
+  // "views" one screen apart is exactly how the wrong one gets read.
+  const viewerRole = viewer.role;
 
   // Per-SECTION form-adviser gate, not per-person. Attendance is adviser work
   // at the DB (`is_adviser_for_section`, 005_rls_teacher_scoping.sql) and in the
@@ -104,19 +93,11 @@ export default async function SectionAttendancePage({
   // section." `resolveClassroomScope` answers that, and resolves adviser over
   // subject when they hold both here.
   //
-  // ⚠ Keyed on `activeRole` — a page renders through the lens. A teaching admin
-  // in the Teacher view reaches this register only for a class she actually
-  // advises, and 404s on the rest; in the Admin view she reaches all of them as
-  // before. The narrowing is one-way and cannot cost her a save: the write
-  // route (`assertAdviserForSections`) and RLS both still run on her real role.
   const { capability } = await loadClassroomAccess(
-    viewer.activeRole,
+    viewerRole,
     viewer.id,
     sectionId
   );
-  // The section is read BEFORE the gate so the wrong-view notice can name the
-  // class — see the note in app/(classroom)/classroom/[sectionId]/layout.tsx.
-  // A section id that does not exist stays a plain 404 in every view.
   const supabase = await createClient();
 
   const { data: sectionRaw } = await supabase
@@ -128,64 +109,27 @@ export default async function SectionAttendancePage({
   const section = sectionRaw as SectionRow;
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
 
-  // ⚠ THIS IS THE GATE THE CRITICAL WAS ABOUT, AND ITS ORIGINAL CAUSE IS NOW
-  // CLOSED. When this notice was written, `/attendance/sections` scoped on the
-  // account role and listed every section in the school in the Teacher view, so
-  // every row on it linked straight into this 404. Phase 3c lensed that page,
-  // and the Attendance sidebar with it, so the CLICKABLE path here is gone.
-  //
-  // The notice stays, and should: a bookmark, a typed URL, a link in an old
-  // email and the unlensed report-card roster all still reach this line, and
-  // for someone holding a second view a 404 with no explanation is a setting
-  // she chose and cannot see. It is no longer load-bearing; it is the net.
-  if (!canReadAttendance(capability)) {
-    if (showWrongViewNotice(viewer)) {
-      return (
-        <PageShell>
-          <WrongViewNotice
-            view={viewer}
-            heading="Not one of your classes."
-            body={`You're viewing as ${ROLE_LABEL[viewer.activeRole!]}, and ${section.name} isn't a class you advise, so its attendance isn't yours to take.`}
-            backHref="/attendance/sections"
-            backLabel="Back to sections"
-          />
-        </PageShell>
-      );
-    }
-    notFound();
-  }
+  if (!canReadAttendance(capability)) notFound();
 
-  // ⚠ ALL FOUR ARE NOW KEYED ON THE LENS (role-switcher Phase 3c, §3 ruling:
-  // in the Teacher view, controls that exist only for oversight roles are
-  // hidden). Everything above this line — the gate, the notice, the register
-  // itself — already renders as a teacher's by the time we get here; leaving
-  // these four on the account role left an office toolbar sitting on top of it.
-  // "The view changes what you see" includes buttons.
-  //
   // ⚠ NARROWING ONLY, AND THE WRITE ROUTES DO NOT MOVE. Every one of these is
-  // re-decided server-side on the REAL JWT role — `POST /api/attendance` for
-  // the No-class mark, and the roster-metadata PATCH for the three field
-  // groups — so hiding a control here can never cost her a save she would
-  // otherwise have made, and showing one again is a single click on "Switch
-  // view".
-  //
-  // `role` (the account) survives on this page for exactly one purpose: it is
-  // the floor `viewRole` falls back to when no lens is set. Nothing else reads
-  // it — the gate above resolves from `viewer.activeRole`, and the notice
-  // beside it prints `viewer.activeRole` too.
+  // re-decided server-side on the JWT role — `POST /api/attendance` for the
+  // No-class mark, and the roster-metadata PATCH for the three field groups —
+  // so hiding a control here can never cost anyone a save they would otherwise
+  // have made.
   const canWriteNc =
-    viewRole === 'academic_coordinator' ||
-    viewRole === 'school_admin' ||
-    viewRole === 'superadmin';
+    viewerRole === 'academic_coordinator' ||
+    viewerRole === 'school_admin' ||
+    viewerRole === 'superadmin';
   // Roster-metadata edit gates for the Details view (Task 2's per-field PATCH
   // gating): Bus/Care + Academics share the same gate as canWriteNc; Admin is
   // narrower (school_admin/superadmin only).
   const canEditBusCare =
-    viewRole === 'academic_coordinator' ||
-    viewRole === 'school_admin' ||
-    viewRole === 'superadmin';
+    viewerRole === 'academic_coordinator' ||
+    viewerRole === 'school_admin' ||
+    viewerRole === 'superadmin';
   const canEditAcademics = canEditBusCare; // same gate as bus_no/classroom_officer_role
-  const canEditAdmin = viewRole === 'school_admin' || viewRole === 'superadmin';
+  const canEditAdmin =
+    viewerRole === 'school_admin' || viewerRole === 'superadmin';
 
   // Terms — pick a term from ?term_id or default to current.
   const { data: termsRaw } = await supabase

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 
 import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
@@ -6,15 +7,17 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { UpdateUserSchema } from '@/lib/schemas/user-admin';
 import { getUserFootprint, isLastSuperadmin } from '@/lib/sis/user-deletion';
-import type { Role } from '@/lib/auth/roles';
+import { getUserRole, getUserRoleSet, type Role } from '@/lib/auth/roles';
 
-// PATCH /api/sis/admin/users/[id] — update role, enabled state, and/or
+// PATCH /api/sis/admin/users/[id] — update roles, enabled state, and/or
 // identity fields.
 //
 // Superadmin-only (requireRole below) — the staff directory renders these
 // actions disabled for school_admin (read-only accounts view, KD #154).
 //
-// `role` writes to `app_metadata.role` (KD #2). `disabled: true` bans the
+// `role` — one role or a list of them — replaces `app_metadata.role`, the set
+// of roles the account may hold (KD #2), and `app_metadata.active_role` is kept
+// pointing at one the account still holds. `disabled: true` bans the
 // user for 100 years (effectively indefinite); `disabled: false` clears the
 // ban. Hard delete lives in the `DELETE` handler below it, scoped to
 // zero-activity accounts only — see that handler's doc comment.
@@ -41,7 +44,7 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const { role, disabled, displayName, email, password } = parsed.data;
+  const { role: roles, disabled, displayName, email, password } = parsed.data;
 
   // Identity edits (name / email / password) are superadmin-only.
   if (
@@ -87,10 +90,8 @@ export async function PATCH(
       );
     }
   }
-  const beforeRole =
-    (before.app_metadata as { role?: string } | null)?.role ??
-    (before.user_metadata as { role?: string } | null)?.role ??
-    null;
+  const beforeRoles = getUserRoleSet(before);
+  const beforeActiveRole = getUserRole(before);
   const beforeDisabled = Boolean(
     before.banned_until && new Date(before.banned_until).getTime() > Date.now()
   );
@@ -99,8 +100,23 @@ export async function PATCH(
     null;
 
   const updates: Parameters<typeof service.auth.admin.updateUserById>[1] = {};
-  if (role !== undefined) {
-    updates.app_metadata = { ...(before.app_metadata ?? {}), role };
+  // The role this account will be working under once the edit lands. Keeping
+  // the one it is already using is the quiet answer — but if that role is being
+  // taken away, it has to move to one the account still holds, or the person is
+  // left working as something the account no longer is. Falls to the first
+  // granted role, which is also what a fresh account gets.
+  const nextActiveRole =
+    roles === undefined
+      ? beforeActiveRole
+      : beforeActiveRole && roles.includes(beforeActiveRole)
+        ? beforeActiveRole
+        : roles[0];
+  if (roles !== undefined) {
+    updates.app_metadata = {
+      ...(before.app_metadata ?? {}),
+      role: roles,
+      active_role: nextActiveRole,
+    };
   }
   if (disabled !== undefined) {
     updates.ban_duration = disabled ? '876000h' : 'none';
@@ -126,7 +142,33 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  if (role !== undefined && role !== beforeRole) {
+  // Every staff lookup in the app reads one cached list (lib/auth/staff-list.ts,
+  // `unstable_cache` on the `teacher-emails` tag, 5-minute window, shared by
+  // every user), and this route can change every field that list holds: the
+  // roles, the email, the display name and the enabled state. Nothing busted
+  // it, so an edit here took up to five minutes to reach the teacher pickers,
+  // the "N teaching" headcount, the form-adviser names on report cards and the
+  // approver notification lists — and no amount of refreshing helped, because
+  // the staleness is on the server.
+  //
+  // POST /api/sis/admin/users has busted the same tag for the same reason since
+  // it was written; this is the asymmetry that left behind, closed. Granting
+  // somebody the teacher role has exactly the failure that route's comment
+  // describes: the obvious next click, "Manage teaching assignments", answered
+  // "that person does not have a teacher account" about a role granted seconds
+  // earlier.
+  //
+  // Unconditional on a successful update rather than per-field: the fields are
+  // ALL cached, so a condition could only ever be a way to get it wrong later.
+  revalidateTag('teacher-emails', 'max');
+
+  // Compared as a joined string so re-saving the same roles in a different
+  // order is not logged as a change — the set is what was granted, the order is
+  // just how the form happened to send it.
+  const beforeRoleLabel = beforeRoles.join(', ');
+  const afterRoleLabel =
+    roles === undefined ? beforeRoleLabel : roles.join(', ');
+  if (roles !== undefined && afterRoleLabel !== beforeRoleLabel) {
     await logAction({
       service,
       actor: {
@@ -139,8 +181,11 @@ export async function PATCH(
       entityId: id,
       context: {
         email: before.email,
-        before: { role: beforeRole },
-        after: { role },
+        before: { role: beforeRoleLabel || null },
+        after: { role: afterRoleLabel },
+        ...(nextActiveRole !== beforeActiveRole
+          ? { active_role: nextActiveRole }
+          : {}),
       },
     });
   }
@@ -156,7 +201,7 @@ export async function PATCH(
       action: disabled ? 'user.disable' : 'user.enable',
       entityType: 'user_account',
       entityId: id,
-      context: { email: before.email, role: role ?? beforeRole },
+      context: { email: before.email, role: afterRoleLabel || null },
     });
   }
 
@@ -234,12 +279,14 @@ export async function DELETE(
     return NextResponse.json({ error: 'user not found' }, { status: 404 });
   }
   const before = beforeRes.user;
-  const role: Role | null =
-    (before.app_metadata as { role?: Role } | null)?.role ??
-    (before.user_metadata as { role?: Role } | null)?.role ??
-    null;
+  // Every role the account holds. The last-superadmin check below has to see a
+  // superadmin who also teaches as a superadmin — reading only the role they
+  // happen to be using would let the last one be deleted while they were
+  // looking at a class.
+  const roles = getUserRoleSet(before);
+  const role: Role | null = getUserRole(before);
 
-  if (role === 'superadmin') {
+  if (roles.includes('superadmin')) {
     let allUsers: Awaited<ReturnType<typeof listAllAuthUsers>>;
     try {
       allUsers = await listAllAuthUsers(service);
@@ -249,13 +296,20 @@ export async function DELETE(
         { status: 500 }
       );
     }
-    const usersForCheck = allUsers.map((u) => ({
-      id: u.id,
-      role:
-        (u.app_metadata as { role?: string } | null)?.role ??
-        (u.user_metadata as { role?: string } | null)?.role ??
-        null,
-    }));
+    // ⚠ "HOLDS superadmin", NOT "IS CURRENTLY WORKING AS superadmin".
+    // `isLastSuperadmin` is a pure one-role-per-row check with its own unit
+    // test — the guard that, gotten backwards, makes every superadmin account
+    // deletable and locks the school out of /sis/admin permanently. Rather than
+    // change it, each row is reduced to the only role it asks about: an account
+    // that holds superadmin alongside another role counts as a superadmin here
+    // even while its holder is looking at the app as a teacher.
+    const usersForCheck = allUsers.map((u) => {
+      const held = getUserRoleSet(u);
+      return {
+        id: u.id,
+        role: held.includes('superadmin') ? 'superadmin' : (held[0] ?? null),
+      };
+    });
     if (isLastSuperadmin(usersForCheck, id)) {
       return NextResponse.json(
         {
@@ -267,7 +321,13 @@ export async function DELETE(
     }
   }
 
-  const footprint = await getUserFootprint(service, id, role);
+  // ⚠ AN ACCOUNT WITH TWO ROLES IS CHECKED AGAINST EVERY TABLE.
+  // The footprint list is scoped per role, so checking a two-role account
+  // against one of them would miss the work it did in the other and report an
+  // account with activity as safe to delete. `null` is the existing
+  // "unknown → check everything" path, which is exactly the right answer here.
+  const footprintRole = roles.length === 1 ? roles[0] : null;
+  const footprint = await getUserFootprint(service, id, footprintRole);
   if (footprint.length > 0) {
     return NextResponse.json(
       {
@@ -282,6 +342,11 @@ export async function DELETE(
   if (deleteErr) {
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
   }
+
+  // Same cached staff list as the PATCH above. A deleted account that stayed in
+  // it would keep appearing in teacher pickers and name lookups for up to five
+  // minutes after it stopped existing.
+  revalidateTag('teacher-emails', 'max');
 
   await logAction({
     service,

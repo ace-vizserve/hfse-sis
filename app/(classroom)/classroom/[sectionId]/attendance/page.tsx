@@ -15,10 +15,7 @@ import { getSectionAttendanceSummary } from '@/lib/attendance/queries';
 import { canReadAttendance } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
-import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Attendance — adviser/oversight only. Belt-and-braces: this page checks
 // canReadAttendance ITSELF (not just the layout, which only asserts "any
@@ -39,32 +36,19 @@ export default async function ClassroomAttendancePage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  // `activeRole`, not `role` — a page renders through the lens. See the
+  // The one role in force — see the
   // section layout for the full note; the shape is identical on every
   // classroom tab.
-  const view = await getViewContext();
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
-  const { capability } = await loadClassroomAccess(
-    activeRole,
-    userId,
-    sectionId
-  );
+  const { capability } = await loadClassroomAccess(role, userId, sectionId);
   // ⚠ REACHABLE, unlike the `!capability` gate the layout answers first: a
   // viewer holding only `subject` capability on this class PASSES the layout
-  // and is turned away here. In the Teacher view that is a teaching admin who
-  // teaches a subject in a class she does not advise — a setting she chose, so
-  // say so instead of 404ing. (role-switcher Phase 3c.)
-  if (!capability || !canReadAttendance(capability)) {
-    return wrongViewNoticeOrNotFound({
-      view,
-      heading: 'The form adviser takes this register.',
-      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and attendance for this class belongs to its form adviser rather than to its subject teachers.`,
-      backHref: `/classroom/${sectionId}`,
-      backLabel: 'Back to the class',
-    });
-  }
+  // and is turned away here — a teacher who teaches a subject in a class she
+  // does not advise. Attendance belongs to the form adviser.
+  if (!capability || !canReadAttendance(capability)) notFound();
 
   const supabase = await createClient();
   const { data: section } = await supabase

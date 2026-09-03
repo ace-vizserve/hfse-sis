@@ -26,6 +26,16 @@ vi.mock('@/lib/auth/require-capability', () => ({
   requireAnyCapability: () => mockRequireCapability(),
 }));
 
+// Both handlers bust the cached staff list (lib/auth/staff-list.ts's
+// `teacher-emails` tag) on success — a deleted account that stayed in it would
+// keep turning up in teacher pickers and name lookups for five minutes. The
+// real `revalidateTag` needs Next's request store, which does not exist under
+// vitest, so it is stubbed rather than worked around.
+const mockRevalidateTag = vi.fn();
+vi.mock('next/cache', () => ({
+  revalidateTag: (...args: unknown[]) => mockRevalidateTag(...args),
+}));
+
 type LogActionParams = {
   action: string;
   entityType: string;

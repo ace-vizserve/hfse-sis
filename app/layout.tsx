@@ -14,7 +14,7 @@ import {
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getViewContext } from '@/lib/auth/view-context';
+import { getSessionUser } from '@/lib/supabase/server';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 
 const inter = Inter({
@@ -68,30 +68,19 @@ async function CommandPaletteMount() {
   // Returns null for unauthenticated users (login page, parent-portal SSO
   // landing) — the palette short-circuits in that case.
   //
-  // ⚠ `getViewContext()` RATHER THAN `getSessionUser()` (role-switcher Phase
-  // 3c). It is the same session read with the active-role lens resolved on top,
-  // and it is `cache()`d, so a page that has already asked pays nothing. The
-  // palette is the FIFTH place modules are offered (see `isHiddenModuleHref`),
-  // and until now it was the one that did not follow the view: Phase 3b hid the
-  // SIS, Records, P-Files and Admissions tiles in the Teacher view, and Cmd+K
-  // went on listing their pages.
-  const viewer = await getViewContext();
+  // `cache()`d, so a page that has already asked pays nothing.
+  const viewer = await getSessionUser();
   const role = viewer?.role ?? null;
   if (!viewer || !role) return null;
-  const viewRole = viewer.activeRole ?? role;
 
   const [hiddenModules, capabilities] = await Promise.all([
-    // Same narrowing the switchers apply, so Cmd+K can't offer a module the
-    // tiles have stopped showing — now including the route-shaped half the
-    // lens adds (`hiddenModulesForView`).
-    resolveHiddenModules(role, viewer.id, viewRole),
+    // Same narrowing the switchers apply, so Cmd+K cannot offer a module the
+    // tiles have stopped showing. The palette is the FIFTH place modules are
+    // offered — see `isHiddenModuleHref`.
+    resolveHiddenModules(role, viewer.id),
     // What this viewer may actually DO (KD #166). Some routes admit a role at
     // the prefix and then bounce them on a capability the page requires — the
     // palette must not advertise those.
-    //
-    // ⚠ ON THE REAL ROLE, ALWAYS. Capabilities are never lensed anywhere in the
-    // app: they are the account's grant set, and a chosen view cannot add to or
-    // take from what the page will demand on arrival.
     getCapabilitiesForRole(role),
   ]);
 
@@ -100,7 +89,6 @@ async function CommandPaletteMount() {
       role={role}
       capabilities={capabilities}
       hiddenModules={hiddenModules}
-      viewRole={viewRole}
     />
   );
 }

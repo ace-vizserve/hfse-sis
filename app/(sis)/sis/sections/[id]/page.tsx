@@ -4,7 +4,7 @@ import { ArrowUpRight, UserCheck, UserMinus, Users } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { getAssignableStaffList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
@@ -173,7 +173,7 @@ export default async function SisSectionDetailPage({
     // /api/teacher-assignments will accept. Four form classes in the live year
     // have their adviser on a school_admin account; a teacher-only list here
     // meant a co-teacher change on one of them could not be made at all.
-    getAssignableStaffList(),
+    getTeacherList(),
     supabase
       .from('teacher_assignments')
       .select(

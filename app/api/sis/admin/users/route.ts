@@ -35,7 +35,21 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { email, role, displayName, password } = parsed.data;
+  const {
+    email,
+    role: roles,
+    startingRole: requestedStart,
+    displayName,
+    password,
+  } = parsed.data;
+
+  // Which role the account starts in. The requested one when it is actually one
+  // of the roles being granted; otherwise the first — an account has to start
+  // somewhere, and starting in a role it does not hold would lock it out.
+  const startingRole =
+    requestedStart && roles.includes(requestedStart)
+      ? requestedStart
+      : roles[0];
 
   const service = createServiceClient();
 
@@ -54,15 +68,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Single createUser call sets email + password + role (app_metadata) +
+  // Single createUser call sets email + password + roles (app_metadata) +
   // display_name (user_metadata) atomically. email_confirm: true marks
   // the email as already-verified so the user can sign in on first attempt.
+  //
+  // BOTH KEYS, ALWAYS. `role` is the list of roles the account may hold and
+  // `active_role` the one in force — every reader goes through
+  // `lib/auth/roles.ts`, which copes with a one-element list exactly as it
+  // copes with the plain string the older accounts still store.
   const { data: created, error: createErr } =
     await service.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      app_metadata: { role },
+      app_metadata: { role: roles, active_role: startingRole },
       user_metadata: displayName ? { display_name: displayName } : undefined,
     });
   if (createErr || !created?.user) {
@@ -93,8 +112,19 @@ export async function POST(request: NextRequest) {
     action: 'user.create',
     entityType: 'user_account',
     entityId: created.user.id,
-    context: { email, role, display_name: displayName ?? null },
+    context: {
+      email,
+      role: roles.join(', '),
+      active_role: startingRole,
+      display_name: displayName ?? null,
+    },
   });
 
-  return NextResponse.json({ ok: true, id: created.user.id, email, role });
+  return NextResponse.json({
+    ok: true,
+    id: created.user.id,
+    email,
+    role: roles,
+    startingRole,
+  });
 }

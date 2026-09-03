@@ -89,14 +89,13 @@ const CLASSIFIED: Record<string, Category[]> = {
   // rather than deferred to callers — which is why it is `act` and not
   // `plumbing` like lib/auth/teacher-assignments.ts, which offers both.
   'lib/auth/assignments-cache.ts': ['act'],
-  // The active-role lens. It reads assignments for ONE boolean — does this
-  // account have teaching work — and decides nothing about access: the lens is
-  // presentation only, and `__tests__/auth/active-role-never-authorises.test.ts`
-  // keeps it out of every gate. Filed under `act` for the relief direction,
-  // which is the question this list exists to force: a colleague standing in on
-  // someone's class has teaching work TODAY and should be offered the teacher
-  // view for the length of the cover, so substantive-only would be wrong here.
-  'lib/auth/view-context.ts': ['act'],
+  // ⚠ `lib/auth/view-context.ts` USED TO BE HERE AND IS DELIBERATELY GONE.
+  // It read assignments for one boolean — does this account have teaching work
+  // — to infer whether to offer a teacher view. An account can now simply HOLD
+  // the teacher role alongside another one (`app_metadata.role` is a list), so
+  // the set of roles someone may work in is read off the session and the query
+  // was removed. Nothing about the relief question changed; there is just no
+  // longer anything in that file to answer it.
   'lib/approvals/resolve.ts': ['act'],
   'lib/sidebar/resolve-hidden-modules.ts': ['act'],
   'lib/sidebar/module-visibility.ts': ['act'],
@@ -143,15 +142,14 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/(evaluation)/evaluation/sections/[sectionId]/page.tsx': ['evaluation'],
   'app/(classroom)/classroom/[sectionId]/write-ups/page.tsx': ['evaluation'],
   'app/(markbook)/markbook/report-cards/[studentId]/page.tsx': ['evaluation'],
-  // The report-card ROSTER, lensed in Phase 3c so the Teacher view lists only
-  // the classes the viewer advises. Same category as its detail-page sibling
-  // above, and for the same reason: it scopes on
-  // `substantiveCapabilityForSection`, so a substitute covering a class does
-  // NOT get its report cards. The card names the regular adviser and carries
-  // the comment they wrote — it stays theirs while they are away. The two
-  // files must not drift apart: a roster wider than the detail page it links
-  // to is a list of rows that refuse you.
-  'app/(markbook)/markbook/report-cards/page.tsx': ['evaluation'],
+  // ⚠ `app/(markbook)/markbook/report-cards/page.tsx` USED TO BE HERE AND IS
+  // DELIBERATELY GONE. That roster once narrowed itself per section for a
+  // teaching admin looking at the app as a teacher; `teacher` is not one of the
+  // three roles the page admits at all, so the narrowing had no audience left
+  // once the switch became a real role change, and the assignment read went
+  // with it. Removed rather than left as a stale entry — this guard fails on
+  // one, and a classification for a read that no longer happens is a claim
+  // about code that is not there.
   'app/(evaluation)/evaluation/sections/page.tsx': ['evaluation', 'name'],
 
   // ── name of record ──────────────────────────────────────────────────────

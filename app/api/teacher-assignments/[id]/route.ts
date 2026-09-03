@@ -150,7 +150,7 @@ export async function PATCH(
     // question asked at two grains, and letting them disagree would mean a
     // teaching admin could cover a whole absence but not a single lesson.
     //
-    // ⚠ `getAssignableStaffList()`, not `getStaffDisplayNameById()`. The
+    // ⚠ `getTeacherList()`, not `getStaffDisplayNameById()`. The
     // latter returns every auth user with an email — which in this database
     // means the ~1,000 parent portal accounts as well as staff (KD #1).
     // Validating against it would let a parent's uuid be written here, and the
@@ -167,8 +167,8 @@ export async function PATCH(
     // record, who may be disabled while on long leave and is still the name on
     // the report card; here it is "who is actually taking the lesson?" — and a
     // disabled account cannot sign in to enter a mark or take the register.
-    const { getAssignableStaffList } = await import('@/lib/auth/staff-list');
-    const assignable = await getAssignableStaffList();
+    const { getTeacherList } = await import('@/lib/auth/staff-list');
+    const assignable = await getTeacherList();
     if (!assignable.some((t) => t.id === reliefTeacherId)) {
       // Not "refresh the list and try again", for the reason POST
       // /api/teacher-assignments spells out: the list this check reads is

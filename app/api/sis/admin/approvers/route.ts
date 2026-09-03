@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import { requireCapability } from '@/lib/auth/require-capability';
-import type { Role } from '@/lib/auth/roles';
+import { getUserRoleSet } from '@/lib/auth/roles';
 import { AssignApproverSchema } from '@/lib/schemas/approvers';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -56,17 +56,18 @@ export async function POST(request: Request) {
   if (userErr || !userRes?.user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
-  const role =
-    (userRes.user.app_metadata as { role?: string } | null)?.role ??
-    (userRes.user.user_metadata as { role?: string } | null)?.role ??
-    null;
+  // EVERY role the account holds, not just the one it is using right now — an
+  // account may hold two. Matches `listEligibleApproverCandidates`, which built
+  // the list this id was picked from; the two must answer the same question or
+  // the page offers people the save then refuses.
+  const roles = getUserRoleSet(userRes.user);
   // The target must hold grade_changes.approve — assigning someone who can't
   // approve would produce a designated approver whose every decision 403s.
   // Reads the same permission map decide.ts checks, so the two can't disagree.
   const capabilityMap = await getRoleCapabilities();
-  const eligible =
-    role != null &&
-    (capabilityMap[role as Role] ?? []).includes('grade_changes.approve');
+  const eligible = roles.some((r) =>
+    (capabilityMap[r] ?? []).includes('grade_changes.approve')
+  );
   if (!eligible) {
     return NextResponse.json(
       {

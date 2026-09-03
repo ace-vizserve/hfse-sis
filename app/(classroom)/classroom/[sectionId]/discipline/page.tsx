@@ -1,7 +1,5 @@
 import { FileText } from 'lucide-react';
-// `notFound` is no longer imported here: the refusal below goes through
-// `wrongViewNoticeOrNotFound`, which throws it on the no-second-view path.
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import {
   FileDisciplineRecordButton,
@@ -26,10 +24,7 @@ import { formatRecordDate, formatRecordWhen } from '@/lib/discipline/display';
 import { listDisciplineForSection } from '@/lib/discipline/queries';
 import { toPlainText } from '@/lib/rich-text';
 import { listHouses } from '@/lib/sis/houses';
-import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type RosterRow = {
   index_number: number;
@@ -58,32 +53,19 @@ export default async function ClassroomDisciplinePage({
 }) {
   const { sectionId } = await params;
 
-  // `activeRole`, not `role` — a page renders through the lens. See the
+  // The one role in force — see the
   // section layout for the full note.
-  const view = await getViewContext();
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   // Same floor as the API and the tab: any capability on this section at all.
   // Filing is open to whoever was in charge at the venue, so reading is too.
-  const { capability } = await loadClassroomAccess(
-    activeRole,
-    userId,
-    sectionId
-  );
+  const { capability } = await loadClassroomAccess(role, userId, sectionId);
   // `canReadRoster` is "holds any capability at all", which is the same floor
-  // the layout has already applied — so nothing reaches this today. Converted
-  // with its six siblings so the Classroom tabs answer a wrong view the same
-  // way; see `wrongViewNoticeOrNotFound` for why all seven moved together.
-  if (!canReadRoster(capability)) {
-    return wrongViewNoticeOrNotFound({
-      view,
-      heading: 'Not one of your classes.',
-      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this isn't a class you teach or advise.`,
-      backHref: '/classroom',
-      backLabel: 'Back to your classes',
-    });
-  }
+  // the layout has already applied — so nothing reaches this today. Kept as
+  // the tab's own gate so a future change to the layout cannot quietly open it.
+  if (!canReadRoster(capability)) notFound();
 
   const supabase = await createClient();
   const [records, { data: sectionRow }, { data: rosterRows }] =

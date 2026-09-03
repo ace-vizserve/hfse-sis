@@ -130,7 +130,6 @@ const getTeacherListMock = vi.fn(async (_opts?: unknown) => [
 vi.mock('@/lib/auth/staff-list', () => ({
   getStaffDisplayNameById: () => getStaffDisplayNameByIdMock(),
   getTeacherList: (opts?: unknown) => getTeacherListMock(opts),
-  getAssignableStaffList: (opts?: unknown) => getTeacherListMock(opts),
 }));
 
 // `createServiceClient()` is called directly inside the call graph of

@@ -450,16 +450,11 @@ export const HOME_TODO_SOURCES: TodoSource[] = [
  * `school_admin` is the only role that gets `kind: 'change-request'` rows
  * (KD #41) — every other role's rows are review-only links into the real page.
  *
- * ⚠ TWO ROLES, AND THEY DO DIFFERENT JOBS (role-switcher Phase 3b, 2026-09-02).
- * `viewRole` picks the ROWS (`source.roles`), so a school_admin in the Teacher
- * view is shown a teacher's panel — the marks and write-ups she owes, not the
- * approvals her account owes. `role` keeps CHECKING them: `capabilities` is the
- * real role's grant set, because the destination page will ask the real role's
- * question when she gets there. `role` authorises, `viewRole` renders.
- *
- * This is what makes Phase 3a's `profile` argument stop being inert — every row
- * that reads `profile.*` sits under a `teacher`-only `roles` list, so before
- * this a school_admin never reached one whatever her profile said.
+ * ⚠ ONE ROLE PICKS THE ROWS AND CHECKS THEM. An earlier design threaded a
+ * second "view" role that chose the rows (`source.roles`) while `capabilities`
+ * still answered for the account's real role. Switching now rewrites the role
+ * itself, so a teaching admin working as a teacher is shown a teacher's panel
+ * AND checked as a teacher — the two cannot disagree.
  */
 export async function getHomeTodos(
   role: Role,
@@ -473,17 +468,13 @@ export async function getHomeTodos(
   // Same safe direction: a caller that forgets these drops the capability-gated
   // rows rather than offering a link that might bounce. Production callers pass
   // getCapabilitiesForRole(role) — see app/(dashboard)/page.tsx.
-  capabilities: readonly Capability[] = [],
-  // The active-role lens. Defaults to `role`, so every caller that has no lens
-  // to offer — and every account with a single view — gets exactly today's
-  // panel.
-  viewRole: Role = role
+  capabilities: readonly Capability[] = []
 ): Promise<HomeTodoItem[]> {
   const ctx: TodoContext = { ayCode, userId, profile };
 
   const sources = HOME_TODO_SOURCES.filter(
     (source) =>
-      source.roles.includes(viewRole) &&
+      source.roles.includes(role) &&
       (!source.requiresCapability ||
         can(capabilities, source.requiresCapability))
   );

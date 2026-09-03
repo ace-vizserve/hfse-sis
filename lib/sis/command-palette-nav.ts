@@ -345,46 +345,27 @@ export const NAV_ENTRIES: NavEntry[] = [
 // `undefined`, so a caller that forgets to thread capabilities hides the gated
 // entries rather than offering ones that bounce on arrival.
 //
-// ⚠ `viewRole` IS THE ACTIVE-ROLE LENS, AND IT INTERSECTS — IT NEVER REPLACES
-// `role`. Both halves of the palette are lensed (role-switcher Phase 3c): the
-// `hiddenModules` list arrives already narrowed by `hiddenModulesForView`, and
-// the per-entry role gate below now has to admit the REAL role AND the view.
-//
-// Why an intersection rather than "gate on the view":
-//
-//   • the real role must stay in the test because it is what the proxy will
-//     apply on arrival — dropping it would let a lens ADVERTISE a page the
-//     account cannot open, which is KD #173's dead end wearing a new hat;
-//   • the view must be in the test because `isHiddenModuleHref` only removes
-//     whole MODULES. `/markbook/audit-log`, `/markbook/change-requests` and
-//     `/sis/admin/staff/accounts` live inside modules a teacher view can still
-//     open, so the module filter alone leaves them on offer while Phase 3b has
-//     already taken their sidebar rows away.
-//
-// That is the "modules are offered in FIVE places" invariant on
-// `isHiddenModuleHref` — the palette is the fifth, and it was the one left
-// disagreeing with the other four after Phase 3b. `capabilities` is
-// deliberately NOT lensed here (nor anywhere): it is the real role's grant set
-// and answers "will the page keep you once you arrive", which a chosen view
-// cannot change.
-//
-// Defaults to `role`, so every caller that does not pass it — and every plain
-// teacher, whose entitled set is exactly `['teacher']` — behaves as before.
+// ⚠ ONE ROLE. An earlier design threaded a second "view" role through here and
+// intersected the two, so that a teaching admin could be offered a teacher's
+// palette while her account stayed an admin's. An account now holds a list of
+// roles with one in force, so switching changes `role` itself — and the palette
+// answers for whoever she is working as, which is also whoever the proxy will
+// apply on arrival. That is the "modules are offered in FIVE places" invariant
+// on `isHiddenModuleHref`: the palette is the fifth, and it now cannot disagree
+// with the other four because all five read the same value.
 export function visibleNavEntries(
   role: Role | null,
   capabilities: readonly Capability[] | undefined,
-  hiddenModules: readonly SidebarModule[] = [],
-  viewRole: Role | null = role
+  hiddenModules: readonly SidebarModule[] = []
 ): NavEntry[] {
-  const admits = (entry: NavEntry, r: Role | null): boolean =>
+  const admits = (entry: NavEntry): boolean =>
     entry.requiresRoles
-      ? !!r && entry.requiresRoles.includes(r)
-      : isRouteAllowed(hrefPathname(entry.href), r);
+      ? !!role && entry.requiresRoles.includes(role)
+      : isRouteAllowed(hrefPathname(entry.href), role);
 
   return NAV_ENTRIES.filter(
     (entry) =>
-      admits(entry, role) &&
-      admits(entry, viewRole) &&
+      admits(entry) &&
       !isHiddenModuleHref(entry.href, hiddenModules) &&
       (!entry.requiresCapability || can(capabilities, entry.requiresCapability))
   );

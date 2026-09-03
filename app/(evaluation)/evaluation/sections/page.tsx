@@ -26,10 +26,8 @@ import {
   listFormAdviserSectionIds,
 } from '@/lib/evaluation/queries';
 import { deriveTermShortLabels } from '@/lib/evaluation/term-short-labels';
-import { showWrongViewNotice } from '@/components/auth/wrong-view-notice';
-import { SwitchViewButton } from '@/components/view-switch/switch-view-button';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 
@@ -47,14 +45,10 @@ type LevelLite = {
 // /evaluation/sections/[sectionId], which keeps its own term switcher), not
 // before you've picked a class.
 export default async function EvaluationSectionsPickerPage() {
-  const sessionUser = await getViewContext();
+  const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  // ⚠ AN ACCESS GATE, SO IT KEEPS THE REAL ROLE — PERMANENTLY. This is a role
-  // allowlist that redirects, not a rendering choice: it decides whether the
-  // viewer may be here at all, and "role authorises, activeRole renders"
-  // (lib/auth/active-role.ts) puts it firmly on the account. Reading the lens
-  // here would also be pointless in the safe direction and dangerous in the
-  // other: every role the lens can name is already on this list.
+  // A role allowlist that redirects — it decides whether the viewer may be
+  // here at all.
   if (
     sessionUser.role !== 'teacher' &&
     sessionUser.role !== 'academic_coordinator' &&
@@ -64,10 +58,9 @@ export default async function EvaluationSectionsPickerPage() {
     redirect('/');
   }
 
-  // The lens, with the account role as the floor. Everything BELOW this line is
-  // a rendering decision — which sections to list, what to call them, whether
-  // to print the adviser column (role-switcher Phase 3c).
-  const view = sessionUser.activeRole ?? sessionUser.role;
+  // Everything BELOW this line is a rendering decision — which sections to
+  // list, what to call them, whether to print the adviser column.
+  const view = sessionUser.role;
 
   const supabase = await createClient();
 
@@ -212,10 +205,6 @@ export default async function EvaluationSectionsPickerPage() {
   // called, and `isTeacher` (plus the `listFormAdviserSectionIds` filter
   // further up) decides everything. Import and claim both removed.
   const isTeacher = view === 'teacher';
-  // Is the narrowing above the result of a VIEW this person chose, rather than
-  // of the account they hold? Only ever true for the handful of accounts that
-  // hold a second lens; see the empty state below for what it changes.
-  const narrowedByView = showWrongViewNotice(sessionUser);
 
   const levels = Array.from(
     new Map(
@@ -327,28 +316,10 @@ export default async function EvaluationSectionsPickerPage() {
               {isTeacher ? 'No advisory sections.' : 'No sections in this AY.'}
             </p>
             <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-              {/* Three states, not two — the middle one is new. Now that this
-                  page narrows on the VIEW, an admin who advises no class sees
-                  an empty list the moment she switches to Teacher, and "ask the
-                  academic coordinator" reads as nonsense to someone who could
-                  make the assignment herself. Twin of the same line on
-                  /attendance/sections, down to the ROLE_LABEL — the lens is
-                  whatever `activeRole` says, so writing "Teacher" here would be
-                  a caption that lies the moment a second lens exists. */}
-              {isTeacher && narrowedByView
-                ? `You're viewing as ${ROLE_LABEL[sessionUser.activeRole!]}, which shows only the classes you are the form adviser for.`
-                : isTeacher
-                  ? 'You have no form adviser assignments. Ask the academic coordinator to assign one in SIS Admin → Sections.'
-                  : 'Create sections in SIS Admin → Sections for the current academic year.'}
+              {isTeacher
+                ? 'You have no form adviser assignments. Ask the academic coordinator to assign one in SIS Admin → Sections.'
+                : 'Create sections in SIS Admin → Sections for the current academic year.'}
             </p>
-            {/* Paired with the switch, like every other lens refusal in the
-                app — and this button returns to this same page afterwards. */}
-            {isTeacher && narrowedByView && sessionUser.role && (
-              <SwitchViewButton
-                target={sessionUser.role}
-                activeRole={sessionUser.activeRole}
-              />
-            )}
           </CardContent>
         </Card>
       ) : (

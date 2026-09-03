@@ -18,30 +18,15 @@
 // panels that would come back empty. `canReadAttendance` / `canReadWriteups`
 // below are the single source for that decision — do not re-derive it inline.
 //
-// ⚠ WHICH ROLE THE CALLER PASSES IS THE CALLER'S DECISION, AND IT DIFFERS.
-// Since the active-role lens landed (lib/auth/active-role.ts), the six
-// `school_admin` accounts that also teach can look at the app AS a teacher:
+// ⚠ THE ROLE IS A PARAMETER AND MUST STAY ONE. This module deliberately does
+// not read the session itself: `app/api/classroom/**` gates service-client
+// reads on `loadClassroomAccess`, where RLS is not behind the call site — the
+// call site IS the boundary, and an access check that resolves its own subject
+// out of sight of the caller is one nobody can audit by reading the route.
 //
-//        role authorises.  activeRole renders.
-//
-//   • A page or layout passes `activeRole` — it is deciding what to SHOW.
-//   • An API route passes the real `role` — it is deciding what to ALLOW.
-//
-// This module deliberately does NOT read the lens itself. It cannot: the same
-// two functions serve both audiences, and `app/api/classroom/**` gates
-// service-client reads on `loadClassroomAccess`, where RLS is not behind the
-// call site — the call site IS the boundary. A helper that reached for
-// `getViewContext()` internally would put a viewer-controlled cookie inside
-// those route decisions, and `__tests__/auth/active-role-never-authorises.test.ts`
-// could not see it, because the route itself would never name the lens.
-// So the role stays a parameter. Ruled 2026-09-02 (role-switcher Phase 3a).
-//
-// The narrowing only ever runs one way, which is why this is safe. Entitlement
-// adds `'teacher'` only for an account that genuinely holds assignment rows,
-// and teacher scope is derived from those same rows — so a teaching admin in
-// the Teacher lens sees a STRICT SUBSET of what her account role already
-// reaches. A real teacher's entitled set is exactly `['teacher']`, so nothing
-// about a teacher's behaviour can change at all.
+// A `school_admin` who also teaches switches to the `teacher` role to do that
+// work, and is then scoped from her own assignment rows — a strict subset of
+// the oversight the admin role reaches.
 
 import type { Role } from '@/lib/auth/roles';
 import type {
@@ -98,14 +83,9 @@ export type ClassroomScope = {
  * Pure. Derives scope from assignment rows already loaded by
  * `loadEffectiveAssignmentsForUser`, so it is unit-testable without a database.
  *
- * ⚠ `role` IS THE ROLE TO RESOLVE SCOPE *FOR*, NOT NECESSARILY THE ACCOUNT'S.
- * Pages and layouts pass `activeRole` (the lens the viewer is looking through);
- * API routes pass the real `role` from the JWT. See the ruling at the top of
- * this file for why that choice belongs to the caller and can never move in
- * here. Passing `'teacher'` for an account whose role is `school_admin` is the
- * supported case, not a misuse: the assignments handed in are that account's
- * own, so the scope it produces is narrower than the oversight they already
- * had.
+ * ⚠ `role` IS THE ROLE TO RESOLVE SCOPE *FOR*, and it is the caller's to
+ * supply — see the ruling at the top of this file for why it can never move in
+ * here.
  *
  * A section where the user holds BOTH a form_adviser row and a
  * subject_teacher row resolves to 'adviser' — the wider capability wins,

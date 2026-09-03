@@ -15,7 +15,6 @@ import { describe, it, expect } from 'vitest';
 import {
   ADVISER_ONLY_MODULES,
   hiddenModulesForTeacher,
-  hiddenModulesForView,
   isHiddenModuleHref,
   moduleAdmitsRole,
   teachingProfileFor,
@@ -318,59 +317,5 @@ describe('moduleAdmitsRole — the shared front-door question', () => {
     ] as const) {
       expect(moduleAdmitsRole(m, 'teacher'), m).toBe(true);
     }
-  });
-});
-
-describe('hiddenModulesForView — what the LENS takes away', () => {
-  it('removes the four a teacher cannot open, in switcher order', () => {
-    expect(hiddenModulesForView('school_admin', 'teacher')).toEqual([
-      'admissions',
-      'records',
-      'p-files',
-      'sis',
-    ]);
-  });
-
-  it('⚠ and never the two the ASSIGNMENT rule owns', () => {
-    // Attendance and Evaluation admit a teacher, so this rule has nothing to
-    // say about them. Whether a particular teacher can use them is
-    // `hiddenModulesForTeacher`'s question, and it is asked of the REAL role.
-    const hidden = hiddenModulesForView('school_admin', 'teacher');
-    expect(hidden).not.toContain('attendance');
-    expect(hidden).not.toContain('evaluation');
-    expect(hidden).not.toContain('markbook');
-    expect(hidden).not.toContain('classroom');
-  });
-
-  it('takes nothing when the view is the account role', () => {
-    for (const role of ROLES) {
-      expect(hiddenModulesForView(role, role), `${role}`).toEqual([]);
-      // The default argument is the same statement, made by omission — every
-      // caller that has no lens to offer must get today's behaviour.
-      expect(hiddenModulesForView(role), `${role} (implicit)`).toEqual([]);
-    }
-  });
-
-  it('takes nothing from a plain teacher, who has only one view', () => {
-    expect(hiddenModulesForView('teacher', 'teacher')).toEqual([]);
-  });
-
-  it('names only modules the ACCOUNT could otherwise have reached', () => {
-    // Listing a module the real role cannot open either would be true and
-    // useless — the switcher filters those on the real role before it consults
-    // this list — and it would read as though the lens had taken something
-    // away when it had not.
-    const hidden = hiddenModulesForView('p_file_officer', 'teacher');
-    expect(hidden).toContain('p-files');
-    expect(hidden).not.toContain('records');
-    expect(hidden).not.toContain('sis');
-  });
-
-  it('handles a null role without inventing a narrowing', () => {
-    // A parent. `getEntitledRoles` gives them no lens at all, so this pair
-    // cannot arise — but the type allows it and returning a list here would
-    // mean hiding modules from someone who has none.
-    expect(hiddenModulesForView(null, null)).toEqual([]);
-    expect(hiddenModulesForView(null, 'teacher')).toEqual([]);
   });
 });

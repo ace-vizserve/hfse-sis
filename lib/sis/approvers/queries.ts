@@ -3,6 +3,11 @@ import { cache } from 'react';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { getRoleCapabilities } from '@/lib/auth/permission-map';
+import {
+  resolveActiveRoleFromMetadata,
+  resolveRoleSetFromMetadata,
+  type Role,
+} from '@/lib/auth/roles';
 import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
 
 export type ApproverUser = {
@@ -10,7 +15,8 @@ export type ApproverUser = {
   user_id: string;
   email: string;
   display_name: string | null;
-  role: string | null;
+  /** The role this account is working under — a label, not a gate. */
+  role: Role | null;
   assigned_at: string;
 };
 
@@ -56,10 +62,13 @@ export async function listApproversForFlow(
     .map((a) => {
       const u = userById.get(a.user_id);
       if (!u) return null;
-      const role =
-        (u.app_metadata as { role?: string } | null)?.role ??
-        (u.user_metadata as { role?: string } | null)?.role ??
-        null;
+      // The role this account is working under right now — a label beside the
+      // name, not a gate. Eligibility was decided when the assignment was
+      // made, and is re-checked on every decision by the capability map.
+      const role = resolveActiveRoleFromMetadata(
+        u.app_metadata as Record<string, unknown> | null,
+        u.user_metadata as Record<string, unknown> | null
+      );
       const display_name =
         (u.user_metadata as { display_name?: string } | null)?.display_name ??
         null;
@@ -140,13 +149,21 @@ export async function listEligibleApproverCandidates(
   const users = await getAllUsers();
   const candidates = users
     .map((u) => {
+      // ⚠ EVERY ROLE THE ACCOUNT HOLDS, NOT THE ONE IT IS USING RIGHT NOW.
+      // Eligibility is a fact about the account: a school_admin who also
+      // teaches may approve change requests whether or not she happens to be
+      // working as a teacher this afternoon, and a list that dropped her
+      // because of that would be unexplainable to whoever is reading it. The
+      // role reported back is the one that MADE her eligible, so the label
+      // beside her name always holds the capability the page is about.
       const role =
-        (u.app_metadata as { role?: string } | null)?.role ??
-        (u.user_metadata as { role?: string } | null)?.role ??
-        null;
+        resolveRoleSetFromMetadata(
+          u.app_metadata as Record<string, unknown> | null,
+          u.user_metadata as Record<string, unknown> | null
+        ).find((r) => eligibleRoles.has(r)) ?? null;
       return { user_id: u.id, email: u.email ?? '', role };
     })
-    .filter((u) => u.role != null && eligibleRoles.has(u.role))
+    .filter((u) => u.role != null)
     .filter((u) => u.email !== '');
 
   const { data: existing } = await service

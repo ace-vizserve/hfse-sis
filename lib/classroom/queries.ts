@@ -8,15 +8,11 @@
 // that check exists at all, and the "Authorization" section of the Phase 4
 // brief for why the layout's own check isn't sufficient on its own.
 //
-// ⚠ `role` IS A PARAMETER AND MUST STAY ONE. Pages and layouts pass
-// `activeRole` (the active-role lens — what to SHOW); the five
-// `app/api/classroom/**` routes pass the real JWT `role` (what to ALLOW).
-// Those routes fetch with the SERVICE client, so RLS is not behind this call —
-// this is the whole boundary. If this function read `getViewContext()` itself,
-// a cookie would be deciding route access, and
-// `__tests__/auth/active-role-never-authorises.test.ts` would not catch it:
-// that guard bans a route from naming the lens, and a route delegating to a
-// helper never names it. Ruled 2026-09-02 (role-switcher Phase 3a).
+// ⚠ `role` IS A PARAMETER AND MUST STAY ONE. Pages, layouts and the five
+// `app/api/classroom/**` routes all pass the caller's own role; those routes
+// fetch with the SERVICE client, so RLS is not behind this call and this is the
+// whole boundary. Reading the session in here would move that decision out of
+// the caller's sight, which is exactly where an access check should not go.
 
 import 'server-only';
 
@@ -61,8 +57,7 @@ export type ClassroomAccess = {
 };
 
 /**
- * @param role The role to resolve access FOR — `activeRole` from a page or
- *   layout, the real JWT `role` from an API route. See the header.
+ * @param role The role to resolve access FOR — the caller's own. See the header.
  */
 export async function loadClassroomAccess(
   role: Role | null,
@@ -76,11 +71,8 @@ export async function loadClassroomAccess(
   // data, same conditions — lib/auth/assignments-cache.ts.
   //
   // The `=== 'teacher'` test is on the role PASSED IN, which is the point: a
-  // teaching admin viewing a class through the Teacher lens now takes this
-  // branch and gets her real per-section capability, where before she fell
-  // through to the oversight one. For her the memo also stops being a
-  // formality — `getViewContext()` has already made this exact call earlier in
-  // the same request to decide her entitlement, so this one folds into it.
+  // teaching admin working as a teacher takes this branch and gets her real
+  // per-section capability rather than the oversight one.
   const assignments =
     role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);

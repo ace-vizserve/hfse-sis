@@ -26,10 +26,8 @@ import type { Role } from '@/lib/auth/roles';
 
 export type GradingSheetGateInput = {
   /**
-   * The lens being rendered — `activeRole`, with the account role as its floor.
-   *
-   * NOT the account role. For the six accounts that both administer and teach,
-   * this is `'teacher'` while they are looking at the app as one.
+   * The role in force. For an account that both administers and teaches, this
+   * is `'teacher'` once they have switched to it.
    */
   viewRole: Role | null;
   /** `grading_sheets.is_locked` — the term has been committed. */

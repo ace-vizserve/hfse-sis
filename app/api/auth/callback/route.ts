@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { getUserRole } from '@/lib/auth/roles';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 
 // Supabase OAuth / magic-link / email-confirm callback.
@@ -40,14 +41,14 @@ export async function GET(request: NextRequest) {
         actor: {
           id: data.user.id,
           email: data.user.email ?? null,
-          // ⚠ READ STRAIGHT OFF `app_metadata`, NOT FROM A GATE, because this
+          // ⚠ READ STRAIGHT OFF THE ACCOUNT, NOT FROM A GATE, because this
           // fires BEFORE any gate — signing in IS the action, so there is no
           // `requireRole` above it to have already answered. This is the role
-          // the account held at the moment it signed in, which is exactly the
-          // question the column asks. Null for an account with no role yet
-          // (a parent, or a staff account still being set up).
-          role:
-            (data.user.app_metadata as { role?: string } | null)?.role ?? null,
+          // the account was working under at the moment it signed in, which is
+          // exactly the question the column asks: an account that holds two
+          // roles logs in under the one it left off in. Null for an account
+          // with no role yet (a parent, or a staff account still being set up).
+          role: getUserRole(data.user),
         },
         action: 'user.login',
         entityType: 'user_account',

@@ -39,7 +39,6 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getRoleFromClaims } from '@/lib/auth/roles';
-import { getViewContext } from '@/lib/auth/view-context';
 import { isUserAssignedApprover } from '@/lib/sis/approvers/queries';
 import {
   formatRangeLabel,
@@ -117,41 +116,16 @@ export default async function MarkbookHome({
   // below rather than sitting between two awaits.
   const service = createServiceClient();
 
-  // ── THE LENS AND THE ACADEMIC YEAR, ONE WAVE ──────────────────────────
-  // Neither reads the other. `getViewContext()` costs a real
-  // `teacher_assignments` select for every non-teacher account (see its own
-  // header for why that is accepted), and awaiting it on its own line blocked
-  // the AY query behind it for no reason. Issued together instead.
-  //
-  // The lens takes the account role as its floor. `role` is still read from the
-  // JWT claims above and is what every loader and route behind this page
-  // authorises on; `view` decides only which dashboard this is.
-  // (role-switcher Phase 3c.)
-  const [viewer, currentAy] = await Promise.all([
-    getViewContext(),
-    getCurrentAcademicYear(service),
-  ]);
-  const view = viewer?.activeRole ?? role;
+  const currentAy = await getCurrentAcademicYear(service);
+  // Named `view` because it decides only which dashboard this is.
+  const view = role;
   const ayId = currentAy?.id ?? null;
   const ayCode = currentAy?.ay_code ?? '';
 
-  // ⚠ ALL THREE ON THE LENS. They are not gates — every page they link to
-  // re-checks, and `/markbook/report-cards` and `/markbook/audit-log` both
-  // refuse a teacher on their own — so the only thing they decide is which
-  // dashboard a viewer is looking at. Left on the account role, a teaching
-  // admin in the Teacher view would get her teacher priority panel and lede
-  // stacked on top of the school-wide registrar dashboard, the admin tool
-  // grid and a Report Cards card whose sidebar row Phase 3b has already
-  // removed from this view. That is the half-lensed page this phase exists to
-  // remove, and it is the §3 ruling applied to a dashboard: in the Teacher
-  // view, controls that exist only for oversight roles are hidden.
-  //
-  // `canSeeGrading` names `teacher` itself, so it stays true in both views —
-  // the grading card is the one card a teacher needs, and it becomes the
-  // primary action once `canSeeAdmin` goes.
-  //
-  // Narrowing only, and it is what stops six or seven school-wide loaders
-  // firing for a dashboard she is not being shown.
+  // Not gates — every page these link to re-checks, and `/markbook/report-cards`
+  // and `/markbook/audit-log` both refuse a teacher on their own. All they
+  // decide is which dashboard the viewer is looking at, and which of the six or
+  // seven school-wide loaders below fire at all.
   const canSeeAdmin =
     view === 'academic_coordinator' ||
     view === 'school_admin' ||

@@ -11,9 +11,8 @@ import {
   Scale,
   Users,
 } from 'lucide-react';
-import { getViewContext } from '@/lib/auth/view-context';
 import { gradingSheetGates } from '@/lib/markbook/grading-gates';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   loadPriorTermGrades,
@@ -130,13 +129,12 @@ export default async function GradingSheetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const sessionUser = await getViewContext();
+  const sessionUser = await getSessionUser();
   const role: Role | null = sessionUser?.role ?? null;
-  // The lens, with the account role as the floor (role-switcher Phase 3c).
-  // `role` still authorises: every write on this page goes through
-  // PATCH /api/grading-sheets/[id]/… , which reads the JWT role and has never
-  // seen this value.
-  const view: Role | null = sessionUser?.activeRole ?? role;
+  // Named `view` for the gate flags below; every write on this page goes
+  // through PATCH /api/grading-sheets/[id]/… , which reads the same role off
+  // the JWT.
+  const view: Role | null = role;
 
   // ⚠ THE FIVE GATE FLAGS ARE RESOLVED IN ONE PLACE FURTHER DOWN, once the
   // sheet's lock state and this viewer's assignment are both known —

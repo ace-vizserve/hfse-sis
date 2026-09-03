@@ -55,7 +55,7 @@ import {
   getSubmissionVelocityRange,
 } from '@/lib/evaluation/dashboard';
 import { buildAllRowSets } from '@/lib/evaluation/drill';
-import { getViewContext } from '@/lib/auth/view-context';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
 
 // Evaluation module landing page. The real work happens on /evaluation/sections
@@ -74,27 +74,17 @@ export default async function EvaluationHub({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
-  const sessionUser = await getViewContext();
+  const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const resolvedSearch = await searchParams;
 
-  // The lens, with the account role as the floor (role-switcher Phase 3c).
-  // `sessionUser.role` still authorises — nothing below this line is a gate,
-  // and every loader re-checks.
-  const view = sessionUser.activeRole ?? sessionUser.role;
+  const view = sessionUser.role;
 
-  // ⚠ ON THE LENS, NOT THE ACCOUNT ROLE. `canToggle` is the oversight switch
-  // for this whole page: the chase KPIs, the registrar priority panel, the
-  // comparison toolbar and the two hub cards that point at
-  // /evaluation/virtue-themes and /sis/calendar. Phase 3b already took both of
-  // those rows out of the Teacher view's Evaluation sidebar, so leaving this on
-  // the account role would leave the page arguing with its own nav — and it is
-  // the §3 ruling besides: in the Teacher view, controls that exist only for
-  // oversight roles are hidden.
-  //
-  // It also saves work. Four loaders below are gated on it, so a teaching admin
-  // in the Teacher view no longer pays for school-wide reads she is not being
-  // shown.
+  // `canToggle` is the oversight switch for this whole page: the chase KPIs,
+  // the registrar priority panel, the comparison toolbar and the two hub cards
+  // that point at /evaluation/virtue-themes and /sis/calendar. It also saves
+  // work — four loaders below are gated on it, so a teacher never pays for
+  // school-wide reads she is not being shown.
   const canToggle =
     view === 'academic_coordinator' ||
     view === 'school_admin' ||

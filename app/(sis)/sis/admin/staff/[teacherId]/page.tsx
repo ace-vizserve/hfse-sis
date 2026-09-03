@@ -25,7 +25,7 @@ import {
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getAssignableStaffList } from '@/lib/auth/staff-list';
+import { getTeacherList } from '@/lib/auth/staff-list';
 import {
   ASSIGNMENT_ROLE_LABELS,
   isAdviserRole,
@@ -76,7 +76,7 @@ export default async function TeacherClassesPage({
     // what POST /api/relief/book and PATCH /api/teacher-assignments/[id] will
     // accept — teaching admins cover lessons here, and a teacher-only list
     // could not record it.
-    getAssignableStaffList(),
+    getTeacherList(),
     getSessionUser().then((u) =>
       u?.role ? getCapabilitiesForRole(u.role) : []
     ),

@@ -8,10 +8,7 @@ import { subjectTeacherPairs } from '@/lib/auth/teacher-assignments';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadReportCard } from '@/lib/classroom/scope';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
-import { wrongViewNoticeOrNotFound } from '@/components/auth/wrong-view-notice';
-import { ROLE_LABEL } from '@/lib/auth/role-labels';
-import { getViewContext } from '@/lib/auth/view-context';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 type SubjectLite = { id: string; code: string; name: string };
@@ -46,29 +43,17 @@ export default async function ClassroomGradesPage({
   const { sectionId } = await params;
   const sp = await searchParams;
 
-  // `activeRole`, not `role` — a page renders through the lens. See the
-  // section layout for the full note.
-  const view = await getViewContext();
+  // The one role in force — see the section layout for the full note.
+  const view = await getSessionUser();
   if (!view) redirect('/login');
-  const { id: userId, activeRole } = view;
+  const { id: userId, role } = view;
 
   const { capability, substantiveCapability, assignments } =
-    await loadClassroomAccess(activeRole, userId, sectionId);
+    await loadClassroomAccess(role, userId, sectionId);
   // The layout's own gate refuses this case first, so nothing reaches here
-  // today. Converted anyway (role-switcher Phase 3c): the two tabs whose gates
-  // ARE reachable — Attendance and Write-ups — now explain themselves, and a
-  // sibling that still 404s silently is one edit to the layout away from being
-  // the odd one out. Same copy as the layout, deliberately: it is the same
-  // refusal for the same reason.
-  if (!capability) {
-    return wrongViewNoticeOrNotFound({
-      view,
-      heading: 'Not one of your classes.',
-      body: `You're viewing as ${ROLE_LABEL[view.activeRole!]}, and this isn't a class you teach or advise.`,
-      backHref: '/classroom',
-      backLabel: 'Back to your classes',
-    });
-  }
+  // today. Kept as the tab's own gate so a future change to the layout cannot
+  // quietly open it.
+  if (!capability) notFound();
 
   const supabase = await createClient();
   const { data: section } = await supabase

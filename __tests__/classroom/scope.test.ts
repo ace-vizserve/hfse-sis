@@ -213,17 +213,17 @@ describe('capability gates mirror RLS', () => {
   });
 });
 
-// ── The active-role lens (role-switcher Phase 3a) ─────────────────────────
+// ── An account that holds two roles ───────────────────────────────────────
 //
 // Six live `school_admin` accounts also teach, four as the form adviser of
-// record. `resolveClassroomScope` is what makes the two views differ: a page
-// hands it `activeRole`, an API route hands it the real `role`, and the SAME
-// account and the SAME assignment rows must produce two different answers.
+// record. Once one of them is granted the `teacher` role and switches into it,
+// `resolveClassroomScope` is handed the SAME assignment rows under a different
+// role and must produce a different answer.
 //
 // These cases are written as the pair, not as two separate assertions, because
-// the property that matters is the RELATIONSHIP between them — the teacher
-// view must be a strict narrowing of the admin view, never a widening.
-describe('resolveClassroomScope — the active-role lens', () => {
+// the property that matters is the RELATIONSHIP between them — working as a
+// teacher must be a strict narrowing of working as an admin, never a widening.
+describe('resolveClassroomScope — an account that holds two roles', () => {
   const teachingAdminRows = [
     adviserRow(SECTION_A),
     subjectRow(SECTION_B, 's1'),
@@ -262,11 +262,10 @@ describe('resolveClassroomScope — the active-role lens', () => {
     }
   });
 
-  it('a plain teacher is unaffected — the lens can only ever say "teacher" for them', () => {
-    // `getEntitledRoles` returns exactly `['teacher']` for a teacher, so
-    // `activeRole` is always `'teacher'` and that is the only call that can
-    // happen for them. Pinned because "nothing about a teacher's behaviour can
-    // change" is the claim the whole phase rests on.
+  it('a plain teacher is unaffected — there is only one role to be in', () => {
+    // A single-role account has nothing to switch to, so `'teacher'` is the
+    // only call that can happen for them. Pinned because "nothing about a
+    // teacher's behaviour can change" is the claim the whole change rests on.
     //
     // Stated as the WHOLE expected scope rather than by comparing the call
     // with itself: an earlier version of this test asserted
@@ -288,10 +287,9 @@ describe('resolveClassroomScope — the active-role lens', () => {
     });
   });
 
-  it('an oversight role with no assignments is unaffected in either view', () => {
-    // An admin who does not teach is never offered the teacher lens at all
-    // (`getEntitledRoles` adds it only on assignment rows), so her only
-    // reachable answer is the oversight one — and it must not have moved.
+  it('an oversight role with no assignments is unaffected in either role', () => {
+    // An admin who does not teach is never granted the teacher role, so her
+    // only reachable answer is the oversight one — and it must not have moved.
     const adminView = resolveClassroomScope('academic_coordinator', []);
     expect(adminView.isOversight).toBe(true);
     expect(adminView.sectionIds).toBeNull();
