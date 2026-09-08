@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
+import { FeedbackSheet } from '@/components/feedback-sheet';
 import { CommandPaletteTrigger } from '@/components/sis/command-palette';
 import { TopbarModuleSwitcher } from '@/components/topbar-module-switcher';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
@@ -48,8 +49,16 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md">
         <TopbarModuleSwitcher role={role} hiddenModules={hiddenModules} />
-        <div className="ml-auto w-full max-w-sm">
-          <CommandPaletteTrigger placeholder="Search students or navigate…" />
+        {/* The width cap moved from the palette to this row: the palette now
+            shares the space with the feedback button, and a `w-full` child of
+            a content-sized flex parent has no definite percentage to resolve
+            against. `min-w-0` lets the palette absorb the squeeze instead of
+            shoving the button off the edge. */}
+        <div className="ml-auto flex w-full max-w-lg items-center justify-end gap-3">
+          <div className="min-w-0 flex-1">
+            <CommandPaletteTrigger placeholder="Search students or navigate…" />
+          </div>
+          <FeedbackSheet />
         </div>
       </header>
       <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">

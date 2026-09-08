@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/supabase/server';
 import { ModuleSidebar } from '@/components/module-sidebar';
+import { FeedbackSheet } from '@/components/feedback-sheet';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { AyBanner } from '@/components/sis/ay-banner';
 import {
@@ -116,7 +117,8 @@ export default async function RecordsLayout({
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
           <div className="flex items-center w-full mx-auto max-w-[1440px]">
             <SidebarTrigger className="-ml-1" />
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <FeedbackSheet />
               <NotificationBell
                 role={role}
                 userId={id}
