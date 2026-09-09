@@ -314,6 +314,32 @@ const ROSTER: RosterEntry[] = [
     role: 'teacher',
     group: 'Teachers - Secondary',
   },
+  {
+    // Added 2026-09-08 from `Teachers Deployment_Updated 29 Jun 26_Teacherscopy
+    // .xlsx`, whose Teachers List names 26 teachers. NONE of them needed an
+    // account — a preview on 2026-09-09 created 0.
+    //
+    // ⚠ THIS ROW DELIBERATELY REPORTS MISMATCH RATHER THAN CREATING ANYTHING.
+    // He already holds an account under this email with role `school_admin`,
+    // so the workbook and the system disagree about what he is. That is the
+    // same disagreement as Mae Juni, Melissa Balantac, Lhen Mendoza, Koh Suat
+    // Hoon and Chandana Dileep — all six teach in the timetable while holding
+    // an admin role here — and the answer for every one of them is a ROLE
+    // GRANT, not an account: one person, one account, and a role LIST decides
+    // what they may do (KD #206).
+    //
+    // Left in place on purpose. The script never re-roles or password-resets
+    // an existing account, so this row cannot do harm, and it keeps printing
+    // MISMATCH until somebody grants him `teacher` — at which point his role
+    // set contains it and the row falls quiet on its own. Deleting it would
+    // just remove the reminder. Do NOT add the other five: they are already in
+    // this roster under their admin roles, and a second row per person would
+    // collide with the first.
+    fullName: 'Muhammad Hanafi Bin Rubaai',
+    email: 'muhammad.hanafi@hfse.edu.sg',
+    role: 'teacher',
+    group: 'Teachers - Secondary',
+  },
 
   // Relief, part-time. Two were named on 2026-08-25; only one is new here.
   // ⚠ Mr Chong Jun Hien was named in that same message but is NOT new — he is
