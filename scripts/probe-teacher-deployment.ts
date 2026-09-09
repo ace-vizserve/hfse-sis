@@ -323,6 +323,64 @@ async function main() {
   console.log(`\nBLOCKED (${blocked.length}):`);
   blocked.forEach((l) => console.log(l));
 
+  // ⚠ The counts do not have to agree, and when they disagree it matters. The
+  // workbook names one adviser per class it deploys; the database holds every
+  // section that exists. A section the timetable never mentions has no adviser
+  // NAMED ANYWHERE — which is a real gap in the deployment, not a parsing
+  // failure, and is invisible if you only read the list above.
+  const coveredSectionIds = new Set<string>();
+  for (const { classLabel } of advisers) {
+    const r = resolveSection(classLabel);
+    if (r.ok) coveredSectionIds.add(r.section.id);
+  }
+  const uncovered = sections.filter((s) => !coveredSectionIds.has(s.id));
+  console.log(
+    `\nSECTIONS THE WORKBOOK NAMES NO ADVISER FOR (${uncovered.length} of ${sections.length}):`
+  );
+  if (uncovered.length === 0) console.log('  (none)');
+  uncovered.forEach((s) =>
+    console.log(`  ${levelCodeOf(s).padEnd(4)} ${s.name}`)
+  );
+
+  // ── 1b. What the database holds RIGHT NOW ────────────────────────────────
+  // The list above is what the workbook PROPOSES. This is what is actually
+  // stored. They are different questions, and conflating them is how you end
+  // up reporting a class as advised when nothing has been written yet.
+  const { data: existing } = await service
+    .from('teacher_assignments')
+    .select('section_id, teacher_user_id')
+    .eq('role', 'form_adviser')
+    .in(
+      'section_id',
+      sections.map((s) => s.id)
+    );
+  const currentBySection = new Map(
+    ((existing ?? []) as { section_id: string; teacher_user_id: string }[]).map(
+      (r) => [r.section_id, r.teacher_user_id]
+    )
+  );
+  const emailById = new Map(users.map((u) => [u.id, u.email ?? '(no email)']));
+
+  console.log('\n═══ 1b. FORM ADVISERS STORED TODAY ═══\n');
+  const proposedBySection = new Map<string, string>();
+  for (const { teacher, classLabel } of advisers) {
+    const r = resolveSection(classLabel);
+    if (r.ok) proposedBySection.set(r.section.id, teacher);
+  }
+  for (const s of [...sections].sort((a, b) =>
+    `${levelCodeOf(a)}${a.name}`.localeCompare(`${levelCodeOf(b)}${b.name}`)
+  )) {
+    const cur = currentBySection.get(s.id);
+    const curLabel = cur ? emailById.get(cur) : 'NONE';
+    const prop = proposedBySection.get(s.id) ?? '—';
+    console.log(
+      `  ${levelCodeOf(s).padEnd(4)} ${s.name.padEnd(16)} stored: ${String(curLabel).padEnd(34)} workbook: ${prop}`
+    );
+  }
+  console.log(
+    `\n  ${currentBySection.size} of ${sections.length} sections have a stored form adviser.`
+  );
+
   // ── 2. Subject cells ─────────────────────────────────────────────────────
   // Counted and sampled, NOT parsed into assignments. The point of this
   // section is to show how much of the grid is well-formed enough to be worth
