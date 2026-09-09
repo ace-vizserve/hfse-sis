@@ -141,6 +141,38 @@ function norm(s: string): string {
 }
 
 /**
+ * Strip everything the SIS does not model.
+ *
+ * ⚠ `teacher_assignments` has NO TIME DIMENSION — it is (teacher, section,
+ * subject, role) and nothing else. So every clock time, day name and day
+ * abbreviation in these cells is noise, not difficulty. Treating it as
+ * difficulty is what made an earlier pass call `P4 Trust STAR (Tu, W) P5
+ * Commitment - STAR (Th F)` unparseable; drop the days and it is plainly two
+ * assignments of the same subject to two classes.
+ *
+ * Order matters: clock times before day letters, or the `F` in a time range
+ * survives as a phantom Friday.
+ */
+function stripSchedule(text: string): string {
+  return (
+    text
+      // 8:30 - 9:15, (10:45 - 11:45), `10:30
+      .replace(
+        /`?\d{1,2}:\d{2}\s*(?:[-–]\s*\d{1,2}:\d{2})?\s*(?:am|pm)?/gi,
+        ' '
+      )
+      // Full and short day names, including the run-together "MTW" and the
+      // bare single letters the sheet uses (Mo, Tu, W, Th, F).
+      .replace(
+        /\b(mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|mon|tues?|wed|thurs?|thu|fri|mtw|mo|tu|th|fr|w|f|m)\b/gi,
+        ' '
+      )
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+/**
  * The secondary stream shorthand, expanded.
  *
  * The school writes `Sec 1D1` / `Sec 2I2`; the sections are named
@@ -262,7 +294,8 @@ async function main() {
   console.log(`Academic year : ${ay.ay_code}`);
   console.log(`Sections       : ${sections.length}`);
   console.log(`Subjects       : ${subjects.length}`);
-  console.log(`Accounts       : ${users.length}\n`);
+  console.log(`Accounts       : ${users.length}`);
+  console.log(`Subject names  : ${subjects.map((s) => s.name).join(', ')}\n`);
 
   // A class label resolves only when its level token matches AND exactly one
   // section in that level has a name contained in the label. Anything else is
@@ -387,25 +420,204 @@ async function main() {
   // importing at all — that is the decision it exists to inform.
   console.log('\n═══ 2. SUBJECT CELLS (evidence, not assignments) ═══\n');
 
-  let wellFormed = 0;
-  const messy: string[] = [];
-  for (const { teacher, text } of subjectCells) {
-    const m = text.match(/^(.+?)\s+[-–]\s+(.+)$/);
-    const lvlOk = m ? levelTokenOf(clean(m[1])) : null;
-    const subjOk =
-      m &&
-      subjects.some(
-        (s) => norm(m[2]).includes(norm(s.name)) || norm(m[2]) === norm(s.code)
-      );
-    if (m && lvlOk && subjOk) wellFormed++;
-    else if (messy.length < 25) messy.push(`  ${teacher.padEnd(20)} ${text}`);
+  // ⚠ MEASURE THE DATA, NOT THE PARSER. The first cut of this required a
+  // spaced hyphen between class and subject and reported 23 of 128 cells
+  // usable — but most cells simply have no separator ("P2 Honesty English"),
+  // so that number described the regex rather than the workbook. What matters
+  // is whether a cell names a class and a subject that actually EXIST, and how
+  // many of each. So: look for every real section name and every real subject
+  // name occurring anywhere in the cell.
+  //
+  // A cell naming exactly one of each is an assignment. A cell naming two
+  // classes ("P4 Trust STAR (Tu, W) P5 Commitment - STAR (Th F)") is two
+  // assignments and cannot be split without deciding which subject belongs to
+  // which class. That distinction is the whole question, so it is counted
+  // rather than glossed.
+  // How many sections each level has. A level with exactly ONE section can be
+  // named by its level alone — the sheet writes "Sec 3 Science" and "Sec 4
+  // Contemporary Art" with no virtue name, because there is only one of each.
+  // The adviser resolver already allowed this; the subject pass did not, which
+  // is what made 17 cells look like they named no class at all.
+  const perLevel = new Map<string, number>();
+  for (const s of sections)
+    perLevel.set(levelCodeOf(s), (perLevel.get(levelCodeOf(s)) ?? 0) + 1);
+
+  // The school's own words for two subjects. STAR ("Sports, Talent, Arts and
+  // Rhythm") is what the timetable calls MAPEH throughout, and the sheet
+  // misspells two others. Written out rather than fuzzy-matched, same reason as
+  // the teacher aliases.
+  const SUBJECT_ALIASES: Record<string, string[]> = {
+    MAPEH: ['star'],
+    Mathematics: ['mathermatics'],
+    'Pastoral Ministry and Personal Development': ['pastrolministry'],
+    'Mother Tongue': ['mothertingue'],
+  };
+  // ⚠ "Homeroom and Values Education" is NOT in this table on purpose. It
+  // appears in eleven cells and is not a subject in `subjects` — it is the form
+  // adviser's own pastoral period, already represented by the form_adviser row.
+  // Aliasing it to something would invent a subject teacher for a subject the
+  // school does not grade.
+  //
+  // "MTW" is also left alone. It reads as Mother Tongue in Ms. Jasmine's and
+  // Ms. Li's cells and as Mon/Tue/Wed everywhere else — including one cell that
+  // uses both. Neither of those two teachers has an account (no email on the
+  // roster), so resolving it would produce assignments that cannot be written
+  // anyway.
+  const subjectKeys = subjects.map((s) => ({
+    name: s.name,
+    keys: [norm(s.name), ...(SUBJECT_ALIASES[s.name] ?? []).map(norm)],
+  }));
+
+  const sectionLabels = sections.map((s) => ({
+    label: `${levelCodeOf(s)} ${s.name}`,
+    // Both spellings the workbook uses: "P3 Courageous", and the secondary
+    // shorthand "Sec 1D1" for "S1 Discipline 1".
+    keys: [
+      norm(`${levelCodeOf(s)}${s.name}`),
+      norm(
+        `Sec${levelCodeOf(s).replace(/^S/, '')}${s.name
+          .replace(/^Discipline\s*/i, 'D')
+          .replace(/^Integrity\s*/i, 'I')}`
+      ),
+      // Level-only, and ONLY when the level holds one section — otherwise
+      // "Sec 1" would match both Discipline classes and silently pick one.
+      ...(perLevel.get(levelCodeOf(s)) === 1
+        ? [norm(levelCodeOf(s)), norm(`Sec${levelCodeOf(s).replace(/^S/, '')}`)]
+        : []),
+    ],
+  }));
+
+  // Positional extraction. A cell can name several classes, and the subject
+  // that belongs to each is the text FOLLOWING it — "P4 Trust STAR ... P5
+  // Commitment - STAR ..." is two pairs, not a four-way ambiguity. So find
+  // where each class name starts, cut the cell at those points, and read the
+  // subjects out of each piece. Text before the first class attaches to it,
+  // because the sheet sometimes leads with the subject ("Science P1 ...").
+  function pairsIn(text: string): { section: string; subject: string }[] {
+    const stripped = stripSchedule(text);
+    const n = norm(stripped);
+
+    // Map each normalised index back to nothing useful, so work in normalised
+    // space throughout: find the earliest normalised offset of every class.
+    const found: { label: string; at: number }[] = [];
+    for (const s of sectionLabels) {
+      let best = -1;
+      for (const k of s.keys) {
+        const i = n.indexOf(k);
+        if (i !== -1 && (best === -1 || i < best)) best = i;
+      }
+      if (best !== -1) found.push({ label: s.label, at: best });
+    }
+    if (found.length === 0) return [];
+    found.sort((a, b) => a.at - b.at);
+
+    const out: { section: string; subject: string }[] = [];
+    for (let i = 0; i < found.length; i++) {
+      const from = i === 0 ? 0 : found[i].at;
+      const to = i + 1 < found.length ? found[i + 1].at : n.length;
+      const segment = n.slice(from, to);
+      for (const subj of subjectKeys) {
+        if (subj.keys.some((k) => segment.includes(k)))
+          out.push({ section: found[i].label, subject: subj.name });
+      }
+    }
+    return out;
   }
 
-  console.log(`Total cells        : ${subjectCells.length}`);
-  console.log(`Cleanly parseable  : ${wellFormed}`);
-  console.log(`Needs a human      : ${subjectCells.length - wellFormed}\n`);
-  console.log('Sample of what does not parse:');
-  messy.forEach((l) => console.log(l));
+  let resolvedCells = 0;
+  let noClass = 0;
+  let classNoSubject = 0;
+  const samples: string[] = [];
+
+  for (const { teacher, text } of subjectCells) {
+    const pairs = pairsIn(text);
+    if (pairs.length > 0) {
+      resolvedCells++;
+      continue;
+    }
+    const n = norm(stripSchedule(text));
+    const hasClass = sectionLabels.some((s) =>
+      s.keys.some((k) => n.includes(k))
+    );
+    if (!hasClass) {
+      noClass++;
+      if (samples.length < 14)
+        samples.push(`  [no known class] ${teacher}: ${text}`);
+    } else {
+      classNoSubject++;
+      if (samples.length < 14)
+        samples.push(`  [no known subject] ${teacher}: ${text}`);
+    }
+  }
+  const oneEach = resolvedCells;
+  const multiClass = 0;
+  const noSubject = classNoSubject;
+
+  void multiClass;
+  console.log(`Total cells                    : ${subjectCells.length}`);
+  console.log(`Yield at least one assignment  : ${oneEach}`);
+  console.log(`Class found, no known subject  : ${noSubject}`);
+  console.log(`No known class named           : ${noClass}\n`);
+  console.log('Samples of what does not resolve to a single assignment:');
+  samples.forEach((l) => console.log(l));
+
+  // ⚠ CELLS ARE NOT ASSIGNMENTS. A timetable repeats the same teacher, class
+  // and subject once per period, so 128 cells describe far fewer distinct
+  // teaching assignments. The count that decides whether an import is worth
+  // building is the number of DISTINCT (teacher, class, subject) triples — and
+  // whether any two of them disagree.
+  const triples = new Map<
+    string,
+    { teacher: string; section: string; subject: string }
+  >();
+  // A class+subject claimed by two different teachers is a real conflict, not
+  // a parsing artefact — the unique index allows one subject teacher per class
+  // — so collect them rather than letting the last writer win.
+  const claims = new Map<string, Set<string>>();
+  for (const { teacher, text } of subjectCells) {
+    const email = ALIASES[teacher];
+    if (!email || !userByEmail.has(email)) continue;
+    for (const p of pairsIn(text)) {
+      triples.set(`${email}|${p.section}|${p.subject}`, {
+        teacher: email,
+        section: p.section,
+        subject: p.subject,
+      });
+      const slot = `${p.section}|${p.subject}`;
+      if (!claims.has(slot)) claims.set(slot, new Set());
+      claims.get(slot)!.add(email);
+    }
+  }
+
+  console.log(
+    `\nDISTINCT (teacher, class, subject) from the clean cells: ${triples.size}`
+  );
+  const bySection = new Map<string, number>();
+  for (const t of triples.values())
+    bySection.set(t.section, (bySection.get(t.section) ?? 0) + 1);
+  console.log('  subjects covered per class:');
+  for (const s of [...bySection.entries()].sort())
+    console.log(`    ${s[0].padEnd(18)} ${s[1]}`);
+  const missing = sections
+    .map((s) => `${levelCodeOf(s)} ${s.name}`)
+    .filter((l) => !bySection.has(l));
+  if (missing.length)
+    console.log(
+      `  classes with NO subject teacher resolved: ${missing.join(', ')}`
+    );
+
+  const contested = [...claims.entries()].filter(([, who]) => who.size > 1);
+  if (contested.length) {
+    console.log(
+      `\n  ⚠ CLAIMED BY MORE THAN ONE TEACHER (${contested.length}) — one subject teacher per class is a unique index, so these need a decision before any import:`
+    );
+    for (const [slot, who] of contested) {
+      const [sec, subj] = slot.split('|');
+      console.log(
+        `    ${sec.padEnd(18)} ${subj.padEnd(22)} ${[...who].join(', ')}`
+      );
+    }
+  }
 
   // ── 3. Names the workbook uses that we cannot place ──────────────────────
   console.log('\n═══ 3. UNPLACED NAMES ═══\n');
