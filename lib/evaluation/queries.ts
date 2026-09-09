@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
+import { ADVISER_ROLES } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -227,9 +228,37 @@ export async function getWriteupProgressByTerm(
   return out;
 }
 
-// Which sections does this user advise? Returns the section_id set. For
-// teachers, scoped to `teacher_assignments.role='form_adviser'`.
-export async function listFormAdviserSectionIds(
+// ─────────────────────────────────────────────────────────────────────────
+// Two questions that used to be one
+// ─────────────────────────────────────────────────────────────────────────
+//
+// ⚠ READING A CLASS'S WRITE-UPS AND WRITING THEM ARE DIFFERENT PERMISSIONS
+// HERE, and this is the only module where they come apart.
+//
+// HFSE shares a form class between two advisers (migration 124, Sec 4
+// Excellence — "Ms Med & Ms Elaine"). A co-adviser takes the register, opens
+// the classroom, sees the grades: `is_adviser_for_section` admits them and the
+// app agrees everywhere else. But the write-up is not class work — it becomes
+// the form class adviser's comment on the report card, and that card prints
+// ONE name (KD #158). Mr Ace, 2026-09-09: "as co teacher the main FCA can only
+// write that up".
+//
+// So: `listAdvisedSectionIds` below answers WHAT MAY I SEE and includes
+// co-advisers. `listAdviserOfRecordSectionIds` answers WHAT MAY I WRITE and
+// does not — it lives in its own file, `lib/evaluation/adviser-of-record.ts`,
+// so the two are never one grep away from being "tidied" into each other and
+// so the guard can classify them apart.
+//
+// ⚠ NEITHER SEES RELIEF COVER, deliberately and unchanged: the regular adviser
+// keeps their write-ups while somebody else covers the class (Mr Ace,
+// 2026-08-11), and `evaluation_writeups` has no adviser predicate in RLS at
+// all (migration 018), so these functions are the only thing enforcing it.
+
+/**
+ * Sections this user advises in any capacity — form adviser OR co-adviser.
+ * The READ scope for the Evaluation module.
+ */
+export async function listAdvisedSectionIds(
   userId: string
 ): Promise<Set<string>> {
   const service = createServiceClient();
@@ -237,6 +266,6 @@ export async function listFormAdviserSectionIds(
     .from('teacher_assignments')
     .select('section_id')
     .eq('teacher_user_id', userId)
-    .eq('role', 'form_adviser');
+    .in('role', ADVISER_ROLES);
   return new Set((data ?? []).map((r) => r.section_id as string));
 }

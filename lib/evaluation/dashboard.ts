@@ -1,6 +1,8 @@
 import { unstable_cache } from 'next/cache';
 
 import { loadAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { isAdviserOfRecordRole } from '@/lib/evaluation/adviser-of-record';
+import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -581,7 +583,15 @@ async function loadEvaluationTeacherPriorityUncached(
 ): Promise<PriorityPayload> {
   const service = createServiceClient();
 
-  // 1. Resolve teacher's form_adviser sections.
+  // 1. Resolve the teacher's advisory sections — and it is TWO resolutions,
+  //    because a co-adviser advises a class whose write-ups are not theirs.
+  //
+  //    The COUNT below must stay of-record: telling a co-adviser "18 write-ups
+  //    pending" would put another teacher's work at the top of their dashboard
+  //    as if it were overdue on them. But "do you advise anything at all"
+  //    includes them, because the answer decides which empty state they get,
+  //    and the old one — "No advisory sections assigned" — was untrue to their
+  //    face and sat next to a sidebar offering them the module.
   const assignments = await loadAssignmentsForUser(
     service,
     input.teacherUserId
@@ -589,16 +599,27 @@ async function loadEvaluationTeacherPriorityUncached(
   const adviserSectionIds = Array.from(
     new Set(
       assignments
-        .filter((a) => a.role === 'form_adviser')
+        .filter((a) => isAdviserOfRecordRole(a.role))
         .map((a) => a.section_id)
     )
   );
+  const coAdvisesSomething =
+    adviserSectionIds.length === 0 &&
+    assignments.some((a) => isAdviserRole(a.role));
 
   if (adviserSectionIds.length === 0) {
     return {
       eyebrow: 'Priority · this term',
-      title: 'No advisory sections assigned',
-      headline: { value: 0, label: 'writeups pending', severity: 'good' },
+      title: coAdvisesSomething
+        ? 'No write-ups of your own'
+        : 'No advisory sections assigned',
+      headline: {
+        value: 0,
+        label: coAdvisesSomething
+          ? 'the form class adviser writes these'
+          : 'writeups pending',
+        severity: 'good',
+      },
       chips: [],
       cta: undefined,
       iconKey: 'pen',

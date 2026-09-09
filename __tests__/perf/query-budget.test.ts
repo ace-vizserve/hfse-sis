@@ -496,11 +496,20 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
       fixtures(),
       { maxWaves: 100 }
     );
-    // 42 round trips / 21 waves for 2 sections — the per-section fan-out this
+    // 48 round trips / 11 waves for 2 sections — the per-section fan-out this
     // surface exists to size. A fix that batches the per-section reads across
     // sections (rather than per-section Promise.all groups run one after
     // another) is the shape a later phase should be aiming at here.
-    expect(roundTrips).toBe(42);
+    //
+    // Re-measured 2026-09-09: 42 -> 48, i.e. +3 per section, from
+    // `getSectionAttendanceSummary` reading the school calendar. Depth
+    // unchanged at 11. ⚠ THE PER-SECTION FAN-OUT IS EXACTLY WHY THIS GREW BY
+    // SIX rather than three: this dashboard pays the summary's cost once per
+    // advised class, and an adviser with five classes pays it five times. The
+    // calendar read is per (term, level) and identical across sections of the
+    // same level, so it is the obvious thing for the batching phase above to
+    // hoist. Sized here so that decision has a number behind it.
+    expect(roundTrips).toBe(48);
     expect(waves).toBe(11);
   });
 });
@@ -631,7 +640,18 @@ describe('budget: classroom section page — data loading', () => {
   // whichever single loader is deepest, which is the roster-then-rows pair
   // inside `getRollupForSection` / `getWriteupProgressByTerm`: two.
   // `roundTrips` is unchanged, which is the proof nothing was dropped.
-  it('measured 2026-08-29: roundTrips=11, waves=2', async () => {
+  //
+  // Re-measured 2026-09-09: 11/2 -> 14/2. `getSectionAttendanceSummary` now
+  // reads the school calendar instead of inferring school days from the marks
+  // (it answered 6 on a term with 30), which costs three trips — the section
+  // joined to its level, the roster's enrolment windows, and the term's
+  // encodable dates. THE DEPTH IS THE NUMBER THAT MATTERS AND IT DID NOT MOVE:
+  // the calendar cannot start until the level type arrives, so holding it to
+  // two waves meant kicking `getRollupForSection` off before the await rather
+  // than inside the second Promise.all. Written down because a later reader
+  // will find that ordering odd and be tempted to tidy it — doing so costs a
+  // wave, which this assertion will catch.
+  it('measured 2026-09-09: roundTrips=14, waves=2', async () => {
     // Resolved under REAL timers, before the measured section starts — see
     // the note on runClassroomSectionPageLoader for why.
     const { getSectionStaff } = await import('@/lib/classroom/staff');
@@ -656,7 +676,7 @@ describe('budget: classroom section page — data loading', () => {
       fixtures(),
       { maxWaves: 100 }
     );
-    expect(roundTrips).toBe(11);
+    expect(roundTrips).toBe(14);
     expect(waves).toBe(2);
   });
 });

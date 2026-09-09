@@ -30,6 +30,17 @@ import { join, relative, sep } from 'node:path';
 //   name       name of record — must NEVER see relief
 //   coverage   "is the post filled at all?" — a relief must NOT satisfy these,
 //              or an unstaffed section would look staffed and publish
+//   of_record  only the ADVISER OF RECORD may do this — a co-adviser is refused
+//              even though the class is genuinely theirs. One member today, and
+//              it is a decision rather than an oversight: Mr Ace, 2026-09-09,
+//              on being shown that a co-adviser could not save a write-up —
+//              "as co teacher the main FCA can only write that up". So the
+//              write-up stays with the one name that prints on the report card.
+//              Sits BESIDE `evaluation`, not inside it: `evaluation` answers the
+//              relief question (a substitute must not write in the adviser's
+//              place) and `of_record` answers the co-role one. Two axes, and
+//              collapsing them is precisely how Evaluation missed migration 124
+//              for two weeks — see the co-role section at the bottom.
 //   crud       manages assignment/relief rows themselves; not an access answer
 //   plumbing   shared helper whose own callers carry the classification
 // CO ROLES (migration 124) CUT ACROSS ALL OF THIS, in one direction only.
@@ -37,10 +48,11 @@ import { join, relative, sep } from 'node:path';
 // `co_adviser` / `co_teacher`, so anything answering ACT must admit them too —
 // comparing `role === 'form_adviser'` there refuses access the database grants,
 // which is how a co-teacher ended up locked out of a sheet SQL had already
-// opened. Anything answering NAME or COVERAGE must NOT: a report card prints
-// one adviser, a grading sheet has one owner, and a section holding nothing but
-// a co-adviser still needs an adviser of record or publishing refuses it
-// (Mr Ace, 2026-08-27). Both halves are asserted at the bottom of this file.
+// opened. Anything answering NAME, COVERAGE or OF_RECORD must NOT: a report
+// card prints one adviser, a grading sheet has one owner, a section holding
+// nothing but a co-adviser still needs an adviser of record or publishing
+// refuses it (Mr Ace, 2026-08-27), and the write-up belongs to that same one
+// adviser (Mr Ace, 2026-09-09). Both halves are asserted at the bottom.
 //
 //   monitoring ⚠ reads cover in order to SHOW it — including cover that has not
 //              started yet (migration 123) — and never to decide anything. This
@@ -55,6 +67,7 @@ import { join, relative, sep } from 'node:path';
 type Category =
   | 'act'
   | 'evaluation'
+  | 'of_record'
   | 'name'
   | 'coverage'
   | 'crud'
@@ -135,7 +148,15 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/(markbook)/markbook/sections/page.tsx': ['act', 'name'],
 
   // ── evaluation (substantive only, no DB backstop) ───────────────────────
-  'app/api/evaluation/writeups/route.ts': ['evaluation'],
+  // The two `of_record` members, and the ONLY evaluation surfaces that keep
+  // the `form_adviser` literal: everything beside them widened to
+  // ADVISER_ROLES so a co-adviser can READ their own class's write-ups, and
+  // these did not, so they cannot write them.
+  'app/api/evaluation/writeups/route.ts': ['evaluation', 'of_record'],
+  // The write scope itself, extracted from lib/evaluation/queries.ts where it
+  // sat four lines from its read-scope twin — one `.eq` against the other's
+  // `.in`, which is a difference a sweep deletes by accident.
+  'lib/evaluation/adviser-of-record.ts': ['evaluation', 'of_record'],
   'app/api/evaluation/drill/[target]/route.ts': ['evaluation'],
   'lib/evaluation/queries.ts': ['evaluation'],
   'lib/evaluation/dashboard.ts': ['evaluation'],
@@ -224,7 +245,13 @@ const READ_PATTERNS = [
   /\bsubjectTeacherPairs\b/,
   /\bloadClassroomAccess\b/,
   /\bresolveClassroomScope\b/,
-  /\blistFormAdviserSectionIds\b/,
+  // The Evaluation scope pair. Two names because they are two questions —
+  // `listAdvisedSectionIds` includes co-advisers and answers what may be READ,
+  // `listAdviserOfRecordSectionIds` does not and answers what may be WRITTEN.
+  // They replaced one `listFormAdviserSectionIds` that was silently doing both.
+  /\blistAdvisedSectionIds\b/,
+  /\blistAdviserOfRecordSectionIds\b/,
+  /\bisAdviserOfRecordRole\b/,
   /\bloadFormAdvisersBySection\b/,
   /\bbuildSubjectTeacherNameMap\b/,
   /\bbuildFormAdviserNameMap\b/,
@@ -458,17 +485,112 @@ describe('the co-role boundary', () => {
   // (lib/account/sections.ts turns a role into words). What is not fine is
   // testing the literal while SELECTING FROM a collection of assignments,
   // because that is the shape that decides who gets in.
-  const LITERAL_ROLE_FILTER =
-    /\.(filter|some|find)\([^)]*role === '(form_adviser|subject_teacher)'/;
+  //
+  // 🔴 THE PATTERN THIS REPLACES COULD NOT MATCH A SINGLE LINE IN THIS REPO,
+  // and so passed vacuously from the day it was written — including over the
+  // seven sites the sweep that added it had just fixed by hand. It was
+  // `/\.(filter|some|find)\([^)]*role === '…'/`, and it failed twice over:
+  //
+  //   • `[^)]*` cannot cross the `)` in `(a) =>`, so it only ever matched a
+  //     BARE arrow parameter (`a => …`). Prettier's `arrowParens: "always"` is
+  //     the default and is not overridden in .prettierrc, so every arrow in
+  //     this repo is parenthesised. Measured: ZERO bare-param role checks exist
+  //     in lib/, app/ or components/ — the pattern's whole matchable surface is
+  //     a formatting style the formatter removes on save.
+  //   • It never looked at `.eq('role', …)` at all, which is the shape MOST
+  //     real gates use, because most of them are Supabase queries rather than
+  //     array filters.
+  //
+  // Replaced with three patterns keyed on shape rather than on whitespace.
+  // `.role === '…'` (a property access) is the discriminator that keeps a label
+  // map out of scope: lib/account/sections.ts tests a bare `role === …` on its
+  // own parameter, which is turning a role into words, not choosing who gets in.
+  const LITERAL_ROLE_FILTERS: Array<[string, RegExp]> = [
+    ['a.role === ’literal’', /\.role === '(form_adviser|subject_teacher)'/],
+    [
+      ".eq('role', ’literal’)",
+      /\.eq\(\s*'role',\s*'(form_adviser|subject_teacher)'/,
+    ],
+    [
+      ".in('role', [’literal’…])",
+      /\.in\(\s*'role',\s*\[[^\]]*'(form_adviser|subject_teacher)'/,
+    ],
+  ];
+
+  // Files that hold TWO reads and only one of them is the act read. The guard
+  // matches at file granularity, so it cannot tell the gate from the column
+  // beside it; naming them here makes each exemption a written decision with a
+  // reason instead of a regex accident. Every entry must ALSO carry `name` —
+  // asserted below, so a plain `act` file can never be quietly added.
+  const LITERAL_IS_THE_NAME_READ: Record<string, string> = {
+    'app/(attendance)/attendance/[sectionId]/page.tsx':
+      'The literal resolves the adviser NAME for the section context card. The act half of this page is the register itself, gated in app/api/attendance/daily.',
+    'app/api/attendance/[sectionId]/export/route.ts':
+      'The literal resolves the adviser NAME printed in the workbook header. The act half — who may press Export — is the isAdviserRole check at the top of the same file, and a co-adviser passes it.',
+    'app/(markbook)/markbook/grading/page.tsx':
+      'All four literals build the Teacher and Form Adviser display COLUMNS, which must keep naming the teacher of record. The act half is "My sheets", which resolves through loadEffectiveAssignmentsForUser.',
+  };
+
+  it('every literal exemption is a file that also prints a name', () => {
+    // Without this, the exemption list is a hole anyone can widen. A file only
+    // earns an exemption by genuinely holding a name-of-record read too.
+    for (const file of Object.keys(LITERAL_IS_THE_NAME_READ)) {
+      expect(
+        CLASSIFIED[file],
+        `${file} is exempted from the co-role literal check but is not classified 'name'`
+      ).toContain('name');
+    }
+  });
 
   it('no act-category file selects assignments by a role literal', () => {
-    for (const file of actFiles) {
+    // ⚠ EVALUATION IS IN SCOPE HERE TOO, and its absence is the whole reason
+    // this guard sat green while a co-adviser was locked out of the Evaluation
+    // module for two weeks. The `evaluation` category was invented for the
+    // RELIEF axis — a substitute must not write in the adviser's place — and
+    // the co-role check only ever looped over `act`. Exempting Evaluation from
+    // one axis silently exempted it from the other. `of_record` now carries the
+    // co-role exemption explicitly, so a file has to ASK for it.
+    const inScope = Object.entries(CLASSIFIED)
+      .filter(
+        ([, c]) =>
+          (c.includes('act') || c.includes('evaluation')) &&
+          !c.includes('of_record')
+      )
+      .map(([f]) => f);
+
+    for (const file of inScope) {
+      if (LITERAL_IS_THE_NAME_READ[file]) continue;
+      const text = stripComments(source(file));
+      for (const [shape, pattern] of LITERAL_ROLE_FILTERS) {
+        expect(
+          text,
+          `${file} decides who may act, and holds a ${shape}. Use ` +
+            `isAdviserRole / isSubjectRole / ADVISER_ROLES / SUBJECT_ROLES — a ` +
+            `literal here refuses a co-adviser or co-teacher the access ` +
+            `is_adviser_for_section and is_teacher_for_sheet already grant them.`
+        ).not.toMatch(pattern);
+      }
+    }
+  });
+
+  it('adviser-of-record gates still refuse a co-adviser', () => {
+    // The inverse, stated so the next sweep cannot "fix" it back. The write-up
+    // is the one piece of adviser work that does NOT come with the class: it
+    // becomes the form class adviser's comment on the report card, and that
+    // card prints one name (KD #158). Mr Ace, 2026-09-09: "as co teacher the
+    // main FCA can only write that up".
+    const ofRecord = Object.entries(CLASSIFIED)
+      .filter(([, c]) => c.includes('of_record'))
+      .map(([f]) => f);
+
+    expect(ofRecord.length).toBeGreaterThan(0);
+    for (const file of ofRecord) {
       expect(
         stripComments(source(file)),
-        `${file} decides who may act. Use isAdviserRole / isSubjectRole — a ` +
-          `literal here refuses a co-adviser or co-teacher the access ` +
-          `is_adviser_for_section and is_teacher_for_sheet already grant them.`
-      ).not.toMatch(LITERAL_ROLE_FILTER);
+        `${file} admits only the adviser of record. Widening it to ` +
+          `isAdviserRole / ADVISER_ROLES would let a co-adviser write the ` +
+          `form class adviser's report card comment.`
+      ).not.toMatch(/isAdviserRole|ADVISER_ROLES/);
     }
   });
 

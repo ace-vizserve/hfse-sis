@@ -17,6 +17,7 @@ import {
   type SectionWriteupRow,
   type WriteupRow,
 } from '@/lib/evaluation/drill';
+import { ADVISER_ROLES } from '@/lib/schemas/teacher-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 
 const VALID_TARGETS: EvaluationDrillTarget[] = [
@@ -80,7 +81,13 @@ export async function GET(
   const format = url.searchParams.get('format') ?? 'json';
   const columnsParam = url.searchParams.get('columns');
 
-  // Teacher → narrow to form_adviser sections.
+  // Teacher → narrow to the sections they advise.
+  //
+  // ADVISER_ROLES, not the `form_adviser` literal: this is a READ, and a
+  // co-adviser advises the class (migration 124). Narrowing to the adviser of
+  // record handed them an empty drill and an empty export for children they
+  // teach every day. Writing the write-up is the one thing that stays with the
+  // adviser of record, and that gate lives in ../writeups/route.ts.
   let allowedSectionIds: string[] | null = null;
   if (!REGISTRAR_PLUS.has(guard.role)) {
     const service = createServiceClient();
@@ -88,7 +95,7 @@ export async function GET(
       .from('teacher_assignments')
       .select('section_id')
       .eq('teacher_user_id', guard.user.id)
-      .eq('role', 'form_adviser');
+      .in('role', ADVISER_ROLES);
     allowedSectionIds = ((assignments ?? []) as { section_id: string }[]).map(
       (a) => a.section_id
     );

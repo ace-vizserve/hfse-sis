@@ -23,7 +23,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import {
   getWriteupProgressByTerm,
-  listFormAdviserSectionIds,
+  listAdvisedSectionIds,
 } from '@/lib/evaluation/queries';
 import { deriveTermShortLabels } from '@/lib/evaluation/term-short-labels';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
@@ -123,13 +123,21 @@ export default async function EvaluationSectionsPickerPage() {
   // Teachers see only their advisory sections — subject teachers have no
   // role in this module after the purpose fix.
   //
-  // ⚠ ON THE LENS. `listFormAdviserSectionIds` reads this viewer's OWN adviser
+  // ⚠ ON THE LENS. `listAdvisedSectionIds` reads this viewer's OWN adviser
   // rows, so a teaching admin in the Teacher view gets her own classes and
   // nothing else — a strict subset of the school-wide list she keeps in the
   // Admin view. The section detail page narrows the same way, so a row on this
   // list can no longer point at a page that turns her away.
+  //
+  // ⚠ CO-ADVISERS ARE IN THIS LIST AND CANNOT WRITE ITS WRITE-UPS. That looks
+  // like a contradiction and is the deliberate shape: the class really is
+  // theirs (they take its register, they open its classroom), but the write-up
+  // becomes the form class adviser's comment on the report card and that card
+  // prints one name. Before this, they were filtered out here and met "No
+  // advisory sections." in a module the sidebar had just offered them —
+  // a dead end rather than a read-only page. See lib/evaluation/queries.ts.
   if (view === 'teacher') {
-    const adviserSet = await listFormAdviserSectionIds(sessionUser.id);
+    const adviserSet = await listAdvisedSectionIds(sessionUser.id);
     sections = sections.filter((s) => adviserSet.has(s.id));
   }
 
@@ -202,7 +210,7 @@ export default async function EvaluationSectionsPickerPage() {
   // The comment that used to sit here claimed the row destination came from
   // "the shared classroom scope resolver" so it could not drift from
   // Classroom. It did not: `resolveClassroomScope` was imported and never
-  // called, and `isTeacher` (plus the `listFormAdviserSectionIds` filter
+  // called, and `isTeacher` (plus the `listAdvisedSectionIds` filter
   // further up) decides everything. Import and claim both removed.
   const isTeacher = view === 'teacher';
 

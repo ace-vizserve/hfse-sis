@@ -226,7 +226,7 @@ export function AdviserAttendanceDashboard({
                     Attendance
                   </th>
                   <th className="whitespace-nowrap px-5 py-2.5 text-left text-[11px] font-semibold text-muted-foreground">
-                    Present · late · absent · excused
+                    On time · late · absent · excused
                   </th>
                   <th className="px-5 py-2.5 text-right text-[11px] font-semibold text-muted-foreground">
                     School days
@@ -239,7 +239,12 @@ export function AdviserAttendanceDashboard({
               <tbody>
                 {data.sections.map((s) => {
                   const sum = data.summaries[s.sectionId];
-                  const pct = sum?.averageAttendancePct ?? null;
+                  // presentRate — the same figure the section card shows. When
+                  // this read `averageAttendancePct` (the mean of per-student
+                  // percentages) and the card read the student-day ratio, one
+                  // class could show two different percentages on two screens,
+                  // which is worse than either number being imperfect.
+                  const pct = sum?.presentRate ?? null;
                   return (
                     <tr
                       key={s.sectionId}
@@ -285,9 +290,14 @@ export function AdviserAttendanceDashboard({
                           </>
                         )}
                       </td>
+                      {/* onTime, not totalDaysPresent. The rollup's
+                          `days_present` is P + L + EX, so the first number here
+                          already contained the second and the fourth — the row
+                          read like four separate tallies and was three
+                          overlapping ones. These four sum to the days marked. */}
                       <td className="whitespace-nowrap px-5 py-3.5 font-mono text-[11px] tabular-nums text-muted-foreground">
                         {sum
-                          ? `${sum.totalDaysPresent} · ${sum.totalDaysLate} · ${sum.totalDaysAbsent} · ${sum.totalDaysExcused}`
+                          ? `${sum.onTime} · ${sum.late} · ${sum.absent} · ${sum.excused}`
                           : '—'}
                       </td>
                       <td className="px-5 py-3.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">

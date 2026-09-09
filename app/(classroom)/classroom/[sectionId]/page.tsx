@@ -350,21 +350,31 @@ export default async function ClassroomOverviewPage({
             footerDetail="This term"
             href={`/classroom/${sectionId}/grades${termQuery}`}
           />
+          {/* The tile that sends an adviser to the Attendance tab, so it has to
+              be honest at a glance: the rate over what is actually marked, with
+              the coverage gap as its footer. `schoolDays` alone was the old
+              footer and it read as reassurance — "42 school days" beside a
+              percentage looks like 42 days of evidence, whether or not any of
+              them were marked. */}
           {showAttendance && (
             <LinkStatCard
               description="Attendance"
               value={
-                attendanceSummary?.averageAttendancePct != null
-                  ? `${attendanceSummary.averageAttendancePct.toFixed(1)}%`
+                attendanceSummary?.presentRate != null
+                  ? `${attendanceSummary.presentRate.toFixed(1)}%`
                   : '—'
               }
               icon={CalendarCheck}
               footerTitle={
                 attendanceSummary && attendanceSummary.schoolDays > 0
-                  ? `${attendanceSummary.schoolDays} school days`
+                  ? `${attendanceSummary.daysMarked} of ${attendanceSummary.schoolDays} days marked`
                   : 'No data yet'
               }
-              footerDetail="Average, this term"
+              footerDetail={
+                attendanceSummary && attendanceSummary.unmarkedStudentDays > 0
+                  ? `${attendanceSummary.unmarkedStudentDays.toLocaleString('en-SG')} student-days outstanding`
+                  : 'This term'
+              }
               href={`/classroom/${sectionId}/attendance${termQuery}`}
             />
           )}

@@ -15,6 +15,7 @@ import {
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
 import { GRADE_BANDS, type GradeBand } from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
+import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -1077,13 +1078,20 @@ async function loadMarkbookTeacherPriorityUncached(
 ): Promise<PriorityPayload> {
   const service = createServiceClient();
 
-  // Resolve teacher's subject_teacher assignments → (section, subject) pairs.
+  // Resolve the teacher's subject assignments → (section, subject) pairs.
+  //
+  // isSubjectRole, not `role === 'subject_teacher'`: HFSE shares a subject
+  // between two teachers across different days of the week (migration 124), and
+  // the second one holds a `co_teacher` row. `is_teacher_for_sheet` admits them
+  // to the sheet, so a literal here would offer them the class in Markbook and
+  // then show this card an empty list — "No assigned sections yet" to someone
+  // who teaches two.
   const assignments = await loadEffectiveAssignmentsForUser(
     service,
     input.teacherUserId
   );
   const subjectPairs = assignments
-    .filter((a) => a.role === 'subject_teacher' && a.subject_id != null)
+    .filter((a) => isSubjectRole(a.role) && a.subject_id != null)
     .map((a) => ({
       section_id: a.section_id,
       subject_id: a.subject_id as string,

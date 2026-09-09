@@ -1,16 +1,6 @@
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowUpRight, CalendarCheck } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { SectionSummaryCard } from '@/components/attendance/section-summary-card';
 import { getSectionAttendanceSummary } from '@/lib/attendance/queries';
 import { canReadAttendance } from '@/lib/classroom/scope';
 import { getTermsForAy, loadClassroomAccess } from '@/lib/classroom/queries';
@@ -26,6 +16,9 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // Deliberately no embedded grid — the marking sheet assumes full viewport
 // width (sticky columns, marking palette, up to 50 students). This is a
 // summary + a link to the real writer at /attendance/[sectionId].
+//
+// The card itself is shared with the Markbook section page — see
+// components/attendance/section-summary-card.tsx for what it says and why.
 export default async function ClassroomAttendancePage({
   params,
   searchParams,
@@ -84,97 +77,15 @@ export default async function ClassroomAttendancePage({
           No term configured for this academic year.
         </div>
       ) : (
-        <Card className="@container/card">
-          <CardHeader className="flex flex-row items-start justify-between gap-4">
-            <div className="space-y-1.5">
-              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                Average, {selectedTerm?.label ?? 'this term'}
-              </CardDescription>
-              <CardTitle className="font-serif text-[24px] font-semibold tracking-tight text-foreground">
-                {summary.averageAttendancePct != null
-                  ? `${summary.averageAttendancePct.toFixed(1)}% average`
-                  : 'No data yet'}
-              </CardTitle>
-              <p className="text-[11px] text-muted-foreground">
-                Read-only. Daily marking happens in the Attendance module.
-              </p>
-            </div>
-            <CardAction>
-              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                <CalendarCheck className="size-4" />
-              </div>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap items-center gap-6">
-              <Stat label="School days" value={summary.schoolDays} />
-              <Stat label="Present" value={summary.totalDaysPresent} />
-              <Stat
-                label="Late"
-                value={summary.totalDaysLate}
-                className="text-amber-700 dark:text-amber-200"
-              />
-              <Stat
-                label="Excused"
-                value={summary.totalDaysExcused}
-                className="text-sky-700 dark:text-sky-200"
-              />
-              <Stat
-                label="Absent"
-                value={summary.totalDaysAbsent}
-                className="text-amber-700 dark:text-amber-200"
-              />
-              <Stat
-                label="Perfect"
-                value={summary.perfectAttendanceCount}
-                suffix={` / ${summary.studentCount}`}
-              />
-              <div className="ml-auto">
-                <Button asChild size="sm" className="gap-1.5">
-                  <Link
-                    href={`/attendance/${sectionId}${
-                      selectedTermId ? `?term_id=${selectedTermId}` : ''
-                    }`}
-                  >
-                    Open the attendance sheet
-                    <ArrowUpRight className="size-3.5" />
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <SectionSummaryCard
+          summary={summary}
+          termLabel={selectedTerm?.label ?? null}
+          href={`/attendance/${sectionId}${
+            selectedTermId ? `?term_id=${selectedTermId}` : ''
+          }`}
+          linkLabel="Open the attendance sheet"
+        />
       )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  suffix,
-  className,
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
-  className?: string;
-}) {
-  return (
-    <div className="flex flex-col">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </span>
-      <span
-        className={`font-serif text-[20px] font-semibold tabular-nums text-foreground ${className ?? ''}`}
-      >
-        {value.toLocaleString('en-SG')}
-        {suffix && (
-          <span className="ml-1 text-[13px] font-normal text-muted-foreground">
-            {suffix}
-          </span>
-        )}
-      </span>
     </div>
   );
 }

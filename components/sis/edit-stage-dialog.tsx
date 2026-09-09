@@ -553,7 +553,7 @@ export function EditStageDialog({
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl!">
         {pendingMidTerm ? (
           <LateEnrolleePrompt
             payload={pendingMidTerm}

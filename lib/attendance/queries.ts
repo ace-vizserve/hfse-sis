@@ -12,8 +12,15 @@ import {
 } from '@/lib/schemas/attendance';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
+import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { expandSchoolDays } from '@/lib/attendance/school-days';
+import {
+  computeSectionAttendanceSummary,
+  type SectionAttendanceSummary,
+  type SummaryEnrolmentInput,
+} from '@/lib/attendance/section-summary';
 import { countVacationTrips } from '@/lib/attendance/vacation-trips';
+import { sgToday } from '@/lib/dates';
 
 // Attendance module — server-side read helpers.
 //
@@ -365,74 +372,147 @@ export const getRollupForSection = cache(async function getRollupForSection(
   return ((data ?? []) as RollupRaw[]).map(normalizeRollup);
 });
 
-// Aggregate view for the Markbook section-detail summary card.
-export type SectionAttendanceSummary = {
-  sectionId: string;
-  termId: string;
-  studentCount: number;
-  schoolDays: number; // max across students (handles NC variance)
-  averageAttendancePct: number | null;
-  totalDaysPresent: number;
-  totalDaysLate: number;
-  totalDaysAbsent: number;
-  totalDaysExcused: number;
-  perfectAttendanceCount: number;
-};
+// Aggregate view for the section attendance summary card. The arithmetic and
+// the reasoning both live in `./section-summary`; this module fetches.
+export type { SectionAttendanceSummary } from './section-summary';
 
+/**
+ * The section attendance summary card's data.
+ *
+ * ⚠ THIS READS THE SCHOOL CALENDAR NOW, and that is the whole change. It used
+ * to answer entirely from `attendance_records`, whose `school_days` column
+ * counts a student's own marks rather than the term's days — so "School days"
+ * was really "the best-covered student's mark count" and read 6 on a term with
+ * 30 of them. See `./section-summary` for the full account.
+ *
+ * ── QUERY SHAPE — 4 round trips added, still TWO WAVES ─────────────────────
+ *
+ * Wave 1 issues the two reads that depend on nothing: the section (joined to
+ * its level, so the level type costs no second trip) and the roster with its
+ * enrolment windows. Wave 2 issues the three that depend on them — the term
+ * calendar needs the level type; the rollups and the marked dates need the
+ * enrolment ids.
+ *
+ * ⚠ THE ROSTER IS READ TWICE AND THAT IS DELIBERATE. `getRollupForSection` is
+ * memoised per request and reads `section_students` for ids alone; this
+ * function needs three more columns off the same table. Widening the shared
+ * loader would push the extra columns onto every one of its callers, and
+ * dropping the shared loader would cost the page its memo — the at-risk panel
+ * calls it again a few lines later. One narrow extra read is the cheaper of
+ * the three.
+ */
 export async function getSectionAttendanceSummary(
   sectionId: string,
   termId: string
 ): Promise<SectionAttendanceSummary> {
-  const rollups = await getRollupForSection(sectionId, termId);
-  if (rollups.length === 0) {
-    return {
-      sectionId,
-      termId,
-      studentCount: 0,
-      schoolDays: 0,
-      averageAttendancePct: null,
-      totalDaysPresent: 0,
-      totalDaysLate: 0,
-      totalDaysAbsent: 0,
-      totalDaysExcused: 0,
-      perfectAttendanceCount: 0,
-    };
-  }
+  const service = createServiceClient();
 
-  let sumPct = 0;
-  let pctCount = 0;
-  let totalPresent = 0;
-  let totalLate = 0;
-  let totalAbsent = 0;
-  let totalExcused = 0;
-  let perfect = 0;
-  let maxDays = 0;
-  for (const r of rollups) {
-    if (r.attendancePct != null) {
-      sumPct += r.attendancePct;
-      pctCount += 1;
-    }
-    totalPresent += r.daysPresent;
-    totalLate += r.daysLate;
-    totalAbsent += r.daysAbsent;
-    totalExcused += r.daysExcused;
-    maxDays = Math.max(maxDays, r.schoolDays);
-    if (r.daysAbsent === 0 && r.daysLate === 0 && r.schoolDays > 0)
-      perfect += 1;
-  }
-  return {
+  // ⚠ STARTED HERE, AWAITED LATER, AND THE ORDER IS LOAD-BEARING.
+  // `getRollupForSection` is itself two waves deep (roster, then rollup rows).
+  // Awaiting it below alongside the calendar — which cannot start until the
+  // level type arrives — would stack its two waves after this one and take the
+  // classroom page from 2 waves to 3. Kicked off in the first wave, its second
+  // trip overlaps the calendar's first and the depth is unchanged.
+  const rollupsPromise = getRollupForSection(sectionId, termId);
+
+  const [sectionRes, enrolmentRes] = await Promise.all([
+    service
+      .from('sections')
+      .select('id, level:levels(level_type)')
+      .eq('id', sectionId)
+      .maybeSingle(),
+    service
+      .from('section_students')
+      .select('id, enrollment_date, withdrawal_date, enrollment_status')
+      .eq('section_id', sectionId),
+  ]);
+
+  const levelRaw = (
+    sectionRes.data as {
+      level?: { level_type?: string }[] | { level_type?: string } | null;
+    } | null
+  )?.level;
+  const level = Array.isArray(levelRaw) ? levelRaw[0] : levelRaw;
+  // Only primary and secondary carry audience overrides (KD #50/#76).
+  // Preschool and an unresolved level both fall through to the 'all' baseline,
+  // which is what `null` means to the calendar helper.
+  const levelType =
+    level?.level_type === 'primary' || level?.level_type === 'secondary'
+      ? level.level_type
+      : null;
+
+  const enrolments: SummaryEnrolmentInput[] = (
+    (enrolmentRes.data ?? []) as Array<{
+      id: string;
+      enrollment_date: string | null;
+      withdrawal_date: string | null;
+      enrollment_status: string;
+    }>
+  ).map((e) => ({
+    sectionStudentId: e.id,
+    enrollmentDate: e.enrollment_date,
+    withdrawalDate: e.withdrawal_date,
+    enrollmentStatus: e.enrollment_status,
+  }));
+  const enrolmentIds = enrolments.map((e) => e.sectionStudentId);
+
+  const [encodableDates, rollups, markedDates] = await Promise.all([
+    getEncodableDatesForTerm(termId, levelType),
+    rollupsPromise,
+    listMarkedDatesForSection(termId, enrolmentIds),
+  ]);
+
+  return computeSectionAttendanceSummary({
     sectionId,
     termId,
-    studentCount: rollups.length,
-    schoolDays: maxDays,
-    averageAttendancePct:
-      pctCount > 0 ? Math.round((sumPct / pctCount) * 100) / 100 : null,
-    totalDaysPresent: totalPresent,
-    totalDaysLate: totalLate,
-    totalDaysAbsent: totalAbsent,
-    totalDaysExcused: totalExcused,
-    perfectAttendanceCount: perfect,
-  };
+    encodableDates,
+    markedDates,
+    enrolments,
+    rollups: rollups.map((r) => ({
+      sectionStudentId: r.sectionStudentId,
+      schoolDays: r.schoolDays,
+      daysPresent: r.daysPresent,
+      daysLate: r.daysLate,
+      daysExcused: r.daysExcused,
+      daysAbsent: r.daysAbsent,
+    })),
+    asOf: sgToday(),
+  });
+}
+
+/**
+ * Distinct dates in this term carrying at least one mark for this class.
+ *
+ * Coverage is a question about the CLASS, not about any one child: a day is
+ * marked when the adviser opened the register and worked through it. Deriving
+ * it from the rollups instead would answer a different question — a child who
+ * joined last week has 4 marks in a class that has been marked 20 times.
+ *
+ * NC rows are included on purpose. "Not in class" is a mark somebody made; the
+ * day was attended to. It is only excluded from the rollup's `school_days`,
+ * which is a count of days owed, not of days handled.
+ */
+async function listMarkedDatesForSection(
+  termId: string,
+  enrolmentIds: string[]
+): Promise<string[]> {
+  if (enrolmentIds.length === 0) return [];
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('attendance_daily')
+    .select('date')
+    .eq('term_id', termId)
+    .in('section_student_id', enrolmentIds);
+  if (error) {
+    console.error(
+      '[attendance] listMarkedDatesForSection failed:',
+      error.message
+    );
+    return [];
+  }
+  return Array.from(
+    new Set(((data ?? []) as Array<{ date: string }>).map((r) => r.date))
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────

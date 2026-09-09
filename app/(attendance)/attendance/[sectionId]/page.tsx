@@ -478,16 +478,30 @@ export default async function SectionAttendancePage({
               }
               footerDetail={selectedTerm?.label ?? ''}
             />
+            {/* presentRate, not averageAttendancePct. The old figure was the
+                mean of per-student percentages, which weights a child with four
+                marks the same as one with forty-six — and the footer under it
+                said "Present ÷ school days", which is what it was NOT doing.
+                This one is the real ratio over the student-days marked, and the
+                footer now names its own denominator. */}
             <StatCard
-              description="Average attendance"
+              description="Attendance"
               value={
-                summary.averageAttendancePct != null
-                  ? `${summary.averageAttendancePct.toFixed(1)}%`
+                summary.presentRate != null
+                  ? `${summary.presentRate.toFixed(1)}%`
                   : '—'
               }
               icon={Percent}
-              footerTitle="Across marked students"
-              footerDetail="Present ÷ school days"
+              footerTitle={
+                summary.markedStudentDays > 0
+                  ? `Across ${summary.markedStudentDays.toLocaleString('en-SG')} student-days marked`
+                  : 'Nothing marked yet'
+              }
+              footerDetail={
+                summary.unmarkedStudentDays > 0
+                  ? `${summary.unmarkedStudentDays.toLocaleString('en-SG')} still to mark`
+                  : 'Fully marked'
+              }
             />
             <StatCard
               description="Perfect attendance"

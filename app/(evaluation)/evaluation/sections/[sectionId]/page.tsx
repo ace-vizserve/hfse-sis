@@ -1,4 +1,4 @@
-import { ArrowLeft, Sparkle } from 'lucide-react';
+import { ArrowLeft, BookOpenCheck, Sparkle } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -6,13 +6,15 @@ import { TermSwitcher } from '@/components/evaluation/term-switcher';
 import { WriteupRosterClient } from '@/components/evaluation/writeup-roster-client';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
+import { listAdviserOfRecordSectionIds } from '@/lib/evaluation/adviser-of-record';
 import { canEditWriteups } from '@/lib/evaluation/edit-gate';
 import {
   getEvaluationTermConfig,
   getSectionRoster,
-  listFormAdviserSectionIds,
+  listAdvisedSectionIds,
 } from '@/lib/evaluation/queries';
 import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
+import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 export default async function EvaluationSectionRosterPage({
@@ -50,14 +52,25 @@ export default async function EvaluationSectionRosterPage({
     .single();
   if (!section) notFound();
 
-  // Teachers must be the section's form adviser — subject teachers have no
-  // role in this module after the purpose fix (KD evaluation purpose spec).
+  // Teachers must advise the section — subject teachers have no role in this
+  // module after the purpose fix (KD evaluation purpose spec).
   //
+  // TWO QUESTIONS, and they have different answers for a co-adviser. Advising
+  // the class at all decides whether the page opens; being the adviser OF
+  // RECORD decides whether the write-up fields accept typing. A co-adviser
+  // reads what the form class adviser wrote about children they co-advise, and
+  // writes nothing — the write-up is the comment that prints on the report
+  // card under one name (Mr Ace, 2026-09-09).
+  let isAdviserOfRecord = true;
   if (role === 'teacher') {
-    const adviserSet = await listFormAdviserSectionIds(sessionUser.id);
-    if (!adviserSet.has(sectionId)) {
+    const [advisedSet, ofRecordSet] = await Promise.all([
+      listAdvisedSectionIds(sessionUser.id),
+      listAdviserOfRecordSectionIds(sessionUser.id),
+    ]);
+    if (!advisedSet.has(sectionId)) {
       redirect('/evaluation/sections');
     }
+    isAdviserOfRecord = ofRecordSet.has(sectionId);
   }
 
   // T1–T3 only; T4 excluded (no FCA comment on the final card, KD #49).
@@ -102,6 +115,15 @@ export default async function EvaluationSectionRosterPage({
       : section.academic_year
   ) as { ay_code: string; label: string } | null;
 
+  // Only for the co-adviser notice below — "these are not yours to write" is
+  // half an answer without "and here is whose they are". One extra query, on
+  // the one screen that has something to say with it.
+  const adviserOfRecordName =
+    !isAdviserOfRecord && ay
+      ? ((await loadFormAdvisersBySection([sectionId], ay.ay_code))[sectionId]
+          ?.name ?? null)
+      : null;
+
   // Teachers are locked until Joann sets the virtue theme; registrar+ can
   // always edit (write-up fields gate per canEdit in WriteupRosterClient).
   //
@@ -110,7 +132,11 @@ export default async function EvaluationSectionRosterPage({
   // `lib/evaluation/edit-gate.ts` so a test can call them; the short version is
   // that the route has no virtue-theme condition at all, so this page has
   // always refused MORE than the route and lensing makes it refuse more again.
-  const canEdit = canEditWriteups(role, !!config?.virtueTheme);
+  const canEdit = canEditWriteups(
+    role,
+    !!config?.virtueTheme,
+    isAdviserOfRecord
+  );
   // Submitted AND non-empty — an emptied write-up is "missing", not submitted
   // (keeps the count consistent with the sections list + publish-readiness).
   // Emptiness comes from the shared KD #120 helper: the column holds formatted
@@ -196,12 +222,21 @@ export default async function EvaluationSectionRosterPage({
           </p>
           <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
             {/* On the lens, so the sentence matches what `canEdit` above
-                actually did to the fields on this screen. */}
-            {role === 'teacher' ? (
+                actually did to the fields on this screen.
+
+                ⚠ AND ON WHO IS READING. For a co-adviser the theme is not why
+                the fields are locked and never will be — setting it changes
+                nothing for them. Claiming otherwise sends them to ask the
+                academic coordinator for something that would not help. The
+                panel above already gave them the real reason, so this one drops
+                the promise and just reports the gap. */}
+            {role === 'teacher' && isAdviserOfRecord ? (
               <>
                 Write-up fields are locked until the academic coordinator sets
                 the theme in SIS Admin.
               </>
+            ) : role === 'teacher' ? (
+              <>The academic coordinator has not set it yet.</>
             ) : (
               <>
                 Set it in{' '}
@@ -216,6 +251,33 @@ export default async function EvaluationSectionRosterPage({
               </>
             )}
           </p>
+        </div>
+      )}
+
+      {/* Co-adviser. §9.4 status panel, accent family and a flat tile: nothing
+          has gone wrong and there is nothing for them to resolve, so it is not
+          destructive — but it is a standing condition rather than a step, which
+          is what keeps the tile flat rather than the §7.4 gradient.
+
+          Deliberately says what they CAN do first. A panel that only says "you
+          may not" reads as a fault; the roster below it is genuinely useful to
+          a co-adviser, and this sentence is what tells them to read on. */}
+      {!isAdviserOfRecord && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft bg-accent p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-indigo text-white shadow-brand-tile">
+            <BookOpenCheck className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              You can read these write-ups, not write them.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              You co-advise {section.name}, so the roster is yours to follow.
+              The write-up becomes the form class adviser&rsquo;s comment on the
+              report card, and that comment carries one name —{' '}
+              {adviserOfRecordName ?? 'the form class adviser'} writes it.
+            </p>
+          </div>
         </div>
       )}
 
