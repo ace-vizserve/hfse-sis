@@ -46,6 +46,7 @@ import {
 } from '@/lib/sis/queries';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import { isRouteAllowed } from '@/lib/auth/roles';
 import {
   canAssignSection,
   canWriteStudentRecord,
@@ -121,6 +122,20 @@ export default async function SisStudentDetailPage({
   // STUDENT_RECORD_WRITERS in lib/auth/student-record.ts) because other call
   // sites still read one name or the other.
   const canPlaceStudent = canAssignSection(sessionUser.role);
+  // canPlaceStudent is the RIGHT to place a student; this is whether the
+  // viewer can actually open the door EnrollmentTab's "Move to another
+  // section" link points at. The two used to be the same set of roles, so
+  // one check covered both — they no longer are, since 2026-09-10 gave
+  // admissions the right without giving them SIS Admin (Mr Ace named three
+  // modules for admissions — Records, P-Files, Admissions — not SIS Admin).
+  // Computed with isRouteAllowed (the app's one answer to "may this role
+  // open this path") rather than a hand-rolled role list, and passed down
+  // as a prop rather than re-derived inside the component, matching how
+  // canPlaceStudent itself already arrives there.
+  const canReachSectionSetup = isRouteAllowed(
+    '/sis/sections',
+    sessionUser.role
+  );
 
   const { enroleeNumber } = await params;
   const { ay: ayParam, tab: tabParam } = await searchParams;
@@ -435,6 +450,7 @@ export default async function SisStudentDetailPage({
             currentSectionId={currentSectionId}
             canEdit={canEditRecord}
             canAssignSection={canPlaceStudent}
+            canReachSectionSetup={canReachSectionSetup}
           />
         </TabsContent>
 
