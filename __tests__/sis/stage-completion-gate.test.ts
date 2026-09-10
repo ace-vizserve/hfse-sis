@@ -17,8 +17,11 @@ import {
 // fields as records get touched.
 //
 // This pure test is the single guarantee the stage PATCH route and the stage
-// edit dialog agree, the same way admissions-stage-freeze.test.ts is for
-// isAdmissionsStageFrozen.
+// edit dialog agree about what "finished" requires.
+//
+// It is unrelated to the post-enrolment stage FREEZE, which was a different
+// rule and was removed on 2026-09-10 — see
+// __tests__/sis/enrolled-record-stays-editable.test.ts.
 
 /** Shorthand: the fieldKeys still blocking, in order. */
 function blockedKeys(

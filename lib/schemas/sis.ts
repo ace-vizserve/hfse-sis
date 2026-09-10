@@ -744,9 +744,8 @@ export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
 // requires" and the UI can drive off one source. It does not replace
 // validateTerminalReason, and neither one is redundant.
 //
-// Following isAdmissionsStageFrozen's precedent, this map is SHARED by the
-// stage PATCH route (server enforcement) and the stage edit dialog (which
-// disables save), so the two cannot drift.
+// This map is SHARED by the stage PATCH route (server enforcement) and the
+// stage edit dialog (which disables save), so the two cannot drift.
 //
 // Outer key: the stage. Inner key: the status value. Value: the fieldKeys from
 // STAGE_COLUMN_MAP[stage].extras that must be filled in at that status, in the
@@ -923,47 +922,15 @@ export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
   // class gets 'Finished' set by the auto-assign algorithm, not a prereq.
 };
 
-// Module-ownership rule (KD #147): once a student is FULLY 'Enrolled', the
-// admissions stage editor freezes — the funnel is historical. EXCEPTION:
-// `supplies` + `orientation` legitimately happen AFTER enrolment (kit pickup,
-// orientation day), so they stay editable post-Enrolled until they reach a
-// FINALIZED status, after which they lock too (forward-only — a finalized step
-// is never rewritten).
-export const POST_ENROLMENT_EDITABLE_STAGES = [
-  'supplies',
-  'orientation',
-] as const satisfies readonly StageKey[];
-
-// The terminal/finalized statuses that lock a post-enrolment stage.
-export const STAGE_FINALIZED_STATUSES: Partial<
-  Record<StageKey, readonly string[]>
-> = {
-  supplies: ['Claimed', 'Cancelled'],
-  orientation: ['Finished', 'Cancelled'],
-};
-
-// Is this admissions stage frozen for editing right now? SHARED by the stage
-// PATCH route (server enforcement) and the enrollment-tab UI so they can't
-// drift. Rules:
-//   • not fully 'Enrolled' → nothing frozen (the funnel is still in progress;
-//     'Enrolled (Conditional)' stays fully editable until it resolves);
-//   • fully 'Enrolled' → every stage freezes EXCEPT supplies/orientation, which
-//     stay editable until their OWN status is finalized.
-export function isAdmissionsStageFrozen(
-  stageKey: StageKey,
-  currentStageStatus: string | null,
-  applicationStatus: string | null
-): boolean {
-  if ((applicationStatus ?? '').trim() !== 'Enrolled') return false;
-  if (
-    !(POST_ENROLMENT_EDITABLE_STAGES as readonly StageKey[]).includes(stageKey)
-  ) {
-    return true;
-  }
-  return (STAGE_FINALIZED_STATUSES[stageKey] ?? []).includes(
-    (currentStageStatus ?? '').trim()
-  );
-}
+// ⚠ THERE IS NO POST-ENROLMENT FREEZE ANY MORE (removed 2026-09-10). KD #147's
+// module-ownership rule used to live here: once a student was fully 'Enrolled',
+// every admissions stage froze for EVERY role, superadmin included. It made an
+// honest correction to an enrolled child's record impossible for the people who
+// own that record. Every funnel stage is editable again; the audit row the
+// stage PATCH route writes on each field change is what makes that safe.
+//
+// `ENROLLED_PREREQ_STAGES` + `STAGE_TERMINAL_STATUS` above are a DIFFERENT rule
+// (they gate the flip TO Enrolled) and are still enforced.
 
 export const APPLICATION_TERMINAL_REASON_VALUES = [
   'chose_another_school',

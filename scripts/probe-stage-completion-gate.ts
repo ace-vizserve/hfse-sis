@@ -22,12 +22,14 @@
 //
 // "Blank" = null, or a string that is empty after trimming.
 //
-// THE FROZEN SPLIT IS THE POINT. `isAdmissionsStageFrozen` (lib/schemas/sis.ts,
-// KD #147) already refuses every edit to a fully-'Enrolled' student's funnel
-// stages. A blocked row that is ALSO frozen is harmless — the gate can never
-// fire on it, because the save is rejected one check earlier. Only
-// blocked-AND-still-editable is real impact. The script imports the shipped
-// predicate rather than restating it, so the two cannot drift.
+// EVERY BLOCKED ROW NOW COUNTS. This script used to split its findings into
+// "blocked but already frozen" (harmless — KD #147's post-enrolment freeze
+// rejected the save one check earlier) and "blocked and still editable" (the
+// real impact), and told you to read only the second column. THAT FREEZE WAS
+// REMOVED ON 2026-09-10: an enrolled student's funnel stages are editable
+// again, for every role. So there is no longer any such thing as a row the
+// gate can never fire on — every blocked row below is reachable, and the one
+// number the probe reports is the whole blast radius.
 //
 // STRICTLY READ-ONLY. Every statement is a SELECT or a `head: true` count.
 // Nothing is written, so it is safe to point at production. Exit code is 0
@@ -47,7 +49,7 @@
 //   npx tsx --env-file=.env.local scripts/probe-stage-completion-gate.ts
 import { fetchAllPages } from '../lib/supabase/paginate';
 import { prefixFor } from '../lib/admissions/_shared';
-import { isAdmissionsStageFrozen, type StageKey } from '../lib/schemas/sis';
+import { type StageKey } from '../lib/schemas/sis';
 import { createServiceClient } from '../lib/supabase/service';
 
 // ── formatting helpers (same house style as the other probes) ───────────────
@@ -170,10 +172,6 @@ type RuleTally = {
   armed: number;
   /** Of those, rows missing at least one required column. */
   blocked: number;
-  /** Blocked rows whose stage is ALREADY frozen — the gate can never fire. */
-  blockedFrozen: number;
-  /** Blocked rows that are still editable — the real impact. */
-  blockedEditable: number;
   /** Per required column, how many armed rows have it blank. */
   missingByCol: Map<string, number>;
   /** Per armed status value, armed / blocked. */
@@ -187,8 +185,6 @@ function emptyTally(): RuleTally {
   return {
     armed: 0,
     blocked: 0,
-    blockedFrozen: 0,
-    blockedEditable: 0,
     missingByCol: new Map(),
     byStatus: new Map(),
     whitespaceOnlyByCol: new Map(),
@@ -276,8 +272,6 @@ async function main() {
 
   const grand = {
     rowsAnyBlocked: 0,
-    rowsAnyBlockedEditable: 0,
-    rowsAnyBlockedAllFrozen: 0,
     totalRows: 0,
   };
   const grandByRule = new Map<string, RuleTally>();
@@ -290,11 +284,9 @@ async function main() {
     for (const r of RULES) tallies.set(r.id, emptyTally());
 
     let rowsAnyBlocked = 0;
-    let rowsAnyBlockedEditable = 0;
 
     for (const row of rows) {
       let anyBlocked = false;
-      let anyBlockedEditable = false;
 
       for (const rule of RULES) {
         const status = ((row[rule.statusCol] as string | null) ?? '').trim();
@@ -332,38 +324,19 @@ async function main() {
         bs.blocked += 1;
         gbs.blocked += 1;
         anyBlocked = true;
-
-        // Would the shipped freeze rule reject the save before the gate
-        // could? Imported, not restated — see the header.
-        const frozen = isAdmissionsStageFrozen(
-          rule.stageKey,
-          (row[rule.statusCol] as string | null) ?? null,
-          row.applicationStatus
-        );
-        if (frozen) {
-          t.blockedFrozen += 1;
-          g.blockedFrozen += 1;
-        } else {
-          t.blockedEditable += 1;
-          g.blockedEditable += 1;
-          anyBlockedEditable = true;
-        }
       }
 
       if (anyBlocked) rowsAnyBlocked += 1;
-      if (anyBlockedEditable) rowsAnyBlockedEditable += 1;
     }
 
     grand.totalRows += rows.length;
     grand.rowsAnyBlocked += rowsAnyBlocked;
-    grand.rowsAnyBlockedEditable += rowsAnyBlockedEditable;
-    grand.rowsAnyBlockedAllFrozen += rowsAnyBlocked - rowsAnyBlockedEditable;
 
-    console.log(`  rule  armed  blocked   frozen  editable   rule`);
+    console.log(`  rule  armed  blocked   rule`);
     for (const rule of RULES) {
       const t = tallies.get(rule.id)!;
       console.log(
-        `  ${rule.id}   ${pad(t.armed)}  ${pad(t.blocked, 7)}  ${pad(t.blockedFrozen, 7)}  ${pad(t.blockedEditable, 8)}   ${rule.label}`
+        `  ${rule.id}   ${pad(t.armed)}  ${pad(t.blocked, 7)}   ${rule.label}`
       );
     }
     for (const rule of RULES) {
@@ -389,26 +362,24 @@ async function main() {
     }
 
     console.log(
-      `\n  ▶ ${ay} distinct rows holding ≥1 blocked stage : ${rowsAnyBlocked} / ${rows.length}` +
-        `\n      of which STILL EDITABLE (real impact)     : ${rowsAnyBlockedEditable}` +
-        `\n      of which every hit is already frozen      : ${rowsAnyBlocked - rowsAnyBlockedEditable}`
+      `\n  ▶ ${ay} distinct rows holding ≥1 blocked stage : ${rowsAnyBlocked} / ${rows.length}`
     );
   }
 
   // ── Grand totals ──────────────────────────────────────────────────────────
   h1('GRAND TOTAL · ALL ACADEMIC YEARS');
-  console.log(`  rule  armed  blocked   frozen  editable   rule`);
+  console.log(`  rule  armed  blocked   rule`);
   for (const rule of RULES) {
     const g = grandByRule.get(rule.id)!;
     console.log(
-      `  ${rule.id}   ${pad(g.armed)}  ${pad(g.blocked, 7)}  ${pad(g.blockedFrozen, 7)}  ${pad(g.blockedEditable, 8)}   ${rule.label}`
+      `  ${rule.id}   ${pad(g.armed)}  ${pad(g.blocked, 7)}   ${rule.label}`
     );
   }
   console.log(
     `\n  Status rows read, all AYs                    : ${grand.totalRows}` +
       `\n  ▶ DISTINCT ROWS HOLDING ≥1 BLOCKED STAGE     : ${grand.rowsAnyBlocked}` +
-      `\n      still editable — the gate WOULD fire     : ${grand.rowsAnyBlockedEditable}` +
-      `\n      already frozen — the gate can NEVER fire : ${grand.rowsAnyBlockedAllFrozen}`
+      `\n      every one of them is reachable — the post-enrolment freeze that` +
+      `\n      used to make some of them unreachable was removed 2026-09-10.`
   );
 
   // ── Cross-check: same question, asked server-side ─────────────────────────
@@ -498,8 +469,9 @@ async function main() {
 
   h1('DONE — nothing was written');
   console.log(
-    'Read the "still editable" column. That, and only that, is the number of\n' +
-      'existing production rows the proposed gate would lock out of editing.\n'
+    'Read the "blocked" column. Every row it counts is reachable, so that is\n' +
+      'the number of existing production rows the proposed gate would lock out\n' +
+      'of editing.\n'
   );
 }
 

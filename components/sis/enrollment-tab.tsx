@@ -38,7 +38,6 @@ import { RichText } from '@/components/ui/rich-text';
 import { StatusBadge } from '@/components/ui/status-badge';
 import {
   ENROLLED_PREREQ_STAGES,
-  isAdmissionsStageFrozen,
   STAGE_COLUMN_MAP,
   type StageKey,
 } from '@/lib/schemas/sis';
@@ -458,9 +457,6 @@ export function EnrollmentTab({
   ];
 
   const applicationStatus = s.applicationStatus ?? null;
-  // Fully Enrolled freezes the funnel (KD #147). 'Enrolled (Conditional)' stays
-  // editable — it still has an outstanding condition to resolve.
-  const frozen = applicationStatus === 'Enrolled';
   const applicationTone: ApplicationTone =
     applicationStatus === 'Enrolled'
       ? 'enrolled'
@@ -494,23 +490,12 @@ export function EnrollmentTab({
         </div>
       )}
 
-      {frozen && (
-        <div className="flex items-start gap-3 rounded-xl border border-brand-mint/40 bg-brand-mint/10 p-4">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-brand-mint" />
-          <div className="space-y-1 text-sm leading-relaxed">
-            <p className="font-medium text-foreground">
-              This student is enrolled — the admissions funnel is now a
-              read-only record.
-            </p>
-            <p className="text-muted-foreground">
-              Supplies and orientation can still be updated until they&apos;re
-              finalized. Manage enrolment (withdrawal, re-enrolment) in Records
-              and documents in P-Files.
-            </p>
-          </div>
-        </div>
-      )}
-
+      {/* ⚠ THE "read-only once enrolled" BANNER THAT USED TO SIT HERE IS GONE
+          (2026-09-10). It announced KD #147's post-enrolment freeze, which has
+          been removed — every stage below stays editable after a student
+          enrols, and each save writes an audit row. The Application status card
+          immediately below still says, plainly, that the student is enrolled,
+          so nothing about the state is now unsaid. */}
       <StageProgressCard
         prereqStages={[...intakeCards, ...commitmentsCards].filter((c) =>
           (ENROLLED_PREREQ_STAGES as readonly StageKey[]).includes(c.key)
@@ -524,7 +509,6 @@ export function EnrollmentTab({
         s={s}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
-        frozen={frozen}
         canEdit={canEdit}
         canAssignSection={canAssignSection}
       />
@@ -680,7 +664,6 @@ function ApplicationStatusCard({
   s,
   ayCode,
   enroleeNumber,
-  frozen,
   canEdit,
   canAssignSection,
 }: {
@@ -689,7 +672,6 @@ function ApplicationStatusCard({
   s: StatusRow;
   ayCode: string;
   enroleeNumber: string;
-  frozen: boolean;
   canEdit: boolean;
   canAssignSection: boolean;
 }) {
@@ -787,7 +769,6 @@ function ApplicationStatusCard({
               initialStatus={applicationCard.status}
               initialRemarks={applicationCard.remarks}
               initialExtras={applicationCard.extrasInitial}
-              frozen={frozen}
               canAssignSection={canAssignSection}
               prereqStatuses={prereqStatuses}
             />
@@ -1159,14 +1140,6 @@ function StageStatusTile({
   /** May this viewer open `/sis/sections`? See the Props docstring above. */
   canReachSectionSetup: boolean;
 }) {
-  // Per-stage freeze (KD #147): all stages freeze once fully Enrolled, except
-  // supplies/orientation which stay editable until finalized. Shared with the
-  // stage PATCH route so the disabled control matches the server's 422.
-  const frozen = isAdmissionsStageFrozen(
-    stage.key,
-    stage.status,
-    applicationStatus
-  );
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
   // The class stage has no edit control of its own here. Class Assignment is
@@ -1213,7 +1186,6 @@ function StageStatusTile({
             initialStatus={stage.status}
             initialRemarks={stage.remarks}
             initialExtras={stage.extrasInitial}
-            frozen={frozen}
           />
         ) : null}
       </div>
@@ -1282,9 +1254,9 @@ function StageStatusTile({
             </Link>
           </Button>
         )}
-      {/* Enrolled but unplaced — this tile is otherwise a dead end, because
-          the class stage is frozen once Enrolled and the queue is the only
-          door left. */}
+      {/* Enrolled but unplaced — this tile is otherwise a dead end, because the
+          class stage has no edit control of its own (placement is done in
+          Records), so the queue is the only door out of here. */}
       {awaitingPlacement && canAssignSection && (
         <Button asChild variant="outline" size="sm" className="ml-1 self-start">
           <Link href="/records/unsynced">

@@ -70,7 +70,6 @@ export function EditStageDialog({
   initialRemarks,
   initialExtras,
   prereqStatuses,
-  frozen = false,
   canAssignSection = false,
 }: {
   ayCode: string;
@@ -79,12 +78,6 @@ export function EditStageDialog({
   initialStatus: string | null;
   initialRemarks: string | null;
   initialExtras: ExtraValues;
-  /**
-   * When true the student is fully Enrolled — the admissions funnel becomes a
-   * read-only record (KD #147). The trigger button is disabled and submit is
-   * guarded. Enrolment changes move to Records, documents to P-Files.
-   */
-  frozen?: boolean;
   /**
    * Current statuses for the 5 ENROLLED_PREREQ_STAGES. Optional — when
    * provided AND `stageKey === 'application'` AND the user picks `Enrolled`
@@ -464,7 +457,6 @@ export function EditStageDialog({
   }
 
   async function onSubmit(values: StageUpdateInput) {
-    if (frozen) return;
     const extrasPayload = {
       ...values.extras,
       ...(stageKey === 'application' &&
@@ -547,18 +539,12 @@ export function EditStageDialog({
         }
       }}
     >
+      {/* ⚠ NO `disabled` HERE ANY MORE. Until 2026-09-10 this button greyed
+          itself out once the student was fully Enrolled (KD #147's freeze).
+          That rule is gone: an enrolled student's funnel record stays
+          correctable, and every save still writes an audit row. */}
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1 text-xs"
-          disabled={frozen}
-          title={
-            frozen
-              ? 'Enrolled — managed in Records (enrolment) and P-Files (documents).'
-              : undefined
-          }
-        >
+        <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
           <Pencil className="size-3" />
           Edit
         </Button>

@@ -13,8 +13,6 @@ import {
   ENROLLED_PREREQ_STAGES,
   evaluateEnrolledFlip,
   findStageCompletionBlockers,
-  isAdmissionsStageFrozen,
-  POST_ENROLMENT_EDITABLE_STAGES,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
@@ -169,53 +167,21 @@ export async function PATCH(
     );
   }
 
-  // 1.4) Post-enrolment stage freeze (module-ownership rule — historical vs
-  // current truth, KD #147). Once a student is FULLY 'Enrolled', the admissions
-  // funnel is historical: the post-enrolment lifecycle is owned by Records
-  // (enrolment / withdrawal / re-enrolment — which cascades the applicationStatus
-  // mirror) and P-Files (documents). Every stage freezes EXCEPT `supplies` +
-  // `orientation`, which legitimately happen after enrolment and stay editable
-  // until they reach a finalized status (then they lock too — forward-only).
-  // 'Enrolled (Conditional)' is fully editable (it still has a condition to
-  // resolve). The withdrawal / re-enrol cascades write applicationStatus via the
-  // section-students route (direct table write), NOT this editor, so they are
-  // unaffected. Shared `isAdmissionsStageFrozen` so the UI can't drift.
-  const currentStageStatus =
-    ((before as unknown as Record<string, unknown>)[cols.statusCol] as
-      | string
-      | null) ?? null;
-  let currentAppStatus: string | null;
-  if (stageKey === 'application') {
-    currentAppStatus = currentStageStatus;
-  } else {
-    const { data: appRow } = await supabase
-      .from(statusTable)
-      .select('"applicationStatus"')
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle();
-    currentAppStatus =
-      (appRow as { applicationStatus: string | null } | null)
-        ?.applicationStatus ?? null;
-  }
-  if (isAdmissionsStageFrozen(stageKey, currentStageStatus, currentAppStatus)) {
-    const isPostEnrol = (
-      POST_ENROLMENT_EDITABLE_STAGES as readonly string[]
-    ).includes(stageKey);
-    return NextResponse.json(
-      isPostEnrol
-        ? {
-            error:
-              'This step is already finalized and can no longer be changed.',
-            code: 'stage_finalized',
-          }
-        : {
-            error:
-              'This student is enrolled — their record is now managed in Records (enrolment, withdrawal, re-enrolment) and P-Files (documents). The admissions funnel is read-only.',
-            code: 'enrolled_frozen',
-          },
-      { status: 422 }
-    );
-  }
+  // ⚠ THERE IS NO POST-ENROLMENT FREEZE ANY MORE (removed 2026-09-10; it was
+  // KD #147's module-ownership rule). Every funnel stage stays editable after
+  // a student enrols, for every role that could edit it before.
+  //
+  // What makes that safe is the audit row this route already writes on every
+  // field change — a wrong edit is attributable and reversible, which is what
+  // the freeze was really buying at the cost of making honest corrections
+  // impossible.
+  //
+  // ⚠ THREE FIELDS STILL HAVE TEETH, and they are worth knowing before anyone
+  // adds a bulk editor here: `fatherEmail` and `guardianEmail` each gate two
+  // document slots, and `applicationStatus === 'Enrolled (Conditional)'` gates
+  // one. Clearing a gate HIDES a slot that may already hold an approved file.
+  // Nothing is deleted — the column keeps the file and restoring the gate
+  // brings it back — but no screen shows it while the gate is shut.
 
   // 1.5) Terminal-status reversal guard (M7 / KD #59).
   // Cancelled and Withdrawn are terminal states in the SIS funnel. Flipping
@@ -461,8 +427,8 @@ export async function PATCH(
   // "subject to a deliberation by Academics Team"
   // (docs/context/admission-process.md). A student enrolled without one is a
   // normal, expected state — they surface in the students-needing-setup queue
-  // and are placed later via /assign-section, which is also the only door once
-  // `isAdmissionsStageFrozen` freezes the class stage.
+  // and are placed later via /assign-section, which stays the ordinary door for
+  // placing an already-enrolled student.
   //
   // A section MAY still be supplied, as a convenience for a coordinator doing
   // both steps at once. There is deliberately no auto-pick anywhere (see
