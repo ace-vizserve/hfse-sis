@@ -40,6 +40,7 @@ export default async function RecordsLayout({
 
   const { id, email, role, roles } = view;
   if (
+    role !== 'admissions' &&
     role !== 'academic_coordinator' &&
     role !== 'school_admin' &&
     role !== 'superadmin'

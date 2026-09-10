@@ -51,6 +51,7 @@ export default async function RecordsStudentsPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
+    sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'

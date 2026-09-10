@@ -39,6 +39,7 @@ export default async function PFilesLayout({
 
   const { id, email, role, roles } = view;
   if (
+    role !== 'admissions' &&
     role !== 'p_file_officer' &&
     role !== 'school_admin' &&
     role !== 'superadmin'

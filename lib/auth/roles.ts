@@ -274,7 +274,12 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: '/records/academic-summary',
         label: 'Overview',
-        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
       },
     ],
   },
@@ -1089,8 +1094,12 @@ export const ROUTE_ACCESS: Array<{
     allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
+    // `admissions` joined 2026-09-10 when the P-Files officer role was
+    // retired and admissions absorbed the whole document lifecycle. They
+    // hold every documents_* capability, so the module they reach here is
+    // fully theirs rather than a read-only courtesy.
     prefix: '/p-files',
-    allowed: ['p_file_officer', 'school_admin', 'superadmin'],
+    allowed: ['admissions', 'school_admin', 'superadmin'],
   },
   // ── The applicant record, split list-vs-detail for the P-Files officer ────
   // These three rows are order-sensitive; see `exact` on ROUTE_ACCESS above.
@@ -1148,11 +1157,21 @@ export const ROUTE_ACCESS: Array<{
   // restriction is documented at the route and longer-prefix-wins holds.
   {
     prefix: '/records/academic-summary',
-    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
   },
   {
     prefix: '/records',
-    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+    allowed: [
+      'admissions',
+      'academic_coordinator',
+      'school_admin',
+      'superadmin',
+    ],
   },
   // The hub admits the academic coordinator so SIS Admin appears in her module
   // switcher — the switcher shows a module iff `isRouteAllowed(primaryHref)`,

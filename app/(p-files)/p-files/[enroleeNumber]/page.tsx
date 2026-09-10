@@ -77,6 +77,7 @@ export default async function StudentDocumentDetailPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
+    sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'p_file_officer' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'

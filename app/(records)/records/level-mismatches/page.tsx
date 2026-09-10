@@ -34,6 +34,7 @@ export default async function LevelMismatchesPage() {
   if (!sessionUser) redirect('/login');
   const role = sessionUser.role ?? '';
   if (
+    role !== 'admissions' &&
     role !== 'academic_coordinator' &&
     role !== 'school_admin' &&
     role !== 'superadmin'

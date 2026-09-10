@@ -299,6 +299,7 @@ export default async function RecordsStudentCrossYearPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (
+    sessionUser.role !== 'admissions' &&
     sessionUser.role !== 'academic_coordinator' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
@@ -308,8 +309,8 @@ export default async function RecordsStudentCrossYearPage({
 
   // `<StpApplicationCard>` gained an OPTIONAL `canEdit` defaulting to FALSE
   // (KD #173) so the P-Files officer gets a read-only applicant file. Passed
-  // explicitly here so this page's behaviour is unchanged: all three roles
-  // admitted above are STUDENT_RECORD_WRITERS, so it is always true — stated,
+  // explicitly here so this page's behaviour is unchanged: every role
+  // admitted above is in STUDENT_RECORD_WRITERS, so it is always true — stated,
   // not assumed, so a future change to either list is visible at this line.
   const canEditRecord = canWriteStudentRecord(sessionUser.role);
 

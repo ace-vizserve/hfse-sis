@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_ROLE_CAPABILITIES } from '@/lib/auth/capabilities';
+import { isRouteAllowed } from '@/lib/auth/roles';
 
 /**
  * 2026-09-10 — the P-Files Officer role was retired and `admissions` took the
@@ -34,5 +35,26 @@ describe('admissions absorbs the P-Files officer', () => {
       (c) => !(DOCUMENT_CAPABILITIES as readonly string[]).includes(c)
     );
     expect(extra).toEqual([]);
+  });
+});
+
+describe('admissions reaches the modules it absorbed', () => {
+  it('may open P-Files', () => {
+    expect(isRouteAllowed('/p-files', 'admissions')).toBe(true);
+    expect(isRouteAllowed('/p-files/2026-0001', 'admissions')).toBe(true);
+  });
+
+  it('may open Records', () => {
+    expect(isRouteAllowed('/records', 'admissions')).toBe(true);
+    expect(isRouteAllowed('/records/academic-summary', 'admissions')).toBe(
+      true
+    );
+  });
+
+  it('still does not reach SIS Admin or the approvers editor', () => {
+    // The merge is about student documents and records, not about handing
+    // admissions the configuration surfaces.
+    expect(isRouteAllowed('/sis/admin/roles', 'admissions')).toBe(false);
+    expect(isRouteAllowed('/sis/admin/approvers', 'admissions')).toBe(false);
   });
 });
