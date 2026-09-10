@@ -1,6 +1,9 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Sunrise, Sun, Moon } from 'lucide-react';
+import { CalendarPlus, Sunrise, Sun, Moon, UserCog } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
@@ -77,10 +80,27 @@ export default async function Home() {
             capabilities
           )}
         />
-        <p className="mt-8 text-sm text-muted-foreground">
-          No current academic year is set yet — ask a superadmin to configure
-          one in SIS Admin.
-        </p>
+        {/* §7.6 — this is the first thing a whole school sees on a fresh
+            install, and it was a bare sentence. An empty state that looks
+            like a rendering failure on the login-landing page is the worst
+            possible place for one. */}
+        <Card className="mt-8">
+          <CardContent className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <CalendarPlus className="size-[18px]" aria-hidden />
+            </div>
+            <div className="space-y-1">
+              <p className="font-serif text-[15px] font-semibold text-foreground">
+                No academic year is set up yet
+              </p>
+              <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                Classes, marks and attendance all hang off the school year. A
+                superadmin can create one in SIS Admin, and this page fills in
+                straight away.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </PageShell>
     );
   }
@@ -137,8 +157,15 @@ export default async function Home() {
       {/* The panel renders nothing when there is no cover booked, which is the
           ordinary case — so the gap below the header has to come from here
           instead, or every teacher without cover gets a tighter page. */}
+      {/* ⚠ GRID, NOT FLEX, AND THE RATIO IS EXPLICIT. `flex-[2]` / `flex-1` on
+          the children made the split depend on content: "Coming up" with two
+          short rows and a to-do list with nine did not hold 2:1, they
+          negotiated it, and the row's proportions moved as the data moved. A
+          named grid ratio holds whatever is in the panels.
+          Gap is 6 (24px), matching §3.4's rhythm — it was 3 (12px), which read
+          as two halves of one object rather than two panels. */}
       <div
-        className={`${upcomingCover.length > 0 ? 'mt-6' : 'mt-8'} mb-6 flex flex-col gap-3 lg:flex-row lg:items-stretch`}
+        className={`${upcomingCover.length > 0 ? 'mt-6' : 'mt-10'} mb-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.7fr_1fr] lg:items-stretch`}
       >
         <TodoPanel title={todoTitle} items={todos} />
         <ComingUpPanel events={events} />
@@ -167,14 +194,16 @@ function Header({
   return (
     <header className="flex flex-col gap-6 border-b border-border pb-7 md:flex-row md:items-end md:justify-between">
       <div className="flex items-start gap-4">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <GreetingIcon className="size-[21px]" />
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <GreetingIcon className="size-[22px]" />
         </div>
         <div>
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             HFSE · Student Information System
           </p>
-          <h1 className="mt-2 font-serif text-[32px] font-semibold leading-[1.08] tracking-tight text-foreground md:text-[38px]">
+          {/* 38/44, the §8 hero size. This was 32/38 — a step smaller than
+              every other page in the app, on the page that opens it. */}
+          <h1 className="mt-2 font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             {label}, {name}.
           </h1>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
@@ -182,7 +211,17 @@ function Header({
           </p>
         </div>
       </div>
-      <QuickActionsRow actions={quickActions} />
+      {/* `/` has no sidebar, so this is the only route to Account from the
+          page every role lands on after signing in. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <QuickActionsRow actions={quickActions} />
+        <Button variant="outline" asChild>
+          <Link href="/account">
+            <UserCog />
+            Account
+          </Link>
+        </Button>
+      </div>
     </header>
   );
 }

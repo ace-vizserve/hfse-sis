@@ -113,13 +113,20 @@ export function TodoPanel({
   const showGroups = urgent.length > 0 && calm.length > 0;
 
   return (
-    <Card className="flex-[2] overflow-hidden p-0">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <ListChecks className="size-[15px]" aria-hidden />
+    // No flex ratio here — the home page's grid owns the column split now, and
+    // a `flex-[2]` left on a grid item is a second, silent opinion about width.
+    <Card className="overflow-hidden p-0">
+      {/* ⚠ THE THREE HOME PANELS SHARE ONE HEADER TREATMENT — size-9 tile,
+          serif 18px, px-5 py-4. They shipped with three different paddings
+          (px-4 py-3, px-4 py-3, px-5 py-3.5) and two tile sizes, which is why
+          the page read as slightly-off rather than obviously wrong: nothing
+          lined up across the row. */}
+      <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <ListChecks className="size-[17px]" aria-hidden />
           </div>
-          <span className="font-serif text-base font-semibold text-foreground">
+          <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
             {title}
           </span>
         </div>

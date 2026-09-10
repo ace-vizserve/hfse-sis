@@ -1,4 +1,4 @@
-import { Activity } from 'lucide-react';
+import { Activity, History } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -17,17 +17,33 @@ function dotClass(tone: RecentAction['tone']): string {
 export function RecentActionsPanel({ actions }: { actions: RecentAction[] }) {
   return (
     <Card className="overflow-hidden p-0">
-      <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
-        <div className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <Activity className="size-[15px]" aria-hidden />
+      {/* Header treatment matched to `todo-panel.tsx` — see the note there.
+          Also `font-semibold`, not `font-bold`: this was the only serif title
+          on the page set a weight heavier than every other card in the app. */}
+      <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+          <Activity className="size-[17px]" aria-hidden />
         </div>
-        <span className="font-serif text-base font-bold text-foreground">
+        <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
           Recent actions
         </span>
       </div>
       {actions.length === 0 ? (
-        <div className="px-5 py-4 text-xs text-muted-foreground">
-          Nothing you&apos;ve done shows up here yet.
+        // §7.6 — matched to `todo-panel.tsx`'s empty state, which is the one
+        // on this page that already had the full pattern.
+        <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <History className="size-[18px]" aria-hidden />
+          </div>
+          <div className="space-y-1">
+            <p className="font-serif text-[15px] font-semibold text-foreground">
+              No activity yet
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Marks, attendance and approvals you record will appear here as you
+              go.
+            </p>
+          </div>
         </div>
       ) : (
         <ol className="relative py-5 pr-5 pl-14">
@@ -44,7 +60,10 @@ export function RecentActionsPanel({ actions }: { actions: RecentAction[] }) {
                 )}
                 aria-hidden
               >
-                <span className="size-2 rounded-full bg-white" />
+                {/* `bg-primary-foreground`, not `bg-white` — Hard Rule #7.
+                    Same resolved value, but it is the token for "on a primary
+                    surface", which is what this dot sits on. */}
+                <span className="size-2 rounded-full bg-primary-foreground" />
               </span>
               <div className="flex items-start justify-between gap-3">
                 <div>

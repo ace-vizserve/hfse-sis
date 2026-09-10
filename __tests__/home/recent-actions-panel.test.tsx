@@ -34,9 +34,14 @@ describe('RecentActionsPanel', () => {
   });
 
   it('shows an empty state when there is no recent activity', () => {
+    // ⚠ ASSERTS BOTH HALVES, not just that some text appeared. §7.6 says an
+    // empty state carries a title AND a sentence of guidance — this panel
+    // shipped with only a one-line note until 2026-09-10, which is exactly
+    // what a test matching a single string cannot tell you.
     render(<RecentActionsPanel actions={[]} />);
+    expect(screen.getByText('No activity yet')).toBeInTheDocument();
     expect(
-      screen.getByText("Nothing you've done shows up here yet.")
+      screen.getByText(/Marks, attendance and approvals you record/)
     ).toBeInTheDocument();
   });
 });
