@@ -2,12 +2,15 @@
 
 ## User Roles
 
-| Role         | Who                   | Permissions                                                                             |
-| ------------ | --------------------- | --------------------------------------------------------------------------------------- |
-| `teacher`    | Subject teachers      | Enter/edit scores for their assigned subject + section + term (while unlocked)          |
-| `registrar`  | Joann Clemente        | Lock/unlock sheets, apply post-lock edits, manage student roster, generate report cards |
-| `admin`      | Ms. Chandana, Ms. Tin | Approve grade adjustment requests, set lock schedules                                   |
-| `superadmin` | Ace/Kurt (Vizserve)   | Full system access, configuration, user management                                      |
+**There are five, and the strings below are the live ones.** `registrar` → `academic_coordinator` and `p-file` → `p_file_officer` were renamed in KD #155; `admin` → `school_admin` in KD #39; and **`p_file_officer` was retired entirely on 2026-09-10 (KD #207)**, with `admissions` absorbing the document lifecycle. The rest of this doc still says "registrar" and "admin" in its grading narrative — read those as `academic_coordinator` and `school_admin`. The authoritative role list is `ROLES` in `lib/auth/roles.ts`; the authoritative access table is `docs/context/14-modules-overview.md`.
+
+| Role                   | Who                                             | Permissions                                                                                                                                                                          |
+| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `teacher`              | Subject teachers + form class advisers          | Enter/edit scores for their assigned subject + section + term (while unlocked); FCA write-ups and attendance for their own sections                                                  |
+| `academic_coordinator` | Joann Clemente                                  | Lock/unlock sheets, apply post-lock edits, manage student roster, generate report cards, set weights / virtue themes / the AY                                                        |
+| `admissions`           | Admissions team                                 | The applications funnel end to end, **the whole document lifecycle on both sides of enrolment** (P-Files), and Records — including placing a student in a class and withdrawing them |
+| `school_admin`         | Ms. Chandana, Ms. Tin, office + oversight staff | Approve grade adjustment requests, set lock schedules, cross-cutting config; also holds every document capability                                                                    |
+| `superadmin`           | Ace/Kurt (Vizserve)                             | Full system access, configuration, user management, role permissions                                                                                                                 |
 
 ## End-to-End Grading Workflow
 

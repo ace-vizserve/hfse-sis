@@ -112,23 +112,38 @@ The single "enrolment" event hands off two different axes to two different owner
 
 The rule is enforced at the **write layer**, not just in the UI:
 
-- **Status freeze (Lock #1):** `app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts`
-  rejects a stage-status mutation when the student is fully `Enrolled` — via the
-  shared `isAdmissionsStageFrozen` (`lib/schemas/sis.ts`). \*\*Exception: `supplies`
-  - `orientation`** legitimately happen *after* enrolment (kit pickup, orientation
-    day), so they stay editable post-`Enrolled` **until they reach a finalized
-    status\*\* (supplies `Claimed`/`Cancelled`, orientation `Finished`/`Cancelled`),
-    after which they lock too — forward-only (422 `stage_finalized`). Every other
-    stage 422s `enrolled_frozen`. `Enrolled (Conditional)` stays fully editable
-    until it resolves to `Enrolled`. The withdrawal/re-enrol cascades are
-    unaffected (they write via the section-students route, not this editor). The
-    enrollment-tab UI computes the same `isAdmissionsStageFrozen` per stage so the
-    disabled control matches the server.
-- **Document handoff (Lock #2):** `app/api/sis/students/[enroleeNumber]/document/[slotKey]/route.ts`
-  rejects (403) the `admissions` role on an **enrolled** student (post-enrolment
-  documents are P-Files') and the `p-file` role on an **un-enrolled** student
-  (pre-enrolment validation is Admissions'). `registrar`/`superadmin` may act on
-  either side (KD #37).
+- ⚠ **Status freeze (Lock #1) — REMOVED 2026-09-10. There is no post-enrolment
+  stage freeze any more.** It used to sit in
+  `app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts` and reject
+  every stage-status mutation once a student was fully `Enrolled`, for **every
+  role including superadmin** — module ownership expressed as a lock. Mr Ace:
+  _"we should just enable that its all audit logged anyways"_. It made an honest
+  correction to an enrolled child's record impossible for the people who own
+  that record, and what replaces it is the **audit row that route already writes
+  on every field change**. `isAdmissionsStageFrozen`,
+  `POST_ENROLMENT_EDITABLE_STAGES` and `STAGE_FINALIZED_STATUSES` are deleted
+  from `lib/schemas/sis.ts` — deleted rather than left dormant, so no caller can
+  quietly reintroduce the rule; `__tests__/sis/enrolled-record-stays-editable.test.ts`
+  asserts they stay gone.
+  - **What is NOT affected:** the prerequisite gate on the flip **to** `Enrolled`
+    (`ENROLLED_PREREQ_STAGES` + `STAGE_TERMINAL_STATUS`) is a different rule and
+    still fires; so does the per-status completion gate
+    (`findStageCompletionBlockers`). The withdrawal / re-enrol cascades never went
+    through this editor.
+  - ⚠ **Three stage fields have teeth now that they are editable after
+    enrolment:** `fatherEmail` and `guardianEmail` each gate two document slots,
+    and `applicationStatus = 'Enrolled (Conditional)'` gates one. Clearing a gate
+    **hides** a slot that may already hold an approved file. Nothing is deleted
+    and restoring the gate brings it back, but no screen shows it meanwhile.
+- **Document handoff (Lock #2) — still in force, and it was never really about
+  role names.** `app/api/sis/students/[enroleeNumber]/document/[slotKey]/route.ts`
+  picks `documents_pre_enrolment.validate` or `documents_post_enrolment.validate`
+  from the **student's** enrolment state, and the caller must hold that side.
+  KD #166 made it a capability precisely so one person could hold both. Today
+  `admissions`, `school_admin` and `superadmin` each hold both, since
+  `p_file_officer` was retired into `admissions` on 2026-09-10 (KD #207).
+  `registrar` in older prose here means `academic_coordinator` (KD #155), and she
+  holds no document capability at all since migration 106.
 - **Shared profile (Open):** profile/family edits are exposed from Records too
   (writing the existing `/profile` + `/family/[parent]` routes, which already
   allow `registrar`). This **amends KD #97** — Records is no longer read-only on

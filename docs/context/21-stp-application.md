@@ -2,7 +2,11 @@
 
 ## What this doc is
 
-HFSE's workflow for sponsoring foreign-student Singapore Student Pass (STP) applications with the Immigration & Checkpoints Authority of Singapore (ICA). This doc owns the **field gate** (`stpApplicationType`), the **3 STP-conditional document slots**, the **`residenceHistory`** column, and how the SIS surfaces (or will surface) the workflow today.
+🔴 **THE 3 STP-CONDITIONAL DOCUMENT SLOTS DO NOT EXIST. Everything below about `icaPhoto`, `financialSupportDocs` and `vaccinationInformation` is HISTORY — read it as the design that was built and then withdrawn.** Migration 050 removed them (**KD #96**): HFSE parents upload those files to ICA's own portal directly, so the school never receives them and tracking a status for them was meaningless. `DOCUMENT_SLOTS` does not list them and **`STP_CONDITIONAL_SLOT_KEYS` is an empty tuple**, kept exported only for import back-compat — a `.includes()` against it folds to false, which is why nothing broke loudly. The DB columns stay on `ay{YY}_enrolment_documents` for historical preservation and are read and written by nothing. **Do not add new STP document slots back without a migration and a fresh decision.** There are **21** document slots, none of them STP-gated; `lib/p-files/document-config.ts::DOCUMENT_SLOTS` is the source of truth and `docs/context/12-p-files-module.md` is the current write-up.
+
+**What IS still tracked, and is the live half of this doc:** `stpApplicationType`, `stpApplicationStatus` (`Pending → Submitted → Approved | Rejected`) and `residenceHistory` on the `ay{YY}_enrolment_applications` / `_status` rows. The school records which phase the family is in; ICA owns the actual document collection.
+
+HFSE's workflow for sponsoring foreign-student Singapore Student Pass (STP) applications with the Immigration & Checkpoints Authority of Singapore (ICA). This doc owns the **field gate** (`stpApplicationType`), the **`stpApplicationStatus` phases**, the **`residenceHistory`** column, and how the SIS surfaces (or will surface) the workflow today.
 
 The pipeline is a parallel sub-flow that applies only to foreign-student personas — Singapore Citizens and PR holders skip it entirely. It piggybacks on the existing admissions tables and document-status flow rather than introducing a separate STP table.
 

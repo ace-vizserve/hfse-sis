@@ -4,12 +4,12 @@ All API routes are Next.js App Router route handlers under `app/api/`. This doc 
 
 ## Conventions
 
-- **Auth.** Every staff route calls `requireRole([...])` from `lib/auth/require-role.ts` (Supabase session + `app_metadata.role`). Roles are `teacher | registrar | school_admin | superadmin | p-file | admissions` (KD #2; the old `admin` role was retired in favour of `school_admin`, KD #39). In the tables below, **registrar+** = `registrar, school_admin, superadmin`.
+- **Auth.** Every staff route calls `requireRole([...])` from `lib/auth/require-role.ts` (Supabase session + `app_metadata.role`). Roles are `teacher | academic_coordinator | admissions | school_admin | superadmin` — **five** (KD #2). `admin` was retired in favour of `school_admin` (KD #39); `registrar`/`p-file` were renamed to `academic_coordinator`/`p_file_officer` (KD #155); and `p_file_officer` was retired into `admissions` on 2026-09-10 (KD #207). ⚠ **The tables below still say `registrar` and `p-file` throughout — read those as `academic_coordinator` and, for document work, `admissions`.** **registrar+** = `academic_coordinator, school_admin, superadmin`.
 - **No login/logout API routes.** Staff sign in on `/login` via the Supabase browser client. The only route under `/api/auth/` is `GET /api/auth/callback` (Supabase auth code exchange).
 - **Validation** is mixed by design (KD #23): manual checks for simple mutations, zod `safeParse` (schemas in `lib/schemas/`) for complex ones. Don't migrate routes for uniformity.
 - **Audit.** Every mutating route logs via `lib/audit/log-action.ts` into the generic `audit_log` (KD #9).
 - **Cache invalidation.** Mutations call `revalidateTag` (e.g. `sis:${ayCode}`) and/or `invalidateDrillTags(module, ayCode)` after the write (KD #80).
-- **Errors** are JSON `{ error: string }` with an appropriate status; several routes also carry a machine-readable `code` (e.g. 422 `publish_blocked`, 422 `enrolled_frozen`).
+- **Errors** are JSON `{ error: string }` with an appropriate status; several routes also carry a machine-readable `code` (e.g. 422 `publish_blocked`, 409 `no_document_row`). ⚠ **`enrolled_frozen` and `stage_finalized` were retired on 2026-09-10** with KD #147's post-enrolment stage freeze — the stage editor no longer refuses an enrolled student, so a client still branching on those codes is branching on something that can never arrive.
 - **Removed features return 410 Gone**, not 404 — e.g. the legacy Evaluation PTC routes (KD #114).
 
 ## Students & Sync
@@ -178,18 +178,18 @@ The response carries a deliberately narrow field set built by `lib/classroom/stu
 
 Field edits on the AY-prefixed admissions tables. Most are gated `admissions, registrar, superadmin`; write-locks per the module-ownership model (KD #147/#150) apply on top of the role gate.
 
-| Route (under `/api/sis/students/:enroleeNumber/`) | Method | Description                                                                                |
-| ------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
-| `profile`                                         | PATCH  | Shared student profile (identity/contacts)                                                 |
-| `family/:parent`                                  | PATCH  | Mother / father / guardian details                                                         |
-| `stage/:stageKey`                                 | PATCH  | 9-stage pipeline status editor; frozen post-Enrolled except supplies/orientation (KD #147) |
-| `document/:slotKey`                               | PATCH  | Approve/reject/set a document slot (admissions pre-enrolment, p-file post — KD #147)       |
-| `stp-status`                                      | PATCH  | STP application type/status (KD #61)                                                       |
-| `residence-history`                               | PATCH  | ICA 5-year residence history                                                               |
-| `pre-course`                                      | PATCH  | Pre-course counselling fields                                                              |
-| `allowance` / `vl-allowance`                      | PATCH  | registrar+ — compassionate / vacation leave allowances (KD #94)                            |
-| `transfer-section`                                | POST   | registrar+ — atomic mid-year section transfer (KD #67)                                     |
-| `assign-section`                                  | POST   | registrar+ — class assignment (step 11) + sync; returns `midTermEnrolment` (KD #180)       |
+| Route (under `/api/sis/students/:enroleeNumber/`) | Method | Description                                                                                                                                                                                                                               |
+| ------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile`                                         | PATCH  | Shared student profile (identity/contacts)                                                                                                                                                                                                |
+| `family/:parent`                                  | PATCH  | Mother / father / guardian details                                                                                                                                                                                                        |
+| `stage/:stageKey`                                 | PATCH  | 9-stage pipeline status editor. ⚠ **No longer frozen post-Enrolled** — KD #147's freeze was removed 2026-09-10; every stage stays editable and each field change writes an audit row. The prereq gate on the flip TO Enrolled still fires |
+| `document/:slotKey`                               | PATCH  | Approve/reject/set a document slot (admissions pre-enrolment, p-file post — KD #147)                                                                                                                                                      |
+| `stp-status`                                      | PATCH  | STP application type/status (KD #61)                                                                                                                                                                                                      |
+| `residence-history`                               | PATCH  | ICA 5-year residence history                                                                                                                                                                                                              |
+| `pre-course`                                      | PATCH  | Pre-course counselling fields                                                                                                                                                                                                             |
+| `allowance` / `vl-allowance`                      | PATCH  | registrar+ — compassionate / vacation leave allowances (KD #94)                                                                                                                                                                           |
+| `transfer-section`                                | POST   | registrar+ — atomic mid-year section transfer (KD #67)                                                                                                                                                                                    |
+| `assign-section`                                  | POST   | registrar+ — class assignment (step 11) + sync; returns `midTermEnrolment` (KD #180)                                                                                                                                                      |
 
 Related reads: `GET /api/sis/today-term` (current-term resolver, KD #116), `GET /api/sis/cohorts/:cohort` (STP / medical / pass-expiry cohort lenses), `POST /api/sis/students/raw-columns` (export sheet's load-all-columns read).
 

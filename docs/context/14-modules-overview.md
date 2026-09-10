@@ -26,15 +26,15 @@ Owns the "Form Class Adviser's Comments" on T1–T3 report cards. FCA write-ups 
 
 ### P-Files — document repository (`/p-files/*`)
 
-Per-student document storage with revision history. Stores file URLs + metadata + expiries; archives prior versions on replace; never sets `'Rejected'` (that's the document-validation route's job). Three-tier access: `p-file` officers and superadmin have full write, school_admin is read-only. Enrolled-students-only scope (KD #71). See `12-p-files-module.md`.
+Per-student document storage with revision history, and the place documents are reviewed. Stores file URLs + metadata + expiries; archives prior versions on replace. **Scope is everyone in the academic year, applicants and enrolled students alike (KD #204, which reversed KD #71's enrolled-only rule)** — they share one documents row and one 21-slot list. **Access: `admissions`, `school_admin` and `superadmin`, all three with full write** — the `p_file_officer` role was retired 2026-09-10 and admissions absorbed all eight document capabilities (KD #207). Writes are gated on capabilities, not role names, and the route picks the pre- or post-enrolment side from the student's enrolment state. See `12-p-files-module.md`.
 
 ### Admissions — pre-enrolment pipeline (`/admissions/*`)
 
-The full pre-enrolment funnel (Inquiry → Applied → Interviewed → Offered → Accepted → Enrolled). Profile / family / stage pipeline editing, document validation (approve/reject), discount-code catalogue CRUD, STP application tracking, application feedback, staleness filter. Analytics dashboard + Enrollment Health Insights (`/admissions/insights`, KD #140). **Frozen post-enrolment** for most axes (KD #147) — Records owns the academic lifecycle once the student is Enrolled. Audience: admissions role, registrar, school_admin, superadmin. See `08-admission-dashboard.md`.
+The full pre-enrolment funnel (Inquiry → Applied → Interviewed → Offered → Accepted → Enrolled). Profile / family / stage pipeline editing, document validation (approve/reject), discount-code catalogue CRUD, STP application tracking, application feedback, staleness filter. Analytics dashboard + Enrollment Health Insights (`/admissions/insights`, KD #140). ⚠ **NOT frozen post-enrolment any more** — KD #147's stage freeze was removed 2026-09-10 and every funnel stage stays editable after a student enrols, each edit writing an audit row. Records still owns the academic lifecycle; what changed is that the admissions record stays correctable by the people who own it. Audience: admissions, academic_coordinator, school_admin, superadmin. See `08-admission-dashboard.md`.
 
 ### Records — enrolled-student system of record (`/records/*`)
 
-The post-enrolment operational hub. Enrolled-student directory, cross-year academic history (via `studentNumber`, KD #4), section transfers, movements feed, unsynced-students queue, Academic Summary hub (`/records/academic-summary`, KD #127/#134), Report-book export. Shares the **Shared Student Profile** (`ay{YY}_enrolment_applications` identity row) with Admissions — both modules can edit Profile + Family (KD #147). Audience: registrar, school_admin, superadmin. See `13-sis-module.md`.
+The post-enrolment operational hub. Enrolled-student directory, cross-year academic history (via `studentNumber`, KD #4), section transfers, movements feed, unsynced-students queue, Academic Summary hub (`/records/academic-summary`, KD #127/#134), Report-book export. Shares the **Shared Student Profile** (`ay{YY}_enrolment_applications` identity row) with Admissions — both modules can edit Profile + Family (KD #147). Audience: academic_coordinator, **admissions** (added 2026-09-10 with the P-Files officer retirement, KD #207 — including placing students in classes and withdrawing them), school_admin, superadmin. See `13-sis-module.md`.
 
 ### SIS Admin — configuration surface (`/sis/*`)
 
@@ -119,8 +119,8 @@ Two columns in the admissions schema are both named `applicationStatus`, in diff
 
 ### Coordination rules (KD #147)
 
-- **Admissions stage editors freeze once Enrolled** — the stage PATCH route 422s `enrolled_frozen` for most stages once `applicationStatus==='Enrolled'`; exceptions: `supplies` + `orientation` remain editable until finalized.
-- **Document validation: role gate splits by enrolment state** — the document-validation PATCH 403s the `admissions` role on enrolled students (docs are P-Files') and `p-file` on un-enrolled (validation is Admissions'). Registrar/superadmin act either side.
+- ⚠ **THE POST-ENROLMENT STAGE FREEZE IS GONE (removed 2026-09-10).** KD #147's Lock #1 used to 422 `enrolled_frozen` on every stage once `applicationStatus==='Enrolled'`, for every role including superadmin. Mr Ace: _"we should just enable that its all audit logged anyways"_. Every funnel stage is editable after enrolment again, and the audit row the stage PATCH already writes on each field change is what makes that safe. The Enrolled-flip PREREQUISITE gate (`ENROLLED_PREREQ_STAGES`) is a different rule and still stands.
+- **Document validation splits by enrolment state, not by role name** — the document PATCH picks `documents_pre_enrolment.validate` or `documents_post_enrolment.validate` from the STUDENT's enrolment state, and the caller must hold that side. This is KD #147's Lock #2, still in force; KD #166 expressed it as a capability so one person can hold both sides. Today `admissions`, `school_admin` and `superadmin` each hold both.
 - **`classSection` is the Markbook liveness signal.** `lib/sync/students.ts` treats `enrolment_status.classSection IS NOT NULL` as "this student is live in Markbook." Do not null it silently — use the withdrawal/transfer routes.
 - **The Records module must not re-implement document upload.** The Documents tab deep-links to P-Files. `DocumentCard` adds `scroll-mt-20 target:` styling so the linked slot scrolls into view.
 - **Section transfer is single-source via SIS Admin** (KD #67). `POST /api/sis/students/[enroleeNumber]/transfer-section` is the only path for moving an enrolled student mid-year.
@@ -129,7 +129,7 @@ Two columns in the admissions schema are both named `applicationStatus`, in diff
 
 Deep-links and module-to-module routes in place:
 
-- **Module switcher** (`components/module-sidebar/sidebar-header.tsx`) — `Popover` switcher in every module sidebar; visible when `allowedModules.length > 1`. Single-module roles (p-file → P-Files only, admissions → Admissions only) see a non-interactive brand tile. See KD #33/#58.
+- **Module switcher** (`components/module-sidebar/sidebar-header.tsx`) — `Popover` switcher in every module sidebar; visible when `allowedModules.length > 1`, otherwise a non-interactive brand tile. **No role is single-module today**: `admissions` reaches Admissions, P-Files and Records, and every other surviving role reaches several. See KD #33/#58.
 - **Records → P-Files** — Records student detail Documents tab deep-links each slot to `/p-files/[enroleeNumber]?ay=…`.
 - **Markbook → Records** — Academic Summary drill sheets link to `/records/students/[studentNumber]`; drill rows always use `studentNumber` per KD #81.
 - **Admissions → Records** — enrolled applicants deep-link to `/records/students/by-enrolee/[enroleeNumber]`.
@@ -139,24 +139,30 @@ Deep-links and module-to-module routes in place:
 
 ## Access matrix
 
-Reflects current `ROUTE_ACCESS` in `lib/auth/roles.ts`. `—` means the role cannot reach that surface. The `admin` role was **retired in KD #39** — `school_admin` is the consolidated cross-cutting generalist.
+Reflects current `ROUTE_ACCESS` in `lib/auth/roles.ts`. `—` means the role cannot reach that surface.
 
-| Module / surface                                | teacher                      | p-file            | admissions                | registrar                                              | school_admin             | superadmin          |
-| ----------------------------------------------- | ---------------------------- | ----------------- | ------------------------- | ------------------------------------------------------ | ------------------------ | ------------------- |
-| Markbook `/markbook/*` (own sheets)             | ✓ own sheets                 | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
-| Markbook change-request approval                | — (view own)                 | —                 | —                         | ✓ apply only                                           | ✓ approve/reject         | ✓ full              |
-| Attendance `/attendance/*`                      | ✓ own sections               | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
-| Evaluation `/evaluation/*`                      | ✓ form adviser               | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
-| P-Files `/p-files/*`                            | —                            | ✓ full            | —                         | —                                                      | ✓ read                   | ✓ full              |
-| Admissions `/admissions/*`                      | —                            | —                 | ✓ full (excl. AY config)  | ✓ full                                                 | ✓ full                   | ✓ full              |
-| Discount codes `/sis/admin/discount-codes`      | —                            | —                 | ✓ (KD #133)               | ✓                                                      | ✓ full                   | ✓ full              |
-| Records `/records/*`                            | —                            | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
-| Academic Summary `/records/academic-summary`    | —                            | —                 | —                         | ✓ full                                                 | ✓ full                   | ✓ full              |
-| SIS Admin `/sis/*`                              | —                            | —                 | — (except discount codes) | — (except calendar / sections / sync / discount codes) | ✓ full config            | ✓ full incl. delete |
-| AY Setup `/sis/ay-setup`                        | —                            | —                 | —                         | —                                                      | ✓ create + switch-active | ✓ full incl. delete |
-| Approver management `/sis/admin/approvers`      | —                            | —                 | —                         | —                                                      | —                        | ✓                   |
-| Module switcher visible                         | ✓ (markbook/attendance/eval) | locked to P-Files | locked to admissions      | ✓ (5 modules)                                          | ✓                        | ✓                   |
-| Parent portal (external SPA `/api/parent/v2/*`) | —                            | —                 | —                         | —                                                      | —                        | —                   |
+⚠ **There are FIVE roles, not six or seven.** The `admin` role was retired in KD #39 (`school_admin` is the consolidated cross-cutting generalist); `registrar` and `p-file` were renamed to `academic_coordinator` and `p_file_officer` in KD #155; and **`p_file_officer` itself was retired on 2026-09-10 (KD #207)**, with `admissions` absorbing the whole document lifecycle. `ROLES.length === 5`. The old spellings survive in historical KD prose and in `audit_log.actor_role` on rows written before the retirement — see `lib/audit/humanize.ts::RETIRED_ROLE_LABELS`.
+
+| Module / surface                                | teacher                                | academic_coordinator                                                | admissions                          | school_admin             | superadmin          |
+| ----------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- | ----------------------------------- | ------------------------ | ------------------- |
+| Markbook `/markbook/*`                          | ✓ own sheets                           | ✓ full                                                              | —                                   | ✓ full                   | ✓ full              |
+| Markbook change-request approval                | — (view own)                           | ✓ apply only                                                        | —                                   | ✓ approve/reject         | ✓ full              |
+| Attendance `/attendance/*`                      | ✓ own sections                         | ✓ full                                                              | —                                   | ✓ full                   | ✓ full              |
+| Evaluation `/evaluation/*`                      | ✓ form adviser                         | ✓ full                                                              | —                                   | ✓ full                   | ✓ full              |
+| Classroom `/classroom/*`                        | ✓ own classes                          | ✓ full                                                              | —                                   | ✓ full                   | ✓ full              |
+| P-Files `/p-files/*`                            | —                                      | —                                                                   | ✓ full                              | ✓ full                   | ✓ full              |
+| Admissions `/admissions/*`                      | —                                      | ✓ full                                                              | ✓ full (excl. AY config)            | ✓ full                   | ✓ full              |
+| Records `/records/*`                            | —                                      | ✓ full                                                              | ✓ full (incl. placement/withdrawal) | ✓ full                   | ✓ full              |
+| Academic Summary `/records/academic-summary`    | —                                      | ✓ full                                                              | ✓                                   | ✓ full                   | ✓ full              |
+| Discount codes `/sis/admin/discount-codes`      | —                                      | ✓                                                                   | ✓ (KD #133)                         | ✓ full                   | ✓ full              |
+| SIS Admin `/sis/*`                              | —                                      | ✓ hub + ay-setup / calendar / sections / staff / subjects (KD #169) | — (except discount codes)           | ✓ full config            | ✓ full incl. delete |
+| AY Setup `/sis/ay-setup`                        | —                                      | ✓ (no delete)                                                       | —                                   | ✓ create + switch-active | ✓ full incl. delete |
+| Approver management `/sis/admin/approvers`      | —                                      | —                                                                   | —                                   | —                        | ✓                   |
+| Role permissions `/sis/admin/roles`             | —                                      | —                                                                   | —                                   | —                        | ✓                   |
+| Module switcher visible                         | ✓ (markbook/attendance/eval/classroom) | ✓                                                                   | ✓ (admissions / p-files / records)  | ✓                        | ✓                   |
+| Parent portal (external SPA `/api/parent/v2/*`) | —                                      | —                                                                   | —                                   | —                        | —                   |
+
+⚠ **`admissions` is no longer a single-module role.** It reaches Admissions, P-Files and Records, so it gets a real module switcher rather than the non-interactive brand tile a one-module role sees.
 
 Parents authenticate against the shared Supabase project from the external SPA and call `/api/parent/v2/*` directly — they are not SIS users and never appear in this matrix.
 

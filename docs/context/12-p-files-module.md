@@ -14,16 +14,21 @@ P-Files lives alongside the other Records modules as a separate route group (`/(
 
 ## Access
 
-Three-tier access:
+⚠ **THERE IS NO P-FILES OFFICER ANY MORE (2026-09-10, KD #207).** The `p_file_officer` role was retired and **`admissions` absorbed the entire document lifecycle** — all eight `documents_*` capabilities, both sides of enrolment. One person had been doing both jobs; two roles for one lifecycle meant every document rule was written twice. The table below is the end state; anything elsewhere in this repo still describing a P-Files officer is history, not current behaviour.
 
-| Role                            | Browse / view / history          | Upload / replace |
-| ------------------------------- | -------------------------------- | ---------------- |
-| `p-file` officer                | ✅                               | ✅               |
-| `superadmin`                    | ✅                               | ✅               |
-| `admin` / `school_admin`        | ✅ (read-only oversight, KD #74) | ❌               |
-| `teacher`, `registrar`, parents | ❌                               | ❌               |
+Three roles reach the module, and all three of them can do everything in it:
 
-`proxy.ts::ROUTE_ACCESS` allows `p-file + admin + school_admin + superadmin` to reach `/p-files/*`; the layouts re-assert this. Write gates live at the API layer — `POST /api/p-files/[enroleeNumber]/upload` requires `['p-file', 'superadmin']`, so even if an oversight role bypasses UI their request is rejected. `DocumentCard` takes a `canWrite` prop (server-rendered from the session role) that hides the Upload / Replace button for read-only viewers. Per KD #74, the page RSC also branches on `isOfficer = role === 'p-file' || role === 'superadmin'` to gate `<PriorityPanel>` + `<DocumentChaseQueueStrip>` + bulk-notify; oversight roles see the analytical surface only.
+| Role                   | Reach `/p-files` | Browse / view / history | Upload / replace | Approve / reject / chase |
+| ---------------------- | ---------------- | ----------------------- | ---------------- | ------------------------ |
+| `admissions`           | ✅               | ✅                      | ✅               | ✅                       |
+| `school_admin`         | ✅               | ✅                      | ✅               | ✅                       |
+| `superadmin`           | ✅               | ✅                      | ✅               | ✅                       |
+| `academic_coordinator` | ❌               | ❌                      | ❌               | ❌                       |
+| `teacher`, parents     | ❌               | ❌                      | ❌               | ❌                       |
+
+The academic coordinator's exclusion is deliberate and predates this change: migration 106 took every document capability off her (KD #166 update, KD #173), and no route or link offers her the module.
+
+`proxy.ts::ROUTE_ACCESS` allows `admissions + school_admin + superadmin` to reach `/p-files/*`, and `app/(p-files)/layout.tsx` re-asserts exactly that trio. **Write gates are capabilities, not role names** — the upload route, the document PATCH and the chase routes each enforce their own (`documents_{pre,post}_enrolment.{upload,validate,chase}`), and the route picks the pre- or post-enrolment side from the STUDENT's enrolment state rather than from the caller's role. `DocumentCard` takes a `canWrite` prop and `ActionQueueCard` takes `canChase` + `canUpload`, all server-rendered from the viewer's capabilities, so a capability revoked at `/sis/admin/roles` hides exactly the controls it should. The page RSC's `isOfficer` is now literally `can(capabilities, 'documents_post_enrolment.chase')` — it gates `<PriorityPanel>` + `<DocumentChaseQueueStrip>` + bulk-notify, and a role holding read but not chase still gets the analytical surface (KD #74's oversight lens, expressed as a capability).
 
 **Scope — everyone in the year, not just the enrolled (KD #204, supersedes the enrolled-only rule of KD #71/#91).** `/p-files/[enroleeNumber]` opens for anyone with a row in this AY's admissions tables, applicant or enrolled, gated by `lib/p-files/queries.ts::studentExistsInAy`. Sidebar quicklinks stay renewal-shaped (`?status=expired` + `?expiring=30|60|90`) with **Needs review** (`?status=uploaded`) beside them.
 
@@ -31,20 +36,34 @@ Three-tier access:
 
 ## Required Documents Per Student
 
-Sixteen total slots, split by expiry behavior. The canonical list lives at `lib/sis/queries.ts:DOCUMENT_SLOTS` (16 entries; `STP_CONDITIONAL_SLOT_KEYS` exports the 3 STP-gated slot keys separately).
+**Twenty-one slots**, split by expiry behavior. The canonical list lives in **`lib/p-files/document-config.ts::DOCUMENT_SLOTS`** (21 entries, each carrying its own `conditional` rule); `lib/sis/queries.ts::DOCUMENT_SLOTS` is the column-mapping twin with the same 21 keys in the same order.
 
-### Non-expiring documents (8 slots)
+⚠ **THERE ARE NO STP-CONDITIONAL DOCUMENT SLOTS.** This section used to list three — ICA Photo, Financial Support Docs, Vaccination Information. **Migration 050 removed them from the enrolment process (KD #96): parents file those with ICA directly, and the school never collects them.** The columns survive on `ay{YY}_enrolment_documents` for historical preservation but are enumerated nowhere, so the seeder, the UI and every gate skip them. `STP_CONDITIONAL_SLOT_KEYS` is retained only as an **empty tuple** for back-compat with importers that do a `.includes()` that now folds to false; new code should not reference it. STP progress is tracked on `ay{YY}_enrolment_status.stpApplicationStatus` instead — see `21-stp-application.md`.
 
-| Document                | DB column (URL)          | DB column (status)             | STP-conditional? |
-| ----------------------- | ------------------------ | ------------------------------ | ---------------- |
-| ID Picture              | `idPicture`              | `idPictureStatus`              | —                |
-| Birth Certificate       | `birthCert`              | `birthCertStatus`              | —                |
-| Educational Certificate | `educCert`               | `educCertStatus`               | —                |
-| Medical Exam            | `medical`                | `medicalStatus`                | —                |
-| Form 12                 | `form12`                 | `form12Status`                 | —                |
-| ICA Photo               | `icaPhoto`               | `icaPhotoStatus`               | ✅ STP only      |
-| Financial Support Docs  | `financialSupportDocs`   | `financialSupportDocsStatus`   | ✅ STP only      |
-| Vaccination Information | `vaccinationInformation` | `vaccinationInformationStatus` | ✅ STP only      |
+### Non-expiring documents — student's own (5 slots)
+
+| Document                | DB column (URL) | DB column (status) |
+| ----------------------- | --------------- | ------------------ |
+| ID Picture              | `idPicture`     | `idPictureStatus`  |
+| Birth Certificate       | `birthCert`     | `birthCertStatus`  |
+| Educational Certificate | `educCert`      | `educCertStatus`   |
+| Medical Exam            | `medical`       | `medicalStatus`    |
+| Form 12                 | `form12`        | `form12Status`     |
+
+### Non-expiring documents — school forms (8 slots, migration 135)
+
+⚠ **`group: 'school'` is load-bearing, not cosmetic.** The parent portal offers none of these — Mr Ace: _"these files are not gonna be uploaded in the parent portal, this will be uploaded in p-files module"_. Filed under `student` they would show up in the parent-chase Action Queue offering to "Remind parent" about a form no parent can produce. See `isChaseableGroup`.
+
+| Document                                | DB column (URL)            | DB column (status)               | Conditional?                                      |
+| --------------------------------------- | -------------------------- | -------------------------------- | ------------------------------------------------- |
+| Last School Recommendation & Good Moral | `lastSchoolRecommendation` | `lastSchoolRecommendationStatus` | —                                                 |
+| Assessment Result and Interview         | `assessmentResult`         | `assessmentResultStatus`         | —                                                 |
+| Signed Student Contract                 | `signedContract`           | `signedContractStatus`           | —                                                 |
+| New Student Checksheet                  | `newStudentChecksheet`     | `newStudentChecksheetStatus`     | —                                                 |
+| Student P-Files Checklist               | `pfilesChecklist`          | `pfilesChecklistStatus`          | —                                                 |
+| Pre-Counselling Acknowledgement Form    | `preCounsellingAck`        | `preCounsellingAckStatus`        | —                                                 |
+| Conditional Enrolment                   | `conditionalEnrolment`     | `conditionalEnrolmentStatus`     | ✅ `applicationStatus = 'Enrolled (Conditional)'` |
+| Late Enrolment Form                     | `lateEnrolmentForm`        | `lateEnrolmentFormStatus`        | ✅ late enrollee                                  |
 
 ### Expiring documents (8 slots)
 
@@ -61,10 +80,15 @@ Sixteen total slots, split by expiry behavior. The canonical list lives at `lib/
 
 ### Conditional logic
 
-- Father documents required only if `fatherEmail` is present in `ay{YYYY}_enrolment_applications`
-- Guardian documents required only if `guardianEmail` is present in `ay{YYYY}_enrolment_applications`
+**Five of the 21 slots are conditional**; the rest always apply. `lib/p-files/document-config.ts::isSlotApplicable` is the one place that decides, and it is pure and never throws — six different queries feed it half-populated rows.
+
+- Father documents (2) required only if `fatherEmail` is present in `ay{YYYY}_enrolment_applications`
+- Guardian documents (2) required only if `guardianEmail` is present in `ay{YYYY}_enrolment_applications`
+- Conditional Enrolment (1) shows only when `applicationStatus = 'Enrolled (Conditional)'`
+- Late Enrolment Form (1) shows only for a late enrollee
 - Mother documents always required (assumption — validate with stakeholder)
-- The 3 STP-conditional slots required only if `ay{YYYY}_enrolment_applications.stpApplicationType` indicates an active STP application. See `21-stp-application.md` for the full STP workflow (Edutrust Certified school sponsoring Singapore Student Passes via ICA).
+
+⚠ **A conditional slot HIDES rather than deletes.** Clearing `fatherEmail`, or resolving a conditional enrolment, takes the slot off every screen even when it already holds an approved file. The column keeps the file and restoring the gate brings it back — but nothing shows it while the gate is shut. This matters most on the admissions stage editor, which can now edit those gate fields after a student is enrolled (KD #147's freeze was removed 2026-09-10).
 
 ## Document status workflow (canonical reference)
 
@@ -138,7 +162,7 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 
 ### 2. Student detail view
 
-- All 16 document slots (8 non-expiring + 8 expiring; 3 of the non-expiring are STP-conditional and only show when `stpApplicationType` is set) with current status, file preview/download link, expiry date, **History button** for any slot with a file
+- All 21 document slots (13 non-expiring — 5 the student's own, 8 school forms — plus 8 expiring), grouped by `GROUP_LABELS`, with current status, file preview/download link, expiry date, and a **History button** for any slot with a file. Five of the 21 are conditional and appear only for the students they apply to; see "Conditional logic" above.
 - Visual indicators: mint (on file), amber (pending review), red (expired), dashed (missing), muted (N/A)
 
 ### 3. Upload / Replace on behalf
@@ -176,7 +200,7 @@ app/api/p-files/[enroleeNumber]/
 
 ### Module switcher
 
-After login, the root `/` page (or sidebar) shows a module picker: Markbook vs P-Files. The `proxy.ts` middleware gates access by role — a `p-file` role user who tries to access `/grading` gets redirected, and vice versa for a `teacher` trying `/p-files`.
+After login, the root `/` page (and the sidebar's module switcher) offers whichever modules the viewer's role can open. The `proxy.ts` middleware gates access by role — an `admissions` user who tries `/grading` gets redirected, and so does a `teacher` trying `/p-files`.
 
 ### Shared infrastructure
 

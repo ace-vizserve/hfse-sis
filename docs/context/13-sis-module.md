@@ -22,9 +22,11 @@ A comprehensive records surface for admissions and registrar staff. Primary jobs
 
 ## Access
 
-- **Primary audience:** admissions staff, registrar
-- **Admin + superadmin:** full access
-- **Teachers, parents, `p-file` officer:** no access (not their workflow)
+⚠ **THIS SECTION IS THE ORIGINAL DESIGN NOTE, NOT THE SHIPPED ACCESS MODEL.** The live table is in `docs/context/14-modules-overview.md`, derived from `ROUTE_ACCESS`. Two things below are now wrong: `registrar` was renamed `academic_coordinator` (KD #155), and **the `p-file` officer role no longer exists** — it was retired into `admissions` on 2026-09-10 (KD #207), which also gave `admissions` full `/records` access including placement and withdrawal.
+
+- **Primary audience:** admissions staff, academic coordinator
+- **school_admin + superadmin:** full access
+- **Teachers, parents:** no access (not their workflow)
 
 Role strategy — two options, TBD:
 

@@ -207,7 +207,7 @@ Cache invalidation: `revalidateTag('sis:${newAyCode}', 'max')` after creation or
 | Early-bird toggle            | `school_admin`, `superadmin` | Config surface (KD #118 — Admissions reads, SIS Admin owns).           |
 | Delete AY (empty AYs only)   | `superadmin` only            | Destructive + irreversible. Matches KD #2's destructive-ops carve-out. |
 
-Registrar-edited config that lives on related data (e.g. virtue themes) is reached through **other** surfaces registrar can access — e.g. `/evaluation/virtue-themes` (KD #137) — not through this page. Teachers, parents, p-file officers, and the admissions role never reach this surface either.
+Registrar-edited config that lives on related data (e.g. virtue themes) is reached through **other** surfaces registrar can access — e.g. `/evaluation/virtue-themes` (KD #137) — not through this page. Teachers, parents and the admissions role never reach this surface either. (There is no p-file officer role any more — it was retired into `admissions` on 2026-09-10, KD #207 — and admissions' exclusion here is unchanged by that.)
 
 ## Resolved decisions
 
