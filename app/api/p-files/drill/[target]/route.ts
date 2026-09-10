@@ -26,7 +26,12 @@ const VALID_TARGETS: PFilesDrillTarget[] = [
   'revisions-on-day',
 ];
 
-const ALLOWED_ROLES = ['p_file_officer', 'school_admin', 'superadmin'] as const;
+const ALLOWED_ROLES = [
+  'admissions',
+  'p_file_officer',
+  'school_admin',
+  'superadmin',
+] as const;
 
 export async function GET(
   req: Request,

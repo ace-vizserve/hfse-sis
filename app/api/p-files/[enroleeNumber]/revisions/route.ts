@@ -12,6 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
   const auth = await requireRole([
+    'admissions',
     'p_file_officer',
     'school_admin',
     'superadmin',

@@ -33,6 +33,7 @@ const DOC_TARGETS: ReadonlySet<RecordsDrillTarget> =
   ]);
 
 const ALLOWED_ROLES = [
+  'admissions',
   'academic_coordinator',
   'school_admin',
   'superadmin',
