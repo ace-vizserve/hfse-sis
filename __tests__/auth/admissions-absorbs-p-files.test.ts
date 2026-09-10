@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_ROLE_CAPABILITIES } from '@/lib/auth/capabilities';
 import { isRouteAllowed } from '@/lib/auth/roles';
+import {
+  ENROLMENT_PLACEMENT_WRITERS,
+  STUDENT_RECORD_WRITERS,
+} from '@/lib/auth/student-record';
 
 /**
  * 2026-09-10 — the P-Files Officer role was retired and `admissions` took the
@@ -56,5 +60,19 @@ describe('admissions reaches the modules it absorbed', () => {
     // admissions the configuration surfaces.
     expect(isRouteAllowed('/sis/admin/roles', 'admissions')).toBe(false);
     expect(isRouteAllowed('/sis/admin/approvers', 'admissions')).toBe(false);
+  });
+});
+
+describe('admissions may place and withdraw students', () => {
+  it('is an enrolment placement writer', () => {
+    // The two lists used to differ by exactly this role. They no longer do:
+    // admissions owns the child end to end now that Records is theirs.
+    expect(ENROLMENT_PLACEMENT_WRITERS).toContain('admissions');
+  });
+
+  it('leaves the two writer lists in agreement', () => {
+    expect([...ENROLMENT_PLACEMENT_WRITERS].sort()).toEqual(
+      [...STUDENT_RECORD_WRITERS].sort()
+    );
   });
 });

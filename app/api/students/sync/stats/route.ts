@@ -10,6 +10,7 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 // Accepts optional ?ay=AY2026 query param; falls back to current AY.
 export async function GET(request: Request) {
   const auth = await requireRole([
+    'admissions',
     'academic_coordinator',
     'school_admin',
     'superadmin',

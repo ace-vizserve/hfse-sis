@@ -1,8 +1,10 @@
 import type { Role } from '@/lib/auth/roles';
 
 // Who may WRITE to a student's own record, and who may move them between
-// classes. Two lists, because `app/api/sis/students/[enroleeNumber]/**` really
-// does hold two different audiences — see WHY THIS IS NOT A CAPABILITY below.
+// classes. Two lists — record edits and placement — used to hold two
+// different audiences; as of 2026-09-10 they hold the same roles (see
+// ENROLMENT_PLACEMENT_WRITERS below for why). Still two names because
+// ~14 call sites read one or the other — see WHY THIS IS NOT A CAPABILITY.
 
 /**
  * The shared student record — profile, family, pipeline stage, STP status,
@@ -24,18 +26,15 @@ export const STUDENT_RECORD_WRITERS = [
   'superadmin',
 ] as const satisfies readonly Role[];
 
-/**
- * Placement and money — section assignment, mid-year transfer, compassionate
- * and vacation-leave allowances.
- *
- * `admissions` is deliberately ABSENT: enrolment placement is not theirs
- * (KD #51 — the funnel ends at Enrolled, and the academic lifecycle on
- * `section_students` belongs to Records). This list already included
- * school_admin before KD #173 and is unchanged by it; it exists here so the
- * distinction between the two sets is stated once, in a name, instead of
- * living as two coincidentally-similar literals in eleven route files.
- */
+// ⚠ THESE TWO LISTS ARE NOW IDENTICAL, and the comment that used to explain
+// why they differed is gone on purpose. Until 2026-09-10 admissions could move
+// an applicant through the funnel but not put them in a class — the funnel was
+// theirs, the placement was Records'. Records is theirs too now (the P-Files
+// officer role was retired into it), so the split has nothing left to protect.
+// Kept as two names because ~14 call sites read one or the other, and
+// collapsing them is a rename, not a permissions change.
 export const ENROLMENT_PLACEMENT_WRITERS = [
+  'admissions',
   'academic_coordinator',
   'school_admin',
   'superadmin',
@@ -46,12 +45,14 @@ export const ENROLMENT_PLACEMENT_WRITERS = [
 // The obvious move is a `student_record.edit` capability. It was considered
 // and rejected, for three reasons worth keeping:
 //
-//   1. ONE capability cannot describe this folder. The two lists above differ
-//      by exactly `admissions`, so collapsing them would hand the admissions
-//      team section placement and allowance edits — a silent permission
-//      change, which lib/auth/capabilities.ts forbids in its own header. Two
-//      capabilities to model one folder is vocabulary invented to satisfy a
-//      refactor rather than a need.
+//   1. RETIRED (2026-09-10). This used to be "one capability can't describe
+//      this folder, because the two lists differ by exactly `admissions`" —
+//      collapsing them would have handed admissions section placement as a
+//      silent permission change. They no longer differ, so that argument is
+//      gone. The two lists stay separate NAMES anyway (~14 call sites read
+//      one or the other; collapsing the names is a rename hazard, not a
+//      modelling one) but that alone doesn't argue for a capability — reasons
+//      2 and 3 below are what still keep this off `requireCapability`.
 //   2. A code-only capability is INERT. `role_permissions` is authoritative
 //      once populated (lib/auth/permission-map.ts), so a new capability does
 //      nothing until its migration reaches production — and until then
@@ -70,11 +71,12 @@ export function canWriteStudentRecord(role: Role | null): boolean {
 /**
  * May this role put a student into a class?
  *
- * The two lists differ by exactly `admissions`, and that difference is the
- * school's admission process: Enrolment is step 10 (admissions), Class
- * Assignment is step 11, done by Student Affairs "subject to a deliberation
- * by Academics Team" (docs/context/admission-process.md). So an admissions
- * user finishes the funnel and hands over; they never choose the class.
+ * Same roster as `canWriteStudentRecord` as of 2026-09-10 — admissions now
+ * owns Records end to end (the P-Files officer role was retired into it), so
+ * the old boundary at "Enrolment is step 10 (admissions), Class Assignment is
+ * step 11 (Student Affairs)" (docs/context/admission-process.md) no longer
+ * marks a permission edge. Kept as its own function/name because call sites
+ * read intent ("can this role place a student"), not the literal role list.
  */
 export function canAssignSection(role: Role | null): boolean {
   return (

@@ -17,6 +17,7 @@ import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tag
 //   * Never delete; every mutation goes through update/insert only.
 export async function POST(request: Request) {
   const auth = await requireRole([
+    'admissions',
     'academic_coordinator',
     'school_admin',
     'superadmin',

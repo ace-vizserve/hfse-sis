@@ -85,6 +85,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; enrolmentId: string }> }
 ) {
   const auth = await requireRole([
+    'admissions',
     'academic_coordinator',
     'school_admin',
     'superadmin',
