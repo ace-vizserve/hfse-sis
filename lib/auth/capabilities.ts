@@ -382,21 +382,24 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   ],
 
   admissions: [
+    // THE WHOLE DOCUMENT LIFECYCLE, BOTH SIDES OF ENROLMENT (2026-09-10).
+    // `p_file_officer` was retired and admissions absorbed it — one person
+    // already did both jobs, and the role held exactly these eight grants.
+    //
+    // The note that used to sit here predicted the upload grant exactly: it
+    // said the case for `documents_pre_enrolment.upload` was real and was
+    // withheld only because "there is nowhere for them to use it — the only
+    // upload surface is the P-Files student page, and `/p-files` excludes
+    // them at ROUTE_ACCESS". Task 2 of this change opens that route, so the
+    // grant is now wired to a real gate rather than being a ticked box.
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
+    'documents_pre_enrolment.upload',
     'documents_pre_enrolment.validate',
-    // No post-enrolment grant — route.ts:77-86 403s them on an enrolled
-    // student (those documents are P-Files' territory).
-    //
-    // DELIBERATELY NOT GRANTED `documents_pre_enrolment.upload` either, though
-    // this is the role that owns applicants and the case for it is real. There
-    // is nowhere for them to use it: the only upload surface is the P-Files
-    // student page, `/p-files` excludes them at ROUTE_ACCESS, and the applicant
-    // file's `DocumentsViewer` takes `canValidate` / `canChase` props and no
-    // upload path at all. Granting it would be a ticked box wired to no gate,
-    // which this file's header calls worse than no box. Give them an upload
-    // control on the applicant file first, then this grant is a data edit at
-    // /sis/admin/roles — no code change.
+    'documents_post_enrolment.read',
+    'documents_post_enrolment.chase',
+    'documents_post_enrolment.upload',
+    'documents_post_enrolment.validate',
   ],
 };
 
