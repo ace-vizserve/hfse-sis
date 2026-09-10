@@ -97,6 +97,7 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 const ALLOWED_ROLES = new Set([
+  'admissions',
   'academic_coordinator',
   'school_admin',
   'superadmin',
