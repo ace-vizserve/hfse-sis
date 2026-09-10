@@ -15,7 +15,6 @@ const ROLE_LABELS: Record<Role, string> = {
   academic_coordinator: 'Academic Coordinator',
   school_admin: 'School admin',
   superadmin: 'Superadmin',
-  p_file_officer: 'P-File Officer',
   admissions: 'Admissions',
 };
 

@@ -82,7 +82,6 @@ const ROLE_LABEL: Record<Role, string> = {
   academic_coordinator: 'Academic Coordinator',
   school_admin: TABLE_COPY.schoolAdmin,
   superadmin: 'Superadmin',
-  p_file_officer: 'P-File Officer',
   admissions: 'Admissions',
 };
 

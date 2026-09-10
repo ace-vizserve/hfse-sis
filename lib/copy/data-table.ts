@@ -20,7 +20,6 @@ export const TABLE_COPY = {
   teacher: 'Teacher',
   academicCoordinator: 'Academic Coordinator',
   superadmin: 'Superadmin',
-  pFileOfficer: 'P-File Officer',
   admissions: 'Admissions',
 
   // Sync wizard
@@ -52,13 +51,18 @@ export type TableCopyKey = keyof typeof TABLE_COPY;
  * separate job — hub-snapshot-card deliberately pluralises for count cards, so
  * it is not a straight substitution, and repointing the others would change
  * live display text in surfaces this change has no business touching.
+ *
+ * FIVE ROLES, not six: `p_file_officer: 'P-File Officer'` stood here until the
+ * role was retired 2026-09-10 and admissions absorbed the document lifecycle.
+ * The twin map in `lib/auth/role-labels.ts` lost the same entry; the one
+ * remaining difference between the two is still `school_admin` — sentence case
+ * here (exported data), title case there (app chrome).
  */
 export const ROLE_LABELS = {
   teacher: TABLE_COPY.teacher,
   academic_coordinator: TABLE_COPY.academicCoordinator,
   school_admin: TABLE_COPY.schoolAdmin,
   superadmin: TABLE_COPY.superadmin,
-  p_file_officer: TABLE_COPY.pFileOfficer,
   admissions: TABLE_COPY.admissions,
 } as const satisfies Record<string, string>;
 

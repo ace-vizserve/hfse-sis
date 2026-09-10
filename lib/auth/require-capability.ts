@@ -12,7 +12,7 @@ export type RequireCapabilityUser = { id: string; email: string | null };
 // Signature, return shape and status codes are DELIBERATELY identical, so
 // migrating a route is a one-line swap:
 //
-//    const auth = await requireRole(['p_file_officer', 'superadmin']);
+//    const auth = await requireRole(['admissions', 'superadmin']);
 //    const auth = await requireCapability('documents_post_enrolment.upload');
 //
 // and everything downstream (`if ('error' in auth) return auth.error;`,

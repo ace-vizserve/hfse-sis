@@ -16,7 +16,7 @@ import {
 
 // Lifecycle drills back the <DocumentChaseQueueStrip> on /records (registrar
 // per KD #74's isOperational), /admissions (admissions + registrar), and
-// /p-files (p-file via isOfficer), plus the school_admin/superadmin oversight
+// /p-files (admissions via isOfficer), plus the school_admin/superadmin oversight
 // view on /sis. Restricting the route to school_admin+superadmin would 403
 // every operational consumer.
 const ALLOWED_ROLES = [
@@ -24,7 +24,6 @@ const ALLOWED_ROLES = [
   'school_admin',
   'superadmin',
   'admissions',
-  'p_file_officer',
 ] as const;
 
 export async function GET(

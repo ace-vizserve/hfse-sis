@@ -44,12 +44,9 @@ const PFILE_VERIFICATION_ACTIONS = [
 ] as const;
 
 // Roles that see the pfileAwaitingVerification badge. Mirrors the p-files
-// layout gate (p-file, school_admin, superadmin per KD #31 + KD #74).
-const PFILE_BADGE_ROLES: Role[] = [
-  'p_file_officer',
-  'school_admin',
-  'superadmin',
-];
+// layout gate (admissions, school_admin, superadmin per KD #31 + KD #74 —
+// `p_file_officer` stood in the first slot until it was retired 2026-09-10).
+const PFILE_BADGE_ROLES: Role[] = ['admissions', 'school_admin', 'superadmin'];
 
 export function useRealtimeBadges(
   role: Role | null,

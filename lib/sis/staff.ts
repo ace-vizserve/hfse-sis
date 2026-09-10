@@ -79,7 +79,7 @@ type RawAssignment = {
 // file that stays that way. This builds a LIST OF PEOPLE to show, not a list
 // of people who may be recorded as teaching, and `staff-table.tsx` prints a
 // `role="teacher"` chip on every row on the strength of it. Widening it to all
-// staff would fill the page with p_file_officer and admissions accounts that
+// staff would fill the page with admissions accounts that
 // hold nothing, and make that chip a lie.
 //
 // ⚠ THE CONSEQUENCE, KNOWN AND ACCEPTED: the six school_admin accounts that

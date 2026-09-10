@@ -16,10 +16,9 @@ import type { Role } from '@/lib/auth/roles';
 // the edge proxy — display copy has no business travelling there.
 //
 // Plain English, not the database's snake_case (Mr Ace's standing note: school
-// administrators are not IT). `p_file_officer` is "P-File Officer" because
-// that is what the school calls the job.
+// administrators are not IT).
 //
-// ⚠ THERE IS A SECOND SIX-ROLE MAP AND IT IS NOT A MISTAKE: `ROLE_LABELS` in
+// ⚠ THERE IS A SECOND FIVE-ROLE MAP AND IT IS NOT A MISTAKE: `ROLE_LABELS` in
 // `lib/copy/data-table.ts`, whose own docstring claims role labels belong
 // there. Both stay. RULED 2026-09-03, so nobody "fixes" one into the other:
 //
@@ -29,7 +28,10 @@ import type { Role } from '@/lib/auth/roles';
 //     toast, and the "Switch to School Admin view" button — a named control,
 //     which the design system title-cases.
 //
-// ⚠ EXACTLY ONE OF THE SIX ACTUALLY DIFFERS, and it is worth knowing which
+// (Both maps carried a sixth entry, `p_file_officer: 'P-File Officer'`, until
+// the role was retired 2026-09-10.)
+//
+// ⚠ EXACTLY ONE OF THE FIVE ACTUALLY DIFFERS, and it is worth knowing which
 // before anyone reaches for a merge: `school_admin` is "School admin" there
 // and "School Admin" here. The other five are byte-identical. That single
 // difference is the whole of the sentence-case-in-exports vs
@@ -45,6 +47,5 @@ export const ROLE_LABEL: Record<Role, string> = {
   academic_coordinator: 'Academic Coordinator',
   school_admin: 'School Admin',
   superadmin: 'Superadmin',
-  p_file_officer: 'P-File Officer',
   admissions: 'Admissions',
 };

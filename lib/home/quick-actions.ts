@@ -124,10 +124,9 @@ export const QUICK_ACTIONS: Record<Role, QuickActionRow[]> = {
     { label: 'Manage staff', href: '/sis/admin/staff' },
     { label: 'School config', href: '/sis/admin/school-config' },
   ],
-  // These two roles redirect away from `/` before this ever renders
+  // This role redirects away from `/` before this ever renders
   // (app/(dashboard)/page.tsx + layout.tsx) — kept here only so the
   // Record<Role, ...> map is exhaustive and getQuickActions is total.
-  p_file_officer: [],
   admissions: [],
 };
 

@@ -78,7 +78,6 @@ export default async function StudentDocumentDetailPage({
   if (!sessionUser) redirect('/login');
   if (
     sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'p_file_officer' &&
     sessionUser.role !== 'school_admin' &&
     sessionUser.role !== 'superadmin'
   ) {
@@ -233,7 +232,7 @@ export default async function StudentDocumentDetailPage({
   // The group test is not a tidy-up. This queue and the "N documents need
   // attention" headline above it are a chase worklist — every row offers
   // "Remind parent" and "Set promised date". School forms (migration 135) are
-  // uploaded by the P-Files officer and the parent portal never offers them,
+  // uploaded by school staff and the parent portal never offers them,
   // so a missing one is internal school admin with nobody to remind. Without
   // this filter every student showed six permanently-outstanding rows that no
   // reminder could ever clear. They stay fully visible and uploadable in their

@@ -25,7 +25,6 @@ const ALL_ROLES: Role[] = [
   'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p_file_officer',
   'admissions',
 ];
 

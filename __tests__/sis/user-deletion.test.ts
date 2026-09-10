@@ -51,20 +51,18 @@ describe('getUserFootprint', () => {
     );
   });
 
-  it('p_file_officer role only queries its 2 tables', async () => {
+  it('admissions role only queries its 2 document tables', async () => {
+    // Was two tests: `p_file_officer` queried both of these and `admissions`
+    // queried only `p_file_outreach`. The officer role was retired 2026-09-10
+    // and admissions inherited `p_file_revisions.replaced_by_user_id` with the
+    // upload capability that writes it — without it, deleting an admissions
+    // account would pass the footprint check and strand the revision.
     const client = mockClient();
-    await getUserFootprint(client as never, 'user-1', 'p_file_officer');
+    await getUserFootprint(client as never, 'user-1', 'admissions');
     const queriedTables = new Set(queryCalls.map((c) => c.table));
     expect(queriedTables).toEqual(
       new Set(['p_file_revisions', 'p_file_outreach'])
     );
-  });
-
-  it('admissions role only queries p_file_outreach', async () => {
-    const client = mockClient();
-    await getUserFootprint(client as never, 'user-1', 'admissions');
-    const queriedTables = new Set(queryCalls.map((c) => c.table));
-    expect(queriedTables).toEqual(new Set(['p_file_outreach']));
   });
 
   it('returns an empty array when nothing matches', async () => {
@@ -94,7 +92,7 @@ describe('getUserFootprint', () => {
 
   it("a null role checks the union of every role's tables", async () => {
     // level_aliases is only in academic_coordinator/school_admin/superadmin's
-    // lists, never teacher's or p_file_officer's/admissions' — proves the
+    // lists, never teacher's or admissions' — proves the
     // null-role fallback is broader than any single role's list.
     hits.add('level_aliases.created_by');
     const client = mockClient();
@@ -116,7 +114,7 @@ describe('getUserFootprint', () => {
     const result = await getUserFootprint(
       erroringClient as never,
       'user-1',
-      'p_file_officer'
+      'admissions'
     );
     expect(result.sort()).toEqual(['p_file_outreach', 'p_file_revisions']);
   });

@@ -87,48 +87,35 @@ const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
   // are the first entries here that also NARROW — she loses all four of her
   // document capabilities — so the name is now half-accurate; it is the record
   // of deliberate moves, in either direction.
-  'documents_pre_enrolment.read': [
-    'admissions',
-    'p_file_officer',
-    'school_admin',
-    'superadmin',
-  ],
-  'documents_pre_enrolment.chase': [
-    'admissions',
-    'p_file_officer',
-    'school_admin',
-    'superadmin',
-  ],
+  //
+  // ⚠ `p_file_officer` STOOD IN ALL SEVEN OF THESE UNTIL 2026-09-10, when the
+  // role was retired from the `Role` union and every one of its eight document
+  // grants moved to `admissions` (migration 143, note below). Its removal here
+  // is that retirement, NOT a narrowing: `admissions` was already beside it in
+  // each list, so no capability lost a holder.
+  'documents_pre_enrolment.read': ['admissions', 'school_admin', 'superadmin'],
+  'documents_pre_enrolment.chase': ['admissions', 'school_admin', 'superadmin'],
   'documents_pre_enrolment.validate': [
     'admissions',
-    'p_file_officer',
     'school_admin',
     'superadmin',
   ],
   'documents_post_enrolment.validate': [
     'admissions',
-    'p_file_officer',
     'school_admin',
     'superadmin',
   ],
   'documents_post_enrolment.chase': [
     'admissions',
-    'p_file_officer',
     'school_admin',
     'superadmin',
   ],
   'documents_post_enrolment.upload': [
     'admissions',
-    'p_file_officer',
     'school_admin',
     'superadmin',
   ],
-  'documents_post_enrolment.read': [
-    'admissions',
-    'p_file_officer',
-    'school_admin',
-    'superadmin',
-  ],
+  'documents_post_enrolment.read': ['admissions', 'school_admin', 'superadmin'],
 
   // 2026-09-10, Mr Ace: the P-Files Officer role is retired and `admissions`
   // absorbs its whole document lifecycle. Migration 143. One person already
@@ -142,7 +129,15 @@ const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
   // capability — is untouched and still asserted below.
 };
 
-const PRE_MIGRATION_GATES: Partial<Record<Capability, Role[]>> = {
+// ⚠ `string[]`, NOT `Role[]`, AND THAT IS THE POINT. This is a frozen record of
+// what each gate enforced BEFORE the capability layer, and several of those
+// gates named `p_file_officer` — a role retired from the `Role` union on
+// 2026-09-10. Typing this as `Role[]` would force the history to be rewritten
+// every time a role is retired, destroying the evidence the docstring above
+// says must not be edited in place. The values are compared against
+// `DELIBERATE_WIDENINGS` first, and every entry naming the retired role has
+// one, so nothing here is asserted as a current holder set.
+const PRE_MIGRATION_GATES: Partial<Record<Capability, string[]>> = {
   // requireRole(['academic_coordinator','superadmin','admissions','p_file_officer'])
   // then 403 p_file_officer when the student isn't enrolled.
   'documents_pre_enrolment.validate': [
@@ -673,7 +668,7 @@ describe('parity with the gates these capabilities replace', () => {
     }
   });
 
-  it('the officer now validates both sides of enrolment', () => {
+  it('one role still validates both sides of enrolment', () => {
     // This test used to assert the OPPOSITE — that the seed must not grant it,
     // because at the time it had to stay a data edit so applying migration 101
     // changed no access. That constraint belonged to 101. The edit was since
@@ -683,13 +678,19 @@ describe('parity with the gates these capabilities replace', () => {
     // This is the case the whole capability layer exists for: one person
     // validating documents on both sides of enrolment, which a single role
     // could never express (KD #166).
+    //
+    // It read `DEFAULT_ROLE_CAPABILITIES.p_file_officer` until 2026-09-10.
+    // That role was retired and `admissions` absorbed all eight grants
+    // (migration 143), so the property this pins — SOMEBODY spans the
+    // enrolment line — is now admissions' to hold. The subject moved; the
+    // assertion did not.
     for (const capability of [
       'documents_pre_enrolment.read',
       'documents_pre_enrolment.chase',
       'documents_pre_enrolment.validate',
       'documents_post_enrolment.validate',
     ] as const) {
-      expect(DEFAULT_ROLE_CAPABILITIES.p_file_officer, capability).toContain(
+      expect(DEFAULT_ROLE_CAPABILITIES.admissions, capability).toContain(
         capability
       );
     }
@@ -748,7 +749,21 @@ function tuplesIn(block: string): string[] {
  * the academic coordinator). A union would still contain the revoked rows and
  * report drift that doesn't exist — worse, it would go on passing if someone
  * later re-added a capability that was deliberately taken away.
+ *
+ * TWO SHAPES OF DELETE, and the second one cost a real failure. 106 revokes by
+ * listing `(role, capability)` pairs; 143 retires a whole role in one line —
+ * `where role = 'p_file_officer'` — with no tuples to match. Reading only the
+ * tuple form left all eight of that role's grants in the replay, so the
+ * database and this model disagreed by exactly the change being made.
  */
+function roleWideDeleteIn(statement: string): string | null {
+  return (
+    statement.match(
+      /delete from public\.role_permissions\s+where\s+role\s*=\s*'([a-z_]+)'/
+    )?.[1] ?? null
+  );
+}
+
 function replaySeedMigrations(): Set<string> {
   const held = new Set<string>();
   for (const file of SEED_MIGRATIONS) {
@@ -757,7 +772,14 @@ function replaySeedMigrations(): Set<string> {
       if (statement.includes('insert into public.role_permissions')) {
         for (const t of tuplesIn(statement)) held.add(t);
       } else if (statement.includes('delete from public.role_permissions')) {
-        for (const t of tuplesIn(statement)) held.delete(t);
+        const retiredRole = roleWideDeleteIn(statement);
+        if (retiredRole) {
+          for (const t of [...held]) {
+            if (t.startsWith(`${retiredRole}|`)) held.delete(t);
+          }
+        } else {
+          for (const t of tuplesIn(statement)) held.delete(t);
+        }
       }
     }
   }

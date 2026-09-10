@@ -11,8 +11,8 @@ export type StaffFamily = {
 // — not a schema/access concept. Each role appears in exactly one family;
 // role order within each family matches the
 // approved mockup (not necessarily ROLES' declaration order in
-// lib/auth/roles.ts — e.g. 'admissions' is listed before 'p_file_officer'
-// here to read naturally against the "Admissions & Enrollment" label).
+// lib/auth/roles.ts). The "Admissions & Enrollment" family carried a second
+// row, 'P-File Officer', until that role was retired 2026-09-10.
 export function computeStaffFamilies(
   accounts: { role: Role | null }[]
 ): StaffFamily[] {
@@ -40,10 +40,7 @@ export function computeStaffFamilies(
       key: 'admissions-enrollment',
       label: 'Admissions & Enrollment',
       total: 0,
-      roles: [
-        { role: 'admissions', label: 'Admissions', count: 0 },
-        { role: 'p_file_officer', label: 'P-File Officer', count: 0 },
-      ],
+      roles: [{ role: 'admissions', label: 'Admissions', count: 0 }],
     },
     {
       key: 'admin',

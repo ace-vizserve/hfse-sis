@@ -155,13 +155,12 @@ function buildSheet(
 }
 
 // Plain-English role names for the handout — staff should not have to read
-// `p_file_officer` off a sheet.
+// `academic_coordinator` off a sheet.
 export const ROLE_LABELS: Record<string, string> = {
   teacher: 'Teacher',
   academic_coordinator: 'Academic Coordinator',
   school_admin: 'School Admin',
   superadmin: 'Superadmin',
-  p_file_officer: 'P-Files Officer',
   admissions: 'Admissions',
 };
 

@@ -25,7 +25,7 @@ type RawAuditRow = {
  * The signed-in account's own last N audit_log rows, humanized. Reads via
  * the service client — audit_log SELECT is RLS-gated to
  * is_registrar_or_above() (migration 006), so a plain server client would
- * return nothing for a teacher/p_file_officer/admissions session. This is
+ * return nothing for a teacher/admissions session. This is
  * the same reason every per-module audit-log page already uses the service
  * client.
  */

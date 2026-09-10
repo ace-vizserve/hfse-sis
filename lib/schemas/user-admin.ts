@@ -10,7 +10,6 @@ const RoleEnum = z.enum([
   'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p_file_officer',
   'admissions',
 ]);
 export type AssignableRole = z.infer<typeof RoleEnum>;

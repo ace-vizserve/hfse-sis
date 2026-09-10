@@ -42,7 +42,6 @@ export default async function EvaluationLayout({
     'superadmin',
   ];
   if (!role || !allowed.includes(role)) {
-    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }

@@ -10,6 +10,10 @@
  * while `components/module-sidebar/sidebar-profile.tsx` linked all six roles
  * to it. Two of six roles could not change their password in the app.
  *
+ * (`p_file_officer` was retired 2026-09-10, so only the `admissions` redirect
+ * survives. The account of the bug is left as it happened — the shape of the
+ * mistake is the point, and it needs two roles to show it.)
+ *
  * Nothing in the route table could catch this: `isRouteAllowed('/account', …)`
  * was — and still is — true for every role, because there is no `/account`
  * rule and unmatched prefixes default to allow. The gate that broke it was the
@@ -56,10 +60,12 @@ describe('/account reachability', () => {
     ]);
   });
 
-  // …and the module redirects must still exist, on the page where they belong.
-  it('the home page still redirects the single-module roles', () => {
+  // …and the module redirect must still exist, on the page where it belongs.
+  it('the home page still redirects the single-module role', () => {
+    // Two redirects until 2026-09-10, when `p_file_officer` was retired and
+    // `/p-files` stopped being anyone's only module. `admissions` is the last
+    // single-module role, and it is the one this must keep catching.
     const targets = redirectTargets(source(HOME_PAGE));
-    expect(targets).toContain('/p-files');
     expect(targets).toContain('/admissions');
     expect(targets).toContain('/login');
   });

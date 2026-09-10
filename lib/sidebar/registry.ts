@@ -261,14 +261,17 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // expiring within 30 days. Already-expired surfaces as a sidebar
       // nav item one click away.
       //
+      // Was keyed on `p_file_officer` until that role was retired 2026-09-10;
+      // admissions absorbed the document lifecycle and owns this queue now.
+      //
       // No school_admin entry, and that is now a GAP rather than a policy.
       // KD #31 made her read-only on P-Files, but migration 106 granted her
       // `documents_post_enrolment.chase/upload/validate` — while the pages
-      // still gate their write actions on a `role === 'p_file_officer' ||
-      // 'superadmin'` literal. So she holds the rights and cannot reach them.
-      // Deliberately left alone here (KD #173): widening the P-Files write
-      // surface is its own decision, not a side effect of a comment fix.
-      p_file_officer: {
+      // still gate their write actions on role literals. So she holds the
+      // rights and cannot reach them. Deliberately left alone here (KD #173):
+      // widening the P-Files write surface is its own decision, not a side
+      // effect of a comment fix.
+      admissions: {
         label: 'Expiring ≤30 days',
         href: '/p-files?expiring=30',
         icon: CalendarClock,

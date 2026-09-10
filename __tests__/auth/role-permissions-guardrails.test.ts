@@ -30,7 +30,7 @@ const SEEDED = ROLES.flatMap((role) =>
 describe('RolePermissionsUpdateSchema', () => {
   it('accepts a known role with known capabilities', () => {
     const result = RolePermissionsUpdateSchema.safeParse({
-      role: 'p_file_officer',
+      role: 'admissions',
       capabilities: ['documents_pre_enrolment.validate'],
     });
     expect(result.success).toBe(true);

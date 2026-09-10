@@ -86,15 +86,14 @@ const REDIRECT_STUBS = new Set([
 // and excludes that role — which is exactly the shape `isRouteAllowed` reads,
 // so this cannot disagree with the real gate.
 //
-// Today this exempts one pair: the P-Files officer on
-// `/admissions/applications`. Migration 106 gave them the pre-enrolment
-// document capabilities, so their own /p-files/document-validation queue grew
-// an Applicants tab and every applicant name in it links to the applicant
-// FILE. They do not get the funnel — the list page next door is `exact`-gated
-// away from them — and app/(admissions)/layout.tsx renders them P-Files
-// chrome, so they never see an Admissions sidebar that could carry such an
-// item at all. See KD #173. The floor assertion below keeps this from quietly
-// growing into a way to hide real dead ends.
+// Today it exempts NOTHING. It exempted one pair — the P-Files officer on
+// `/admissions/applications`, who reached the applicant FILE from their own
+// validation queue without being handed the funnel (KD #173) — until that role
+// was retired 2026-09-10 and the three-row `exact` split collapsed to one. An
+// empty exemption set is the strongest state this test can be in: every
+// allowed route is being held to the "must have a nav path" rule with no
+// carve-outs. The floor assertion below keeps it from quietly growing back
+// into a way to hide real dead ends.
 function isDetailOnlyFor(prefix: string, index: number, role: Role): boolean {
   return ROUTE_ACCESS.some(
     (r, i) =>
@@ -163,7 +162,7 @@ describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
   // prefix, so nothing looks like a dead link and there is no prefix to
   // demand a nav entry for. Verified by experiment — deleting Classroom's
   // ROUTE_ACCESS row left A and B green while every role, including
-  // admissions and p_file_officer, could open /classroom.
+  // admissions, could open /classroom.
   //
   // So the highest-risk mistake when adding a module — forgetting the rule —
   // needs its own assertion. No module may rely on default-allow.
@@ -218,9 +217,11 @@ describe('nav <-> ROUTE_ACCESS consistency (all modules)', () => {
     // Pin the whole set: growing it should be a deliberate, reviewed edit here,
     // not a silent side effect of a ROUTE_ACCESS change.
     it('the detail-only exemption covers exactly the pairs we intend', () => {
-      expect(derivedExemptions()).toEqual([
-        { role: 'p_file_officer', prefix: '/admissions/applications' },
-      ]);
+      // Empty since 2026-09-10. The one pair it ever held was
+      // `p_file_officer` on `/admissions/applications`; retiring that role
+      // collapsed the `exact` split it depended on, and no other rule sets
+      // `exact`. Re-adding a pair here must be a deliberate, reviewed edit.
+      expect(derivedExemptions()).toEqual([]);
     });
   });
 });

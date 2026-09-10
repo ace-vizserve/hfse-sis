@@ -43,7 +43,6 @@ export default async function AttendanceLayout({
     'superadmin',
   ];
   if (!role || !allowed.includes(role)) {
-    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }

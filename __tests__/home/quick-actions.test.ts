@@ -119,7 +119,6 @@ describe('getQuickActions', () => {
   });
 
   it('returns [] for roles that never reach the home page', () => {
-    expect(getQuickActions('p_file_officer')).toEqual([]);
     expect(getQuickActions('admissions')).toEqual([]);
   });
 

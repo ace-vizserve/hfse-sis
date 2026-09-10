@@ -37,8 +37,8 @@ export default async function ClassroomListPage() {
 
   // Scoping — Phase 1's resolver. Only `teacher` derives a scope from
   // assignments; oversight roles skip the query (resolveClassroomScope
-  // ignores assignments for them) and admissions/p_file_officer never
-  // reach this page at all (ROUTE_ACCESS excludes them).
+  // ignores assignments for them) and admissions never
+  // reaches this page at all (ROUTE_ACCESS excludes them).
   //
   // The MEMO, not a fresh `loadEffectiveAssignmentsForUser(createServiceClient(), …)`:
   // a single navigation asks this same question from the palette, the sidebar

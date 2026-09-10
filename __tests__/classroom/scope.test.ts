@@ -56,7 +56,10 @@ describe('resolveClassroomScope — oversight roles', () => {
 });
 
 describe('resolveClassroomScope — non-teaching roles', () => {
-  it.each(['admissions', 'p_file_officer'] as const)(
+  // `p_file_officer` stood beside `admissions` here until it was retired
+  // 2026-09-10. The property is unchanged: a non-teaching role gets an empty
+  // array, which is not the same answer as null.
+  it.each(['admissions'] as const)(
     '%s gets no classes (empty array, distinct from null)',
     (role) => {
       const scope = resolveClassroomScope(role, [adviserRow(SECTION_A)]);

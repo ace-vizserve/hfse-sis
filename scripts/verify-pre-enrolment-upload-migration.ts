@@ -15,7 +15,12 @@
 // Run: npx tsx --env-file=.env.local scripts/verify-pre-enrolment-upload-migration.ts
 import { createServiceClient } from '../lib/supabase/service';
 
-const EXPECTED_HOLDERS = ['p_file_officer', 'school_admin', 'superadmin'];
+// Migration 139 granted this to `p_file_officer`, school_admin and superadmin.
+// Migration 143 retired `p_file_officer` and moved its eight document grants to
+// `admissions`, so post-143 that is the holder set this script must expect —
+// leaving the old name here would report a correctly-migrated database as
+// broken.
+const EXPECTED_HOLDERS = ['admissions', 'school_admin', 'superadmin'];
 
 type Check = { name: string; passed: boolean; detail: string };
 const checks: Check[] = [];

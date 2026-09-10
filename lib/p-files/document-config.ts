@@ -29,7 +29,8 @@ export type DocumentGroup =
 /**
  * Can a missing document in this group legitimately be chased from a parent?
  *
- * `school` documents are uploaded by the P-Files officer and above and are
+ * `school` documents are uploaded by staff who hold `documents_*.upload`, and
+ * are
  * never offered by the parent portal, so a reminder about one is noise at
  * best. This is the ONE definition — the queue, the counts and the buttons all
  * read it, so a fifth group can never be added to a chase surface by accident.

@@ -39,7 +39,6 @@ export default async function MarkbookLayout({
 
   const { id, email, role, roles } = view;
   if (!role) redirect('/login');
-  if (role === 'p_file_officer') redirect('/p-files');
 
   const capabilities = await getCapabilitiesForRole(role);
 

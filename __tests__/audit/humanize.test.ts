@@ -3,6 +3,7 @@ import {
   auditActionLabel,
   auditActionTone,
   auditContextSummary,
+  auditRoleLabel,
 } from '@/lib/audit/humanize';
 
 describe('auditActionLabel', () => {
@@ -577,10 +578,10 @@ describe('view switch entries', () => {
   it('names a role the way the school does, not the way the database does', () => {
     const summary = auditContextSummary('user.view.switch', {
       from_view: 'teacher',
-      to_view: 'p_file_officer',
+      to_view: 'academic_coordinator',
     });
-    expect(summary).toContain('P-File Officer');
-    expect(summary).not.toContain('p_file_officer');
+    expect(summary).toContain('Academic Coordinator');
+    expect(summary).not.toContain('academic_coordinator');
   });
 
   it('says where they landed when there is nothing to move from', () => {
@@ -611,5 +612,26 @@ describe('view switch entries', () => {
     });
     expect(summary).not.toContain('{');
     expect(summary).not.toContain('from_view');
+  });
+});
+
+describe('auditRoleLabel keeps rendering retired roles', () => {
+  // `audit_log.actor_role` is HISTORY. `p_file_officer` was retired from the
+  // `Role` union on 2026-09-10, but every row that role ever wrote still
+  // carries the string and is still read. Deleting its label would silently
+  // downgrade years of log lines to "P File Officer" — which is why
+  // `auditRoleLabel` takes a `string`, not a `Role`, and carries a separate
+  // retired-role map.
+  it('still names the retired P-Files officer the way the school did', () => {
+    expect(auditRoleLabel('p_file_officer')).toBe('P-File Officer');
+  });
+
+  it('still names every live role', () => {
+    expect(auditRoleLabel('school_admin')).toBe('School Admin');
+    expect(auditRoleLabel('admissions')).toBe('Admissions');
+  });
+
+  it('falls back to English for a role it has never heard of', () => {
+    expect(auditRoleLabel('some_future_role')).toBe('Some Future Role');
   });
 });

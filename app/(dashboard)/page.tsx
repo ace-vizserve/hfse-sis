@@ -44,7 +44,6 @@ export default async function Home() {
   // version. Only the 4 multi-module roles ever render the rest of this
   // page.
   if (!role) redirect('/login');
-  if (role === 'p_file_officer') redirect('/p-files');
   if (role === 'admissions') redirect('/admissions');
 
   // Falls back to email when no display name is set (getStaffDisplayNameById

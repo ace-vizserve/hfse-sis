@@ -94,9 +94,13 @@ export default async function SisStudentDetailPage({
   // TWO AUDIENCES, ONE PAGE (KD #173).
   //
   // The four roles that may WRITE a student record open it to work on it. The
-  // P-Files officer opens it because their own document-validation queue links
-  // every applicant name here — they need to SEE the file behind a document
-  // they are deciding on, and nothing more.
+  // second audience was the P-Files officer, whose own document-validation
+  // queue linked every applicant name here — they needed to SEE the file
+  // behind a document they were deciding on, and nothing more. That role was
+  // retired 2026-09-10 into `admissions`, who are already a writer, so the
+  // capability arm below no longer admits anyone the writer arm does not.
+  // Kept, not collapsed: it is what the page's admission rule MEANS, and the
+  // next holder of a read-only document capability should reach this file too.
   //
   // This replaces a four-role `!==` chain. It admits exactly the same people:
   // STUDENT_RECORD_WRITERS is that same four (admissions,
@@ -107,9 +111,10 @@ export default async function SisStudentDetailPage({
     can(capabilities, 'documents_pre_enrolment.read');
   if (!canOpen) redirect('/');
 
-  // Drives every edit affordance below. Read-only for the officer: the routes
-  // behind these sheets and dialogs already refuse them, so rendering the
-  // controls would only produce a form that 403s on save.
+  // Drives every edit affordance below. Read-only for anyone admitted by the
+  // capability arm alone: the routes behind these sheets and dialogs already
+  // refuse them, so rendering the controls would only produce a form that
+  // 403s on save.
   const canEditRecord = canWriteStudentRecord(sessionUser.role);
   // As of 2026-09-10 this equals canEditRecord for every role. admissions
   // absorbed the retired p_file_officer role, and Records came with it — so

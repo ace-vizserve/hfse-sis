@@ -11,7 +11,8 @@ import { countAwaitingVerification } from '@/lib/p-files/document-validation';
 // WHY THE SUM (KD #173). `/p-files/document-validation` is one page with two
 // queues: enrolled students (post-enrolment) and applicants (pre-enrolment),
 // each rendered only for the viewer who holds the matching read capability.
-// Migration 106 gave `p_file_officer` the pre-enrolment capabilities, so their
+// Migration 106 gave the P-Files officer (a role since retired, 2026-09-10)
+// the pre-enrolment capabilities, so their
 // Applicants tab became real work — but the badge still counted only
 // `countAwaitingVerification`, so it undercounted their actual queue and could
 // read zero while the page held rows. A badge that disagrees with the page it

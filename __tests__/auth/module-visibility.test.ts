@@ -103,7 +103,6 @@ describe('hiddenModulesForTeacher — only the teacher role is narrowed', () => 
     'school_admin',
     'superadmin',
     'admissions',
-    'p_file_officer',
     null,
   ];
 
@@ -261,7 +260,6 @@ describe('teachingProfileFor', () => {
       'academic_coordinator',
       'school_admin',
       'superadmin',
-      'p_file_officer',
       'admissions',
       null,
     ] as const) {

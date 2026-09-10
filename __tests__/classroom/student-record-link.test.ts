@@ -31,7 +31,6 @@ const ALL_ROLES: Role[] = [
   'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p_file_officer',
   'admissions',
 ];
 
@@ -54,8 +53,8 @@ describe('student-record link — capability must match ROUTE_ACCESS', () => {
       // The inverse direction. A role that CAN open /records/students should
       // be offered the link — otherwise a future widening of ROUTE_ACCESS
       // silently leaves the classroom rendering plain text for someone who
-      // could act. Roles with no classroom capability at all (admissions,
-      // p_file_officer) are exempt: they never reach a classroom surface.
+      // could act. Roles with no classroom capability at all (admissions)
+      // are exempt: they never reach a classroom surface.
       const hasAnyClassroomCapability =
         capabilityForSection(resolveClassroomScope(role, []), 'sec-1') != null;
       if (

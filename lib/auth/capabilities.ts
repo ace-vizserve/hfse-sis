@@ -255,8 +255,9 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_pre_enrolment.read',
     'documents_pre_enrolment.chase',
     'documents_pre_enrolment.validate',
-    // Granted 2026-09-01 alongside the same grant to p_file_officer and
-    // superadmin — parity with the post-enrolment `upload` she already holds,
+    // Granted 2026-09-01 alongside the same grant to p_file_officer (a role
+    // since retired, 2026-09-10) and superadmin — parity with the
+    // post-enrolment `upload` she already holds,
     // so nobody new can upload anything. See KD #204.
     'documents_pre_enrolment.upload',
     // No longer read-only oversight on the P-Files side: chase, upload and
@@ -343,43 +344,9 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     // absence of this line is what makes the buttons disappear.
   ],
 
-  p_file_officer: [
-    // The whole post-enrolment document lifecycle: the validation queue
-    // (page.tsx:25-31 + isOfficer), staff upload
-    // (app/api/p-files/[enroleeNumber]/upload/route.ts:69), and the P-Files
-    // branch of notify / bulk-notify / promise.
-    'documents_post_enrolment.read',
-    'documents_post_enrolment.chase',
-    'documents_post_enrolment.upload',
-    'documents_post_enrolment.validate',
-    // BOTH SIDES OF ENROLMENT (2026-07-31, migration 106). This is the change
-    // the whole capability layer was built for — the note that used to sit here
-    // predicted it exactly ("granting documents_pre_enrolment.validate here is
-    // exactly the change HFSE asked for, and it is a data edit, not a code
-    // change"). It was made as a data edit; 106 writes it into the seed so the
-    // code stops disagreeing with production.
-    //
-    // No route change was needed: /p-files/document-validation is already the
-    // unified queue and loads the applicant rows whenever the viewer holds
-    // `documents_pre_enrolment.read`, so the officer sees both queues in the
-    // module they can already reach.
-    //
-    // ONE route was opened afterwards (KD #173): the applicant FILE at
-    // /admissions/applications/[enroleeNumber], which every row in that new
-    // Applicants tab links to. `/admissions` otherwise still excludes them at
-    // ROUTE_ACCESS, deliberately — including the applications list next door —
-    // and the file renders read-only for them. The capability gives them the
-    // WORK, not the whole Admissions module.
-    'documents_pre_enrolment.read',
-    'documents_pre_enrolment.chase',
-    'documents_pre_enrolment.validate',
-    // STAFF UPLOAD ON THE APPLICANT SIDE (2026-09-01, KD #204). The officer
-    // could already upload into an enrolled student's folder; once applicants
-    // appeared on the P-Files list with folders of their own, the same button
-    // on the same page refused them. Parity grant — the holder set for
-    // `upload` is now identical on both sides of enrolment.
-    'documents_pre_enrolment.upload',
-  ],
+  // `p_file_officer` held the eight document capabilities and stood here until
+  // it was retired 2026-09-10. Every one of them moved to `admissions` below —
+  // nothing was dropped, and the role is gone from the `Role` union.
 
   admissions: [
     // THE WHOLE DOCUMENT LIFECYCLE, BOTH SIDES OF ENROLMENT (2026-09-10).

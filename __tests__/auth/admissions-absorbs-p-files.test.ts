@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_ROLE_CAPABILITIES } from '@/lib/auth/capabilities';
-import { isRouteAllowed } from '@/lib/auth/roles';
+import { ROLES, isRouteAllowed } from '@/lib/auth/roles';
 import {
   ENROLMENT_PLACEMENT_WRITERS,
   STUDENT_RECORD_WRITERS,
@@ -74,5 +74,19 @@ describe('admissions may place and withdraw students', () => {
     expect([...ENROLMENT_PLACEMENT_WRITERS].sort()).toEqual(
       [...STUDENT_RECORD_WRITERS].sort()
     );
+  });
+});
+
+describe('the P-Files officer role is retired', () => {
+  it('is gone from the role list', () => {
+    expect(ROLES).not.toContain('p_file_officer');
+    expect(ROLES).toHaveLength(5);
+  });
+
+  it('left no capability grants behind', () => {
+    expect(
+      Object.keys(DEFAULT_ROLE_CAPABILITIES),
+      'a Role-keyed map still carries the retired role'
+    ).not.toContain('p_file_officer');
   });
 });

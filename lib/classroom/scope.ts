@@ -52,7 +52,7 @@ export type ClassroomScope = {
   /**
    * `null` means "every section in the AY" (oversight roles) — callers should
    * skip the id filter entirely rather than pass a huge IN list. An empty
-   * array means "no classes at all" (admissions / p_file_officer), which is
+   * array means "no classes at all" (admissions), which is
    * distinct from null and must not be treated as unscoped.
    */
   sectionIds: string[] | null;
@@ -111,7 +111,7 @@ export function resolveClassroomScope(
   }
 
   // Only `teacher` derives scope from assignments. Every other role
-  // (admissions, p_file_officer, or a null/unknown role) gets nothing —
+  // (admissions, or a null/unknown role) gets nothing —
   // they have no teaching relationship to any class.
   if (role !== 'teacher') {
     return {

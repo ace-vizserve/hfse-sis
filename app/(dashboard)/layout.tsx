@@ -20,13 +20,12 @@ export const instant = false;
 // All module-specific chrome (sidebars, badges, module-scoped nav) lives in
 // the respective (markbook) / (records) / (p-files) / (sis) layouts.
 //
-// The single-module redirects (p_file_officer → /p-files, admissions →
-// /admissions) belong to `/` ALONE and live in its page, not here. Running
-// them at the layout applied them to every child, which made `/account`
-// unreachable for exactly those two roles — they bounced back to their module
-// from the profile menu and so had no way to change their password in the app.
-// Nothing is lost by not repeating them here:
-//   `/`                 — app/(dashboard)/page.tsx runs the identical three.
+// The single-module redirect (admissions → /admissions) belongs to `/` ALONE
+// and lives in its page, not here. Running it at the layout applied it to
+// every child, which made `/account` unreachable for exactly that role — they
+// bounced back to their module from the profile menu and so had no way to
+// change their password in the app. Nothing is lost by not repeating it here:
+//   `/`                 — app/(dashboard)/page.tsx runs the identical rules.
 //   `/admin/admissions` — ROUTE_ACCESS admits academic_coordinator+ only, and
 //                         proxy.ts bounces everyone else to `/`, where the
 //                         page redirect then applies.

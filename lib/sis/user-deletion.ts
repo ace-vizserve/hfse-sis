@@ -79,11 +79,14 @@ const ROLE_FOOTPRINT_COLUMNS: Record<
     { table: 'level_aliases', column: 'created_by' },
     { table: 'teacher_assignments', column: 'relief_teacher_user_id' },
   ],
-  p_file_officer: [
-    { table: 'p_file_revisions', column: 'replaced_by_user_id' },
+  admissions: [
     { table: 'p_file_outreach', column: 'created_by_user_id' },
+    // Inherited from the retired `p_file_officer` block (2026-09-10). Not
+    // bookkeeping: admissions now holds `documents_*.upload`, so replacing a
+    // document stamps THEIR id here, and a footprint that omitted it would let
+    // the account delete cleanly and strand the revision.
+    { table: 'p_file_revisions', column: 'replaced_by_user_id' },
   ],
-  admissions: [{ table: 'p_file_outreach', column: 'created_by_user_id' }],
 };
 
 // Union of every role's columns, deduped — used when a role can't be

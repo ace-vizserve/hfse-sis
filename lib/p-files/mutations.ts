@@ -24,10 +24,10 @@ export type RevisionSnapshot = {
 };
 
 // Inserts one row into `p_file_revisions` capturing the pre-replacement
-// snapshot when a P-File Officer replaces a document. Service-role
+// snapshot when a staff member replaces a document. Service-role
 // client only. The DB trigger (migration 033) catches parent-portal
 // direct re-uploads via a separate path; this function only handles the
-// SIS officer flow and tags the row as `source = 'pfile-upload'`.
+// in-SIS upload flow and tags the row as `source = 'pfile-upload'`.
 export async function createRevision(
   service: SupabaseClient,
   snap: RevisionSnapshot

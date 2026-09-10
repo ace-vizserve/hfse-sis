@@ -8,12 +8,18 @@ import type { User } from '@supabase/supabase-js';
 // at runtime.
 import type { Capability } from '@/lib/auth/capabilities';
 
+// ⚠ `p_file_officer` WAS HERE AND IS NOT COMING BACK (retired 2026-09-10).
+// Admissions absorbed the whole document lifecycle — the role had exactly one
+// holder and described a job admissions already did on the applicant side.
+//
+// The STRING still exists in the world: `audit_log.actor_role` carries it on
+// every row that role ever wrote, and `lib/audit/humanize.ts` must go on
+// rendering it. Retired from the app, not deleted from history.
 export type Role =
   | 'teacher'
   | 'academic_coordinator'
   | 'school_admin'
   | 'superadmin'
-  | 'p_file_officer'
   | 'admissions';
 
 export const ROLES: Role[] = [
@@ -21,7 +27,6 @@ export const ROLES: Role[] = [
   'academic_coordinator',
   'school_admin',
   'superadmin',
-  'p_file_officer',
   'admissions',
 ];
 
@@ -108,7 +113,7 @@ const PFILES_NAV: NavSection[] = [
   },
   {
     // Quick filters land on the dashboard with a `?status=` preset so the
-    // P-File Officer can jump straight to the work queue. school_admin sees
+    // admissions team can jump straight to the work queue. school_admin sees
     // the same lists, and the page still renders them read-only — but that is
     // now a UI gap rather than a rule: migration 106 gave her the
     // post-enrolment document capabilities while the page kept its
@@ -131,9 +136,11 @@ const PFILES_NAV: NavSection[] = [
     ],
   },
   {
-    // Renewal-outreach windows — officer+ only (p_file_officer / school_admin
-    // / superadmin) because these are the lists the bulk-remind action
-    // operates on. school_admin reaches the lists but gets no bulk-notify CTA;
+    // Renewal-outreach windows — the /p-files audience exactly (admissions /
+    // school_admin / superadmin), because these are the lists the bulk-remind
+    // action operates on. `p_file_officer` stood at the head of this list until
+    // it was retired 2026-09-10 and admissions absorbed the document
+    // lifecycle. school_admin reaches the lists but gets no bulk-notify CTA;
     // that used to be KD #74 policy and is now just the page's role-literal
     // gate lagging her migration-106 grants (KD #173). Other oversight roles
     // are not granted these quicklinks at all.
@@ -142,17 +149,17 @@ const PFILES_NAV: NavSection[] = [
       {
         href: '/p-files?expiring=30',
         label: 'Within 30 days',
-        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
+        requiresRoles: ['admissions', 'school_admin', 'superadmin'],
       },
       {
         href: '/p-files?expiring=60',
         label: 'Within 60 days',
-        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
+        requiresRoles: ['admissions', 'school_admin', 'superadmin'],
       },
       {
         href: '/p-files?expiring=90',
         label: 'Within 90 days',
-        requiresRoles: ['p_file_officer', 'school_admin', 'superadmin'],
+        requiresRoles: ['admissions', 'school_admin', 'superadmin'],
       },
     ],
   },
@@ -183,7 +190,16 @@ const RECORDS_NAV: NavSection[] = [
       {
         href: '/records/insights',
         label: 'Insights',
-        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+        // `admissions` was added 2026-09-10: the page's own guard already
+        // admitted them, so leaving them off here hid a page they could reach
+        // — the reach-but-cannot-see shape this module has been bitten by
+        // before.
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
       },
     ],
   },
@@ -931,7 +947,14 @@ export const ROUTE_ACCESS: Array<{
   // `/admissions/applications/[enroleeNumber]` share a prefix string, so no
   // amount of reordering separates the list page from a detail page. Needed
   // when a role should reach a record they were linked to without being handed
-  // the whole index — see the P-Files officer rows below (KD #173).
+  // the whole index.
+  //
+  // ⚠ NO ROW SETS THIS TODAY. Its only user was the three-row
+  // `/admissions/applications` split that let the P-Files officer open an
+  // applicant file without the funnel (KD #173); that role was retired
+  // 2026-09-10 and the three rows collapsed to one. The field and its handling
+  // in `isRouteAllowed` are kept because "the file, not the folder" is a
+  // recurring need and re-deriving it costs more than carrying it.
   //
   // First-match-in-declaration-order still decides everything, so an `exact`
   // row must sit ABOVE the subtree row it carves out of.
@@ -1016,7 +1039,7 @@ export const ROUTE_ACCESS: Array<{
   // The bare legacy `/admin` bookmark, which is a one-line `redirect('/records')`
   // stub like its `/admin/admissions` sibling above. It had no rule at all until
   // KD #173, and `isRouteAllowed` returns true for an unmatched prefix — so a
-  // teacher, admissions or p_file_officer user opening an old bookmark was let
+  // teacher or admissions user opening an old bookmark was let
   // through, redirected to /records, blocked there by the proxy, bounced to `/`,
   // and redirected once more by the home page's own role routing. Three hops to
   // say "no". With this row the gate fires on the first request, which is the
@@ -1032,8 +1055,8 @@ export const ROUTE_ACCESS: Array<{
   },
   // Classroom — a section × term workspace for teaching staff. Mandatory
   // row: isRouteAllowed defaults to ALLOW for any prefix with no matching
-  // rule, so without this, admissions and p_file_officer (who have no
-  // teaching role) could open it. No competing `/classroom*` rule exists,
+  // rule, so without this, admissions (who has no teaching role) could open
+  // it. No competing `/classroom*` rule exists,
   // so placement relative to the other rules doesn't matter for
   // longest-prefix-wins.
   {
@@ -1101,46 +1124,17 @@ export const ROUTE_ACCESS: Array<{
     prefix: '/p-files',
     allowed: ['admissions', 'school_admin', 'superadmin'],
   },
-  // ── The applicant record, split list-vs-detail for the P-Files officer ────
-  // These three rows are order-sensitive; see `exact` on ROUTE_ACCESS above.
-  //
-  // Migration 106 gave `p_file_officer` the pre-enrolment document
-  // capabilities, so /p-files/document-validation now shows them an Applicants
-  // tab. Every applicant name in that queue links to the applicant file — which
-  // lived behind the broad /admissions rule, so the link bounced them to `/`.
-  // They may now open the FILE. They still may not browse the funnel: the
-  // closed archive and the applications list keep their original audience.
   {
-    prefix: '/admissions/applications/closed',
-    allowed: [
-      'admissions',
-      'academic_coordinator',
-      'school_admin',
-      'superadmin',
-    ],
-  },
-  {
-    // The list. `exact` is the whole mechanism — without it this row would
-    // swallow every detail page below and the officer would be shut out again.
-    prefix: '/admissions/applications',
-    exact: true,
-    allowed: [
-      'admissions',
-      'academic_coordinator',
-      'school_admin',
-      'superadmin',
-    ],
-  },
-  {
-    // The applicant file. Detail-only by construction: the `exact` row above
-    // has already claimed the bare list path.
+    // Was three rows with an `exact` carve-out, which existed only to let the
+    // P-Files officer open an applicant FILE without being handed the funnel
+    // (KD #173). That role was retired 2026-09-10 and the three rows collapsed
+    // to one identical audience, so the carve-out is gone with it.
     prefix: '/admissions/applications',
     allowed: [
       'admissions',
       'academic_coordinator',
       'school_admin',
       'superadmin',
-      'p_file_officer',
     ],
   },
   {

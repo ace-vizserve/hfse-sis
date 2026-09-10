@@ -5,10 +5,13 @@ import { isRouteAllowed } from '@/lib/auth/roles';
 
 describe('shortcutsForRole', () => {
   it('only returns shortcuts for modules the role can actually open', () => {
-    const result = shortcutsForRole('p_file_officer');
+    // Was `p_file_officer` until that role was retired 2026-09-10. `admissions`
+    // absorbed it and is the narrowest remaining role with shortcuts, so it is
+    // the one that would expose a shortcut pointing somewhere it cannot open.
+    const result = shortcutsForRole('admissions');
     for (const s of result) {
       expect(
-        isRouteAllowed(SIDEBAR_REGISTRY[s.module].primaryHref, 'p_file_officer')
+        isRouteAllowed(SIDEBAR_REGISTRY[s.module].primaryHref, 'admissions')
       ).toBe(true);
     }
   });
@@ -54,7 +57,6 @@ describe('shortcutsForRole', () => {
       'academic_coordinator',
       'school_admin',
       'superadmin',
-      'p_file_officer',
       'admissions',
     ] as const) {
       expect(shortcutsForRole(role).length).toBeGreaterThan(0);
@@ -97,7 +99,6 @@ describe('shortcutsForRole', () => {
       'academic_coordinator',
       'school_admin',
       'superadmin',
-      'p_file_officer',
       'admissions',
     ] as const) {
       expect(() => shortcutsForRole(role)).not.toThrow();

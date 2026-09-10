@@ -115,9 +115,14 @@ describe('getThisTermStats', () => {
     ]);
   });
 
-  it('p_file_officer: expiring-soon count + already-expired count (filtered from getExpiringDocuments, not the combined priority headline)', async () => {
-    const rows = await getThisTermStats({ ...base, role: 'p_file_officer' });
+  it('admissions: follow-ups + expiring-soon + already-expired (the last filtered from getExpiringDocuments, not the combined priority headline)', async () => {
+    // The two document rows were a `p_file_officer` branch of their own until
+    // that role was retired 2026-09-10. They moved onto admissions rather than
+    // being deleted — admissions holds all eight document capabilities now, so
+    // the renewal chase is their work and these are their numbers.
+    const rows = await getThisTermStats({ ...base, role: 'admissions' });
     expect(rows).toEqual([
+      { label: 'Applications needing follow-up', value: 5, tone: 'warning' },
       { label: 'Expiring within 30 days', value: 12, tone: 'warning' },
       // Mock data has exactly 2 rows with daysUntilExpiry < 0 (-5, -1).
       { label: 'Already expired', value: 2, tone: 'warning' },
@@ -132,13 +137,6 @@ describe('getThisTermStats', () => {
         cmpTo: null,
       })
     );
-  });
-
-  it('admissions: applications needing follow-up', async () => {
-    const rows = await getThisTermStats({ ...base, role: 'admissions' });
-    expect(rows).toEqual([
-      { label: 'Applications needing follow-up', value: 5, tone: 'warning' },
-    ]);
   });
 
   it('omits a role branch row entirely when its underlying call throws (no fake zero) — sync rows still ship', async () => {

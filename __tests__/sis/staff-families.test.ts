@@ -4,13 +4,12 @@ import { computeStaffFamilies } from '@/lib/sis/staff-families';
 import type { Role } from '@/lib/auth/roles';
 
 describe('computeStaffFamilies', () => {
-  it('groups all 6 roles into exactly 3 families with correct counts', () => {
+  it('groups all 5 roles into exactly 3 families with correct counts', () => {
     const accounts: { role: Role | null }[] = [
       { role: 'teacher' },
       { role: 'teacher' },
       { role: 'academic_coordinator' },
       { role: 'admissions' },
-      { role: 'p_file_officer' },
       { role: 'school_admin' },
       { role: 'school_admin' },
       { role: 'superadmin' },
@@ -30,7 +29,7 @@ describe('computeStaffFamilies', () => {
     const admissionsEnrollment = families.find(
       (f) => f.key === 'admissions-enrollment'
     )!;
-    expect(admissionsEnrollment.total).toBe(2);
+    expect(admissionsEnrollment.total).toBe(1);
 
     const admin = families.find((f) => f.key === 'admin')!;
     expect(admin.total).toBe(3);
@@ -68,14 +67,13 @@ describe('computeStaffFamilies', () => {
     expect(
       families.find((f) => f.key === 'academics')!.roles.map((r) => r.role)
     ).toEqual(['teacher', 'academic_coordinator']);
-    // Deliberately NOT ROLES' declaration order (which lists p_file_officer
-    // before admissions) — 'admissions' reads first here to match the
-    // "Admissions & Enrollment" family label.
+    // One row since 2026-09-10: the family's second role, 'p_file_officer',
+    // was retired and admissions absorbed it.
     expect(
       families
         .find((f) => f.key === 'admissions-enrollment')!
         .roles.map((r) => r.role)
-    ).toEqual(['admissions', 'p_file_officer']);
+    ).toEqual(['admissions']);
     expect(
       families.find((f) => f.key === 'admin')!.roles.map((r) => r.role)
     ).toEqual(['school_admin', 'superadmin']);

@@ -42,7 +42,7 @@ type Params = {
  * so the from/to values passed here don't affect the result — a single-day
  * "today" range is used only to satisfy the required shape.
  *
- * p_file_officer's "Already expired" row derives `overdue.length` the same
+ * The admissions "Already expired" row derives `overdue.length` the same
  * way `getPFilesPriority` computes its internal `overdue` array
  * (lib/p-files/dashboard.ts:759) — calling the already-cached
  * `getExpiringDocuments(ayCode, 60, 10_000)` directly and filtering to
@@ -154,8 +154,21 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
     return rows;
   }
 
-  if (role === 'p_file_officer') {
+  if (role === 'admissions') {
+    // The two document rows below stood in a `p_file_officer` branch of their
+    // own until that role was retired 2026-09-10. They moved here rather than
+    // being deleted: admissions now holds all eight document capabilities and
+    // reaches /p-files, so the renewal chase is their daily work and these are
+    // their numbers.
     return settle([
+      async () => {
+        const outdated = await getOutdatedApplications(ayCode);
+        return {
+          label: 'Applications needing follow-up',
+          value: outdated.length,
+          tone: 'warning',
+        };
+      },
       async () => {
         const today = sgToday();
         const kpis = await getPFilesKpisRange({
@@ -177,19 +190,6 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
         return {
           label: 'Already expired',
           value: overdue.length,
-          tone: 'warning',
-        };
-      },
-    ]);
-  }
-
-  if (role === 'admissions') {
-    return settle([
-      async () => {
-        const outdated = await getOutdatedApplications(ayCode);
-        return {
-          label: 'Applications needing follow-up',
-          value: outdated.length,
           tone: 'warning',
         };
       },

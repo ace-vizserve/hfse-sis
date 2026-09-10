@@ -154,14 +154,15 @@ const ROSTER: RosterEntry[] = [
     role: 'admissions',
     group: 'Admissions',
   },
-
-  // P-Files officer — the renewals officer. Module-scoped: reaches /p-files
-  // and nothing else (KD #2/#31). Sole holder of this role.
+  // The renewals officer. Held `p_file_officer` in its own group here — the
+  // sole holder of that role — until it was retired 2026-09-10 and admissions
+  // absorbed the whole document lifecycle. She was moved to `admissions` on
+  // the same day; the roster now says so.
   {
     fullName: 'Louilyn Gutierrez',
     email: 'louilyn.gutierrez@vizserve.hfse.edu.sg',
-    role: 'p_file_officer',
-    group: 'P-Files Officer',
+    role: 'admissions',
+    group: 'Admissions',
   },
 
   // ── Teachers ───────────────────────────────────────────────────────────

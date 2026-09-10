@@ -5,7 +5,6 @@ const VIEW_ALL_ACTIVITY_TARGET: Record<Role, string> = {
   academic_coordinator: '/markbook/audit-log',
   school_admin: '/sis/audit-log',
   superadmin: '/sis/audit-log',
-  p_file_officer: '/p-files/audit-log',
   admissions: '/admissions/audit-log',
 };
 

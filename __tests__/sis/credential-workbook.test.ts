@@ -111,12 +111,12 @@ describe('buildCredentialWorkbook', () => {
 
   it('renders plain-English role names, never the raw enum', () => {
     const wb = read([
-      row({ role: 'p_file_officer', group: 'Officer' }),
+      row({ role: 'admissions', group: 'Officer' }),
       row({ role: 'academic_coordinator', group: 'Academics' }),
     ]);
     const cell = (tab: string) =>
       (aoa(wb, tab)[CREDENTIAL_SHEET_LAYOUT.firstDataRow] as unknown[])[3];
-    expect(cell('Officer')).toBe('P-Files Officer');
+    expect(cell('Officer')).toBe('Admissions');
     expect(cell('Academics')).toBe('Academic Coordinator');
   });
 

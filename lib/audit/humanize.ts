@@ -1186,8 +1186,23 @@ function studentLead(ctx: Record<string, unknown>): string {
 // `p_file_officer` into "P File Officer". Falls back for a value the map does
 // not know, so a role added later still reads as English rather than
 // snake_case.
+//
+// ⚠ RETIRED ROLES STILL HAVE TO RENDER. `ROLE_LABEL` is keyed on the LIVE
+// `Role` union, but this function reads `audit_log.actor_role`, which is
+// history — every row a retired role ever wrote still carries its string, and
+// those rows are read forever. Retiring a role must therefore move its label
+// here, not delete it, or years of log lines start reading "P File Officer"
+// (or worse, raw snake_case) on the day the union changes. The parameter is
+// `string`, not `Role`, for exactly this reason.
+const RETIRED_ROLE_LABELS: Record<string, string> = {
+  // Retired 2026-09-10; admissions absorbed the whole document lifecycle.
+  p_file_officer: 'P-File Officer',
+};
+
 export function auditRoleLabel(role: string): string {
-  return ROLE_LABEL[role as Role] ?? humanizeKey(role);
+  return (
+    ROLE_LABEL[role as Role] ?? RETIRED_ROLE_LABELS[role] ?? humanizeKey(role)
+  );
 }
 
 function humanizeKey(key: string): string {

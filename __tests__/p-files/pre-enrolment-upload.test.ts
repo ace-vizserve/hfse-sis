@@ -58,21 +58,25 @@ describe('documents_pre_enrolment.upload', () => {
     expect(holdersOf('documents_pre_enrolment.upload')).toEqual(
       holdersOf('documents_post_enrolment.upload')
     );
+    // Read `p_file_officer` in the first slot until 2026-09-10, when that role
+    // was retired and `admissions` absorbed all eight document capabilities
+    // (migration 143). The holder COUNT is unchanged — it is the same three
+    // people, one of them renamed.
     expect(holdersOf('documents_pre_enrolment.upload')).toEqual([
-      'p_file_officer',
+      'admissions',
       'school_admin',
       'superadmin',
     ]);
   });
 
-  it('is withheld from admissions, who have no upload surface to use it on', () => {
-    // Not an oversight — recorded in both lib/auth/capabilities.ts and
-    // migration 139. `/p-files` excludes them at ROUTE_ACCESS and the applicant
-    // file's DocumentsViewer has no upload path, so the grant would be a ticked
-    // box wired to no gate. Give them a control first, then grant it as data.
-    expect(holdersOf('documents_pre_enrolment.upload')).not.toContain(
-      'admissions'
-    );
+  it('is now held by admissions, who were given the upload surface first', () => {
+    // ⚠ THIS ASSERTED THE OPPOSITE UNTIL 2026-09-10, and the reason it did is
+    // worth keeping: migration 139 deliberately withheld the grant because
+    // `/p-files` excluded admissions at ROUTE_ACCESS and the applicant file's
+    // DocumentsViewer had no upload path — "give them a control first, then
+    // grant it as data". That control now exists. Admissions reaches /p-files,
+    // absorbed the retired P-Files officer, and holds the grant it is wired to.
+    expect(holdersOf('documents_pre_enrolment.upload')).toContain('admissions');
   });
 });
 

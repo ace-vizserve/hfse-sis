@@ -15,9 +15,6 @@ describe('viewAllActivityHref', () => {
     expect(viewAllActivityHref('superadmin', 'amier@hfse.edu.sg')).toBe(
       '/sis/audit-log?actor=amier%40hfse.edu.sg'
     );
-    expect(viewAllActivityHref('p_file_officer', 'pfiles@hfse.edu.sg')).toBe(
-      '/p-files/audit-log?actor=pfiles%40hfse.edu.sg'
-    );
     expect(viewAllActivityHref('admissions', 'admissions@hfse.edu.sg')).toBe(
       '/admissions/audit-log?actor=admissions%40hfse.edu.sg'
     );

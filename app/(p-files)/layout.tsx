@@ -38,12 +38,7 @@ export default async function PFilesLayout({
   if (!view) redirect('/login');
 
   const { id, email, role, roles } = view;
-  if (
-    role !== 'admissions' &&
-    role !== 'p_file_officer' &&
-    role !== 'school_admin' &&
-    role !== 'superadmin'
-  )
+  if (role !== 'admissions' && role !== 'school_admin' && role !== 'superadmin')
     redirect('/');
 
   const capabilities = await getCapabilitiesForRole(role);

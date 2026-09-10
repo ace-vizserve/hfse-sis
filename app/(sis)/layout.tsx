@@ -66,7 +66,6 @@ export default async function SisLayout({
     role !== 'school_admin' &&
     role !== 'superadmin'
   ) {
-    if (role === 'p_file_officer') redirect('/p-files');
     if (!role) redirect('/login');
     redirect('/');
   }

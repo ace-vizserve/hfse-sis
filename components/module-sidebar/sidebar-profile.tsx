@@ -98,7 +98,7 @@ export function SidebarProfile({ email, roles, role }: SidebarProfileProps) {
   // stands in for its "hold a pending flag across the write" guidance.
   //
   // `switchingTo` is cleared in `finally`, not only on failure: `/` bounces
-  // `p_file_officer` and `admissions` straight back to their own module
+  // `admissions` straight back to their own module
   // (KD #173), where this component instance can survive the round trip rather
   // than remounting — leaving every row disabled forever if only the failure
   // path cleared it.
