@@ -85,10 +85,15 @@ type Props = {
    *  the dialog fetches `assignable-sections`, which 403s for a read-only
    *  viewer and would leave them staring at an empty section picker. */
   canEdit?: boolean;
-  /** May this viewer put a student in a class? Narrower than `canEdit` — the
-   *  admissions team finishes enrolment (step 10) but Records assigns the
-   *  class (step 11, KD #51). Defaults to FALSE for the same reason `canEdit`
-   *  does: no picker beats a picker whose save is refused. */
+  /** May this viewer put a student in a class? Until 2026-09-10 this was
+   *  narrower than `canEdit` — the admissions team finished enrolment (step
+   *  10) but Records assigned the class (step 11). admissions absorbed
+   *  Records (the retired p_file_officer role went with it), and placement
+   *  came with it, so the two are now equal for every role. KD #51 itself
+   *  (Admissions as its own module, hosting the pre-enrolment funnel) is
+   *  unaffected — only the "who may place" rule once derived from it
+   *  changed. Defaults to FALSE for the same reason `canEdit` does: no
+   *  picker beats one whose save could be refused. */
   canAssignSection?: boolean;
 };
 
@@ -1219,8 +1224,18 @@ function StageStatusTile({
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
       {/* Both links go to placement surfaces, so both gate on the placement
-          role, not merely on canEdit — an admissions viewer following either
-          would land on a page their role cannot open (KD #173). */}
+          role, not merely on canEdit. That used to be sufficient to keep a
+          viewer from following a link their role can't open (KD #173); as of
+          2026-09-10 it no longer is for the FIRST link below. admissions now
+          holds canAssignSection (this task absorbed placement along with
+          Records), so this tile renders "Move to another section" for them —
+          but ROUTE_ACCESS still gates /sis/sections/[id] to
+          academic_coordinator / school_admin / superadmin, so an admissions
+          viewer who clicks it still bounces. KNOWN GAP, not fixed here (this
+          pass is a comment sweep, not a behaviour change — flagged for
+          whoever owns the SIS/Records route-access follow-up). The SECOND
+          link, "Assign a class" → /records/unsynced, is fine: admissions
+          already reaches all of /records. */}
       {autoManaged && currentSectionId && canAssignSection && (
         <Button asChild variant="outline" size="sm" className="ml-1 self-start">
           <Link href={`/sis/sections/${currentSectionId}`}>

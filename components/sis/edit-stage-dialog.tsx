@@ -95,11 +95,21 @@ export function EditStageDialog({
    */
   prereqStatuses?: Partial<Record<StageKey, string | null>>;
   /**
-   * May this viewer put a student in a class? Class Assignment is step 11 of
-   * HFSE's admission process and belongs to Records, so an admissions user
-   * finishing step 10 never sees the picker — and the server 403s them if
-   * they somehow post one. Defaults to false: a caller that forgets to pass
-   * it renders no picker, rather than one whose save is refused.
+   * May this viewer put a student in a class? Until 2026-09-10 this was
+   * narrower than `canEdit` — Class Assignment (step 11) belonged to
+   * Records, and an admissions user finishing step 10 never saw the picker
+   * because the server would 403 the post. admissions absorbed Records
+   * (the retired p_file_officer role went with it), and placement came with
+   * it, so the caller now passes the same value it passes for `canEdit` for
+   * that role. KD #51 itself is unaffected — Admissions is still its own
+   * module hosting the pre-enrolment funnel; only the "who may place" rule
+   * once derived from it changed. Kept as its own prop (rather than folded
+   * into `canEdit`) because the two names are still threaded separately
+   * end-to-end — see `ENROLMENT_PLACEMENT_WRITERS` /
+   * `STUDENT_RECORD_WRITERS` in lib/auth/student-record.ts. Defaults to
+   * false: a caller that forgets to pass it renders no picker, rather than
+   * one whose save could be refused for a role that still lacks placement
+   * rights.
    */
   canAssignSection?: boolean;
 }) {

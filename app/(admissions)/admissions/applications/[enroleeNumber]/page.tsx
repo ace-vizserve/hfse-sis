@@ -110,8 +110,16 @@ export default async function SisStudentDetailPage({
   // behind these sheets and dialogs already refuse them, so rendering the
   // controls would only produce a form that 403s on save.
   const canEditRecord = canWriteStudentRecord(sessionUser.role);
-  // Narrower than canEditRecord: admissions finish enrolment (step 10) but
-  // Records assign the class (step 11, KD #51).
+  // As of 2026-09-10 this equals canEditRecord for every role. admissions
+  // absorbed the retired p_file_officer role, and Records came with it — so
+  // the funnel/placement split (admissions finishes step 10, Records places
+  // in step 11) that used to make this narrower than canEditRecord no
+  // longer holds. KD #51 itself is unaffected: Admissions is still its own
+  // module hosting the pre-enrolment funnel, and Records is still
+  // enrolled-only — this is a role widening, not a re-definition of either
+  // module. Kept as its own variable (mirrors ENROLMENT_PLACEMENT_WRITERS vs
+  // STUDENT_RECORD_WRITERS in lib/auth/student-record.ts) because other call
+  // sites still read one name or the other.
   const canPlaceStudent = canAssignSection(sessionUser.role);
 
   const { enroleeNumber } = await params;

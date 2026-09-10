@@ -43,8 +43,14 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
 ) {
-  // Placement, not the student record — `admissions` is deliberately excluded
-  // (KD #51). Same three roles as before; see lib/auth/student-record.ts.
+  // Placement, not the student record — that used to mean `admissions` was
+  // deliberately excluded here (KD #51). As of 2026-09-10 admissions
+  // absorbed the retired p_file_officer role along with Records, and
+  // placement came with it, so ENROLMENT_PLACEMENT_WRITERS now equals
+  // STUDENT_RECORD_WRITERS (four roles, not three) — see
+  // lib/auth/student-record.ts. KD #51 itself (Admissions as its own module)
+  // is unaffected; only the "who may place" rule once derived from it
+  // changed.
   const auth = await requireRole([...ENROLMENT_PLACEMENT_WRITERS]);
   if ('error' in auth) return auth.error;
 

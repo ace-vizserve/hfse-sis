@@ -20,8 +20,14 @@ import { createServiceClient } from '@/lib/supabase/service';
 // students.id, then write the grading-schema column.
 //
 // Gated on ENROLMENT_PLACEMENT_WRITERS rather than STUDENT_RECORD_WRITERS: a
-// house is a placement decision the school makes, not an application field, so
-// `admissions` is excluded (KD #51) exactly as it is for section transfers.
+// house is a placement decision the school makes, not an application field —
+// that's still why this route reads the placement name rather than the
+// record name. It used to also mean `admissions` was excluded (KD #51),
+// exactly as it was for section transfers; as of 2026-09-10 admissions
+// absorbed the retired p_file_officer role along with Records, and
+// placement came with it, so the two lists (and every route gated on
+// either) now admit the same four roles. KD #51 itself is unaffected —
+// only the "who may place" rule once derived from it changed.
 //
 // The house lives on the cross-AY `students` row on purpose — see migration
 // 110's header. A student keeps their house for their whole time at school.
