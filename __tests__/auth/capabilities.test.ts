@@ -106,20 +106,40 @@ const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
     'superadmin',
   ],
   'documents_post_enrolment.validate': [
+    'admissions',
     'p_file_officer',
     'school_admin',
     'superadmin',
   ],
   'documents_post_enrolment.chase': [
+    'admissions',
     'p_file_officer',
     'school_admin',
     'superadmin',
   ],
   'documents_post_enrolment.upload': [
+    'admissions',
     'p_file_officer',
     'school_admin',
     'superadmin',
   ],
+  'documents_post_enrolment.read': [
+    'admissions',
+    'p_file_officer',
+    'school_admin',
+    'superadmin',
+  ],
+
+  // 2026-09-10, Mr Ace: the P-Files Officer role is retired and `admissions`
+  // absorbs its whole document lifecycle. Migration 143. One person already
+  // did both jobs — the role being retired had exactly one holder
+  // (louilyn.gutierrez@) — so this is the reassignment, not a new idea: the
+  // four grants above cross `admissions` onto the post-enrolment side it had
+  // never held, closing the asymmetry KD #147's Lock #2 deliberately created
+  // in migration 106 ("documents belong to Admissions before enrolment and
+  // P-Files after"). That lock is what ended; the STRUCTURAL rule beside it —
+  // the route reads enrolment state, not the caller's role, to pick the
+  // capability — is untouched and still asserted below.
 };
 
 const PRE_MIGRATION_GATES: Partial<Record<Capability, Role[]>> = {
@@ -533,10 +553,19 @@ describe('parity with the gates these capabilities replace', () => {
     const post = holdersOf('documents_post_enrolment.validate');
     expect(pre.length).toBeGreaterThan(0);
     expect(post.length).toBeGreaterThan(0);
-    // `admissions` must never hold the post-enrolment side and `p_file_officer`
-    // is the only role whose pre-enrolment grant was a deliberate crossing —
-    // KD #147's module ownership, which this reassignment does not reverse.
-    expect(post).not.toContain('admissions');
+    // UNTIL 2026-09-10 this asserted the opposite: `admissions` must never
+    // hold the post-enrolment side, because KD #147's Lock #2 kept the two
+    // sides on separate roles (admissions before enrolment, `p_file_officer`
+    // after) and only `p_file_officer` was allowed to cross it. That lock
+    // ended when `p_file_officer` was retired — one person already did both
+    // jobs, and the role had exactly one holder — so `admissions` absorbed the
+    // whole lifecycle (migration 143). What that lock was protecting against
+    // (a role crossing the line by accident, un-decided) is still guarded: not
+    // by WHO may hold both sides, but by every role that validates on one side
+    // now validating on both — the asymmetry is what's gone, not the
+    // requirement that crossing it be a deliberate, recorded decision
+    // (DELIBERATE_WIDENINGS is that record).
+    expect([...pre].sort()).toEqual([...post].sort());
   });
 
   it('school_admin now validates documents on both sides', () => {
@@ -697,6 +726,10 @@ const SEED_MIGRATIONS = [
   // sides of enrolment. KD #204 gave applicants P-Files folders; this gives
   // staff a way to put a file in one.
   'supabase/migrations/139_role_permissions_pre_enrolment_upload.sql',
+  // `p_file_officer` retired (2026-09-10): one person already did both jobs,
+  // and the role being retired had exactly one holder. `admissions` absorbs
+  // the whole document lifecycle — the five grants it did not already hold.
+  'supabase/migrations/143_admissions_absorbs_p_file_officer.sql',
 ];
 
 /** `('role', 'capability')` tuples inside one SQL statement block. */
