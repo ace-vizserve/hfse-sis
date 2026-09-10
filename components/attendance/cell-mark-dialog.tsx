@@ -96,7 +96,7 @@ import {
 //     school's own words from the paper legend. Shortening it here would
 //     either fork the vocabulary or silently reword a surface nobody reviewed.
 //   * Excused refusing to save without a reason (see `excusedArmed` below).
-//   * The note committing on blur, and the P / A / L / E shortcuts.
+//   * The note committing on blur.
 //   * Marking staying ONE CLICK. The container got bigger; the number of
 //     clicks it takes to mark a class did not, or the register pass becomes a
 //     chore and the teachers stop doing it here.
@@ -301,9 +301,8 @@ export function CellMarkDialog({
   //
   // `'clear'` is a change like any other as far as this question goes: a
   // teacher blanking a day two people approved is exactly the moment the
-  // filing has to interrupt. Routing it anywhere else would repeat the bug
-  // the keyboard shortcuts already had — a guard only one path respects is
-  // not a guard.
+  // filing has to interrupt. Routing it anywhere else would give us a guard
+  // only one path respects, which is not a guard.
   const [pendingOverride, setPendingOverride] = useState<
     AttendanceStatus | 'clear' | null
   >(null);
@@ -364,32 +363,12 @@ export function CellMarkDialog({
     onPick('EX', next as ExReason);
   }
 
-  // Letter keys for the common marks — speed for bulk encoding. Excuse reasons
-  // stay Tab/click (they carry a quota decision, not a reflex).
-  function onKeyDown(e: React.KeyboardEvent) {
-    // The note field lives inside this handler's subtree, so without this
-    // guard typing "please" into it would stamp Present, Late and Absent on
-    // the way through.
-    const target = e.target as HTMLElement | null;
-    if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
-
-    // ⚠ ROUTED THROUGH `pickStatus`, NOT STRAIGHT TO `onPick`. It used to call
-    // onPick directly, which was harmless while every mark was a plain write —
-    // but the moment overriding an approved day needed confirming, pressing
-    // "a" would have skipped the question the mouse now has to answer. A guard
-    // only one input path respects is not a guard.
-    //
-    // ⚠ THERE IS NO "n" ANY MORE. It stamped NC, which is not a mark a person
-    // picks — see the note above `SEGMENT_BASE`.
-    const k = e.key.toLowerCase();
-    if (k === 'p') pickStatus('P');
-    else if (k === 'a') pickStatus('A');
-    else if (k === 'l') pickStatus('L');
-    else if (k === 'e') pickStatus('EX');
-    else return;
-    e.preventDefault();
-  }
-
+  // ⚠ THERE ARE NO LETTER SHORTCUTS. "p" / "a" / "l" / "e" used to stamp the
+  // four marks straight from the dialog — removed on request. Keyboard users
+  // reach the marks the way the primitive intends: Tab to the track, arrow
+  // keys within it (roving tabindex), Space or Enter to pick. Do not put the
+  // letters back without also re-routing them through `pickStatus`, which is
+  // where the approved-day confirmation lives.
   const reasons: {
     reason: ExReason;
     quota: { used: number; allowance: number; unit: string } | null;
@@ -425,10 +404,7 @@ export function CellMarkDialog({
           scrolling the middle band is what keeps the header and the footer —
           the student's name and the way out — on screen at every height.
           Padding moves onto the three bands so the hairlines run edge to edge. */}
-      <DialogContent
-        onKeyDown={onKeyDown}
-        className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-xl"
-      >
+      <DialogContent className="flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-xl">
         {/* The student is the headline, so it is set like one. The number and
             the day are reference, so they are mono and quiet. `pr-10` keeps a
             long name clear of the close button, which floats over this band. */}

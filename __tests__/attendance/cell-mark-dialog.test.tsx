@@ -181,18 +181,36 @@ describe('the segmented track', () => {
  * grid that actually paints them.
  */
 describe('no class is not a mark a person picks', () => {
-  it('is nowhere on the track, and no longer answers its keyboard shortcut', async () => {
-    const { onPick, user } = setup();
-
+  it('is nowhere on the track', () => {
+    setup();
     expect(screen.queryByRole('radio', { name: 'No class' })).toBeNull();
     expect(screen.getAllByRole('radio')).toHaveLength(4);
+  });
+});
 
-    // "n" used to stamp NC. It must now do nothing at all rather than fall
-    // through to some other mark.
-    await user.click(screen.getByRole('radio', { name: 'Present' }));
-    onPick.mockClear();
-    await user.keyboard('n');
+/**
+ * The letter shortcuts left the dialog on 2026-09-10, on request.
+ *
+ * "p" / "a" / "l" / "e" used to stamp Present / Absent / Late / Excused from
+ * anywhere in the dialog. A mark is a permanent line in an append-only
+ * register, and a reflex keystroke is a poor way to write one — the note field
+ * needed its own guard to stop "please" stamping three marks on the way
+ * through, which is the shape of the problem.
+ *
+ * Keyboard marking still works, through the primitive rather than around it:
+ * the track is one tab stop with arrow keys inside it (roving tabindex).
+ */
+describe('the letter keys do not mark anything', () => {
+  it.each(['p', 'a', 'l', 'e'])('“%s” writes nothing', async (letter) => {
+    const { onPick, user } = setup();
+    await user.keyboard(letter);
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('does not open the excuse reasons either', async () => {
+    const { user } = setup();
+    await user.keyboard('e');
+    expect(screen.queryByText('MC / Excuse leave')).toBeNull();
   });
 });
 
@@ -478,20 +496,6 @@ describe('a day a parent filed for', () => {
     expect(screen.getByRole('radio', { name: 'Excused' })).toBeTruthy();
   });
 
-  it('asks on the keyboard shortcut too', async () => {
-    // A guard only the mouse respects is not a guard — the letter keys exist
-    // precisely so a teacher can move fast without looking.
-    const { onPick, user } = setup({
-      status: 'EX',
-      exReason: 'mc',
-      filing: FILING,
-    });
-    await user.click(screen.getByRole('radio', { name: 'Excused' }));
-    await user.keyboard('a');
-    expect(onPick).not.toHaveBeenCalled();
-    expect(screen.getByText(/approved this day as excused/)).toBeTruthy();
-  });
-
   it('does not ask when the teacher excused the day themselves', async () => {
     // No filing covers this day, so there is nothing to override and the
     // question would be noise. Asking routinely is how a warning stops working.
@@ -594,17 +598,5 @@ describe('a day a parent filed for', () => {
 
     expect(onPick).not.toHaveBeenCalled();
     expect(screen.getByText(/Ms Elaine Wee approved this day/)).toBeTruthy();
-  });
-
-  it('asks on the keyboard shortcut for a holiday too', async () => {
-    const { onPick, user } = setup({
-      status: 'EX',
-      exReason: 'vacation',
-      filing: TRAVEL_FILING,
-    });
-    await user.click(screen.getByRole('radio', { name: 'Excused' }));
-    await user.keyboard('a');
-    expect(onPick).not.toHaveBeenCalled();
-    expect(screen.getByText(/approved this day as excused/)).toBeTruthy();
   });
 });
