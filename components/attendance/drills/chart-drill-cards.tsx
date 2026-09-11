@@ -17,13 +17,15 @@ import {
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type {
-  AttendanceDrillTarget,
-  AttendanceEntryRow,
-  CalendarDayRow,
-  CompassionateUsageRow,
-  SectionAttendanceRow,
-  TopAbsentDrillRow,
+import {
+  sortTopActive,
+  TOP_ATTENDANCE_LIST_LIMIT,
+  type AttendanceDrillTarget,
+  type AttendanceEntryRow,
+  type CalendarDayRow,
+  type CompassionateUsageRow,
+  type SectionAttendanceRow,
+  type TopAbsentDrillRow,
 } from '@/lib/attendance/drill';
 
 type CommonProps = {
@@ -240,15 +242,13 @@ export function TopAbsentDrillCard({
   // Top-active is the same row set sorted ascending by absences (then desc
   // by attendance %). Lets the registrar acknowledge perfect attenders
   // alongside the chase list — both views answer "who needs attention".
-  const activeData = React.useMemo(
-    () =>
-      [...data].sort(
-        (a, b) => a.absences - b.absences || b.attendancePct - a.attendancePct
-      ),
-    [data]
-  );
+  // Shared with the dashboard CSV export (lib/attendance/dashboard-export.ts)
+  // via lib/attendance/drill.ts so the two can't disagree on the sort.
+  const activeData = React.useMemo(() => sortTopActive(data), [data]);
   const tableRows =
-    tab === 'absent' ? data.slice(0, 10) : activeData.slice(0, 10);
+    tab === 'absent'
+      ? data.slice(0, TOP_ATTENDANCE_LIST_LIMIT)
+      : activeData.slice(0, TOP_ATTENDANCE_LIST_LIMIT);
   const drillTarget: AttendanceDrillTarget =
     tab === 'absent' ? 'top-absent' : 'top-active';
   const emptyMessage =

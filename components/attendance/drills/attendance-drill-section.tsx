@@ -9,9 +9,12 @@ import { VacationLeaveQuotaCard } from '@/components/attendance/drills/vacation-
 import type { ExReasonMix, DayTypePoint } from '@/lib/attendance/dashboard';
 import { buildAllRowSets } from '@/lib/attendance/drill';
 
-// Owns the ~180k-row `buildAllRowSets` scan so React can suspend on it
-// independently of the fast top-of-fold (hero + PriorityPanel, KD #56/#57)
-// and the range-scoped KPIs above it, which don't depend on this scan.
+// The page owns the ~180k-row `buildAllRowSets` scan (creates the promise
+// once, un-awaited) so it can share ONE scan between this section and the
+// "Export CSV" button — both consumers await the same promise rather than
+// triggering the scan twice. React still suspends on it here, independently
+// of the fast top-of-fold (hero + PriorityPanel, KD #56/#57) and the
+// range-scoped KPIs above it, which don't depend on this scan.
 // `exMix`/`dayTypes` are cheap queries the page already fetched — passed
 // through rather than re-fetched here.
 export async function AttendanceDrillSection({
@@ -20,7 +23,7 @@ export async function AttendanceDrillSection({
   rangeTo,
   vacationTermId,
   currentTermLabel,
-  defaultVlAllowance,
+  rowSetsPromise,
   exMix,
   dayTypes,
 }: {
@@ -29,17 +32,11 @@ export async function AttendanceDrillSection({
   rangeTo?: string;
   vacationTermId: string | null;
   currentTermLabel: string | null;
-  defaultVlAllowance: number;
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>;
   exMix: ExReasonMix[];
   dayTypes: DayTypePoint[];
 }) {
-  const drillRowSets = await buildAllRowSets({
-    ayCode,
-    from: rangeFrom,
-    to: rangeTo,
-    vacationTermId,
-    defaultVlAllowance,
-  });
+  const drillRowSets = await rowSetsPromise;
 
   return (
     <>

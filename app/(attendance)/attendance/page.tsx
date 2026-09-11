@@ -26,6 +26,10 @@ import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-
 import { DailyAttendanceDrillCard } from '@/components/attendance/drills/chart-drill-cards';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import {
+  ExportCsvButton,
+  ExportCsvButtonPending,
+} from '@/components/dashboard/export-csv-button';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
@@ -39,7 +43,11 @@ import {
   getDayTypeDistributionRange,
   getExReasonMixRange,
 } from '@/lib/attendance/dashboard';
-import { getCompassionateOverQuota } from '@/lib/attendance/drill';
+import { buildAttendanceDashboardExport } from '@/lib/attendance/dashboard-export';
+import {
+  buildAllRowSets,
+  getCompassionateOverQuota,
+} from '@/lib/attendance/drill';
 import { attendanceInsights } from '@/lib/dashboard/insights';
 import {
   formatRangeLabel,
@@ -136,6 +144,29 @@ async function countDeclarationsWaiting(
     );
     return 0;
   }
+}
+
+// Renders the "Export CSV" button once the shared `buildAllRowSets` scan
+// (owned by the page, passed down as `rowSetsPromise`) has resolved. Lives
+// behind its own <Suspense> so the hero's primary action ("Mark attendance")
+// never waits on the ~180k-row scan that also feeds <AttendanceDrillSection>
+// below the fold — both consumers await the SAME promise, so the scan only
+// runs once per render.
+async function AttendanceExportButton(
+  props: Omit<
+    Parameters<typeof buildAttendanceDashboardExport>[0],
+    'rowSets'
+  > & {
+    rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  }
+) {
+  const { rowSetsPromise, ...rest } = props;
+  const rowSets = await rowSetsPromise;
+  return (
+    <ExportCsvButton
+      data={buildAttendanceDashboardExport({ ...rest, rowSets })}
+    />
+  );
 }
 
 export default async function AttendanceDashboard({
@@ -249,6 +280,21 @@ export default async function AttendanceDashboard({
     }
   }
 
+  // Created ONCE, un-awaited — shared by <AttendanceDrillSection> (below the
+  // fold, behind its own Suspense) and the "Export CSV" button (in the hero,
+  // behind its own Suspense) so the ~180k-row scan runs exactly once per
+  // render rather than once per consumer. Both consumers await it; neither
+  // gets a stale copy. An un-awaited promise that later rejects is still
+  // awaited by both, so there is no unhandled-rejection risk — do not add a
+  // `.catch` here, it would swallow the error one of the two needs to see.
+  const rowSetsPromise = buildAllRowSets({
+    ayCode: selectedAy,
+    from: rangeInput.from,
+    to: rangeInput.to,
+    vacationTermId: currentTermId,
+    defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
+  });
+
   const [kpisResult, dailySeries, exMix, dayTypes, compassionateOverQuota] =
     await Promise.all([
       getAttendanceKpisRange(rangeInput),
@@ -340,12 +386,27 @@ export default async function AttendanceDashboard({
         description={ledeSentence}
         badges={[{ label: selectedAy }]}
         actions={
-          <Button asChild size="sm">
-            <Link href="/attendance/sections">
-              Mark attendance
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
+          <>
+            <Button asChild size="sm">
+              <Link href="/attendance/sections">
+                Mark attendance
+                <ArrowRight className="size-3.5" />
+              </Link>
+            </Button>
+            <Suspense fallback={<ExportCsvButtonPending />}>
+              <AttendanceExportButton
+                ayCode={selectedAy}
+                rangeInput={rangeInput}
+                kpis={kpisResult}
+                dailySeries={dailySeries}
+                exMix={exMix}
+                dayTypes={dayTypes}
+                vacationTermId={currentTermId}
+                currentTermLabel={currentTermLabel}
+                rowSetsPromise={rowSetsPromise}
+              />
+            </Suspense>
+          </>
         }
       />
 
@@ -530,7 +591,7 @@ export default async function AttendanceDashboard({
           rangeTo={rangeInput.to}
           vacationTermId={currentTermId}
           currentTermLabel={currentTermLabel}
-          defaultVlAllowance={schoolConfig.defaultVlAllowancePerTerm}
+          rowSetsPromise={rowSetsPromise}
           exMix={exMix}
           dayTypes={dayTypes}
         />

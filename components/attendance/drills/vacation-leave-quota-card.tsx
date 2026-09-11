@@ -16,7 +16,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
-import type { VacationLeaveUsageRow } from '@/lib/attendance/drill';
+import {
+  AT_RISK_LEAVE_LIMIT,
+  selectAtRiskVacationLeave,
+  type VacationLeaveUsageRow,
+} from '@/lib/attendance/drill';
 
 const BADGE_BASE =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
@@ -45,22 +49,10 @@ export function VacationLeaveQuotaCard({
 
   // At-risk = used > 0 AND (over quota OR remaining ≤ 0). With a 1-per-term
   // default this collapses to "anyone who took VL this term", which is
-  // exactly what the registrar wants to see at a glance.
-  const atRisk = React.useMemo(
-    () =>
-      data
-        .filter(
-          (r) =>
-            r.usedThisTerm > 0 &&
-            (r.isOverTermQuota || r.remainingThisTerm <= 0)
-        )
-        .sort((a, b) => {
-          if (a.isOverTermQuota !== b.isOverTermQuota)
-            return a.isOverTermQuota ? -1 : 1;
-          return b.usedThisTerm - a.usedThisTerm;
-        }),
-    [data]
-  );
+  // exactly what the registrar wants to see at a glance. Shared with the
+  // dashboard CSV export (lib/attendance/dashboard-export.ts) via
+  // lib/attendance/drill.ts so the two can't disagree on who counts.
+  const atRisk = React.useMemo(() => selectAtRiskVacationLeave(data), [data]);
 
   const overCount = atRisk.filter((r) => r.isOverTermQuota).length;
   const atLimitCount = atRisk.length - overCount;
@@ -112,7 +104,7 @@ export function VacationLeaveQuotaCard({
                 </tr>
               </thead>
               <tbody>
-                {atRisk.slice(0, 8).map((r) => (
+                {atRisk.slice(0, AT_RISK_LEAVE_LIMIT).map((r) => (
                   <tr
                     key={r.studentSectionId}
                     className="border-b border-border/60"

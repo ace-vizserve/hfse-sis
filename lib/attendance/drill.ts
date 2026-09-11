@@ -915,6 +915,68 @@ async function rollupVacationLeave(
   return rows;
 }
 
+// ─── Card selection rules ───────────────────────────────────────────────────
+//
+// These are the exact filter/sort/slice a card applies to the rows it's
+// handed before drawing them, pulled out here so the card and the dashboard
+// CSV export (lib/attendance/dashboard-export.ts) call the SAME function —
+// the CSV must never re-implement a selection rule and risk drifting from
+// what's on screen.
+
+// Sibling lens to "top-absent": same rows, sorted ascending by absences (then
+// descending by attendance %) so the front of the list is the perfect-
+// attender / honor-roll cohort. Used by both the top-active drill target
+// above and the "Top-active" tab of TopAbsentDrillCard.
+export function sortTopActive(rows: TopAbsentDrillRow[]): TopAbsentDrillRow[] {
+  return [...rows].sort(
+    (a, b) => a.absences - b.absences || b.attendancePct - a.attendancePct
+  );
+}
+
+// How many rows TopAbsentDrillCard shows per tab (both "Top-absent" and
+// "Top-active") — shared with the dashboard export so the CSV can't drift
+// from the card's own limit.
+export const TOP_ATTENDANCE_LIST_LIMIT = 10;
+
+// How many rows CompassionateQuotaCard / VacationLeaveQuotaCard show in
+// their at-risk table — shared with the dashboard export for the same
+// reason as TOP_ATTENDANCE_LIST_LIMIT.
+export const AT_RISK_LEAVE_LIMIT = 8;
+
+// At-risk = used at least one day AND (over quota OR down to the last day).
+// Sorted so over-quota students lead, then by usage. Unsliced — callers
+// needing the on-screen table also apply `.slice(0, AT_RISK_LEAVE_LIMIT)`;
+// the full (unsliced) list is what the card's "N over / N near" counts are
+// built from.
+export function selectAtRiskCompassionate(
+  rows: CompassionateUsageRow[]
+): CompassionateUsageRow[] {
+  return rows
+    .filter((r) => r.used > 0 && (r.isOverQuota || r.remaining <= 1))
+    .sort((a, b) => {
+      if (a.isOverQuota !== b.isOverQuota) return a.isOverQuota ? -1 : 1;
+      return b.used - a.used;
+    });
+}
+
+// Same shape as selectAtRiskCompassionate, for the per-term vacation-leave
+// quota (KD #94). With the default 1-per-term allowance this collapses to
+// "anyone who took VL this term" — exactly what the registrar wants to see.
+export function selectAtRiskVacationLeave(
+  rows: VacationLeaveUsageRow[]
+): VacationLeaveUsageRow[] {
+  return rows
+    .filter(
+      (r) =>
+        r.usedThisTerm > 0 && (r.isOverTermQuota || r.remainingThisTerm <= 0)
+    )
+    .sort((a, b) => {
+      if (a.isOverTermQuota !== b.isOverTermQuota)
+        return a.isOverTermQuota ? -1 : 1;
+      return b.usedThisTerm - a.usedThisTerm;
+    });
+}
+
 // ─── Public builders ────────────────────────────────────────────────────────
 
 export type BuildDrillRowsInput = DrillRangeInput & {
@@ -984,7 +1046,7 @@ export async function buildAttendanceDrillRows(
   return (await rollupCompassionate(input.ayCode)) as AttendanceDrillRow[];
 }
 
-type AllRowSets = {
+export type AllRowSets = {
   topAbsent: TopAbsentDrillRow[];
   sectionAttendance: SectionAttendanceRow[];
   calendar: CalendarDayRow[];
@@ -1169,15 +1231,8 @@ function applyTargetFilter(
     }
     case 'top-absent':
       return rows;
-    case 'top-active': {
-      // Same row shape as top-absent — registrar's sibling lens. Sort
-      // ascending by absences (then desc by attendancePct) so the front
-      // of the list is the perfect-attender / honor-roll cohort.
-      const sorted = [...(rows as TopAbsentDrillRow[])].sort(
-        (a, b) => a.absences - b.absences || b.attendancePct - a.attendancePct
-      );
-      return sorted as AttendanceDrillRow[];
-    }
+    case 'top-active':
+      return sortTopActive(rows as TopAbsentDrillRow[]) as AttendanceDrillRow[];
     case 'attendance-by-section':
     case 'compassionate-quota':
     case 'vacation-leave-quota':

@@ -16,7 +16,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
-import type { CompassionateUsageRow } from '@/lib/attendance/drill';
+import {
+  AT_RISK_LEAVE_LIMIT,
+  selectAtRiskCompassionate,
+  type CompassionateUsageRow,
+} from '@/lib/attendance/drill';
 
 const BADGE_BASE =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
@@ -39,17 +43,10 @@ export function CompassionateQuotaCard({
 }) {
   const [open, setOpen] = React.useState(false);
 
-  // At-risk = used > 0 AND (over quota OR remaining ≤ 1).
-  const atRisk = React.useMemo(
-    () =>
-      data
-        .filter((r) => r.used > 0 && (r.isOverQuota || r.remaining <= 1))
-        .sort((a, b) => {
-          if (a.isOverQuota !== b.isOverQuota) return a.isOverQuota ? -1 : 1;
-          return b.used - a.used;
-        }),
-    [data]
-  );
+  // At-risk = used > 0 AND (over quota OR remaining ≤ 1). Shared with the
+  // dashboard CSV export (lib/attendance/dashboard-export.ts) via
+  // lib/attendance/drill.ts so the two can't disagree on who counts.
+  const atRisk = React.useMemo(() => selectAtRiskCompassionate(data), [data]);
 
   const overCount = atRisk.filter((r) => r.isOverQuota).length;
   const nearCount = atRisk.length - overCount;
@@ -102,7 +99,7 @@ export function CompassionateQuotaCard({
                 </tr>
               </thead>
               <tbody>
-                {atRisk.slice(0, 8).map((r) => (
+                {atRisk.slice(0, AT_RISK_LEAVE_LIMIT).map((r) => (
                   <tr
                     key={r.studentSectionId}
                     className="border-b border-border/60"
