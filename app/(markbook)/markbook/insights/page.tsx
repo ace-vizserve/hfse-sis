@@ -26,6 +26,7 @@ import {
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
@@ -54,12 +55,14 @@ import {
   getSubjectLevelTrend,
   getSubjectPerformanceTrend,
   type MarkbookCompareKpis,
-  type SubjectTrendPoint,
 } from '@/lib/markbook/compare';
+import { buildMarkbookInsightsExport } from '@/lib/markbook/insights-export';
 import {
   buildMultiAyTrend,
+  selectSubjectsToWatch,
   selectTopMovementSubjects,
   topBandBadge,
+  type TrendPoint,
 } from '@/lib/markbook/insights-compare';
 import {
   buildSubjectLevelPoints,
@@ -313,14 +316,11 @@ export default async function MarkbookInsightsPage({
     })
   );
 
-  const watchRows: SubjectTrendPoint[] = latestPeriodWithData
-    ? primaryTrendPoints
-        .filter(
-          (p) => p.periodLabel === latestPeriodWithData && p.avgGrade !== null
-        )
-        .sort((a, b) => (a.avgGrade ?? 0) - (b.avgGrade ?? 0))
-        .slice(0, 6)
-    : [];
+  const watchRows: TrendPoint[] = selectSubjectsToWatch(
+    primaryTrendPoints,
+    latestPeriodWithData ?? null,
+    6
+  );
 
   // ── Level-breakdown layer (primary AY only) ────────────────────────────────
   const levelPoints: SubjectLevelTrendPoint[] =
@@ -450,6 +450,20 @@ export default async function MarkbookInsightsPage({
     { key: 'locked', label: 'Sheets locked', color: 'var(--color-brand-mint)' },
   ];
 
+  const exportData = buildMarkbookInsightsExport({
+    ayCode: selectedAy,
+    compareAy,
+    haveTrend,
+    trendBarSeries,
+    trendBarData,
+    watchRows,
+    levelLineData,
+    schoolAvgAcrossLevels,
+    regressionMovers,
+    changeRequests: crs,
+    lockBarData,
+  });
+
   return (
     <PageShell>
       <Link
@@ -472,6 +486,7 @@ export default async function MarkbookInsightsPage({
           },
           growthBadge,
         ]}
+        actions={<ExportCsvButton data={exportData} />}
       />
 
       <div className="flex justify-end">

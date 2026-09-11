@@ -178,3 +178,32 @@ export function selectTopMovementSubjects(
 
   return withMovement.slice(0, limit).map((m) => m.subjectName);
 }
+
+// ── selectSubjectsToWatch ─────────────────────────────────────────────────────
+
+/**
+ * Select the "Subjects to watch" rows for the Markbook Insights page: the
+ * `limit` lowest-averaging subjects in `latestPeriod` (the latest period that
+ * actually has any data), worst (lowest average) first.
+ *
+ * Rows with a null `avgGrade`, or belonging to any other period, are
+ * excluded. A stable sort preserves input order among exact ties (matching
+ * `Array.prototype.sort`'s ES2019+ stability guarantee).
+ *
+ * @param points        Trend points (primary AY only — the page never mixes
+ *                       comparison-AY subjects into this ranking).
+ * @param latestPeriod  The period label to rank within, or null when no
+ *                       period has any data yet (→ empty result).
+ * @param limit          Max rows to return (default 6 — the card's row budget).
+ */
+export function selectSubjectsToWatch(
+  points: TrendPoint[],
+  latestPeriod: string | null,
+  limit = 6
+): TrendPoint[] {
+  if (!latestPeriod) return [];
+  return points
+    .filter((p) => p.periodLabel === latestPeriod && p.avgGrade !== null)
+    .sort((a, b) => (a.avgGrade ?? 0) - (b.avgGrade ?? 0))
+    .slice(0, limit);
+}
