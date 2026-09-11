@@ -24,6 +24,7 @@ import {
 } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
@@ -45,6 +46,7 @@ import {
   getTopAbsentByTerm,
   type TermWindowInput,
 } from '@/lib/attendance/drill';
+import { buildAttendanceInsightsExport } from '@/lib/attendance/insights-export';
 import { isApproachingVlQuota } from '@/lib/attendance/insights-watchlist';
 import {
   getAttendanceMixByTerm,
@@ -511,6 +513,27 @@ export default async function AttendanceInsightsPage({
     };
   });
 
+  const exportData = buildAttendanceInsightsExport({
+    ayCode: selectedAy,
+    compareAy,
+    hasCurrentPeriodData,
+    rate,
+    priorRate,
+    rateDelta,
+    absent: kpis.current.absent,
+    late: kpis.current.late,
+    attendanceMixPieData,
+    haveTrend,
+    rateTrend,
+    hasMixByTerm: mixByTerm.length > 0,
+    compositionData,
+    termsWithAbsences,
+    haveQuotaRisk,
+    compassionateOver,
+    vacationOver,
+    vacationApproaching,
+  });
+
   return (
     <PageShell>
       <Link
@@ -533,6 +556,7 @@ export default async function AttendanceInsightsPage({
           },
           growthBadge,
         ]}
+        actions={<ExportCsvButton data={exportData} />}
       />
 
       <div className="flex justify-end">
