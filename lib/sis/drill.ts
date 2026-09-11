@@ -17,6 +17,16 @@ import { parseLocalDate } from '@/lib/dashboard/range';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
 import { inChaseLensScope, type ChaseQueueLens } from '@/lib/sis/chase-lens';
+// Client-safe: `readiness.ts` exists so browser code can have these shapes
+// without reaching into the server-only `config.ts`. This module is imported
+// by client components, so it must never import `config.ts` itself.
+import { joinNames, type FlowConfig } from '@/lib/approvals/readiness';
+import {
+  APPROVER_LEVEL_SCOPE_LABELS,
+  GRADE_CHANGE_FLOW_SHORT_LABELS,
+  type ApprovalRule,
+  type GradeChangeApprovalFlow,
+} from '@/lib/schemas/approval-flows';
 import {
   DOCUMENT_SLOTS as PFILES_DOCUMENT_SLOTS,
   isSlotApplicable,
@@ -1020,14 +1030,149 @@ export type AuditDrillRow = {
   createdAt: string;
 };
 
-export type ApproverAssignmentDrillRow = {
+/**
+ * One step of one grade-change route, as the "Grade change approvals" drill
+ * lists it — opened from the readiness strip on /sis.
+ *
+ * ⚠ THE STEPS, NOT `approver_assignments`. This drill used to list that
+ * table: the retired two-approver pool a teacher picked from (and it selected
+ * a `role` column the table never had, so it listed nothing). Grade changes
+ * are approved in ordered steps now (migration 144), and the strip above this
+ * drill reports on those steps — so the drill shows the same steps, with the
+ * people on each.
+ */
+export type GradeChangeStepDrillRow = {
+  /** The step's id; the route's own key when it has no steps at all. */
   id: string;
-  flow: string;
-  userId: string;
-  email: string | null;
-  role: string;
-  assignedAt: string | null;
+  flow: GradeChangeApprovalFlow;
+  routeLabel: string;
+  /** 1-based, in the order the steps run. Null when nothing is set up. */
+  stepOrder: number | null;
+  stepCount: number;
+  /** Null when nothing is set up. */
+  label: string | null;
+  kind: 'named' | 'form_adviser' | 'not_set_up';
+  /**
+   * One of them (`any`) or all of them (`all`) must approve. Always `any` for a
+   * form adviser step or a route with no steps.
+   */
+  approvalRule: ApprovalRule;
+  /** Always empty for a form adviser step or a route with no steps. */
+  people: Array<{
+    name: string;
+    /** "Primary only" etc. Null means the person covers every child. */
+    scope: string | null;
+    /** Their account is turned off — still on the step, but cannot sign in. */
+    disabled: boolean;
+  }>;
 };
+
+/**
+ * How one drill row reads in words — the CSV cell, and the sheet's search.
+ *
+ * "Ms A or Ms B" when any one of them approves, "Ms A and Ms B" when everyone
+ * must — the same word the approvers screen's summary line uses (`joinNames`).
+ *
+ * ⚠ PEOPLE SPLIT BY HALF OF THE SCHOOL KEEP THE SEMICOLONS. Ms Lhen (Primary)
+ * and Ms Elaine (Secondary) are neither "or" nor "and" — a child gets exactly
+ * one of them — so the list is not joined with a word that says otherwise; on
+ * an "everyone" step the sentence says so after the list instead.
+ */
+export function describeGradeChangeStepPeople(
+  row: GradeChangeStepDrillRow
+): string {
+  if (row.kind === 'not_set_up') return 'No steps set up yet';
+  if (row.kind === 'form_adviser') return 'Form class adviser';
+  if (row.people.length === 0) return 'Nobody set up yet';
+  const names = row.people.map((p) => {
+    const notes = [
+      ...(p.scope ? [p.scope] : []),
+      ...(p.disabled ? ['account turned off'] : []),
+    ];
+    return notes.length > 0 ? `${p.name} (${notes.join(', ')})` : p.name;
+  });
+  const everyone = row.approvalRule === 'all';
+  if (row.people.some((p) => p.scope)) {
+    const list = names.join('; ');
+    return everyone && names.length > 1
+      ? `${list} — everyone covering the child’s half must approve`
+      : list;
+  }
+  return joinNames(names, everyone ? 'and' : 'or');
+}
+
+/**
+ * The drill rows for the grade-change routes, in the order a request meets
+ * them in a year, each route's steps in the order they run.
+ *
+ * Pure, so it can live in this client-importable module: the route reads the
+ * configuration (`loadFlowConfig`, server-only) and hands it here.
+ *
+ * ⚠ A ROUTE WITH NO STEPS STILL GETS A ROW. Leaving it out would make the list
+ * look complete while a teacher on that route cannot file at all — the exact
+ * thing the strip above flags.
+ */
+export function buildGradeChangeStepDrillRows(
+  configs: readonly FlowConfig[]
+): GradeChangeStepDrillRow[] {
+  const rows: GradeChangeStepDrillRow[] = [];
+  for (const config of configs) {
+    const flow = config.flow as GradeChangeApprovalFlow;
+    const routeLabel = GRADE_CHANGE_FLOW_SHORT_LABELS[flow] ?? config.flow;
+    const stages = [...config.stages].sort(
+      (a, b) => a.stageOrder - b.stageOrder
+    );
+    if (stages.length === 0) {
+      rows.push({
+        id: `${flow}:none`,
+        flow,
+        routeLabel,
+        stepOrder: null,
+        stepCount: 0,
+        label: null,
+        kind: 'not_set_up',
+        approvalRule: 'any',
+        people: [],
+      });
+      continue;
+    }
+    stages.forEach((stage, index) => {
+      const seen = new Set<string>();
+      const people: GradeChangeStepDrillRow['people'] = [];
+      if (stage.resolver === 'named') {
+        for (const a of stage.approvers) {
+          // One line per person per half — somebody holding both an untagged
+          // row and a tagged one is shown once per row they actually hold.
+          const key = `${a.userId}:${a.appliesToLevelType ?? '*'}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          people.push({
+            name: a.displayName,
+            scope: a.appliesToLevelType
+              ? APPROVER_LEVEL_SCOPE_LABELS[a.appliesToLevelType]
+              : null,
+            disabled: a.disabled,
+          });
+        }
+      }
+      rows.push({
+        id: stage.id,
+        flow,
+        routeLabel,
+        // Renumbered 1..n, as a request's own steps are: a retired step leaves
+        // a gap in the configuration that nobody filing ever sees.
+        stepOrder: index + 1,
+        stepCount: stages.length,
+        label: stage.label,
+        kind: stage.resolver === 'form_adviser' ? 'form_adviser' : 'named',
+        approvalRule:
+          stage.resolver === 'named' ? (stage.approvalRule ?? 'any') : 'any',
+        people,
+      });
+    });
+  }
+  return rows;
+}
 
 export type AcademicYearDrillRow = {
   id: string;
@@ -1094,44 +1239,6 @@ export async function loadAuditEventsUncached(
     entityId: r.entity_id,
     context: r.context,
     createdAt: r.created_at,
-  }));
-}
-
-export async function loadApproverAssignments(): Promise<
-  ApproverAssignmentDrillRow[]
-> {
-  const service = createServiceClient();
-  const { data } = await service
-    .from('approver_assignments')
-    .select('id, flow, user_id, role, created_at');
-  type Row = {
-    id: string;
-    flow: string;
-    user_id: string;
-    role: string;
-    created_at: string | null;
-  };
-  const rows = (data ?? []) as Row[];
-
-  // Resolve emails via auth admin
-  const emailMap = new Map<string, string>();
-  try {
-    const { data: userList } = await service.auth.admin.listUsers({
-      perPage: 1000,
-    });
-    if (userList?.users) {
-      for (const u of userList.users) if (u.email) emailMap.set(u.id, u.email);
-    }
-  } catch {
-    /* email is best-effort */
-  }
-  return rows.map((r) => ({
-    id: r.id,
-    flow: r.flow,
-    userId: r.user_id,
-    email: emailMap.get(r.user_id) ?? null,
-    role: r.role,
-    assignedAt: r.created_at,
   }));
 }
 

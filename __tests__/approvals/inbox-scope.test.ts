@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { listDecidedStages, listInboxStages } from '@/lib/approvals/inbox';
+import {
+  countInboxActionable,
+  listDecidedStages,
+  listInboxStages,
+  loadStepDecisions,
+} from '@/lib/approvals/inbox';
 
 /**
  * Who sees what in the declarations queue.
@@ -71,11 +76,17 @@ function makeService(opts: {
   }>;
   stages: StageRow[];
   captured: { orClauses: string[] };
+  /** approval_request_stage_decisions rows (migration 145). */
+  decisions?: unknown[];
 }): SupabaseClient {
   const service = {
     from(table: string) {
       const rows =
-        table === 'teacher_assignments' ? opts.assignments : opts.stages;
+        table === 'teacher_assignments'
+          ? opts.assignments
+          : table === 'approval_request_stage_decisions'
+            ? (opts.decisions ?? [])
+            : opts.stages;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       builder.select = chain;
@@ -545,5 +556,231 @@ describe('listDecidedStages', () => {
       }
     );
     expect(captured.orClauses).toEqual([]);
+  });
+
+  it('includes a step that needs everyone which the viewer approved and which still waits on others', async () => {
+    // Migration 145. The inbox stops offering it to them; without this their
+    // yes would vanish from every list until the last person caught up.
+    const pendingAll = {
+      id: 'stage-2',
+      request_id: 'request-1',
+      stage_order: 1,
+      label: 'Academic and Examination Board',
+      resolver: 'named',
+      approval_rule: 'all',
+      approver_pool: [OIC, 'other-1'],
+      section_id: null,
+      status: 'pending',
+      decided_by: null,
+      decided_by_email: null,
+      decided_at: null,
+      approval_requests: {
+        subject_type: 'student_declaration',
+        subject_id: 'declaration-1',
+        status: 'pending',
+        filed_by_email: 'parent@example.com',
+        created_at: '2026-09-01T00:00:00Z',
+      },
+    };
+    const myYes = {
+      request_stage_id: 'stage-2',
+      user_id: OIC,
+      user_email: 'oic@hfse.edu.sg',
+      decision: 'approve',
+      note: '<p>Seen the certificate.</p>',
+      decided_at: '2026-09-05T02:00:00Z',
+      approval_request_stages: { request_id: 'request-1', status: 'pending' },
+    };
+    const rows = await listDecidedStages(
+      makeService({
+        assignments: [],
+        stages: [pendingAll] as never,
+        captured: { orClauses: [] },
+        decisions: [myYes],
+      }),
+      {
+        flow: 'attendance.student_declaration',
+        userId: OIC,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      requestStatus: 'pending',
+      status: 'pending',
+      approvalRule: 'all',
+      canDecide: false,
+      decidedBy: null,
+    });
+    // The person's own note comes with it (migration 146 review): on a step
+    // that needs everyone it is stored nowhere else.
+    expect(rows[0].decisions).toEqual([
+      {
+        userId: OIC,
+        email: 'oic@hfse.edu.sg',
+        decision: 'approve',
+        decidedAt: '2026-09-05T02:00:00Z',
+        note: '<p>Seen the certificate.</p>',
+      },
+    ]);
+  });
+});
+
+describe('loadStepDecisions — each person’s note', () => {
+  it('asks for the note, and reads a missing one as null', async () => {
+    const selects: string[] = [];
+    const rows = [
+      {
+        request_stage_id: 'stage-1',
+        user_id: 'u-gary',
+        user_email: 'gary@hfse.test',
+        decision: 'approve',
+        note: '<p>Checked the script.</p>',
+        decided_at: '2026-09-05T02:00:00Z',
+      },
+      {
+        request_stage_id: 'stage-1',
+        user_id: 'u-nina',
+        user_email: 'nina@hfse.test',
+        decision: 'approve',
+        decided_at: '2026-09-05T03:00:00Z',
+      },
+    ];
+    const builder: Record<string, unknown> = {};
+    builder.select = (columns: string) => {
+      selects.push(columns);
+      return builder;
+    };
+    builder.in = () => builder;
+    builder.order = () => builder;
+    builder.then = (resolve: (v: unknown) => unknown) =>
+      resolve({ data: rows, error: null });
+    const service = { from: () => builder } as unknown as SupabaseClient;
+
+    const byStage = await loadStepDecisions(service, ['stage-1']);
+
+    expect(selects[0].split(',').map((c) => c.trim())).toContain('note');
+    expect(byStage.get('stage-1')?.map((d) => d.note)).toEqual([
+      '<p>Checked the script.</p>',
+      null,
+    ]);
+  });
+});
+
+describe('listInboxStages — a step the viewer has already decided (migration 145)', () => {
+  const allStep = () =>
+    stage({
+      id: 'stage-all',
+      resolver: 'named',
+      approver_pool: [OIC, 'other-1'],
+      section_id: null,
+      label: 'Academic and Examination Board',
+      ...({ approval_rule: 'all' } as object),
+    });
+
+  it('stays visible, is not offered, and carries the rule and the decisions', async () => {
+    const [row] = await listInboxStages(
+      makeService({
+        assignments: [],
+        stages: [allStep()],
+        captured: { orClauses: [] },
+        decisions: [
+          {
+            request_stage_id: 'stage-all',
+            user_id: OIC,
+            user_email: 'oic@hfse.edu.sg',
+            decision: 'approve',
+            decided_at: '2026-09-05T02:00:00Z',
+          },
+        ],
+      }),
+      {
+        flow: 'attendance.student_declaration',
+        userId: OIC,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(row.canDecide).toBe(false);
+    expect(row.approvalRule).toBe('all');
+    expect(row.decisions.map((d) => d.userId)).toEqual([OIC]);
+  });
+
+  it('is still offered to the person on the step who has not decided', async () => {
+    const [row] = await listInboxStages(
+      makeService({
+        assignments: [],
+        stages: [allStep()],
+        captured: { orClauses: [] },
+        decisions: [
+          {
+            request_stage_id: 'stage-all',
+            user_id: OIC,
+            user_email: null,
+            decision: 'approve',
+            decided_at: '2026-09-05T02:00:00Z',
+          },
+        ],
+      }),
+      {
+        flow: 'attendance.student_declaration',
+        userId: 'other-1',
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(row.canDecide).toBe(true);
+  });
+
+  it('drops out of the "waiting for you" count', async () => {
+    const service = (decisions: unknown[]) =>
+      makeService({
+        assignments: [],
+        stages: [allStep()],
+        captured: { orClauses: [] },
+        decisions,
+      });
+    const scope = {
+      flow: 'attendance.student_declaration' as const,
+      userId: OIC,
+      role: 'teacher' as const,
+      today: TODAY,
+    };
+    expect(await countInboxActionable(service([]), scope)).toBe(1);
+    expect(
+      await countInboxActionable(
+        service([
+          {
+            request_stage_id: 'stage-all',
+            user_id: OIC,
+            decision: 'approve',
+            decided_at: '2026-09-05T02:00:00Z',
+          },
+        ]),
+        scope
+      )
+    ).toBe(0);
+  });
+
+  it("reads a step with no rule as 'any'", async () => {
+    const [row] = await listInboxStages(
+      makeService({
+        assignments: [],
+        stages: [
+          stage({ resolver: 'named', approver_pool: [OIC], section_id: null }),
+        ],
+        captured: { orClauses: [] },
+      }),
+      {
+        flow: 'attendance.student_declaration',
+        userId: OIC,
+        role: 'teacher',
+        today: TODAY,
+      }
+    );
+    expect(row.approvalRule).toBe('any');
+    expect(row.decisions).toEqual([]);
+    expect(row.canDecide).toBe(true);
   });
 });

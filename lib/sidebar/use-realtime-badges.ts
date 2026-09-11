@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import type { Role, SidebarBadgeKey, SidebarBadges } from '@/lib/auth/roles';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { createClient } from '@/lib/supabase/client';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
+import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
 
 // Generalized realtime sidebar badge hook, returning merged live counts for
 // the badges present in `initial`.
@@ -96,14 +98,23 @@ export function useRealtimeBadges(
     initial.changeRequests ?? null
   );
 
-  useEffect(() => {
-    if (liveChangeRequestCount == null) return;
-    setBadges((prev) =>
-      prev.changeRequests === liveChangeRequestCount
-        ? prev
-        : { ...prev, changeRequests: liveChangeRequestCount }
-    );
-  }, [liveChangeRequestCount]);
+  // ⚠ SINCE MIGRATION 144 THE BADGE IS TWO NUMBERS ADDED TOGETHER. The legacy
+  // count above covers requests on the two-approver path; a grade change filed
+  // since is decided step by step, and "waiting for you" on it is the engine's
+  // answer, seeded as `gradeChangeSteps`. The legacy count excludes those rows
+  // so nothing is counted twice.
+  //
+  // ⚠ NOT FOR THE TEACHER TREE. There the badge sits on "My Requests", which
+  // lists the requests SHE filed — a step waiting for her decision lives on a
+  // different page, and adding it here would put a number on a row whose page
+  // does not contain those requests (the defect nav-badge-follows-rows exists
+  // for). The bell still counts it, wherever she is.
+  const tracksGradeChangeSteps = rowsRole != null && rowsRole !== 'teacher';
+  const liveGradeChangeStepCount = useStagedApprovalCount(
+    userId,
+    GRADE_CHANGE_FLOWS,
+    tracksGradeChangeSteps ? (initial.gradeChangeSteps ?? null) : null
+  );
 
   const liveDeclarationCount = useDeclarationCount(
     userId,
@@ -146,5 +157,19 @@ export function useRealtimeBadges(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
-  return badges;
+  // ⚠ `changeRequests` IS DERIVED ON THE WAY OUT, NEVER STORED. It is the sum
+  // of two live numbers, and the sync effect above replaces stored state with
+  // the raw server seed whenever the seed changes — which would put the
+  // legacy-only half back on the badge until one of the two counts happened to
+  // move. Computing it here means there is no stored copy to go stale.
+  return useMemo(() => {
+    if (liveChangeRequestCount == null && liveGradeChangeStepCount == null) {
+      return badges;
+    }
+    const combined =
+      (liveChangeRequestCount ?? 0) + (liveGradeChangeStepCount ?? 0);
+    return badges.changeRequests === combined
+      ? badges
+      : { ...badges, changeRequests: combined };
+  }, [badges, liveChangeRequestCount, liveGradeChangeStepCount]);
 }

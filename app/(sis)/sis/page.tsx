@@ -39,7 +39,6 @@ import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
-import { listAllApproverAssignments } from '@/lib/sis/approvers/queries';
 import {
   listLevels,
   listSubjectLevelOfferings,
@@ -77,8 +76,8 @@ export default async function SisAdminHub() {
   // quick action deep-links to `?view=accounts`, and the staff page hides the
   // Accounts tab from the academic coordinator — she would land on the
   // directory with no sign of what she clicked for. Gated here rather than left
-  // to disappoint. (The other candidate, the approver-readiness attention row,
-  // needs no new gate: `approverFlowCounts` is already fetched only for
+  // to disappoint. (The other candidate, the approval-steps attention row,
+  // needs no new gate: it is built from `health`, which is fetched only for
   // superadmin, so the row cannot be built for anyone else.)
   //
   // Neither is a nav item, so the KD #159 nav test would not have caught this —
@@ -130,11 +129,11 @@ export default async function SisAdminHub() {
     ? resolveCompareAy(undefined, ayCodes, ayCode)
     : null;
 
-  // System-health strip is superadmin-only (approver counts are sensitive to
-  // their operational awareness). school_admin sees the hub without it. The
-  // new approver-flow-counts attention signal follows the same gate — it
-  // reads the same /sis/admin/approvers-only data (ROUTE_ACCESS restricts
-  // that page to superadmin).
+  // System-health strip is superadmin-only (approval set-up is their
+  // operational awareness). school_admin sees the hub without it. The
+  // approval-steps attention signal follows the same gate — it is read off
+  // the same payload, which carries /sis/admin/approvers-only data
+  // (ROUTE_ACCESS restricts that page to superadmin).
   const [
     health,
     hubKpis,
@@ -142,7 +141,6 @@ export default async function SisAdminHub() {
     unassignedStudents,
     upcomingEvents,
     unassignedAdviserSections,
-    approverFlowCounts,
     subjectConfigGapsForHub,
     hubSnapshot,
     moduleOverview,
@@ -151,7 +149,17 @@ export default async function SisAdminHub() {
     auditByModule,
     ayReadiness,
   ] = await Promise.all([
-    role === 'superadmin' ? getSystemHealth() : Promise.resolve(null),
+    // Caught here rather than inside the loader: a failed read must not be
+    // cached as "nothing set up", and must not take the whole hub down either.
+    role === 'superadmin'
+      ? getSystemHealth().catch((err) => {
+          console.warn(
+            '[sis hub] system health fetch failed:',
+            err instanceof Error ? err.message : err
+          );
+          return null;
+        })
+      : Promise.resolve(null),
     ayCode ? getHubKpis(ayCode).catch(() => null) : Promise.resolve(null),
     compareAyCode
       ? getHubKpis(compareAyCode).catch(() => null)
@@ -173,9 +181,6 @@ export default async function SisAdminHub() {
     currentAy
       ? loadUnassignedAdviserSections(currentAy.id, currentAy.ay_code)
       : Promise.resolve([] as Array<{ id: string; name: string }>),
-    role === 'superadmin'
-      ? loadApproverFlowCounts()
-      : Promise.resolve({} as Record<string, number>),
     currentAy
       ? loadSubjectConfigGapsForHub(currentAy.id, currentAy.ay_code)
       : Promise.resolve([] as EmptyLevelGap[]),
@@ -194,8 +199,8 @@ export default async function SisAdminHub() {
     ayCode
       ? getAuditActivityByModule(weekRange).catch(() => null)
       : Promise.resolve(null),
-    // Year band. Appended rather than inserted so the thirteen entries above
-    // keep their positions in the destructure.
+    // Year band. Appended rather than inserted so the entries above keep
+    // their positions in the destructure.
     currentAy ? getAyReadiness(currentAy.ay_code) : Promise.resolve(null),
   ]);
 
@@ -222,7 +227,8 @@ export default async function SisAdminHub() {
     unassigned: unassignedStudents,
     pendingChangeRequests: hubKpis?.pendingChangeRequests ?? 0,
     unassignedAdviserSections,
-    approverFlowCounts,
+    approvalFlows: health?.approverFlows,
+    levelTypesInUse: health?.levelTypesInUse,
     subjectConfigGaps: subjectConfigGapsForHub,
   });
 
@@ -409,30 +415,6 @@ async function loadUnassignedAdviserSections(
       err instanceof Error ? err.message : err
     );
     return [];
-  }
-}
-
-// Per-flow assigned-approver count, for the "under-resourced approver flow"
-// attention row (superadmin-only, gated at the call site — mirrors the
-// /sis/admin/approvers ROUTE_ACCESS restriction this data otherwise powers).
-// Deliberately NOT unstable_cache-wrapped: `listAllApproverAssignments`
-// composes `lib/sis/approvers/queries.ts`'s own request-scoped
-// `React.cache` (getAllUsers) and approver_assignments has no existing
-// revalidateTag convention (the /sis/admin/approvers page itself reads it
-// uncached, per-request) — adding a new tag here with nothing to invalidate
-// it would only add staleness risk for a small, cheap query.
-async function loadApproverFlowCounts(): Promise<Record<string, number>> {
-  try {
-    const byFlow = await listAllApproverAssignments();
-    return Object.fromEntries(
-      Object.entries(byFlow).map(([flow, users]) => [flow, users.length])
-    );
-  } catch (err) {
-    console.warn(
-      '[sis hub] approver flow counts fetch failed:',
-      err instanceof Error ? err.message : err
-    );
-    return {};
   }
 }
 

@@ -52,43 +52,10 @@ export type DeclarationForApproval = {
   levelType: ApproverLevelScope | null;
 };
 
-/**
- * `section_id` → which half of the school it belongs to.
- *
- * Read from `levels.level_type` rather than derived from a level CODE. The
- * column is the school's own answer and already carries preschool; a code map
- * is a second copy of it that can drift.
- */
-export async function loadLevelTypesBySection(
-  service: SupabaseClient,
-  sectionIds: string[]
-): Promise<Map<string, ApproverLevelScope | null>> {
-  const out = new Map<string, ApproverLevelScope | null>();
-  const ids = [...new Set(sectionIds.filter(Boolean))];
-  if (ids.length === 0) return out;
-
-  const { data, error } = await service
-    .from('sections')
-    .select('id, levels(level_type)')
-    .in('id', ids);
-  if (error) throw new Error(error.message);
-
-  type Row = {
-    id: string;
-    levels:
-      | { level_type: ApproverLevelScope }
-      | { level_type: ApproverLevelScope }[]
-      | null;
-  };
-  for (const row of (data ?? []) as unknown as Row[]) {
-    // PostgREST returns an embedded to-one as an object or a single-element
-    // array depending on how it infers the relationship; both shapes appear in
-    // this codebase, so normalise rather than assume.
-    const level = Array.isArray(row.levels) ? row.levels[0] : row.levels;
-    out.set(row.id, level?.level_type ?? null);
-  }
-  return out;
-}
+// ⚠ Re-exported, not redefined. It moved to `lib/approvals/level-types.ts`
+// when grade changes became the engine's second consumer; the repair script
+// and every other importer of this name still reach it here.
+export { loadLevelTypesBySection } from '@/lib/approvals/level-types';
 
 export type OpenDeclarationApprovalsResult = {
   opened: number;

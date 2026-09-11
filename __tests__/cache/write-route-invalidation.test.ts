@@ -127,21 +127,30 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'which is React cache() — request-scoped, so it is gone before the next ' +
     'request and revalidateTag has nothing to bust. A staff member who edits a ' +
     'mapping sees it on their next page load.',
-  // The two `approvers` routes sat here reading "writes approver_assignments.
-  // lib/sis/approvers/queries.ts is uncached." That reader is indeed uncached,
-  // but naming it was not the same as checking every reader: `getSystemHealth`
-  // (lib/sis/health.ts) counts the same table into the /sis readiness strip
-  // from inside an `unstable_cache`. Both routes now emit 'sis-health', so
-  // they invalidate and no longer belong on this list. A reason that names one
-  // reader is only as good as the search behind it.
-  'app/api/sis/admin/approval-stages/route.ts':
-    'writes approval_stages. lib/approvals/config.ts is uncached, deliberately: ' +
-    'these are read by the queue and the readiness strip, both per request.',
-  'app/api/sis/admin/approval-stages/[id]/route.ts': 'same — uncached config.',
-  'app/api/sis/admin/approval-stage-approvers/route.ts':
-    'same — uncached config.',
-  'app/api/sis/admin/approval-stage-approvers/[id]/route.ts':
-    'same — uncached config.',
+  // The two `approvers` routes have now been on BOTH sides of this list. They
+  // first sat here reading "writes approver_assignments. lib/sis/approvers/
+  // queries.ts is uncached." — true of that reader, but `getSystemHealth`
+  // (lib/sis/health.ts) also counted the table from inside an `unstable_cache`,
+  // so they were made to emit 'sis-health' and left. Then grade change
+  // requests moved onto ordered approval steps and the strip stopped reading
+  // the pool at all, so the tag was taken off again and they came back.
+  //
+  // The four approval-step routes went the other way, for the same reason: they
+  // sat here as "uncached config" until the strip began reading
+  // `approval_stages` + `approval_stage_approvers` inside that same cache. They
+  // now emit 'sis-health' and are off the list. Checked 2026-09-11 by grepping
+  // every reader of all three tables, not by trusting the old reasons.
+  'app/api/sis/admin/approvers/route.ts':
+    'writes approver_assignments, the retired two-approver pool. Nothing cached ' +
+    'reads it: its only other reader is lib/sis/approvers/queries.ts, which is ' +
+    'per request, and getSystemHealth (lib/sis/health.ts) loads the approval ' +
+    'steps through loadFlowConfig now, not this table.',
+  'app/api/sis/admin/approvers/[id]/route.ts':
+    'same table, same readers — the revoke half of the route above.',
+  'app/api/approvals/[requestId]/decide/route.ts':
+    'a thin wrapper over lib/approvals/decide.ts. The bust lives in each subject ' +
+    'handler, because only the handler knows which module its subject feeds: ' +
+    'lib/declarations/approval-handler.ts busts attendance + records.',
 
   // ── writes whose surfaces are all per-request ───────────────────────────
   'app/api/parent/v2/declarations/route.ts':
@@ -565,8 +574,9 @@ describe('a lone bare cache tag is one some write actually emits', () => {
     // and now holds none: getSystemHealth was the one of the four found by
     // this guard that could go MEANINGFULLY stale, so it was fixed rather than
     // exempted. It now carries a single dedicated 'sis-health' tag, emitted by
-    // all five writes of the `academic_years` and `approver_assignments` data
-    // it reads, so it is produced and this scan no longer reaches it. The bare
+    // every write of the `academic_years` and approval-step data it reads
+    // (the list is at the site), so it is produced and this scan no longer
+    // reaches it. The bare
     // 'sis' and 'markbook' tags it used to carry were deleted — both were
     // inert, and 'sis' in particular must never start being emitted, because
     // the two activity feeds exempted above would be busted as collateral.

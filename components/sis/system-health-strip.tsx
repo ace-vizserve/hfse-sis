@@ -105,7 +105,8 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
             </div>
           </button>
 
-          {/* Approver coverage — click to drill into all approver assignments */}
+          {/* Grade change approvals — click to see each route's steps and the
+              people on them */}
           <button
             type="button"
             onClick={() => setDrillTarget('approver-coverage')}
@@ -120,31 +121,30 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Approvers
+                Grade change approvals
               </p>
+              {/* Whether a teacher can file each kind of grade change — the
+                  same check the approvers screen shows on its cards. */}
               <p className="font-serif text-base font-semibold text-foreground">
-                {approverFlows.length} flow
-                {approverFlows.length === 1 ? '' : 's'}
-                {approverIssues > 0 && (
-                  <>
-                    {' · '}
-                    <span className="text-destructive">
-                      {approverIssues} under-staffed
-                    </span>
-                  </>
+                {approverIssues === 0 ? (
+                  'Ready'
+                ) : (
+                  <span className="text-destructive">
+                    {approverIssues} of {approverFlows.length} not ready
+                  </span>
                 )}
               </p>
               <ul className="space-y-0.5 text-xs text-muted-foreground">
                 {approverFlows.map((f) => (
                   <li key={f.flow} className="flex items-center gap-1.5">
                     {f.ok ? (
-                      <CheckCircle2 className="size-3 text-brand-mint" />
+                      <CheckCircle2 className="size-3 shrink-0 text-brand-mint" />
                     ) : (
-                      <ShieldAlert className="size-3 text-destructive" />
+                      <ShieldAlert className="size-3 shrink-0 text-destructive" />
                     )}
                     <span>
                       <span className="text-foreground">{f.label}:</span>{' '}
-                      <span className="tabular-nums">{f.count}</span> assigned
+                      {f.readiness.label}
                     </span>
                   </li>
                 ))}
@@ -165,7 +165,7 @@ export function SystemHealthStrip({ health }: { health: SystemHealth }) {
                 href="/sis/admin/approvers"
                 className="inline-flex items-center gap-1.5 font-serif text-base font-semibold text-foreground hover:text-brand-indigo-deep"
               >
-                Approver assignments <ArrowUpRight className="size-3.5" />
+                Approvers <ArrowUpRight className="size-3.5" />
               </Link>
               {/* No "AY setup" link here (layout redesign pass, Phase 1) — it
                   duplicated HubYearBand's primary CTA to the same

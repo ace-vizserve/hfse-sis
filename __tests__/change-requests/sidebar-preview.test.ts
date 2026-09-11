@@ -27,6 +27,10 @@ function makeService(
       if (trackCalls) trackCalls.push('or');
       return chain;
     },
+    is: () => {
+      if (trackCalls) trackCalls.push('is');
+      return chain;
+    },
     order: () => {
       if (trackCalls) trackCalls.push('order');
       return chain;

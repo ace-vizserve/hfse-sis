@@ -5,16 +5,37 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { listStaffUsers } from '@/lib/sis/users/queries';
 import { repointWaitingStages } from '@/lib/approvals/materialise';
 import {
+  APPROVAL_RULE_ALL_NEEDS_NAMED,
   STAGED_APPROVAL_FLOWS,
   type ApprovalResolver,
+  type ApprovalRule,
   type ApproverLevelScope,
   type StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
-import type {
-  FlowConfig,
-  StageApproverView,
-  StageView,
+import {
+  canRequireEveryone,
+  type FlowConfig,
+  type StageApproverView,
+  type StageView,
 } from '@/lib/approvals/readiness';
+
+/**
+ * Who is changing the configuration. Handed on to `repointWaitingStages`, which
+ * may FINISH the live step of a request as a result — take the last hold-out
+ * off an "Everyone must approve" step, or relax it to "any one of them" after
+ * somebody on it has already approved (migration 146). Whatever that sets
+ * moving (the next step, the register, the teacher's email) runs as this
+ * person's doing, and the audit row says so while naming the approval the step
+ * actually finished on — never this person as the approver.
+ *
+ * Read off that function's own signature, so the two can never disagree.
+ */
+export type ApprovalConfigActor = NonNullable<
+  Parameters<typeof repointWaitingStages>[2]
+>;
+
+/** The sentence for the one refusal a superadmin can act on. */
+export const EVERYONE_NEEDS_NAMED_PEOPLE = `${APPROVAL_RULE_ALL_NEEDS_NAMED} Who advises a class changes when someone covers it, so on that step any one adviser approves.`;
 
 /**
  * Reading and editing the steps of a staged approval flow.
@@ -48,7 +69,7 @@ export async function loadFlowConfig(
 ): Promise<FlowConfig> {
   const { data: stageRows, error } = await service
     .from('approval_stages')
-    .select('id, flow, stage_order, label, resolver')
+    .select('id, flow, stage_order, label, resolver, approval_rule')
     .eq('flow', flow)
     .eq('is_active', true)
     .order('stage_order', { ascending: true });
@@ -60,6 +81,7 @@ export async function loadFlowConfig(
     stage_order: number;
     label: string;
     resolver: ApprovalResolver;
+    approval_rule: ApprovalRule | null;
   };
   const stages = (stageRows ?? []) as unknown as StageRow[];
   if (stages.length === 0) return { flow, stages: [] };
@@ -95,6 +117,9 @@ export async function loadFlowConfig(
       displayName: user?.display_name ?? '(account removed)',
       role: user?.role ?? null,
       disabled: user?.disabled ?? false,
+      // Nobody can act from an account that is not there. The readiness check
+      // reads this: one such person stalls a step that needs everyone.
+      removed: !user,
       appliesToLevelType: row.applies_to_level_type ?? null,
     });
     byStage.set(row.stage_id, list);
@@ -108,6 +133,9 @@ export async function loadFlowConfig(
       stageOrder: s.stage_order,
       label: s.label,
       resolver: s.resolver,
+      // The column defaults to 'any' (migration 145); the fallback only covers
+      // a read that races the migration.
+      approvalRule: s.approval_rule ?? 'any',
       approvers: byStage.get(s.id) ?? [],
     })),
   };
@@ -238,9 +266,18 @@ export async function createStage(
     flow: StagedApprovalFlow;
     label: string;
     resolver: ApprovalResolver;
+    /** Defaults to `any` — one person carries the step, as every step did. */
+    approvalRule?: ApprovalRule;
     createdBy: string | null;
   }
 ): Promise<StageView> {
+  const approvalRule = input.approvalRule ?? 'any';
+  // The schema refuses this first; this is the rule, restated where the write
+  // happens, so no other caller can get round it.
+  if (approvalRule === 'all' && !canRequireEveryone(input.resolver)) {
+    throw new Error(EVERYONE_NEEDS_NAMED_PEOPLE);
+  }
+
   const { data: existing, error: readErr } = await service
     .from('approval_stages')
     .select('stage_order')
@@ -261,10 +298,11 @@ export async function createStage(
       stage_order: highest + 1,
       label: input.label,
       resolver: input.resolver,
+      approval_rule: approvalRule,
       is_active: true,
       created_by: input.createdBy,
     })
-    .select('id, flow, stage_order, label, resolver')
+    .select('id, flow, stage_order, label, resolver, approval_rule')
     .single();
   if (error) throw new Error(error.message);
 
@@ -274,6 +312,7 @@ export async function createStage(
     stage_order: number;
     label: string;
     resolver: ApprovalResolver;
+    approval_rule: ApprovalRule | null;
   };
   return {
     id: row.id,
@@ -281,8 +320,82 @@ export async function createStage(
     stageOrder: row.stage_order,
     label: row.label,
     resolver: row.resolver,
+    approvalRule: row.approval_rule ?? approvalRule,
     approvers: [],
   };
+}
+
+export type SetStageRuleResult =
+  | {
+      ok: true;
+      /** False when the step already had this setting — nothing was written. */
+      changed: boolean;
+      previous: ApprovalRule;
+      /**
+       * Requests not yet past the step — waiting for it or on it now — that
+       * were brought in line with the change.
+       */
+      repointed: number;
+    }
+  | { ok: false; reason: 'stage_not_found' | 'needs_named_people' };
+
+/**
+ * Change whether a step needs one of its people or all of them.
+ *
+ * ⚠ IT REACHES EVERY REQUEST NOT YET PAST THE STEP — waiting for it, or sitting
+ * on it right now — the same way changing who is on a step does
+ * (`repointWaitingStages`, one `approval_repoint_request_stage` call per
+ * request, under the lock a decision takes). A request should follow the
+ * school's current answer to "who has to say yes", and neither direction
+ * reinterprets anybody's decision:
+ *
+ *   - "any one of them" → "everyone": a live step has no approvals yet (the
+ *     first yes would have closed it), so nothing finishes; it now waits for
+ *     all of them.
+ *   - "everyone" → "any one of them": if somebody on the live step has already
+ *     approved, their yes is enough under the new setting, so the step
+ *     finishes in the earliest approver's name and the request moves on. That
+ *     is why the actor is passed along: what happens next runs on their name.
+ *
+ * ⚠ A STEP ALREADY DECIDED KEEPS THE SETTING IT WAS DECIDED UNDER. That is the
+ * engine's rule (it only rewrites undecided rows), and it is what keeps a
+ * finished approval explainable a year later.
+ */
+export async function setStageRule(
+  service: SupabaseClient,
+  stageId: string,
+  rule: ApprovalRule,
+  actor: ApprovalConfigActor
+): Promise<SetStageRuleResult> {
+  const { data, error } = await service
+    .from('approval_stages')
+    .select('id, resolver, approval_rule')
+    .eq('id', stageId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return { ok: false, reason: 'stage_not_found' };
+
+  const stage = data as unknown as {
+    resolver: ApprovalResolver;
+    approval_rule: ApprovalRule | null;
+  };
+  const previous = stage.approval_rule ?? 'any';
+
+  if (rule === 'all' && !canRequireEveryone(stage.resolver)) {
+    return { ok: false, reason: 'needs_named_people' };
+  }
+  if (previous === rule) {
+    return { ok: true, changed: false, previous, repointed: 0 };
+  }
+
+  const { error: writeErr } = await service
+    .from('approval_stages')
+    .update({ approval_rule: rule, updated_at: new Date().toISOString() })
+    .eq('id', stageId);
+  if (writeErr) throw new Error(writeErr.message);
+
+  const repointed = await repointWaitingStages(service, stageId, actor);
+  return { ok: true, changed: true, previous, repointed };
 }
 
 export async function renameStage(
@@ -391,6 +504,8 @@ export async function assignStageApprover(
     /** `null` = approves for every child. */
     appliesToLevelType?: ApproverLevelScope | null;
     createdBy: string | null;
+    /** Who is adding them — see `ApprovalConfigActor`. */
+    actor: ApprovalConfigActor;
   }
 ): Promise<{ alreadyAssigned: boolean; id: string | null; repointed: number }> {
   const { data, error } = await service
@@ -419,7 +534,11 @@ export async function assignStageApprover(
     throw new Error(error.message);
   }
 
-  const repointed = await repointWaitingStages(service, input.stageId);
+  const repointed = await repointWaitingStages(
+    service,
+    input.stageId,
+    input.actor
+  );
 
   return {
     alreadyAssigned: false,
@@ -428,9 +547,15 @@ export async function assignStageApprover(
   };
 }
 
+/**
+ * ⚠ TAKING THE LAST HOLD-OUT OFF AN "EVERYONE" STEP FINISHES IT. If everybody
+ * still on the step has already approved, the step is done the moment this
+ * person leaves it, and the request moves on — so the actor goes along.
+ */
 export async function removeStageApprover(
   service: SupabaseClient,
-  approverId: string
+  approverId: string,
+  actor: ApprovalConfigActor
 ): Promise<{
   stageId: string;
   userId: string;
@@ -457,7 +582,7 @@ export async function removeStageApprover(
     applies_to_level_type: ApproverLevelScope | null;
   };
 
-  const repointed = await repointWaitingStages(service, row.stage_id);
+  const repointed = await repointWaitingStages(service, row.stage_id, actor);
 
   return {
     stageId: row.stage_id,

@@ -13,6 +13,8 @@ import {
 import type { Role } from '@/lib/auth/roles';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
+import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { ActivityPanel } from '@/components/notifications/activity-panel';
 
 const GATE_ROLES: Role[] = [
@@ -48,6 +50,14 @@ type NotificationBellProps = {
    * it simply contributes nothing rather than throwing.
    */
   initialDeclarationCount?: number | null;
+  /**
+   * Grade-change steps waiting for this person to decide (migration 144 —
+   * requests on the approval engine). `initialCount` is the legacy half and
+   * excludes those rows, so the two add without overlap.
+   *
+   * Optional for the same reason as the declaration count.
+   */
+  initialGradeChangeStepCount?: number | null;
 };
 
 // Surfaces the changeRequests realtime signal outside Markbook's own
@@ -65,18 +75,31 @@ export function NotificationBell({
   userId,
   initialCount,
   initialDeclarationCount = null,
+  initialGradeChangeStepCount = null,
 }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const changeRequestCount = useChangeRequestCount(role, userId, initialCount);
   const declarationCount = useDeclarationCount(userId, initialDeclarationCount);
+  // Unlike the Markbook sidebar badge, the bell counts these for EVERY role,
+  // teacher included: an Academic and Examination Board member can hold a
+  // teacher account, and the bell is how a step waiting for them finds them.
+  const gradeChangeStepCount = useStagedApprovalCount(
+    userId,
+    GRADE_CHANGE_FLOWS,
+    initialGradeChangeStepCount
+  );
 
   // ⚠ `null` means "not tracked", which is not the same as zero — treating it
   // as zero would render a confident "0 pending" for somebody whose count
-  // simply never loaded. If neither source is tracked the badge stays hidden.
+  // simply never loaded. If no source is tracked the badge stays hidden.
   const count =
-    changeRequestCount == null && declarationCount == null
+    changeRequestCount == null &&
+    declarationCount == null &&
+    gradeChangeStepCount == null
       ? null
-      : (changeRequestCount ?? 0) + (declarationCount ?? 0);
+      : (changeRequestCount ?? 0) +
+        (declarationCount ?? 0) +
+        (gradeChangeStepCount ?? 0);
 
   if (!role || !GATE_ROLES.includes(role)) return null;
 

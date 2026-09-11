@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarIcon, ExternalLink, RotateCcw, X } from 'lucide-react';
+import { CalendarIcon, Check, ExternalLink, RotateCcw, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
@@ -44,6 +44,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-dialog';
+import { ApprovalStepStrip } from '@/components/approvals/approval-step-rail';
+import { approvalTally } from '@/lib/approvals/rail';
+import type { StagedGradeChangeView } from '@/lib/change-requests/staged-flows';
 import {
   buildGradeChangeEvents,
   markChangeFieldLabel,
@@ -187,6 +190,17 @@ export type AdminRequestRow = {
   subjectCode?: string | null;
   subjectName?: string | null;
   termLabel?: string | null;
+  /**
+   * The flow a request filed after migration 144 went to. Null on a legacy
+   * row, which keeps the two-approver path — co-sign line, undo and all.
+   */
+  approval_flow: string | null;
+  /**
+   * The ladder, for a step-by-step request (built on the server). When set,
+   * this row is decided through the approval engine: its buttons follow
+   * `staged.canDecide`, and none of the legacy-only affordances render.
+   */
+  staged: StagedGradeChangeView | null;
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -333,6 +347,21 @@ function ReviewerLine({ row }: { row: AdminRequestRow }) {
   );
 }
 
+// Where a step-by-step request is: which route it took, then the ladder as a
+// strip of tiles and one line naming who has it. Sits under the status pill,
+// so the pill still answers "what state" and this answers "with whom".
+function StagedRoute({ staged }: { staged: StagedGradeChangeView }) {
+  return (
+    <div className="mt-2 max-w-[15rem] space-y-1">
+      <p className="text-[11px] font-medium text-ink-2">{staged.routeLabel}</p>
+      <ApprovalStepStrip
+        stages={staged.stages}
+        peopleByStageOrder={staged.peopleByStageOrder}
+      />
+    </div>
+  );
+}
+
 export function ChangeRequestsDataTable({
   rows,
   canDecide,
@@ -437,8 +466,25 @@ export function ChangeRequestsDataTable({
       return;
     }
 
-    if (!canDecide) {
-      toast.error('You do not have permission to decide this request.');
+    // An email or bell link to a step this person has already approved, which
+    // is still waiting on the others. Not a refusal — they have done their part.
+    if (row.staged?.viewerApprovedWaiting) {
+      toast.info('You approved this step. It is waiting on the others.');
+      clearReqParams();
+      return;
+    }
+
+    // A step-by-step row answers for itself: the viewer may decide only the
+    // step that is live, and only if they sit on it.
+    const rowCanDecide = row.staged
+      ? row.staged.canDecide && row.staged.requestStatus === 'pending'
+      : canDecide;
+    if (!rowCanDecide) {
+      toast.error(
+        row.staged
+          ? 'This step is not yours to decide.'
+          : 'You do not have permission to decide this request.'
+      );
       clearReqParams();
       return;
     }
@@ -646,7 +692,10 @@ export function ChangeRequestsDataTable({
                 Note: {row.original.decisionNoteText}
               </div>
             )}
-            <ReviewerLine row={row.original} />
+            {/* The co-sign line reads the two-approver columns, which a
+                step-by-step request does not use — its decisions are on the
+                step strip in the Status column. */}
+            {!row.original.staged && <ReviewerLine row={row.original} />}
           </div>
         ),
         filterFn: (row, id, value) => {
@@ -674,6 +723,9 @@ export function ChangeRequestsDataTable({
                 row.original.approved_at != null && (
                   <AgingLine approvedAt={row.original.approved_at} />
                 )}
+              {row.original.staged && (
+                <StagedRoute staged={row.original.staged} />
+              )}
             </div>
           );
         },
@@ -693,7 +745,12 @@ export function ChangeRequestsDataTable({
           // Undo gate: only the rejecting approver, only on rejected rows,
           // only within 2 hours of the rejection. The PATCH endpoint
           // re-checks all three; the client gate is for surface visibility.
+          //
+          // Never on a step-by-step row: a turn-down there ends the ladder and
+          // the engine has no way back (migration 127), so the button would
+          // offer something the server refuses.
           const undoVisible =
+            !r.staged &&
             r.status === 'rejected' &&
             actorEmail != null &&
             r.primary_reviewed_by_email === actorEmail &&
@@ -701,6 +758,21 @@ export function ChangeRequestsDataTable({
             Date.now() - Date.parse(r.primary_reviewed_at) < 2 * 60 * 60 * 1000;
 
           const hasSecondaryActions = !!r.grading_sheet_id || undoVisible;
+
+          const approvedWaiting =
+            r.status === 'pending' && r.staged?.viewerApprovedWaiting === true;
+          const showDecision =
+            r.status === 'pending' &&
+            !approvedWaiting &&
+            (r.staged
+              ? r.staged.canDecide && r.staged.requestStatus === 'pending'
+              : canDecide);
+          // The live step needs everyone — the approve dialog says so, because
+          // "it moves on to the next person" would not be true of this click.
+          const liveStage = r.staged?.stages.find(
+            (s) => s.status === 'pending'
+          );
+          const everyoneTally = liveStage ? approvalTally(liveStage) : null;
 
           return (
             <div
@@ -743,11 +815,23 @@ export function ChangeRequestsDataTable({
                   viewerId,
                   nameById,
                   href: `/markbook/change-requests?req=${r.id}`,
+                  steps: r.staged?.stages ?? null,
                 })}
               />
-              {canDecide && r.status === 'pending' && (
+              {approvedWaiting && (
+                // In place of the buttons, where the eye goes for them. Plain
+                // words rather than a badge: it is a note to one reader, not a
+                // state the whole queue sorts by.
+                <span className="inline-flex max-w-[12rem] items-center gap-1.5 text-left text-[12px] leading-snug text-muted-foreground">
+                  <Check className="size-3.5 shrink-0 text-ink" aria-hidden />
+                  You approved — waiting on the others
+                </span>
+              )}
+              {showDecision && (
                 <ChangeRequestDecisionButtons
                   requestId={r.id}
+                  approvalRequestId={r.staged?.approvalRequestId ?? null}
+                  everyoneTally={everyoneTally}
                   controlledOpen={controlledByRow[r.id] ?? null}
                   onControlledOpenConsumed={() => consumeControlledFor(r.id)}
                 />

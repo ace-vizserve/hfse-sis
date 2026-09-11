@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -57,12 +58,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
   try {
     const result = await assignStageApprover(service, {
       stageId: stage_id,
       userId: user_id,
       appliesToLevelType,
       createdBy: auth.user.id,
+      // Adding someone can change who a waiting request is waiting on; if that
+      // moves one along, it moves on this person's name.
+      actor,
     });
 
     if (result.alreadyAssigned) {
@@ -73,11 +83,7 @@ export async function POST(request: Request) {
 
     await logAction({
       service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
+      actor,
       action: 'approval_stage.approver.assign',
       entityType: 'approval_stage_approver',
       entityId: result.id,
@@ -94,6 +100,12 @@ export async function POST(request: Request) {
         repointed_waiting: result.repointed,
       },
     });
+
+    // Who is on a step is what the /sis readiness strip reports as ready or
+    // not (`getSystemHealth`, lib/sis/health.ts). Emitted only here, after a
+    // row was actually added — the already-assigned branch above changed
+    // nothing, so there is nothing to bust.
+    revalidateTag('sis-health', 'max');
 
     return NextResponse.json(
       { ok: true, repointed: result.repointed },

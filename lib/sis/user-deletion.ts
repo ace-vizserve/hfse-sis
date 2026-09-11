@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
+import { repointWaitingStages } from '@/lib/approvals/materialise';
 
 // Which tables a user-deletion check should query, scoped to the account's
 // CURRENT role (spec §4, docs/superpowers/specs/2026-07-24-user-account-deletion-design.md).
@@ -138,6 +139,67 @@ export async function getUserFootprint(
   );
 
   return Array.from(new Set(results.filter((t): t is string => t !== null)));
+}
+
+// ── Approval steps the account is named on ────────────────────────────────
+//
+// ⚠ NOT A FOOTPRINT, AND NOT A REASON TO REFUSE THE DELETE. Being named on a
+// step is configuration, not activity: `approval_stage_approvers.user_id`
+// cascades on delete (migration 126), so the account simply leaves the step.
+//
+// ⚠ BUT THE REQUESTS ALREADY ON THOSE STEPS DO NOT FOLLOW BY THEMSELVES. Each
+// copied the step's people in when it was filed, so a deleted person stays in
+// every in-flight pool — and on an "Everyone must approve" step that is a yes
+// that can never come, stalling every request on it with nothing on screen to
+// say why. So the route reads the steps BEFORE deleting (the cascade removes
+// the rows that say which they were) and re-points them AFTER, exactly as
+// taking somebody off a step on the approvers screen does.
+
+/** The configured approval steps this account is named on, deduped. */
+export async function listApprovalStagesNamingUser(
+  service: SupabaseClient,
+  userId: string
+): Promise<string[]> {
+  const { data, error } = await service
+    .from('approval_stage_approvers')
+    .select('stage_id')
+    .eq('user_id', userId);
+  if (error) throw new Error(error.message);
+  return [
+    ...new Set(
+      ((data ?? []) as Array<{ stage_id: string }>).map((r) => r.stage_id)
+    ),
+  ];
+}
+
+/**
+ * Bring the requests on each step in line once the account is gone.
+ *
+ * `actor` is the admin who deleted the account: a step that needed only the
+ * deleted person's yes finishes as a result, and what that sets moving runs on
+ * their name (the audit row still names the last real approval).
+ *
+ * ⚠ NEVER THROWS. The account is already deleted; a step that fails to
+ * re-point is logged and brought in line by the next edit to it on the
+ * approvers screen — reporting the whole delete as failed would invite a
+ * retry against an account that no longer exists.
+ */
+export async function repointStagesAfterUserDeletion(
+  service: SupabaseClient,
+  stageIds: readonly string[],
+  actor: NonNullable<Parameters<typeof repointWaitingStages>[2]>
+): Promise<void> {
+  for (const stageId of stageIds) {
+    try {
+      await repointWaitingStages(service, stageId, actor);
+    } catch (e) {
+      console.error(
+        '[user-deletion] could not update requests on an approval step after deleting the account:',
+        stageId,
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 }
 
 // True when `targetId` is a superadmin AND no OTHER superadmin exists in

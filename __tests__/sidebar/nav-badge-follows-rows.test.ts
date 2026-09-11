@@ -110,6 +110,10 @@ describe('the changeRequests badge and the row it sits on describe one page', ()
         calls.push('or');
         return query;
       },
+      is: () => {
+        calls.push('is');
+        return query;
+      },
     };
     applyChangeRequestCountScope(query, 'teacher', 'user-1');
     expect(calls).toEqual(['eq:requested_by', 'eq:status']);
@@ -126,6 +130,10 @@ describe('the changeRequests badge and the row it sits on describe one page', ()
       },
       or: () => {
         calls.push('or');
+        return query;
+      },
+      is: () => {
+        calls.push('is');
         return query;
       },
     };

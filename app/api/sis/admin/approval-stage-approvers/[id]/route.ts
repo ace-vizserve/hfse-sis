@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -33,9 +34,18 @@ export async function DELETE(
 
   const { id } = await params;
   const service = createServiceClient();
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
 
   try {
-    const removed = await removeStageApprover(service, id);
+    // ⚠ The actor goes in, not just into the audit row. Taking the last
+    // hold-out off an "Everyone must approve" step finishes that step for
+    // every request already waiting on it, and whatever that sets moving is
+    // recorded as this person's doing.
+    const removed = await removeStageApprover(service, id, actor);
     if (!removed) {
       return NextResponse.json(
         { error: 'That person is no longer on this step.' },
@@ -45,11 +55,7 @@ export async function DELETE(
 
     await logAction({
       service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
+      actor,
       action: 'approval_stage.approver.revoke',
       entityType: 'approval_stage_approver',
       entityId: id,
@@ -61,6 +67,10 @@ export async function DELETE(
         repointed_waiting: removed.repointed,
       },
     });
+
+    // Taking the last person off a step turns the /sis readiness strip from
+    // ready to not-ready (`getSystemHealth`, lib/sis/health.ts).
+    revalidateTag('sis-health', 'max');
 
     return NextResponse.json({ ok: true, repointed: removed.repointed });
   } catch (e) {

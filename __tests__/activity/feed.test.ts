@@ -71,6 +71,8 @@ vi.mock('@/lib/declarations/staff', () => ({
               status: 'pending',
               sectionId: 'sec-a',
               approverPool: [],
+              approvalRule: 'any',
+              decisions: [],
               decidedBy: null,
               decidedByEmail: null,
               decidedAt: null,
@@ -313,12 +315,21 @@ function makeDeclarationScopeService(
       if (table === 'approval_request_stages') {
         const builder: Record<string, unknown> = {};
         const chain = () => builder;
+        // ⚠ Since migration 144 the MARK-CHANGE side reads this table too, to
+        // find the step-by-step requests a teacher sits on. That read filters
+        // its flows with `.in(...)`; the declaration read never does. Only the
+        // declaration read's `.or()` is the one this test is about.
+        let isGradeChangeInvolvement = false;
         builder.select = chain;
         builder.eq = chain;
+        builder.in = () => {
+          isGradeChangeInvolvement = true;
+          return builder;
+        };
         builder.order = chain;
         builder.limit = chain;
         builder.or = (clause: string) => {
-          captured.orClauses.push(clause);
+          if (!isGradeChangeInvolvement) captured.orClauses.push(clause);
           return builder;
         };
         // No filings need to actually resolve for this test — it only
@@ -424,6 +435,24 @@ function makeMarkChangeService(
 ): SupabaseClient {
   return {
     from(table: string) {
+      // Migration 144: a non-oversight reader's step-by-step involvement is
+      // resolved first (their advised classes, then the steps naming them).
+      // Neither contributes anything here — these tests are about the
+      // `grade_change_requests` scope — so both answer empty.
+      if (
+        table === 'teacher_assignments' ||
+        table === 'approval_request_stages'
+      ) {
+        const empty: Record<string, unknown> = {};
+        const chain = () => empty;
+        empty.select = chain;
+        empty.in = chain;
+        empty.or = chain;
+        empty.then = (
+          resolve: (value: { data: unknown; error: null }) => unknown
+        ) => resolve({ data: [], error: null });
+        return empty;
+      }
       if (table !== 'grade_change_requests') {
         throw new Error(
           `mark-change scoping test queried an unexpected table: ${table}`
@@ -514,6 +543,10 @@ describe('loadActivityPage — mark-change scoping (the leak guard)', () => {
     // A teacher must never get the whole school's approved queue just
     // because it happens to share the `status.eq.approved` shape.
     expect(clause).not.toContain('status.eq.approved');
+    // Migration 144 — no step-by-step involvement, so no id arm at all. An
+    // empty `id.in.()` would be invalid PostgREST, and a missing guard here
+    // is how it would get sent.
+    expect(clause).not.toContain('id.in.');
   });
 
   // An oversight role reads the whole school, exactly as it does on the queue
@@ -779,6 +812,338 @@ function makeWaitingAcrossTabsService(userId: string): SupabaseClient {
     },
   } as unknown as SupabaseClient;
 }
+
+// ── Grade changes decided step by step (migration 144) ─────────────────────
+//
+// Nobody is `primary_approver_id` on such a row, so the approver arms cannot
+// find it for the people deciding it, and "waiting for me" cannot be read off
+// those columns. Both answers come from the engine instead.
+
+type StagedFixture = {
+  /** Subject ids the viewer's steps name, as the involvement read returns. */
+  involvedSubjectIds?: string[];
+  gradeChangeRows: unknown[];
+  /** approval_requests rows, per flow. */
+  requestsByFlow?: Record<string, unknown[]>;
+  stages?: unknown[];
+  /** approval_request_stage_decisions rows (migration 145). */
+  decisions?: unknown[];
+};
+
+function makeStagedFeedService(
+  fixture: StagedFixture,
+  captured: { gradeChangeOr: string[] }
+): SupabaseClient {
+  const thenable = (data: unknown) => {
+    const builder: Record<string, unknown> = {};
+    const chain = () => builder;
+    for (const m of ['select', 'eq', 'in', 'or', 'order', 'limit']) {
+      builder[m] = chain;
+    }
+    builder.then = (resolve: (v: { data: unknown; error: null }) => unknown) =>
+      resolve({ data, error: null });
+    return builder;
+  };
+
+  return {
+    from(table: string) {
+      if (table === 'teacher_assignments') return thenable([]);
+      if (table === 'approval_request_stage_decisions') {
+        return thenable(fixture.decisions ?? []);
+      }
+      if (table === 'approval_request_stages') {
+        // Two different reads hit this table: the involvement lookup (embeds
+        // the request, filters flows with `.in` on the embed) and the ladder
+        // load (`.in('request_id', …)`). Told apart by the column filtered.
+        const builder = thenable([]) as Record<string, unknown>;
+        let data: unknown = [];
+        builder.in = (column: string) => {
+          data =
+            column === 'request_id'
+              ? (fixture.stages ?? [])
+              : (fixture.involvedSubjectIds ?? []).map((id) => ({
+                  request_id: `appr-${id}`,
+                  approval_requests: {
+                    flow: 'markbook.grade_change',
+                    subject_type: 'grade_change_request',
+                    subject_id: id,
+                  },
+                }));
+          return builder;
+        };
+        builder.then = (
+          resolve: (v: { data: unknown; error: null }) => unknown
+        ) => resolve({ data, error: null });
+        return builder;
+      }
+      if (table === 'approval_requests') {
+        const builder = thenable([]) as Record<string, unknown>;
+        let flow = '';
+        builder.eq = (column: string, value: string) => {
+          if (column === 'flow') flow = value;
+          return builder;
+        };
+        builder.then = (
+          resolve: (v: { data: unknown; error: null }) => unknown
+        ) =>
+          resolve({ data: fixture.requestsByFlow?.[flow] ?? [], error: null });
+        return builder;
+      }
+      if (table === 'grade_change_requests') {
+        const builder = thenable(fixture.gradeChangeRows) as Record<
+          string,
+          unknown
+        >;
+        builder.or = (clause: string) => {
+          captured.gradeChangeOr.push(clause);
+          return builder;
+        };
+        return builder;
+      }
+      throw new Error(
+        `staged feed fixture queried an unexpected table: ${table}`
+      );
+    },
+  } as unknown as SupabaseClient;
+}
+
+const STAGED_ROW = {
+  ...MARK_CHANGE_ROW,
+  id: 'gcr-2',
+  requested_by: 'u-teacher',
+  primary_approver_id: null,
+  secondary_approver_id: null,
+  approval_flow: 'markbook.grade_change',
+};
+
+const STAGED_REQUEST = {
+  id: 'appr-gcr-2',
+  flow: 'markbook.grade_change',
+  subject_type: 'grade_change_request',
+  subject_id: 'gcr-2',
+  status: 'pending',
+  current_stage_order: 2,
+  filed_by_email: 'grace.lim@hfse.edu.sg',
+  created_at: '2026-08-27T00:47:00.000Z',
+  decided_at: null,
+};
+
+const STAGED_STAGES = [
+  {
+    request_id: 'appr-gcr-2',
+    stage_order: 1,
+    label: 'Head of Department',
+    resolver: 'named',
+    status: 'approved',
+    section_id: null,
+    approver_pool: ['hod-1'],
+    decided_by: 'hod-1',
+    decided_by_email: 'hod@hfse.edu.sg',
+    decided_at: '2026-08-27T01:10:00.000Z',
+    decision_note: null,
+  },
+  {
+    request_id: 'appr-gcr-2',
+    stage_order: 2,
+    label: 'Principal',
+    resolver: 'named',
+    status: 'pending',
+    section_id: null,
+    approver_pool: ['board-teacher'],
+    decided_by: null,
+    decided_by_email: null,
+    decided_at: null,
+    decision_note: null,
+  },
+];
+
+describe('loadActivityPage — grade changes decided step by step', () => {
+  it('admits a teacher to the requests they sit a step of, by id, inside the one scoping filter', async () => {
+    const captured = { gradeChangeOr: [] as string[] };
+    await loadActivityPage(
+      makeStagedFeedService(
+        { involvedSubjectIds: ['gcr-2', 'gcr-3'], gradeChangeRows: [] },
+        captured
+      ),
+      {
+        userId: 'board-teacher',
+        role: 'teacher',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+
+    expect(captured.gradeChangeOr).toHaveLength(1);
+    const clause = captured.gradeChangeOr[0];
+    expect(clause).toContain('id.in.(gcr-2,gcr-3)');
+    // Still the personal arms — the new arm widens by exactly those ids.
+    expect(clause).toContain('requested_by.eq.board-teacher');
+    expect(clause).not.toContain('is.null');
+  });
+
+  it('puts the request in "waiting" for the person on the live step, linked to the queue', async () => {
+    const page = await loadActivityPage(
+      makeStagedFeedService(
+        {
+          involvedSubjectIds: ['gcr-2'],
+          gradeChangeRows: [STAGED_ROW],
+          requestsByFlow: { 'markbook.grade_change': [STAGED_REQUEST] },
+          stages: STAGED_STAGES,
+        },
+        { gradeChangeOr: [] }
+      ),
+      {
+        userId: 'board-teacher',
+        role: 'teacher',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+
+    expect(page.waiting).toEqual([
+      expect.objectContaining({
+        id: 'grade_change:gcr-2',
+        requestId: 'gcr-2',
+        subtitle: 'Mark change · Principal',
+        href: '/markbook/change-requests?req=gcr-2',
+      }),
+    ]);
+    // A teacher DECIDING, not filing, is sent to the queue on the log too.
+    expect(
+      page.events.every((e) => e.href === '/markbook/change-requests?req=gcr-2')
+    ).toBe(true);
+  });
+
+  it('builds the history from the ladder — the decided step is an event, the live one is not', async () => {
+    const page = await loadActivityPage(
+      makeStagedFeedService(
+        {
+          gradeChangeRows: [STAGED_ROW],
+          requestsByFlow: { 'markbook.grade_change': [STAGED_REQUEST] },
+          stages: STAGED_STAGES,
+        },
+        { gradeChangeOr: [] }
+      ),
+      {
+        userId: 'oversight-1',
+        role: 'superadmin',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+
+    expect(page.events.map((e) => e.id).sort()).toEqual([
+      'grade_change:gcr-2:requested',
+      'grade_change:gcr-2:step:1',
+    ]);
+    // Oversight widens the log, never the to-do list: the live step names
+    // somebody else.
+    expect(page.waiting).toHaveLength(0);
+  });
+
+  it('never puts a request in "waiting" for the teacher who filed it, even on their own step', async () => {
+    // The filer is also named on the live step (a pool built before the
+    // filer was kept off it, say). Nobody approves their own request.
+    const page = await loadActivityPage(
+      makeStagedFeedService(
+        {
+          involvedSubjectIds: ['gcr-2'],
+          gradeChangeRows: [STAGED_ROW],
+          requestsByFlow: {
+            'markbook.grade_change': [
+              { ...STAGED_REQUEST, filed_by: 'board-teacher' },
+            ],
+          },
+          stages: STAGED_STAGES,
+        },
+        { gradeChangeOr: [] }
+      ),
+      {
+        userId: 'board-teacher',
+        role: 'teacher',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+    expect(page.waiting).toHaveLength(0);
+  });
+
+  it('drops a request from "waiting" once the viewer has approved a step that needs everyone', async () => {
+    // Migration 145: the step stays pending after this person's yes, because
+    // somebody else on it has not said yes yet. It is no longer waiting on them.
+    const allStages = STAGED_STAGES.map((s, i) =>
+      s.stage_order === 2
+        ? {
+            ...s,
+            id: `ars-${i + 1}`,
+            approval_rule: 'all',
+            approver_pool: ['board-teacher', 'board-other'],
+          }
+        : { ...s, id: `ars-${i + 1}` }
+    );
+    const load = (decisions: unknown[]) =>
+      loadActivityPage(
+        makeStagedFeedService(
+          {
+            involvedSubjectIds: ['gcr-2'],
+            gradeChangeRows: [STAGED_ROW],
+            requestsByFlow: { 'markbook.grade_change': [STAGED_REQUEST] },
+            stages: allStages,
+            decisions,
+          },
+          { gradeChangeOr: [] }
+        ),
+        {
+          userId: 'board-teacher',
+          role: 'teacher',
+          tab: 'grade_change',
+          cursor: null,
+          limit: 20,
+        }
+      );
+
+    expect((await load([])).waiting).toHaveLength(1);
+    const after = await load([
+      {
+        request_stage_id: 'ars-2',
+        user_id: 'board-teacher',
+        user_email: 'board@hfse.edu.sg',
+        decision: 'approve',
+        decided_at: '2026-08-28T01:00:00.000Z',
+      },
+    ]);
+    expect(after.waiting).toHaveLength(0);
+  });
+
+  it('never reads "waiting" off the approver columns on a step-by-step row', async () => {
+    // A row that somehow carried the viewer in `secondary_approver_id` must
+    // still answer from the ladder, where the viewer is on no live step.
+    const page = await loadActivityPage(
+      makeStagedFeedService(
+        {
+          gradeChangeRows: [
+            { ...STAGED_ROW, secondary_approver_id: 'oversight-1' },
+          ],
+          requestsByFlow: { 'markbook.grade_change': [STAGED_REQUEST] },
+          stages: STAGED_STAGES,
+        },
+        { gradeChangeOr: [] }
+      ),
+      {
+        userId: 'oversight-1',
+        role: 'school_admin',
+        tab: 'grade_change',
+        cursor: null,
+        limit: 20,
+      }
+    );
+    expect(page.waiting).toHaveLength(0);
+  });
+});
 
 describe('loadActivityPage — waiting is pinned above the tab strip (F2)', () => {
   it('is identical for general, grade_change and student_declaration', async () => {

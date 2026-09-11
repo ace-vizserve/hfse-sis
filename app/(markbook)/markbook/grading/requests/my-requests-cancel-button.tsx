@@ -19,7 +19,18 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 
-export function MyRequestsCancelButton({ requestId }: { requestId: string }) {
+export function MyRequestsCancelButton({
+  requestId,
+  steppedApproval = false,
+}: {
+  requestId: string;
+  /**
+   * A request decided step by step (migration 144) has no single school admin
+   * reviewing it, so the confirm copy says what is actually withdrawn. The
+   * write is the same PATCH either way — the route closes the ladder too.
+   */
+  steppedApproval?: boolean;
+}) {
   // ApiError.message already resolves to the body's `error` field, so the
   // original `body.error ?? 'failed to cancel'` copy is preserved via
   // e.message; the generic fallback covers non-ApiError failures.
@@ -60,8 +71,9 @@ export function MyRequestsCancelButton({ requestId }: { requestId: string }) {
         <AlertDialogHeader>
           <AlertDialogTitle>Cancel this request?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will withdraw the request from your school admin&apos;s review
-            queue. You can file a new one if you change your mind.
+            {steppedApproval
+              ? 'This withdraws the request from whoever is deciding it now, and nobody further along will see it. You can file a new one if you change your mind.'
+              : "This will withdraw the request from your school admin's review queue. You can file a new one if you change your mind."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

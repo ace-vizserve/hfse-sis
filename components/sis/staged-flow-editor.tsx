@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   ListOrdered,
   Pencil,
@@ -54,26 +55,35 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import {
   APPROVAL_RESOLVERS,
   APPROVAL_RESOLVER_DESCRIPTIONS,
   APPROVAL_RESOLVER_LABELS,
+  APPROVAL_RULES,
+  APPROVAL_RULE_LABELS,
   APPROVAL_STAGE_LABEL_MAX,
   APPROVER_LEVEL_SCOPE_ANY_LABEL,
   APPROVER_LEVEL_SCOPE_LABELS,
+  DECLARATION_APPROVAL_FLOW,
+  STAGE_NAME_EXAMPLES,
   STAGED_FLOW_DESCRIPTIONS,
   STAGED_FLOW_LABELS,
   type ApprovalResolver,
+  type ApprovalRule,
   type ApproverLevelScope,
+  type StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
 // ⚠ From `readiness.ts`, NOT `config.ts`. `config.ts` is `server-only`, so a
 // VALUE imported from it into a client component throws at runtime — and
 // TypeScript does not catch it, because a type-only import is erased while a
 // function import is not.
 import {
+  canRequireEveryone,
   classifyStagedFlowReadiness,
+  describeStepsInOrder,
   type FlowConfig,
 } from '@/lib/approvals/readiness';
 import { cn } from '@/lib/utils';
@@ -91,12 +101,68 @@ import { cn } from '@/lib/utils';
 //
 // ⚠ NUMBERING IS THE CONTENT HERE, not ornament. Everything about this screen
 // is the fact that step 1 happens before step 2 — that is the whole reason
-// these tables exist, and the difference between this and the pooled approver
-// table above it.
+// these tables exist.
 //
-// ⚠ NO `default` BUTTON. The page already has one, on the approver table
-// above (§9.2: exactly one primary CTA per view), and every control here is
-// configuration, which §9.2 assigns to `outline`.
+// ⚠ NO `default` BUTTON. Every control here is configuration, which §9.2
+// assigns to `outline`, and the page renders one card per flow — a gradient
+// "Add a step" on each would be three primary CTAs, which is none.
+//
+// ⚠ SOME COPY BELONGS TO ONE FLOW ONLY. Declarations are filed by parents and
+// can carry a medical certificate; grade changes are filed by teachers and
+// carry neither. Anything that says "parent" or "medical certificate" is gated
+// on `DECLARATION_APPROVAL_FLOW` below, or it reads as a wrong instruction over
+// the grade-change cards.
+
+const isDeclaration = (flow: StagedApprovalFlow) =>
+  flow === DECLARATION_APPROVAL_FLOW;
+
+/**
+ * How a step finds its people, said for this flow and this step's setting.
+ *
+ * The medical-certificate sentence is a declaration's alone — a grade change
+ * has no attachment at all — and "any one of them" stops being true the moment
+ * a step needs everyone, so both halves are composed here rather than read from
+ * one fixed string.
+ */
+function resolverDescription(
+  flow: StagedApprovalFlow,
+  resolver: ApprovalResolver,
+  rule: ApprovalRule = 'any'
+): string {
+  if (resolver !== 'named') return APPROVAL_RESOLVER_DESCRIPTIONS[resolver];
+  const who =
+    rule === 'all'
+      ? 'You choose who. Everyone on this step must approve before it moves on.'
+      : 'You choose who. Any one of them can approve this step.';
+  return isDeclaration(flow)
+    ? `${who} Anyone you add here will be able to open the whole filing, including any medical certificate attached to it.`
+    : who;
+}
+
+/** Why a form adviser step cannot need everyone — one line, under the control. */
+const ADVISER_STEP_RULE_REASON =
+  'Who advises a class changes when someone covers it, so any one adviser approves this step.';
+
+/** One sentence under the setting, when there is something worth saying. */
+function ruleNote(
+  stage: FlowConfig['stages'][number],
+  rule: ApprovalRule
+): string | null {
+  if (!canRequireEveryone(stage.resolver)) return ADVISER_STEP_RULE_REASON;
+  if (rule !== 'all') return null;
+  const people = new Set(stage.approvers.map((a) => a.userId)).size;
+  // Nobody yet is already said, in red, beside the empty list of names.
+  if (people === 0) return null;
+  if (people === 1) {
+    return `Only one person is on this step, so this works the same as “${APPROVAL_RULE_LABELS.any}”.`;
+  }
+  // ⚠ Halves are not pooled. With Ms Lhen on Primary and Ms Elaine on
+  // Secondary, "everyone" is everyone covering THIS child — never both.
+  if (stage.approvers.some((a) => a.appliesToLevelType !== null)) {
+    return 'Everyone who covers the child’s half of the school must approve.';
+  }
+  return null;
+}
 
 type StaffOption = {
   userId: string;
@@ -146,23 +212,11 @@ export function StagedFlowEditor({
 }) {
   if (flows.length === 0) return null;
 
+  // No section intro of its own: the page header above says how every
+  // approval works, and what happens to a turned-down request differs by who
+  // filed it, so that sentence lives on each card instead.
   return (
     <section className="space-y-4">
-      <div className="space-y-1.5">
-        <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-          Step-by-step approvals
-        </p>
-        <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
-          Approvals that happen in order
-        </h2>
-        <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-          These run one step at a time. A request goes to the first step, and
-          only moves to the next once somebody there has approved it. Any one
-          person on a step can approve for that step. If anyone turns it down,
-          it stops there and the parent is told.
-        </p>
-      </div>
-
       {flows.map((flow) => (
         <FlowCard
           key={flow.flow}
@@ -184,16 +238,23 @@ function FlowCard({
   staff: StaffOption[];
   levelTypesInUse: ApproverLevelScope[];
 }) {
-  const readiness = classifyStagedFlowReadiness(flow.stages, levelTypesInUse);
+  const readiness = classifyStagedFlowReadiness(
+    flow.stages,
+    levelTypesInUse,
+    flow.flow
+  );
+  const inOrder = describeStepsInOrder(flow.stages);
   const [addingStep, setAddingStep] = useState(false);
 
   return (
     <Card className="@container/card gap-0 py-0">
       <CardHeader className="border-b border-border py-5">
+        {/* Who files decides what a "no" means for them, and it is the one
+            difference between these cards a reader needs before the steps. */}
         <CardDescription className="font-mono text-[10px] font-semibold tracking-[0.14em] uppercase">
-          Approval flow
+          {isDeclaration(flow.flow) ? 'Filed by parents' : 'Filed by teachers'}
         </CardDescription>
-        <CardTitle className="font-serif text-[22px]">
+        <CardTitle className="font-serif text-[22px] leading-snug">
           {STAGED_FLOW_LABELS[flow.flow]}
         </CardTitle>
         <CardAction>
@@ -201,23 +262,63 @@ function FlowCard({
             <ListOrdered className="size-4" />
           </div>
         </CardAction>
+        <p className="col-start-1 max-w-3xl text-[14px] leading-relaxed text-muted-foreground">
+          {STAGED_FLOW_DESCRIPTIONS[flow.flow]}
+        </p>
       </CardHeader>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-muted/30 px-6 py-3">
-        {/* §9.3 recipes — mint when it can finish, destructive when it cannot. */}
-        <Badge
-          className={cn(
-            'h-6',
-            readiness.tone === 'mint'
-              ? 'border-brand-mint bg-brand-mint/30 text-ink'
-              : 'border-destructive/40 bg-destructive/10 text-destructive'
+      <div className="space-y-2 border-b border-border bg-muted/30 px-6 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* §9.3 recipes — mint when it can finish, destructive when it cannot. */}
+          <Badge
+            className={cn(
+              'h-6 shrink-0',
+              readiness.tone === 'mint'
+                ? 'border-brand-mint bg-brand-mint/30 text-ink'
+                : 'border-destructive/40 bg-destructive/10 text-destructive'
+            )}
+          >
+            {readiness.label}
+          </Badge>
+
+          {/* The whole ladder on one line, so the order can be checked at a
+              glance without reading every row below. A step with nobody on it
+              is the one place colour appears — it is where requests stop. */}
+          {inOrder.length > 0 && (
+            <ol
+              aria-label="Steps in order"
+              className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px]"
+            >
+              {inOrder.map((step, index) => (
+                <li key={index} className="flex items-center gap-1.5">
+                  {index > 0 && (
+                    <ArrowRight
+                      className="size-3 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      'font-medium',
+                      step.empty ? 'text-destructive' : 'text-foreground'
+                    )}
+                  >
+                    {step.text}
+                    {step.empty && (
+                      <span className="sr-only"> (nobody yet)</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
-        >
-          {readiness.label}
-        </Badge>
-        <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
-          {readiness.warning ?? STAGED_FLOW_DESCRIPTIONS[flow.flow]}
-        </p>
+        </div>
+
+        {readiness.warning && (
+          <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
+            {readiness.warning}
+          </p>
+        )}
       </div>
 
       {flow.stages.length === 0 ? (
@@ -226,9 +327,11 @@ function FlowCard({
             No steps yet
           </p>
           <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-muted-foreground">
-            Add the first step to start. For absence declarations the school
-            asked for the child&rsquo;s form class adviser, then an officer in
-            charge.
+            {/* Every flow that is not a declaration is a grade change today
+                (STAGED_APPROVAL_FLOWS) — the same split the eyebrow uses. */}
+            {isDeclaration(flow.flow)
+              ? 'Add the first step to start. For absence declarations the school asked for the child’s form class adviser, then an officer in charge.'
+              : 'Grade change requests of this kind can’t be filed until at least one step has someone on it.'}
           </p>
         </div>
       ) : (
@@ -285,8 +388,13 @@ function StageRow({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [chosen, setChosen] = useState<StaffOption | null>(null);
   const [busy, setBusy] = useState(false);
+  // The setting the reader just picked, held until the saved one arrives with
+  // the refresh — so the control answers the click at once, and falls back to
+  // the stored value by itself if the save is refused.
+  const [pendingRule, setPendingRule] = useState<ApprovalRule | null>(null);
 
   const isNamed = stage.resolver === 'named';
+  const rule: ApprovalRule = pendingRule ?? stage.approvalRule;
 
   // Halves each person already holds on this step. `null` in the list means
   // "every child", which leaves nothing further to give them.
@@ -356,7 +464,7 @@ function StageRow({
             {stage.label}
           </p>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {APPROVAL_RESOLVER_DESCRIPTIONS[stage.resolver]}
+            {resolverDescription(stage.flow, stage.resolver, rule)}
           </p>
         </div>
 
@@ -485,6 +593,17 @@ function StageRow({
             </Popover>
           </div>
         )}
+
+        <RuleControl
+          stage={stage}
+          rule={rule}
+          busy={busy}
+          onChange={async (next) => {
+            setPendingRule(next);
+            await patch({ approval_rule: next }, 'Saving…');
+            setPendingRule(null);
+          }}
+        />
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -594,7 +713,7 @@ function StageRow({
                     }),
                   {
                     pending: 'Removing…',
-                    success: `“${stage.label}” has been removed from this flow.`,
+                    success: `“${stage.label}” has been removed.`,
                   }
                 );
                 setBusy(false);
@@ -609,13 +728,77 @@ function StageRow({
   );
 }
 
+// ── One of them, or all of them ────────────────────────────────────────────
+//
+// A segmented control, not a pair of radio cards: this lives INSIDE a dense
+// list row beside the names it governs, where two cards per step would double
+// every row's height. The Add-step dialog, which has the room, uses the cards.
+//
+// ⚠ IT SAVES ON CLICK, like the move arrows beside it — there is no Save for a
+// two-way switch. It also reaches requests already waiting on the step (see
+// `setStageRule`), which is why the toast names the step it changed.
+//
+// ⚠ SHOWN, DISABLED, ON A FORM ADVISER STEP rather than hidden. A reader
+// comparing two steps should see that the adviser step has the same question
+// and why its answer is fixed, not wonder where the control went.
+function RuleControl({
+  stage,
+  rule,
+  busy,
+  onChange,
+}: {
+  stage: FlowConfig['stages'][number];
+  rule: ApprovalRule;
+  busy: boolean;
+  onChange: (rule: ApprovalRule) => void | Promise<void>;
+}) {
+  const allowed = canRequireEveryone(stage.resolver);
+  const note = ruleNote(stage, rule);
+
+  return (
+    <div className="flex flex-col gap-1.5 pt-0.5">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={allowed ? rule : 'any'}
+        disabled={!allowed || busy}
+        // A single-select group reports '' when the chosen segment is clicked
+        // again. That is "no change", never "no setting".
+        onValueChange={(value) => {
+          if (value && value !== rule) void onChange(value as ApprovalRule);
+        }}
+        aria-label={`How many people must approve ${stage.label}`}
+        className="max-w-full"
+      >
+        {APPROVAL_RULES.map((option) => (
+          <ToggleGroupItem
+            key={option}
+            value={option}
+            className="h-auto min-h-7 min-w-0 shrink px-2.5 py-1 text-[12px] leading-tight whitespace-normal sm:whitespace-nowrap"
+          >
+            {APPROVAL_RULE_LABELS[option]}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      {note && (
+        <p className="max-w-xl text-[12px] leading-relaxed text-muted-foreground">
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Step two of the picker: which children this person approves for.
 //
-// ⚠ THE ACCESS SENTENCE IS NOT A NICETY. Being named to a step is itself how
-// somebody gets to read a child's medical certificate — the officer in charge
-// sits on a plain teacher account and the declaration's own read rules admit
-// neither them nor their role. That grant happens here, at this click, and it
-// should not be something a superadmin discovers afterwards.
+// ⚠ THE ACCESS SENTENCE IS NOT A NICETY. Being named to a DECLARATION step is
+// itself how somebody gets to read a child's medical certificate — the officer
+// in charge sits on a plain teacher account and the declaration's own read
+// rules admit neither them nor their role. That grant happens here, at this
+// click, and it should not be something a superadmin discovers afterwards.
+// A grade change carries no attachment, so the sentence is shown on
+// declaration steps only.
 function ScopeStep({
   person,
   stage,
@@ -638,7 +821,7 @@ function ScopeStep({
     const half = APPROVER_LEVEL_SCOPE_LABELS[option]
       .replace(' only', '')
       .toLowerCase();
-    return `They only see filings for children in ${half} classes. Anyone else's go to whoever covers that half.`;
+    return `They only see requests for children in ${half} classes. Anyone else's go to whoever covers that half.`;
   };
 
   return (
@@ -687,10 +870,12 @@ function ScopeStep({
             );
           })}
         </RadioGroup>
-        <FieldDescription>
-          Anyone on “{stage.label}” can open what the parent sent, including a
-          medical certificate.
-        </FieldDescription>
+        {isDeclaration(stage.flow) && (
+          <FieldDescription>
+            Anyone on “{stage.label}” can open what the parent sent, including a
+            medical certificate.
+          </FieldDescription>
+        )}
       </Field>
 
       <Button
@@ -721,7 +906,9 @@ function AddStageDialog({
   const run = useWriteAction();
   const [label, setLabel] = useState('');
   const [resolver, setResolver] = useState<ApprovalResolver>('named');
+  const [rule, setRule] = useState<ApprovalRule>('any');
   const [busy, setBusy] = useState(false);
+  const everyoneAllowed = canRequireEveryone(resolver);
 
   return (
     <Dialog
@@ -730,6 +917,7 @@ function AddStageDialog({
         if (!next) {
           setLabel('');
           setResolver('named');
+          setRule('any');
         }
         onOpenChange(next);
       }}
@@ -748,7 +936,7 @@ function AddStageDialog({
             id="new-stage-label"
             value={label}
             maxLength={APPROVAL_STAGE_LABEL_MAX}
-            placeholder="Officer in charge"
+            placeholder={STAGE_NAME_EXAMPLES[flow]}
             onChange={(e) => setLabel(e.target.value)}
           />
           <FieldDescription>
@@ -761,7 +949,13 @@ function AddStageDialog({
           <FieldLabel>Who approves this step</FieldLabel>
           <RadioGroup
             value={resolver}
-            onValueChange={(v) => setResolver(v as ApprovalResolver)}
+            onValueChange={(v) => {
+              const next = v as ApprovalResolver;
+              setResolver(next);
+              // Switching to the adviser step takes "everyone" off the table,
+              // so the choice underneath goes back to the only one it allows.
+              if (!canRequireEveryone(next)) setRule('any');
+            }}
             className="gap-3"
           >
             {APPROVAL_RESOLVERS.map((option) => (
@@ -775,12 +969,49 @@ function AddStageDialog({
                     {APPROVAL_RESOLVER_LABELS[option]}
                   </span>
                   <span className="block text-[13px] leading-relaxed text-muted-foreground">
-                    {APPROVAL_RESOLVER_DESCRIPTIONS[option]}
+                    {resolverDescription(flow, option, rule)}
                   </span>
                 </span>
               </label>
             ))}
           </RadioGroup>
+        </Field>
+
+        <Field>
+          <FieldLabel id="new-stage-rule-label">
+            How many of them must approve
+          </FieldLabel>
+          <RadioGroup
+            value={everyoneAllowed ? rule : 'any'}
+            onValueChange={(v) => setRule(v as ApprovalRule)}
+            disabled={!everyoneAllowed}
+            aria-labelledby="new-stage-rule-label"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          >
+            {APPROVAL_RULES.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 has-[:checked]:border-brand-indigo-soft has-[:checked]:bg-accent has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
+              >
+                <RadioGroupItem value={option} className="mt-0.5" />
+                <span className="space-y-0.5">
+                  <span className="block text-[14px] font-medium text-foreground">
+                    {APPROVAL_RULE_LABELS[option]}
+                  </span>
+                  <span className="block text-[13px] leading-relaxed text-muted-foreground">
+                    {option === 'all'
+                      ? 'It moves on once every one of them has approved.'
+                      : 'It moves on as soon as one of them approves.'}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
+          <FieldDescription>
+            {everyoneAllowed
+              ? 'Either way, if anyone on the step turns it down, it stops there.'
+              : ADVISER_STEP_RULE_REASON}
+          </FieldDescription>
         </Field>
 
         <DialogFooter>
@@ -803,11 +1034,12 @@ function AddStageDialog({
                       flow,
                       label: label.trim(),
                       resolver,
+                      approval_rule: everyoneAllowed ? rule : 'any',
                     }),
                   }),
                 {
                   pending: 'Adding…',
-                  success: `“${label.trim()}” has been added to this flow.`,
+                  success: `“${label.trim()}” has been added.`,
                   onResolved: () => onOpenChange(false),
                 }
               );

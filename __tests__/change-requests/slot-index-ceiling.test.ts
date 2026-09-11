@@ -23,16 +23,48 @@ vi.mock('@/lib/auth/require-role', () => ({
 // '11111111-1111-1111-1111-111111111111' fail validation.
 const SHEET_ID = '11111111-1111-4111-8111-111111111111';
 const ENTRY_ID = '22222222-2222-4222-8222-222222222222';
-const APPROVER_1 = '33333333-3333-4333-8333-333333333333';
-const APPROVER_2 = '44444444-4444-4444-8444-444444444444';
 
-vi.mock('@/lib/sis/approvers/queries', () => ({
-  listApproversForFlow: vi.fn(() =>
-    Promise.resolve([
-      { user_id: APPROVER_1, email: 'a1@hfse.test', display_name: 'A1' },
-      { user_id: APPROVER_2, email: 'a2@hfse.test', display_name: 'A2' },
-    ])
-  ),
+// Past the ceiling guard, a request is routed onto the approval steps
+// (migration 144). Those reads are stubbed to a route that can run, so the
+// "within the max" case reaches 201; `file-on-approval-steps.test.ts` covers
+// the routing itself.
+vi.mock('@/lib/change-requests/approval-route', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/lib/change-requests/approval-route')
+  >()),
+  resolveGradeChangeFlow: vi.fn(async () => 'markbook.grade_change'),
+}));
+
+vi.mock('@/lib/approvals/level-types', () => ({
+  loadLevelTypesBySection: vi.fn(async () => new Map()),
+}));
+
+vi.mock('@/lib/approvals/materialise', () => ({
+  loadConfiguredLadder: vi.fn(async () => [
+    {
+      id: 'st-1',
+      stage_order: 1,
+      label: 'Academic coordinator',
+      resolver: 'named',
+      approvers: [{ userId: 'u-1', appliesToLevelType: null }],
+    },
+  ]),
+  openApprovalRequest: vi.fn(async () => ({
+    opened: true,
+    requestId: 'apr-1',
+    stageCount: 1,
+  })),
+}));
+
+vi.mock('@/lib/change-requests/approval-notify', () => ({
+  loadGradeChangeStepRecipients: vi.fn(async () => ({
+    flow: 'markbook.grade_change',
+    stageOrder: 1,
+    stageCount: 1,
+    stageLabel: 'Academic coordinator',
+    recipients: [{ id: 'u-1', email: 'a1@hfse.test' }],
+  })),
+  sendGradeChangeStepEmails: vi.fn(async () => 'sent'),
 }));
 
 vi.mock('@/lib/audit/log-action', () => ({
@@ -55,7 +87,6 @@ vi.mock('@/lib/change-requests/labels', () => ({
 }));
 
 vi.mock('@/lib/notifications/email-change-request', () => ({
-  notifyRequestFiled: vi.fn(() => Promise.resolve({ sent: 0, failed: 0 })),
   notifyApprovedNotApplied: vi.fn(() => Promise.resolve()),
 }));
 
@@ -185,8 +216,6 @@ describe('POST /api/change-requests — slot_index ceiling guard', () => {
         proposed_value: '85',
         reason_category: 'regrading',
         justification: 'Re-scored after a re-check of the raw paper.',
-        primary_approver_id: APPROVER_1,
-        secondary_approver_id: APPROVER_2,
       })
     )) as Response;
     expect(res.status).toBe(422);
@@ -206,8 +235,6 @@ describe('POST /api/change-requests — slot_index ceiling guard', () => {
         proposed_value: '85',
         reason_category: 'regrading',
         justification: 'Re-scored after a re-check of the raw paper.',
-        primary_approver_id: APPROVER_1,
-        secondary_approver_id: APPROVER_2,
       })
     )) as Response;
     expect(res.status).toBe(201);

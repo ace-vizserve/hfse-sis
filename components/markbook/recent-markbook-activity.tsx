@@ -62,7 +62,10 @@ export function RecentMarkbookActivity({
         ) : (
           <ul className="divide-y divide-border border-t border-border">
             {rows.map((r) => {
-              const { Icon, label, tint } = describeAction(r.action);
+              const { Icon, label, tint } = describeAction(
+                r.action,
+                r.isApprovalStep
+              );
               return (
                 <li key={r.id} className="flex items-start gap-3 px-5 py-3">
                   <div
@@ -208,7 +211,20 @@ const ACTION_MAP: Record<
   },
 };
 
-function describeAction(action: string) {
+// One step of a request decided step by step (migration 144). Logged as
+// `grade_change_approved`, but the change is not approved until the last step
+// is — so it reads as a step, and takes the informational tint rather than the
+// mint that says "done".
+const APPROVAL_STEP = {
+  label: 'Approved a step of a change request',
+  Icon: Check,
+  tint: 'bg-gradient-to-b from-accent to-accent/60 text-brand-indigo-deep',
+};
+
+function describeAction(action: string, isApprovalStep = false) {
+  if (action === 'grade_change_approved' && isApprovalStep) {
+    return APPROVAL_STEP;
+  }
   return (
     ACTION_MAP[action] ?? {
       label: action.replace(/\./g, ' '),

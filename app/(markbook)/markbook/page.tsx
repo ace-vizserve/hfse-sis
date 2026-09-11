@@ -39,7 +39,9 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getRoleFromClaims } from '@/lib/auth/roles';
-import { isUserAssignedApprover } from '@/lib/sis/approvers/queries';
+import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
+import { getStagedWaitingCount } from '@/lib/sidebar/notification-counts';
 import {
   formatRangeLabel,
   resolveRange,
@@ -241,25 +243,52 @@ export default async function MarkbookHome({
   // On the lens — `getMarkbookTeacherPriority` is keyed on her user id, so the
   // panel holds her own open sheets and nothing wider.
   const isTeacher = view === 'teacher';
-  const [teacherPriority, registrarPriority] = await Promise.all([
-    isTeacher && userId && ayCode
-      ? getMarkbookTeacherPriority({ ayCode, teacherUserId: userId })
-      : Promise.resolve(null),
-    canSeeAdmin && ayCode && kpisResult && userId
-      ? (role === 'superadmin'
-          ? Promise.resolve(true)
-          : isUserAssignedApprover(userId, 'markbook.change_request')
-        ).then((canActOnChangeRequests) =>
-          getMarkbookRegistrarPriority({
-            ayCode,
-            changeRequestsPending: kpisResult.current.changeRequestsPending,
-            from: rangeInput.from,
-            to: rangeInput.to,
-            canActOnChangeRequests,
-          })
-        )
-      : Promise.resolve(null),
-  ]);
+
+  // ── How many grade change decisions are waiting for THIS viewer ──────────
+  //
+  // ⚠ NOT `kpisResult.current.changeRequestsPending`. That is every pending
+  // request in the school, and the headline, lede and callout below all say
+  // "awaiting YOUR decision" — so a school admin on one step read the whole
+  // school's queue as hers. This is the same two numbers the Change Requests
+  // badge adds in the module layout: the legacy two-approver requests in her
+  // scope, plus the grade-change steps waiting for her on the approval engine
+  // (migration 144). The first excludes the second's rows, so nothing counts
+  // twice. Superadmin gets exactly what the badge gives them.
+  //
+  // ⚠ THE COORDINATOR'S LEGACY HALF IS LEFT OUT. For that role the badge's
+  // legacy number is requests APPROVED and waiting to be applied — work, but
+  // not a decision — so putting it under "awaiting your decision" would be the
+  // same wrong sentence in a different place. Steps on the ladder still count.
+  const decisionsWaitingForViewer: Promise<number> =
+    canSeeAdmin && userId && role
+      ? Promise.all([
+          role === 'academic_coordinator'
+            ? Promise.resolve(0)
+            : getSidebarChangeRequestCount(service, role, userId),
+          getStagedWaitingCount(service, role, userId, GRADE_CHANGE_FLOWS),
+        ]).then(([legacy, steps]) => legacy + steps)
+      : Promise.resolve(0);
+
+  const [teacherPriority, registrarPriority, decisionsWaiting] =
+    await Promise.all([
+      isTeacher && userId && ayCode
+        ? getMarkbookTeacherPriority({ ayCode, teacherUserId: userId })
+        : Promise.resolve(null),
+      canSeeAdmin && ayCode && kpisResult && userId
+        ? decisionsWaitingForViewer.then((waiting) =>
+            getMarkbookRegistrarPriority({
+              ayCode,
+              changeRequestsPending: waiting,
+              from: rangeInput.from,
+              to: rangeInput.to,
+              // A number of your own above zero is itself the proof that you
+              // can act on something.
+              canActOnChangeRequests: waiting > 0,
+            })
+          )
+        : Promise.resolve(null),
+      decisionsWaitingForViewer,
+    ]);
 
   // ── Role-aware lede: derived from live priority data, neutral when clear ──
   // Teacher: surface the open-sheets signal from their priority panel.
@@ -274,7 +303,7 @@ export default async function MarkbookHome({
       return 'All your grading sheets are up to date. Check your sections below or review recent activity.';
     }
     if (canSeeAdmin && registrarPriority) {
-      const pending = kpisResult?.current.changeRequestsPending ?? 0;
+      const pending = decisionsWaiting;
       const openSheets = registrarPriority.headline.value ?? 0;
       if (pending > 0) {
         return `${pending} grade change ${pending === 1 ? 'request needs' : 'requests need'} your decision. Grading sheets, publications, and recent activity are below.`;
@@ -346,7 +375,7 @@ export default async function MarkbookHome({
       {canSeeAdmin &&
         registrarPriority &&
         (() => {
-          const pending = kpisResult?.current.changeRequestsPending ?? 0;
+          const pending = decisionsWaiting;
           const openSheets = registrarPriority.headline.value ?? 0;
           if (pending > 0 && registrarPriority.iconKey === 'warning') {
             return (

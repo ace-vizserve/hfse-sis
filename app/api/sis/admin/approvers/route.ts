@@ -1,4 +1,3 @@
-import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
@@ -109,11 +108,12 @@ export async function POST(request: Request) {
     context: { user_id, flow, email: userRes.user.email ?? null },
   });
 
-  // Approver coverage per flow is what the /sis readiness strip reports, and
-  // `getSystemHealth` (lib/sis/health.ts) caches it school-wide. Emitted only
-  // here, after a row was actually inserted — the 23505 branch above returns an
-  // idempotent success having changed nothing, so there is nothing to bust.
-  revalidateTag('sis-health', 'max');
+  // ⚠ NO CACHE TAG, and there used to be one. `getSystemHealth`
+  // (lib/sis/health.ts) counted this table into the /sis readiness strip and
+  // this route emitted 'sis-health' for it. Grade change requests moved onto
+  // ordered approval steps, the strip now reads those instead, and nothing
+  // cached reads `approver_assignments` any more — so the tag would bust an
+  // entry this write cannot have changed.
 
   return NextResponse.json({ ok: true, id: (inserted as { id: string }).id });
 }

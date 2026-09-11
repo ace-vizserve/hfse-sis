@@ -1374,6 +1374,20 @@ export type GradeChangePipeline = {
   undoneRejections: number;
 };
 
+/**
+ * Only the `grade_change_approved` rows that approved a WHOLE request.
+ *
+ * ⚠ A REQUEST DECIDED STEP BY STEP (migration 144) WRITES ONE APPROVAL ROW PER
+ * STEP, with `context.final` false on every step but the last. Counting them
+ * all would report a three-step approval as three approvals. A row from the
+ * older two-approver flow carries no `final` key at all and IS a whole
+ * approval, so the test is "not false" — `->>` gives null for a missing key,
+ * and `neq` alone is never true of null, which is what the `is.null` arm is
+ * for.
+ */
+export const FINAL_GRADE_CHANGE_APPROVAL_FILTER =
+  'context->>final.is.null,context->>final.neq.false';
+
 async function loadGradeChangePipelineUncached(
   input: RangeInput
 ): Promise<GradeChangePipeline> {
@@ -1381,20 +1395,24 @@ async function loadGradeChangePipelineUncached(
   const fromTs = `${input.from}T00:00:00+08:00`;
   const toTs = `${input.to}T23:59:59+08:00`;
 
-  const countFor = async (action: string) => {
-    const { count } = await service
+  const countFor = async (action: string, opts: { or?: string } = {}) => {
+    let query = service
       .from('audit_log')
       .select('id', { count: 'exact', head: true })
       .eq('action', action)
       .gte('created_at', fromTs)
       .lte('created_at', toTs);
+    if (opts.or) query = query.or(opts.or);
+    const { count } = await query;
     return count ?? 0;
   };
 
   const [submitted, approved, rejected, applied, undoneRejections] =
     await Promise.all([
       countFor('grade_change_requested'),
-      countFor('grade_change_approved'),
+      countFor('grade_change_approved', {
+        or: FINAL_GRADE_CHANGE_APPROVAL_FILTER,
+      }),
       countFor('grade_change_rejected'),
       countFor('grade_change_applied'),
       countFor('grade_change_undo_rejection'),

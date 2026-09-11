@@ -3,7 +3,16 @@ import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
-import { listDecidedStages, listInboxStages } from '@/lib/approvals/inbox';
+import {
+  listDecidedStages,
+  listInboxStages,
+  type RequestLadder,
+} from '@/lib/approvals/inbox';
+import {
+  viewerApprovedLiveStep,
+  withApprovalProgress,
+  type ApprovalRailStage,
+} from '@/lib/approvals/rail';
 import { loadStaffDeclarations } from '@/lib/declarations/staff';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
 import { PageShell } from '@/components/ui/page-shell';
@@ -32,6 +41,30 @@ import {
 // effect at all — not adding one is both correct and the safer move.
 
 export const metadata = { title: 'Declarations · Attendance' };
+
+/**
+ * The ladder as the step rail draws it: display fields only, plus the tick per
+ * person on a step that needs everyone. Picked field by field so the pool and
+ * the per-person decisions — account ids — are not what this hands on.
+ */
+function toRailStages(
+  ladder: RequestLadder | null,
+  nameById: ReadonlyMap<string, string>
+): ApprovalRailStage[] {
+  if (!ladder) return [];
+  return withApprovalProgress(ladder.stages, ladder.stages, nameById).map(
+    (s) => ({
+      stageOrder: s.stageOrder,
+      label: s.label,
+      resolver: s.resolver,
+      status: s.status,
+      decidedAt: s.decidedAt,
+      decisionNote: s.decisionNote,
+      approvalRule: s.approvalRule,
+      people: s.people,
+    })
+  );
+}
 
 export default async function DeclarationsQueuePage({
   searchParams,
@@ -111,6 +144,16 @@ export default async function DeclarationsQueuePage({
         stageCount: ladder?.stages.length ?? stage.stageOrder,
         waitingOn: stage.canDecide ? 'you' : 'someone else',
         canDecide: stage.canDecide,
+        // ⚠ ON THE STEP, AND ALREADY DONE THEIR PART. An "Everyone must
+        // approve" step keeps waiting after this person approves, and
+        // `canDecide` turns false — which on its own would read "not yours to
+        // decide" to the very person who just decided it.
+        youApprovedWaiting: ladder
+          ? viewerApprovedLiveStep(ladder, sessionUser.id)
+          : false,
+        // The steps as the rail draws them, with a tick per person on any step
+        // that needs everyone — names resolved here, never ids in the browser.
+        railStages: toRailStages(ladder, nameById),
         // How it ended — 'pending' while it is still moving. This is what the
         // history tab reads, and what stops a finished filing being offered
         // an Approve button.

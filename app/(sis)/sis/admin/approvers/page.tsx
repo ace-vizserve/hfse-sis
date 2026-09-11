@@ -1,17 +1,8 @@
 import { Info } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import {
-  ApproverReadinessCards,
-  ApproversDataTable,
-} from '@/components/sis/approvers-data-table';
 import { PageShell } from '@/components/ui/page-shell';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
-import { APPROVER_FLOWS, type ApproverFlow } from '@/lib/schemas/approvers';
-import {
-  listAllApproverAssignments,
-  listEligibleApproverCandidates,
-} from '@/lib/sis/approvers/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -21,6 +12,47 @@ import {
 import { listStaffUsers } from '@/lib/sis/users/queries';
 import { StagedFlowEditor } from '@/components/sis/staged-flow-editor';
 
+// /sis/admin/approvers — who approves what, and in what order.
+//
+// ── PURPOSE (design-system §5, step 1) ─────────────────────────────────────
+// A superadmin sets out, for each kind of request, the steps it goes through
+// and who is on each step. The primary action is adding a step or a person.
+//
+// ── PATTERN ────────────────────────────────────────────────────────────────
+// Header, one short panel of rules, then one §8 group container card per kind
+// of request (`StagedFlowEditor`).
+//
+// ⚠ THE TWO-APPROVER POOL IS GONE FROM THIS SCREEN. Grade change requests used
+// to have a teacher pick a primary and a secondary from `approver_assignments`;
+// they now go through ordered steps like everything else (KD #196), so the
+// readiness cards, the pool table and their "at least 2 approvers" rules were
+// removed rather than left beside a mechanism that no longer reads them.
+//
+// ⚠ The rules panel is above the cards on purpose (Law of Proximity): it is
+// what a superadmin needs to know BEFORE adding or removing somebody, not
+// something to discover after scrolling past the steps.
+
+const RULES: Array<{ lead: string; body: string }> = [
+  {
+    lead: 'Steps happen in order',
+    body: 'A request goes to the first step, and only moves on once that step is approved.',
+  },
+  {
+    // ⚠ Was "Whoever acts first moves it on", which stopped being true of
+    // every step when a step could need everyone on it (migration 145).
+    lead: 'One of them, or all of them',
+    body: 'A step can have one person or several. Each step says whether any one of them is enough, or everyone on it must approve.',
+  },
+  {
+    lead: 'A “no” at any step ends it',
+    body: 'Later steps never see a request that has been turned down, and whoever filed it is told.',
+  },
+  {
+    lead: 'Nobody picks their approver',
+    body: 'Parents and teachers who file a request never choose who approves it. It follows the steps set here.',
+  },
+];
+
 export default async function ApproversPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -28,94 +60,47 @@ export default async function ApproversPage() {
 
   const service = createServiceClient();
 
-  const [byFlow, candidatesByFlow, stagedFlows, staff, levelTypesInUse] =
-    await Promise.all([
-      listAllApproverAssignments(),
-      Promise.all(
-        APPROVER_FLOWS.map(
-          async (flow) =>
-            [flow, await listEligibleApproverCandidates(flow)] as const
-        )
-      ).then(
-        (entries) =>
-          Object.fromEntries(entries) as Record<
-            ApproverFlow,
-            Array<{ user_id: string; email: string; role: string }>
-          >
-      ),
-      loadAllFlowConfigs(service),
-      listStaffUsers(),
-      listLevelTypesInUse(service),
-    ]);
+  const [stagedFlows, staff, levelTypesInUse] = await Promise.all([
+    loadAllFlowConfigs(service),
+    listStaffUsers(),
+    listLevelTypesInUse(service),
+  ]);
 
   return (
     <PageShell>
       <SisPageHeader
         group="Access & system"
-        title="Approver assignments."
-        description="Designate which school admins are approvers for each approval flow. When a teacher files a locked-sheet change request, they pick a primary and secondary from the flow’s list; only those two see and act on it."
+        title="Approvers."
+        description="Every approval in the school is a list of steps, taken in order. Set out the steps for each kind of request, and who is on each step."
       />
 
-      {/* Moved above the readiness cards + table (layout redesign pass, Law
-          of Proximity) — this explainer covers rules a superadmin needs
-          BEFORE assigning/removing approvers (2-minimum, first-to-act,
-          forward-only revocation), so it needs to be read before the action,
-          not discovered by scrolling past the table afterward. */}
-      <section className="rounded-xl border border-border bg-muted/30 p-5">
-        <div className="mb-3 flex items-center gap-2">
-          <Info className="size-4 text-brand-indigo" />
-          <p className="font-serif text-[15px] font-semibold text-foreground">
-            How this works
-          </p>
+      <section
+        aria-labelledby="approval-rules-heading"
+        className="rounded-xl border border-border bg-muted/30 p-5"
+      >
+        <div className="mb-4 flex items-center gap-2">
+          <Info className="size-4 text-brand-indigo" aria-hidden />
+          <h2
+            id="approval-rules-heading"
+            className="font-serif text-[15px] font-semibold text-foreground"
+          >
+            How approvals work
+          </h2>
         </div>
-        <ul className="ml-4 list-disc space-y-1.5 text-[13px] leading-relaxed text-muted-foreground">
-          <li>
-            <strong className="font-medium text-foreground">
-              At least 2 approvers per flow
-            </strong>{' '}
-            — teachers must pick both primary and secondary. Fewer than 2 means
-            the request form is blocked with a message telling them to contact
-            you.
-          </li>
-          <li>
-            <strong className="font-medium text-foreground">
-              First to act wins
-            </strong>{' '}
-            — primary and secondary both see every request in their inbox and
-            can approve or reject independently. There&apos;s no escalation
-            timer.
-          </li>
-          <li>
-            <strong className="font-medium text-foreground">
-              Revocation is forward-only
-            </strong>{' '}
-            — removing an approver here does not pull them from in-flight
-            requests where they&apos;re already designated. They can still act
-            on those until the request is resolved.
-          </li>
-          <li>
-            <strong className="font-medium text-foreground">
-              Only school admins are eligible
-            </strong>{' '}
-            as approvers — superadmins manage this list but don&apos;t approve
-            change requests themselves. If you need someone as an approver, set
-            their role to{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
-              school_admin
-            </code>{' '}
-            in Supabase Auth first.
-          </li>
-        </ul>
+        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+          {RULES.map((rule) => (
+            <div key={rule.lead} className="space-y-1">
+              <dt className="text-[13px] font-medium text-foreground">
+                {rule.lead}
+              </dt>
+              <dd className="text-[13px] leading-relaxed text-muted-foreground">
+                {rule.body}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
-      <ApproverReadinessCards byFlow={byFlow} />
-
-      <ApproversDataTable byFlow={byFlow} candidatesByFlow={candidatesByFlow} />
-
-      {/* Ordered flows — a different mechanism from everything above, and the
-          copy on each has to say which one the reader is looking at. Above:
-          a POOL of two, whoever acts first decides. Below: a SEQUENCE, one
-          step at a time. Nothing above this line changed. */}
       <StagedFlowEditor
         flows={stagedFlows}
         staff={staff

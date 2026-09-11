@@ -43,7 +43,10 @@ import { PageShell } from '@/components/ui/page-shell';
 import { ScoreEntryGrid } from '@/components/grading/score-entry-grid';
 import { LockToggle } from '@/components/grading/lock-toggle';
 import { TotalsEditor } from '@/components/grading/totals-editor';
-import { listApproversForFlow } from '@/lib/sis/approvers/queries';
+import {
+  loadGradeChangeFilingRoute,
+  type GradeChangeFilingRoute,
+} from '@/lib/change-requests/filing-route';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { RequestEditButton } from './request-edit-button';
 
@@ -392,17 +395,30 @@ export default async function GradingSheetPage({
     isSubjectTeacherForSheet,
   });
 
-  // Designated approvers for the locked-sheet change-request flow. Teachers
-  // pick primary + secondary from this list when filing a request; the
-  // list is managed at /sis/admin/approvers. Filter out the current user
-  // since a teacher can't designate themselves.
-  const approversAll =
-    sheet.is_locked && isAssignedTeacher
-      ? await listApproversForFlow('markbook.change_request')
-      : [];
-  const approvers = approversAll
-    .filter((a) => a.user_id !== sessionUser?.id)
-    .map((a) => ({ user_id: a.user_id, email: a.email, role: a.role }));
+  // Where a change filed here would go (migration 144). Teachers no longer
+  // pick approvers: the school sets the steps in SIS Admin → Approvers, and
+  // the route depends on whether parents have already seen this term's
+  // report card. Only worked out for the viewer who gets the Request edit
+  // button — the same condition that renders it.
+  //
+  // ⚠ A failure here must not take the sheet down with it. The form then
+  // says it could not show the steps, and the filing route — which decides
+  // for itself either way — still refuses anything that cannot be approved.
+  let filingRoute: GradeChangeFilingRoute | null = null;
+  if (sheet.is_locked && isAssignedTeacher && section?.id) {
+    try {
+      filingRoute = await loadGradeChangeFilingRoute(createServiceClient(), {
+        gradingSheetId: sheet.id,
+        sectionId: section.id,
+        filerId: sessionUser?.id ?? null,
+      });
+    } catch (e) {
+      console.error(
+        '[grading sheet] approval steps could not be loaded',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 
   // Build a quick lookup so the open-change-requests banner can label each
   // request with the affected student's name + index number. The banner
@@ -540,7 +556,7 @@ export default async function GradingSheetPage({
               isExaminable={isExaminable}
               wwSlotCount={(sheet.ww_totals ?? []).length as number}
               ptSlotCount={(sheet.pt_totals ?? []).length as number}
-              approvers={approvers}
+              route={filingRoute}
               students={rows.map((r) => ({
                 entry_id: r.entry_id,
                 index_number: r.index_number,

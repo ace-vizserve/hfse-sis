@@ -19,6 +19,9 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { isEmptyRichText } from '@/lib/rich-text';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import type { ChangeRequestStatus } from '@/lib/markbook/change-request-status';
+import { cancelApprovalRequest } from '@/lib/approvals/cancel';
+import { GRADE_CHANGE_SUBJECT_TYPE } from '@/lib/change-requests/approval-route';
+import { reprojectGradeChangeRequest } from '@/lib/change-requests/approval-projection';
 
 // Decision core for the change-request workflow. Extracted verbatim (in
 // logic) from the PATCH handler at app/api/change-requests/[id]/route.ts so
@@ -55,6 +58,118 @@ export type DecideResult = {
   error?: string;
 };
 
+/** What an approver hears when they try the old path on a step-by-step request. */
+export const STAGED_REQUEST_DECIDED_ELSEWHERE =
+  'This request is decided step by step. Open it from Change requests.';
+
+/** What the teacher hears when a step was decided before their cancel landed. */
+export const STAGED_REQUEST_ALREADY_DECIDED =
+  'Someone has already decided this request, so it can no longer be cancelled. Refresh to see where it is.';
+
+/**
+ * What the teacher hears when the request was decided but her copy of it could
+ * not be brought up to date — so "refresh to see where it is" would show her
+ * the same waiting request again.
+ */
+export const STAGED_REQUEST_DECIDED_NOT_SHOWN =
+  'Someone has already decided this request, so it can no longer be cancelled, but its status could not be updated. Tell an administrator.';
+
+const CANCEL_FAILED = 'Could not cancel this request. Please try again.';
+
+/**
+ * The teacher pressed Cancel and `approval_cancel` answered `request_closed`.
+ * Before telling her somebody decided it, check that the row she is looking at
+ * agrees.
+ *
+ * ⚠ THE ROW CAN BE LEFT BEHIND, and this is where it gets noticed. The engine
+ * commits first and the row is written after, as a second statement — so a
+ * failed second write leaves a closed ladder under a row that still reads
+ * `pending` (this function only runs for a row that passed the pending check).
+ * Answering 409 over that would be a sentence with no effect: she refreshes
+ * and sees the same waiting request, and every later click is refused the same
+ * way.
+ *
+ *   ladder cancelled          → her own earlier withdrawal landed and the row
+ *                               did not. Returns null, and the caller finishes
+ *                               the cancel exactly as it would have — row
+ *                               update and audit row.
+ *   ladder approved/rejected  → write that outcome onto the row from the
+ *                               engine's record, then say it was decided —
+ *                               now true on her screen too.
+ *
+ * ⚠ SAFE AGAINST THE DECIDE ROUTE RACING IN. When her click lands a moment
+ * after an approver's, that approver's handler may still be about to write the
+ * same row. Whichever write lands second finds nothing pending; this side reads
+ * that as "moved on", and the handler reads a row already carrying its own
+ * outcome as done (lib/change-requests/approval-handler.ts).
+ */
+async function settleClosedLadder(
+  service: SupabaseClient,
+  gradeChangeRequestId: string,
+  approvalRequestId: string
+): Promise<DecideResult | null> {
+  const { data, error } = await service
+    .from('approval_requests')
+    .select('status')
+    .eq('id', approvalRequestId)
+    .maybeSingle();
+  if (error || !data) {
+    console.error(
+      '[change-requests] could not re-read a closed approval request:',
+      approvalRequestId,
+      error?.message ?? 'not found'
+    );
+    return { ok: false, httpStatus: 500, error: CANCEL_FAILED };
+  }
+  const ladderStatus = (data as { status: string }).status;
+
+  if (ladderStatus === 'cancelled') return null;
+
+  if (ladderStatus === 'approved' || ladderStatus === 'rejected') {
+    const projected = await reprojectGradeChangeRequest(service, {
+      gradeChangeRequestId,
+      approvalRequestId,
+      status: ladderStatus,
+    });
+    if (projected.ok) {
+      console.warn(
+        '[change-requests] re-projected a decided grade change left pending:',
+        gradeChangeRequestId,
+        ladderStatus
+      );
+      try {
+        invalidateDrillTags('markbook', await requireCurrentAyCode(service));
+      } catch (e) {
+        console.error(
+          '[change-requests] cache invalidation skipped:',
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    }
+    if (projected.ok || projected.reason === 'row_moved_on') {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: STAGED_REQUEST_ALREADY_DECIDED,
+      };
+    }
+    console.error(
+      '[change-requests] could not re-project a decided grade change:',
+      gradeChangeRequestId,
+      projected.message
+    );
+    return {
+      ok: false,
+      httpStatus: 500,
+      error: STAGED_REQUEST_DECIDED_NOT_SHOWN,
+    };
+  }
+
+  // Still pending: `approval_cancel` said closed, so nothing here should reach
+  // this. Nothing was changed, so trying again is the honest answer.
+  return { ok: false, httpStatus: 500, error: CANCEL_FAILED };
+}
+
 export async function decideChangeRequest(
   args: DecideArgs
 ): Promise<DecideResult> {
@@ -68,6 +183,27 @@ export async function decideChangeRequest(
     .single();
   if (fetchError || !existing) {
     return { ok: false, httpStatus: 404, error: 'request not found' };
+  }
+
+  // ⚠ A REQUEST FILED AFTER MIGRATION 144 IS NOT DECIDED HERE. It carries an
+  // `approval_flow`, and its decisions go through the ordered approval engine
+  // (`POST /api/approvals/[requestId]/decide`, lib/approvals/decide.ts), one
+  // step at a time. Everything below this guard is the two-approver path:
+  // letting it write `status` on such a row would approve a grade change the
+  // ladder never approved, and there is no undo on the ladder to walk back.
+  //
+  // Checked before the note rule on purpose — the answer to "reject this" is
+  // "not from here", whether or not a reason came with it.
+  const isStaged = existing.approval_flow != null;
+  if (
+    isStaged &&
+    (action === 'approve' || action === 'reject' || action === 'undo_rejection')
+  ) {
+    return {
+      ok: false,
+      httpStatus: 409,
+      error: STAGED_REQUEST_DECIDED_ELSEWHERE,
+    };
   }
 
   // Reject requires a non-empty decision note. In the in-app path the form
@@ -213,6 +349,60 @@ export async function decideChangeRequest(
         httpStatus: 403,
         error: 'only the original requester can cancel this request',
       };
+    }
+
+    // ⚠ A STEP-BY-STEP REQUEST IS WITHDRAWN FROM ITS LADDER FIRST. Setting
+    // `status='cancelled'` alone would leave the approval request open, and
+    // its approver could still approve a change its author had taken back.
+    // `approval_cancel` takes the same row lock as `approval_advance`, so a
+    // withdrawal and a decision serialise: if a step was decided first, it
+    // answers `request_closed` and nothing is cancelled.
+    //
+    // The WHO rule (requester only, still pending) is this file's — checked
+    // above — because the RPC knows nothing about grade changes.
+    if (isStaged) {
+      const { data: approvalRow, error: approvalErr } = await service
+        .from('approval_requests')
+        .select('id')
+        .eq('subject_type', GRADE_CHANGE_SUBJECT_TYPE)
+        .eq('subject_id', id)
+        .maybeSingle();
+      if (approvalErr) {
+        return {
+          ok: false,
+          httpStatus: 500,
+          error: 'Could not cancel this request. Please try again.',
+        };
+      }
+      // No approval request at all means none was ever opened for this row
+      // (filing opens it in the same request). There is no ladder to close,
+      // so the row alone is cancelled below.
+      const approvalRequestId = (approvalRow as { id: string } | null)?.id;
+      if (approvalRequestId) {
+        let outcome: Awaited<ReturnType<typeof cancelApprovalRequest>>;
+        try {
+          outcome = await cancelApprovalRequest(service, approvalRequestId);
+        } catch (e) {
+          console.error(
+            '[change-requests] approval_cancel failed:',
+            e instanceof Error ? e.message : String(e)
+          );
+          return {
+            ok: false,
+            httpStatus: 500,
+            error: 'Could not cancel this request. Please try again.',
+          };
+        }
+        if (outcome === 'request_closed') {
+          // `null` means the ladder was already withdrawn — finish it below.
+          const settled = await settleClosedLadder(
+            service,
+            id,
+            approvalRequestId
+          );
+          if (settled) return settled;
+        }
+      }
     }
   } else if (action === 'undo_rejection') {
     // Undo is the rejecting approver's "I clicked the wrong button" escape

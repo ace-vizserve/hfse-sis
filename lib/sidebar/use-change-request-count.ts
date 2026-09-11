@@ -29,6 +29,7 @@ import { createClient } from '@/lib/supabase/client';
 type ChangeRequestScopeQuery = {
   eq: (column: string, value: unknown) => ChangeRequestScopeQuery;
   or: (filters: string) => ChangeRequestScopeQuery;
+  is: (column: string, value: null) => ChangeRequestScopeQuery;
 };
 
 // The pure per-role branch of the live-recount query — pulled out of the
@@ -51,14 +52,19 @@ export function applyChangeRequestCountScope(
     return query.eq('status', 'approved');
   }
   if (role === 'school_admin') {
+    // ⚠ `approval_flow.is.null` in the broadcast arm — a request decided step
+    // by step has both approver columns null by design, and is counted by the
+    // staged-approval hook instead. See lib/change-requests/sidebar-counts.ts.
     return query
       .eq('status', 'pending')
       .or(
-        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)`
       );
   }
   if (role === 'superadmin') {
-    return query.eq('status', 'pending');
+    // Legacy rows only, for the same reason — the ladder rows are the staged
+    // count's, and counting them here too would double them on the badge.
+    return query.eq('status', 'pending').is('approval_flow', null);
   }
   return null;
 }

@@ -6,6 +6,7 @@ import type { Role } from '@/lib/auth/roles';
 import type {
   ApprovalRequestStatus,
   ApprovalResolver,
+  ApprovalRule,
   ApprovalStageStatus,
   StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
@@ -42,6 +43,89 @@ export const OVERSIGHT_ROLES: ReadonlySet<Role> = new Set<Role>([
   'superadmin',
 ]);
 
+/**
+ * One person's decision on one step (migration 145's
+ * `approval_request_stage_decisions`).
+ *
+ * ⚠ AN 'all' STEP COLLECTS SEVERAL OF THESE BEFORE IT CLOSES, and the step's
+ * own `decidedBy` names only the person who closed it — the last approver, or
+ * whoever turned it down. This list is where the rest of the yeses live.
+ */
+export type StepDecision = {
+  userId: string;
+  email: string | null;
+  decision: 'approve' | 'reject';
+  decidedAt: string;
+  /**
+   * What this person wrote with their decision — rich-text HTML, or null.
+   *
+   * ⚠ ON AN 'all' STEP THIS IS THE ONLY PLACE MOST NOTES LIVE. The step row's
+   * `decision_note` holds only the closer's words; everyone who approved
+   * before them wrote into this row and nowhere else.
+   */
+  note: string | null;
+};
+
+/** Has this person already decided this step — said yes, or no? */
+export function hasDecidedStep(
+  stage: { decisions: readonly StepDecision[] },
+  userId: string
+): boolean {
+  return stage.decisions.some((d) => d.userId === userId);
+}
+
+/** The ids of everyone who has said yes to this step. */
+export function approvedByOf(stage: {
+  decisions: readonly StepDecision[];
+}): string[] {
+  return stage.decisions
+    .filter((d) => d.decision === 'approve')
+    .map((d) => d.userId);
+}
+
+/**
+ * Every decision on the given steps, keyed by step id, oldest first. One read,
+ * never one per step. Nothing is read when there are no steps.
+ */
+export async function loadStepDecisions(
+  service: SupabaseClient,
+  stageIds: readonly string[]
+): Promise<Map<string, StepDecision[]>> {
+  const out = new Map<string, StepDecision[]>();
+  const ids = [...new Set(stageIds.filter(Boolean))];
+  // `in.()` is not valid PostgREST.
+  if (ids.length === 0) return out;
+
+  const { data, error } = await service
+    .from('approval_request_stage_decisions')
+    .select('request_stage_id, user_id, user_email, decision, note, decided_at')
+    .in('request_stage_id', ids)
+    .order('decided_at', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  for (const row of (data ?? []) as unknown as Array<{
+    request_stage_id?: string;
+    user_id?: string;
+    user_email?: string | null;
+    decision?: string;
+    note?: string | null;
+    decided_at?: string;
+  }>) {
+    if (!row.request_stage_id || !row.user_id) continue;
+    if (row.decision !== 'approve' && row.decision !== 'reject') continue;
+    const list = out.get(row.request_stage_id) ?? [];
+    list.push({
+      userId: row.user_id,
+      email: row.user_email ?? null,
+      decision: row.decision,
+      decidedAt: row.decided_at ?? '',
+      note: row.note ?? null,
+    });
+    out.set(row.request_stage_id, list);
+  }
+  return out;
+}
+
 export type InboxStage = {
   requestId: string;
   subjectType: string;
@@ -56,6 +140,10 @@ export type InboxStage = {
   status: ApprovalStageStatus;
   sectionId: string | null;
   approverPool: string[];
+  /** Migration 145. 'any' — first to act carries it; 'all' — everyone must. */
+  approvalRule: ApprovalRule;
+  /** Every decision on this step so far, oldest first. */
+  decisions: StepDecision[];
   /**
    * Who ended it, and when. Null while it is still moving — a stage waiting on
    * somebody has nobody to name yet.
@@ -70,6 +158,10 @@ export type InboxStage = {
    * coordinator watching the school's queue is not an approver on anybody's
    * absence; showing them buttons that would then 403 is the bug
    * `/markbook/change-requests` still has for superadmins.
+   *
+   * ⚠ FALSE ONCE THE VIEWER HAS DECIDED THE STEP. On an 'all' step somebody who
+   * has already approved is still on it while it waits on the others; it is no
+   * longer waiting on them.
    */
   canDecide: boolean;
 };
@@ -79,6 +171,14 @@ export type InboxScope = {
   userId: string;
   role: Role | null;
   today?: string;
+};
+
+/**
+ * The same scope over SEVERAL flows at once — what a count that spans flows
+ * (the notification bell, once grade change requests join it) asks with.
+ */
+export type InboxMultiFlowScope = Omit<InboxScope, 'flow'> & {
+  flows: readonly StagedApprovalFlow[];
 };
 
 /**
@@ -93,6 +193,31 @@ export async function listInboxStages(
   service: SupabaseClient,
   scope: InboxScope
 ): Promise<InboxStage[]> {
+  return listInboxStagesAcrossFlows(service, {
+    flows: [scope.flow],
+    userId: scope.userId,
+    role: scope.role,
+    today: scope.today,
+  });
+}
+
+/**
+ * `listInboxStages` over several flows in ONE pass.
+ *
+ * ⚠ ONE QUERY, NOT ONE PER FLOW. A caller that looped `listInboxStages` would
+ * re-read the person's advised classes once per flow, and the header count
+ * runs in every module layout on every navigation. The scope rule is identical
+ * — it is the same code — so the answer is the sum a loop would give: every
+ * stage belongs to exactly one request, and every request to exactly one flow.
+ */
+export async function listInboxStagesAcrossFlows(
+  service: SupabaseClient,
+  scope: InboxMultiFlowScope
+): Promise<InboxStage[]> {
+  const flows = [...new Set(scope.flows)];
+  // `in.()` is not valid PostgREST, and no flows means nothing is waiting.
+  if (flows.length === 0) return [];
+
   const today = scope.today ?? sgToday();
   const isOversight = scope.role != null && OVERSIGHT_ROLES.has(scope.role);
 
@@ -105,17 +230,17 @@ export async function listInboxStages(
   let query = service
     .from('approval_request_stages')
     .select(
-      `id, request_id, stage_order, label, resolver, approver_pool, section_id, status,
-       approval_requests!inner(id, flow, subject_type, subject_id, status, filed_by_email, created_at)`
+      `id, request_id, stage_order, label, resolver, approval_rule, approver_pool, section_id, status,
+       approval_requests!inner(id, flow, subject_type, subject_id, status, filed_by, filed_by_email, created_at)`
     )
     .eq('status', 'pending')
-    .eq('approval_requests.flow', scope.flow)
+    .in('approval_requests.flow', flows)
     .eq('approval_requests.status', 'pending');
 
   if (!isOversight) {
     // ⚠ Both arms are ROOT columns. PostgREST cannot `or` across a root column
     // and an embedded table's column, which is why the flow filter above is a
-    // separate `.eq` rather than being folded in here.
+    // separate `.in` rather than being folded in here.
     const arms = [`approver_pool.cs.{${scope.userId}}`];
     if (advisedSectionIds.length > 0) {
       arms.push(`section_id.in.(${advisedSectionIds.join(',')})`);
@@ -130,6 +255,7 @@ export async function listInboxStages(
     subject_type: string;
     subject_id: string;
     status: ApprovalRequestStatus;
+    filed_by?: string | null;
     filed_by_email: string;
     created_at: string;
   };
@@ -139,6 +265,7 @@ export async function listInboxStages(
     stage_order: number;
     label: string;
     resolver: ApprovalResolver;
+    approval_rule?: ApprovalRule | null;
     approver_pool: string[] | null;
     section_id: string | null;
     status: ApprovalStageStatus;
@@ -146,8 +273,15 @@ export async function listInboxStages(
   };
 
   const advised = new Set(advisedSectionIds);
+  const rows = (data ?? []) as unknown as Row[];
+  // One read for every step's decisions — what lets a step this person has
+  // already approved stop counting as waiting for them.
+  const decisionsByStage = await loadStepDecisions(
+    service,
+    rows.map((r) => r.id)
+  );
 
-  return ((data ?? []) as unknown as Row[]).map((row) => {
+  return rows.map((row) => {
     // PostgREST returns an embedded to-one as an object or a single-element
     // array depending on how it infers the relationship; both shapes appear in
     // this codebase, so normalise rather than assume.
@@ -155,10 +289,26 @@ export async function listInboxStages(
       ? row.approval_requests[0]
       : row.approval_requests;
     const pool = row.approver_pool ?? [];
+    // ⚠ NEVER THE PERSON WHO FILED IT. Nobody approves their own request, and
+    // on a form adviser step the filer can be exactly the adviser the step
+    // would admit. Judged here rather than filtered out of the query, so an
+    // oversight reader still SEES their own filing in the school's queue —
+    // they just are not offered it, and every count that reads `canDecide`
+    // stops counting it. (A `filed_by <> me` filter would also have dropped
+    // every request whose filer is null, since `<>` is never true of null.)
+    // For declarations the filer is a parent, so this changes nothing there.
+    const filedByViewer =
+      req?.filed_by != null && req.filed_by === scope.userId;
+    const decisions = decisionsByStage.get(row.id) ?? [];
+    // ⚠ A step this person has already decided is not waiting for them, even
+    // while an 'all' step is still waiting for somebody else on it.
+    const decidedByViewer = decisions.some((d) => d.userId === scope.userId);
     const canDecide =
-      row.resolver === 'named'
+      !filedByViewer &&
+      !decidedByViewer &&
+      (row.resolver === 'named'
         ? pool.includes(scope.userId)
-        : row.section_id != null && advised.has(row.section_id);
+        : row.section_id != null && advised.has(row.section_id));
 
     return {
       requestId: row.request_id,
@@ -174,7 +324,9 @@ export async function listInboxStages(
       status: row.status,
       sectionId: row.section_id,
       approverPool: pool,
-      // A pending stage is by definition undecided.
+      approvalRule: row.approval_rule ?? 'any',
+      decisions,
+      // A pending stage is by definition not yet closed.
       decidedBy: null,
       decidedByEmail: null,
       decidedAt: null,
@@ -189,6 +341,15 @@ export async function countInboxActionable(
   scope: InboxScope
 ): Promise<number> {
   const rows = await listInboxStages(service, scope);
+  return rows.filter((r) => r.canDecide).length;
+}
+
+/** The same number summed across several flows, in one pass. */
+export async function countInboxActionableAcrossFlows(
+  service: SupabaseClient,
+  scope: InboxMultiFlowScope
+): Promise<number> {
+  const rows = await listInboxStagesAcrossFlows(service, scope);
   return rows.filter((r) => r.canDecide).length;
 }
 
@@ -207,6 +368,12 @@ export async function countInboxActionable(
  *
  * So involvement is judged across the WHOLE ladder — you were on any step of
  * it — and the row returned represents the request's OUTCOME.
+ *
+ * ⚠ PLUS ONE KIND OF OPEN REQUEST (migration 145): one whose live step needs
+ * everyone and which THIS viewer has already approved. It is still pending
+ * (`requestStatus: 'pending'`), represented by that live step, and never
+ * decidable — the inbox has stopped offering it to them, and this is where
+ * their yes stays visible while the others catch up.
  *
  * ⚠ THE COUNTS MUST NOT COME THROUGH HERE. The sidebar badge, the "Waiting for
  * you" panel and the notification bell all mean "there is work for you"; a
@@ -243,15 +410,51 @@ export async function listDecidedStages(
     involvement = involvement.or(arms.join(','));
   }
 
-  const { data: involvedRows, error: involvedErr } = await involvement;
+  // ── And the 'all' steps this person has approved that still wait on others ─
+  //
+  // ⚠ STILL OPEN, BUT NOT WAITING ON THEM. The inbox stops offering a step the
+  // viewer has already approved (migration 145), and without this their yes
+  // would vanish from every list until the last person on the step caught up.
+  // Personal, so the same for an oversight reader: it is about what THEY did.
+  const [
+    { data: involvedRows, error: involvedErr },
+    { data: approvedRows, error: approvedErr },
+  ] = await Promise.all([
+    involvement,
+    service
+      .from('approval_request_stage_decisions')
+      .select(
+        'request_stage_id, approval_request_stages!inner(request_id, status, approval_requests!inner(flow, status))'
+      )
+      .eq('user_id', scope.userId)
+      .eq('decision', 'approve')
+      .eq('approval_request_stages.status', 'pending')
+      .eq('approval_request_stages.approval_requests.flow', scope.flow)
+      .eq('approval_request_stages.approval_requests.status', 'pending'),
+  ]);
   if (involvedErr) throw new Error(involvedErr.message);
+  if (approvedErr) throw new Error(approvedErr.message);
+
+  type EmbeddedStep = { request_id?: string };
+  const stillWaitingIds = (
+    (approvedRows ?? []) as unknown as Array<{
+      approval_request_stages?: EmbeddedStep | EmbeddedStep[] | null;
+    }>
+  )
+    .map((r) =>
+      Array.isArray(r.approval_request_stages)
+        ? r.approval_request_stages[0]?.request_id
+        : r.approval_request_stages?.request_id
+    )
+    .filter((id): id is string => Boolean(id));
 
   const requestIds = [
-    ...new Set(
-      ((involvedRows ?? []) as unknown as Array<{ request_id: string }>).map(
+    ...new Set([
+      ...((involvedRows ?? []) as unknown as Array<{ request_id: string }>).map(
         (r) => r.request_id
-      )
-    ),
+      ),
+      ...stillWaitingIds,
+    ]),
   ];
   if (requestIds.length === 0) return [];
 
@@ -259,7 +462,7 @@ export async function listDecidedStages(
   const { data, error } = await service
     .from('approval_request_stages')
     .select(
-      `id, request_id, stage_order, label, resolver, approver_pool, section_id, status,
+      `id, request_id, stage_order, label, resolver, approval_rule, approver_pool, section_id, status,
        decided_by, decided_by_email, decided_at,
        approval_requests!inner(id, flow, subject_type, subject_id, status, filed_by_email, created_at)`
     )
@@ -280,6 +483,7 @@ export async function listDecidedStages(
     stage_order: number;
     label: string;
     resolver: ApprovalResolver;
+    approval_rule?: ApprovalRule | null;
     approver_pool: string[] | null;
     section_id: string | null;
     status: ApprovalStageStatus;
@@ -289,12 +493,17 @@ export async function listDecidedStages(
     approval_requests: EmbeddedRequest | EmbeddedRequest[];
   };
 
+  const allRows = (data ?? []) as unknown as Row[];
   const byRequest = new Map<string, Row[]>();
-  for (const row of (data ?? []) as unknown as Row[]) {
+  for (const row of allRows) {
     const list = byRequest.get(row.request_id) ?? [];
     list.push(row);
     byRequest.set(row.request_id, list);
   }
+  const decisionsByStage = await loadStepDecisions(
+    service,
+    allRows.map((r) => r.id)
+  );
 
   const out: InboxStage[] = [];
   for (const [, stages] of byRequest) {
@@ -308,10 +517,14 @@ export async function listDecidedStages(
     // represented by the step that turned it down — that is the step carrying
     // the name and the reason somebody will want. An approved one is
     // represented by its LAST approval, which is the moment it became final.
+    // One still waiting on others is represented by the live step the viewer
+    // has already approved.
     const representative =
       req.status === 'rejected'
         ? stages.find((s) => s.status === 'rejected')
-        : [...stages].reverse().find((s) => s.status === 'approved');
+        : req.status === 'pending'
+          ? stages.find((s) => s.status === 'pending')
+          : [...stages].reverse().find((s) => s.status === 'approved');
     const stage = representative ?? stages[stages.length - 1];
 
     out.push({
@@ -328,11 +541,14 @@ export async function listDecidedStages(
       status: stage.status,
       sectionId: stage.section_id,
       approverPool: stage.approver_pool ?? [],
+      approvalRule: stage.approval_rule ?? 'any',
+      decisions: decisionsByStage.get(stage.id) ?? [],
       decidedBy: stage.decided_by,
       decidedByEmail: stage.decided_by_email,
       decidedAt: stage.decided_at,
-      // Nothing here is actionable — it is already decided. Saying otherwise
-      // would put an Approve button on a finished filing.
+      // Nothing here is actionable — it is already decided, or (still open)
+      // already decided by this viewer. Saying otherwise would put an Approve
+      // button on a filing that would refuse it.
       canDecide: false,
     });
   }
@@ -348,6 +564,15 @@ export type RequestLadderStage = {
   status: ApprovalStageStatus;
   sectionId: string | null;
   approverPool: string[];
+  /** Migration 145. 'any' — first to act carries it; 'all' — everyone must. */
+  approvalRule: ApprovalRule;
+  /**
+   * Every decision on this step, oldest first. On an 'all' step this is where
+   * the approvals before the last one live — `decidedBy` names only whoever
+   * closed the step.
+   */
+  decisions: StepDecision[];
+  /** Whoever CLOSED the step. Null while it is still open. */
   decidedBy: string | null;
   decidedByEmail: string | null;
   decidedAt: string | null;
@@ -361,6 +586,11 @@ export type RequestLadder = {
   subjectId: string;
   status: ApprovalRequestStatus;
   currentStageOrder: number;
+  /**
+   * `approval_requests.filed_by`. What keeps a person from being offered a
+   * decision on their own request (`canDecideCurrentStep`).
+   */
+  filedBy: string | null;
   filedByEmail: string;
   filedAt: string;
   decidedAt: string | null;
@@ -371,7 +601,8 @@ export type RequestLadder = {
  * The full ladder for a set of subjects, keyed by subject id.
  *
  * This is what puts "with the form class adviser, then the officer in charge —
- * and Ms J approved it on Tuesday" on a screen. Two queries, never N.
+ * and Ms J approved it on Tuesday" on a screen. Three queries (requests, steps,
+ * decisions), never N.
  */
 export async function loadLaddersBySubject(
   service: SupabaseClient,
@@ -384,7 +615,7 @@ export async function loadLaddersBySubject(
   const { data: requests, error } = await service
     .from('approval_requests')
     .select(
-      'id, flow, subject_type, subject_id, status, current_stage_order, filed_by_email, created_at, decided_at'
+      'id, flow, subject_type, subject_id, status, current_stage_order, filed_by, filed_by_email, created_at, decided_at'
     )
     .eq('flow', opts.flow)
     .eq('subject_type', opts.subjectType)
@@ -398,6 +629,7 @@ export async function loadLaddersBySubject(
     subject_id: string;
     status: ApprovalRequestStatus;
     current_stage_order: number;
+    filed_by?: string | null;
     filed_by_email: string;
     created_at: string;
     decided_at: string | null;
@@ -408,7 +640,7 @@ export async function loadLaddersBySubject(
   const { data: stages, error: stageErr } = await service
     .from('approval_request_stages')
     .select(
-      'request_id, stage_order, label, resolver, status, section_id, approver_pool, decided_by, decided_by_email, decided_at, decision_note'
+      'id, request_id, stage_order, label, resolver, approval_rule, status, section_id, approver_pool, decided_by, decided_by_email, decided_at, decision_note'
     )
     .in(
       'request_id',
@@ -418,10 +650,12 @@ export async function loadLaddersBySubject(
   if (stageErr) throw new Error(stageErr.message);
 
   type StageRow = {
+    id: string;
     request_id: string;
     stage_order: number;
     label: string;
     resolver: ApprovalResolver;
+    approval_rule?: ApprovalRule | null;
     status: ApprovalStageStatus;
     section_id: string | null;
     approver_pool: string[] | null;
@@ -431,8 +665,15 @@ export async function loadLaddersBySubject(
     decision_note: string | null;
   };
 
+  const stageRows = (stages ?? []) as unknown as StageRow[];
+  // The third read — one, whatever the number of requests.
+  const decisionsByStage = await loadStepDecisions(
+    service,
+    stageRows.map((s) => s.id)
+  );
+
   const byRequest = new Map<string, RequestLadderStage[]>();
-  for (const s of (stages ?? []) as unknown as StageRow[]) {
+  for (const s of stageRows) {
     const list = byRequest.get(s.request_id) ?? [];
     list.push({
       stageOrder: s.stage_order,
@@ -441,6 +682,8 @@ export async function loadLaddersBySubject(
       status: s.status,
       sectionId: s.section_id,
       approverPool: s.approver_pool ?? [],
+      approvalRule: s.approval_rule ?? 'any',
+      decisions: decisionsByStage.get(s.id) ?? [],
       decidedBy: s.decided_by,
       decidedByEmail: s.decided_by_email,
       decidedAt: s.decided_at,
@@ -457,6 +700,7 @@ export async function loadLaddersBySubject(
       subjectId: r.subject_id,
       status: r.status,
       currentStageOrder: r.current_stage_order,
+      filedBy: r.filed_by ?? null,
       filedByEmail: r.filed_by_email,
       filedAt: r.created_at,
       decidedAt: r.decided_at,

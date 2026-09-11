@@ -39,7 +39,10 @@ const ACTION_LABELS: Record<string, string> = {
   'publication.create': 'Report card published',
   'publication.delete': 'Publication removed',
   grade_change_requested: 'Grade change requested',
-  grade_change_approved: 'Grade change approved',
+  // One tally over every `grade_change_approved` row, and since migration 144
+  // that includes each single step of a request decided step by step — so the
+  // label names both rather than counting steps as whole approvals.
+  grade_change_approved: 'Grade change approvals and steps',
   grade_change_rejected: 'Grade change rejected',
   grade_change_applied: 'Grade change applied',
   grade_change_undo_rejection: 'Rejection undone',

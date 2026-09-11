@@ -21,7 +21,11 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import type { SidebarModule } from '@/lib/sidebar/registry';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -110,7 +114,12 @@ export default async function AdmissionsLayout({
   // declaration is decided by whether they are ON a step — a form class adviser
   // holds a plain `teacher` account and the officer in charge does too — so the
   // count answers that itself and returns 0 for everybody else.
-  const declarationCount = await getDeclarationWaitingCount(service, role, id);
+  const [declarationCount, gradeChangeStepCount] = await Promise.all([
+    getDeclarationWaitingCount(service, role, id),
+    // Grade changes decided step by step — the same "on a step" rule, so the
+    // same lack of a role gate.
+    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+  ]);
 
   // Always empty here, and cheaply so — the only tiles this hides are the ones
   // a subject-teacher-only account cannot use, and the redirect above already
@@ -145,6 +154,7 @@ export default async function AdmissionsLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

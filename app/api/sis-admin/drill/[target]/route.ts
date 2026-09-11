@@ -1,19 +1,26 @@
 import { NextResponse } from 'next/server';
 
+import { loadFlowConfig } from '@/lib/approvals/config';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import {
+  GRADE_CHANGE_AEB_APPROVAL_FLOW,
+  GRADE_CHANGE_APPROVAL_FLOW,
+} from '@/lib/schemas/approval-flows';
+import {
+  buildGradeChangeStepDrillRows,
+  describeGradeChangeStepPeople,
   loadAcademicYearsList,
   loadActorActivity,
-  loadApproverAssignments,
   loadAuditEventsUncached,
   modulePrefixFor,
   type AcademicYearDrillRow,
   type ActorActivityDrillRow,
-  type ApproverAssignmentDrillRow,
   type AuditDrillRow,
+  type GradeChangeStepDrillRow,
   type SisAdminDrillTarget,
 } from '@/lib/sis/drill';
+import { createServiceClient } from '@/lib/supabase/service';
 
 const VALID_TARGETS: SisAdminDrillTarget[] = [
   'audit-events',
@@ -26,7 +33,7 @@ const ALLOWED_ROLES = ['school_admin', 'superadmin'] as const;
 
 type AnyRow =
   | AuditDrillRow
-  | ApproverAssignmentDrillRow
+  | GradeChangeStepDrillRow
   | AcademicYearDrillRow
   | ActorActivityDrillRow;
 
@@ -63,11 +70,20 @@ export async function GET(
       eyebrow = 'Drill · Audit';
       break;
     }
-    case 'approver-coverage':
-      rows = await loadApproverAssignments();
-      title = 'Approver assignments';
+    case 'approver-coverage': {
+      // The same two routes, in the same order, that the readiness strip
+      // reports on — read from the steps themselves, uncached, so the list is
+      // what is set up right now.
+      const service = createServiceClient();
+      const configs = await Promise.all([
+        loadFlowConfig(service, GRADE_CHANGE_APPROVAL_FLOW),
+        loadFlowConfig(service, GRADE_CHANGE_AEB_APPROVAL_FLOW),
+      ]);
+      rows = buildGradeChangeStepDrillRows(configs);
+      title = 'Grade change approvals';
       eyebrow = 'Drill · Approvers';
       break;
+    }
     case 'academic-years':
       rows = await loadAcademicYearsList();
       title = 'Academic years';
@@ -139,12 +155,12 @@ function csvResponse(
       ]);
       break;
     case 'approver-coverage':
-      headers = ['Flow', 'Email', 'Role', 'Assigned'];
-      body = (rows as ApproverAssignmentDrillRow[]).map((r) => [
-        r.flow,
-        r.email ?? r.userId,
-        r.role,
-        r.assignedAt ?? '',
+      headers = ['Kind of change', 'Step', 'Step name', 'Who approves'];
+      body = (rows as GradeChangeStepDrillRow[]).map((r) => [
+        r.routeLabel,
+        r.stepOrder == null ? '' : `${r.stepOrder} of ${r.stepCount}`,
+        r.label ?? '',
+        describeGradeChangeStepPeople(r),
       ]);
       break;
     case 'academic-years':

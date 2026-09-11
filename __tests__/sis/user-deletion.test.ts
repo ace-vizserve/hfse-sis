@@ -1,5 +1,19 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { getUserFootprint, isLastSuperadmin } from '@/lib/sis/user-deletion';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+const repointWaitingStages = vi.fn(
+  async (_service: unknown, _stageId: string, _actor: unknown) => 0
+);
+vi.mock('@/lib/approvals/materialise', () => ({
+  repointWaitingStages: (service: unknown, stageId: string, actor: unknown) =>
+    repointWaitingStages(service, stageId, actor),
+}));
+
+import {
+  getUserFootprint,
+  isLastSuperadmin,
+  listApprovalStagesNamingUser,
+  repointStagesAfterUserDeletion,
+} from '@/lib/sis/user-deletion';
 
 // Records every (table, column) pair queried, and lets each test decide
 // which (table, column) pairs should report an existing row.
@@ -117,6 +131,82 @@ describe('getUserFootprint', () => {
       'admissions'
     );
     expect(result.sort()).toEqual(['p_file_outreach', 'p_file_revisions']);
+  });
+});
+
+// ⚠ NOT PART OF THE FOOTPRINT, deliberately — the role table-lists above are
+// unchanged. Being named on an approval step is configuration: the rows
+// cascade away with the account (migration 126), so they must never block a
+// delete. What they need is the requests already on those steps brought in
+// line afterwards, or a step that needs everyone waits forever for a yes from
+// an account that no longer exists.
+describe('approval steps the account is named on', () => {
+  beforeEach(() => {
+    repointWaitingStages.mockReset();
+    repointWaitingStages.mockImplementation(async () => 0);
+  });
+
+  it('lists each step once, however many rows name the person on it', async () => {
+    const calls: Array<{ table: string; column: string; value: string }> = [];
+    const client = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: (column: string, value: string) => {
+            calls.push({ table, column, value });
+            return Promise.resolve({
+              // One row per half of the school on stage-1.
+              data: [
+                { stage_id: 'stage-1' },
+                { stage_id: 'stage-1' },
+                { stage_id: 'stage-2' },
+              ],
+              error: null,
+            });
+          },
+        }),
+      }),
+    };
+    const ids = await listApprovalStagesNamingUser(client as never, 'user-1');
+    expect(ids).toEqual(['stage-1', 'stage-2']);
+    expect(calls).toEqual([
+      { table: 'approval_stage_approvers', column: 'user_id', value: 'user-1' },
+    ]);
+  });
+
+  it('throws on a read error, so the route can refuse the delete', async () => {
+    const client = {
+      from: () => ({
+        select: () => ({
+          eq: () => Promise.resolve({ data: null, error: { message: 'boom' } }),
+        }),
+      }),
+    };
+    await expect(
+      listApprovalStagesNamingUser(client as never, 'user-1')
+    ).rejects.toThrow('boom');
+  });
+
+  it('re-points every step with the deleting admin, and a failure on one does not stop the rest', async () => {
+    const actor = {
+      id: 'u-super',
+      email: 'super@hfse.test',
+      role: 'superadmin' as const,
+    };
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    repointWaitingStages.mockImplementationOnce(async () => {
+      throw new Error('lock timeout');
+    });
+    await repointStagesAfterUserDeletion(
+      {} as never,
+      ['stage-1', 'stage-2'],
+      actor
+    );
+    expect(repointWaitingStages.mock.calls.map((c) => [c[1], c[2]])).toEqual([
+      ['stage-1', actor],
+      ['stage-2', actor],
+    ]);
+    expect(errors).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
   });
 });
 

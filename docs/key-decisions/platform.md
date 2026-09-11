@@ -606,3 +606,24 @@ app_metadata.active_role = 'teacher'                     // what it IS right now
 **Guarded by** `__tests__/auth/admissions-absorbs-p-files.test.ts` — that admissions holds all eight and **nothing outside the document lifecycle**, that it reaches P-Files and Records but **still not SIS Admin or the approvers editor**, that the two writer lists agree, and that the retired role is gone from `ROLES` and left no capability grants behind. ⚠ **A green auth suite does not certify a change here**: `link-capability-consistency.test.ts` models only `role !== 'x'` inequality chains and is blind to `ALLOWED_ROLES.includes(...)` and `requireRole([...])` — roughly a third of the app's guards. Four separate follow-up commits on this branch exist because of that blind spot (four Records `ALLOWED_ROLES` guards, the P-Files drill and revisions guards, and a section-move link that rendered for a role which cannot open its destination). **Sweep by hand.**
 
 **Same day, same branch, different rule: KD #147's post-enrolment stage freeze was removed** — see the re-head at KD #147. The two changes are independent; they shipped together only because both were Mr Ace's answers in one conversation.
+
+---
+
+### KD #209
+
+**An approval step can require everyone** (2026-09-11, migrations 145 + 146). Extends KD #196 for every flow: declarations, both grade-change routes (KD #208), and anything later.
+
+- **The rule is set per step at `/sis/admin/approvers`:** `'any'` (the default, first to act carries it) or `'all'` (every person on the step must approve).
+  - A rejection by anyone still ends the request.
+  - `'all'` is refused on form-adviser steps, since relief cover changes who that is.
+  - An empty pool never counts as everyone.
+- **Each person's decision is its own row** in `approval_request_stage_decisions`. The step row's `decided_by` is whoever closed it.
+  - An approval that doesn't close the step returns `recorded`.
+  - Approving twice returns `already_approved`.
+  - "Waiting for you" drops a step the moment you've decided it.
+- **Edits reach live requests, under the request lock** (`approval_repoint_request_stage`, 146): pool and rule changes apply to waiting and pending steps.
+  - Relaxing a step that already has an approval, or removing the last hold-out, closes it.
+  - The subject follow-up names the real last approver, never the admin who edited.
+  - Ladder rows match their config step by `config_stage_id`; the label is only a fallback for old rows.
+- ⚠ **Decisions carry no FK to `auth.users`** (history must survive account deletion). Deleting an account re-points the steps it was on. Readiness flags a turned-off account on an "everyone" step as blocking.
+- 🔴 **Apply 146 before deploying.** Every approver or rule edit calls the new RPC.

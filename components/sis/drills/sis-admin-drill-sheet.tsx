@@ -18,12 +18,13 @@ import {
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type {
-  AcademicYearDrillRow,
-  ActorActivityDrillRow,
-  ApproverAssignmentDrillRow,
-  AuditDrillRow,
-  SisAdminDrillTarget,
+import {
+  describeGradeChangeStepPeople,
+  type AcademicYearDrillRow,
+  type ActorActivityDrillRow,
+  type AuditDrillRow,
+  type GradeChangeStepDrillRow,
+  type SisAdminDrillTarget,
 } from '@/lib/sis/drill';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
@@ -53,7 +54,7 @@ const BADGE_BASE =
 
 type AnyRow =
   | AuditDrillRow
-  | ApproverAssignmentDrillRow
+  | GradeChangeStepDrillRow
   | AcademicYearDrillRow
   | ActorActivityDrillRow;
 
@@ -132,55 +133,171 @@ function buildAuditColumns(): ColumnDef<AuditDrillRow, unknown>[] {
   ];
 }
 
-function buildApproverColumns(): ColumnDef<
-  ApproverAssignmentDrillRow,
+/**
+ * The grade-change approval steps, route by route.
+ *
+ * The step marker is the same numbered disc the teacher's filing form draws
+ * (`ApprovalRoutePanel` in the grading sheet's Request edit dialog), so what
+ * the superadmin checks here looks like what a teacher is shown before
+ * sending. Numbered because the steps genuinely run in that order.
+ *
+ * Colour carries state only (09a §9): destructive where a teacher would be
+ * refused — a route with no steps, a named step with nobody on it. The
+ * half-of-the-school note is words in the mono metadata voice, not a colour,
+ * matching the approvers screen's tag.
+ */
+function buildGradeChangeStepColumns(): ColumnDef<
+  GradeChangeStepDrillRow,
   unknown
 >[] {
   return [
     {
-      id: 'flow',
-      accessorKey: 'flow',
-      header: 'Flow',
+      id: 'routeLabel',
+      accessorKey: 'routeLabel',
+      header: 'Kind of change',
       cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.flow}</span>
-      ),
-    },
-    {
-      id: 'email',
-      accessorKey: 'email',
-      header: 'Approver',
-      cell: ({ row }) => (
-        <div className="space-y-0.5">
-          <div className="font-medium text-foreground">
-            {row.original.email ?? row.original.userId}
-          </div>
-          {row.original.email && (
-            <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              {row.original.userId.slice(0, 8)}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'role',
-      accessorKey: 'role',
-      header: 'Role',
-      cell: ({ row }) => (
-        <Badge variant="muted" className={BADGE_BASE}>
-          {row.original.role}
-        </Badge>
-      ),
-    },
-    {
-      id: 'assignedAt',
-      accessorKey: 'assignedAt',
-      header: 'Assigned',
-      cell: ({ row }) => (
-        <span className="text-sm tabular-nums text-muted-foreground">
-          {formatDate(row.original.assignedAt)}
+        <span className="text-sm font-medium text-foreground">
+          {row.original.routeLabel}
         </span>
       ),
+    },
+    {
+      id: 'step',
+      accessorFn: (r) => r.stepOrder ?? 0,
+      header: 'Step',
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.stepOrder == null) {
+          return <span className="text-sm text-muted-foreground">—</span>;
+        }
+        return (
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-brand-indigo-soft bg-background font-mono text-[10px] font-semibold tabular-nums text-brand-indigo-deep">
+              {r.stepOrder}
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              of {r.stepCount}
+            </span>
+          </span>
+        );
+      },
+    },
+    {
+      id: 'label',
+      accessorFn: (r) => r.label ?? 'No steps set up yet',
+      header: 'Step name',
+      cell: ({ row }) =>
+        row.original.label == null ? (
+          <span className="text-sm font-medium text-destructive">
+            No steps set up yet
+          </span>
+        ) : (
+          <span className="text-sm text-foreground">{row.original.label}</span>
+        ),
+    },
+    {
+      id: 'people',
+      accessorFn: (r) => describeGradeChangeStepPeople(r),
+      header: 'Who approves',
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.kind === 'not_set_up') {
+          return (
+            <span className="text-xs leading-relaxed text-muted-foreground">
+              Teachers can’t send this kind of change until its steps are set up
+              in SIS Admin → Approvers.
+            </span>
+          );
+        }
+        if (r.kind === 'form_adviser') {
+          return (
+            <div className="space-y-0.5">
+              <div className="text-sm text-foreground">Form class adviser</div>
+              <div className="text-xs text-muted-foreground">
+                Whoever advises the child’s class at the time
+              </div>
+            </div>
+          );
+        }
+        if (r.people.length === 0) {
+          return (
+            <span className="text-sm font-medium text-destructive">
+              Nobody set up yet
+            </span>
+          );
+        }
+        // ⚠ ONE WORD CARRIES THE SETTING. "Mr Gary or Ms Nina" — either of
+        // them approves; "Mr Gary and Ms Nina" — both must. Read as a sentence
+        // so the word sits where the eye already is.
+        if (!r.people.some((p) => p.scope)) {
+          const word = r.approvalRule === 'all' ? 'and' : 'or';
+          return (
+            <p className="text-sm leading-relaxed">
+              {r.people.map((p, i) => (
+                <React.Fragment key={`${p.name}-${i}`}>
+                  {i > 0 && (
+                    <span className="text-muted-foreground">
+                      {i === r.people.length - 1 ? ` ${word} ` : ', '}
+                    </span>
+                  )}
+                  <span
+                    className={
+                      p.disabled ? 'text-muted-foreground' : 'text-foreground'
+                    }
+                  >
+                    {p.name}
+                  </span>
+                  {p.disabled && (
+                    <span className="text-xs text-muted-foreground">
+                      {' '}
+                      (account turned off)
+                    </span>
+                  )}
+                </React.Fragment>
+              ))}
+            </p>
+          );
+        }
+        // Split by half of the school: a child gets ONE of these people, so no
+        // joining word fits. On a step that needs everyone, a line says what
+        // that means for a half.
+        return (
+          <div className="space-y-1">
+            <ul className="space-y-1">
+              {r.people.map((p, i) => (
+                <li
+                  key={`${p.name}-${p.scope ?? 'all'}-${i}`}
+                  className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                >
+                  <span
+                    className={cn(
+                      'text-sm',
+                      p.disabled ? 'text-muted-foreground' : 'text-foreground'
+                    )}
+                  >
+                    {p.name}
+                  </span>
+                  {p.scope && (
+                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-indigo-deep">
+                      {p.scope.replace(' only', '')}
+                    </span>
+                  )}
+                  {p.disabled && (
+                    <span className="text-xs text-muted-foreground">
+                      Account turned off
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {r.approvalRule === 'all' && r.people.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Everyone covering the child’s half must approve
+              </p>
+            )}
+          </div>
+        );
+      },
     },
   ];
 }
@@ -331,7 +448,7 @@ export function SisAdminDrillSheet({
       case 'audit-events':
         return buildAuditColumns() as ColumnDef<AnyRow, unknown>[];
       case 'approver-coverage':
-        return buildApproverColumns() as ColumnDef<AnyRow, unknown>[];
+        return buildGradeChangeStepColumns() as ColumnDef<AnyRow, unknown>[];
       case 'academic-years':
         return buildAYColumns() as ColumnDef<AnyRow, unknown>[];
       case 'activity-by-actor':
@@ -390,6 +507,15 @@ export function SisAdminDrillSheet({
       rows={rows}
       density={density}
       onDensityChange={setDensity}
+      {...(effectiveTarget === 'approver-coverage'
+        ? {
+            description:
+              'Who approves each kind of grade change, in the order the steps run. Change them in SIS Admin → Approvers.',
+            // Grouping by level, status or stage means nothing for a list of
+            // steps, so the tabs are not offered.
+            showGroupBy: false,
+          }
+        : {})}
     />
   );
 }

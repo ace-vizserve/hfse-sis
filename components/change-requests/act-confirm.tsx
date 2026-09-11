@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
+import { isEmptyRichText } from '@/lib/rich-text';
 
 import { Button } from '@/components/ui/button';
 import { RichText } from '@/components/ui/rich-text';
@@ -25,12 +26,33 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor';
 
 type Field = { label: string; value: string };
 
+/**
+ * Set for a request on the approval steps (migration 144). The approver is
+ * deciding ONE step, not the whole request, and the copy has to say so — an
+ * approval at step 1 of 3 does not send anything to the registrar yet.
+ */
+export type ActStep = {
+  stageOrder: number;
+  stageCount: number;
+  stageLabel: string;
+  /** The report card had already been published when the change was filed. */
+  board: boolean;
+  /**
+   * Set when this step needs everyone on it to approve (migration 145): how
+   * many have so far. An approval then does not move the request on by itself.
+   */
+  everyone?: { approved: number; total: number } | null;
+};
+
 type Props = {
   token: string;
   action: 'approve' | 'reject';
   fields: Field[];
   justification: string | null;
   appHref: string;
+  step?: ActStep | null;
+  /** Measured on the words. 300 for a step decision, 1,000 for the older path. */
+  noteMaxLength?: number;
 };
 
 type Phase = 'confirm' | 'done' | 'error';
@@ -41,11 +63,18 @@ export function ActConfirm({
   fields,
   justification,
   appHref,
+  step = null,
+  noteMaxLength = 1000,
 }: Props) {
   const [phase, setPhase] = useState<Phase>('confirm');
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [doneMessage, setDoneMessage] = useState<string | null>(null);
+  const [movedOn, setMovedOn] = useState(false);
+  // Approved, and the step still needs the others (`recorded`). A success —
+  // but not "Step approved", because the step is not.
+  const [recorded, setRecorded] = useState(false);
 
   const isReject = action === 'reject';
 
@@ -60,7 +89,12 @@ export function ActConfirm({
   // network error (case 3).
   const actMutation = useMutation({
     mutationFn: (vars: { decision_note?: string }) =>
-      apiFetch<{ ok?: boolean; error?: string }>(
+      apiFetch<{
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        outcome?: string;
+      }>(
         '/api/change-requests/act',
         jsonInit('POST', {
           token,
@@ -69,6 +103,11 @@ export function ActConfirm({
       ),
     onSuccess: (data) => {
       if (data.ok) {
+        // A step decision says what it did in its own words ("It has moved on
+        // to the next step"); the older path has no message and keeps its copy.
+        setDoneMessage(typeof data.message === 'string' ? data.message : null);
+        setMovedOn(data.outcome === 'advanced');
+        setRecorded(data.outcome === 'recorded');
         setPhase('done');
         return;
       }
@@ -99,7 +138,9 @@ export function ActConfirm({
   const submitting = actMutation.isPending;
 
   function submit() {
-    if (isReject && note.trim().length === 0) {
+    // An editor clicked into and left alone stores `<p></p>`, which is not a
+    // reason (09-design-system.md §4.1.1).
+    if (isReject && isEmptyRichText(note)) {
       setNoteError('A reason is required to decline a request.');
       return;
     }
@@ -113,12 +154,24 @@ export function ActConfirm({
         tone="mint"
         icon={CheckCircle2}
         eyebrow="Grade change request"
-        title={isReject ? 'Request declined' : 'Request approved'}
+        title={
+          isReject
+            ? 'Request declined'
+            : recorded
+              ? 'Your approval is recorded'
+              : movedOn
+                ? 'Step approved'
+                : 'Request approved'
+        }
       >
         <p>
-          {isReject
-            ? 'Thank you. The teacher has been notified that the request was declined.'
-            : 'Thank you. The request has been approved — the registrar will apply it to the locked sheet.'}
+          {doneMessage
+            ? `Thank you. ${doneMessage}`
+            : recorded
+              ? 'Thank you. Everyone on this step must approve, so the request moves on once the others have too.'
+              : isReject
+                ? 'Thank you. The teacher has been notified that the request was declined.'
+                : 'Thank you. The request has been approved — the registrar will apply it to the locked sheet.'}
         </p>
         <p>
           <Link
@@ -162,9 +215,31 @@ export function ActConfirm({
     >
       <p>
         {isReject
-          ? 'Please confirm you want to decline this grade change. The teacher will be notified.'
-          : 'Please confirm you want to approve this grade change. The registrar will then apply it to the locked sheet.'}
+          ? step
+            ? 'Please confirm you want to decline this grade change. That ends the request: the grade stays as it is and the teacher is told.'
+            : 'Please confirm you want to decline this grade change. The teacher will be notified.'
+          : step
+            ? step.everyone && step.everyone.approved < step.everyone.total - 1
+              ? 'Please confirm you want to approve. Everyone on this step must approve, so your approval is recorded and the request moves on once the others have approved too.'
+              : step.stageOrder < step.stageCount
+                ? 'Please confirm you want to approve this step. The request then moves on to the next step.'
+                : 'Please confirm you want to approve this grade change. This is the last step, so the registrar can then apply it to the locked sheet.'
+            : 'Please confirm you want to approve this grade change. The registrar will then apply it to the locked sheet.'}
       </p>
+
+      {step ? (
+        <p className="rounded-lg border border-brand-indigo-soft/60 bg-accent/60 px-4 py-3 text-foreground">
+          {step.stageCount > 1
+            ? `You are deciding step ${step.stageOrder} of ${step.stageCount}: ${step.stageLabel}.`
+            : `You are deciding the approval step: ${step.stageLabel}.`}
+          {step.everyone && step.everyone.total > 0
+            ? ` ${step.everyone.approved} of ${step.everyone.total} on this step have approved so far.`
+            : ''}
+          {step.board
+            ? " This term's report card had already been published, so this change goes to the Academic and Examination Board."
+            : ''}
+        </p>
+      ) : null}
 
       <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 rounded-lg border bg-muted/40 p-4 text-foreground">
         {fields.map((f) => (
@@ -210,7 +285,7 @@ export function ActConfirm({
             aria-invalid={noteError ? true : undefined}
             placeholder="Let the teacher know why this request was declined."
             disabled={submitting}
-            maxLength={1000}
+            maxLength={noteMaxLength}
           />
           {noteError ? (
             <p className="text-sm text-destructive">{noteError}</p>

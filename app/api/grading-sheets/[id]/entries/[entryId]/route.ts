@@ -27,6 +27,7 @@ import {
 } from '@/lib/grading/first-score-gate';
 import { mergeSlotLabel } from '@/lib/grading/slot-label-sanitize';
 import type { SlotLabels, SlotMeta } from '@/lib/schemas/grading-sheet';
+import { GRADE_CHANGE_AEB_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 
 // PATCH /api/grading-sheets/[id]/entries/[entryId]
 // Rules (Sprint 9):
@@ -326,16 +327,7 @@ export async function PATCH(
 
       appliedChangeRequest = reqRow;
       appliedProposedValue = typedProposed;
-      const approverEmail =
-        reqRow.primary_reviewed_by_email ??
-        reqRow.reviewed_by_email ??
-        '(unknown)';
-      approval_reference =
-        `Request #${reqRow.id.slice(0, 8)} approved by ${approverEmail} ${
-          reqRow.reviewed_at
-            ? new Date(reqRow.reviewed_at).toISOString().slice(0, 10)
-            : ''
-        }`.trim();
+      approval_reference = buildApprovalReference(reqRow);
     } else {
       // ----- Path B: data entry correction -----
       const reason = body.correction_reason as string;
@@ -785,6 +777,51 @@ function valuesMatch(
   }
   // letter_grade and any other string field
   return String(typed) === String(approved);
+}
+
+/**
+ * The `approval_reference` written onto a grade entry when an approved change
+ * request is applied (Hard Rule #5) — "Request #1a2b3c4d approved by
+ * someone@hfse.edu.sg 2026-09-11".
+ *
+ * ⚠ TWO SHAPES OF REQUEST, ONE SENTENCE.
+ *  • Legacy (no `approval_flow`): whoever reviewed first, from the per-designee
+ *    column with the old single-reviewer column as fallback — unchanged.
+ *  • Step by step (migration 144): the engine writes the final approver onto
+ *    `reviewed_by_email` / `reviewed_at` when the last step completes, and
+ *    there are no designee columns to read. A request that went to the
+ *    Academic and Examination Board says so, because that is the fact an
+ *    auditor reading the grade later most needs: parents had already seen it.
+ *
+ * Exported for its test; the route is its only caller.
+ */
+export function buildApprovalReference(reqRow: {
+  id: string;
+  approval_flow?: string | null;
+  primary_reviewed_by_email?: string | null;
+  reviewed_by_email?: string | null;
+  reviewed_at?: string | null;
+  approved_at?: string | null;
+}): string {
+  const day = (iso: string | null | undefined) =>
+    iso ? new Date(iso).toISOString().slice(0, 10) : '';
+
+  if (reqRow.approval_flow != null) {
+    const approver = reqRow.reviewed_by_email ?? '(unknown)';
+    const board =
+      reqRow.approval_flow === GRADE_CHANGE_AEB_APPROVAL_FLOW
+        ? ' (Academic and Examination Board)'
+        : '';
+    return `${`Request #${reqRow.id.slice(0, 8)} approved by ${approver} ${day(
+      reqRow.reviewed_at ?? reqRow.approved_at
+    )}`.trim()}${board}`;
+  }
+
+  const approverEmail =
+    reqRow.primary_reviewed_by_email ?? reqRow.reviewed_by_email ?? '(unknown)';
+  return `Request #${reqRow.id.slice(0, 8)} approved by ${approverEmail} ${day(
+    reqRow.reviewed_at
+  )}`.trim();
 }
 
 // Builds the JSONB patch passed to apply_change_request_atomic for a

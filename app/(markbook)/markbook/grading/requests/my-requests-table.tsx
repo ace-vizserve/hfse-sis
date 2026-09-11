@@ -19,6 +19,8 @@ import {
   type ChangeRequestStatus,
 } from '@/lib/markbook/change-request-status';
 import { ApprovalHistoryDialog } from '@/components/approvals/approval-history-dialog';
+import { ApprovalStepStrip } from '@/components/approvals/approval-step-rail';
+import type { StagedGradeChangeView } from '@/lib/change-requests/staged-flows';
 import { toPlainText } from '@/lib/rich-text';
 import {
   buildGradeChangeEvents,
@@ -82,6 +84,12 @@ export type MyRequestRow = {
   subjectCode?: string | null;
   subjectName?: string | null;
   termLabel?: string | null;
+  /**
+   * The ladder, for a request decided step by step (migration 144). When set,
+   * the row says where the request is instead of who reviewed it — there are
+   * no designated approvers on such a row to name.
+   */
+  staged: StagedGradeChangeView | null;
 };
 
 function statusLabel(s: ChangeRequestStatus): string {
@@ -231,7 +239,7 @@ function buildColumns(
                 Note: {note}
               </div>
             )}
-            <ReviewerLine row={row.original} />
+            {!row.original.staged && <ReviewerLine row={row.original} />}
           </div>
         );
       },
@@ -246,11 +254,27 @@ function buildColumns(
       cell: ({ row }) => {
         const cfg = CHANGE_REQUEST_STATUS_CONFIG[row.original.status];
         const Icon = cfg.icon;
+        const staged = row.original.staged;
         return (
-          <Badge variant={cfg.variant}>
-            <Icon className="h-3 w-3" />
-            {cfg.label}
-          </Badge>
+          <div>
+            <Badge variant={cfg.variant}>
+              <Icon className="h-3 w-3" />
+              {cfg.label}
+            </Badge>
+            {/* Where it is, for a request decided step by step: the route it
+                took, the steps as tiles, and who has it now. */}
+            {staged && (
+              <div className="mt-2 max-w-[15rem] space-y-1">
+                <p className="text-[11px] font-medium text-ink-2">
+                  {staged.routeLabel}
+                </p>
+                <ApprovalStepStrip
+                  stages={staged.stages}
+                  peopleByStageOrder={staged.peopleByStageOrder}
+                />
+              </div>
+            )}
+          </div>
         );
       },
       // Raw enum value isn't the friendly label — CSV_CONFIG's "Status" extra
@@ -310,6 +334,7 @@ function buildColumns(
                 // is a deep link to nowhere. The panel's own teacher href
                 // (feed.ts) already omits it for the same reason.
                 href: '/markbook/grading/requests',
+                steps: r.staged?.stages ?? null,
               })}
             />
             {r.status === 'approved' ? (
@@ -334,7 +359,10 @@ function buildColumns(
               </Link>
             )}
             {r.status === 'pending' && (
-              <MyRequestsCancelButton requestId={r.id} />
+              <MyRequestsCancelButton
+                requestId={r.id}
+                steppedApproval={r.staged != null}
+              />
             )}
           </div>
         );

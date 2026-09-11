@@ -2,10 +2,23 @@ import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, FileQuestion } from 'lucide-react';
 
 import { ActConfirm } from '@/components/change-requests/act-confirm';
+import { loadLaddersBySubject } from '@/lib/approvals/inbox';
+import { isEveryoneStep, ladderStepTally } from '@/lib/approvals/rail';
 import { verifyActionToken } from '@/lib/change-requests/action-token';
+import {
+  loadGradeChangeActState,
+  type GradeChangeActState,
+} from '@/lib/change-requests/approval-act';
+import { GRADE_CHANGE_SUBJECT_TYPE } from '@/lib/change-requests/approval-route';
 import { fetchLabels } from '@/lib/change-requests/labels';
 import { createServiceClient } from '@/lib/supabase/service';
 import { REASON_CATEGORY_LABELS } from '@/lib/schemas/change-request';
+import {
+  APPROVAL_NOTE_MAX,
+  GRADE_CHANGE_AEB_APPROVAL_FLOW,
+  GRADE_CHANGE_APPROVAL_FLOW,
+  type GradeChangeApprovalFlow,
+} from '@/lib/schemas/approval-flows';
 
 export const metadata = {
   title: 'Grade change request',
@@ -76,6 +89,106 @@ function AppLink({ href, label }: { href: string; label: string }) {
       {label}
     </Link>
   );
+}
+
+function asGradeChangeFlow(value: unknown): GradeChangeApprovalFlow | null {
+  if (value === GRADE_CHANGE_APPROVAL_FLOW) return GRADE_CHANGE_APPROVAL_FLOW;
+  if (value === GRADE_CHANGE_AEB_APPROVAL_FLOW) {
+    return GRADE_CHANGE_AEB_APPROVAL_FLOW;
+  }
+  return null;
+}
+
+/** Where a stepped request stands, for somebody who cannot act on it now. */
+function stepStateMessage(
+  state: Exclude<GradeChangeActState, { kind: 'can_act' }>,
+  rowStatus: string,
+  /**
+   * How many on the live step have approved, when that step needs everyone
+   * (migration 145). Null on a step that needs only one of its people.
+   */
+  liveTally: { approved: number; total: number } | null = null
+): { tone: 'mint' | 'amber' | 'muted'; title: string; body: string } {
+  const where =
+    'stageOrder' in state && state.stageCount > 1
+      ? `It is now at step ${state.stageOrder} of ${state.stageCount}${state.stageLabel ? ` (${state.stageLabel})` : ''}.`
+      : '';
+  switch (state.kind) {
+    case 'not_found':
+      return {
+        tone: 'muted',
+        title: "We couldn't find this request",
+        body: 'The approval steps for this request could not be found. Open it in the app to see where it stands.',
+      };
+    case 'closed':
+      if (state.requestStatus === 'approved') {
+        return {
+          tone: 'mint',
+          title:
+            rowStatus === 'applied'
+              ? 'This change is already live'
+              : 'This change has been approved',
+          body:
+            rowStatus === 'applied'
+              ? 'Every step approved this request and it has been applied to the grading sheet — there is nothing left to do.'
+              : 'Every step has approved this request. There is nothing left for you to decide.',
+        };
+      }
+      if (state.requestStatus === 'rejected') {
+        return {
+          tone: 'muted',
+          title: 'This request was turned down',
+          body: 'Someone on the approval steps turned this request down, so the grade stays as it is. There is nothing left to decide.',
+        };
+      }
+      return {
+        tone: 'muted',
+        title: 'This request was cancelled',
+        body: 'The teacher withdrew this request, so it can no longer be approved or declined.',
+      };
+    case 'already_approved': {
+      // ⚠ NOT "it has moved on" — that is `already_decided`, for somebody who
+      // approved an EARLIER step. Here this person's approval is in and the
+      // step is still here, because it needs everyone on it.
+      const step =
+        state.stageCount > 1
+          ? `step ${state.stageOrder} of ${state.stageCount}${state.stageLabel ? ` (${state.stageLabel})` : ''}`
+          : 'this step';
+      const sofar =
+        liveTally && liveTally.total > 0
+          ? `, and ${liveTally.approved} of ${liveTally.total} have so far`
+          : '';
+      return {
+        tone: 'mint',
+        title: 'You approved — waiting on the others',
+        body: `Your approval is recorded. Everyone on ${step} must approve${sofar}. The request moves on once the rest have approved, and there is nothing more for you to do.`,
+      };
+    }
+    case 'already_decided':
+      return {
+        tone: 'mint',
+        title: "You've already approved your step",
+        body: `Your decision has been recorded. ${where || 'The request has moved on.'}`.trim(),
+      };
+    case 'not_yet':
+      return {
+        tone: 'amber',
+        title: "It isn't your turn yet",
+        body: `This request is still with an earlier step. ${where} You will get another email when it reaches you.`.trim(),
+      };
+    case 'not_yours':
+      return {
+        tone: 'amber',
+        title: 'This one is not yours to decide',
+        body: `You are not on the approval step this request is waiting for. ${where}`.trim(),
+      };
+    case 'own_request':
+      return {
+        tone: 'amber',
+        title: 'You filed this request',
+        body: `Someone else has to approve it. ${where}`.trim(),
+      };
+  }
 }
 
 export default async function ChangeRequestActPage({
@@ -171,6 +284,78 @@ export default async function ChangeRequestActPage({
   ];
 
   const status = existing.status as string;
+
+  // ── Filed on the approval steps (migration 144) ────────────────────────
+  //
+  // Confirm is offered only to somebody on the step that is waiting right
+  // now. Everyone else is told where the request stands in words — "not your
+  // turn yet" and "not yours" are different sentences, and a page that offers
+  // a button the server will refuse is worse than one that explains.
+  const approvalFlow = asGradeChangeFlow(existing.approval_flow);
+  if (approvalFlow) {
+    const [state, ladders] = await Promise.all([
+      loadGradeChangeActState(service, {
+        flow: approvalFlow,
+        gradeChangeRequestId: payload.requestId,
+        approverId: payload.approverId,
+      }),
+      // Read alongside, for the one thing the state does not carry: how many
+      // on a live step that needs everyone have approved it so far. Still a
+      // READ — this page must never mutate.
+      loadLaddersBySubject(service, {
+        flow: approvalFlow,
+        subjectType: GRADE_CHANGE_SUBJECT_TYPE,
+        subjectIds: [payload.requestId],
+      }),
+    ]);
+    const ladder = ladders.get(payload.requestId) ?? null;
+    const liveStep = ladder?.stages.find((s) => s.status === 'pending');
+    const liveTally = liveStep ? ladderStepTally(liveStep) : null;
+
+    if (state.kind === 'can_act') {
+      return (
+        <ActConfirm
+          token={token}
+          action={payload.action}
+          fields={fields}
+          justification={existing.justification ?? null}
+          appHref={appHref}
+          noteMaxLength={APPROVAL_NOTE_MAX}
+          step={{
+            stageOrder: state.stageOrder,
+            stageCount: state.stageCount,
+            stageLabel: state.stageLabel,
+            board: approvalFlow === GRADE_CHANGE_AEB_APPROVAL_FLOW,
+            everyone:
+              liveStep && isEveryoneStep(liveStep) && liveTally
+                ? liveTally
+                : null,
+          }}
+        />
+      );
+    }
+    const info = stepStateMessage(state, status, liveTally);
+    return (
+      <MessageCard
+        tone={info.tone}
+        eyebrow="Grade change request"
+        title={info.title}
+      >
+        <p>{info.body}</p>
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 rounded-lg border bg-muted/40 p-4 text-foreground">
+          {fields.map((f) => (
+            <div key={f.label} className="flex gap-3 text-sm">
+              <dt className="w-28 shrink-0 text-muted-foreground">{f.label}</dt>
+              <dd className="min-w-0 break-words">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p>
+          <AppLink href={appHref} label="Open in the app" />
+        </p>
+      </MessageCard>
+    );
+  }
 
   // State derivation (read-only — this GET never mutates). A change request
   // needs TWO designated approvers to co-sign: the first to act flips the

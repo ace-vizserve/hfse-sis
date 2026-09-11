@@ -55,7 +55,12 @@ vi.mock('@/lib/auth/permission-map', async () => {
   };
 });
 
-import { decideChangeRequest } from '@/lib/change-requests/decide';
+import {
+  decideChangeRequest,
+  STAGED_REQUEST_ALREADY_DECIDED,
+  STAGED_REQUEST_DECIDED_ELSEWHERE,
+  STAGED_REQUEST_DECIDED_NOT_SHOWN,
+} from '@/lib/change-requests/decide';
 
 // ── Minimal chainable Supabase service-client stub ────────────────────────
 // Models exactly the two chains decide.ts uses against
@@ -384,5 +389,409 @@ describe('decideChangeRequest', () => {
     expect(result.ok).toBe(false);
     expect(result.httpStatus).toBe(403);
     expect(result.error).toMatch(/not allowed to approve or reject/i);
+  });
+});
+
+// ── Migration 144: requests decided step by step ───────────────────────────
+//
+// A row with `approval_flow` set is decided on the ordered approval engine,
+// never here. These pin the two halves of that: the old decision paths refuse
+// it outright, and a withdrawal closes the ladder BEFORE the row.
+
+type StagedCalls = {
+  updates: Array<Record<string, unknown>>;
+  /** The `.eq()` filters on each update, in the same order as `updates`. */
+  updateFilters?: Array<Array<[string, unknown]>>;
+  rpc: Array<{ fn: string; args: unknown }>;
+  tables: string[];
+};
+
+function makeStagedService(opts: {
+  existing: Record<string, unknown>;
+  /** `status` is what the re-read after `request_closed` finds. */
+  approvalRequest?: { id: string; status?: string } | null;
+  /** Fail the SECOND read of approval_requests — the one after the RPC. */
+  approvalRereadFails?: boolean;
+  /** The decided step `approval_request_stages` hands back. */
+  decidedStage?: Record<string, unknown> | null;
+  cancelOutcome?: 'cancelled' | 'request_closed' | 'request_not_found';
+  updated?: Record<string, unknown> | null;
+  calls: StagedCalls;
+}) {
+  let approvalReads = 0;
+  return {
+    from(table: string) {
+      opts.calls.tables.push(table);
+      const builder: Record<string, unknown> = {};
+      let filters: Array<[string, unknown]> | null = null;
+      builder.select = () => builder;
+      builder.eq = (col: string, val: unknown) => {
+        filters?.push([col, val]);
+        return builder;
+      };
+      builder.order = () => builder;
+      builder.limit = () => builder;
+      builder.single = async () => ({ data: opts.existing, error: null });
+      builder.maybeSingle = async () => {
+        if (table === 'approval_requests') {
+          approvalReads += 1;
+          if (approvalReads > 1 && opts.approvalRereadFails) {
+            return { data: null, error: { message: 'connection reset' } };
+          }
+          return { data: opts.approvalRequest ?? null, error: null };
+        }
+        if (table === 'approval_request_stages') {
+          return { data: opts.decidedStage ?? null, error: null };
+        }
+        return {
+          data:
+            opts.updated === undefined
+              ? { ...opts.existing, status: 'cancelled' }
+              : opts.updated,
+          error: null,
+        };
+      };
+      builder.update = (patch: Record<string, unknown>) => {
+        opts.calls.updates.push(patch);
+        filters = [];
+        opts.calls.updateFilters?.push(filters);
+        return builder;
+      };
+      return builder;
+    },
+    rpc: async (fn: string, args: unknown) => {
+      opts.calls.rpc.push({ fn, args });
+      return {
+        data: [{ outcome: opts.cancelOutcome ?? 'cancelled' }],
+        error: null,
+      };
+    },
+  } as never;
+}
+
+const stagedRow = (overrides: Record<string, unknown> = {}) =>
+  baseRow({
+    approval_flow: 'markbook.grade_change',
+    primary_approver_id: null,
+    secondary_approver_id: null,
+    ...overrides,
+  });
+
+describe('decideChangeRequest — a request decided step by step', () => {
+  it.each(['approve', 'reject', 'undo_rejection'] as const)(
+    '%s is refused with 409 and writes nothing',
+    async (action) => {
+      const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+      const result = await decideChangeRequest({
+        service: makeStagedService({
+          existing: stagedRow(
+            action === 'undo_rejection' ? { status: 'rejected' } : {}
+          ),
+          calls,
+        }),
+        requestId: 'req-1',
+        action,
+        actingUser: adminUser('anyone'),
+        decisionNote: action === 'reject' ? 'A real reason.' : null,
+        via: 'in_app',
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.httpStatus).toBe(409);
+      expect(result.error).toBe(STAGED_REQUEST_DECIDED_ELSEWHERE);
+      expect(calls.updates).toEqual([]);
+      expect(calls.rpc).toEqual([]);
+      expect(logActionMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('the refusal does not depend on a missing reason — reject with no note is still 409, not 400', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({ existing: stagedRow(), calls }),
+      requestId: 'req-1',
+      action: 'reject',
+      actingUser: adminUser('anyone'),
+      decisionNote: '<p></p>',
+      via: 'email_token',
+    });
+    expect(result.httpStatus).toBe(409);
+  });
+
+  it('a legacy row is untouched by the guard', async () => {
+    const service = makeService({
+      existing: { data: baseRow({ approval_flow: null }), error: null },
+      updated: { data: baseRow({ status: 'approved' }), error: null },
+    });
+    const result = await decideChangeRequest({
+      service,
+      requestId: 'req-1',
+      action: 'approve',
+      actingUser: adminUser(PRIMARY_APPROVER),
+      via: 'in_app',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('cancel by the requester closes the ladder, then the row, with the usual audit row', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1' },
+        cancelOutcome: 'cancelled',
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: { id: 'teacher-1', email: 't@hfse.test', role: 'teacher' },
+      via: 'in_app',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('cancelled');
+    expect(calls.rpc).toEqual([
+      { fn: 'approval_cancel', args: { p_request_id: 'appr-1' } },
+    ]);
+    // The ladder is closed BEFORE the row is written.
+    expect(calls.tables.indexOf('approval_requests')).toBeLessThan(
+      calls.tables.lastIndexOf('grade_change_requests')
+    );
+    expect(calls.updates).toEqual([{ status: 'cancelled' }]);
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    expect(logActionMock.mock.calls[0][0]).toMatchObject({
+      action: 'grade_change_cancelled',
+    });
+  });
+
+  it('cancel that loses the race to a decision is 409, cancels nothing and audits nothing', async () => {
+    // The approver's own write reached the row first, so nothing is pending
+    // any more by the time this side tries.
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'approved' },
+        decidedStage: {
+          decided_by: 'u-board',
+          decided_by_email: 'board@hfse.test',
+          decided_at: '2026-09-10T01:00:00.000Z',
+          decision_note: null,
+        },
+        cancelOutcome: 'request_closed',
+        updated: null,
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: { id: 'teacher-1', email: 't@hfse.test', role: 'teacher' },
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(409);
+    expect(result.error).toBe(STAGED_REQUEST_ALREADY_DECIDED);
+    expect(calls.updates.some((u) => u.status === 'cancelled')).toBe(false);
+    expect(logActionMock).not.toHaveBeenCalled();
+  });
+
+  it('only the requester may cancel — the ladder is never touched for anyone else', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1' },
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: { id: 'someone-else', email: 's@hfse.test', role: 'teacher' },
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(403);
+    expect(calls.rpc).toEqual([]);
+  });
+
+  it('a request no longer pending is not cancelled, and the ladder is not touched', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow({ status: 'approved' }),
+        approvalRequest: { id: 'appr-1' },
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: { id: 'teacher-1', email: 't@hfse.test', role: 'teacher' },
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(400);
+    expect(calls.rpc).toEqual([]);
+  });
+});
+
+// The ladder commits first and the row is written after, as a second
+// statement. When that second write fails, the ladder is closed under a row
+// still reading `pending`, and every later click is answered `request_closed`.
+// These pin the teacher's Cancel finishing the job instead of telling her
+// "someone already decided it" over a request her screen still shows waiting.
+describe('decideChangeRequest — cancel over a ladder that closed without its row', () => {
+  const teacher = { id: 'teacher-1', email: 't@hfse.test', role: 'teacher' };
+
+  it('a withdrawal that reached the ladder but not the row is finished on the next try', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'cancelled' },
+        cancelOutcome: 'request_closed',
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: teacher,
+      via: 'in_app',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('cancelled');
+    expect(calls.updates).toEqual([{ status: 'cancelled' }]);
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    expect(logActionMock.mock.calls[0][0]).toMatchObject({
+      action: 'grade_change_cancelled',
+    });
+  });
+
+  it('an approval left behind is written onto the row from the step that finished it, then 409', async () => {
+    const calls: StagedCalls = {
+      updates: [],
+      updateFilters: [],
+      rpc: [],
+      tables: [],
+    };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'approved' },
+        decidedStage: {
+          decided_by: 'u-board',
+          decided_by_email: 'board@hfse.test',
+          decided_at: '2026-09-10T01:00:00.000Z',
+          decision_note: null,
+        },
+        cancelOutcome: 'request_closed',
+        updated: { id: 'req-1' },
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: teacher,
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(409);
+    expect(result.error).toBe(STAGED_REQUEST_ALREADY_DECIDED);
+    expect(calls.updates).toEqual([
+      {
+        status: 'approved',
+        reviewed_by: 'u-board',
+        reviewed_by_email: 'board@hfse.test',
+        reviewed_at: '2026-09-10T01:00:00.000Z',
+        approved_at: '2026-09-10T01:00:00.000Z',
+      },
+    ]);
+    // Only ever over a row still pending — never over one that moved on.
+    expect(calls.updateFilters).toEqual([
+      [
+        ['id', 'req-1'],
+        ['status', 'pending'],
+      ],
+    ]);
+    // The teacher did not decide anything, so nothing is logged in her name.
+    expect(logActionMock).not.toHaveBeenCalled();
+  });
+
+  it('a turn-down left behind carries the approver’s reason onto the row', async () => {
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'rejected' },
+        decidedStage: {
+          decided_by: 'u-hod',
+          decided_by_email: null,
+          decided_at: '2026-09-10T02:00:00.000Z',
+          decision_note: '<p>The paper shows 20.</p>',
+        },
+        cancelOutcome: 'request_closed',
+        updated: { id: 'req-1' },
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: teacher,
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(409);
+    expect(calls.updates).toEqual([
+      {
+        status: 'rejected',
+        reviewed_by: 'u-hod',
+        reviewed_by_email: '(unknown)',
+        reviewed_at: '2026-09-10T02:00:00.000Z',
+        decision_note: '<p>The paper shows 20.</p>',
+      },
+    ]);
+  });
+
+  it('says the status could not be updated — not "refresh" — when the row cannot be brought in line', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'approved' },
+        // No decided step to read the decision from.
+        decidedStage: null,
+        cancelOutcome: 'request_closed',
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: teacher,
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(500);
+    expect(result.error).toBe(STAGED_REQUEST_DECIDED_NOT_SHOWN);
+    expect(result.error).not.toMatch(/refresh/i);
+    expect(calls.updates).toEqual([]);
+    expect(logActionMock).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it('asks her to try again when the closed request cannot be re-read', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const calls: StagedCalls = { updates: [], rpc: [], tables: [] };
+    const result = await decideChangeRequest({
+      service: makeStagedService({
+        existing: stagedRow(),
+        approvalRequest: { id: 'appr-1', status: 'cancelled' },
+        approvalRereadFails: true,
+        cancelOutcome: 'request_closed',
+        calls,
+      }),
+      requestId: 'req-1',
+      action: 'cancel',
+      actingUser: teacher,
+      via: 'in_app',
+    });
+
+    expect(result.httpStatus).toBe(500);
+    expect(result.error).toMatch(/try again/i);
+    expect(calls.updates).toEqual([]);
+    errors.mockRestore();
   });
 });

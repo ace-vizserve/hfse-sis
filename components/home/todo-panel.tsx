@@ -85,7 +85,10 @@ function TodoRow({ item }: { item: HomeTodoItem }) {
                 </div>
               </div>
             ) : null}
-            <TodoCrActions requestId={item.requestId} />
+            <TodoCrActions
+              requestId={item.requestId}
+              approvalRequestId={item.approvalRequestId ?? null}
+            />
           </>
         ) : (
           <Link

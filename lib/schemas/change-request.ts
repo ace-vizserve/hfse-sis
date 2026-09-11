@@ -44,10 +44,13 @@ export const CORRECTION_REASON_LABELS: Record<CorrectionReason, string> = {
 };
 
 // Form payload for teachers filing a new request. slot_index is required
-// whenever field is ww_scores or pt_scores. primary/secondary approvers
-// must be distinct and neither can be the requesting teacher — the API
-// route re-validates these invariants + that both IDs are in the
-// `approver_assignments` list for `markbook.change_request`.
+// whenever field is ww_scores or pt_scores.
+//
+// ⚠ NO APPROVERS IN HERE ANY MORE (migration 144). The teacher used to pick a
+// primary and a secondary approver; the school now sets the approval steps in
+// SIS Admin → Approvers, and the filing route picks which set of steps applies
+// (lib/change-requests/approval-route.ts). A client still sending the two old
+// ids has them silently dropped by `z.object`, which is harmless.
 export const ChangeRequestFormSchema = z
   .object({
     grading_sheet_id: z.string().uuid('Missing grading sheet'),
@@ -76,8 +79,6 @@ export const ChangeRequestFormSchema = z
       .refine((value) => proseLength(value) <= 2000, {
         message: 'Justification is too long',
       }),
-    primary_approver_id: z.string().uuid('Pick a primary approver'),
-    secondary_approver_id: z.string().uuid('Pick a secondary approver'),
   })
   .refine(
     (data) =>
@@ -89,11 +90,7 @@ export const ChangeRequestFormSchema = z
         'Slot index is required for WW/PT fields and must be empty otherwise',
       path: ['slot_index'],
     }
-  )
-  .refine((data) => data.primary_approver_id !== data.secondary_approver_id, {
-    message: 'Primary and secondary approvers must be different people',
-    path: ['secondary_approver_id'],
-  });
+  );
 
 export type ChangeRequestFormInput = z.infer<typeof ChangeRequestFormSchema>;
 

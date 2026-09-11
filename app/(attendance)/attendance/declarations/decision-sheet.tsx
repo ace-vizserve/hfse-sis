@@ -9,9 +9,9 @@ import {
   Link2,
   TriangleAlert,
   Users,
-  X,
 } from 'lucide-react';
 
+import { ApprovalStepRail } from '@/components/approvals/approval-step-rail';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -31,14 +31,9 @@ import {
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
-import { toPlainText } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 import type { DeclarationQueueRow } from './declarations-data-table';
-import {
-  formatDayRange,
-  formatDecidedAt,
-  formatFiledAt,
-} from '@/lib/declarations/format';
+import { formatDayRange, formatFiledAt } from '@/lib/declarations/format';
 
 // Everything the parent sent, and the decision.
 //
@@ -129,6 +124,10 @@ function DecisionPanel({
         ),
       {
         pending: action === 'approve' ? 'Approving…' : 'Turning it down…',
+        // The engine's own sentence, whatever the outcome — including
+        // `recorded`, where the approval is saved but the step still needs the
+        // others. That is a success, and the refresh this waits for is what
+        // turns the footer into "You approved — waiting on the others".
         success: (data) => data.message,
         onResolved: () => onOpenChange(false),
       }
@@ -273,106 +272,14 @@ function DecisionPanel({
         {/* ── The steps ────────────────────────────────────────────── */}
         <section className="space-y-3">
           <SectionLabel>Where this has got to</SectionLabel>
-          {/* ⚠ A rejection ENDS the ladder — every later step keeps status
-              'waiting' in the table forever. Rendered the same as a step that
-              is still coming, they read as "not yet" when the truth is
-              "never". */}
-          <ol className="space-y-0">
-            {(d.ladder?.stages ?? []).map((stage, index, all) => {
-              const decided =
-                stage.status === 'approved' || stage.status === 'rejected';
-              const rejectedAt = all.find((s) => s.status === 'rejected');
-              const neverReached =
-                rejectedAt != null &&
-                stage.stageOrder > rejectedAt.stageOrder &&
-                !decided;
-              const people = row.peopleByStageOrder[stage.stageOrder];
-              return (
-                <li key={stage.stageOrder} className="flex gap-3">
-                  {/* The rail: a real sequence, so a real line. */}
-                  <div className="flex flex-col items-center">
-                    <span
-                      className={cn(
-                        'flex size-7 shrink-0 items-center justify-center rounded-lg font-mono text-[11px] font-semibold tabular-nums',
-                        stage.status === 'approved' &&
-                          'bg-brand-mint/30 text-ink',
-                        stage.status === 'rejected' &&
-                          'bg-destructive/10 text-destructive',
-                        stage.status === 'pending' &&
-                          'bg-accent text-accent-foreground',
-                        stage.status === 'waiting' &&
-                          'bg-muted text-muted-foreground',
-                        neverReached &&
-                          'border border-dashed border-hairline-strong bg-card text-ink-5'
-                      )}
-                    >
-                      {stage.status === 'approved' ? (
-                        <Check className="size-3.5" aria-hidden />
-                      ) : stage.status === 'rejected' ? (
-                        <X className="size-3.5" aria-hidden />
-                      ) : (
-                        stage.stageOrder
-                      )}
-                    </span>
-                    {index < all.length - 1 && (
-                      <span
-                        className="my-1 w-px flex-1 bg-border"
-                        aria-hidden
-                      />
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1 pb-5">
-                    <p className="text-[14px] font-medium text-foreground">
-                      {stage.label}
-                    </p>
-                    {decided ? (
-                      <p className="text-[13px] text-muted-foreground">
-                        {stage.status === 'approved'
-                          ? 'Approved'
-                          : 'Turned down'}{' '}
-                        by {row.decidedByNames[stage.stageOrder] ?? 'someone'} ·{' '}
-                        {formatDecidedAt(stage.decidedAt)}
-                      </p>
-                    ) : stage.resolver === 'form_adviser' ? (
-                      <p className="text-[13px] text-muted-foreground">
-                        Whoever advises the class, including anyone covering it
-                        this week.
-                      </p>
-                    ) : neverReached ? (
-                      <p className="text-[13px] text-muted-foreground">
-                        Never reached — the filing was turned down before this
-                        step.
-                      </p>
-                    ) : people ? (
-                      <p className="text-[13px] text-muted-foreground">
-                        {people}
-                      </p>
-                    ) : (
-                      // ⚠ The live case today: nobody holds the officer-in-
-                      // charge post yet, so this step really will stall. Say
-                      // so here rather than let a filing appear to vanish.
-                      <p className="text-[13px] text-destructive">
-                        Nobody has been added to this step yet, so it will stop
-                        here.
-                      </p>
-                    )}
-                    {/* ⚠ STRIPPED, because the box that WRITES this is the
-                        rich-text field below and it stores HTML. Printed raw,
-                        an approver's note would read “<p>Back Monday.</p>”.
-                        Plain text rather than rendered markup: the note is
-                        quoted inline inside a sentence here, which is no place
-                        for a bullet list. */}
-                    {stage.decisionNote && (
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-foreground italic">
-                        “{toPlainText(stage.decisionNote)}”
-                      </p>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+          {/* Shared with grade changes since migration 144 — the markup that
+              lived here, moved rather than redrawn. */}
+          <ApprovalStepRail
+            stages={row.railStages}
+            peopleByStageOrder={row.peopleByStageOrder}
+            decidedByNames={row.decidedByNames}
+            subjectNoun="filing"
+          />
         </section>
 
         {/* ── What it did to the attendance sheet ──────────────────── */}
@@ -432,6 +339,14 @@ function DecisionPanel({
               Approve
             </Button>
           </div>
+        ) : row.youApprovedWaiting ? (
+          // ⚠ NOT "not yours to decide". This person is on the step and has
+          // already approved it; the step needs everyone, so it waits. The
+          // rail above shows who is still to approve.
+          <p className="flex items-center gap-2 text-[13px] text-foreground">
+            <Check className="size-4 shrink-0 text-ink" aria-hidden />
+            You approved — waiting on the others.
+          </p>
         ) : (
           <p className="text-[13px] text-muted-foreground">
             This one is with{' '}

@@ -35,7 +35,7 @@ import { toPlainText } from '@/lib/rich-text';
 // most email clients won't navigate from. The central warning fires once at
 // import time from `lib/env.ts`; the runtime fallback to '' is unchanged.
 
-type RequestSummary = {
+export type RequestSummary = {
   id: string;
   grading_sheet_id: string;
   field_changed: string;
@@ -186,6 +186,108 @@ export async function notifyRequestFiled(
   for (const approver of recipients) {
     const html = renderEmailFrame({
       headline: 'New grade change request',
+      bodyHtml,
+      ctas: [
+        {
+          label: 'Approve',
+          href: actionTokenUrl(req.id, 'approve', approver.id),
+          variant: 'primary',
+        },
+        {
+          label: 'Reject',
+          href: actionTokenUrl(req.id, 'reject', approver.id),
+          variant: 'destructive',
+        },
+        {
+          label: 'To review the request, click here',
+          href: changeRequestUrl(req.id),
+          variant: 'secondary-text',
+        },
+      ],
+    });
+    const res = await sendAll(
+      t.resend,
+      t.from,
+      [approver.email],
+      subject,
+      html
+    );
+    sent += res.sent;
+    failed += res.failed;
+  }
+  return { sent, failed };
+}
+
+/** Which step of a grade change's approval it is now somebody's turn at. */
+export type StepTurn = {
+  /** True when the report card had already reached parents at filing. */
+  board: boolean;
+  /** 1-based. */
+  stageOrder: number;
+  stageCount: number;
+  stageLabel: string;
+};
+
+// Fired on: POST /api/change-requests (step 1) and on every approval that
+// moves a grade change on to its next step (lib/change-requests/approval-handler.ts).
+// Recipients: the people on the step that is now waiting. Each gets their OWN
+// email, for the same reason as `notifyRequestFiled` above — the Approve and
+// Reject buttons carry a token signed for that one person, and the confirm
+// page checks that person is on the step before it offers to act.
+//
+// ⚠ A STEP WITH SEVERAL PEOPLE EMAILS ALL OF THEM, and the first to act carries
+// it. The copy says so, so the second person who clicks is not surprised to
+// find it already decided.
+export async function notifyStepTurn(
+  req: RequestSummary,
+  step: StepTurn,
+  approvers: { id: string; email: string }[]
+): Promise<{ sent: number; failed: number }> {
+  const t = getTransport();
+  const recipients = approvers.filter((a) => Boolean(a.email));
+  if (!t || recipients.length === 0) return { sent: 0, failed: 0 };
+
+  const who = req.student_label ?? 'student';
+  const subject = step.board
+    ? `Grade change needs Academic and Examination Board approval — ${who}`
+    : `Grade change needs your approval — ${who}`;
+  const headline = step.board
+    ? 'Grade change needs Academic and Examination Board approval'
+    : 'Grade change needs your approval';
+
+  const stepLine =
+    step.stageCount > 1
+      ? `It is now at step ${step.stageOrder} of ${step.stageCount}: <strong>${escapeHtml(step.stageLabel)}</strong>.`
+      : `You are on the approval step: <strong>${escapeHtml(step.stageLabel)}</strong>.`;
+  const earlier =
+    step.stageOrder > 1 ? ' The earlier steps have already approved it.' : '';
+  const board = step.board
+    ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">This term's report card has already been published to parents, so this change goes to the Academic and Examination Board.</p>`
+    : '';
+  const shared =
+    recipients.length > 1
+      ? `<p style="font-size:14px;line-height:22px;color:#475569;margin:0 0 16px;">Other people on this step have been sent this email too. Whoever acts first decides the step.</p>`
+      : '';
+
+  const bodyHtml = `
+    <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
+      A teacher has asked to change a grade on a locked grading sheet.
+      ${stepLine}${earlier}
+    </p>
+    ${board}
+    ${summaryTable(req)}
+    <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
+      <strong>Justification:</strong><br/>
+      <span style="color:#475569;">${escapeLines(toPlainText(req.justification))}</span>
+    </p>
+    ${shared}
+  `;
+
+  let sent = 0;
+  let failed = 0;
+  for (const approver of recipients) {
+    const html = renderEmailFrame({
+      headline,
       bodyHtml,
       ctas: [
         {

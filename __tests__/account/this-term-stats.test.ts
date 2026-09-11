@@ -25,6 +25,11 @@ vi.mock('@/lib/markbook/dashboard', () => ({
 vi.mock('@/lib/change-requests/sidebar-counts', () => ({
   getSidebarChangeRequestCount: vi.fn(() => Promise.resolve(3)),
 }));
+// Grade-change steps on the approval engine (migration 144) — the other half
+// of "Awaiting your review".
+vi.mock('@/lib/sidebar/notification-counts', () => ({
+  getStagedWaitingCount: vi.fn(() => Promise.resolve(2)),
+}));
 vi.mock('@/lib/auth/staff-list', () => ({
   getStaffCount: vi.fn(() => Promise.resolve(28)),
 }));
@@ -100,10 +105,11 @@ describe('getThisTermStats', () => {
     );
   });
 
-  it('school_admin: change requests awaiting this user as approver', async () => {
+  it('school_admin: change requests awaiting this user — legacy requests plus steps waiting on the approval engine', async () => {
     const rows = await getThisTermStats({ ...base, role: 'school_admin' });
+    // 3 on the two-approver path + 2 grade-change steps for her to decide.
     expect(rows).toEqual([
-      { label: 'Awaiting your review', value: 3, tone: 'warning' },
+      { label: 'Awaiting your review', value: 5, tone: 'warning' },
     ]);
   });
 

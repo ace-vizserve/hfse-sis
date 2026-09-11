@@ -371,6 +371,66 @@ function templateSummary(
     case 'grade_change_applied':
     case 'grade_change_undo_rejection': {
       const parts: string[] = [];
+      // ── One step of an ordered approval (migration 144) ────────────────
+      //
+      // Every yes on the ladder is logged as `grade_change_approved`, and the
+      // action label alone would read "Grade change approved" for step 1 of 3.
+      // `final: false` marks a step, so the line opens by saying which one —
+      // the change is not approved until the last step is.
+      const stepOrder = numish(ctx.stage_order);
+      const closedByStepEdit = str(ctx.via) === 'repoint';
+      // ⚠ NOBODY CLICKED (migrations 145 and 146). The actor on this row is
+      // the admin who changed the step's people or rule, and the step finished
+      // because its new terms were already met. "Fully approved" beside the
+      // admin's name would say the admin approved it; this names the approval
+      // it actually finished on. Checked first for that reason.
+      if (action === 'grade_change_approved' && closedByStepEdit) {
+        const lastBy = str(ctx.final_approver_email);
+        const lastByText = lastBy ? ` (last approval by ${lastBy})` : '';
+        parts.push(
+          boolish(ctx.final) === true
+            ? `Grade change request finished after an approver change${lastByText}`
+            : stepOrder != null
+              ? `Step ${stepOrder} of a grade change request finished after an approver change${lastByText}`
+              : `A step of a grade change request finished after an approver change${lastByText}`
+        );
+      } else if (
+        // ⚠ 'recorded' (migration 145) is a yes on a step that needs everyone,
+        // and the step has NOT moved. Checked before `final`: it is also
+        // `final: false`, and "Approved step 2" alone would claim the step was
+        // carried.
+        action === 'grade_change_approved' &&
+        str(ctx.outcome) === 'recorded'
+      ) {
+        parts.push(
+          stepOrder != null
+            ? `Approved step ${stepOrder} of a grade change request (waiting on others)`
+            : 'Approved one step of a grade change request (waiting on others)'
+        );
+      } else if (
+        action === 'grade_change_approved' &&
+        boolish(ctx.final) === false
+      ) {
+        parts.push(
+          stepOrder != null
+            ? `Approved step ${stepOrder} of a grade change request`
+            : 'Approved one step of a grade change request'
+        );
+      } else if (
+        action === 'grade_change_approved' &&
+        boolish(ctx.final) === true
+      ) {
+        parts.push(
+          stepOrder != null && stepOrder > 1
+            ? `Approved the last step (step ${stepOrder})`
+            : 'Fully approved'
+        );
+      } else if (action === 'grade_change_rejected' && stepOrder != null) {
+        parts.push(`Turned down at step ${stepOrder}`);
+      }
+      if (str(ctx.flow) === 'markbook.grade_change_aeb') {
+        parts.push('Academic and Examination Board');
+      }
       const field = str(ctx.field);
       if (field) {
         const diff = scalarDiff(
@@ -454,8 +514,22 @@ function templateSummary(
       const stage = str(ctx.stage_label);
       if (stage) parts.push(stage);
       const outcome = str(ctx.outcome);
-      if (outcome === 'advanced') parts.push('moved to the next step');
+      if (str(ctx.via) === 'repoint') {
+        // Nobody clicked (migrations 145 and 146): the actor is the admin who
+        // changed the step's people or rule, and the step finished because its
+        // new terms were already met. Named for the approval it finished on,
+        // so the line never reads as the admin having approved the absence.
+        const lastBy = str(ctx.final_approver_email);
+        const lastByText = lastBy ? ` (last approval by ${lastBy})` : '';
+        parts.push(
+          outcome === 'completed'
+            ? `finished after an approver change${lastByText}`
+            : `step finished after an approver change${lastByText}`
+        );
+      } else if (outcome === 'advanced') parts.push('moved to the next step');
       else if (outcome === 'completed') parts.push('fully approved');
+      // Migration 145 — a yes on a step that needs everyone, still waiting.
+      else if (outcome === 'recorded') parts.push('waiting on others');
       if (boolish(ctx.note_present) === true) parts.push('note attached');
       return joinParts(parts);
     }

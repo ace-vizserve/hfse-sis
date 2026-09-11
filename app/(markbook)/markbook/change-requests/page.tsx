@@ -1,7 +1,15 @@
 import { redirect } from 'next/navigation';
 
+import { OVERSIGHT_ROLES } from '@/lib/approvals/inbox';
+import { loadAdvisedSectionIds } from '@/lib/approvals/resolve';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
+import {
+  listGradeChangeInvolvement,
+  loadGradeChangeLadders,
+  toStagedGradeChangeView,
+} from '@/lib/change-requests/staged-scope';
+import { withStepProgress } from '@/lib/change-requests/step-progress';
 import {
   getStaffDisplayNameById,
   narrowStaffNamesToRows,
@@ -34,27 +42,52 @@ export default async function AdminChangeRequestsPage({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const { role } = sessionUser;
-  if (
-    !role ||
-    (role !== 'school_admin' &&
-      role !== 'superadmin' &&
-      role !== 'academic_coordinator')
-  ) {
-    redirect('/');
-  }
+  if (!role) redirect('/');
+
+  const service = createServiceClient();
+
+  // ── Who may open this page ───────────────────────────────────────────────
+  //
+  // ⚠ TWO WAYS IN SINCE MIGRATION 144, and the second one is not a role.
+  //   • The three oversight roles see the school's queue, as they always did.
+  //   • Anybody sitting on a step of a grade change decided step by step. The
+  //     Academic and Examination Board can include a teacher account, and a
+  //     board member with a request waiting must be able to open it — the
+  //     bell and the home to-do list both send them here.
+  // A teacher on no step has nothing to see, and is sent home rather than
+  // shown an empty queue that implies there should be something in it.
+  //
+  // ⚠ NOT WRITTEN AS A `role !== …` CHAIN, deliberately: the second arm is
+  // data, and a role-literal gate would bounce the board member. The proxy
+  // already admits every Markbook role to `/markbook` (ROUTE_ACCESS), so this
+  // is the only gate on the route.
+  const isOversight = OVERSIGHT_ROLES.has(role);
+  const advisedSectionIds = await loadAdvisedSectionIds(
+    service,
+    sessionUser.id
+  );
+  const involvedIds = isOversight
+    ? []
+    : await listGradeChangeInvolvement(service, {
+        userId: sessionUser.id,
+        advisedSectionIds,
+      });
+  if (!isOversight && involvedIds.length === 0) redirect('/');
+
   // Was `role === 'school_admin' || role === 'superadmin'`, which showed a
   // superadmin Approve/Reject buttons that ALWAYS 403'd — decide.ts rejects
   // superadmin by design (they decide who may approve, not what is approved).
   // Deriving from the same capability decide.ts checks means the buttons appear
   // exactly when the decision would succeed.
+  //
+  // ⚠ LEGACY ROWS ONLY. A step-by-step row carries its own `canDecide`, worked
+  // out from the step that is live and who sits on it — see `staged` below.
   const canDecide = can(
     await getCapabilitiesForRole(role),
     'grade_changes.approve'
   );
 
   const { sheet_id, req: reqParam, action: actionParam } = await searchParams;
-
-  const service = createServiceClient();
 
   // Current AY — used to scope the queue. Without this filter admins saw
   // change requests from every AY mixed in. `sections.academic_year_id`
@@ -89,6 +122,7 @@ export default async function AdminChangeRequestsPage({
        secondary_decision,
        primary_reviewed_at,
        approved_at, rejection_undone_at,
+       approval_flow,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(id, name, academic_year_id),
          subject:subjects(code, name),
@@ -109,12 +143,24 @@ export default async function AdminChangeRequestsPage({
   }
 
   if (role === 'school_admin') {
+    // Legacy rows: the ones she was designated on, plus the pre-013 broadcast
+    // rows. ⚠ `approval_flow.is.null` inside that broadcast arm — a step-by-
+    // step row also has both approver columns null. Step-by-step rows come in
+    // through the last arm instead: she oversees them school-wide, like the
+    // other two oversight roles.
     query = query.or(
-      `primary_approver_id.eq.${sessionUser.id},secondary_approver_id.eq.${sessionUser.id},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+      `primary_approver_id.eq.${sessionUser.id},secondary_approver_id.eq.${sessionUser.id},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null),approval_flow.not.is.null`
     );
+  } else if (!isOversight) {
+    // Somebody on a step and nothing more: exactly the requests they sit on,
+    // and never a legacy row — those are decided by designated school admins.
+    query = query.in('id', involvedIds).not('approval_flow', 'is', null);
   }
 
-  const { data: rawRows } = await query;
+  const [{ data: rawRows }, staffEntries] = await Promise.all([
+    query,
+    getStaffDisplayNameById(),
+  ]);
 
   type RawGradingSheet = {
     section: { id: string; name: string; academic_year_id: string } | null;
@@ -141,10 +187,20 @@ export default async function AdminChangeRequestsPage({
     | 'subjectName'
     | 'termLabel'
     | 'studentLabel'
+    | 'staged'
   > & { grading_sheet?: RawGradingSheet; grade_entry?: RawGradeEntry };
-  const rows: AdminRequestRow[] = (
-    (rawRows ?? []) as unknown as RawRequestRow[]
-  ).map((r) => {
+  const rawList = (rawRows ?? []) as unknown as RawRequestRow[];
+
+  // The ladder behind every step-by-step row, in four reads for the whole page.
+  const ladders = await loadGradeChangeLadders(
+    service,
+    rawList.filter((r) => r.approval_flow != null).map((r) => r.id)
+  );
+  const nameById = new Map(staffEntries);
+  const advisedSet = new Set(advisedSectionIds);
+
+  const rows: AdminRequestRow[] = rawList.map((r) => {
+    const ladder = r.approval_flow != null ? ladders.get(r.id) : undefined;
     const gs = r.grading_sheet;
     const student = r.grade_entry?.section_student?.student;
     const studentLabel =
@@ -163,19 +219,31 @@ export default async function AdminChangeRequestsPage({
         : null,
       termLabel: gs?.term?.label ?? null,
       studentLabel,
+      // Null for a legacy row, and for a step-by-step row whose approval
+      // request could not be found — that one still lists, with no buttons,
+      // rather than vanishing from the queue.
+      staged: ladder
+        ? withStepProgress(
+            toStagedGradeChangeView(ladder, {
+              userId: sessionUser.id,
+              advisedSectionIds: advisedSet,
+              nameById,
+            }),
+            ladder,
+            sessionUser.id,
+            nameById
+          )
+        : null,
     };
   });
 
-  const staffNames = narrowStaffNamesToRows(
-    await getStaffDisplayNameById(),
-    rows,
-    (r) => [
-      r.requested_by,
-      r.primary_reviewed_by,
-      r.secondary_reviewed_by,
-      r.applied_by,
-    ]
-  );
+  const staffNames = narrowStaffNamesToRows(staffEntries, rows, (r) => [
+    r.requested_by,
+    r.primary_reviewed_by,
+    r.secondary_reviewed_by,
+    r.applied_by,
+    ...(r.staged?.stages.map((s) => s.decidedBy) ?? []),
+  ]);
 
   const counts: Record<ChangeRequestStatus, number> = {
     pending: 0,

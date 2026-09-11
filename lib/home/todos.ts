@@ -11,6 +11,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sgToday } from '@/lib/dates';
+import { listInboxStagesAcrossFlows } from '@/lib/approvals/inbox';
+import { GRADE_CHANGE_SUBJECT_TYPE } from '@/lib/change-requests/approval-route';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 
 export type HomeTodoItem = {
   id: string;
@@ -20,6 +23,12 @@ export type HomeTodoItem = {
   kind: 'review' | 'change-request';
   aging?: { label: string; tone: 'success' | 'warning' | 'destructive' };
   requestId?: string;
+  /**
+   * Set when the grade change is decided step by step (migration 144): the
+   * `approval_requests.id` the one-tap Approve posts to. Absent on a legacy
+   * request, which still goes through the two-approver route.
+   */
+  approvalRequestId?: string;
   requestedBy?: string;
 };
 
@@ -147,43 +156,60 @@ type RawCrRow = {
   } | null;
 };
 
-/**
- * Grade change-requests assigned to this school_admin, exactly scoped like
- * app/(markbook)/markbook/change-requests/page.tsx:88-91 (assigned-to-me OR
- * legacy both-null broadcast). school_admin is the ONLY role this fires for
- * — verified against lib/change-requests/decide.ts, which 403s any other
- * role attempting to approve/reject regardless of what any page renders.
- */
-async function schoolAdminChangeRequestTodos({
-  ayCode,
-  userId,
-}: TodoContext): Promise<HomeTodoItem[]> {
-  const service = createServiceClient();
-  const ayId = await resolveAyId(service, ayCode);
-  if (!ayId) return [];
+const CR_TODO_LIMIT = 5;
 
-  const { data, error } = await service
-    .from('grade_change_requests')
-    .select(
-      `id, requested_at, requested_by_email,
+const CR_TODO_SELECT = `id, requested_at, requested_by_email,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(academic_year_id),
          subject:subjects(name),
          subject_config:subject_configs(display_name),
          term:terms(label)
-       )`
-    )
-    .eq('status', 'pending')
-    .eq('grading_sheet.section.academic_year_id', ayId)
-    .or(
-      `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
-    )
-    .order('requested_at', { ascending: true })
-    .limit(5);
+       )`;
 
-  if (error || !data) return [];
+/**
+ * Grade change requests waiting for THIS person's decision, from both paths.
+ *
+ * • Legacy requests (no `approval_flow`) assigned to this school_admin, exactly
+ *   scoped like app/(markbook)/markbook/change-requests/page.tsx
+ *   (assigned-to-me OR legacy both-null broadcast). school_admin is the ONLY
+ *   role that half fires for — lib/change-requests/decide.ts 403s any other
+ *   role attempting to approve/reject regardless of what any page renders.
+ * • Requests decided step by step (migration 144) whose live step this person
+ *   may decide, whatever their role — an Academic and Examination Board member
+ *   can hold a teacher account.
+ *
+ * Oldest first across both, five at most.
+ */
+async function schoolAdminChangeRequestTodos({
+  ayCode,
+  userId,
+  role,
+}: TodoContext): Promise<HomeTodoItem[]> {
+  const service = createServiceClient();
+  const ayId = await resolveAyId(service, ayCode);
+  if (!ayId) return [];
 
-  return (data as unknown as RawCrRow[]).map((row) => {
+  const [legacy, staged] = await Promise.all([
+    role === 'school_admin'
+      ? loadLegacyChangeRequestRows(service, ayId, userId)
+      : Promise.resolve([] as RawCrRow[]),
+    loadStagedChangeRequestRows(service, ayId, userId),
+  ]);
+
+  const approvalRequestIdBySubject = staged.approvalRequestIdBySubject;
+  const seen = new Set<string>();
+  const merged = [...legacy, ...staged.rows]
+    .filter((row) => (seen.has(row.id) ? false : (seen.add(row.id), true)))
+    .sort((a, b) =>
+      a.requested_at < b.requested_at
+        ? -1
+        : a.requested_at > b.requested_at
+          ? 1
+          : 0
+    )
+    .slice(0, CR_TODO_LIMIT);
+
+  return merged.map((row) => {
     // The to-do names a subject to a person, so it uses what that sheet's
     // YEAR calls it (migration 137) — the config is on the sheet already.
     const sheet = row.grading_sheet;
@@ -199,9 +225,76 @@ async function schoolAdminChangeRequestTodos({
       kind: 'change-request' as const,
       aging: agingFor(row.requested_at),
       requestId: row.id,
+      ...(approvalRequestIdBySubject.has(row.id)
+        ? { approvalRequestId: approvalRequestIdBySubject.get(row.id) }
+        : {}),
       requestedBy: row.requested_by_email ?? undefined,
     };
   });
+}
+
+async function loadLegacyChangeRequestRows(
+  service: SupabaseClient,
+  ayId: string,
+  userId: string
+): Promise<RawCrRow[]> {
+  const { data, error } = await service
+    .from('grade_change_requests')
+    .select(CR_TODO_SELECT)
+    .eq('status', 'pending')
+    .eq('grading_sheet.section.academic_year_id', ayId)
+    .or(
+      `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)`
+    )
+    .order('requested_at', { ascending: true })
+    .limit(CR_TODO_LIMIT);
+
+  if (error || !data) return [];
+  return data as unknown as RawCrRow[];
+}
+
+/**
+ * Step-by-step grade changes whose live step this person may decide.
+ *
+ * ⚠ ASKED WITH `role: null`, ON PURPOSE. An oversight role widens what the
+ * inbox RETURNS (every open step in the school) but never what it lets them
+ * DECIDE, and this list is only the second. Asking as nobody-in-particular
+ * reads just the steps that name this person or a class they advise — the
+ * same `canDecide` answer from a far smaller read.
+ */
+async function loadStagedChangeRequestRows(
+  service: SupabaseClient,
+  ayId: string,
+  userId: string
+): Promise<{
+  rows: RawCrRow[];
+  approvalRequestIdBySubject: Map<string, string>;
+}> {
+  const stages = await listInboxStagesAcrossFlows(service, {
+    flows: GRADE_CHANGE_FLOWS,
+    userId,
+    role: null,
+  });
+  const approvalRequestIdBySubject = new Map(
+    stages
+      .filter((s) => s.canDecide && s.subjectType === GRADE_CHANGE_SUBJECT_TYPE)
+      .map((s) => [s.subjectId, s.requestId] as const)
+  );
+  if (approvalRequestIdBySubject.size === 0) {
+    return { rows: [], approvalRequestIdBySubject };
+  }
+
+  const { data, error } = await service
+    .from('grade_change_requests')
+    .select(CR_TODO_SELECT)
+    .in('id', [...approvalRequestIdBySubject.keys()])
+    .eq('status', 'pending')
+    .eq('grading_sheet.section.academic_year_id', ayId)
+    .order('requested_at', { ascending: true })
+    .limit(CR_TODO_LIMIT);
+
+  if (error || !data) return { rows: [], approvalRequestIdBySubject };
+  return { rows: data as unknown as RawCrRow[], approvalRequestIdBySubject };
 }
 
 async function docValidationTodo({
@@ -347,6 +440,8 @@ function reportCardGapsTodo(ayCode: string): Promise<HomeTodoItem | null> {
 type TodoContext = {
   ayCode: string;
   userId: string;
+  /** The role picking the rows — the change-request source splits on it. */
+  role: Role;
   /** Only consulted by the two teacher rows — see their loaders (KD #170). */
   profile: TeachingProfile;
 };
@@ -394,11 +489,16 @@ export const HOME_TODO_SOURCES: TodoSource[] = [
   {
     id: 'markbook-change-requests',
     href: '/markbook/change-requests',
-    // The only source that emits `kind: 'change-request'`, and school_admin is
-    // the only role it fires for (KD #41, verified against
-    // lib/change-requests/decide.ts, which 403s every other role attempting to
-    // approve or reject).
-    roles: ['school_admin'],
+    // The only source that emits `kind: 'change-request'`.
+    //
+    // ⚠ EVERY MARKBOOK ROLE SINCE MIGRATION 144, and that is not a widening of
+    // who approves. The legacy half still fires for school_admin alone (KD
+    // #41 — lib/change-requests/decide.ts 403s every other role on the
+    // two-approver path). The step-by-step half fires for whoever sits on the
+    // live step, which is data, not a role: an Academic and Examination Board
+    // member may hold a teacher account. Anyone on no step gets no rows, and
+    // `/markbook/change-requests` admits exactly the people who do.
+    roles: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
     load: schoolAdminChangeRequestTodos,
   },
   {
@@ -447,8 +547,9 @@ export const HOME_TODO_SOURCES: TodoSource[] = [
  * grounds — whether the row is meant for this role, and whether the viewer
  * still holds the capability its destination demands (KD #173).
  *
- * `school_admin` is the only role that gets `kind: 'change-request'` rows
- * (KD #41) — every other role's rows are review-only links into the real page.
+ * `kind: 'change-request'` rows go to a school_admin for legacy requests (KD
+ * #41) and to whoever sits on the live step of a step-by-step one (migration
+ * 144) — every other row is a review-only link into the real page.
  *
  * ⚠ ONE ROLE PICKS THE ROWS AND CHECKS THEM. An earlier design threaded a
  * second "view" role that chose the rows (`source.roles`) while `capabilities`
@@ -470,7 +571,7 @@ export async function getHomeTodos(
   // getCapabilitiesForRole(role) — see app/(dashboard)/page.tsx.
   capabilities: readonly Capability[] = []
 ): Promise<HomeTodoItem[]> {
-  const ctx: TodoContext = { ayCode, userId, profile };
+  const ctx: TodoContext = { ayCode, userId, role, profile };
 
   const sources = HOME_TODO_SOURCES.filter(
     (source) =>

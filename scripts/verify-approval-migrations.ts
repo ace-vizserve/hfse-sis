@@ -1,6 +1,7 @@
 // scripts/verify-approval-migrations.ts
 //
-// Checks that migrations 126 to 129 actually landed, against a live database.
+// Checks that migrations 126 to 129, 144, 145 and 146 actually landed, against
+// a live database.
 //
 // STRICTLY READ-ONLY. Every statement below is a SELECT or a deliberately
 // failing call; nothing is written, so it is safe to point at production.
@@ -198,6 +199,107 @@ async function main() {
       : `outcome was ${outcome ?? '(none)'}`
   );
 
+  // ── 144 · the cancel RPC exists, and grade changes can name their flow ──
+  //
+  // ⚠ Needed for the anon check below to mean anything. PostgREST answers
+  // PGRST202 for a function it cannot find, and that check counts PGRST202 as
+  // "denied" — so without this, an unapplied 144 would pass as locked down.
+  // A zero uuid matches no request, so nothing is cancelled.
+  const cancel = await service.rpc('approval_cancel', {
+    p_request_id: ZERO_UUID,
+  });
+  const cancelOutcome = Array.isArray(cancel.data)
+    ? (cancel.data[0] as { outcome?: string } | undefined)?.outcome
+    : undefined;
+  record(
+    '144 · approval_cancel exists and answers request_not_found',
+    !cancel.error && cancelOutcome === 'request_not_found',
+    cancel.error
+      ? `call failed: ${cancel.error.message}`
+      : `outcome was ${cancelOutcome ?? '(none)'}`
+  );
+
+  const flowCol = await service
+    .from('grade_change_requests')
+    .select('approval_flow')
+    .limit(1);
+  record(
+    '144 · grade_change_requests.approval_flow exists',
+    !flowCol.error,
+    flowCol.error ? `read failed: ${flowCol.error.message}` : 'readable'
+  );
+
+  // ── 145 · step rules, the decisions table, and the reevaluate RPC ───────
+  for (const table of ['approval_stages', 'approval_request_stages']) {
+    const ruleCol = await service.from(table).select('approval_rule').limit(1);
+    record(
+      `145 · ${table}.approval_rule exists`,
+      !ruleCol.error,
+      ruleCol.error ? `read failed: ${ruleCol.error.message}` : 'readable'
+    );
+  }
+
+  const decisionsTable = await service
+    .from('approval_request_stage_decisions')
+    .select('id, request_stage_id, user_id, decision, decided_at')
+    .limit(1);
+  record(
+    '145 · approval_request_stage_decisions exists',
+    !decisionsTable.error,
+    decisionsTable.error
+      ? `read failed: ${decisionsTable.error.message}`
+      : 'readable'
+  );
+
+  // ⚠ Needed for the anon check below to mean anything, for the same PGRST202
+  // reason as approval_cancel above. A zero uuid matches no step.
+  const reevaluate = await service.rpc('approval_reevaluate_stage', {
+    p_request_stage_id: ZERO_UUID,
+  });
+  const reevaluateOutcome = Array.isArray(reevaluate.data)
+    ? (reevaluate.data[0] as { outcome?: string } | undefined)?.outcome
+    : undefined;
+  record(
+    '145 · approval_reevaluate_stage exists and answers unchanged',
+    !reevaluate.error && reevaluateOutcome === 'unchanged',
+    reevaluate.error
+      ? `call failed: ${reevaluate.error.message}`
+      : `outcome was ${reevaluateOutcome ?? '(none)'}`
+  );
+
+  // ── 146 · the locked repoint RPC, and the ladder's link to its step ─────
+  //
+  // ⚠ Needed for the anon check below to mean anything, for the same PGRST202
+  // reason as approval_cancel above. A zero uuid matches no step, so the call
+  // answers 'skipped' before it takes any lock or writes anything.
+  const repoint = await service.rpc('approval_repoint_request_stage', {
+    p_request_stage_id: ZERO_UUID,
+    p_pool: [],
+    p_rule: 'any',
+  });
+  const repointOutcome = Array.isArray(repoint.data)
+    ? (repoint.data[0] as { outcome?: string } | undefined)?.outcome
+    : undefined;
+  record(
+    '146 · approval_repoint_request_stage exists and answers skipped',
+    !repoint.error && repointOutcome === 'skipped',
+    repoint.error
+      ? `call failed: ${repoint.error.message}`
+      : `outcome was ${repointOutcome ?? '(none)'}`
+  );
+
+  const configStageCol = await service
+    .from('approval_request_stages')
+    .select('config_stage_id')
+    .limit(1);
+  record(
+    '146 · approval_request_stages.config_stage_id exists',
+    !configStageCol.error,
+    configStageCol.error
+      ? `read failed: ${configStageCol.error.message}`
+      : 'readable — renaming a step no longer cuts its requests off'
+  );
+
   // ── 127 · THE LOCKDOWN, called with the ANON key ────────────────────────
   const anonUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey =
@@ -224,6 +326,25 @@ async function main() {
           p_action: 'approve',
           p_note: null,
         },
+      ],
+      // Migration 144. Takes only a request id and checks nobody's right to
+      // cancel — that is the route's job — so an anon caller reaching the body
+      // could withdraw any grade change in flight.
+      ['approval_cancel (144)', 'approval_cancel', { p_request_id: ZERO_UUID }],
+      // Migration 145. Takes only a step id and checks nobody's right to move
+      // it on — an anon caller reaching the body could close a step early.
+      [
+        'approval_reevaluate_stage (145)',
+        'approval_reevaluate_stage',
+        { p_request_stage_id: ZERO_UUID },
+      ],
+      // Migration 146. Takes a step id, a pool and a rule and checks nobody's
+      // right to set them — an anon caller reaching the body could put anyone
+      // on a live step, or relax it and close it.
+      [
+        'approval_repoint_request_stage (146)',
+        'approval_repoint_request_stage',
+        { p_request_stage_id: ZERO_UUID, p_pool: [], p_rule: 'any' },
       ],
       [
         'apply_change_request_atomic (the hole 103 and 104 missed)',
@@ -253,6 +374,33 @@ async function main() {
           : '⚠ ANON EXECUTED IT. The body ran, so the revoke did not take.'
       );
     }
+
+    // ── 145 · anon cannot write a decision ──────────────────────────────
+    //
+    // ⚠ THE ONE WRITE ATTEMPT IN THIS SCRIPT, and it is built to be refused.
+    // The anon role holds no session, so RLS's insert policy (`with check
+    // (false)` for authenticated, nothing at all for anon) must turn it away
+    // before any row exists. The zero uuids also match no step and no user, so
+    // even a missing policy would fail on the foreign keys rather than write.
+    // Refused either way is the pass; a success is the finding.
+    const anonInsert = await anon
+      .from('approval_request_stage_decisions')
+      .insert({
+        request_stage_id: ZERO_UUID,
+        user_id: ZERO_UUID,
+        decision: 'approve',
+      });
+    const insertRefused =
+      anonInsert.error != null &&
+      (anonInsert.error.code === '42501' ||
+        /row-level security|permission denied/i.test(anonInsert.error.message));
+    record(
+      '145 · anon cannot insert into approval_request_stage_decisions',
+      insertRefused,
+      anonInsert.error
+        ? `anon got ${anonInsert.error.code ?? '(no code)'}: ${anonInsert.error.message}`
+        : '⚠ ANON INSERTED A DECISION ROW. RLS on the table is not in force.'
+    );
   }
 
   // ── Configuration, which is a fact about the school, not the schema ─────

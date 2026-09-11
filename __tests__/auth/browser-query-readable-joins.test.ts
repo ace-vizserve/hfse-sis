@@ -51,6 +51,13 @@ const BROWSER_READABLE: Record<string, string> = {
     'migration 131 — readable where the reader is on one of its own stages, ' +
     'mirroring 129. Before 131 this was `using (false)` and the join it ' +
     'serves silently returned nothing.',
+  approval_request_stages:
+    "migration 129 — readable where the reader is in the step's approver_pool " +
+    'or advises its section. The one join (lib/sidebar/use-staged-approval-' +
+    "count.ts) starts from the reader's OWN decision rows (145), and a person " +
+    'can only decide a step they are in the pool of — so the rows it needs are ' +
+    'exactly the rows 129 admits. Someone removed from a step afterwards drops ' +
+    'out of the join, which is right: that step is no longer theirs to count.',
 };
 
 /** Files that talk to Supabase as the signed-in user rather than service-role. */

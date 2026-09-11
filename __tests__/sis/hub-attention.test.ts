@@ -80,6 +80,15 @@ describe('buildAttentionRows', () => {
   });
 });
 
+/** A named step with one person who approves for every child. */
+const ONE_PERSON_STEP = {
+  label: 'Ms Chandana',
+  resolver: 'named' as const,
+  approvers: [{ appliesToLevelType: null }] as Array<{
+    appliesToLevelType: 'primary' | 'secondary' | 'preschool' | null;
+  }>,
+};
+
 describe('buildAttentionRows — Phase 7 additions', () => {
   const BASE_INPUT = {
     unassigned: [],
@@ -119,25 +128,79 @@ describe('buildAttentionRows — Phase 7 additions', () => {
     });
   });
 
-  it('adds a destructive row when an approver flow is under-resourced', () => {
+  it('adds a destructive row when a grade-change approval has no steps', () => {
     const rows = buildAttentionRows({
       ...BASE_INPUT,
-      approverFlowCounts: { 'markbook.change_request': 1 },
+      approvalFlows: [
+        {
+          flow: 'markbook.grade_change_aeb',
+          label: 'Grade changes after publishing',
+          stages: [],
+        },
+      ],
     });
     const row = rows.find(
-      (r) => r.id === 'approver-flow-markbook.change_request'
+      (r) => r.id === 'approver-flow-markbook.grade_change_aeb'
     );
-    expect(row?.severity).toBe('destructive'); // 1 approver = destructive per classifyApproverReadiness
+    expect(row).toMatchObject({
+      severity: 'destructive',
+      text: 'Grade changes after publishing: no steps set up',
+      href: '/sis/admin/approvers',
+    });
   });
 
-  it('omits an approver-flow row when the flow already has 2+ approvers', () => {
+  it('flags a step with nobody on it', () => {
     const rows = buildAttentionRows({
       ...BASE_INPUT,
-      approverFlowCounts: { 'markbook.change_request': 2 },
+      approvalFlows: [
+        {
+          flow: 'markbook.grade_change',
+          label: 'Grade changes before publishing',
+          stages: [{ ...ONE_PERSON_STEP, approvers: [] }],
+        },
+      ],
     });
     expect(
-      rows.some((r) => r.id === 'approver-flow-markbook.change_request')
-    ).toBe(false);
+      rows.find((r) => r.id === 'approver-flow-markbook.grade_change')?.text
+    ).toBe('Grade changes before publishing: 1 step has nobody in it');
+  });
+
+  it('omits the row when every step has somebody — one person is enough', () => {
+    // ⚠ Not the retired pool's "at least 2 approvers" rule. A step is a
+    // station, not a quorum.
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      approvalFlows: [
+        {
+          flow: 'markbook.grade_change',
+          label: 'Grade changes before publishing',
+          stages: [ONE_PERSON_STEP],
+        },
+      ],
+    });
+    expect(rows.some((r) => r.id.startsWith('approver-flow-'))).toBe(false);
+  });
+
+  it('flags a half of the school nobody covers, keeping the half capitalised', () => {
+    const rows = buildAttentionRows({
+      ...BASE_INPUT,
+      approvalFlows: [
+        {
+          flow: 'markbook.grade_change',
+          label: 'Grade changes before publishing',
+          stages: [
+            {
+              ...ONE_PERSON_STEP,
+              approvers: [{ appliesToLevelType: 'primary' }],
+            },
+          ],
+        },
+      ],
+      levelTypesInUse: ['primary', 'secondary'],
+    });
+    expect(
+      rows.find((r) => r.id === 'approver-flow-markbook.grade_change')?.text
+    ).toBe('Grade changes before publishing: nobody covers Secondary');
   });
 
   it('adds an amber row per level with no subjects configured', () => {
@@ -187,13 +250,19 @@ describe('buildAttentionRows — severity-sorted (Serial Position Effect)', () =
     const rows = buildAttentionRows({
       unassigned: [unplaced()],
       pendingChangeRequests: 1,
-      approverFlowCounts: { 'markbook.change_request': 1 },
+      approvalFlows: [
+        {
+          flow: 'markbook.grade_change',
+          label: 'Grade changes before publishing',
+          stages: [],
+        },
+      ],
     });
     // unplaced-students + approver-flow are both destructive, in that
     // computation order; pending-change-requests (amber) sorts after both.
     expect(rows.map((r) => r.id)).toEqual([
       'unplaced-students',
-      'approver-flow-markbook.change_request',
+      'approver-flow-markbook.grade_change',
       'pending-change-requests',
     ]);
   });

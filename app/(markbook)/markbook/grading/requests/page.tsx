@@ -15,6 +15,11 @@ import {
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import {
+  loadGradeChangeLadders,
+  toStagedGradeChangeView,
+} from '@/lib/change-requests/staged-scope';
+import { withStepProgress } from '@/lib/change-requests/step-progress';
 import { MyRequestsTable, type MyRequestRow } from './my-requests-table';
 
 type RequestRow = {
@@ -44,6 +49,8 @@ type RequestRow = {
   secondary_reviewed_by_email: string | null;
   secondary_reviewed_at: string | null;
   secondary_decision: 'approved' | 'rejected' | null;
+  /** Set on a request filed after migration 144 — decided step by step. */
+  approval_flow: string | null;
 };
 
 function fieldLabel(field: string, slot: number | null): string {
@@ -94,6 +101,7 @@ export default async function MyRequestsPage() {
        primary_reviewed_by, primary_reviewed_by_email,
        secondary_reviewed_by, secondary_reviewed_by_email, secondary_reviewed_at,
        secondary_decision,
+       approval_flow,
        grading_sheet:grading_sheets!inner(
          section:sections!inner(name, academic_year_id),
          subject:subjects(code, name),
@@ -116,7 +124,10 @@ export default async function MyRequestsPage() {
     );
   }
 
-  const { data: rawRows } = await listQuery;
+  const [{ data: rawRows }, staffEntries] = await Promise.all([
+    listQuery,
+    getStaffDisplayNameById(),
+  ]);
 
   type RawGradingSheet = {
     section: { name: string; academic_year_id: string } | null;
@@ -140,9 +151,23 @@ export default async function MyRequestsPage() {
     grade_entry?: RawGradeEntry;
   })[];
 
+  // Where each step-by-step request has got to. The teacher filed these, so
+  // the ladder is what tells her who has it now — there are no designated
+  // approvers on such a row to name instead.
+  const ladders = await loadGradeChangeLadders(
+    service,
+    rawList.filter((r) => r.approval_flow != null).map((r) => r.id)
+  );
+  const nameById = new Map(staffEntries);
+  // This page offers no decision buttons — deciding happens on
+  // /markbook/change-requests — so the advised-class read that `canDecide`
+  // would need is skipped, and the view's `canDecide` is never consulted here.
+  const NO_ADVISED_SECTIONS: ReadonlySet<string> = new Set();
+
   // Map server rows → MyRequestRow (derive field_label on the server so
   // it's available as a stable string for faceting + CSV export).
   const tableRows: MyRequestRow[] = rawList.map((r) => {
+    const ladder = r.approval_flow != null ? ladders.get(r.id) : undefined;
     const gs = r.grading_sheet;
     const student = r.grade_entry?.section_student?.student;
     const studentLabel =
@@ -185,19 +210,30 @@ export default async function MyRequestsPage() {
         ? subjectDisplayName(gs.subject, gs.subject_config)
         : null,
       termLabel: gs?.term?.label ?? null,
+      // The tick per person on a step that needs everyone — so the teacher
+      // sees "1 of 2 approved" rather than a step that looks stuck.
+      staged: ladder
+        ? withStepProgress(
+            toStagedGradeChangeView(ladder, {
+              userId,
+              advisedSectionIds: NO_ADVISED_SECTIONS,
+              nameById,
+            }),
+            ladder,
+            userId,
+            nameById
+          )
+        : null,
     };
   });
 
-  const staffNames = narrowStaffNamesToRows(
-    await getStaffDisplayNameById(),
-    tableRows,
-    (r) => [
-      r.requested_by,
-      r.primary_reviewed_by,
-      r.secondary_reviewed_by,
-      r.applied_by,
-    ]
-  );
+  const staffNames = narrowStaffNamesToRows(staffEntries, tableRows, (r) => [
+    r.requested_by,
+    r.primary_reviewed_by,
+    r.secondary_reviewed_by,
+    r.applied_by,
+    ...(r.staged?.stages.map((s) => s.decidedBy) ?? []),
+  ]);
 
   const counts = rawList.reduce(
     (acc, r) => {

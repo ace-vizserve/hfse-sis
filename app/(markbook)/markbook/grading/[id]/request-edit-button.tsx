@@ -6,7 +6,8 @@ import {
   AlertTriangle,
   Check,
   ChevronsUpDown,
-  Loader2,
+  Route,
+  Scale,
   Search,
   Send,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
@@ -61,6 +63,13 @@ import {
   type ChangeRequestField,
   type ChangeRequestFormInput,
 } from '@/lib/schemas/change-request';
+import {
+  gradeChangeLadderProblem,
+  stepPeopleLabel,
+  type GradeChangeFilingRoute,
+  type GradeChangeStepSummary,
+} from '@/lib/change-requests/ladder-summary';
+import { GRADE_CHANGE_AEB_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 
 // One row per student in this section. Provided by the server component.
 export type RequestableStudent = {
@@ -76,22 +85,18 @@ export type RequestableStudent = {
   withdrawn: boolean;
 };
 
-// Designated approvers for the markbook.change_request flow, minus the
-// current teacher (they can't self-approve). Populated server-side from
-// `approver_assignments`.
-export type ApproverOption = {
-  user_id: string;
-  email: string;
-  role: string | null;
-};
-
 type Props = {
   sheetId: string;
   isExaminable: boolean;
   wwSlotCount: number;
   ptSlotCount: number;
   students: RequestableStudent[];
-  approvers: ApproverOption[];
+  /**
+   * Where the request would go, worked out on the server. The teacher does not
+   * pick approvers (migration 144). Null when it could not be loaded — the
+   * form still sends, and the server decides for itself.
+   */
+  route: GradeChangeFilingRoute | null;
 };
 
 const FIELD_LABELS: Record<ChangeRequestField, string> = {
@@ -108,7 +113,7 @@ export function RequestEditButton({
   wwSlotCount,
   ptSlotCount,
   students,
-  approvers,
+  route,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -122,10 +127,6 @@ export function RequestEditButton({
     );
   }, [isExaminable]);
 
-  const approverCount = approvers.length;
-  const noApproversConfigured = approverCount === 0;
-  const onlyOneApprover = approverCount === 1;
-
   const form = useForm<ChangeRequestFormInput>({
     resolver: zodResolver(ChangeRequestFormSchema),
     defaultValues: {
@@ -137,14 +138,22 @@ export function RequestEditButton({
       proposed_value: '',
       reason_category: 'regrading',
       justification: '',
-      primary_approver_id: '',
-      secondary_approver_id: '',
     },
   });
 
-  const primaryApproverId = form.watch('primary_approver_id');
-
   const selectedEntryId = form.watch('grade_entry_id');
+
+  // The route follows the picked student: a child who moved in from a class
+  // whose report card was already published goes to the board even when this
+  // class's card has not been. Before a student is picked, the class's own
+  // route is the honest default.
+  const flow = route
+    ? (selectedEntryId && route.flowByEntryId[selectedEntryId]) ||
+      route.sectionFlow
+    : null;
+  const toBoard = flow === GRADE_CHANGE_AEB_APPROVAL_FLOW;
+  const steps = route ? (toBoard ? route.steps.board : route.steps.normal) : [];
+  const routeProblem = route ? gradeChangeLadderProblem(steps) : null;
   const selectedField = form.watch('field_changed');
   const selectedSlot = form.watch('slot_index');
 
@@ -258,8 +267,8 @@ export function RequestEditButton({
               Request a locked-sheet edit
             </SheetTitle>
             <SheetDescription className="text-sm text-muted-foreground">
-              This request will be sent to your school admin for approval. The
-              registrar applies the change after it is approved.
+              Your request goes through the approval steps shown below. Once
+              every step has approved it, the registrar applies the change.
             </SheetDescription>
           </SheetHeader>
 
@@ -471,105 +480,12 @@ export function RequestEditButton({
                   )}
                 />
 
-                <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-                  <div className="space-y-1">
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-indigo-deep">
-                      Approvers
-                    </p>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Pick who reviews this request. Both can act independently;
-                      the first to approve or reject wins.
-                    </p>
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="primary_approver_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Primary approver</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={approverCount < 2}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pick an approver…" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {approvers.map((a) => (
-                              <SelectItem key={a.user_id} value={a.user_id}>
-                                {a.email}
-                                {a.role && (
-                                  <span className="ml-2 text-[10px] uppercase text-muted-foreground">
-                                    {a.role}
-                                  </span>
-                                )}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="secondary_approver_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Secondary approver</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={approverCount < 2}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pick a different approver…" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {approvers
-                              .filter((a) => a.user_id !== primaryApproverId)
-                              .map((a) => (
-                                <SelectItem key={a.user_id} value={a.user_id}>
-                                  {a.email}
-                                  {a.role && (
-                                    <span className="ml-2 text-[10px] uppercase text-muted-foreground">
-                                      {a.role}
-                                    </span>
-                                  )}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          Must be different from the primary approver.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {primaryApproverId && form.watch('secondary_approver_id') && (
-                    <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                      <AlertCircle
-                        className="mt-0.5 h-3 w-3 shrink-0"
-                        aria-hidden="true"
-                      />
-                      <span>
-                        Only these two administrators will be able to act on
-                        this request. If both are unavailable, the request will
-                        sit in their queue until one returns or another
-                        administrator is added.
-                      </span>
-                    </p>
-                  )}
-                </div>
+                <ApprovalRoutePanel
+                  loaded={route !== null}
+                  toBoard={toBoard}
+                  steps={steps}
+                  problem={routeProblem}
+                />
               </div>
 
               <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
@@ -581,19 +497,15 @@ export function RequestEditButton({
                 <Button
                   type="submit"
                   size="sm"
+                  loading={busy}
+                  loadingText="Submitting…"
                   disabled={
-                    busy ||
-                    noApproversConfigured ||
-                    onlyOneApprover ||
-                    (proposedTouched && isSameValue)
+                    routeProblem !== null || (proposedTouched && isSameValue)
                   }
+                  title={routeProblem ?? undefined}
                 >
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  {busy ? 'Submitting…' : 'Submit request'}
+                  {!busy && <Send className="h-4 w-4" />}
+                  Submit request
                 </Button>
               </SheetFooter>
             </form>
@@ -601,6 +513,138 @@ export function RequestEditButton({
         </ScrollArea>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * Who a request filed now would go to, in the order they approve it.
+ *
+ * Not a picker: the school sets these people in SIS Admin → Approvers, and the
+ * teacher only needs to know where the request is going and whether it can go
+ * at all. The steps are a real sequence — each waits for the one before — so
+ * they are numbered and joined by a rail, the one place in this form where
+ * structure is doing the explaining.
+ *
+ * Accent (informational) when the change goes to the Academic and Examination
+ * Board, muted otherwise — 09a §9.1. A step nobody can approve is the only
+ * destructive colour here, because it is the only thing that stops the send.
+ */
+function ApprovalRoutePanel({
+  loaded,
+  toBoard,
+  steps,
+  problem,
+}: {
+  loaded: boolean;
+  toBoard: boolean;
+  steps: GradeChangeStepSummary[];
+  problem: string | null;
+}) {
+  const line = toBoard
+    ? "This term's report card has already been published, so this goes to the Academic and Examination Board."
+    : 'This goes to the grade change approvers.';
+  const Icon = toBoard ? Scale : Route;
+
+  return (
+    <section
+      aria-labelledby="approval-route-title"
+      className={cn(
+        'space-y-4 rounded-lg border p-4',
+        toBoard
+          ? 'border-brand-indigo-soft/60 bg-accent/60'
+          : 'border-border bg-muted/30'
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-lg',
+            toBoard
+              ? 'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+              : 'border border-border bg-background text-brand-indigo-deep'
+          )}
+        >
+          <Icon className="size-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 space-y-1">
+          <p
+            id="approval-route-title"
+            className="font-serif text-[15px] font-semibold leading-tight text-foreground"
+          >
+            Who approves this
+          </p>
+          {loaded ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {line}
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              The approval steps could not be shown right now. You can still
+              send the request; it will go to the people the school has set up.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {loaded && steps.length > 0 && (
+        <ol className="space-y-3">
+          {steps.map((step, index) => {
+            const nobody = step.kind === 'named' && step.people.length === 0;
+            const who = stepPeopleLabel(step);
+            const isLast = index === steps.length - 1;
+            return (
+              <li key={step.order} className="relative flex gap-3">
+                {!isLast && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-3 left-[9.5px] top-5 w-px bg-hairline-strong"
+                  />
+                )}
+                <span
+                  className={cn(
+                    'relative flex size-5 shrink-0 items-center justify-center rounded-full border font-mono text-[10px] font-semibold tabular-nums',
+                    nobody
+                      ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                      : 'border-brand-indigo-soft bg-background text-brand-indigo-deep'
+                  )}
+                >
+                  <span className="sr-only">Step </span>
+                  {step.order}
+                </span>
+                <div className="min-w-0 pb-0.5">
+                  <p
+                    className={cn(
+                      'text-[13px] font-medium leading-5',
+                      nobody ? 'text-destructive' : 'text-foreground'
+                    )}
+                  >
+                    {who}
+                  </p>
+                  {step.label.trim().toLowerCase() !== who.toLowerCase() && (
+                    <p className="text-[11px] leading-4 text-muted-foreground">
+                      {step.label}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      {problem && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs leading-relaxed text-destructive"
+        >
+          <AlertCircle
+            className="mt-0.5 size-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{problem}</span>
+        </p>
+      )}
+    </section>
   );
 }
 

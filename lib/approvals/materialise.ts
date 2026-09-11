@@ -11,7 +11,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// ⚠ TYPE-ONLY. `decide.ts` is `server-only` and pulls in both subject handlers;
+// a value import here would break the repair script that imports this file.
+// The follow-up is loaded with a dynamic import, and only when an actor is
+// given — which no script does.
+import type { DecideActor } from '@/lib/approvals/decide';
 import type {
+  ApprovalRepointOutcome,
+  ApprovalRule,
   ApproverLevelScope,
   StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
@@ -60,6 +67,17 @@ export type OpenApprovalRequestInput = {
   levelType: ApproverLevelScope | null;
   filedBy: string | null;
   filedByEmail: string;
+  /**
+   * People who must never be frozen into a named step's pool on this request.
+   *
+   * ⚠ OPTIONAL AND EMPTY BY DEFAULT, so a consumer that does not pass it gets
+   * exactly the pool it always got. A grade change passes the filer: a teacher
+   * named on a step (or a coordinator filing on a colleague's behalf) must not
+   * be able to approve their own request. A derived step holds no pool, so
+   * this cannot reach it — the decide pipeline refuses the filer there
+   * (`SUBJECT_PRECHECKS` in lib/approvals/decide.ts).
+   */
+  excludeUserIds?: readonly string[];
 };
 
 export type OpenApprovalRequestResult =
@@ -73,6 +91,8 @@ type ConfiguredStage = {
   stage_order: number;
   label: string;
   resolver: 'named' | 'form_adviser';
+  /** Migration 145. Missing reads as 'any'. */
+  approval_rule?: ApprovalRule | null;
 };
 
 export type ConfiguredApprover = {
@@ -104,6 +124,19 @@ export function poolForLevelType(
   return out;
 }
 
+/**
+ * The rule a step is filed with. 'all' only ever on a named step — the same
+ * line migration 145's CHECK draws — so anything else reads as 'any'.
+ */
+export function ruleForFiling(stage: {
+  resolver: 'named' | 'form_adviser';
+  approval_rule?: ApprovalRule | null;
+}): ApprovalRule {
+  return stage.resolver === 'named' && stage.approval_rule === 'all'
+    ? 'all'
+    : 'any';
+}
+
 /** The active steps of a flow, in order, each with its people if it names any. */
 export async function loadConfiguredLadder(
   service: SupabaseClient,
@@ -111,7 +144,7 @@ export async function loadConfiguredLadder(
 ): Promise<Array<ConfiguredStage & { approvers: ConfiguredApprover[] }>> {
   const { data: stages, error } = await service
     .from('approval_stages')
-    .select('id, stage_order, label, resolver')
+    .select('id, stage_order, label, resolver, approval_rule')
     .eq('flow', flow)
     .eq('is_active', true)
     .order('stage_order', { ascending: true });
@@ -199,6 +232,7 @@ export async function openApprovalRequest(
   }
 
   const requestId = (created as unknown as { id: string }).id;
+  const excluded = new Set(input.excludeUserIds ?? []);
 
   // ⚠ Renumbered 1..n rather than copying the configuration's own numbers. A
   // deactivated stage leaves a gap in the configuration, and the ladder is a
@@ -208,6 +242,15 @@ export async function openApprovalRequest(
     stage_order: index + 1,
     label: stage.label,
     resolver: stage.resolver,
+    // ⚠ Which configured step this is a copy of (migration 146), so a later
+    // change to that step's people or rule still finds this row after the
+    // step is renamed. `repointWaitingStages` matched by label alone before,
+    // and a rename cut every request already on the step off from it.
+    config_stage_id: stage.id,
+    // Copied like the pool (migration 145). ⚠ 'all' is written only onto a
+    // named step: migration 145's CHECK refuses it on a derived one, and a
+    // configuration row that somehow carried it must not fail the filing.
+    approval_rule: ruleForFiling(stage),
     // Frozen for a named stage; the shape CHECK in migration 126 requires this
     // to be empty for a derived one.
     // ⚠ Filtered to this child's half of the school. An empty result is a
@@ -215,7 +258,9 @@ export async function openApprovalRequest(
     // rather than hand the child to an officer for the other half.
     approver_pool:
       stage.resolver === 'named'
-        ? poolForLevelType(stage.approvers, input.levelType)
+        ? poolForLevelType(stage.approvers, input.levelType).filter(
+            (id) => !excluded.has(id)
+          )
         : [],
     section_id: stage.resolver === 'form_adviser' ? input.sectionId : null,
     // ⚠ Stamped on EVERY row, derived or named, so the pool of a request
@@ -263,14 +308,50 @@ export async function openApprovalRequest(
  * The pool is recomputed per row from the child's own half (`level_type`,
  * stamped on the stage row since migration 128), so one person can hold
  * Primary and another Secondary and each waiting request follows its child.
+ *
+ * ── Finding the copies (migration 146) ──
+ *
+ * ⚠ BY `config_stage_id` FIRST, AND BY LABEL ONLY WHERE THAT IS NULL. A row
+ * filed since 146 names the configured step it was copied from, so renaming
+ * the step no longer cuts it off. The label is the fallback for older rows the
+ * migration could not place — a ladder is renumbered 1..n at filing, so the
+ * number was never a usable key.
+ *
+ * ── The rule (migrations 145 and 146) ──
+ *
+ * ⚠ THE CONFIGURED RULE REACHES THE LIVE STEP TOO, not only a waiting one.
+ * Tightening "any one of them" to "everyone" cannot close a pending step — it
+ * has no approvals, because the first yes closes an 'any' step. Relaxing
+ * "everyone" to "any one of them" closes a step somebody on it has already
+ * approved, in the earliest approver's name, and the request moves on.
+ *
+ * ⚠ EVERY WRITE GOES THROUGH `approval_repoint_request_stage`, one call per
+ * row, which takes the same request lock `approval_advance` does. A plain
+ * update from here could land between an approver's click and its commit, and
+ * rewrite a step the click had just closed.
+ *
+ * ⚠ A LIVE 'all' STEP IS ALWAYS SENT, even when nothing about it changed. A
+ * rebuild made without an actor (the repair script) can leave a step whose
+ * people have all approved; the next edit made with one is what moves it.
+ * When the call closes a step, the subject's follow-up runs in `actor`'s name
+ * (the admin who made the change), and the handlers record the real last
+ * approver beside them.
+ *
+ * ⚠ WITHOUT AN ACTOR, A LIVE 'all' STEP IS LEFT ALONE ENTIRELY — pool and rule
+ * both. It is the only kind of live step a rewrite can close, and closing it
+ * with no follow-up would leave the parent's status, the register and the next
+ * step's email behind the ladder. A step left waiting is consistent, and the
+ * next edit on the approvers screen (which always passes an actor) brings it
+ * in line. The repair scripts call this without one.
  */
 export async function repointWaitingStages(
   service: SupabaseClient,
-  stageId: string
+  stageId: string,
+  actor?: DecideActor | null
 ): Promise<number> {
   const { data: stage, error: stageErr } = await service
     .from('approval_stages')
-    .select('id, flow, stage_order, label, resolver')
+    .select('id, flow, stage_order, label, resolver, approval_rule')
     .eq('id', stageId)
     .maybeSingle();
   if (stageErr) throw new Error(stageErr.message);
@@ -281,9 +362,12 @@ export async function repointWaitingStages(
     stage_order: number;
     label: string;
     resolver: 'named' | 'form_adviser';
+    approval_rule?: ApprovalRule | null;
   };
-  // A derived step works its people out at decision time and holds no pool.
+  // A derived step works its people out at decision time and holds no pool —
+  // and can only ever be 'any', so there is no rule to carry either.
   if (cfg.resolver !== 'named') return 0;
+  const configuredRule = ruleForFiling(cfg);
 
   const { data: approverRows, error: approverErr } = await service
     .from('approval_stage_approvers')
@@ -307,7 +391,7 @@ export async function repointWaitingStages(
   const { data: openRows, error: openErr } = await service
     .from('approval_request_stages')
     .select(
-      'id, label, level_type, approver_pool, approval_requests!inner(flow, status)'
+      'id, request_id, label, config_stage_id, status, approval_rule, level_type, approver_pool, approval_requests!inner(flow, status, filed_by)'
     )
     .eq('approval_requests.flow', cfg.flow)
     .eq('approval_requests.status', 'pending')
@@ -315,30 +399,152 @@ export async function repointWaitingStages(
     .in('status', ['pending', 'waiting']);
   if (openErr) throw new Error(openErr.message);
 
+  type EmbeddedRequest = { filed_by: string | null };
   const rows = (openRows ?? []) as unknown as Array<{
     id: string;
+    request_id?: string;
     label: string;
+    config_stage_id?: string | null;
+    status?: 'pending' | 'waiting';
+    approval_rule?: ApprovalRule | null;
     level_type: ApproverLevelScope | null;
     approver_pool: string[] | null;
+    approval_requests: EmbeddedRequest | EmbeddedRequest[] | null;
   }>;
 
   let changed = 0;
   for (const row of rows) {
-    // ⚠ Matched by LABEL, not by number. A ladder is a snapshot renumbered
-    // 1..n at filing time, so a step deactivated since then leaves the live
-    // configuration's numbers and a frozen ladder's numbers disagreeing. The
-    // label is what somebody actually named and survives that.
-    if (row.label !== cfg.label) continue;
-    const next = poolForLevelType(approvers, row.level_type ?? null);
-    if (samePool(row.approver_pool ?? [], next)) continue;
-    const { error: writeErr } = await service
-      .from('approval_request_stages')
-      .update({ approver_pool: next })
-      .eq('id', row.id);
-    if (writeErr) throw new Error(writeErr.message);
-    changed += 1;
+    if (!isCopyOfStage(row, { id: stageId, label: cfg.label })) continue;
+    const req = Array.isArray(row.approval_requests)
+      ? row.approval_requests[0]
+      : row.approval_requests;
+    const filedBy = req?.filed_by ?? null;
+    // ⚠ THE FILER STAYS OFF THEIR OWN REQUEST. A grade change is opened with
+    // its filer left out of every pool (`excludeUserIds`); rebuilding the pool
+    // from the configuration here would quietly put them back the next time
+    // anyone edits the step. Applied to every flow because it is a no-op for
+    // the rest: a declaration's filer is a parent, and parents are never on a
+    // staff step.
+    const next = poolForLevelType(approvers, row.level_type ?? null).filter(
+      (id) => id !== filedBy
+    );
+    const poolChanged = !samePool(row.approver_pool ?? [], next);
+    const rowRule: ApprovalRule = row.approval_rule ?? 'any';
+    const ruleChanged = rowRule !== configuredRule;
+    // The only live step a rewrite can close: one somebody may already have
+    // approved. A pending 'any' step has no approvals — its first yes closes
+    // it — so neither a new pool nor 'all' can finish it.
+    const mayClose = row.status === 'pending' && rowRule === 'all';
+
+    if (!poolChanged && !ruleChanged && !mayClose) continue;
+
+    if (mayClose && !actor) {
+      // Only worth saying when this run would have changed something; an
+      // untouched step is exactly as it was.
+      if (poolChanged || ruleChanged) {
+        console.warn(
+          '[approvals] a live step that needs everyone was left as it was, because no acting admin was given to run what follows if it moves on:',
+          row.id
+        );
+      }
+      continue;
+    }
+
+    const { data, error } = await service.rpc(
+      'approval_repoint_request_stage',
+      {
+        p_request_stage_id: row.id,
+        p_pool: next,
+        p_rule: configuredRule,
+      }
+    );
+    if (error) throw new Error(error.message);
+
+    const result = (Array.isArray(data) ? data[0] : data) as {
+      outcome: ApprovalRepointOutcome;
+      decided_stage_order: number | null;
+      next_stage_order: number | null;
+    } | null;
+    // The request closed, or the step was decided, while we waited for the
+    // lock. Nothing was written, so nothing was re-pointed.
+    if (!result || result.outcome === 'skipped') continue;
+
+    if (poolChanged || ruleChanged) changed += 1;
+
+    if (result.outcome === 'advanced' || result.outcome === 'completed') {
+      await followUpAfterRepoint(service, row, actor ?? null, {
+        outcome: result.outcome,
+        decidedStageOrder: result.decided_stage_order,
+        nextStageOrder: result.next_stage_order,
+      });
+    }
   }
   return changed;
+}
+
+/**
+ * Is this ladder row a copy of that configured step?
+ *
+ * ⚠ BY ID WHEN THE ROW CARRIES ONE (migration 146) — a rename must not cut a
+ * request off. By LABEL only for a row filed before 146 that the migration
+ * could not place; a ladder is renumbered 1..n at filing, so a step
+ * deactivated since then leaves the numbers disagreeing, and the label is what
+ * somebody actually named.
+ */
+export function isCopyOfStage(
+  row: { label: string; config_stage_id?: string | null },
+  stage: { id: string; label: string }
+): boolean {
+  if (row.config_stage_id) return row.config_stage_id === stage.id;
+  return row.label === stage.label;
+}
+
+/**
+ * What follows a step that `approval_repoint_request_stage` just closed: the
+ * subject's handler, in the acting admin's name.
+ *
+ * ⚠ LOGS RATHER THAN THROWS. The ladder has moved and the admin's edit
+ * succeeded; the repair scripts bring a subject left behind back in line.
+ */
+async function followUpAfterRepoint(
+  service: SupabaseClient,
+  row: { id: string; request_id?: string },
+  actor: DecideActor | null,
+  moved: {
+    outcome: 'advanced' | 'completed';
+    decidedStageOrder: number | null;
+    nextStageOrder: number | null;
+  }
+): Promise<void> {
+  if (!actor) {
+    // Only reachable when the step changed shape between our read and the
+    // lock — `repointWaitingStages` never sends a closable step without one.
+    console.error(
+      '[approvals] a step moved on with no acting admin, so its follow-up did not run:',
+      row.id
+    );
+    return;
+  }
+
+  const requestId = row.request_id;
+  if (!requestId) {
+    console.error(
+      '[approvals] a step moved on but its request id was not read; the follow-up did not run:',
+      row.id
+    );
+    return;
+  }
+
+  const { runSubjectFollowUp } = await import('@/lib/approvals/decide');
+  await runSubjectFollowUp({
+    service,
+    actor,
+    requestId,
+    outcome: moved.outcome,
+    decidedStageOrder: moved.decidedStageOrder,
+    nextStageOrder: moved.nextStageOrder,
+    via: 'repoint',
+  });
 }
 
 /** Order is not meaningful in a pool, so compare as sets. */

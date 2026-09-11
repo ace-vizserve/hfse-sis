@@ -35,3 +35,15 @@ Cross-module notification bell — surfaces the `changeRequests` realtime signal
 **Visual:** popover panel (`Popover`/`PopoverContent`, same primitive as `<SidebarProfile>`'s account menu), numeric destructive-pill badge matching the existing sidebar nav-item badge style (not a bare dot), avatar-initials circles per row (student-name-derived, same gradient-circle convention as the sidebar profile pill), `staleTime: 0` on the lazy on-open fetch (closes a window where a 60s-stale cached panel could disagree with the instantly-live badge). Each of the 7 layouts' header `<div className="flex items-center w-full mx-auto max-w-[1440px]">` wrapper co-centers the header row with `PageShell`'s own `max-w-360` (= 1440px) page-content width.
 
 No migration.
+
+### KD #208
+
+**Grade change requests run on approval steps; teachers no longer pick approvers** (2026-09-11, migration 144). Supersedes the approver picker of KD #25/#88.
+
+- **Two routes, picked at filing and fixed from then on:** `markbook.grade_change` (normal) and `markbook.grade_change_aeb` (Academic and Examination Board). It is AEB once parents could have seen a report card showing that grade, meaning a publish window **started** for the same or a later term in any section the student sat in that AY. Windows since ended, revoked, or re-published later still count, via `publication.create`/`publication.delete` audit rows. `lib/change-requests/approval-route.ts`.
+- **Both run on the KD #196 engine.** Steps and people are set at `/sis/admin/approvers`; the old pool UI is gone. AEB is seeded as Ms Chandana → Ms Christina → Ms Norma → Mr Gary or Ms Nina (Mr Ace, 27 Aug, reconfirmed 2026-09-11). Seed: `scripts/seed-grade-change-approval-steps.ts`.
+- **`grade_change_requests` stays the subject.** `status` is a projection written by `lib/change-requests/approval-handler.ts`; the coordinator's apply step is unchanged. A rejection ends the request.
+- **The filer never decides their own request.** They are left out of named pools at filing and refused before `approval_advance` for adviser steps.
+- **Dropped:** the 2-hour rejection undo. It came from an internal audit (commit `d260f1b7`), never from the school.
+- ⚠ **`approval_flow IS NULL` marks a legacy two-approver row.** Legacy rows finish on the old path. Every copy of the legacy `.or()` predicate carries `approval_flow.is.null`, or new rows would be offered to every school admin.
+- 🔴 **Apply migration 144 BEFORE deploying.** The queue, counts, feed and filing all read `approval_flow`; without the column filing fails and the queue renders empty.

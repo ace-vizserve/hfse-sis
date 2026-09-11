@@ -1,9 +1,9 @@
 // Pure aggregator for the SIS Admin hub's "Needs attention" feed. Merges
 // independent signals — enrolled-but-unplaced students, pending grade
-// change requests, unadvised sections, approver-flow gaps, and levels with
-// no subjects configured — into one severity-ranked row list. No I/O; the
-// RSC page fetches the inputs and this function just shapes them for
-// `<HubAttentionFeed>`.
+// change requests, unadvised sections, grade-change approval steps that are
+// not ready, and levels with no subjects configured — into one
+// severity-ranked row list. No I/O; the RSC page fetches the inputs and this
+// function just shapes them for `<HubAttentionFeed>`.
 //
 // A "demand for a level that isn't offered" signal used to live here too
 // (fed by lib/sis/level-demand.ts) — removed by migration 086 alongside
@@ -17,7 +17,14 @@
 // carries the meaning too — color is never the only signal.
 
 import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard';
-import { classifyApproverReadiness } from '@/lib/sis/approver-readiness';
+import {
+  classifyStagedFlowReadiness,
+  type ReadinessStage,
+} from '@/lib/approvals/readiness';
+import type {
+  ApproverLevelScope,
+  StagedApprovalFlow,
+} from '@/lib/schemas/approval-flows';
 import type { EmptyLevelGap } from '@/lib/sis/subject-config-gaps';
 
 export type AttentionSeverity = 'destructive' | 'amber';
@@ -39,11 +46,22 @@ export function buildAttentionRows(input: {
   // (tests, future consumers) can omit it and get the pre-existing 3-signal
   // behaviour untouched.
   unassignedAdviserSections?: Array<{ id: string; name: string }>;
-  // Per-flow assigned-approver count (e.g. { 'markbook.change_request': 1 }).
-  // Superadmin-only signal — the hub page only fetches this for that role
-  // (mirrors the /sis/admin/approvers ROUTE_ACCESS gate + the system-health
-  // strip's existing superadmin-only framing).
-  approverFlowCounts?: Record<string, number>;
+  // The steps of each grade-change approval, with a short name for the row.
+  // Superadmin-only signal — the hub page only has these for that role,
+  // because they arrive on the system-health payload (mirrors the
+  // /sis/admin/approvers ROUTE_ACCESS gate).
+  //
+  // ⚠ This replaced a per-flow COUNT of the two-approver pool, read as "ready
+  // at 2". Grade changes no longer use that pool; they go through ordered
+  // steps, and "ready" means every named step has somebody on it.
+  approvalFlows?: Array<{
+    flow: StagedApprovalFlow;
+    label: string;
+    stages: ReadinessStage[];
+  }>;
+  // Halves of the school with classes this year, so a step whose people each
+  // cover one half can be flagged when the other half has nobody.
+  levelTypesInUse?: ApproverLevelScope[];
   // Levels this AY that have zero subjects attached at all — same
   // computation that powers the warning banner on /sis/admin/subjects,
   // surfaced here so the gap doesn't require a visit to that page to
@@ -96,16 +114,22 @@ export function buildAttentionRows(input: {
     });
   }
 
-  for (const [flow, count] of Object.entries(input.approverFlowCounts ?? {})) {
-    const readiness = classifyApproverReadiness(count);
+  for (const { flow, label, stages } of input.approvalFlows ?? []) {
+    const readiness = classifyStagedFlowReadiness(
+      stages,
+      input.levelTypesInUse,
+      flow
+    );
     if (readiness.tone === 'mint') continue; // ready, nothing to flag
     rows.push({
       id: `approver-flow-${flow}`,
       severity: 'destructive',
-      text: readiness.warning ?? readiness.label,
-      meta: readiness.label,
+      // The feed shows one truncated line, so the short name and the short
+      // state go first; the full sentence is on the approvers screen.
+      // Only the first letter drops: "Nobody covers Secondary" keeps its half.
+      text: `${label}: ${readiness.label.charAt(0).toLowerCase()}${readiness.label.slice(1)}`,
       href: '/sis/admin/approvers',
-      actionLabel: 'Add approver',
+      actionLabel: 'Set up steps',
     });
   }
 

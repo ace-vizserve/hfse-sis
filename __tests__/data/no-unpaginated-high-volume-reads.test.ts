@@ -78,6 +78,13 @@ const ALLOWED: Record<string, { rows: number; measured: string; why: string }> =
     // defects it was written for all had a plausible estimate in a comment
     // above them, and the estimates were roughly right.
 
+    // ── one grading sheet / one student's sections ─────────────────────────
+    'lib/change-requests/approval-route.ts': {
+      rows: 36,
+      measured: '2026-09-11',
+      why: 'grade_entries of ONE sheet (worst sheet 36 of 21,280 total) to pick each student’s approval route; audit_log publication.create/delete rows for ONE student’s sections this AY (worst section 10, 54 total)',
+    },
+
     // ── one student's own history ──────────────────────────────────────────
     'lib/attendance/queries.ts': {
       rows: 274,

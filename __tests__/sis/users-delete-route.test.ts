@@ -58,11 +58,36 @@ const mockGetUserFootprint = vi.fn(
 const mockIsLastSuperadmin = vi.fn(
   (_users: unknown, _targetId: string) => false
 );
+// The approval-step pair was added when deleting an account started bringing
+// in-flight requests on its steps in line (migration 146 review). Mocked here
+// for the same reason as the two above — this suite pins the ROUTE's order:
+// the steps are read BEFORE the delete (the cascade erases the rows that say
+// which they were), the delete is refused if they cannot be read, and the
+// re-point runs only AFTER a delete that landed.
+let mockNamedStageIds: string[] = [];
+let mockNamedStagesError: Error | null = null;
+const mockListApprovalStagesNamingUser = vi.fn(
+  (_service: unknown, _userId: string) =>
+    mockNamedStagesError
+      ? Promise.reject(mockNamedStagesError)
+      : Promise.resolve(mockNamedStageIds)
+);
+const mockRepointStagesAfterUserDeletion = vi.fn(
+  (_service: unknown, _stageIds: readonly string[], _actor: unknown) =>
+    Promise.resolve()
+);
 vi.mock('@/lib/sis/user-deletion', () => ({
   getUserFootprint: (service: unknown, userId: string, role: string | null) =>
     mockGetUserFootprint(service, userId, role),
   isLastSuperadmin: (users: unknown, targetId: string) =>
     mockIsLastSuperadmin(users, targetId),
+  listApprovalStagesNamingUser: (service: unknown, userId: string) =>
+    mockListApprovalStagesNamingUser(service, userId),
+  repointStagesAfterUserDeletion: (
+    service: unknown,
+    stageIds: readonly string[],
+    actor: unknown
+  ) => mockRepointStagesAfterUserDeletion(service, stageIds, actor),
 }));
 
 type FakeUser = {
@@ -145,6 +170,11 @@ describe('DELETE /api/sis/admin/users/[id]', () => {
     mockListUsersError = null;
     mockDeleteUser.mockClear();
     mockDeleteUser.mockImplementation(() => Promise.resolve({ error: null }));
+    mockNamedStageIds = [];
+    mockNamedStagesError = null;
+    mockListApprovalStagesNamingUser.mockClear();
+    mockRepointStagesAfterUserDeletion.mockClear();
+    mockRevalidateTag.mockClear();
   });
 
   it('blocks self-delete with 403 before any lookup', async () => {
@@ -253,10 +283,65 @@ describe('DELETE /api/sis/admin/users/[id]', () => {
     mockDeleteUser.mockImplementation(() =>
       Promise.resolve({ error: { message: 'auth provider unavailable' } })
     );
+    mockNamedStageIds = ['stage-1'];
     const res = await callDelete();
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe('auth provider unavailable');
     expect(mockLogAction).not.toHaveBeenCalled();
+    // Nothing was deleted, so nothing on the step changed.
+    expect(mockRepointStagesAfterUserDeletion).not.toHaveBeenCalled();
+  });
+
+  describe('approval steps the account was on', () => {
+    it('reads them before the delete and brings their requests in line after, as the deleting admin', async () => {
+      mockNamedStageIds = ['stage-1', 'stage-2'];
+      const order: string[] = [];
+      mockListApprovalStagesNamingUser.mockImplementationOnce(() => {
+        order.push('read');
+        return Promise.resolve(mockNamedStageIds);
+      });
+      mockDeleteUser.mockImplementationOnce(() => {
+        order.push('delete');
+        return Promise.resolve({ error: null });
+      });
+      mockRepointStagesAfterUserDeletion.mockImplementationOnce(() => {
+        order.push('repoint');
+        return Promise.resolve();
+      });
+
+      const res = await callDelete();
+
+      expect(res.status).toBe(200);
+      expect(order).toEqual(['read', 'delete', 'repoint']);
+      expect(mockListApprovalStagesNamingUser.mock.calls[0][1]).toBe(
+        'target-1'
+      );
+      expect(mockRepointStagesAfterUserDeletion.mock.calls[0][1]).toEqual([
+        'stage-1',
+        'stage-2',
+      ]);
+      expect(mockRepointStagesAfterUserDeletion.mock.calls[0][2]).toEqual({
+        id: 'caller-1',
+        email: 'caller@hfse.test',
+        role: 'superadmin',
+      });
+      expect(mockRevalidateTag).toHaveBeenCalledWith('sis-health', 'max');
+    });
+
+    it('does not delete an account whose steps cannot be read', async () => {
+      mockNamedStagesError = new Error('boom');
+      const res = await callDelete();
+      expect(res.status).toBe(500);
+      expect(mockDeleteUser).not.toHaveBeenCalled();
+      expect(mockLogAction).not.toHaveBeenCalled();
+    });
+
+    it('re-points nothing, and leaves the readiness strip alone, for an account on no step', async () => {
+      const res = await callDelete();
+      expect(res.status).toBe(200);
+      expect(mockRepointStagesAfterUserDeletion).not.toHaveBeenCalled();
+      expect(mockRevalidateTag).not.toHaveBeenCalledWith('sis-health', 'max');
+    });
   });
 });

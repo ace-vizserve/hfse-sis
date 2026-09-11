@@ -14,6 +14,22 @@ vi.mock('@/lib/sidebar/use-declaration-count', () => ({
   useDeclarationCount: (_userId: unknown, initial: number | null) => initial,
 }));
 
+// The grade-change steps on the approval engine (migration 144). Recorded so
+// the tests can prove the bell asks about BOTH grade-change flows, not one.
+const { stagedFlowsSeen } = vi.hoisted(() => ({
+  stagedFlowsSeen: [] as string[][],
+}));
+vi.mock('@/lib/sidebar/use-staged-approval-count', () => ({
+  useStagedApprovalCount: (
+    _userId: unknown,
+    flows: readonly string[],
+    initial: number | null
+  ) => {
+    stagedFlowsSeen.push([...flows]);
+    return initial;
+  },
+}));
+
 // ⚠ Task 4 replaced the bell's own preview fetch (two endpoints, merged and
 // rendered inline) with a lazily-mounted <ActivityPanel>, which owns its own
 // `useInfiniteQuery` against a single GET /api/activity. The row-level
@@ -142,6 +158,72 @@ describe('NotificationBell — declarations', () => {
         userId="u-1"
         initialCount={null}
         initialDeclarationCount={null}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Activity' })
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Migration 144 moved grade changes onto the ordered approval engine. The
+ * legacy count (`initialCount`) now excludes those rows, and the steps waiting
+ * for this person come in as a third source — for every role, teacher
+ * included, because the Academic and Examination Board can hold a teacher
+ * account and the bell is how a step finds them.
+ */
+describe('NotificationBell — grade-change steps', () => {
+  it('adds all three sources on the badge', () => {
+    render(
+      <NotificationBell
+        role="school_admin"
+        userId="u-1"
+        initialCount={1}
+        initialDeclarationCount={2}
+        initialGradeChangeStepCount={4}
+      />
+    );
+    expect(screen.getByText('7')).toBeInTheDocument();
+  });
+
+  it('counts a teacher’s steps on its own', () => {
+    render(
+      <NotificationBell
+        role="teacher"
+        userId="u-1"
+        initialCount={0}
+        initialDeclarationCount={0}
+        initialGradeChangeStepCount={2}
+      />
+    );
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
+
+  it('asks about both grade-change flows', () => {
+    stagedFlowsSeen.length = 0;
+    render(
+      <NotificationBell
+        role="teacher"
+        userId="u-1"
+        initialCount={null}
+        initialGradeChangeStepCount={1}
+      />
+    );
+    expect(stagedFlowsSeen.at(-1)?.sort()).toEqual([
+      'markbook.grade_change',
+      'markbook.grade_change_aeb',
+    ]);
+  });
+
+  it('stays hidden when no source is tracked', () => {
+    render(
+      <NotificationBell
+        role="teacher"
+        userId="u-1"
+        initialCount={null}
+        initialDeclarationCount={null}
+        initialGradeChangeStepCount={null}
       />
     );
     expect(

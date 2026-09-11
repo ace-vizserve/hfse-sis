@@ -17,13 +17,33 @@ import {
 } from '@/lib/auth/teacher-assignments';
 import {
   notifyApprovedNotApplied,
-  notifyRequestFiled,
   type ApprovedStaleSummary,
 } from '@/lib/notifications/email-change-request';
 import { createClient } from '@/lib/supabase/server';
-import { listApproversForFlow } from '@/lib/sis/approvers/queries';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import {
+  GRADE_CHANGE_SUBJECT_TYPE,
+  resolveGradeChangeFlow,
+} from '@/lib/change-requests/approval-route';
+import {
+  gradeChangeLadderProblem,
+  summariseGradeChangeLadder,
+} from '@/lib/change-requests/ladder-summary';
+import {
+  loadConfiguredLadder,
+  openApprovalRequest,
+  type OpenApprovalRequestResult,
+} from '@/lib/approvals/materialise';
+import { loadLevelTypesBySection } from '@/lib/approvals/level-types';
+import {
+  loadGradeChangeStepRecipients,
+  sendGradeChangeStepEmails,
+} from '@/lib/change-requests/approval-notify';
+import type {
+  ApproverLevelScope,
+  GradeChangeApprovalFlow,
+} from '@/lib/schemas/approval-flows';
 
 // GET /api/change-requests
 // Query params:
@@ -54,20 +74,36 @@ export async function GET(request: NextRequest) {
        status, requested_by, requested_by_email, requested_at,
        reviewed_by, reviewed_by_email, reviewed_at, decision_note,
        applied_by, applied_at,
-       primary_approver_id, secondary_approver_id,
+       primary_approver_id, secondary_approver_id, approval_flow,
        approved_at, reminder_sent_at, rejection_undone_at`
     )
     .order('requested_at', { ascending: false });
 
   if (auth.role === 'teacher') {
     query = query.eq('requested_by', auth.user.id);
-  } else if (auth.role === 'school_admin' || auth.role === 'superadmin') {
+  } else if (
+    (auth.role === 'school_admin' || auth.role === 'superadmin') &&
+    !sheetId
+  ) {
     // Designated-approver scope: school_admin+ sees only requests where
     // they're primary or secondary. Legacy rows (both NULL) fall back to
     // the broadcast-style "anyone school_admin+ sees it" behavior so
     // pre-feature pending requests don't strand.
+    //
+    // ⚠ `approval_flow.is.null` INSIDE THE LEGACY ARM (migration 144). A
+    // request filed on the approval ladder also has both approver columns
+    // null, so without it every new request would be handed to every school
+    // admin as if it were theirs to decide. Who decides those is the ladder's
+    // business, not this list's.
+    //
+    // ⚠ NOT APPLIED WHEN `sheet_id` IS PRESENT. That call is the apply dialog
+    // on a locked sheet (components/grading/use-approval-reference.tsx),
+    // looking for the approved request behind the cell being edited. Applying
+    // is a different right from deciding, and the entries PATCH route enforces
+    // it — scoping this list to approvers would hide every ladder request from
+    // the admin who has to apply it.
     query = query.or(
-      `primary_approver_id.eq.${auth.user.id},secondary_approver_id.eq.${auth.user.id},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+      `primary_approver_id.eq.${auth.user.id},secondary_approver_id.eq.${auth.user.id},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)`
     );
   }
   if (status) {
@@ -246,9 +282,8 @@ export async function POST(request: NextRequest) {
   // Teachers must be assigned to this section + subject to file a request —
   // held OR covered. A substitute who finds a wrong mark on a locked sheet has
   // to be able to raise it; the alternative is waiting for a teacher who is on
-  // leave. Self-approval is already impossible: the approver check below
-  // refuses to let a requester name themselves, keyed on user id, and a
-  // substitute acts under their own login.
+  // leave. A substitute acts under their own login, so the approval ladder
+  // records who filed it.
   if (auth.role === 'teacher') {
     const cookieClient = await createClient();
     const assignments = await loadEffectiveAssignmentsForUser(
@@ -261,43 +296,6 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-  }
-
-  // Approver validation: both designated users must currently be in the
-  // `markbook.change_request` approver list, and neither can be the teacher
-  // filing the request. The form schema already rejects identical primary
-  // + secondary; we re-check here for defence-in-depth.
-  if (
-    body.primary_approver_id === auth.user.id ||
-    body.secondary_approver_id === auth.user.id
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          'You cannot designate yourself as an approver on your own request.',
-      },
-      { status: 400 }
-    );
-  }
-  if (body.primary_approver_id === body.secondary_approver_id) {
-    return NextResponse.json(
-      { error: 'Primary and secondary approvers must be different people.' },
-      { status: 400 }
-    );
-  }
-  const approvers = await listApproversForFlow('markbook.change_request');
-  const approverIds = new Set(approvers.map((a) => a.user_id));
-  if (!approverIds.has(body.primary_approver_id)) {
-    return NextResponse.json(
-      { error: 'Primary approver is not assigned to this flow.' },
-      { status: 400 }
-    );
-  }
-  if (!approverIds.has(body.secondary_approver_id)) {
-    return NextResponse.json(
-      { error: 'Secondary approver is not assigned to this flow.' },
-      { status: 400 }
-    );
   }
 
   // Snapshot the current value from the entry for the requested field/slot.
@@ -376,14 +374,60 @@ export async function POST(request: NextRequest) {
     // Missing config is its own bug class, not in scope here.
   }
 
-  // Snapshot the eligible designated-approver pool at filing time (KD #41 +
-  // migration 044). Frozen here so that an admin removed from the flow after
-  // the request was filed still resolves correctly in the inbox.
-  const eligibleSnapshot = approvers.map((a) => ({
-    user_id: a.user_id,
-    email: a.email ?? null,
-    display_name: a.display_name ?? null,
-  }));
+  // ── Who approves it ──────────────────────────────────────────────────────
+  //
+  // The teacher no longer chooses (migration 144). Once parents could have
+  // seen this grade on a report card, the change goes to the Academic and
+  // Examination Board; before that, to the ordinary grade change approvers.
+  // The school sets the people on each in SIS Admin → Approvers.
+  //
+  // ⚠ REFUSED BEFORE ANYTHING IS WRITTEN when the steps cannot run. A request
+  // on a ladder with no steps, or with a named step nobody covers for this
+  // class, would sit forever with nobody able to act and nothing explaining
+  // why. Unlike a parent's absence (lib/declarations/approval.ts), a teacher
+  // filing a grade change is staff and can be told plainly who to ask.
+  //
+  // ⚠ THE ROUTE IS FIXED HERE. A report card published after filing does not
+  // move a request already on the ordinary ladder to the board.
+  let flow: GradeChangeApprovalFlow;
+  let levelType: ApproverLevelScope | null;
+  let ladder: Awaited<ReturnType<typeof loadConfiguredLadder>>;
+  try {
+    const [resolvedFlow, levelTypes] = await Promise.all([
+      resolveGradeChangeFlow(service, {
+        gradeEntryId: entry.id,
+        gradingSheetId: sheet.id,
+      }),
+      loadLevelTypesBySection(service, [sheet.section_id]),
+    ]);
+    flow = resolvedFlow;
+    levelType = levelTypes.get(sheet.section_id) ?? null;
+    ladder = await loadConfiguredLadder(service, flow);
+  } catch (e) {
+    console.error(
+      '[change-requests POST] could not work out the approval steps',
+      e instanceof Error ? e.message : String(e)
+    );
+    return NextResponse.json(
+      {
+        error:
+          'Could not work out who needs to approve this change. Nothing was sent — please try again.',
+      },
+      { status: 500 }
+    );
+  }
+
+  // ⚠ THE FILER IS LEFT OFF EVERY STEP. Nobody approves their own request, so
+  // a step whose only person is the teacher filing counts as a step with
+  // nobody on it — refused here, in words that say why.
+  const ladderProblem = gradeChangeLadderProblem(
+    summariseGradeChangeLadder(ladder, levelType, new Map(), {
+      filerId: auth.user.id,
+    })
+  );
+  if (ladderProblem) {
+    return NextResponse.json({ error: ladderProblem }, { status: 409 });
+  }
 
   const { data: inserted, error: insertError } = await service
     .from('grade_change_requests')
@@ -399,9 +443,7 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       requested_by: auth.user.id,
       requested_by_email: auth.user.email ?? '(unknown)',
-      primary_approver_id: body.primary_approver_id,
-      secondary_approver_id: body.secondary_approver_id,
-      eligible_approver_snapshot: eligibleSnapshot,
+      approval_flow: flow,
     })
     .select('*')
     .single();
@@ -409,6 +451,57 @@ export async function POST(request: NextRequest) {
   if (insertError || !inserted) {
     return NextResponse.json(
       { error: insertError?.message ?? 'insert failed' },
+      { status: 500 }
+    );
+  }
+
+  // ⚠ A REQUEST WITH NO LADDER IS TAKEN BACK OUT. Nobody could ever decide it,
+  // no queue would show it, and the teacher would be told it was sent. The
+  // row is removed before any audit row or email refers to it, so a failure
+  // here leaves nothing behind but the log line.
+  let opened: OpenApprovalRequestResult | null = null;
+  try {
+    opened = await openApprovalRequest(service, {
+      flow,
+      subjectType: GRADE_CHANGE_SUBJECT_TYPE,
+      subjectId: inserted.id,
+      sectionId: sheet.section_id,
+      levelType,
+      filedBy: auth.user.id,
+      filedByEmail: auth.user.email ?? '(unknown)',
+      excludeUserIds: [auth.user.id],
+    });
+  } catch (e) {
+    console.error(
+      '[change-requests POST] approval request could not be opened',
+      inserted.id,
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+  if (!opened?.opened) {
+    if (opened) {
+      console.error(
+        '[change-requests POST] approval request not opened',
+        inserted.id,
+        opened.reason
+      );
+    }
+    const { error: rollbackErr } = await service
+      .from('grade_change_requests')
+      .delete()
+      .eq('id', inserted.id);
+    if (rollbackErr) {
+      console.error(
+        '[change-requests POST] rollback of the unsent request failed',
+        inserted.id,
+        rollbackErr.message
+      );
+    }
+    return NextResponse.json(
+      {
+        error:
+          'Could not send this request for approval. Nothing was filed — please try again.',
+      },
       { status: 500 }
     );
   }
@@ -430,113 +523,54 @@ export async function POST(request: NextRequest) {
       slot_index: body.slot_index,
       proposed: body.proposed_value,
       reason_category: body.reason_category,
-      primary_approver_id: body.primary_approver_id,
-      secondary_approver_id: body.secondary_approver_id,
+      flow,
+      request_id: opened.requestId,
     },
   });
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 
-  // Pre-flight: resolve the email recipients for the two designated approvers.
-  // If both have null/empty emails we can't notify anyone — flip the request's
-  // notification_status to 'failed' synchronously and surface a warning to the
-  // teacher so they know to reach the approver(s) directly.
-  const designated = approvers.filter(
-    (a) =>
-      a.user_id === body.primary_approver_id ||
-      a.user_id === body.secondary_approver_id
-  );
-  // Per-approver recipients (id + email) — the email mints a signed action
-  // token keyed on each approver's id for the one-click approve/reject link.
-  const approverRecipients = designated
-    .map((a) => ({ id: a.user_id, email: a.email ?? '' }))
-    .filter((a) => Boolean(a.email));
+  // Pre-flight: who is on step 1, with an email address. Resolved before the
+  // response so a teacher whose request reaches nobody's inbox is told so and
+  // can go and find the approver in person. A named step with nobody on it
+  // was refused above; this catches the rest — a class with no adviser this
+  // week, or approvers with no email on their account.
+  let stepOne: Awaited<ReturnType<typeof loadGradeChangeStepRecipients>> = null;
+  try {
+    stepOne = await loadGradeChangeStepRecipients(service, {
+      flow,
+      gradeChangeRequestId: inserted.id,
+      stageOrder: 1,
+    });
+  } catch (e) {
+    console.error(
+      '[change-requests POST] step 1 recipients could not be read',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
 
   let notificationWarning: string | null = null;
-  if (approverRecipients.length === 0) {
+  if (!stepOne || stepOne.recipients.length === 0) {
     notificationWarning =
-      'Approvers could not be reached by email. Please contact them directly.';
+      'Nobody on the first approval step could be reached by email. Please contact them directly.';
     await service
       .from('grade_change_requests')
       .update({ notification_status: 'failed' })
       .eq('id', inserted.id);
+  } else {
+    // Runs via after() so it survives past the response on Vercel's serverless
+    // runtime (an un-awaited void(async()) has no such guarantee — the function
+    // can freeze once the response is sent, which silently dropped these emails
+    // in prod). The helper persists notification_status (sent / partial /
+    // failed) and never throws.
+    const step = stepOne;
+    after(async () => {
+      await sendGradeChangeStepEmails(service, {
+        gradeChangeRequestId: inserted.id,
+        step,
+      });
+    });
   }
-
-  // Notify designated approvers only. The email scope narrows from "all
-  // school_admin+" (old broadcast) to just the two the teacher picked.
-  // Runs via after() so it survives past the response on Vercel's
-  // serverless runtime (an un-awaited void(async()) has no such guarantee —
-  // the function can freeze once the response is sent, which silently
-  // dropped these emails in prod). After sendAll returns, persist the
-  // resulting notification_status (sent / partial / failed).
-  after(async () => {
-    try {
-      const { student_label, sheet_label } = await fetchLabels(
-        service,
-        sheet.id,
-        entry.id
-      );
-      const { sent, failed } = await notifyRequestFiled(
-        {
-          id: inserted.id,
-          grading_sheet_id: inserted.grading_sheet_id,
-          field_changed: inserted.field_changed,
-          current_value: inserted.current_value,
-          proposed_value: inserted.proposed_value,
-          reason_category: inserted.reason_category,
-          justification: inserted.justification,
-          requested_by_email: inserted.requested_by_email,
-          requested_at: inserted.requested_at,
-          student_label,
-          sheet_label,
-        },
-        approverRecipients
-      );
-      // (0, 0) means RESEND_API_KEY was unset OR there were no recipients —
-      // the pre-flight already wrote 'failed' for the no-recipients case;
-      // either way nothing actually went out, so don't claim 'sent'.
-      const status =
-        sent === 0 && failed === 0
-          ? 'failed'
-          : failed === 0
-            ? 'sent'
-            : sent === 0
-              ? 'failed'
-              : 'partial';
-      await service
-        .from('grade_change_requests')
-        .update({ notification_status: status })
-        .eq('id', inserted.id)
-        .then(
-          () => {},
-          (e) => {
-            console.error(
-              '[change-request POST] notification_status update failed',
-              e
-            );
-          }
-        );
-    } catch (e) {
-      console.error('[change-requests] notify filed failed', e);
-      // notifyRequestFiled / fetchLabels threw before sendAll could resolve.
-      // Mark notification_status='failed' so the row doesn't sit at the
-      // column default 'pending' indefinitely (which would be
-      // indistinguishable from "not yet attempted").
-      await service
-        .from('grade_change_requests')
-        .update({ notification_status: 'failed' })
-        .eq('id', inserted.id)
-        .then(
-          () => {},
-          (innerErr) => {
-            console.error(
-              '[change-request POST] notification_status failed-write also failed',
-              innerErr
-            );
-          }
-        );
-    }
-  });
 
   return NextResponse.json(
     { request: inserted, warning: notificationWarning },

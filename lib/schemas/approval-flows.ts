@@ -9,18 +9,22 @@ import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 //
 // That file's `APPROVER_FLOWS` describes a different mechanism: a flat POOL of
 // approvers where a teacher picks two and whichever acts first becomes
-// "primary". A `>= 2 approvers` rule is hardcoded against that tuple in five
-// places — `lib/sis/approver-readiness.ts`, `lib/sis/health.ts`,
-// `lib/sis/hub-attention.ts`, the Request-edit button and the approvers page's
-// own prose — and only two of those route through the classifier. Adding a
-// staged flow to that tuple would render "at least 2 approvers per flow" over a
-// flow whose actual rule is "at least one person in each NAMED stage", which is
-// a wrong instruction shown to the person configuring it.
+// "primary", ready at ">= 2 approvers". Grade change requests used it until
+// they moved onto the two grade-change flows below; the approvers screen, the
+// /sis readiness strip and the hub's attention feed now all read readiness
+// from `classifyStagedFlowReadiness` (lib/approvals/readiness.ts), whose rule
+// is "at least one person on each NAMED step". The pool's own classifier and
+// its screen were deleted with that move, rather than left describing a rule
+// nothing files against.
 //
-// So staged flows live here, in parallel, and nothing existing moves.
+// Staged flows were kept separate from that tuple from the start, and still
+// are: adding one there would have shown "at least 2 approvers" over a flow
+// whose rule is different.
 
 export const STAGED_APPROVAL_FLOWS = [
   'attendance.student_declaration',
+  'markbook.grade_change',
+  'markbook.grade_change_aeb',
 ] as const;
 export type StagedApprovalFlow = (typeof STAGED_APPROVAL_FLOWS)[number];
 
@@ -37,14 +41,67 @@ export type StagedApprovalFlow = (typeof STAGED_APPROVAL_FLOWS)[number];
 export const DECLARATION_APPROVAL_FLOW: StagedApprovalFlow =
   'attendance.student_declaration';
 
+/**
+ * The two grade-change flows (migration 144). The teacher does not choose
+ * between them — the system does, when the change is filed: once parents have
+ * been able to see the grade on a report card, the change goes to the Academic
+ * and Examination Board instead. See `lib/change-requests/approval-route.ts`.
+ *
+ * Same reason as `DECLARATION_APPROVAL_FLOW` for living here: client
+ * components read these to count and label work.
+ */
+export type GradeChangeApprovalFlow = Extract<
+  StagedApprovalFlow,
+  'markbook.grade_change' | 'markbook.grade_change_aeb'
+>;
+export const GRADE_CHANGE_APPROVAL_FLOW: GradeChangeApprovalFlow =
+  'markbook.grade_change';
+export const GRADE_CHANGE_AEB_APPROVAL_FLOW: GradeChangeApprovalFlow =
+  'markbook.grade_change_aeb';
+
 export const STAGED_FLOW_LABELS: Record<StagedApprovalFlow, string> = {
   'attendance.student_declaration':
     'Attendance · Absence and travel declarations',
+  'markbook.grade_change':
+    'Grade changes — before the report card is published',
+  'markbook.grade_change_aeb':
+    'Grade changes — after the report card is published (Academic and Examination Board)',
 };
 
 export const STAGED_FLOW_DESCRIPTIONS: Record<StagedApprovalFlow, string> = {
   'attendance.student_declaration':
-    'When a parent files an absence or a travel declaration, these people approve it in this order. Each step needs only one of its people to act. If anyone turns it down, it stops there and the parent is told.',
+    'When a parent files an absence or a travel declaration, these people approve it in this order. Each step needs one of its people to approve, unless it is set to need all of them. If anyone turns it down, it stops there and the parent is told.',
+  'markbook.grade_change':
+    'When a teacher asks to change a grade on a locked sheet, and parents have not yet seen that grade on a report card, these people approve it in this order. Each step needs one of its people to approve, unless it is set to need all of them. If anyone turns it down, the grade stays as it is and the teacher is told.',
+  'markbook.grade_change_aeb':
+    'When a teacher asks to change a grade that parents have already been able to see on a report card, the Academic and Examination Board approves it, in this order. Each step needs one of its people to approve, unless it is set to need all of them. If anyone turns it down, the grade stays as it is and the teacher is told.',
+};
+
+/**
+ * The two grade-change routes, short enough for one line of the /sis readiness
+ * strip or one cell of its drill. The long names above belong on the settings
+ * screen.
+ */
+export const GRADE_CHANGE_FLOW_SHORT_LABELS: Record<
+  GradeChangeApprovalFlow,
+  string
+> = {
+  'markbook.grade_change': 'Grade changes before publishing',
+  'markbook.grade_change_aeb': 'Grade changes after publishing',
+};
+
+/**
+ * The example in the "Step name" box when a step is added, per flow.
+ *
+ * ⚠ PER FLOW BECAUSE ONE EXAMPLE READ WRONG ON TWO OF THE THREE CARDS. "Officer
+ * in charge" is the declarations job; on a grade-change card it suggests a
+ * post that has nothing to do with grades. Each stays a JOB, not a person,
+ * because the box's own help line says to name the job.
+ */
+export const STAGE_NAME_EXAMPLES: Record<StagedApprovalFlow, string> = {
+  'attendance.student_declaration': 'Officer in charge',
+  'markbook.grade_change': 'Grade change approvers',
+  'markbook.grade_change_aeb': 'Academic coordinator',
 };
 
 // ── How a stage finds its people ────────────────────────────────────────────
@@ -69,10 +126,33 @@ export const APPROVAL_RESOLVER_LABELS: Record<ApprovalResolver, string> = {
 export const APPROVAL_RESOLVER_DESCRIPTIONS: Record<ApprovalResolver, string> =
   {
     named:
-      'You choose who. Any one of them can approve this step. Anyone you add here will be able to open the whole filing, including any medical certificate attached to it.',
+      'You choose who. Anyone you add here will be able to open the whole filing, including any medical certificate attached to it.',
     form_adviser:
       'Worked out automatically for each child — whoever advises their class at the time, including a co-adviser and anyone covering the class that week. Nobody has to keep a list up to date.',
   };
+
+// ── How many of a step's people must approve (migration 145) ───────────────
+//
+// ⚠ 'all' IS ONLY FOR A STEP OF NAMED PEOPLE. Who counts as a class's form
+// adviser changes with relief cover, so "everyone" on a form adviser step is a
+// set that moves while the step waits. The database refuses it on both
+// `approval_stages` and `approval_request_stages`; `CreateApprovalStageSchema`
+// refuses it before it gets that far.
+//
+// ⚠ A STEP WITH NOBODY ON IT NEVER COUNTS AS "EVERYONE APPROVED". It stalls,
+// visibly, exactly as an empty 'any' step does.
+
+export const APPROVAL_RULES = ['any', 'all'] as const;
+export type ApprovalRule = (typeof APPROVAL_RULES)[number];
+
+export const APPROVAL_RULE_LABELS: Record<ApprovalRule, string> = {
+  any: 'Any one of them approves',
+  all: 'Everyone must approve',
+};
+
+/** Said when 'all' is asked of a form adviser step. */
+export const APPROVAL_RULE_ALL_NEEDS_NAMED =
+  'Only a step with named people can need everyone to approve.';
 
 // ── Which half of the school a named approver covers ────────────────────────
 //
@@ -116,6 +196,9 @@ export const APPROVAL_STAGE_STATUS_VALUES = [
   'pending',
   'approved',
   'rejected',
+  // Migration 144. The request was withdrawn while this step was live. Nobody
+  // on the step decided it, so it carries no decider.
+  'cancelled',
 ] as const;
 export type ApprovalStageStatus = (typeof APPROVAL_STAGE_STATUS_VALUES)[number];
 
@@ -125,6 +208,7 @@ export const APPROVAL_STAGE_STATUS_LABELS: Record<ApprovalStageStatus, string> =
     pending: 'Waiting for a decision',
     approved: 'Approved',
     rejected: 'Turned down',
+    cancelled: 'Cancelled',
   };
 
 export const APPROVAL_REQUEST_STATUS_VALUES = [
@@ -142,12 +226,55 @@ export const APPROVAL_OUTCOMES = [
   'advanced',
   'completed',
   'rejected',
+  // Migration 145. An approval on an 'all' step that still waits on others:
+  // the person's yes is kept, and the step has not moved.
+  'recorded',
   'stage_already_decided',
   'not_authorised',
+  // Migration 145. This person already approved this 'all' step.
+  'already_approved',
   'request_closed',
   'request_not_found',
 ] as const;
 export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
+
+/**
+ * What `approval_reevaluate_stage` (migration 145) can answer — asked after
+ * the people on a waiting 'all' step change, in case the one person still to
+ * approve has just been taken off it.
+ */
+export const APPROVAL_REEVALUATE_OUTCOMES = [
+  'advanced',
+  'completed',
+  'unchanged',
+] as const;
+export type ApprovalReevaluateOutcome =
+  (typeof APPROVAL_REEVALUATE_OUTCOMES)[number];
+
+/**
+ * What `approval_repoint_request_stage` (migration 146) can answer — asked for
+ * each in-flight copy of a step whose people or rule the school just changed.
+ *
+ * 'skipped' — the request had closed, or the step had been decided, by the
+ * time the lock was held; nothing was written. 'unchanged' — the step was
+ * brought in line and did not move. 'advanced' / 'completed' — the live step's
+ * new terms were already met, so it closed and the request moved on.
+ */
+export const APPROVAL_REPOINT_OUTCOMES = [
+  'advanced',
+  'completed',
+  'unchanged',
+  'skipped',
+] as const;
+export type ApprovalRepointOutcome = (typeof APPROVAL_REPOINT_OUTCOMES)[number];
+
+/** What `approval_cancel` (migration 144) can answer. */
+export const APPROVAL_CANCEL_OUTCOMES = [
+  'cancelled',
+  'request_closed',
+  'request_not_found',
+] as const;
+export type ApprovalCancelOutcome = (typeof APPROVAL_CANCEL_OUTCOMES)[number];
 
 // ── Payloads ────────────────────────────────────────────────────────────────
 
@@ -196,18 +323,30 @@ export const DecideApprovalSchema = z
   });
 export type DecideApprovalInput = z.infer<typeof DecideApprovalSchema>;
 
-export const CreateApprovalStageSchema = z.object({
-  flow: z.enum(STAGED_APPROVAL_FLOWS),
-  label: z
-    .string()
-    .trim()
-    .min(1, 'Give this step a name.')
-    .max(
-      APPROVAL_STAGE_LABEL_MAX,
-      `Keep the name to ${APPROVAL_STAGE_LABEL_MAX} characters or fewer.`
-    ),
-  resolver: z.enum(APPROVAL_RESOLVERS),
-});
+export const CreateApprovalStageSchema = z
+  .object({
+    flow: z.enum(STAGED_APPROVAL_FLOWS),
+    label: z
+      .string()
+      .trim()
+      .min(1, 'Give this step a name.')
+      .max(
+        APPROVAL_STAGE_LABEL_MAX,
+        `Keep the name to ${APPROVAL_STAGE_LABEL_MAX} characters or fewer.`
+      ),
+    resolver: z.enum(APPROVAL_RESOLVERS),
+    /** Omitted means 'any' — applied by the server, not here. */
+    approval_rule: z.enum(APPROVAL_RULES).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.approval_rule === 'all' && v.resolver !== 'named') {
+      ctx.addIssue({
+        code: 'custom',
+        message: APPROVAL_RULE_ALL_NEEDS_NAMED,
+        path: ['approval_rule'],
+      });
+    }
+  });
 export type CreateApprovalStageInput = z.infer<
   typeof CreateApprovalStageSchema
 >;
@@ -223,12 +362,19 @@ export const UpdateApprovalStageSchema = z
     /** 'up' / 'down' rather than an absolute position — see lib/approvals/config.ts. */
     move: z.enum(['up', 'down']).optional(),
     is_active: z.boolean().optional(),
+    /**
+     * ⚠ THIS SCHEMA CANNOT KNOW THE STEP'S RESOLVER, so 'all' on a form
+     * adviser step is refused by the route (which reads the step) and, behind
+     * it, by migration 145's CHECK.
+     */
+    approval_rule: z.enum(APPROVAL_RULES).optional(),
   })
   .refine(
     (v) =>
       v.label !== undefined ||
       v.move !== undefined ||
-      v.is_active !== undefined,
+      v.is_active !== undefined ||
+      v.approval_rule !== undefined,
     { message: 'Nothing to change.' }
   );
 export type UpdateApprovalStageInput = z.infer<

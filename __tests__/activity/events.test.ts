@@ -27,6 +27,7 @@ function ladder(overrides: Partial<RequestLadder> = {}): RequestLadder {
     subjectId: 'dec-1',
     status: 'approved',
     currentStageOrder: 2,
+    filedBy: 'parent-1',
     filedByEmail: 'parent@example.com',
     filedAt: '2026-08-24T00:12:00.000Z',
     decidedAt: '2026-08-27T02:01:20.000Z',
@@ -38,6 +39,8 @@ function ladder(overrides: Partial<RequestLadder> = {}): RequestLadder {
         status: 'approved',
         sectionId: 'sec-1',
         approverPool: [],
+        approvalRule: 'any',
+        decisions: [],
         decidedBy: 'u-adviser',
         decidedByEmail: 'radhika.putrevu@hfse.edu.sg',
         decidedAt: '2026-08-24T01:40:00.000Z',
@@ -50,6 +53,8 @@ function ladder(overrides: Partial<RequestLadder> = {}): RequestLadder {
         status: 'approved',
         sectionId: null,
         approverPool: ['u-officer'],
+        approvalRule: 'any',
+        decisions: [],
         decidedBy: 'u-officer',
         decidedByEmail: 'elaine.wee@hfse.edu.sg',
         decidedAt: '2026-08-27T02:01:19.000Z',
@@ -197,6 +202,8 @@ describe('buildDeclarationEvents', () => {
           status: 'approved',
           sectionId: 'sec-1',
           approverPool: [],
+          approvalRule: 'any',
+          decisions: [],
           decidedBy: 'u-adviser',
           decidedByEmail: 'radhika.putrevu@hfse.edu.sg',
           decidedAt: '2026-08-20T00:00:00.000Z',
@@ -209,6 +216,8 @@ describe('buildDeclarationEvents', () => {
           status: 'rejected',
           sectionId: null,
           approverPool: ['u-officer'],
+          approvalRule: 'any',
+          decisions: [],
           decidedBy: 'u-officer',
           decidedByEmail: 'elaine.wee@hfse.edu.sg',
           decidedAt: '2026-08-27T08:22:00.000Z',
@@ -221,6 +230,8 @@ describe('buildDeclarationEvents', () => {
           status: 'waiting',
           sectionId: null,
           approverPool: ['u-registrar'],
+          approvalRule: 'any',
+          decisions: [],
           decidedBy: null,
           decidedByEmail: null,
           decidedAt: null,
@@ -255,6 +266,8 @@ describe('buildDeclarationEvents', () => {
           status: 'rejected',
           sectionId: 'sec-1',
           approverPool: [],
+          approvalRule: 'any',
+          decisions: [],
           decidedBy: 'u-adviser',
           decidedByEmail: 'radhika.putrevu@hfse.edu.sg',
           decidedAt: '2026-08-20T00:00:00.000Z',
@@ -509,6 +522,152 @@ describe('buildGradeChangeEvents', () => {
     expect(events.some((e) => e.id.endsWith(':reviewed:secondary'))).toBe(
       false
     );
+  });
+});
+
+// Migration 144. A request decided step by step has a ladder, and the ladder is
+// the record: every decision on it is its own event. The review columns the
+// engine writes back onto the row summarise the same outcome, so reading both
+// would tell the final approval twice.
+describe('buildGradeChangeEvents — a request decided step by step', () => {
+  const step = (
+    stageOrder: number,
+    status: 'waiting' | 'pending' | 'approved' | 'rejected' | 'cancelled',
+    extra: Partial<{
+      decidedBy: string;
+      decidedByEmail: string;
+      decidedAt: string;
+      decisionNote: string;
+    }> = {}
+  ) => ({
+    stageOrder,
+    label: stageOrder === 1 ? 'Head of Department' : 'Principal',
+    status,
+    decidedBy: extra.decidedBy ?? null,
+    decidedByEmail: extra.decidedByEmail ?? null,
+    decidedAt: extra.decidedAt ?? null,
+    decisionNote: extra.decisionNote ?? null,
+  });
+
+  it('emits one event per decided step, and none from the review columns', () => {
+    const events = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-teacher',
+      steps: [
+        step(1, 'approved', {
+          decidedBy: 'u-officer',
+          decidedAt: '2026-08-27T01:00:00.000Z',
+        }),
+        step(2, 'approved', {
+          decidedBy: 'u-registrar',
+          decidedAt: '2026-08-27T02:00:00.000Z',
+          decisionNote: '<p>Checked against the paper.</p>',
+        }),
+      ],
+    });
+
+    expect(events.map((e) => e.id)).toEqual([
+      'grade_change:gcr-1:requested',
+      'grade_change:gcr-1:step:1',
+      'grade_change:gcr-1:step:2',
+      'grade_change:gcr-1:applied',
+    ]);
+    expect(events[1].predicate).toBe(
+      'approved the “Head of Department” step of the mark change for Samira Bakhtiari.'
+    );
+    expect(events[1].actorLabel).toBe('Elaine Wee');
+    expect(events[2].details).toEqual([
+      { kind: 'note', text: 'Checked against the paper.' },
+    ]);
+  });
+
+  it('marks the step that turned it down, and invents nothing after it', () => {
+    const events = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-officer',
+      status: 'rejected',
+      appliedAt: null,
+      appliedById: null,
+      steps: [
+        step(1, 'rejected', {
+          decidedBy: 'u-officer',
+          decidedAt: '2026-08-27T01:00:00.000Z',
+          decisionNote: 'The original mark stands.',
+        }),
+        step(2, 'waiting'),
+      ],
+    });
+
+    expect(events.map((e) => e.id)).toEqual([
+      'grade_change:gcr-1:requested',
+      'grade_change:gcr-1:step:1',
+    ]);
+    expect(events[1].tone).toBe('turned-down');
+    expect(events[1].actorLabel).toBe('You');
+  });
+
+  it('a withdrawn request has no decision events — nobody decided the cancelled step', () => {
+    const events = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-officer',
+      status: 'cancelled',
+      reviewedAt: null,
+      appliedAt: null,
+      appliedById: null,
+      steps: [step(1, 'cancelled'), step(2, 'waiting')],
+    });
+
+    expect(events.map((e) => e.id)).toEqual(['grade_change:gcr-1:requested']);
+  });
+
+  // Step names are often a person. Lowercasing turned "Ms Chandana" into
+  // "ms chandana" in the middle of a sentence about her own decision.
+  it('keeps a step name exactly as the school wrote it', () => {
+    const events = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-teacher',
+      steps: [
+        {
+          ...step(1, 'approved', {
+            decidedBy: 'u-officer',
+            decidedAt: '2026-08-27T01:00:00.000Z',
+          }),
+          label: 'Ms Chandana',
+        },
+      ],
+    });
+    const stepEvent = events.find((e) => e.id === 'grade_change:gcr-1:step:1');
+    expect(stepEvent?.predicate).toContain('the “Ms Chandana” step');
+
+    const declaration = buildDeclarationEvents({
+      ladder: ladder({
+        stages: ladder().stages.map((s) =>
+          s.stageOrder === 2 ? { ...s, label: 'Ms Lhen' } : s
+        ),
+      }),
+      subjectLabel: 'Amelia Ng, travel 3 Sep',
+      nameById: NAMES,
+      viewerId: '',
+      registerWrittenAt: null,
+      registerDaysWritten: null,
+      registerWriteError: null,
+    });
+    expect(declaration.map((e) => e.predicate)).toContain(
+      'approved the “Ms Lhen” step for Amelia Ng, travel 3 Sep.'
+    );
+  });
+
+  it('null steps keeps a legacy row exactly as it was', () => {
+    const withNull = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-officer',
+      steps: null,
+    });
+    const without = buildGradeChangeEvents({
+      ...gradeChangeBase,
+      viewerId: 'u-officer',
+    });
+    expect(withNull).toEqual(without);
   });
 });
 

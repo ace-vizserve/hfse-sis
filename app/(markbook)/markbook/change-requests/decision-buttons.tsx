@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { isEmptyRichText } from '@/lib/rich-text';
+import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
 
 type Action = 'approve' | 'reject';
 
@@ -30,13 +32,30 @@ export type ControlledOpenRequest = {
 
 export function ChangeRequestDecisionButtons({
   requestId,
+  approvalRequestId = null,
+  everyoneTally = null,
   controlledOpen,
   onControlledOpenConsumed,
 }: {
   requestId: string;
+  /**
+   * Set for a request decided step by step (migration 144): the decision then
+   * goes to the approval engine for this one step, not to the two-approver
+   * route. The same dialog either way — what changes is where it posts, what
+   * it promises, and how long the note may be.
+   */
+  approvalRequestId?: string | null;
+  /**
+   * Set when the step being decided needs everyone on it to approve (migration
+   * 145): how many have so far. Unless this person is the last one still to
+   * approve, their approval is recorded and the step waits for the rest — so
+   * the dialog must not promise that it moves on.
+   */
+  everyoneTally?: { approved: number; total: number } | null;
   controlledOpen?: ControlledOpenRequest | null;
   onControlledOpenConsumed?: () => void;
 }) {
+  const staged = approvalRequestId != null;
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<Action>('approve');
   const [note, setNote] = useState('');
@@ -80,17 +99,30 @@ export function ChangeRequestDecisionButtons({
     return () => window.clearTimeout(t);
   }, [open, action]);
 
-  const rejectNeedsNote = action === 'reject' && note.trim().length === 0;
+  // ⚠ On a step-by-step request "empty" is measured the way the engine's schema
+  // measures it (`DecideApprovalSchema`): a note box clicked into and left
+  // alone stores `<p></p>`, which `.trim()` would call a reason.
+  const rejectNeedsNote =
+    action === 'reject' &&
+    (staged ? isEmptyRichText(note) : note.trim().length === 0);
 
   const decisionMutation = useMutation({
     mutationFn: (vars: { action: Action; note?: string }) =>
-      apiFetch(
-        `/api/change-requests/${requestId}`,
-        jsonInit('PATCH', {
-          action: vars.action,
-          decision_note: vars.note ? vars.note : undefined,
-        })
-      ),
+      staged
+        ? apiFetch<{ message?: string; outcome?: string }>(
+            `/api/approvals/${approvalRequestId}/decide`,
+            jsonInit('POST', {
+              action: vars.action,
+              note: vars.note ? vars.note : undefined,
+            })
+          )
+        : apiFetch<{ message?: string }>(
+            `/api/change-requests/${requestId}`,
+            jsonInit('PATCH', {
+              action: vars.action,
+              decision_note: vars.note ? vars.note : undefined,
+            })
+          ),
   });
 
   const run = useWriteAction();
@@ -112,19 +144,33 @@ export function ChangeRequestDecisionButtons({
         }),
       {
         pending: action === 'approve' ? 'Approving…' : 'Declining…',
-        success: action === 'approve' ? 'Request approved' : 'Request declined',
+        // The engine says what the decision did — "moved on to the next step"
+        // is not the same news as "approved", and `recorded` ("still waiting on
+        // the others") is different news again — so its sentence wins when
+        // there is one. `recorded` is a success: the approval is saved, and the
+        // refresh swaps these buttons for "You approved — waiting on the others".
+        success: (data) =>
+          (staged ? data?.message : undefined) ??
+          (action === 'approve' ? 'Request approved' : 'Request declined'),
         error: (e) => {
           if (e instanceof ApiError && e.status === 409) {
             // Concurrent-decision race: another administrator approved or
             // declined this request before us. Read body.error directly so the
             // fallback matches the original (statusText is not an acceptable
             // description).
-            const body = (e.body ?? {}) as { error?: string };
-            toast.error('Already handled', {
-              description:
-                body.error ??
-                'Another administrator already actioned this request. Refresh to see the latest status.',
-            });
+            const body = (e.body ?? {}) as { error?: string; outcome?: string };
+            // This person approved it already, on a step that needs everyone
+            // (a second tab, or a stale screen). Nothing went wrong.
+            toast.error(
+              body.outcome === 'already_approved'
+                ? 'Already approved'
+                : 'Already handled',
+              {
+                description:
+                  body.error ??
+                  'Another administrator already actioned this request. Refresh to see the latest status.',
+              }
+            );
             setOpen(false);
             void awaitRefresh();
             return null;
@@ -170,9 +216,16 @@ export function ChangeRequestDecisionButtons({
                 : 'Decline this request?'}
             </DialogTitle>
             <DialogDescription>
-              {action === 'approve'
-                ? 'The registrar will be notified and can apply the change on the locked sheet. The teacher is also notified.'
-                : 'The teacher will be notified by email. If you change your mind, you have a 2-hour window to undo the decline from the request queue.'}
+              {staged
+                ? action === 'approve'
+                  ? everyoneTally &&
+                    everyoneTally.approved < everyoneTally.total - 1
+                    ? `Everyone on this step must approve, and ${everyoneTally.approved} of ${everyoneTally.total} have so far. Yours is recorded now, and the request moves on once the others have approved too.`
+                    : 'This approves your step. If it is the last step, the registrar can then apply the change on the locked sheet. If not, it moves on to the next person.'
+                  : 'The request stops here and the grade stays as it is. The teacher is told, with your note as the reason. This cannot be undone.'
+                : action === 'approve'
+                  ? 'The registrar will be notified and can apply the change on the locked sheet. The teacher is also notified.'
+                  : 'The teacher will be notified by email. If you change your mind, you have a 2-hour window to undo the decline from the request queue.'}
             </DialogDescription>
           </DialogHeader>
           <Field>
@@ -189,10 +242,12 @@ export function ChangeRequestDecisionButtons({
               placeholder={
                 action === 'reject'
                   ? 'Explain why this request is being declined.'
-                  : 'Optional note to the teacher and registrar.'
+                  : staged
+                    ? 'Optional note for the next person and the registrar.'
+                    : 'Optional note to the teacher and registrar.'
               }
               rows={4}
-              maxLength={1000}
+              maxLength={staged ? APPROVAL_NOTE_MAX : 1000}
             />
           </Field>
           <DialogFooter>

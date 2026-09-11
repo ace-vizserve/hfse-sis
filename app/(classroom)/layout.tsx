@@ -16,7 +16,11 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -56,10 +60,13 @@ export default async function ClassroomLayout({
   );
 
   const service = createServiceClient();
-  const [changeRequestCount, declarationCount] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, gradeChangeStepCount] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes decided step by step — the bell's third source.
+      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    ]);
 
   // Tiles that would be dead ends for this person: a subject-teacher-only user
   // has no Attendance or Evaluation work of their own, so those two go. The
@@ -92,6 +99,7 @@ export default async function ClassroomLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

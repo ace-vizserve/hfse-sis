@@ -9,6 +9,7 @@ function makeCountService(count: number | null) {
     select: () => chain,
     eq: () => chain,
     or: () => chain,
+    is: () => chain,
     count: count,
     error: null,
   };
@@ -31,8 +32,14 @@ function makeCountService(count: number | null) {
   } as never;
 }
 
-// Mock service that tracks method calls
-function makeCountServiceWithTracking(count: number, trackCalls: string[]) {
+// Mock service that tracks method calls. `or` and `is` also record their
+// arguments, so the legacy-only exclusions (migration 144) can be asserted on
+// the exact filter, not just on a method having been called.
+function makeCountServiceWithTracking(
+  count: number,
+  trackCalls: string[],
+  trackArgs: string[] = []
+) {
   const chain: Record<string, unknown> = {
     select: () => {
       trackCalls.push('select');
@@ -42,8 +49,14 @@ function makeCountServiceWithTracking(count: number, trackCalls: string[]) {
       trackCalls.push('eq');
       return chain;
     },
-    or: () => {
+    or: (filter: string) => {
       trackCalls.push('or');
+      trackArgs.push(`or:${filter}`);
+      return chain;
+    },
+    is: (column: string, value: unknown) => {
+      trackCalls.push('is');
+      trackArgs.push(`is:${column}=${String(value)}`);
       return chain;
     },
     count: count,
@@ -125,6 +138,43 @@ describe('getSidebarChangeRequestCount', () => {
     expect(calls).not.toContain('or');
   });
 
+  // Migration 144. A request decided step by step has BOTH approver columns
+  // null by design, which the old broadcast arm read as "a legacy row everyone
+  // sees". Those rows are the staged count's; counting them here too would put
+  // each one on the badge twice.
+  it('school_admin: the broadcast arm admits legacy rows only', async () => {
+    const calls: string[] = [];
+    const args: string[] = [];
+    const service = makeCountServiceWithTracking(5, calls, args);
+    await getSidebarChangeRequestCount(service, 'school_admin', 'user-1');
+    const or = args.find((a) => a.startsWith('or:'));
+    expect(or).toContain(
+      'and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)'
+    );
+    // Still reaches the rows this admin was designated on.
+    expect(or).toContain('primary_approver_id.eq.user-1');
+    expect(or).toContain('secondary_approver_id.eq.user-1');
+  });
+
+  it('superadmin: counts legacy pending rows only, leaving ladder rows to the staged count', async () => {
+    const calls: string[] = [];
+    const args: string[] = [];
+    const service = makeCountServiceWithTracking(10, calls, args);
+    await getSidebarChangeRequestCount(service, 'superadmin', 'user-1');
+    expect(args).toContain('is:approval_flow=null');
+  });
+
+  it.each(['teacher', 'academic_coordinator'] as const)(
+    '%s: keeps ladder rows — filing and applying did not move',
+    async (role) => {
+      const calls: string[] = [];
+      const args: string[] = [];
+      const service = makeCountServiceWithTracking(1, calls, args);
+      await getSidebarChangeRequestCount(service, role, 'user-1');
+      expect(args.some((a) => a.includes('approval_flow'))).toBe(false);
+    }
+  );
+
   it('unsupported role returns 0', async () => {
     const service = makeCountService(5);
     const result = await getSidebarChangeRequestCount(
@@ -163,6 +213,7 @@ describe('getSidebarChangeRequestCount', () => {
       select: () => chain,
       eq: () => chain,
       or: () => chain,
+      is: () => chain,
       count: null,
       error: new Error('query error'),
     };

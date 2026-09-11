@@ -32,6 +32,7 @@ import {
   notifyRequestApproved,
   notifyRequestFiled,
   notifyRequestRejected,
+  notifyStepTurn,
 } from '@/lib/notifications/email-change-request';
 import { sendReminder } from '@/lib/notifications/email-pfile-reminder';
 
@@ -115,6 +116,50 @@ describe('change-request emails', () => {
     expect(html).toContain('ok');
     expect(html).not.toContain('alert(1)');
     expect(html).not.toContain('onerror');
+  });
+
+  it('emails each person on an approval step their own copy, as prose', async () => {
+    const res = await notifyStepTurn(
+      REQUEST,
+      {
+        board: false,
+        stageOrder: 2,
+        stageCount: 3,
+        stageLabel: 'Head of department',
+      },
+      [
+        { id: 'approver-1', email: 'hod@hfse.edu.sg' },
+        { id: 'approver-2', email: 'deputy@hfse.edu.sg' },
+      ]
+    );
+
+    expect(res).toEqual({ sent: 2, failed: 0 });
+    expect(sent).toHaveLength(2);
+    expect(sent[0].subject).toBe(
+      'Grade change needs your approval — Ravi Kumar'
+    );
+    const html = lastHtml();
+    expect(html).toContain('step 2 of 3');
+    expect(html).toContain('Head of department');
+    expect(html).toContain('The earlier steps have already approved it.');
+    expect(html).toContain('Whoever acts first decides the step.');
+    expect(html).toContain('Please review — the score was 78.');
+    expectNoVisibleTags(html);
+  });
+
+  it('names the Academic and Examination Board when the card was already published', async () => {
+    await notifyStepTurn(
+      REQUEST,
+      { board: true, stageOrder: 1, stageCount: 1, stageLabel: 'Board chair' },
+      [{ id: 'approver-1', email: 'board@hfse.edu.sg' }]
+    );
+    expect(sent.at(-1)?.subject).toBe(
+      'Grade change needs Academic and Examination Board approval — Ravi Kumar'
+    );
+    const html = lastHtml();
+    expect(html).toContain('already been published to parents');
+    expect(html).not.toContain('earlier steps');
+    expect(html).not.toContain('Whoever acts first');
   });
 
   it('strips the decision note on an approval', async () => {

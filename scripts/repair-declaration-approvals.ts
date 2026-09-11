@@ -118,6 +118,11 @@ async function main() {
   // The request finished but the declaration never caught up. `pending` on a
   // finished request is the drift that matters; the reverse cannot happen,
   // because nothing but the decide route writes either side.
+  //
+  // ⚠ A REQUEST PART-WAY THROUGH A STEP THAT NEEDS EVERYONE (migration 145) is
+  // `pending` on both sides and is NOT drift: some of the step's people have
+  // approved and the rest have not yet. Only the request's own status is read
+  // here, so those approvals cannot be mistaken for a finished decision.
   const drifted = declarations.filter((d) => {
     const request = requestBySubject.get(d.id);
     if (!request) return false;
@@ -351,6 +356,11 @@ async function main() {
     console.error(`  could not read the steps: ${activeErr.message}`);
   } else {
     for (const stage of (activeStages ?? []) as Array<{ id: string }>) {
+      // ⚠ NO ACTOR, on purpose. A live step that needs everyone and whose last
+      // hold-out this rebuild removes is left WAITING, not moved on: moving it
+      // here would skip the parent's status, the register and the audit row,
+      // which only the app can write. The next edit on /sis/admin/approvers
+      // moves it, and this run logs each one it left.
       repointed += await repointWaitingStages(service, stage.id);
     }
   }

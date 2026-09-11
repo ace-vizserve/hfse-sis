@@ -16,7 +16,11 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { SidebarBadges } from '@/lib/auth/roles';
@@ -57,10 +61,13 @@ export default async function AttendanceLayout({
   );
 
   const service = createServiceClient();
-  const [changeRequestCount, declarationCount] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, gradeChangeStepCount] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes decided step by step — the bell's third source.
+      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    ]);
 
   // The Declarations nav item carries the same number the bell adds in — how
   // many are waiting for this person, not how many exist.
@@ -98,6 +105,7 @@ export default async function AttendanceLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

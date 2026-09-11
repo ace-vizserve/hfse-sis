@@ -20,7 +20,11 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSectionsCount } from '@/lib/sis/sidebar-counts';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -113,7 +117,11 @@ export default async function SisLayout({
 
   // Not gated on role: being an approver is decided by being ON a step, not by
   // holding a role, so the count answers that itself and returns 0 otherwise.
-  const declarationCount = await getDeclarationWaitingCount(service, role, id);
+  const [declarationCount, gradeChangeStepCount] = await Promise.all([
+    getDeclarationWaitingCount(service, role, id),
+    // Grade changes decided step by step — same "on a step" rule.
+    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+  ]);
 
   const sidebarCounts: SidebarCounts = {};
   if (readiness) {
@@ -159,6 +167,7 @@ export default async function SisLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

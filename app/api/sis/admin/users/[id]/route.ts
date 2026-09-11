@@ -6,7 +6,12 @@ import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { UpdateUserSchema } from '@/lib/schemas/user-admin';
-import { getUserFootprint, isLastSuperadmin } from '@/lib/sis/user-deletion';
+import {
+  getUserFootprint,
+  isLastSuperadmin,
+  listApprovalStagesNamingUser,
+  repointStagesAfterUserDeletion,
+} from '@/lib/sis/user-deletion';
 import { getUserRole, getUserRoleSet, type Role } from '@/lib/auth/roles';
 
 // PATCH /api/sis/admin/users/[id] — update roles, enabled state, and/or
@@ -338,9 +343,42 @@ export async function DELETE(
     );
   }
 
+  // ⚠ READ BEFORE THE DELETE. Removing the account cascades its rows out of
+  // `approval_stage_approvers`, and those rows are the only record of which
+  // steps it was on — so they are read now and the requests on those steps are
+  // brought in line once it is gone (below). Fails closed like the footprint
+  // check: an account whose steps cannot be read is not deleted.
+  let namedStageIds: string[];
+  try {
+    namedStageIds = await listApprovalStagesNamingUser(service, id);
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'Could not check which approval steps this account is on — try again.',
+      },
+      { status: 500 }
+    );
+  }
+
   const { error: deleteErr } = await service.auth.admin.deleteUser(id);
   if (deleteErr) {
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
+  }
+
+  // Requests already on those steps copied this person in when they were
+  // filed. Without this, a step that needs everyone waits forever for a yes
+  // from an account that no longer exists. Same call, same actor, as taking
+  // somebody off a step on the approvers screen. Never throws.
+  if (namedStageIds.length > 0) {
+    await repointStagesAfterUserDeletion(service, namedStageIds, {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    });
+    // Who is on a step feeds the /sis readiness strip (lib/sis/health.ts),
+    // exactly as the approver routes that emit this tag.
+    revalidateTag('sis-health', 'max');
   }
 
   // Same cached staff list as the PATCH above. A deleted account that stayed in

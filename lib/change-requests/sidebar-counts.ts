@@ -19,6 +19,21 @@ import { fetchLabels } from '@/lib/change-requests/labels';
 //   - registrar: approved CRs (the ones they apply via Path A — they have
 //     full visibility regardless of approver assignment).
 //   - teacher: their OWN pending requests.
+//
+// ⚠ SINCE MIGRATION 144 THIS IS THE LEGACY HALF OF THE NUMBER. A request with
+// `approval_flow` set is decided step by step, and "waiting for you" on it is
+// the engine's answer (`getStagedWaitingCount` over the two grade-change
+// flows), added to this one by the caller. So the approver branches below
+// exclude those rows — both approver columns are null on them, which the old
+// broadcast arm would otherwise have read as "a legacy row everyone sees".
+// The teacher's own-pending and the coordinator's approved-to-apply branches
+// keep them: filing and applying did not move.
+//
+// ⚠ `approval_flow.is.null` INSIDE THE BROADCAST ARM IS LOAD-BEARING, in every
+// copy of this predicate. A row filed after migration 144 has both approver
+// columns null by design — the teacher no longer picks — so without it every
+// such row would match "legacy row with no approver" and land in every school
+// admin's legacy queue as well as on the ladder.
 export async function getSidebarChangeRequestCount(
   service: SupabaseClient,
   role: Role,
@@ -53,12 +68,14 @@ export async function getSidebarChangeRequestCount(
     query = query
       .eq('status', 'pending')
       .or(
-        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)`
       );
   } else if (role === 'superadmin') {
     // Oversight scope: full visibility across all pending requests,
-    // regardless of designated approver.
-    query = query.eq('status', 'pending');
+    // regardless of designated approver — legacy rows only. A request decided
+    // step by step is counted by `getStagedWaitingCount` beside this one, and
+    // counting it here too would put it on the badge twice.
+    query = query.eq('status', 'pending').is('approval_flow', null);
   } else {
     return 0;
   }
@@ -128,12 +145,12 @@ export async function getSidebarChangeRequestPreview(
     query = query
       .eq('status', 'pending')
       .or(
-        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null)`
+        `primary_approver_id.eq.${userId},secondary_approver_id.eq.${userId},and(primary_approver_id.is.null,secondary_approver_id.is.null,approval_flow.is.null)`
       );
   } else if (role === 'superadmin') {
     // Oversight scope: full visibility across all pending requests,
-    // regardless of designated approver.
-    query = query.eq('status', 'pending');
+    // regardless of designated approver — legacy rows only, same as the count.
+    query = query.eq('status', 'pending').is('approval_flow', null);
   } else {
     return [];
   }

@@ -95,3 +95,68 @@ describe('ChangeRequestDecisionButtons (bespoke 409 concurrent race)', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 });
+
+// Migration 144. A request decided step by step posts to the approval engine
+// for the viewer's one step — never to the two-approver route, which refuses
+// such a request with 409.
+describe('ChangeRequestDecisionButtons — a request decided step by step', () => {
+  it('approve posts this step to the engine and toasts the engine’s own sentence', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({
+          ok: true,
+          message: 'Approved. It moves on to the Principal.',
+        })
+      )
+    );
+    renderWithClient(
+      <ChangeRequestDecisionButtons
+        requestId="cr-1"
+        approvalRequestId="appr-1"
+      />
+    );
+
+    await approveAndConfirm(user);
+
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'Approved. It moves on to the Principal.'
+      )
+    );
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('/api/approvals/appr-1/decide');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ action: 'approve' });
+  });
+
+  it('says the decline cannot be undone, and offers no undo window', async () => {
+    const user = userEvent.setup();
+    renderWithClient(
+      <ChangeRequestDecisionButtons
+        requestId="cr-1"
+        approvalRequestId="appr-1"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /^decline$/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/decline this request\?/i)).toBeInTheDocument()
+    );
+    expect(screen.getByText(/this cannot be undone/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2-hour window/i)).not.toBeInTheDocument();
+  });
+
+  it('a legacy request keeps posting to the two-approver route', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderWithClient(<ChangeRequestDecisionButtons requestId="cr-1" />);
+
+    await approveAndConfirm(user);
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/change-requests/cr-1');
+    expect(fetchSpy.mock.calls[0][1]?.method).toBe('PATCH');
+  });
+});

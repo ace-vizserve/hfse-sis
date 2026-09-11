@@ -495,6 +495,14 @@ export type RecentMarkbookActivityRow = {
   actorEmail: string | null;
   entityId: string | null;
   createdAt: string;
+  /**
+   * True for a `grade_change_approved` row that approved ONE STEP of a request
+   * decided step by step (migration 144) — `context.final === false`. The
+   * change is not approved until its last step is, so the list must not call
+   * this "approved". False for a final approval and for every legacy row,
+   * which carries no `final` key.
+   */
+  isApprovalStep: boolean;
 };
 
 // Actions that represent Markbook operator activity. Kept in sync with
@@ -526,7 +534,7 @@ async function loadRecentMarkbookActivityUncached(
 
   const { data, error } = await service
     .from('audit_log')
-    .select('id, action, actor_email, entity_id, created_at')
+    .select('id, action, actor_email, entity_id, created_at, context')
     .or(orClause)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -545,6 +553,7 @@ async function loadRecentMarkbookActivityUncached(
     actor_email: string | null;
     entity_id: string | null;
     created_at: string;
+    context: Record<string, unknown> | null;
   };
   return ((data ?? []) as AuditLite[]).map((r) => ({
     id: r.id,
@@ -552,6 +561,10 @@ async function loadRecentMarkbookActivityUncached(
     actorEmail: r.actor_email,
     entityId: r.entity_id,
     createdAt: r.created_at,
+    // Only the one flag leaves this function — the context itself is not
+    // written into the cache.
+    isApprovalStep:
+      r.action === 'grade_change_approved' && r.context?.final === false,
   }));
 }
 
@@ -1218,6 +1231,11 @@ export function getMarkbookTeacherPriority(
 
 export type MarkbookRegistrarPriorityInput = {
   ayCode: string;
+  /**
+   * Grade change decisions waiting for THIS viewer — the page passes the same
+   * two numbers the Change Requests badge adds. Not the school-wide pending
+   * count: the headline built from it says "awaiting your decision".
+   */
   changeRequestsPending: number;
   // Date-picker resolved range. Filters the "open sheets" tally to terms
   // whose [start_date, end_date] overlap [from, to] — so picking "This

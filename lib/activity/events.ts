@@ -1,5 +1,6 @@
 import type { RequestLadder } from '@/lib/approvals/inbox';
 import { toPlainText } from '@/lib/rich-text';
+import type { ApprovalStageStatus } from '@/lib/schemas/approval-flows';
 
 /**
  * One thing that happened to an approval, in the shape the panel and the
@@ -61,7 +62,7 @@ export type ActivityEvent = {
   /** "Radhika Putrevu" · "A parent" · "You". Rendered bold. */
   actorLabel: string;
   actorInitials: string;
-  /** Follows the actor: "approved the form class adviser step for …". */
+  /** Follows the actor: "approved the “Form class adviser” step for …". */
   predicate: string;
   details: ActivityDetail[] | null;
   href: string;
@@ -128,6 +129,17 @@ function actorFor(
     actorLabel: isViewer ? 'You' : name,
     actorInitials: initialsFromName(name),
   };
+}
+
+/**
+ * A step's name inside a sentence, exactly as the school wrote it, in quotes.
+ *
+ * ⚠ NEVER LOWERCASED. Step names are often a person — "Ms Chandana" — and
+ * lowercasing turned that into "ms chandana". The quotes do the job the
+ * lowercasing was doing: they mark the name off from the sentence around it.
+ */
+function stepName(label: string): string {
+  return `“${label}”`;
 }
 
 // ── Declarations ───────────────────────────────────────────────────────────
@@ -200,7 +212,7 @@ export function buildDeclarationEvents(
       ...actorFor(stage.decidedBy, stage.decidedByEmail, viewerId, nameById),
       predicate: `${
         stage.status === 'approved' ? 'approved' : 'turned down'
-      } the ${stage.label.toLocaleLowerCase()} step for ${subjectLabel}.`,
+      } the ${stepName(stage.label)} step for ${subjectLabel}.`,
       details: details.length > 0 ? details : null,
       href,
     });
@@ -256,6 +268,28 @@ export type GradeChangeEventInput = {
   viewerId: string;
   nameById: ReadonlyMap<string, string>;
   href: string;
+  /**
+   * The ladder's steps, for a request decided step by step (migration 144).
+   *
+   * ⚠ WHEN THIS IS SET, THE REVIEW COLUMNS ARE NOT READ. The engine writes a
+   * summary of the outcome back onto the row, and reading both would tell the
+   * final approval twice — once as "approved the mark change" from the row and
+   * once as the last step from the ladder. The ladder is the record; every
+   * decision on it becomes its own event. Omit (or null) for a legacy row,
+   * which keeps the two-approver events exactly as they were.
+   */
+  steps?: readonly GradeChangeStepInput[] | null;
+};
+
+/** One step of a grade change's ladder — `RequestLadderStage` satisfies it. */
+export type GradeChangeStepInput = {
+  stageOrder: number;
+  label: string;
+  status: ApprovalStageStatus;
+  decidedBy: string | null;
+  decidedByEmail: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
 };
 
 /**
@@ -342,7 +376,40 @@ export function buildGradeChangeEvents(
     href: input.href,
   });
 
-  if (input.reviewedAt) {
+  if (input.steps) {
+    // ⚠ ONLY DECIDED STEPS, same rule as declarations. A turn-down stops the
+    // ladder and a withdrawal closes it; the steps after either stay 'waiting'
+    // forever, and a cancelled step was decided by nobody. Emitting any of
+    // those would invent activity that never happened.
+    for (const step of input.steps) {
+      if (
+        (step.status !== 'approved' && step.status !== 'rejected') ||
+        step.decidedAt == null
+      ) {
+        continue;
+      }
+      const turnedDown = step.status === 'rejected';
+      const note = noteDetail(step.decisionNote);
+      events.push({
+        id: `grade_change:${input.id}:step:${step.stageOrder}`,
+        flow: 'grade_change',
+        requestId: input.id,
+        at: step.decidedAt,
+        tone: turnedDown ? 'turned-down' : 'went-through',
+        ...actorFor(
+          step.decidedBy,
+          step.decidedByEmail,
+          input.viewerId,
+          input.nameById
+        ),
+        predicate: `${turnedDown ? 'turned down' : 'approved'} the ${stepName(step.label)} step of the mark change for ${input.studentLabel}.`,
+        details: note ? [note] : null,
+        href: input.href,
+      });
+    }
+  }
+
+  if (!input.steps && input.reviewedAt) {
     const turnedDown = input.status === 'rejected';
     const note = noteDetail(input.decisionNote);
     events.push({
@@ -374,7 +441,7 @@ export function buildGradeChangeEvents(
   // legal, writes `secondary_decision='rejected'`, and leaves `status`
   // untouched at `'approved'`. So the tone here branches on the decision
   // itself, not on the mere presence of a timestamp.
-  if (input.secondaryReviewedAt) {
+  if (!input.steps && input.secondaryReviewedAt) {
     const declined = input.secondaryDecision === 'rejected';
     events.push({
       id: `grade_change:${input.id}:reviewed:secondary`,

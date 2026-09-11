@@ -5,7 +5,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@/lib/auth/roles';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { loadAdvisedSectionIds } from '@/lib/approvals/resolve';
-import { OVERSIGHT_ROLES } from '@/lib/approvals/inbox';
+import {
+  OVERSIGHT_ROLES,
+  hasDecidedStep,
+  type RequestLadder,
+} from '@/lib/approvals/inbox';
+import {
+  canDecideCurrentStep,
+  listGradeChangeInvolvement,
+  loadGradeChangeLadders,
+} from '@/lib/change-requests/staged-scope';
 import { loadStaffDeclarations } from '@/lib/declarations/staff';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { sgToday } from '@/lib/dates';
@@ -341,8 +350,11 @@ async function loadDeclarationSide(
     );
 
     const pending = ladder.stages.find((s) => s.status === 'pending');
+    // ⚠ Not "waiting for you" once you have decided it — on a step that needs
+    // everyone (migration 145) the step stays pending after your yes.
     const mine =
       pending != null &&
+      !hasDecidedStep(pending, scope.userId) &&
       (pending.resolver === 'named'
         ? pending.approverPool.includes(scope.userId)
         : pending.sectionId != null && advised.has(pending.sectionId));
@@ -439,13 +451,41 @@ async function loadMarkChangeSide(
   // is allowed to happen, and it must stay keyed on the SESSION role.
   const isOversight = scope.role != null && OVERSIGHT_ROLES.has(scope.role);
   const arms = markChangeScopeArms(scope);
+  const today = scope.today ?? sgToday();
+
+  // The classes this person advises today — read at most once, and only when
+  // something needs it: involvement below for a non-oversight reader, or a
+  // form-adviser step on a step-by-step request further down.
+  let advised: Set<string> | null = null;
+  const advisedSections = async (): Promise<Set<string>> => {
+    advised ??= new Set(
+      await loadAdvisedSectionIds(service, scope.userId, today)
+    );
+    return advised;
+  };
+
+  // ⚠ STEP-BY-STEP REQUESTS ARE A FIFTH ARM, AND A NARROW ONE (migration 144).
+  // Nobody is `primary_approver_id` on such a row, so the arms above would hide
+  // it from the people deciding it. This admits exactly the requests the
+  // reader sits on a step of — named in a pool, or advising the class a
+  // form-adviser step was worked out from — as an id list resolved first,
+  // never a wider filter narrowed afterwards.
+  if (!isOversight) {
+    const involvedIds = await listGradeChangeInvolvement(service, {
+      userId: scope.userId,
+      advisedSectionIds: [...(await advisedSections())],
+    });
+    if (involvedIds.length > 0) {
+      arms.push(`id.in.(${involvedIds.join(',')})`);
+    }
+  }
 
   let query = service.from('grade_change_requests').select(
     `id, field_changed, slot_index, current_value, proposed_value, status,
        requested_by, requested_by_email, requested_at,
        primary_approver_id, secondary_approver_id,
        reviewed_by, reviewed_by_email, reviewed_at, decision_note,
-       applied_by, applied_at,
+       applied_by, applied_at, approval_flow,
        grade_entry:grade_entries!inner(
          section_student:section_students!inner(
            student:students!inner(first_name, last_name, student_number)
@@ -484,15 +524,36 @@ async function loadMarkChangeSide(
     decision_note: string | null;
     applied_by: string | null;
     applied_at: string | null;
+    approval_flow?: string | null;
     grade_entry:
       | { section_student: SectionStudent | SectionStudent[] }
       | Array<{ section_student: SectionStudent | SectionStudent[] }>;
   };
 
+  const rows = (data ?? []) as unknown as Row[];
   const events: ActivityEvent[] = [];
   const waiting: ActivityWaitingItem[] = [];
 
-  for (const row of (data ?? []) as unknown as Row[]) {
+  // The ladders behind every step-by-step row on this page, in four reads.
+  // Nothing is read when there are none — a school with no such requests yet
+  // pays nothing for this.
+  const stagedIds = rows
+    .filter((r) => r.approval_flow != null)
+    .map((r) => r.id);
+  const ladders =
+    stagedIds.length > 0
+      ? await loadGradeChangeLadders(service, stagedIds)
+      : new Map<string, RequestLadder>();
+  const needsAdvised = [...ladders.values()].some((l) =>
+    l.stages.some(
+      (s) => s.status === 'pending' && s.resolver === 'form_adviser'
+    )
+  );
+  const advisedForSteps = needsAdvised
+    ? await advisedSections()
+    : new Set<string>();
+
+  for (const row of rows) {
     const entry = Array.isArray(row.grade_entry)
       ? row.grade_entry[0]
       : row.grade_entry;
@@ -506,10 +567,19 @@ async function loadMarkChangeSide(
       ? `${student.first_name} ${student.last_name}`
       : 'a student';
 
+    const ladder =
+      row.approval_flow != null ? (ladders.get(row.id) ?? null) : null;
+
     // Teachers land on "My Requests"; everybody else deep-links into the queue,
     // which is what the existing bell already does for the same reason.
+    //
+    // ⚠ EXCEPT A TEACHER WHO IS DECIDING, NOT FILING. On a step-by-step
+    // request somebody else filed, a teacher is there because they sit on a
+    // step (the involvement arm above) — "My Requests" does not list it, and
+    // `/markbook/change-requests` admits them precisely because they sit on it.
     const href =
-      scope.role === 'teacher'
+      scope.role === 'teacher' &&
+      !(ladder != null && row.requested_by !== scope.userId)
         ? '/markbook/grading/requests'
         : `/markbook/change-requests?req=${row.id}`;
 
@@ -542,8 +612,35 @@ async function loadMarkChangeSide(
         viewerId: scope.userId,
         nameById,
         href,
+        // A step-by-step request's history is its ladder — every decision on
+        // it an event of its own. Null keeps a legacy row's events as they were.
+        steps: ladder ? ladder.stages : null,
       })
     );
+
+    if (row.approval_flow != null) {
+      // ⚠ THE ENGINE ANSWERS "WAITING FOR ME" ON THESE, not the approver
+      // columns, which are null on every such row. The live step, and whether
+      // this reader may decide it — the same rule `approval_advance` enforces.
+      if (
+        row.status === 'pending' &&
+        ladder &&
+        canDecideCurrentStep(ladder, scope.userId, advisedForSteps)
+      ) {
+        const live = ladder.stages.find((s) => s.status === 'pending');
+        waiting.push({
+          id: `grade_change:${row.id}`,
+          requestId: row.id,
+          title: `${studentLabel} — ${markChangeFieldLabel(row.field_changed, row.slot_index)}`,
+          subtitle: live ? `Mark change · ${live.label}` : 'Mark change',
+          // Always the queue: this is somebody's decision, and the queue is
+          // where it is made — for a teacher on a step as much as anyone.
+          href: `/markbook/change-requests?req=${row.id}`,
+          initials: initialsFromName(studentLabel),
+        });
+      }
+      continue;
+    }
 
     const mine =
       row.status === 'pending' &&

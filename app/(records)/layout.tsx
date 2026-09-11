@@ -14,7 +14,11 @@ import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
 import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
 import {
@@ -71,6 +75,7 @@ export default async function RecordsLayout({
     awaitingSectionsCount,
     changeRequestCount,
     declarationCount,
+    gradeChangeStepCount,
   ] = await Promise.all([
     // Current AND upcoming AY — admissions enrol into next year's intake
     // during the early-bird window, and a badge that only counts the live
@@ -80,6 +85,8 @@ export default async function RecordsLayout({
     countLevelsAwaitingSections(),
     getSidebarChangeRequestCount(service, role, id),
     getDeclarationWaitingCount(service, role, id),
+    // Grade changes decided step by step — the bell's third source.
+    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
   ]);
   // Both halves of "Levels needing attention" — an unrecognized level name and
   // a level with students waiting but no class. The page shows them as two
@@ -124,6 +131,7 @@ export default async function RecordsLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

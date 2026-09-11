@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import type { ApprovalRailStage } from '@/lib/approvals/rail';
 import type { StaffDeclarationView } from '@/lib/declarations/staff';
 import type { DeclarationType } from '@/lib/schemas/declarations';
 import { DeclarationDecisionSheet } from './decision-sheet';
@@ -42,6 +43,16 @@ export type DeclarationQueueRow = {
   stageCount: number;
   waitingOn: 'you' | 'someone else';
   canDecide: boolean;
+  /**
+   * This person approved the live step, and it needs everyone, so it is still
+   * waiting on the others. Neither "yours to decide" nor "with someone else".
+   */
+  youApprovedWaiting: boolean;
+  /**
+   * The ladder as the step rail draws it — with, on an "Everyone must approve"
+   * step, each person and whether they have approved. Built on the server.
+   */
+  railStages: ApprovalRailStage[];
   /**
    * How the whole filing ended. `pending` while it is still moving.
    *
@@ -233,6 +244,21 @@ export function DeclarationsQueueTable({
                   by {r.decidedByName}
                 </p>
               )}
+            </div>
+          );
+        }
+        if (r.youApprovedWaiting) {
+          // Done on your side, still moving. The accent (informational)
+          // recipe, not mint: mint on this column means "you can act", and
+          // there is nothing left for this person to do.
+          return (
+            <div className="min-w-0">
+              <Badge className="h-6 border-brand-indigo-soft bg-accent text-brand-indigo-deep">
+                You approved
+              </Badge>
+              <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                waiting on the others
+              </p>
             </div>
           );
         }

@@ -17,7 +17,11 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
-import { getDeclarationWaitingCount } from '@/lib/sidebar/notification-counts';
+import {
+  getDeclarationWaitingCount,
+  getStagedWaitingCount,
+} from '@/lib/sidebar/notification-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -50,10 +54,14 @@ export default async function MarkbookLayout({
   );
 
   const service = createServiceClient();
-  const [changeRequestCount, declarationCount] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, gradeChangeStepCount] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes decided step by step (migration 144). The legacy count
+      // above excludes those rows, so the two add without overlap.
+      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    ]);
 
   // ⚠ ONE COUNT, AND IT MUST STAY KEYED ON THE ROLE THE SIDEBAR IS RENDERING.
   //
@@ -74,8 +82,14 @@ export default async function MarkbookLayout({
   // to hang off. The count still reaches the header bell below, which is the
   // point: an absence waiting for you should tap you on the shoulder wherever
   // you are in the app.
+  //
+  // ⚠ `gradeChangeSteps` IS THE OTHER HALF OF THAT SAME BADGE, not a badge of
+  // its own. `useRealtimeBadges` adds it to `changeRequests` for the oversight
+  // tree and leaves it off the teacher tree, whose row ("My Requests") does
+  // not list the steps waiting for her.
   const sidebarBadges: SidebarBadges = {
     changeRequests: changeRequestCount,
+    gradeChangeSteps: gradeChangeStepCount,
   };
 
   // Tiles that would be dead ends for this person: a subject-teacher-only user
@@ -110,6 +124,7 @@ export default async function MarkbookLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
+                initialGradeChangeStepCount={gradeChangeStepCount}
               />
             </div>
           </div>

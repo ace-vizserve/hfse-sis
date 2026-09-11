@@ -635,3 +635,121 @@ describe('auditRoleLabel keeps rendering retired roles', () => {
     expect(auditRoleLabel('some_future_role')).toBe('Some Future Role');
   });
 });
+
+describe('grade change approval steps (migration 144)', () => {
+  it('an intermediate step does not read as the change being approved', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      final: false,
+      stage_order: 2,
+      flow: 'markbook.grade_change',
+      field: 'qa_score',
+    });
+    expect(line.startsWith('Approved step 2 of a grade change request')).toBe(
+      true
+    );
+  });
+
+  it('the last step says so, and names the board', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      final: true,
+      stage_order: 3,
+      flow: 'markbook.grade_change_aeb',
+    });
+    expect(line).toContain('Approved the last step (step 3)');
+    expect(line).toContain('Academic and Examination Board');
+  });
+
+  it('a row from before the steps reads exactly as it did', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      field: 'qa_score',
+      reviewer_ordinal: 'primary',
+    });
+    expect(line).not.toMatch(/step/i);
+  });
+});
+
+describe('steps that need everyone to approve (migration 145)', () => {
+  it('a yes that leaves the step waiting says so, not that the step was approved', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      outcome: 'recorded',
+      final: false,
+      stage_order: 2,
+      flow: 'markbook.grade_change_aeb',
+    });
+    expect(
+      line.startsWith(
+        'Approved step 2 of a grade change request (waiting on others)'
+      )
+    ).toBe(true);
+  });
+
+  // Reworded deliberately (migration 146 review). The actor on these rows is
+  // the admin who changed the step; "moved on when the step's people changed"
+  // beside "Approved the last step" read as the admin having approved it, and
+  // did not say whose approval the step actually finished on.
+  it('a request finished by an approver change names the last approval, not the admin', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      outcome: 'completed',
+      final: true,
+      stage_order: 3,
+      via: 'repoint',
+      closed_by_step_edit: true,
+      final_approver_email: 'norma@hfse.test',
+    });
+    expect(
+      line.startsWith(
+        'Grade change request finished after an approver change (last approval by norma@hfse.test)'
+      )
+    ).toBe(true);
+    expect(line).not.toMatch(/Fully approved|Approved the last step/);
+  });
+
+  it('an intermediate step finished by an approver change says which step', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      outcome: 'advanced',
+      final: false,
+      stage_order: 1,
+      via: 'repoint',
+      closed_by_step_edit: true,
+      final_approver_email: 'gary@hfse.test',
+    });
+    expect(line).toContain(
+      'Step 1 of a grade change request finished after an approver change (last approval by gary@hfse.test)'
+    );
+    expect(line).not.toMatch(/^Approved step/);
+  });
+
+  it('still says an approver change finished it when the approver is unknown', () => {
+    const line = auditContextSummary('grade_change_approved', {
+      final: true,
+      via: 'repoint',
+    });
+    expect(line).toContain(
+      'Grade change request finished after an approver change'
+    );
+    expect(line).not.toContain('last approval by');
+  });
+
+  it('a declaration finished by an approver change names the last approval', () => {
+    const line = auditContextSummary('declaration.approve', {
+      outcome: 'completed',
+      section_name: 'P4 Diligence',
+      via: 'repoint',
+      closed_by_step_edit: true,
+      final_approver_email: 'elaine@hfse.test',
+    });
+    expect(line).toContain(
+      'finished after an approver change (last approval by elaine@hfse.test)'
+    );
+    expect(line).not.toContain('fully approved');
+  });
+
+  it('a declaration yes that leaves the step waiting says so', () => {
+    const line = auditContextSummary('declaration.approve', {
+      outcome: 'recorded',
+      section_name: 'P4 Diligence',
+    });
+    expect(line).toContain('waiting on others');
+    expect(line).not.toContain('fully approved');
+  });
+});

@@ -93,6 +93,12 @@ export type NavSection = {
 
 export type SidebarBadgeKey =
   | 'changeRequests'
+  // ⚠ NO NAV ITEM CARRIES THIS KEY, and none should. It is the server seed for
+  // the step-by-step half of the `changeRequests` badge (grade changes on the
+  // approval engine, migration 144), which `useRealtimeBadges` keeps live and
+  // adds to the legacy count. A row badged with it directly would show half a
+  // number.
+  | 'gradeChangeSteps'
   | 'declarations'
   | 'pendingDocValidation'
   | 'unsyncedStudents'

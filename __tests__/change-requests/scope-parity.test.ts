@@ -47,8 +47,13 @@ function makeTrackingService(trackCalls: string[]) {
       trackCalls.push('eq');
       return chain;
     },
-    or: () => {
+    or: (filter: string) => {
       trackCalls.push('or');
+      trackCalls.push(`or-arg:${filter}`);
+      return chain;
+    },
+    is: (column: string, value: unknown) => {
+      trackCalls.push(`is:${column}=${String(value)}`);
       return chain;
     },
     order: () => {
@@ -92,13 +97,19 @@ function trackHookScope(role: Role, userId: string): string[] {
   const query: {
     eq: (column: string, value: unknown) => typeof query;
     or: (filters: string) => typeof query;
+    is: (column: string, value: null) => typeof query;
   } = {
     eq: () => {
       calls.push('eq');
       return query;
     },
-    or: () => {
+    or: (filter: string) => {
       calls.push('or');
+      calls.push(`or-arg:${filter}`);
+      return query;
+    },
+    is: (column: string, value: unknown) => {
+      calls.push(`is:${column}=${String(value)}`);
       return query;
     },
   };
@@ -135,8 +146,34 @@ describe('change-request scope parity across all 3 independent implementations',
       // unrestricted-oversight scope must NOT apply it anywhere.
       expect(previewUsesOr).toBe(countUsesOr);
       expect(hookUsesOr).toBe(countUsesOr);
+
+      // Migration 144 — and the FILTERS agree, not only the fact of filtering.
+      // The legacy-only exclusion (`approval_flow.is.null` in the broadcast
+      // arm, `.is('approval_flow', null)` for superadmin) has to be in all
+      // three, or the badge and the list it opens disagree the moment the
+      // first step-by-step request is filed.
+      const filters = (calls: string[]) =>
+        calls.filter((c) => c.startsWith('or-arg:') || c.startsWith('is:'));
+      expect(filters(previewCalls)).toEqual(filters(countCalls));
+      expect(filters(hookCalls)).toEqual(filters(countCalls));
     });
   }
+
+  it('every approver branch excludes step-by-step rows; filing and applying keep them', async () => {
+    const legacyOnly = async (role: Role) => {
+      const calls: string[] = [];
+      await getSidebarChangeRequestCount(
+        makeTrackingService(calls),
+        role,
+        'user-1'
+      );
+      return calls.some((c) => c.includes('approval_flow'));
+    };
+    expect(await legacyOnly('school_admin')).toBe(true);
+    expect(await legacyOnly('superadmin')).toBe(true);
+    expect(await legacyOnly('teacher')).toBe(false);
+    expect(await legacyOnly('academic_coordinator')).toBe(false);
+  });
 
   it('a role outside the change-request flow is rejected identically by all three (no .or(), no eq() scoping call at all)', async () => {
     const role = 'admissions' as Role;
@@ -162,6 +199,9 @@ describe('change-request scope parity across all 3 independent implementations',
           return this as never;
         },
         or: function (this: unknown) {
+          return this as never;
+        },
+        is: function (this: unknown) {
           return this as never;
         },
       },

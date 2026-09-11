@@ -8,6 +8,8 @@ import {
   getMarkbookKpisRange,
 } from '@/lib/markbook/dashboard';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
+import { getStagedWaitingCount } from '@/lib/sidebar/notification-counts';
 import { getStaffCount } from '@/lib/auth/staff-list';
 import { getPFilesKpisRange } from '@/lib/p-files/dashboard';
 import { getOutdatedApplications } from '@/lib/admissions/dashboard';
@@ -136,8 +138,19 @@ export async function getThisTermStats(params: Params): Promise<StatRow[]> {
   if (role === 'school_admin') {
     return settle([
       async () => {
-        const count = await getSidebarChangeRequestCount(service, role, userId);
-        return { label: 'Awaiting your review', value: count, tone: 'warning' };
+        // The same two halves the Markbook badge adds: requests on the
+        // two-approver path, and grade-change steps waiting for her on the
+        // approval engine (migration 144). The first excludes the second's
+        // rows, so the sum counts nothing twice.
+        const [legacy, steps] = await Promise.all([
+          getSidebarChangeRequestCount(service, role, userId),
+          getStagedWaitingCount(service, role, userId, GRADE_CHANGE_FLOWS),
+        ]);
+        return {
+          label: 'Awaiting your review',
+          value: legacy + steps,
+          tone: 'warning',
+        };
       },
     ]);
   }
