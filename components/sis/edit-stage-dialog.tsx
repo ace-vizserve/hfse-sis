@@ -549,20 +549,32 @@ export function EditStageDialog({
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl!">
+      {/* ⚠ CAPPED AND SCROLLED, because this dialog has no fixed height. On the
+          application stage it can carry a class picker, the status select, a
+          two-column details grid, a rich-text Remarks editor AND the
+          terminal-reason block at once — taller than a laptop viewport, with
+          Save pushed off the bottom and no way to reach it.
+          `dvh` not `vh`: on mobile Safari the toolbar makes `vh` lie, which
+          puts the footer under the browser chrome — the same bug the cap is
+          here to fix. */}
+      <DialogContent className="flex max-h-[85dvh] max-w-xl! flex-col">
         {pendingMidTerm ? (
-          <LateEnrolleePrompt
-            payload={pendingMidTerm}
-            // Just closes — the prompt awaits its own refresh now, so
-            // refreshing here too would render the server twice for one save.
-            onDone={() => {
-              setPendingMidTerm(null);
-              setOpen(false);
-            }}
-          />
+          // Scrolls on its own — it replaces the whole body, so it inherits the
+          // cap but not the form's scroll container.
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <LateEnrolleePrompt
+              payload={pendingMidTerm}
+              // Just closes — the prompt awaits its own refresh now, so
+              // refreshing here too would render the server twice for one save.
+              onDone={() => {
+                setPendingMidTerm(null);
+                setOpen(false);
+              }}
+            />
+          </div>
         ) : (
           <>
-            <DialogHeader>
+            <DialogHeader className="shrink-0">
               <DialogTitle className="font-serif text-lg font-semibold">
                 Edit {STAGE_LABELS[stageKey]}
               </DialogTitle>
@@ -572,258 +584,276 @@ export function EditStageDialog({
             </DialogHeader>
 
             <Form {...form}>
+              {/* The form is the flex column; only the fields between the
+                  header and the footer scroll, so Save is always reachable —
+                  which is the whole point of the cap above. */}
               <form
                 onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-5"
+                className="flex min-h-0 flex-1 flex-col"
               >
-                {canPickSectionNow && (
-                  <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Assign a class now (optional)
-                    </p>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Leave this empty to enrol now — the student will appear
-                      under Records → Students needing setup, waiting for a
-                      class. Attendance starts on the day they are placed.
-                    </p>
-                    {sectionsQuery.isLoading ? (
-                      <p className="text-xs text-muted-foreground">
-                        Loading classes…
+                {/* `pr-1` leaves room for the scrollbar so it does not sit on
+                    top of the inputs' right edge. */}
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+                  {canPickSectionNow && (
+                    <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
+                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Assign a class now (optional)
                       </p>
-                    ) : sectionsQuery.isError ? (
-                      <p className="text-xs text-destructive">
-                        {sectionsQuery.error instanceof ApiError
-                          ? sectionsQuery.error.message
-                          : "Couldn't load classes — try again."}
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Leave this empty to enrol now — the student will appear
+                        under Records → Students needing setup, waiting for a
+                        class. Attendance starts on the day they are placed.
                       </p>
-                    ) : !sectionsQuery.data?.level ? (
-                      <p className="text-xs text-muted-foreground">
-                        This applicant&apos;s level name isn&apos;t recognised
-                        yet, so no classes can be listed. You can still enrol
-                        them — resolve the name under Records → Levels needing
-                        attention, then assign a class.
-                      </p>
-                    ) : sectionsQuery.data.sections.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        There are no classes at {sectionsQuery.data.level.label}{' '}
-                        yet. You can still enrol this student — create a class
-                        under SIS Admin → Section setup, then assign it from
-                        Records.
-                      </p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {[...sectionsQuery.data.sections]
-                          .sort((a, b) => a.activeCount - b.activeCount)
-                          .map((sec) => {
-                            const full =
-                              sec.activeCount >= MAX_ACTIVE_PER_SECTION;
-                            return (
-                              <button
-                                key={sec.id}
-                                type="button"
-                                disabled={full}
-                                onClick={() => setSectionId(sec.id)}
-                                aria-pressed={sectionId === sec.id}
-                                className={
-                                  'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ' +
-                                  (sectionId === sec.id
-                                    ? 'border-brand-indigo bg-accent'
-                                    : full
-                                      ? 'cursor-not-allowed border-border/60 bg-muted/30 opacity-60'
-                                      : 'border-border hover:bg-accent/40')
-                                }
-                              >
-                                <span className="font-medium text-foreground">
-                                  {sec.name}
-                                </span>
-                                <span className="font-mono tabular-nums text-muted-foreground">
-                                  {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
-                                  {full ? ' · Full' : ''}
-                                </span>
-                              </button>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select value={statusChoice} onValueChange={setStatusChoice}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="No status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {canonicalOptions.map((opt) => (
-                        <SelectItem key={opt} value={opt}>
-                          {opt}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value={OTHER_SENTINEL}>Other…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {statusChoice === OTHER_SENTINEL && (
-                    <Input
-                      placeholder="Enter custom status"
-                      value={statusOther}
-                      onChange={(e) => setStatusOther(e.target.value)}
-                      className="mt-2"
-                      maxLength={120}
-                    />
-                  )}
-                  <FormDescription>
-                    Pick from the canonical list or enter a custom value if
-                    admissions still uses one not listed.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-
-                {cols.extras.length > 0 && (
-                  <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Stage details
-                    </p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {cols.extras.map((e) => (
-                        <FormField
-                          key={e.fieldKey}
-                          control={form.control}
-                          name={`extras.${e.fieldKey}` as const}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">
-                                {e.label}
-                                {blockedFieldKeys.has(e.fieldKey) && (
-                                  <span className="text-destructive"> *</span>
-                                )}
-                              </FormLabel>
-                              <FormControl>
-                                {e.kind === 'date' ? (
-                                  <DatePicker
-                                    value={(field.value as string | null) ?? ''}
-                                    onChange={(next) =>
-                                      field.onChange(next === '' ? null : next)
-                                    }
-                                  />
-                                ) : (
-                                  <Input
-                                    type="text"
-                                    value={(field.value as string | null) ?? ''}
-                                    onChange={(ev) =>
-                                      field.onChange(
-                                        ev.target.value === ''
-                                          ? null
-                                          : ev.target.value
-                                      )
-                                    }
-                                    placeholder=""
-                                  />
-                                )}
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      ))}
+                      {sectionsQuery.isLoading ? (
+                        <p className="text-xs text-muted-foreground">
+                          Loading classes…
+                        </p>
+                      ) : sectionsQuery.isError ? (
+                        <p className="text-xs text-destructive">
+                          {sectionsQuery.error instanceof ApiError
+                            ? sectionsQuery.error.message
+                            : "Couldn't load classes — try again."}
+                        </p>
+                      ) : !sectionsQuery.data?.level ? (
+                        <p className="text-xs text-muted-foreground">
+                          This applicant&apos;s level name isn&apos;t recognised
+                          yet, so no classes can be listed. You can still enrol
+                          them — resolve the name under Records → Levels needing
+                          attention, then assign a class.
+                        </p>
+                      ) : sectionsQuery.data.sections.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          There are no classes at{' '}
+                          {sectionsQuery.data.level.label} yet. You can still
+                          enrol this student — create a class under SIS Admin →
+                          Section setup, then assign it from Records.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {[...sectionsQuery.data.sections]
+                            .sort((a, b) => a.activeCount - b.activeCount)
+                            .map((sec) => {
+                              const full =
+                                sec.activeCount >= MAX_ACTIVE_PER_SECTION;
+                              return (
+                                <button
+                                  key={sec.id}
+                                  type="button"
+                                  disabled={full}
+                                  onClick={() => setSectionId(sec.id)}
+                                  aria-pressed={sectionId === sec.id}
+                                  className={
+                                    'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ' +
+                                    (sectionId === sec.id
+                                      ? 'border-brand-indigo bg-accent'
+                                      : full
+                                        ? 'cursor-not-allowed border-border/60 bg-muted/30 opacity-60'
+                                        : 'border-border hover:bg-accent/40')
+                                  }
+                                >
+                                  <span className="font-medium text-foreground">
+                                    {sec.name}
+                                  </span>
+                                  <span className="font-mono tabular-nums text-muted-foreground">
+                                    {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
+                                    {full ? ' · Full' : ''}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
                     </div>
-                    {showCompletionNotice && (
-                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-                        <AlertTriangle className="size-3.5 shrink-0" />
-                        {completionMessage}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <FormField
-                  control={form.control}
-                  name="remarks"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Remarks</FormLabel>
-                      <FormControl>
-                        <RichTextEditor
-                          value={field.value ?? ''}
-                          onChange={(v) => field.onChange(v === '' ? null : v)}
-                          onBlur={field.onBlur}
-                          rows={4}
-                          placeholder="Notes for this stage…"
-                          maxLength={4000}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
                   )}
-                />
 
-                {stageKey === 'application' && isTerminalStatus && (
-                  <div className="space-y-4 rounded-lg border border-hairline p-4">
-                    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Reason for ending the application
-                    </p>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-foreground">
-                        Category <span className="text-destructive">*</span>
-                      </label>
-                      <Select
-                        value={terminalReason}
-                        onValueChange={(v) =>
-                          setTerminalReason(v as ApplicationTerminalReason)
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a reason..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APPLICATION_TERMINAL_REASON_VALUES.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {APPLICATION_TERMINAL_REASON_LABELS[v]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-foreground">
-                        Notes
-                        {terminalReason === 'other' && (
-                          <span className="text-destructive"> *</span>
-                        )}
-                      </label>
-                      <RichTextEditor
-                        value={terminalNotes}
-                        onChange={setTerminalNotes}
-                        placeholder="Optional additional context..."
-                        maxLength={200}
-                        rows={2}
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select
+                      value={statusChoice}
+                      onValueChange={setStatusChoice}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="No status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {canonicalOptions.map((opt) => (
+                          <SelectItem key={opt} value={opt}>
+                            {opt}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={OTHER_SENTINEL}>Other…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {statusChoice === OTHER_SENTINEL && (
+                      <Input
+                        placeholder="Enter custom status"
+                        value={statusOther}
+                        onChange={(e) => setStatusOther(e.target.value)}
+                        className="mt-2"
+                        maxLength={120}
                       />
-                    </div>
+                    )}
+                    <FormDescription>
+                      Pick from the canonical list or enter a custom value if
+                      admissions still uses one not listed.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
 
-                    {!terminalReason ? (
-                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-                        <AlertTriangle className="size-3.5 shrink-0" />
-                        Pick a reason before you can{' '}
-                        {effectiveStatus === 'Cancelled'
-                          ? 'cancel'
-                          : 'withdraw'}{' '}
-                        this application.
+                  {cols.extras.length > 0 && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Stage details
                       </p>
-                    ) : (
-                      terminalReason === 'other' &&
-                      !terminalNotes.trim() && (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {cols.extras.map((e) => (
+                          <FormField
+                            key={e.fieldKey}
+                            control={form.control}
+                            name={`extras.${e.fieldKey}` as const}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-xs">
+                                  {e.label}
+                                  {blockedFieldKeys.has(e.fieldKey) && (
+                                    <span className="text-destructive"> *</span>
+                                  )}
+                                </FormLabel>
+                                <FormControl>
+                                  {e.kind === 'date' ? (
+                                    <DatePicker
+                                      value={
+                                        (field.value as string | null) ?? ''
+                                      }
+                                      onChange={(next) =>
+                                        field.onChange(
+                                          next === '' ? null : next
+                                        )
+                                      }
+                                    />
+                                  ) : (
+                                    <Input
+                                      type="text"
+                                      value={
+                                        (field.value as string | null) ?? ''
+                                      }
+                                      onChange={(ev) =>
+                                        field.onChange(
+                                          ev.target.value === ''
+                                            ? null
+                                            : ev.target.value
+                                        )
+                                      }
+                                      placeholder=""
+                                    />
+                                  )}
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        ))}
+                      </div>
+                      {showCompletionNotice && (
                         <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
                           <AlertTriangle className="size-3.5 shrink-0" />
-                          Add a note explaining the “Other” reason.
+                          {completionMessage}
                         </p>
-                      )
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  )}
 
-                <DialogFooter className="gap-2">
+                  <FormField
+                    control={form.control}
+                    name="remarks"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Remarks</FormLabel>
+                        <FormControl>
+                          <RichTextEditor
+                            value={field.value ?? ''}
+                            onChange={(v) =>
+                              field.onChange(v === '' ? null : v)
+                            }
+                            onBlur={field.onBlur}
+                            rows={4}
+                            placeholder="Notes for this stage…"
+                            maxLength={4000}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {stageKey === 'application' && isTerminalStatus && (
+                    <div className="space-y-4 rounded-lg border border-hairline p-4">
+                      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Reason for ending the application
+                      </p>
+
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-foreground">
+                          Category <span className="text-destructive">*</span>
+                        </label>
+                        <Select
+                          value={terminalReason}
+                          onValueChange={(v) =>
+                            setTerminalReason(v as ApplicationTerminalReason)
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a reason..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {APPLICATION_TERMINAL_REASON_VALUES.map((v) => (
+                              <SelectItem key={v} value={v}>
+                                {APPLICATION_TERMINAL_REASON_LABELS[v]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-foreground">
+                          Notes
+                          {terminalReason === 'other' && (
+                            <span className="text-destructive"> *</span>
+                          )}
+                        </label>
+                        <RichTextEditor
+                          value={terminalNotes}
+                          onChange={setTerminalNotes}
+                          placeholder="Optional additional context..."
+                          maxLength={200}
+                          rows={2}
+                        />
+                      </div>
+
+                      {!terminalReason ? (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="size-3.5 shrink-0" />
+                          Pick a reason before you can{' '}
+                          {effectiveStatus === 'Cancelled'
+                            ? 'cancel'
+                            : 'withdraw'}{' '}
+                          this application.
+                        </p>
+                      ) : (
+                        terminalReason === 'other' &&
+                        !terminalNotes.trim() && (
+                          <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                            <AlertTriangle className="size-3.5 shrink-0" />
+                            Add a note explaining the “Other” reason.
+                          </p>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter className="shrink-0 gap-2 border-t border-border pt-4">
                   <Button
                     type="button"
                     variant="outline"
