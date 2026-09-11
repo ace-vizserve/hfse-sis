@@ -21,39 +21,52 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-// Filing a record from the CLASS page rather than from one student's drawer.
+// Filing a disciplinary record — the ONE place it happens, on the school-wide
+// register at /classroom/discipline.
 //
-// The drawer is where you file when you already have a child open. This is
-// where you file when you have an incident and have to find them — which,
-// going by how the school actually works, is the more common of the two: the
-// person filing is "the person in charge who is present at the venue"
-// (Chandana, 2026-08-14), and they arrive knowing what happened, not knowing
-// which row of the roster to click.
+// ⚠ THIS IS THE CLASS-PAGE PICKER, WIDENED. It was
+// `components/classroom/file-discipline-record-button.tsx`, scoped to one
+// roster, and it was deleted on 2026-09-11 along with the two other filing
+// surfaces. Christina Labrador, T4 teachers' training, 10 Sep: *"make it just
+// a view tab for all the teachers, rather than use it to file incidents. So we
+// have one centralized template to file any incident."* The two-step shape
+// survived the move because it was already right — the person filing is "the
+// person in charge who is present at the venue" (Chandana, 2026-08-14), and
+// they arrive knowing what happened, not knowing which row to click.
 //
-// SAME FORM, not a second one. The only thing this adds is the step the drawer
-// gets for free — which student — so the two entry points cannot drift on what
-// a record contains or on how a failure is reported.
+// What changed is the size of the haystack: one class became every student in
+// the year, so the list now carries the class name and searching by it is the
+// point rather than a nicety.
+//
+// SAME FORM, not a second one. The only thing this adds is the step a student
+// drawer used to get for free — which student — so nothing here can drift from
+// what a record contains or from how a failure is reported.
+//
+// ⚠ THE SECTION COMES FROM THE STUDENT, NOT FROM THE FILER. The write route is
+// `POST /api/classroom/[sectionId]/students/[studentNumber]/discipline`, and it
+// resolves `student_id`, `section_id` and `academic_year_id` server-side from
+// those two path segments — never from the body. So this component's only job
+// is to name the right pair, and it cannot redirect a record onto a child it
+// was not opened on.
 
-export type DisciplineFilingStudent = {
+export type FilingStudent = {
   studentNumber: string;
   studentName: string;
+  /** The class the record will be filed against — a record is a fact about a
+   *  student IN a class, and `section_id` is stored as it was at filing time. */
+  sectionId: string;
+  sectionName: string;
   indexNumber: number;
 };
 
 export function FileDisciplineRecordButton({
-  sectionId,
-  sectionName,
   students,
-  variant = 'default',
 }: {
-  sectionId: string;
-  sectionName: string | null;
-  students: DisciplineFilingStudent[];
-  /** `empty-state` drops the icon, matching the §7.6 empty-state CTA. */
-  variant?: 'default' | 'empty-state';
+  /** Every student on roll in the selected year, across every class. */
+  students: FilingStudent[];
 }) {
   const [open, setOpen] = useState(false);
-  const [student, setStudent] = useState<DisciplineFilingStudent | null>(null);
+  const [student, setStudent] = useState<FilingStudent | null>(null);
 
   function close() {
     setOpen(false);
@@ -68,7 +81,7 @@ export function FileDisciplineRecordButton({
       onOpenChange={(next) => (next ? setOpen(true) : close())}
     >
       <SheetTrigger asChild>
-        <Button size="sm" className={variant === 'empty-state' ? 'mt-1.5' : ''}>
+        <Button>
           <Plus className="size-4" />
           File a record
         </Button>
@@ -80,7 +93,7 @@ export function FileDisciplineRecordButton({
       >
         <SheetHeader className="gap-1.5 border-b border-border pb-5">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {sectionName ?? 'This class'}
+            {student ? student.sectionName : 'New record'}
           </p>
           <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
             {student ? student.studentName : 'Who is this about?'}
@@ -88,7 +101,7 @@ export function FileDisciplineRecordButton({
           <SheetDescription>
             {student
               ? `No. ${student.indexNumber} · ${student.studentNumber}`
-              : 'Choose the student this incident or letter concerns.'}
+              : 'Search any student in the school by name, class or number.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -106,7 +119,7 @@ export function FileDisciplineRecordButton({
               </Button>
               <div className="h-px bg-border" />
               <DisciplineRecordForm
-                sectionId={sectionId}
+                sectionId={student.sectionId}
                 studentNumber={student.studentNumber}
                 record={null}
                 onDone={close}
@@ -114,26 +127,30 @@ export function FileDisciplineRecordButton({
               />
             </div>
           ) : (
-            // cmdk rather than a plain list: a roster runs to 50 (Hard Rule
-            // #5) and the filer knows the name, so typing beats scrolling.
-            // Searchable by index number too, because teachers call students
-            // by their number.
+            // cmdk rather than a plain list. On one roster that was a
+            // convenience; across the school it is the only workable shape —
+            // the filer knows the name, and typing beats scrolling several
+            // hundred rows. Searchable by class and by index number too,
+            // because teachers call students by their number and the office
+            // usually knows the class before the name.
             <Command className="min-h-0 flex-1">
-              <CommandInput placeholder="Search by name or number…" />
+              <CommandInput placeholder="Search by name, class or number…" />
               <CommandList className="max-h-none flex-1">
-                <CommandEmpty>Nobody on this class list matches.</CommandEmpty>
+                <CommandEmpty>
+                  Nobody on this year&apos;s roll matches.
+                </CommandEmpty>
                 {students.map((s) => (
                   <CommandItem
-                    key={s.studentNumber}
-                    value={`${s.studentName} ${s.indexNumber} ${s.studentNumber}`}
+                    key={`${s.sectionId}-${s.studentNumber}`}
+                    value={`${s.studentName} ${s.sectionName} ${s.indexNumber} ${s.studentNumber}`}
                     onSelect={() => setStudent(s)}
                     className="gap-3"
                   >
-                    <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                      {s.indexNumber}
-                    </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                       {s.studentName}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {s.sectionName}
                     </span>
                     <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                       {s.studentNumber}

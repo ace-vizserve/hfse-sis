@@ -243,13 +243,9 @@ function StudentDetailsBody({
   if (disciplineView.mode !== 'list') {
     return (
       <StudentDisciplineTakeover
-        sectionId={sectionId}
-        studentNumber={studentNumber}
         records={records}
         view={disciplineView}
         onView={setDisciplineView}
-        viewerUserId={viewerUserId}
-        canManageAnyDiscipline={canManageAnyDiscipline}
       />
     );
   }
@@ -478,9 +474,6 @@ function StudentDetailsBody({
                   isError={discipline.isError}
                   onOpen={(recordId) =>
                     setDisciplineView({ mode: 'detail', recordId })
-                  }
-                  onFile={() =>
-                    setDisciplineView({ mode: 'form', recordId: null })
                   }
                 />
               </TabsContent>

@@ -1,10 +1,6 @@
 import { FileText } from 'lucide-react';
 import { notFound, redirect } from 'next/navigation';
 
-import {
-  FileDisciplineRecordButton,
-  type DisciplineFilingStudent,
-} from '@/components/classroom/file-discipline-record-button';
 import { StudentDetailsSheet } from '@/components/classroom/student-details-sheet';
 import { DisciplineTypeChip } from '@/components/discipline/record-type-chip';
 import {
@@ -76,9 +72,11 @@ export default async function ClassroomDisciplinePage({
         .select('name')
         .eq('id', sectionId)
         .maybeSingle(),
-      // The roster is here for the filing button's student picker, not for the
-      // table — a filing is always about one child, and the class page is the
-      // one surface that does not already have one open.
+      // The roster gives the table its house colours and its drawer links.
+      // It also used to feed a filing button's student picker; filing left
+      // this page on 2026-09-11 (Christina Labrador: this tab is "just a view
+      // tab for all the teachers"), so `rosterByNumber` below is now its only
+      // consumer.
       supabase
         .from('section_students')
         .select(
@@ -92,22 +90,6 @@ export default async function ClassroomDisciplinePage({
   const sectionName = (sectionRow as { name: string } | null)?.name ?? null;
   const houses = await listHouses();
   const houseById = new Map(houses.map((h) => [h.id, h]));
-  const students: DisciplineFilingStudent[] = (
-    (rosterRows ?? []) as unknown as RosterRow[]
-  )
-    .filter((r) => r.student?.student_number)
-    .map((r) => ({
-      studentNumber: r.student!.student_number,
-      studentName: [
-        r.student!.last_name,
-        r.student!.first_name,
-        r.student!.middle_name,
-      ]
-        .filter(Boolean)
-        .join(', '),
-      indexNumber: r.index_number,
-    }));
-
   // Keyed by student number so a table row can open the same drawer the
   // Students tab uses. A record whose student has since left the class has no
   // entry here and stays plain text — the drawer reads a live roster, so
@@ -139,13 +121,6 @@ export default async function ClassroomDisciplinePage({
             {records.length}
           </span>
         </h2>
-        {records.length > 0 && (
-          <FileDisciplineRecordButton
-            sectionId={sectionId}
-            sectionName={sectionName}
-            students={students}
-          />
-        )}
       </div>
 
       {records.length === 0 ? (
@@ -158,13 +133,8 @@ export default async function ClassroomDisciplinePage({
           </p>
           <p className="max-w-[42ch] text-sm text-muted-foreground">
             Anything filed for a student in this class will be listed here.
+            Records are filed by the office, on the school-wide discipline page.
           </p>
-          <FileDisciplineRecordButton
-            sectionId={sectionId}
-            sectionName={sectionName}
-            students={students}
-            variant="empty-state"
-          />
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">

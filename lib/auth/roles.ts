@@ -208,13 +208,12 @@ const RECORDS_NAV: NavSection[] = [
     items: [
       { href: '/records/students', label: 'Students' },
       { href: '/records/movements', label: 'Movements' },
-      // Disciplinary records (#7). No `requiresRoles`: the page carries the
-      // same three-role guard as the rest of Records, and a narrower nav item
-      // than its own page is what link-capability-consistency reports on.
-      // No ROUTE_ACCESS row either — the `/records` subtree already admits
-      // exactly these roles, and a redundant prefix would oblige every role in
-      // it to have its own nav link.
-      { href: '/records/discipline', label: 'Discipline' },
+      // ⚠ DISCIPLINE LEFT RECORDS ON 2026-09-11 and now lives in Classroom,
+      // at `/classroom/discipline` — see CLASSROOM_NAV. It moved because it
+      // became the filing surface as well as the register (Christina
+      // Labrador's T4 decision), and filing belongs beside the classes it is
+      // about. `admissions` lost it in the move, which was the point: they
+      // reached it only because Records admits them broadly.
       // Operational queue for enrolled-but-not-synced students. Per-row
       // sync gates on BOTH studentNumber AND classSection — when either
       // is missing the student is stranded outside grading. The queue
@@ -573,7 +572,21 @@ const EVALUATION_NAV: NavSection[] = [
 // yet (no quick action either, same reasoning as Attendance/Evaluation:
 // the one nav item already is the destination).
 const CLASSROOM_NAV: NavSection[] = [
-  { items: [{ href: '/classroom', label: 'All classes' }] },
+  {
+    items: [
+      { href: '/classroom', label: 'All classes' },
+      // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
+      // this page does not (its own ROUTE_ACCESS row is narrower), so without
+      // this every teacher would see a link that bounces them to `/` — the
+      // visible-but-bounces bug three separate pages carried until 2026-09-10.
+      // The list must stay in step with that ROUTE_ACCESS row.
+      {
+        href: '/classroom/discipline',
+        label: 'Discipline',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+    ],
+  },
 ];
 
 // SIS admin hub — the system-level admin surface where structural ops live.
@@ -1053,12 +1066,27 @@ export const ROUTE_ACCESS: Array<{
     prefix: '/admin',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
+  // The school-wide disciplinary register, which is also the one place a
+  // record is filed (moved here from /records/discipline, 2026-09-11).
+  //
+  // ⚠ NARROWER THAN THE MODULE IT SITS IN, which is the whole reason this row
+  // exists — Classroom admits teachers, and this page must not. Christina
+  // Labrador's decision at the T4 training was that teachers read discipline
+  // and never file it, so filing lives behind the office roles. The nav item
+  // in CLASSROOM_NAV carries the matching `requiresRoles`; without both, a
+  // teacher sees a link that bounces them.
+  //
+  // ⚠ MUST STAY ABOVE THE `/classroom` ROW. First match in declaration order
+  // wins, so the broader rule would swallow this one and hand the page back to
+  // every teacher.
+  {
+    prefix: '/classroom/discipline',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
   // Classroom — a section × term workspace for teaching staff. Mandatory
   // row: isRouteAllowed defaults to ALLOW for any prefix with no matching
   // rule, so without this, admissions (who has no teaching role) could open
-  // it. No competing `/classroom*` rule exists,
-  // so placement relative to the other rules doesn't matter for
-  // longest-prefix-wins.
+  // it.
   {
     prefix: '/classroom',
     allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],

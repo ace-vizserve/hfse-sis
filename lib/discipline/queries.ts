@@ -24,6 +24,16 @@ export type DisciplineRecordRow = {
   sectionId: string;
   /** "Sec 1 Discipline 1" — the school form's "Level / Class", as one phrase. */
   className: string | null;
+  /**
+   * "Sec 1" on its own.
+   *
+   * ⚠ CARRIED SEPARATELY EVEN THOUGH `className` CONTAINS IT. The register
+   * filters by level — "every filing, every level" was the ask — and a facet
+   * built on `className` can only offer whole classes, so "show me Secondary
+   * One" would mean ticking every Sec 1 class by hand. Splitting it here beats
+   * making the table re-parse a string it was handed pre-joined.
+   */
+  levelName: string | null;
   academicYearId: string;
   ayCode: string | null;
   recordType: DisciplineRecordType;
@@ -189,6 +199,7 @@ function toRow(
     studentName: student ? fullName(student) : null,
     sectionId: raw.section_id,
     className,
+    levelName: level?.label ?? null,
     academicYearId: raw.academic_year_id,
     ayCode: ay?.ay_code ?? null,
     recordType: raw.record_type,
@@ -320,6 +331,42 @@ export async function listDisciplineForAy(
 
   if (error) {
     console.error('[discipline] year read failed:', error.message);
+    return [];
+  }
+
+  const names = await staffNameMap();
+  return ((data ?? []) as unknown as RawRow[]).map((r) => toRow(r, names));
+}
+
+/**
+ * Everything ever filed, across every year.
+ *
+ * ⚠ THE SIBLING ABOVE IS STILL THE DEFAULT, and its docstring explains why: a
+ * register is a working list for the year in front of you. This is the opt-in
+ * behind `?scope=all` on the register, added 2026-09-11 because the ask was
+ * "all the filings — every level, AY, disciplinary type", and a year switcher
+ * cannot answer a question that spans years ("has this been happening for
+ * three years?").
+ *
+ * ⚠ UNBOUNDED BY CONSTRUCTION, and that is survivable only because of what
+ * this table is. Every row is one filed incident or letter for one child;
+ * across a school this size that is hundreds a year, not millions, and the
+ * page paginates client-side like its year-scoped sibling. If the row count
+ * ever stops being something a human could read, this is the function that
+ * needs a cursor — not the table.
+ */
+export async function listDisciplineForAllAys(): Promise<
+  DisciplineRecordRow[]
+> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('student_discipline_records')
+    .select(SELECT)
+    .order('occurred_on', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[discipline] all-years read failed:', error.message);
     return [];
   }
 

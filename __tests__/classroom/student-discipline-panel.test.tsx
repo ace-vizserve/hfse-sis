@@ -15,7 +15,6 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DisciplineRecordForm } from '@/components/classroom/discipline-record-form';
-import { FileDisciplineRecordButton } from '@/components/classroom/file-discipline-record-button';
 import {
   DisciplineList,
   StudentDisciplineTakeover,
@@ -55,6 +54,7 @@ function row(over: Partial<DisciplineRecordRow> = {}): DisciplineRecordRow {
     studentName: 'Joaquin Bautista',
     sectionId: 'sec-1',
     className: 'Sec 1 Discipline 1',
+    levelName: 'Sec 1',
     academicYearId: 'ay-1',
     ayCode: 'AY2026',
     recordType: 'incident',
@@ -97,16 +97,41 @@ describe('the list', () => {
         isLoading={false}
         isError={false}
         onOpen={vi.fn()}
-        onFile={vi.fn()}
       />
     );
 
     expect(screen.getByText('Nothing on record')).toBeInTheDocument();
-    // The empty state still has to be a way IN — this is the state most
-    // students are in, and it is where most filings will start.
-    expect(
-      screen.getByRole('button', { name: /file a record/i })
-    ).toBeInTheDocument();
+  });
+
+  it('offers no way to file, in either state', () => {
+    // ⚠ THIS TAB IS A VIEW TAB. Christina Labrador, T4 training, 10 Sep 2026:
+    // "make it just a view tab for all the teachers, rather than use it to
+    // file incidents… We don't use this to file any incident." Filing moved
+    // to the school-wide page, which only office roles reach.
+    //
+    // Asserted on BOTH states because the empty one used to carry its own
+    // "File a record" call to action — the state most students are in, and
+    // the one a teacher meets most often.
+    const { unmount } = renderWithClient(
+      <DisciplineList
+        records={[]}
+        isLoading={false}
+        isError={false}
+        onOpen={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /file a record/i })).toBeNull();
+    unmount();
+
+    renderWithClient(
+      <DisciplineList
+        records={[row({ id: 'rec-1' }), LETTER]}
+        isLoading={false}
+        isError={false}
+        onOpen={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /file a record/i })).toBeNull();
   });
 
   it('tells the two kinds of record apart by colour, not only by wording', () => {
@@ -116,7 +141,6 @@ describe('the list', () => {
         isLoading={false}
         isError={false}
         onOpen={vi.fn()}
-        onFile={vi.fn()}
       />
     );
 
@@ -139,7 +163,6 @@ describe('the list', () => {
         isLoading={false}
         isError={false}
         onOpen={vi.fn()}
-        onFile={vi.fn()}
       />
     );
 
@@ -159,7 +182,6 @@ describe('the list', () => {
         isLoading={false}
         isError={false}
         onOpen={onOpen}
-        onFile={vi.fn()}
       />
     );
 
@@ -170,48 +192,22 @@ describe('the list', () => {
   });
 });
 
-describe('who may correct a record', () => {
-  function detail(viewerUserId: string, canManageAnyDiscipline: boolean) {
-    return renderWithClient(
-      <StudentDisciplineTakeover
-        sectionId="sec-1"
-        studentNumber="H260127"
-        records={[LETTER]}
-        view={{ mode: 'detail', recordId: 'rec-2' }}
-        onView={vi.fn()}
-        viewerUserId={viewerUserId}
-        canManageAnyDiscipline={canManageAnyDiscipline}
-      />
-    );
-  }
-
-  it('offers Edit to the person who filed it', () => {
-    detail('user-filer', false);
-    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
-  });
-
-  it('offers Edit to leadership', () => {
-    detail('someone-else', true);
-    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
-  });
-
-  it('withholds Edit from another teacher', () => {
-    // The route answers this case with a 403 sentence. Offering the button
-    // anyway would spend a teacher's typing before telling them.
-    detail('someone-else', false);
-    expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
-  });
+describe('reading one record', () => {
+  // ⚠ THREE TESTS WERE DELETED HERE, and their absence is the point. They
+  // pinned who was offered the Edit button in this drawer — the filer, and
+  // leadership, but not a third teacher. There is no Edit button here any
+  // more: filing and correcting both left the Classroom surfaces on
+  // 2026-09-11 (Christina Labrador, T4 training). Corrections live in
+  // Records, where `components/sis/edit-discipline-record-button.tsx` still
+  // carries the same filer-or-leadership rule, and the PATCH route enforces
+  // it regardless of which screen asks.
 
   it('shows a letter still waiting on its slip as waiting, not as blank', () => {
     renderWithClient(
       <StudentDisciplineTakeover
-        sectionId="sec-1"
-        studentNumber="H260127"
         records={[{ ...LETTER, acknowledgedOn: null }]}
         view={{ mode: 'detail', recordId: 'rec-2' }}
         onView={vi.fn()}
-        viewerUserId="user-filer"
-        canManageAnyDiscipline={false}
       />
     );
 
@@ -222,13 +218,9 @@ describe('who may correct a record', () => {
   it('does not ask about a slip on an incident', () => {
     renderWithClient(
       <StudentDisciplineTakeover
-        sectionId="sec-1"
-        studentNumber="H260127"
         records={[row()]}
         view={{ mode: 'detail', recordId: 'rec-1' }}
         onView={vi.fn()}
-        viewerUserId="user-filer"
-        canManageAnyDiscipline={false}
       />
     );
 
@@ -378,48 +370,11 @@ describe('the form', () => {
   });
 });
 
-describe('filing from the class page', () => {
-  const STUDENTS = [
-    {
-      studentNumber: 'H260127',
-      studentName: 'Bautista, Joaquin P.',
-      indexNumber: 2,
-    },
-    { studentNumber: 'H260140', studentName: 'Reyes, Ana', indexNumber: 7 },
-  ];
-
-  function open() {
-    renderWithClient(
-      <FileDisciplineRecordButton
-        sectionId="sec-1"
-        sectionName="Sec 1 Discipline 1"
-        students={STUDENTS}
-      />
-    );
-    return userEvent.click(
-      screen.getByRole('button', { name: /file a record/i })
-    );
-  }
-
-  it('asks which student before it asks anything else', async () => {
-    await open();
-    // A record is always about one child, and this is the one surface that
-    // does not already have one open — so the student step cannot be skipped.
-    expect(await screen.findByText('Who is this about?')).toBeInTheDocument();
-    expect(screen.getByText('Bautista, Joaquin P.')).toBeInTheDocument();
-    expect(screen.queryByText('What is this?')).toBeNull();
-  });
-
-  it('hands the chosen student to the same form the drawer uses', async () => {
-    await open();
-    await userEvent.click(await screen.findByText('Reyes, Ana'));
-
-    // The header becomes the student, and the body becomes the ordinary
-    // filing form — not a second, parallel one.
-    expect(await screen.findByText('What is this?')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /file record/i })
-    ).toBeInTheDocument();
-    expect(screen.getByText(/No\. 7 · H260140/)).toBeInTheDocument();
-  });
-});
+// ⚠ A WHOLE SUITE WAS DELETED HERE — "filing from the class page", covering
+// `FileDisciplineRecordButton` and its two-step student picker. The component
+// is gone (2026-09-11): filing left every Classroom surface on Christina
+// Labrador's decision at the T4 training, and moved to the school-wide page.
+//
+// The picker itself was not thrown away — the school-wide filing sheet is the
+// same two steps widened from one roster to every student, so if that flow
+// ever needs pinning again, this is what it looked like when it worked.

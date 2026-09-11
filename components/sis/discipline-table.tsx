@@ -53,9 +53,15 @@ function facetFilter(
 export function DisciplineTable({
   records,
   ayCode,
+  allYears = false,
+  toolbarLeading,
 }: {
   records: DisciplineRecordRow[];
   ayCode: string;
+  /** Showing every year at once — reveals the Year column and facet. */
+  allYears?: boolean;
+  /** The page's all-years switch, which changes what is FETCHED. */
+  toolbarLeading?: React.ReactNode;
 }) {
   // ⚠ FLATTENED ONCE, HERE. Three things read `nature` — the cell, the
   // accessor (which is what sorts and what the CSV writes) and the search key
@@ -115,12 +121,37 @@ export function DisciplineTable({
         enableHiding: false,
       },
       {
+        id: 'level',
+        accessorFn: (r) => r.levelName ?? '',
+        header: 'Level',
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-muted-foreground">
+            {row.original.levelName ?? '—'}
+          </span>
+        ),
+        filterFn: facetFilter,
+      },
+      {
         id: 'class',
         accessorFn: (r) => r.className ?? '',
         header: 'Class',
         cell: ({ row }) => (
           <span className="whitespace-nowrap">
             {row.original.className ?? '—'}
+          </span>
+        ),
+        filterFn: facetFilter,
+      },
+      // Only meaningful once the list spans years — with a single year on
+      // screen it would be the same value on every row. Hidden by default and
+      // switched on by the page, rather than built as a second table.
+      {
+        id: 'ay',
+        accessorFn: (r) => r.ayCode ?? '',
+        header: 'Year',
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
+            {row.original.ayCode ?? '—'}
           </span>
         ),
         filterFn: facetFilter,
@@ -201,16 +232,22 @@ export function DisciplineTable({
       facets={[
         { columnId: 'type', label: 'Type' },
         { columnId: 'slip', label: 'Slip back' },
+        { columnId: 'level', label: 'Level' },
         { columnId: 'class', label: 'Class' },
+        ...(allYears ? [{ columnId: 'ay', label: 'Year' }] : []),
       ]}
+      toolbarLeading={toolbarLeading}
+      // The Year column is noise on a single-year list — every row would read
+      // the same. It appears with the data that makes it mean something.
+      initialColumnVisibility={{ ay: allYears }}
       url={{ enabled: true, namespace: 'discipline' }}
       initialSort={[{ id: 'date', desc: true }]}
       pageSize={25}
-      csv={{ filename: `discipline-${ayCode}.csv` }}
+      csv={{ filename: `discipline-${allYears ? 'all-years' : ayCode}.csv` }}
       emptyState={{
         icon: FileText,
         title: 'Nothing filed this year.',
-        body: 'Incidents and letters appear here as staff file them, from the student panel on a class list.',
+        body: 'Incidents and letters appear here as they are filed. Use “File a record” above to add one.',
       }}
       emptyFilteredState={{
         title: 'No records match.',

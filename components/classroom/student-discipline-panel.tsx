@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  ArrowLeft,
-  FileText,
-  Link2,
-  Pencil,
-  Plus,
-  ShieldAlert,
-} from 'lucide-react';
+import { ArrowLeft, FileText, Link2, ShieldAlert } from 'lucide-react';
 
 import { DisciplineTypeChip } from '@/components/discipline/record-type-chip';
 import { Button } from '@/components/ui/button';
@@ -21,8 +14,6 @@ import {
   linkHost,
   linkLabel,
 } from '@/lib/discipline/display';
-
-import { DisciplineRecordForm } from './discipline-record-form';
 
 // The Discipline tab of the student drawer — action item #7. Christina, 18:20:
 // "if we click the name of the student, I was hoping we can also find those
@@ -40,27 +31,26 @@ import { DisciplineRecordForm } from './discipline-record-form';
 // revise on their own schedule. Staff decide; this records it.
 
 /**
- * Which of the three views the discipline surface is showing.
+ * Which of the two views the discipline surface is showing.
  *
- * A record is addressed by id, never held as an object: after an edit the list
- * is refetched, and a captured row would keep rendering the values the user
- * just changed.
+ * ⚠ THERE WAS A THIRD, `form`, AND IT SERVED BOTH FILING AND EDITING. Both
+ * left this panel on 2026-09-11. Christina Labrador, T4 training, 10 Sep:
+ * *"make it just a view tab for all the teachers, rather than use it to file
+ * incidents… We don't use this to file any incident."* Filing moved to the
+ * school-wide page at `/classroom/discipline`, and corrections went with it —
+ * a tab that is a view tab does not hold a form. Records keeps its own
+ * correction path (`components/sis/edit-discipline-record-button.tsx`), which
+ * only office roles reach.
+ *
+ * A record is addressed by id, never held as an object: after a correction
+ * elsewhere the list is refetched, and a captured row would keep rendering the
+ * values somebody just changed.
  */
 export type DisciplineView =
   | { mode: 'list' }
-  | { mode: 'detail'; recordId: string }
-  | { mode: 'form'; recordId: string | null };
+  | { mode: 'detail'; recordId: string };
 
 export const DISCIPLINE_LIST_VIEW: DisciplineView = { mode: 'list' };
-
-/** Whether this reader may correct this record — the filer, or leadership. */
-function mayEdit(
-  record: DisciplineRecordRow,
-  viewerUserId: string,
-  canManageAny: boolean
-): boolean {
-  return record.filedBy === viewerUserId || canManageAny;
-}
 
 /**
  * "Filed by Chandana Dileep · Academics · Slip back 27 May".
@@ -108,13 +98,11 @@ export function DisciplineList({
   isLoading,
   isError,
   onOpen,
-  onFile,
 }: {
   records: DisciplineRecordRow[];
   isLoading: boolean;
   isError: boolean;
   onOpen: (recordId: string) => void;
-  onFile: () => void;
 }) {
   if (isLoading) {
     return (
@@ -142,23 +130,12 @@ export function DisciplineList({
         <p className="max-w-[34ch] text-sm text-muted-foreground">
           Incidents and letters filed for this student will appear here.
         </p>
-        <Button size="sm" onClick={onFile} className="mt-1.5">
-          <Plus className="size-4" />
-          File a record
-        </Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={onFile}>
-          <Plus className="size-4" />
-          File a record
-        </Button>
-      </div>
-
       <div className="overflow-hidden rounded-xl border border-border">
         <ul className="divide-y divide-border">
           {records.map((record) => (
@@ -223,14 +200,10 @@ function BackButton({ onBack }: { onBack: () => void }) {
 
 function DisciplineDetail({
   record,
-  canEdit,
   onBack,
-  onEdit,
 }: {
   record: DisciplineRecordRow;
-  canEdit: boolean;
   onBack: () => void;
-  onEdit: () => void;
 }) {
   const isLetter = record.recordType === 'letter';
   const host = linkHost(record.documentUrl);
@@ -311,72 +284,25 @@ function DisciplineDetail({
           </a>
         </div>
       )}
-
-      {canEdit && (
-        <div className="flex justify-end border-t border-border pt-4">
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Pencil className="size-4" />
-            Edit
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
 
 /**
- * The half of the surface that takes over the drawer body — the detail view and
- * the filing form. Rendered by the sheet INSTEAD of its tabs, which is what
- * lets the form be a full-height task without becoming a second dialog.
+ * The half of the surface that takes over the drawer body — the detail view.
+ * Rendered by the sheet INSTEAD of its tabs, which is what lets a record be
+ * read full-height without becoming a second dialog.
  */
 export function StudentDisciplineTakeover({
-  sectionId,
-  studentNumber,
   records,
   view,
   onView,
-  viewerUserId,
-  canManageAnyDiscipline,
 }: {
-  sectionId: string;
-  studentNumber: string;
   records: DisciplineRecordRow[];
   view: Exclude<DisciplineView, { mode: 'list' }>;
   onView: (next: DisciplineView) => void;
-  viewerUserId: string;
-  canManageAnyDiscipline: boolean;
 }) {
-  const record = view.recordId
-    ? (records.find((r) => r.id === view.recordId) ?? null)
-    : null;
-
-  if (view.mode === 'form') {
-    return (
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">
-        <BackButton onBack={() => onView(DISCIPLINE_LIST_VIEW)} />
-        <div className="h-px bg-border" />
-        <DisciplineRecordForm
-          sectionId={sectionId}
-          studentNumber={studentNumber}
-          record={record}
-          onDone={() =>
-            onView(
-              record
-                ? { mode: 'detail', recordId: record.id }
-                : DISCIPLINE_LIST_VIEW
-            )
-          }
-          onCancel={() =>
-            onView(
-              record
-                ? { mode: 'detail', recordId: record.id }
-                : DISCIPLINE_LIST_VIEW
-            )
-          }
-        />
-      </div>
-    );
-  }
+  const record = records.find((r) => r.id === view.recordId) ?? null;
 
   // The record it was opened on is gone — deleted is impossible here (there is
   // no delete), so this only happens if the list refetched without it. Send the
@@ -396,9 +322,7 @@ export function StudentDisciplineTakeover({
     <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
       <DisciplineDetail
         record={record}
-        canEdit={mayEdit(record, viewerUserId, canManageAnyDiscipline)}
         onBack={() => onView(DISCIPLINE_LIST_VIEW)}
-        onEdit={() => onView({ mode: 'form', recordId: record.id })}
       />
     </div>
   );

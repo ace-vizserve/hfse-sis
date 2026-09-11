@@ -186,6 +186,11 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     fallbackIcon: School,
     iconByHref: {
       '/classroom': School,
+      // Incident and disciplinary records. The system records these and
+      // decides nothing (KD #189), so the glyph names the register, not a
+      // verdict being handed down. Moved here from the records module with
+      // the page itself, 2026-09-11.
+      '/classroom/discipline': Gavel,
     },
     // No quick action — the single nav item (All classes) is already the
     // destination, same reasoning as Attendance/Evaluation above.
@@ -292,10 +297,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/records/insights': ICON_INSIGHTS,
       '/records/students': ICON_STUDENT_DIRECTORY,
       '/records/movements': ArrowRightLeft,
-      // Incident and disciplinary records. The system records these and
-      // decides nothing (KD #189), so the glyph names the register, not a
-      // verdict being handed down.
-      '/records/discipline': Gavel,
       '/records/unsynced': UserX,
       '/records/level-mismatches': FileQuestion,
       '/sis/sections': ICON_SECTION_SETUP,
