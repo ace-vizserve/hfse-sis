@@ -80,11 +80,17 @@ const attendanceMixPieData = [
   { name: 'Absent', value: 12 },
 ];
 
+// Deliberately fractional — the chart these back renders with
+// `yFormat="percent"` (zero decimals: ticks/tooltip/value-labels all show
+// `Math.round(n)`), so these values must be rounded to WHOLE numbers on
+// export, not passed through at 1 decimal. Fixtures are chosen so a
+// naive 1-decimal round (or no round at all) would NOT equal the expected
+// whole-number cell, exposing a fractional leak.
 const rateTrend: AyTrendResult = {
   data: [
-    { x: 'T1', AY2026: 90.1, AY2025: 88 },
+    { x: 'T1', AY2026: 90.6, AY2025: 88.4 },
     { x: 'T2', AY2026: 92.3, AY2025: null },
-    { x: 'T3', AY2026: null, AY2025: 85 },
+    { x: 'T3', AY2026: null, AY2025: 85.5 },
     { x: 'T4', AY2026: null, AY2025: null },
   ],
   series: [
@@ -93,9 +99,13 @@ const rateTrend: AyTrendResult = {
   ],
 };
 
+// Same "fractional on purpose" reasoning as `rateTrend` above — the
+// composition chart also renders `yFormat="percent"` (zero decimals), but
+// the page computes these to 1 decimal (`Math.round(... * 1000) / 10`).
+// The export must round AGAIN to match what the bars actually show.
 const compositionData = [
-  { x: 'T1', present: 85, late: 5, excused: 3, absent: 7 },
-  { x: 'T2', present: 90, late: 2, excused: 1, absent: 7 },
+  { x: 'T1', present: 84.7, late: 5.3, excused: 2.6, absent: 7.4 },
+  { x: 'T2', present: 89.6, late: 2.4, excused: 1.1, absent: 6.9 },
   { x: 'T3', present: 0, late: 0, excused: 0, absent: 0 },
   { x: 'T4', present: 0, late: 0, excused: 0, absent: 0 },
 ];
@@ -248,11 +258,25 @@ describe('buildAttendanceInsightsExport', () => {
       'AY2025 rate (%)',
     ]);
     expect(trend.rows).toEqual([
-      ['T1', 90.1, 88],
-      ['T2', 92.3, null],
-      ['T3', null, 85],
+      ['T1', 91, 88],
+      ['T2', 92, null],
+      ['T3', null, 86],
       ['T4', null, null],
     ]);
+  });
+
+  it("rounds term-rate cells to whole numbers, like the chart's percent formatter", () => {
+    // The chart is rendered with yFormat="percent", whose formatter
+    // (Math.round, zero decimals) drives the axis ticks, tooltip and
+    // on-bar value labels — a fractional cell here would disagree with
+    // what the viewer sees on the bar.
+    const result = buildAttendanceInsightsExport(baseInput);
+    const trend = result.sections[2];
+    for (const row of trend.rows) {
+      for (const cell of row.slice(1)) {
+        if (cell !== null) expect(Number.isInteger(cell)).toBe(true);
+      }
+    }
   });
 
   it('gives the term-rate section zero rows when there is no trend at all', () => {
@@ -285,6 +309,20 @@ describe('buildAttendanceInsightsExport', () => {
       ['T3', 0, 0, 0, 0],
       ['T4', 0, 0, 0, 0],
     ]);
+  });
+
+  it("rounds composition cells to whole numbers, like the chart's percent formatter", () => {
+    // The page computes `compositionData` to 1 decimal, but the composition
+    // chart also renders yFormat="percent" (zero-decimal formatter) — the
+    // export must round again rather than passing the page's intermediate
+    // 1-decimal value straight through.
+    const result = buildAttendanceInsightsExport(baseInput);
+    const composition = result.sections[3];
+    for (const row of composition.rows) {
+      for (const cell of row.slice(1)) {
+        expect(Number.isInteger(cell)).toBe(true);
+      }
+    }
   });
 
   it('gives the composition section zero rows when no term has data', () => {

@@ -147,6 +147,13 @@ export function buildAttendanceInsightsExport(
   // (AYxxxx)" label used only for the legend). The card shows an
   // EmptyChartState instead of the chart when no term has any data at all
   // (`haveTrend` false) — section stays, with zero rows.
+  //
+  // Rounded to WHOLE numbers, not 1 decimal — this chart is rendered with
+  // `yFormat="percent"`, whose formatter (`chart-primitives.ts`) is
+  // `Math.round(n)` with no decimals, and that same formatter drives the
+  // axis ticks, tooltip, AND on-bar value labels. A fractional cell here
+  // (e.g. 84.7) would disagree with the whole-number "85%" the viewer
+  // actually sees on the bar.
   sections.push({
     title: 'Term-by-term attendance',
     headers: ['Term', ...rateTrend.series.map((s) => `${s.key} rate (%)`)],
@@ -155,7 +162,7 @@ export function buildAttendanceInsightsExport(
           String(row.x),
           ...rateTrend.series.map((s) => {
             const v = row[s.key];
-            return typeof v === 'number' ? roundTo(v, 1) : null;
+            return typeof v === 'number' ? roundTo(v, 0) : null;
           }),
         ])
       : [],
@@ -165,16 +172,24 @@ export function buildAttendanceInsightsExport(
   // (%), same values the grouped-bar chart plots. Empty rows when no term
   // has any encoded data (`hasMixByTerm` false), matching the card's own
   // EmptyChartState.
+  //
+  // Rounded to WHOLE numbers for the same reason as the term-rate section
+  // above: this chart also renders with `yFormat="percent"`, whose
+  // zero-decimal formatter drives the ticks/tooltip/value-labels the viewer
+  // actually sees. The page computes `compositionData` to 1 decimal
+  // (`Math.round(... * 1000) / 10`), which is one decimal MORE than what
+  // the bars display — round again here to match the chart, not the page's
+  // intermediate value.
   sections.push({
     title: "What's behind the rate",
     headers: ['Term', 'Present (%)', 'Late (%)', 'Excused (%)', 'Absent (%)'],
     rows: hasMixByTerm
       ? compositionData.map((r) => [
           r.x,
-          r.present,
-          r.late,
-          r.excused,
-          r.absent,
+          roundTo(r.present, 0),
+          roundTo(r.late, 0),
+          roundTo(r.excused, 0),
+          roundTo(r.absent, 0),
         ])
       : [],
   });
