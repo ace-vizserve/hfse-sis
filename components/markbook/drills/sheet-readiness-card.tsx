@@ -15,37 +15,15 @@ import {
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import type { SheetRow } from '@/lib/markbook/drill';
+import {
+  rollupSheetReadiness,
+  selectVisibleSheetReadiness,
+  type SheetReadinessRollup,
+  type SheetRow,
+} from '@/lib/markbook/drill';
 
 const BADGE_BASE =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
-
-type SectionRollup = {
-  sectionName: string;
-  level: string | null;
-  total: number;
-  locked: number;
-  open: number;
-  pctLocked: number;
-};
-
-const CANONICAL_LEVEL_ORDER = [
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'S1',
-  'S2',
-  'S3',
-  'S4',
-];
-function levelRank(code: string | null): number {
-  if (!code) return 99;
-  const i = CANONICAL_LEVEL_ORDER.indexOf(code);
-  return i === -1 ? 98 : i;
-}
 
 /**
  * SheetReadinessCard — per-section grading progress. Each section is one row
@@ -67,46 +45,10 @@ export function SheetReadinessCard({
 }) {
   const [openSection, setOpenSection] = React.useState<string | null>(null);
 
-  const rollup = React.useMemo<SectionRollup[]>(() => {
-    type Acc = {
-      sectionName: string;
-      level: string | null;
-      total: number;
-      locked: number;
-    };
-    const map = new Map<string, Acc>();
-    for (const s of sheets) {
-      let acc = map.get(s.sectionName);
-      if (!acc) {
-        acc = {
-          sectionName: s.sectionName,
-          level: s.level,
-          total: 0,
-          locked: 0,
-        };
-        map.set(s.sectionName, acc);
-      }
-      acc.total += 1;
-      if (s.isLocked) acc.locked += 1;
-    }
-    const rows: SectionRollup[] = [];
-    for (const a of map.values()) {
-      const open = a.total - a.locked;
-      rows.push({
-        sectionName: a.sectionName,
-        level: a.level,
-        total: a.total,
-        locked: a.locked,
-        open,
-        pctLocked: a.total > 0 ? Math.round((a.locked / a.total) * 100) : 0,
-      });
-    }
-    // Sort: most open first, then by level for tie-breaks.
-    rows.sort(
-      (a, b) => b.open - a.open || levelRank(a.level) - levelRank(b.level)
-    );
-    return rows;
-  }, [sheets]);
+  const rollup = React.useMemo<SheetReadinessRollup[]>(
+    () => rollupSheetReadiness(sheets),
+    [sheets]
+  );
 
   const totalOpen = rollup.reduce((s, r) => s + r.open, 0);
   const totalLocked = rollup.reduce((s, r) => s + r.locked, 0);
@@ -115,7 +57,7 @@ export function SheetReadinessCard({
     totalTotal > 0 ? Math.round((totalLocked / totalTotal) * 100) : 0;
   const empty = rollup.length === 0;
   // Sections with 0 open sheets get visually de-emphasized (they're done).
-  const visibleRows = rollup.filter((r) => r.open > 0).slice(0, 12);
+  const visibleRows = selectVisibleSheetReadiness(rollup);
   const doneCount = rollup.filter((r) => r.open === 0).length;
 
   return (

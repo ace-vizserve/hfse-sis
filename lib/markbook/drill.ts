@@ -909,6 +909,95 @@ export function getTeacherEntryVelocity(
 }
 
 // ---------------------------------------------------------------------------
+// Sheet-readiness rollup — SheetReadinessCard's per-section meter (locked vs
+// open sheets). Pulled out here so the card and the dashboard CSV export
+// (lib/markbook/dashboard-export.ts) call the SAME function — the CSV must
+// never re-implement a selection rule and risk drifting from what's on
+// screen.
+
+export type SheetReadinessRollup = {
+  sectionName: string;
+  level: string | null;
+  total: number;
+  locked: number;
+  open: number;
+  pctLocked: number;
+};
+
+const READINESS_LEVEL_ORDER = [
+  'P1',
+  'P2',
+  'P3',
+  'P4',
+  'P5',
+  'P6',
+  'S1',
+  'S2',
+  'S3',
+  'S4',
+];
+function readinessLevelRank(code: string | null): number {
+  if (!code) return 99;
+  const i = READINESS_LEVEL_ORDER.indexOf(code);
+  return i === -1 ? 98 : i;
+}
+
+// One row per section, sorted most-open-first (then by level for tie-breaks)
+// — the exact order SheetReadinessCard renders. `pctLocked` is rounded to a
+// whole number here (Math.round), matching the card's own "N% locked" text —
+// the ONLY place this ratio is computed, so the card and the CSV can never
+// disagree on it.
+export function rollupSheetReadiness(
+  sheets: SheetRow[]
+): SheetReadinessRollup[] {
+  type Acc = {
+    sectionName: string;
+    level: string | null;
+    total: number;
+    locked: number;
+  };
+  const map = new Map<string, Acc>();
+  for (const s of sheets) {
+    let acc = map.get(s.sectionName);
+    if (!acc) {
+      acc = { sectionName: s.sectionName, level: s.level, total: 0, locked: 0 };
+      map.set(s.sectionName, acc);
+    }
+    acc.total += 1;
+    if (s.isLocked) acc.locked += 1;
+  }
+  const rows: SheetReadinessRollup[] = [];
+  for (const a of map.values()) {
+    const open = a.total - a.locked;
+    rows.push({
+      sectionName: a.sectionName,
+      level: a.level,
+      total: a.total,
+      locked: a.locked,
+      open,
+      pctLocked: a.total > 0 ? Math.round((a.locked / a.total) * 100) : 0,
+    });
+  }
+  rows.sort(
+    (a, b) =>
+      b.open - a.open ||
+      readinessLevelRank(a.level) - readinessLevelRank(b.level)
+  );
+  return rows;
+}
+
+// How many rows SheetReadinessCard shows (sections with at least one open
+// sheet, after the sort above) — shared with the dashboard CSV export so the
+// file can't drift from the card's own cutoff.
+export const SHEET_READINESS_LIST_LIMIT = 12;
+
+export function selectVisibleSheetReadiness(
+  rollup: SheetReadinessRollup[]
+): SheetReadinessRollup[] {
+  return rollup.filter((r) => r.open > 0).slice(0, SHEET_READINESS_LIST_LIMIT);
+}
+
+// ---------------------------------------------------------------------------
 // Universal drill row builder — public entry point.
 
 export type BuildDrillRowsInput = DrillRangeInput & {

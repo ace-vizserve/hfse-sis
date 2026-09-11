@@ -15,6 +15,7 @@ import { RecommendationCallout } from '@/components/dashboard/insights/recommend
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import { ChangeRequestPanel } from '@/components/markbook/change-request-panel';
@@ -59,6 +60,7 @@ import {
   getPublicationCoverage,
   getRecentMarkbookActivity,
 } from '@/lib/markbook/dashboard';
+import { buildMarkbookDashboardExport } from '@/lib/markbook/dashboard-export';
 import { buildAllRowSets, getTeacherEntryVelocity } from '@/lib/markbook/drill';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -326,6 +328,27 @@ export default async function MarkbookHome({
           currentAy
             ? [{ label: currentAy.ay_code }, { label: 'Current', tone: 'mint' }]
             : []
+        }
+        actions={
+          // Teacher view gets no button — only the admin dashboard (this
+          // section) has anything to export. Gated on kpisResult (not just
+          // canSeeAdmin) so the button never appears without the Key
+          // figures data it depends on.
+          canSeeAdmin && kpisResult && ayCode ? (
+            <ExportCsvButton
+              data={buildMarkbookDashboardExport({
+                ayCode,
+                rangeInput,
+                kpis: kpisResult,
+                velocity,
+                gradeDist,
+                pubCoverage,
+                changeRequests,
+                sheets: drillRowSets?.sheets ?? null,
+                teacherVelocity,
+              })}
+            />
+          ) : undefined
         }
       />
 
