@@ -21,6 +21,7 @@ import {
 import { Sheet, SheetTrigger } from '@/components/ui/sheet';
 import {
   getDocumentChaseQueueCounts,
+  selectVisibleChaseTiles,
   type ChaseQueueLens,
 } from '@/lib/sis/document-chase-queue';
 import type { LifecycleDrillTarget } from '@/lib/sis/drill';
@@ -110,50 +111,15 @@ export async function DocumentChaseQueueStrip({
   lens: moduleKey = 'admissions',
 }: DocumentChaseQueueStripProps) {
   const counts = await getDocumentChaseQueueCounts(ayCode, moduleKey);
-  const total =
-    counts.promised +
-    counts.validation +
-    counts.revalidation +
-    counts.expiringSoon;
 
-  if (total === 0) return null;
+  // Shared with the Admissions dashboard CSV export
+  // (lib/admissions/dashboard-export.ts) so the file's "Documents to chase"
+  // section can never disagree about which tiles are showing.
+  const visible = selectVisibleChaseTiles(counts, moduleKey);
+  if (visible.length === 0) return null;
 
-  const valueByTarget: Record<LifecycleDrillTarget, number | undefined> = {
-    'awaiting-fee-payment': undefined,
-    'awaiting-document-revalidation': counts.revalidation,
-    'awaiting-document-validation': counts.validation,
-    'awaiting-promised-documents': counts.promised,
-    'awaiting-expiring-documents': counts.expiringSoon,
-    'awaiting-assessment-schedule': undefined,
-    'awaiting-contract-signature': undefined,
-    'missing-class-assignment': undefined,
-    'ungated-to-enroll': undefined,
-    'new-applications': undefined,
-  };
-
-  // Per-module tile filter — drop tiles whose backing count is zeroed out
-  // for this surface (validation + promised on p-files; expiringSoon on
-  // admissions). Tiles with a real zero value (no rows match) are also
-  // dropped to keep the strip from showing empty cards.
-  const visibleTiles = TILES.filter((tile) => {
-    const value = valueByTarget[tile.target] ?? 0;
-    if (value === 0) return false;
-    if (
-      moduleKey === 'admissions' &&
-      tile.target === 'awaiting-expiring-documents'
-    )
-      return false;
-    if (
-      moduleKey === 'p-files' &&
-      (tile.target === 'awaiting-document-validation' ||
-        tile.target === 'awaiting-promised-documents')
-    ) {
-      return false;
-    }
-    return true;
-  });
-
-  if (visibleTiles.length === 0) return null;
+  const valueByTarget = new Map(visible.map((v) => [v.target, v.value]));
+  const visibleTiles = TILES.filter((tile) => valueByTarget.has(tile.target));
 
   // Adapt grid to tile count — keeps the layout balanced across both
   // modules without an awkward 4-col grid for 2 tiles.
@@ -167,7 +133,7 @@ export async function DocumentChaseQueueStrip({
   return (
     <section className={gridClass} aria-label="Documents needing action">
       {visibleTiles.map((tile) => {
-        const value = valueByTarget[tile.target] ?? 0;
+        const value = valueByTarget.get(tile.target) ?? 0;
         const Icon = tile.icon;
         return (
           <Sheet key={tile.target}>

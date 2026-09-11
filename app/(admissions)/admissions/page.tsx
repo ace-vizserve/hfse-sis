@@ -36,6 +36,7 @@ import {
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
@@ -72,10 +73,12 @@ import {
 import { getAdmissionsPriority } from '@/lib/admissions/priority';
 import { buildDrillRows } from '@/lib/admissions/drill';
 import { STALENESS_FOLLOW_UP_VALUES } from '@/lib/admissions/staleness';
+import { buildAdmissionsDashboardExport } from '@/lib/admissions/dashboard-export';
 import {
   getAdmissionsFeedback,
   getPreCourseStats,
 } from '@/lib/admissions/feedback';
+import { getDocumentChaseQueueCounts } from '@/lib/sis/document-chase-queue';
 import {
   admissionsChaseInsights,
   admissionsInsights,
@@ -328,6 +331,7 @@ export default async function AdmissionsDashboard({
     feedbackResult,
     preCourseStats,
     histogram,
+    chaseQueueCounts,
   ] = await Promise.all([
     getPipelineStageBreakdown(selectedAy),
     getConversionFunnel(selectedAy),
@@ -360,6 +364,14 @@ export default async function AdmissionsDashboard({
     // Empty when no enrolments have been stamped yet; the component renders
     // a neutral "building" state in that case.
     getTimeToEnrollHistogram(selectedAy),
+    // Export-only read of <DocumentChaseQueueStrip>'s own tile counts — it's
+    // a self-fetching async component below, not fed from this Promise.all.
+    // `getDocumentChaseQueueCounts` is cached (60s, `sis:${ayCode}` tag), so
+    // this doesn't repeat the strip's query, and it's skipped entirely for a
+    // non-operational viewer, who never sees the strip either.
+    isOperational
+      ? getDocumentChaseQueueCounts(selectedAy, 'admissions')
+      : Promise.resolve(null),
   ]);
 
   // Freshen runs in parallel with the data fetches above; awaited here so
@@ -532,6 +544,33 @@ export default async function AdmissionsDashboard({
       : undefined,
   });
 
+  // Everything the export needs is already loaded above (or, for the chase
+  // queue tiles, loaded once for exactly this purpose) — no page is
+  // streamed via Suspense here, so the button is built inline rather than
+  // behind its own fallback (contrast with the Attendance dashboard).
+  const csvExport = buildAdmissionsDashboardExport({
+    ayCode: selectedAy,
+    rangeInput,
+    isOperational,
+    kpis: kpisResult,
+    velocity,
+    pipelineStages,
+    timeToEnroll: histogram,
+    assessment,
+    appsByLevel,
+    docCompletion,
+    referral,
+    preCourseStats,
+    feedbackStats: feedbackResult.stats,
+    chaseQueueCounts,
+    upcomingAy: upcomingAyCardData
+      ? {
+          ayCode: upcomingAyCardData.ayCode,
+          byStage: upcomingAyCardData.byStage,
+        }
+      : null,
+  });
+
   return (
     <PageShell>
       <DashboardHero
@@ -551,6 +590,7 @@ export default async function AdmissionsDashboard({
             tone: isCurrentAy ? 'mint' : 'muted',
           },
         ]}
+        actions={<ExportCsvButton data={csvExport} />}
       />
 
       <ComparisonToolbar

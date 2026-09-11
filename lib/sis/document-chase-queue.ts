@@ -12,6 +12,7 @@ import {
   inChaseLensScope,
   type ChaseQueueLens,
 } from '@/lib/sis/chase-lens';
+import type { LifecycleDrillTarget } from '@/lib/sis/drill';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Document chase queue — top-of-fold counts for /p-files + /admissions
@@ -57,6 +58,62 @@ export type DocumentChaseQueueCounts = {
   revalidation: number; // Rejected + Expired for both modules per KD #70
   expiringSoon: number; // any Valid slot expiring within 30 days (p-files only — zero for admissions)
 };
+
+// ──────────────────────────────────────────────────────────────────────────
+// Shared "which tiles are actually showing" selection rule. Originally lived
+// inline inside <DocumentChaseQueueStrip> as a `TILES.filter(...)`; pulled
+// out so the Admissions dashboard CSV export can mirror the exact same tile
+// set (a chase count of 0 disappears from the strip, and admissions never
+// shows the expiringSoon / p-files-only tiles) without re-implementing the
+// selection rule a second time. The strip component calls this too — see
+// components/sis/document-chase-queue-strip.tsx.
+// ──────────────────────────────────────────────────────────────────────────
+
+const CHASE_TILE_ORDER: ReadonlyArray<{
+  target: LifecycleDrillTarget;
+  label: string;
+}> = [
+  { target: 'awaiting-document-revalidation', label: 'Awaiting revalidation' },
+  { target: 'awaiting-document-validation', label: 'Awaiting validation' },
+  { target: 'awaiting-promised-documents', label: 'Awaiting promised' },
+  { target: 'awaiting-expiring-documents', label: 'Expiring soon' },
+];
+
+export type ChaseTileRow = {
+  target: LifecycleDrillTarget;
+  label: string;
+  value: number;
+};
+
+/** Pure — exported for the dashboard-export builder + strip component. */
+export function selectVisibleChaseTiles(
+  counts: DocumentChaseQueueCounts,
+  moduleKey: ChaseQueueLens
+): ChaseTileRow[] {
+  const valueByTarget: Record<string, number> = {
+    'awaiting-document-revalidation': counts.revalidation,
+    'awaiting-document-validation': counts.validation,
+    'awaiting-promised-documents': counts.promised,
+    'awaiting-expiring-documents': counts.expiringSoon,
+  };
+  return CHASE_TILE_ORDER.filter((tile) => {
+    const value = valueByTarget[tile.target] ?? 0;
+    if (value === 0) return false;
+    if (
+      moduleKey === 'admissions' &&
+      tile.target === 'awaiting-expiring-documents'
+    )
+      return false;
+    if (
+      moduleKey === 'p-files' &&
+      (tile.target === 'awaiting-document-validation' ||
+        tile.target === 'awaiting-promised-documents')
+    ) {
+      return false;
+    }
+    return true;
+  }).map((tile) => ({ ...tile, value: valueByTarget[tile.target] ?? 0 }));
+}
 
 const CACHE_TTL_SECONDS = 60;
 
