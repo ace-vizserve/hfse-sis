@@ -17,6 +17,7 @@ import { RecommendationCallout } from '@/components/dashboard/insights/recommend
 
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import {
@@ -54,6 +55,7 @@ import {
   getEvaluationTeacherPriority,
   getSubmissionVelocityRange,
 } from '@/lib/evaluation/dashboard';
+import { buildEvaluationDashboardExport } from '@/lib/evaluation/dashboard-export';
 import { buildAllRowSets } from '@/lib/evaluation/drill';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
@@ -259,6 +261,25 @@ export default async function EvaluationHub({
         title="Form class adviser write-ups"
         description={heroDescription}
         badges={ayCode ? [{ label: ayCode }] : []}
+        actions={
+          // Teacher view gets no button — only the oversight dashboard (this
+          // section) has anything to export. Gated the same way the section
+          // below it is (`canToggle && rangeInput && kpisResult &&
+          // velocity`) so the button never appears without the Key figures
+          // data it depends on.
+          canToggle && rangeInput && kpisResult && velocity && ayCode ? (
+            <ExportCsvButton
+              data={buildEvaluationDashboardExport({
+                ayCode,
+                rangeInput,
+                kpis: kpisResult,
+                velocity,
+                chaseKpis,
+                bySection: drillRowSets?.bySection ?? null,
+              })}
+            />
+          ) : undefined
+        }
       />
 
       {termsMissingVirtue.length > 0 && (
