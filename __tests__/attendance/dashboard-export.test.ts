@@ -269,9 +269,26 @@ describe('buildAttendanceDashboardExport', () => {
     const trend = result.sections[1];
     expect(trend.headers).toEqual(['Date', 'Rate (%)', 'Comparison rate (%)']);
     expect(trend.rows).toEqual([
-      ['2026-08-01', 92.5, 88],
+      ['2026-08-01', 93, 88],
       ['2026-08-02', 95, 90],
     ]);
+  });
+
+  it('rounds the daily trend to whole numbers, like the chart (never a fraction)', () => {
+    // The fixture's first point (92.5) is deliberately fractional. The chart
+    // never shows a fraction — its Y-axis tick + tooltip formatters and the
+    // drill-day quick-view all Math.round — so 92.5 must export as 93
+    // (Math.round's half-up), not 92.5.
+    const result = buildAttendanceDashboardExport(baseInput);
+    const trend = result.sections[1];
+    const [firstRow] = trend.rows;
+    expect(firstRow[1]).toBe(93);
+    expect(Number.isInteger(firstRow[1] as number)).toBe(true);
+    for (const row of trend.rows) {
+      expect(Number.isInteger(row[1] as number)).toBe(true);
+      if (row[2] !== null)
+        expect(Number.isInteger(row[2] as number)).toBe(true);
+    }
   });
 
   it('omits the daily-attendance-trend section when the series has 1 or 0 points', () => {

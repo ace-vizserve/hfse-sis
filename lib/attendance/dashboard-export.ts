@@ -113,6 +113,14 @@ export function buildAttendanceDashboardExport(
   // ≤ 1 point (dailySeries.current.length > 1), so the export mirrors that.
   // Comparison is aligned by POSITION, not by date — same as TrendChart's
   // `current.map((pt, i) => ({ ..., comparison: comparison?.[i]?.y }))`.
+  //
+  // Rounded to WHOLE numbers — the chart never shows a fraction. Its Y-axis
+  // tick formatter and tooltip formatter both `Math.round`
+  // (components/dashboard/charts/chart-primitives.ts, wired up in
+  // trend-chart.client.tsx), and the drill-day quick-view does the same
+  // (`Math.round(d.y)}%` in chart-drill-cards.tsx). Every other section in
+  // this file keeps the precision the design brief calls for; this one
+  // matches this specific chart's own rounding, not the usual 1dp.
   if (dailySeries.current.length > 1) {
     const hasComparison = !!dailySeries.comparison;
     sections.push({
@@ -121,10 +129,10 @@ export function buildAttendanceDashboardExport(
         ? ['Date', 'Rate (%)', 'Comparison rate (%)']
         : ['Date', 'Rate (%)'],
       rows: dailySeries.current.map((pt, i) => {
-        const row: (string | number | null)[] = [pt.x, roundTo(pt.y, 1)];
+        const row: (string | number | null)[] = [pt.x, roundTo(pt.y, 0)];
         if (hasComparison) {
           const cmpPt = dailySeries.comparison![i];
-          row.push(cmpPt ? roundTo(cmpPt.y, 1) : null);
+          row.push(cmpPt ? roundTo(cmpPt.y, 0) : null);
         }
         return row;
       }),
