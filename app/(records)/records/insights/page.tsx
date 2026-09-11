@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
 import { AttritionStackedBarChart } from '@/components/dashboard/charts/attrition-stacked-bar-chart';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import {
   ComparisonBarChart,
   type ComparisonBarPoint,
@@ -87,6 +88,7 @@ import {
   rollupMovements,
   WITHDRAWAL_CONTROLLABILITY,
 } from '@/lib/sis/records-insights';
+import { buildRecordsInsightsExport } from '@/lib/sis/records-insights-export';
 import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
 import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
 import {
@@ -544,6 +546,40 @@ export default async function RecordsInsightsPage({
   };
   const withdrawalsSparkline = sparklineFromAyTrend(withdrawalsSparklineTrend);
 
+  // Export CSV — mirrors this page exactly. Every value below is one the
+  // page already computed above; none are re-fetched or re-derived here.
+  const exportData = buildRecordsInsightsExport({
+    ayCode: selectedAy,
+    compareAy,
+    headcountTotal: headcount.total,
+    priorTotal,
+    enrolledDelta,
+    retentionState,
+    retentionPct: retention.pct,
+    lateEnrolledCount: rollup.counts.lateEnrolled,
+    populationComposedData,
+    haveCategoryMixData,
+    categoryMixData,
+    nationalityMix,
+    nationalityByLevel,
+    haveMovementActivity,
+    movementBarData: monthlySeries,
+    retention,
+    haveRetentionByLevel,
+    retentionStackData,
+    haveLate,
+    lateLevelDonutData,
+    lateTermBarData,
+    haveWithdrawals,
+    hasSpecifiedWithdrawalReasons,
+    reasonDonutData,
+    withdrawalsByLevel: rollup.withdrawalsByLevel,
+    withdrawnTotal: rollup.counts.withdrawn,
+    haveAttritionMatrix,
+    attritionStackedData,
+    withdrawalReasonKeys: rollup.withdrawalReasonKeys,
+  });
+
   return (
     <PageShell>
       <Link
@@ -566,6 +602,7 @@ export default async function RecordsInsightsPage({
           },
           growthBadge,
         ]}
+        actions={<ExportCsvButton data={exportData} />}
       />
 
       <div className="flex justify-end">
