@@ -732,10 +732,16 @@ export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
 // would risk breaking section assignment in order to fix a blank field. Do not
 // add a `class` rule.
 //
-// `documents`, `contract` and `orientation` carry no extra fields at all
+// `documents` and `contract` carry no extra fields at all
 // (STAGE_COLUMN_MAP[...].extras is []), so there is nothing to require on
 // them. `documents` only becomes enforceable once the P-Files slots work
 // lands and gives it something to point at.
+//
+// ⚠ This note used to name `orientation` in that list. It was wrong —
+// orientation has always had a Schedule date — and being wrong is why the
+// stage went un-enforced: anyone checking "does orientation need a rule?"
+// read this comment and moved on. It has a rule now. Before adding a stage
+// here, read STAGE_COLUMN_MAP rather than this sentence.
 //
 // The `application` → terminalReason rule is ALSO enforced, more strictly, by
 // validateTerminalReason below — which additionally checks the reason is one
@@ -763,13 +769,37 @@ export const STAGE_STATUS_REQUIRED_FIELDS: Partial<
   fees: {
     Invoiced: ['invoice'],
     'Re-invoiced': ['invoice'],
-    Paid: ['invoice', 'paymentDate'],
+    // `startDate` added 2026-09-12. Missing on only 2 of the 425 records
+    // already at Paid, so this clears a two-record backlog rather than
+    // locking the stage for everyone.
+    Paid: ['invoice', 'paymentDate', 'startDate'],
   },
   assessment: {
-    Finished: ['math', 'english'],
+    // `schedule` added 2026-09-12 on both statuses. A sitting cannot be
+    // under way or finished without a date it was held on, and the cost is
+    // small: of the 87 records at Finished, 4 lack a schedule.
+    //
+    // `medical` is DELIBERATELY NOT REQUIRED at any status, though it is a
+    // field on this stage. It is filled on 4 of 495 records overall and
+    // missing on 83 of the 87 at Finished — that is a field the school does
+    // not use, not a backlog to clear, and requiring it would freeze the
+    // assessment stage for almost everyone who has finished one. Add it only
+    // if admissions says they have started collecting it.
+    'Ongoing Assessment': ['schedule'],
+    Finished: ['schedule', 'math', 'english'],
   },
   supplies: {
     Claimed: ['claimedDate'],
+  },
+  orientation: {
+    // Added 2026-09-12: orientation had no rule at any status, so its one
+    // field was never required — the gap Mr Ace asked to close. Costs
+    // nothing today (no record holds an orientation status yet), which is
+    // the cheapest possible moment to introduce it.
+    //
+    // Only at Finished, matching supplies/Claimed: an orientation still
+    // Pending may genuinely not have a date yet.
+    Finished: ['scheduleDate'],
   },
   application: {
     Cancelled: ['terminalReason'],
@@ -857,6 +887,44 @@ export function findStageCompletionBlockers(
  * too. The wording holds there: it describes the state of the record, not the
  * edit that was attempted.
  */
+// ── A stage may not be saved with no status ───────────────────────────────
+//
+// STAGE_STATUS_REQUIRED_FIELDS above answers "what does THIS status need?",
+// so it has nothing to say about a row saved with no status at all —
+// findStageCompletionBlockers returns early on a blank status by design. That
+// left a hole: a save could set nothing, clear nothing, and still stamp
+// `<stage>UpdatedDate` + `<stage>Updatedby`, so the record read as though
+// somebody had worked the stage when the row was still entirely empty. Mr Ace
+// hit it on Cacao's supplies stage, 2026-09-12: "it should not let me save
+// bruh i have not put status, it let me save thats not good for stale
+// purposes."
+//
+// Checked against the status the row will hold AFTER the save, so editing only
+// the remarks on a stage that already has a status is untouched — the gate is
+// "this stage must not END UP statusless", not "you must retype the status".
+//
+// `class` IS EXEMPT, for the same reason it is absent from
+// STAGE_STATUS_REQUIRED_FIELDS: it has no edit dialog (the tile reads
+// "Assigned in Records"), and its columns are written by the Enrolled flip and
+// the assign-section route. Enforcing a status against write paths that never
+// set one would risk breaking section assignment to fix a blank field.
+export const STATUS_OPTIONAL_STAGES: readonly StageKey[] = ['class'] as const;
+
+/** Would this save leave the stage with no status? Pure; never throws. */
+export function isStageStatusMissing(
+  stageKey: StageKey,
+  /** The status the row will hold AFTER this save. */
+  status: string | null | undefined
+): boolean {
+  if (STATUS_OPTIONAL_STAGES.includes(stageKey)) return false;
+  return (status ?? '').trim() === '';
+}
+
+/** Plain-English refusal, in the same voice as stageCompletionMessage. */
+export function stageStatusMissingMessage(stageKey: StageKey): string {
+  return `${STAGE_LABELS[stageKey]} needs a status before it can be saved.`;
+}
+
 export function stageCompletionMessage(
   stageKey: StageKey,
   status: string,

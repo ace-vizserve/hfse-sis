@@ -52,7 +52,9 @@ import {
   STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
   findStageCompletionBlockers,
+  isStageStatusMissing,
   stageCompletionMessage,
+  stageStatusMissingMessage,
   type ApplicationTerminalReason,
   type StageKey,
   type StageUpdateInput,
@@ -279,6 +281,11 @@ export function EditStageDialog({
         }
       : {}),
   };
+
+  // A stage saved with no status stamps who-and-when onto a row that still
+  // says nothing, so the record reads as worked when it is empty. Same rule as
+  // the route, read from the same helper so the two cannot drift.
+  const statusMissing = isStageStatusMissing(stageKey, effectiveStatus);
 
   const completionBlockers = findStageCompletionBlockers(
     stageKey,
@@ -693,10 +700,17 @@ export function EditStageDialog({
                         maxLength={120}
                       />
                     )}
-                    <FormDescription>
-                      Pick from the canonical list or enter a custom value if
-                      admissions still uses one not listed.
-                    </FormDescription>
+                    {statusMissing ? (
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        {stageStatusMissingMessage(stageKey)}
+                      </p>
+                    ) : (
+                      <FormDescription>
+                        Pick from the canonical list or enter a custom value if
+                        admissions still uses one not listed.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
 
@@ -869,6 +883,7 @@ export function EditStageDialog({
                     loading={busy}
                     loadingText="Saving…"
                     disabled={
+                      statusMissing ||
                       completionBlockers.length > 0 ||
                       (stageKey === 'application' &&
                         isTerminalStatus &&

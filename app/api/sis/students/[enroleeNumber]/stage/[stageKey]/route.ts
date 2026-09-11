@@ -13,6 +13,8 @@ import {
   ENROLLED_PREREQ_STAGES,
   evaluateEnrolledFlip,
   findStageCompletionBlockers,
+  isStageStatusMissing,
+  stageStatusMissingMessage,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
@@ -611,6 +613,19 @@ export async function PATCH(
       status,
       extras
     );
+    // Checked BEFORE the field blockers, because those key off the status and
+    // return nothing when there isn't one — so a statusless save would sail
+    // past them and still stamp the stage's updated-by/date columns.
+    if (isStageStatusMissing(stageKey, effective.status)) {
+      return NextResponse.json(
+        {
+          error: stageStatusMissingMessage(stageKey),
+          code: 'stage_status_required',
+        },
+        { status: 400 }
+      );
+    }
+
     const completionBlockers = findStageCompletionBlockers(
       stageKey,
       effective.status,

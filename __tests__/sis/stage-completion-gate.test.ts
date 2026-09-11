@@ -93,33 +93,47 @@ describe('findStageCompletionBlockers', () => {
       expect(blockedKeys('fees', 'Re-invoiced', {})).toEqual(['invoice']);
     });
 
-    it('Paid needs both', () => {
-      expect(blockedKeys('fees', 'Paid', { invoice: 'INV-9' })).toEqual([
-        'paymentDate',
-      ]);
+    it('Paid needs all three', () => {
       expect(
-        blockedKeys('fees', 'Paid', { paymentDate: '2026-08-01' })
+        blockedKeys('fees', 'Paid', {
+          invoice: 'INV-9',
+          startDate: '2026-08-01',
+        })
+      ).toEqual(['paymentDate']);
+      expect(
+        blockedKeys('fees', 'Paid', {
+          paymentDate: '2026-08-01',
+          startDate: '2026-08-01',
+        })
       ).toEqual(['invoice']);
       expect(
         findStageCompletionBlockers('fees', 'Paid', {
           invoice: 'INV-9',
           paymentDate: '2026-08-01',
+          startDate: '2026-08-01',
         })
       ).toEqual([]);
     });
 
-    // feeStartDate is an extra on the stage but no status requires it.
-    it('never asks for the fee start date', () => {
+    // `startDate` became required at Paid on 2026-09-12, closing a gap Mr Ace
+    // asked about. Only Paid — an invoice that has been sent has no start date
+    // yet. Cost when it shipped: 2 of the 425 records already at Paid.
+    it('asks for the start date at Paid, and only at Paid', () => {
+      expect(blockedKeys('fees', 'Paid', {})).toContain('startDate');
       for (const status of STAGE_STATUS_OPTIONS.fees) {
+        if (status === 'Paid') continue;
         expect(blockedKeys('fees', status, {})).not.toContain('startDate');
       }
     });
   });
 
-  describe('assessment — Finished needs both grades', () => {
-    it('passes when both grades are in', () => {
+  describe('assessment — the sitting date, then both grades', () => {
+    const sat = { schedule: '2026-05-01' };
+
+    it('passes when the date and both grades are in', () => {
       expect(
         findStageCompletionBlockers('assessment', 'Finished', {
+          ...sat,
           math: 'B',
           english: 'A',
         })
@@ -128,20 +142,43 @@ describe('findStageCompletionBlockers', () => {
 
     it('blocks on a blank Math grade, naming it', () => {
       expect(
-        findStageCompletionBlockers('assessment', 'Finished', { english: 'A' })
+        findStageCompletionBlockers('assessment', 'Finished', {
+          ...sat,
+          english: 'A',
+        })
       ).toEqual([{ fieldKey: 'math', label: 'Math grade' }]);
     });
 
     it('blocks on a blank English grade, naming it', () => {
       expect(
-        findStageCompletionBlockers('assessment', 'Finished', { math: 'B' })
+        findStageCompletionBlockers('assessment', 'Finished', {
+          ...sat,
+          math: 'B',
+        })
       ).toEqual([{ fieldKey: 'english', label: 'English grade' }]);
     });
 
-    // The schedule and medical extras exist on the stage but are not gated.
-    it('never asks for the schedule or the medical note', () => {
-      const keys = blockedKeys('assessment', 'Finished', {});
-      expect(keys).toEqual(['math', 'english']);
+    // `schedule` became required on 2026-09-12: a sitting cannot be under way
+    // or finished without a date it was held on. Cost when it shipped: 4 of
+    // the 87 records already at Finished.
+    it('asks for the sitting date once it is under way or done', () => {
+      expect(blockedKeys('assessment', 'Ongoing Assessment', {})).toEqual([
+        'schedule',
+      ]);
+      expect(blockedKeys('assessment', 'Finished', {})).toEqual([
+        'schedule',
+        'math',
+        'english',
+      ]);
+    });
+
+    // Medical stays ungated ON PURPOSE — filled on 4 of 495 records, missing
+    // on 83 of the 87 at Finished. Requiring it would freeze the stage for
+    // nearly everyone who has finished a sitting.
+    it('never asks for the medical note', () => {
+      for (const status of STAGE_STATUS_OPTIONS.assessment) {
+        expect(blockedKeys('assessment', status, {})).not.toContain('medical');
+      }
     });
   });
 
@@ -204,9 +241,9 @@ describe('findStageCompletionBlockers', () => {
       expect(
         findStageCompletionBlockers('registration', 'Pending', {})
       ).toEqual([]);
-      expect(
-        findStageCompletionBlockers('assessment', 'Ongoing Assessment', {})
-      ).toEqual([]);
+      expect(findStageCompletionBlockers('supplies', 'Pending', {})).toEqual(
+        []
+      );
       expect(findStageCompletionBlockers('fees', 'Cancelled', {})).toEqual([]);
     });
 
@@ -268,14 +305,31 @@ describe('findStageCompletionBlockers', () => {
       expect(STAGE_STATUS_REQUIRED_FIELDS.class).toBeUndefined();
     });
 
-    // These three carry no extras at all, so there is nothing to require.
+    // These two carry no extras at all, so there is nothing to require.
     // `documents` only becomes enforceable once the P-Files slots work lands.
-    it('never blocks documents, contract or orientation', () => {
-      for (const stage of ['documents', 'contract', 'orientation'] as const) {
+    //
+    // ⚠ `orientation` used to be named here, and in the source comment beside
+    // STAGE_STATUS_REQUIRED_FIELDS, as a stage with no extras. That was wrong
+    // — it has always had a Schedule date — and the wrong sentence is why it
+    // went unenforced for so long. It has a rule now; see below.
+    it('never blocks documents or contract', () => {
+      for (const stage of ['documents', 'contract'] as const) {
         for (const status of STAGE_STATUS_OPTIONS[stage]) {
           expect(findStageCompletionBlockers(stage, status, {})).toEqual([]);
         }
         expect(STAGE_STATUS_REQUIRED_FIELDS[stage]).toBeUndefined();
+      }
+    });
+
+    it('blocks orientation at Finished, and nowhere else', () => {
+      expect(blockedKeys('orientation', 'Finished', {})).toEqual([
+        'scheduleDate',
+      ]);
+      for (const status of STAGE_STATUS_OPTIONS.orientation) {
+        if (status === 'Finished') continue;
+        expect(findStageCompletionBlockers('orientation', status, {})).toEqual(
+          []
+        );
       }
     });
   });
@@ -307,6 +361,7 @@ describe('findStageCompletionBlockers', () => {
 describe('stageCompletionMessage', () => {
   it('words a single missing field', () => {
     const blockers = findStageCompletionBlockers('assessment', 'Finished', {
+      schedule: '2026-05-01',
       english: 'A',
     });
     expect(stageCompletionMessage('assessment', 'Finished', blockers)).toBe(

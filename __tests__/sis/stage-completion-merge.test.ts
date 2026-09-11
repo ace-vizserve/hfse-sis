@@ -232,7 +232,12 @@ describe('the merged row is what the gate judges', () => {
     const blockers = blockersFor(
       fees,
       'fees',
-      { feeStatus: 'Invoiced', feeInvoice: null, feePaymentDate: null },
+      {
+        feeStatus: 'Invoiced',
+        feeInvoice: null,
+        feePaymentDate: null,
+        feeStartDate: '2026-01-05',
+      },
       'Paid',
       undefined
     );
@@ -260,7 +265,12 @@ describe('the merged row is what the gate judges', () => {
     const blockers = blockersFor(
       fees,
       'fees',
-      { feeStatus: 'Paid', feeInvoice: 'INV-7', feePaymentDate: null },
+      {
+        feeStatus: 'Paid',
+        feeInvoice: 'INV-7',
+        feePaymentDate: null,
+        feeStartDate: '2026-01-05',
+      },
       undefined,
       undefined
     );
