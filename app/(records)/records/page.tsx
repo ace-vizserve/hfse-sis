@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -65,6 +66,8 @@ import {
   getRecordsKpisRange,
   getWithdrawalVelocityRange,
 } from '@/lib/sis/dashboard';
+import { buildRecordsDashboardExport } from '@/lib/sis/records-dashboard-export';
+import { getDocumentChaseQueueCounts } from '@/lib/sis/document-chase-queue';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getSisDashboardSummary } from '@/lib/sis/queries';
 import { countUnsyncedEnrolledStudents } from '@/lib/sis/unsynced-students';
@@ -148,6 +151,7 @@ export default async function RecordsDashboard({
     withdrawVelocity,
     classAssignment,
     unsyncedCount,
+    chaseQueueCounts,
   ] = await Promise.all([
     getSisDashboardSummary(selectedAy),
     getDocumentValidationBacklog(selectedAy),
@@ -159,6 +163,14 @@ export default async function RecordsDashboard({
     getWithdrawalVelocityRange(rangeInput),
     getClassAssignmentReadiness(selectedAy),
     countUnsyncedEnrolledStudents(selectedAy),
+    // Export-only read of <DocumentChaseQueueStrip>'s own tile counts — it's
+    // a self-fetching async component below, not fed from this Promise.all.
+    // `getDocumentChaseQueueCounts` is cached (60s, `sis:${ayCode}` tag), so
+    // this doesn't repeat the strip's query, and it's skipped entirely for a
+    // non-operational viewer, who never sees the strip either.
+    isOperational
+      ? getDocumentChaseQueueCounts(selectedAy, 'p-files')
+      : Promise.resolve(null),
   ]);
 
   await freshenPromise;
@@ -228,6 +240,23 @@ export default async function RecordsDashboard({
             tone: isCurrentAy ? 'mint' : 'muted',
           },
         ]}
+        actions={
+          <ExportCsvButton
+            data={buildRecordsDashboardExport({
+              ayCode: selectedAy,
+              rangeInput,
+              isOperational,
+              kpis: kpisResult,
+              enrolVelocity,
+              withdrawVelocity,
+              docBacklog,
+              levels,
+              expiring,
+              classAssignment,
+              chaseQueueCounts,
+            })}
+          />
+        }
       />
 
       {/* Unsynced-students banner — single Alert for every role when the

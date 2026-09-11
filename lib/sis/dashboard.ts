@@ -1258,6 +1258,19 @@ export function getClassAssignmentReadiness(
   )();
 }
 
+// Rows already arrive sorted desc by daysSinceEnrollment (oldest gap first)
+// from loadClassAssignmentReadinessUncached — this only applies the card's
+// own "top 8" cutoff. Pulled out so the Records dashboard CSV export
+// (lib/sis/records-dashboard-export.ts) can mirror <ClassAssignmentReadinessCard>'s
+// visible rows exactly, without re-implementing the cutoff a second time.
+export const CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT = 8;
+
+export function selectVisibleClassAssignmentReadiness(
+  rows: ClassAssignmentReadinessRow[]
+): ClassAssignmentReadinessRow[] {
+  return rows.slice(0, CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT);
+}
+
 export async function getActivityByActor(range?: {
   from: string;
   to: string;

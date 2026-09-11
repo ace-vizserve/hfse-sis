@@ -16,7 +16,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
-import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard';
+import {
+  selectVisibleClassAssignmentReadiness,
+  type ClassAssignmentReadinessRow,
+} from '@/lib/sis/dashboard';
 
 const BADGE_BASE =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
@@ -89,7 +92,7 @@ export function ClassAssignmentReadinessCard({
                 </tr>
               </thead>
               <tbody>
-                {data.slice(0, 8).map((r) => (
+                {selectVisibleClassAssignmentReadiness(data).map((r) => (
                   <tr
                     key={r.enroleeNumber}
                     className="border-b border-border/60"
