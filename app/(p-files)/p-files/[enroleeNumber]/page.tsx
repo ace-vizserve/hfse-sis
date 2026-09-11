@@ -148,10 +148,16 @@ export default async function StudentDocumentDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Reached when the admissions record itself is missing, which
+                says nothing about whether this child is enrolled — the old
+                copy asserted they were, and then told the reader to place
+                them. Same enrolled-only assumption as the section alert
+                further down, which KD #204 outdated. */}
             <p className="text-sm leading-relaxed text-muted-foreground">
-              This student is enrolled but has not been synced to the SIS yet.
-              Assign them to a section to complete the sync, then return here to
-              manage their documents.
+              We can&apos;t find this student&apos;s record for {selectedAy}, so
+              there are no documents to show. If they have just been enrolled,
+              assigning them to a class completes the sync and their folder
+              appears here.
             </p>
             <Button asChild size="sm">
               <Link href="/records/unsynced">
@@ -439,7 +445,16 @@ export default async function StudentDocumentDetailPage({
         </div>
       </header>
 
-      {!student.section && (
+      {/* ⚠ `enrolled &&` IS THE FIX, NOT DECORATION. This alert was written
+          when P-Files held enrolled students only, so "no section" could only
+          mean "enrolled but not yet placed". KD #204 opened the module to
+          applicants on 2026-09-01, and an applicant has no section BY
+          DEFINITION — so every applicant folder carried a warning telling the
+          reader to go and place a child who has not been offered a place, with
+          a first line ("They're enrolled…") that was simply false.
+          A condition that was exactly right before a scope change, and silently
+          wrong after it. */}
+      {enrolled && !student.section && (
         <Alert variant="warning">
           <AlertIcon variant="warning">
             <AlertTriangle className="size-4" />
