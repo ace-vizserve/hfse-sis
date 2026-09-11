@@ -23,6 +23,7 @@ import {
   getDocumentChaseQueueCounts,
   selectVisibleChaseTiles,
   type ChaseQueueLens,
+  type DocumentChaseQueueCounts,
 } from '@/lib/sis/document-chase-queue';
 import type { LifecycleDrillTarget } from '@/lib/sis/drill';
 
@@ -46,6 +47,16 @@ import type { LifecycleDrillTarget } from '@/lib/sis/drill';
 export type DocumentChaseQueueStripProps = {
   ayCode: string;
   lens?: ChaseQueueLens;
+  /**
+   * Pre-fetched counts. When supplied, the strip skips its own
+   * `getDocumentChaseQueueCounts` call and renders from this instead — for a
+   * caller (Admissions, Records) that already loaded the same counts for its
+   * own CSV export, so the two reads share one fetch rather than the page and
+   * the strip each querying independently for the same (ayCode, lens).
+   * Omit it (P-Files, or any caller that doesn't pre-fetch) and the strip
+   * fetches for itself exactly as before.
+   */
+  counts?: DocumentChaseQueueCounts;
 };
 
 type ChaseTile = {
@@ -109,8 +120,10 @@ const CHIP_COLOR_BY_SEVERITY: Record<
 export async function DocumentChaseQueueStrip({
   ayCode,
   lens: moduleKey = 'admissions',
+  counts: suppliedCounts,
 }: DocumentChaseQueueStripProps) {
-  const counts = await getDocumentChaseQueueCounts(ayCode, moduleKey);
+  const counts =
+    suppliedCounts ?? (await getDocumentChaseQueueCounts(ayCode, moduleKey));
 
   // Shared with the Admissions dashboard CSV export
   // (lib/admissions/dashboard-export.ts) so the file's "Documents to chase"

@@ -165,6 +165,10 @@ const baseInput: BuildAdmissionsDashboardExportInput = {
   chaseQueueCounts,
   upcomingAy: {
     ayCode: 'AY2027',
+    // Deliberately NOT submitted+ongoingVerification+processing (4+2+1=7) —
+    // pins that the exported total is the card's own headline number,
+    // carried through as-is, never recomputed from the stage breakdown.
+    applicationCount: 8,
     byStage: { submitted: 4, ongoingVerification: 2, processing: 1 },
   },
 };
@@ -507,10 +511,14 @@ describe('buildAdmissionsDashboardExport', () => {
     )!;
     expect(earlyBird.headers).toEqual(['Stage', 'Applications']);
     expect(earlyBird.rows).toEqual([
+      ['Total applications', 8],
       ['Submitted', 4],
       ['Ongoing Verification', 2],
       ['Processing', 1],
     ]);
+    // Pin: NOT the sum of the stage rows (4+2+1=7) — the card's own headline
+    // number (applicationCount), carried through as-is.
+    expect(earlyBird.rows[0][1]).toBe(8);
   });
 
   it('omits the early-bird section when there is no upcoming AY', () => {

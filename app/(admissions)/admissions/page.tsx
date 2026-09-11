@@ -364,11 +364,10 @@ export default async function AdmissionsDashboard({
     // Empty when no enrolments have been stamped yet; the component renders
     // a neutral "building" state in that case.
     getTimeToEnrollHistogram(selectedAy),
-    // Export-only read of <DocumentChaseQueueStrip>'s own tile counts — it's
-    // a self-fetching async component below, not fed from this Promise.all.
-    // `getDocumentChaseQueueCounts` is cached (60s, `sis:${ayCode}` tag), so
-    // this doesn't repeat the strip's query, and it's skipped entirely for a
-    // non-operational viewer, who never sees the strip either.
+    // Fetched once here and threaded into BOTH <DocumentChaseQueueStrip>
+    // (via its `counts` prop, below) and the CSV export, so the two never
+    // issue separate queries for the same (ayCode, lens). Skipped entirely
+    // for a non-operational viewer, who never sees the strip either.
     isOperational
       ? getDocumentChaseQueueCounts(selectedAy, 'admissions')
       : Promise.resolve(null),
@@ -566,6 +565,7 @@ export default async function AdmissionsDashboard({
     upcomingAy: upcomingAyCardData
       ? {
           ayCode: upcomingAyCardData.ayCode,
+          applicationCount: upcomingAyCardData.applicationCount,
           byStage: upcomingAyCardData.byStage,
         }
       : null,
@@ -632,7 +632,11 @@ export default async function AdmissionsDashboard({
       {/* Chase strip + chase priority + chase narrative + single directive callout. */}
       {isOperational && (
         <>
-          <DocumentChaseQueueStrip ayCode={selectedAy} lens="admissions" />
+          <DocumentChaseQueueStrip
+            ayCode={selectedAy}
+            lens="admissions"
+            counts={chaseQueueCounts ?? undefined}
+          />
           <PriorityPanel payload={admissionsChasePriority} />
           <InsightsPanel insights={chaseInsights} />
           {ledeCallout && (

@@ -338,7 +338,11 @@ export default async function RecordsDashboard({
           Oversight roles see the same data via the analytical cards below
           but skip this top strip because they don't act on the buckets. */}
       {isOperational && (
-        <DocumentChaseQueueStrip ayCode={selectedAy} lens="p-files" />
+        <DocumentChaseQueueStrip
+          ayCode={selectedAy}
+          lens="p-files"
+          counts={chaseQueueCounts ?? undefined}
+        />
       )}
 
       <InsightsPanel insights={insights} />

@@ -2,10 +2,9 @@
 // (app/(admissions)/admissions/page.tsx, the main funnel view only — the
 // `?status=to-follow|rejected|uploaded|expired` focused view has its own
 // DataTable CSV and never mounts this button). Pure: every number here comes
-// from data the page already loaded, or from the same cached loader a
-// self-fetching widget calls (see `chaseQueueCounts` below) — no DB reads, no
-// clock reads. Mirrors the page exactly: one section per widget the viewer's
-// role renders, in render order.
+// from data the page already loaded — no DB reads, no clock reads. Mirrors
+// the page exactly: one section per widget the viewer's role renders, in
+// render order.
 
 import type {
   AdmissionsRangeKpis,
@@ -61,14 +60,9 @@ export type BuildAdmissionsDashboardExportInput = {
    * when `!isOperational` — the page never mounts the strip for an
    * oversight viewer, so it never needs these counts either.
    *
-   * `getDocumentChaseQueueCounts` is the strip component's OWN loader (it is
-   * a self-contained async server component, not fed from the page's
-   * Promise.all) — page.tsx calls it a second time, for the export, only
-   * when isOperational. That is not a second real query: the loader is
-   * wrapped in `unstable_cache` with a 60s TTL and the `sis:${ayCode}` tag
-   * specifically so more than one consumer can read it (see the loader's own
-   * comment in lib/sis/document-chase-queue.ts) — the same sharing model the
-   * strip already relies on across /admissions, /p-files and /records.
+   * page.tsx fetches this ONCE (in its own Promise.all) and threads it into
+   * both the strip's `counts` prop and this builder, so the strip and the
+   * export never issue separate queries for the same (ayCode, lens).
    */
   chaseQueueCounts: DocumentChaseQueueCounts | null;
   /**
@@ -79,6 +73,10 @@ export type BuildAdmissionsDashboardExportInput = {
    */
   upcomingAy: {
     ayCode: string;
+    /** The card's own headline number ("N applications for {ayLabel}") —
+     *  exported as its own row since a number rendered on the page belongs
+     *  in the file even when it's title-embedded rather than a table cell. */
+    applicationCount: number;
     byStage: {
       submitted: number;
       ongoingVerification: number;
@@ -123,12 +121,18 @@ export function buildAdmissionsDashboardExport(
   const sections: ExportSection[] = [];
 
   // Early-bird signal (KD #77) — renders for every role when the page has an
-  // upcoming AY open for applications. Not gated by isOperational.
+  // upcoming AY open for applications. Not gated by isOperational. "Total
+  // applications" is the card's own headline number (CardTitle: "{N}
+  // applications for {ayLabel}") — a number rendered on the page belongs in
+  // the file even though it's embedded in a title sentence rather than a
+  // table cell, so it's listed here as its own row, ahead of the per-stage
+  // breakdown the card shows below that headline.
   if (upcomingAy) {
     sections.push({
       title: `Early-bird applications — ${upcomingAy.ayCode}`,
       headers: ['Stage', 'Applications'],
       rows: [
+        ['Total applications', upcomingAy.applicationCount],
         ['Submitted', upcomingAy.byStage.submitted],
         ['Ongoing Verification', upcomingAy.byStage.ongoingVerification],
         ['Processing', upcomingAy.byStage.processing],
