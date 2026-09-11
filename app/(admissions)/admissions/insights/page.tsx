@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -71,7 +72,10 @@ import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
   getAdmissionsTerminalReasons,
   growthDelta,
+  reasonLabel,
+  selectTopReasonBars,
 } from '@/lib/admissions/insights';
+import { buildAdmissionsInsightsExport } from '@/lib/admissions/insights-export';
 import {
   AY_MONTH_LABELS,
   currentInProgressMonthLabel,
@@ -88,7 +92,6 @@ import {
   computeDelta,
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
-import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -98,15 +101,6 @@ const ALLOWED_ROLES = new Set([
   'school_admin',
   'superadmin',
 ]);
-
-// Humanize a terminal-reason code via the schema label map; fall back to the
-// raw stored string (e.g. 'Unspecified' / 'Other free-text') when unmapped.
-function reasonLabel(reason: string): string {
-  return (
-    (APPLICATION_TERMINAL_REASON_LABELS as Record<string, string>)[reason] ??
-    reason
-  );
-}
 
 // ── Small page-local presentation helpers ──────────────────────────────────
 // Composed from the app's own established chart-panel idiom (mono
@@ -441,33 +435,18 @@ export default async function AdmissionsInsightsPage({
     (r) => r.applied >= REFERRAL_MIN_SAMPLE
   );
 
-  // Cancellation reasons — top 5 + an overflow bucket for the sorted bar list.
-  // terminal.overall is already sorted desc by count (lib/admissions/insights.ts).
-  // The overflow bucket carries a sentinel key + the label "Other reasons" —
-  // deliberately distinct from the real `other` reason code, whose display
-  // label is already "Other" (APPLICATION_TERMINAL_REASON_LABELS) and which
-  // can legitimately rank in the top 5 alongside the overflow row.
-  const TOP_REASON_COUNT = 5;
-  const topReasons = terminal.overall.slice(0, TOP_REASON_COUNT);
-  const otherReasonsCount = terminal.overall
-    .slice(TOP_REASON_COUNT)
-    .reduce((s, r) => s + r.count, 0);
-  const reasonBars = [
-    ...topReasons.map((r) => ({
-      key: r.reason,
-      label: reasonLabel(r.reason),
-      count: r.count,
-    })),
-    ...(otherReasonsCount > 0
-      ? [
-          {
-            key: 'other_reasons',
-            label: 'Other reasons',
-            count: otherReasonsCount,
-          },
-        ]
-      : []),
-  ];
+  // Cancellation reasons — top 5 + an overflow bucket for the sorted bar
+  // list. Shared with the CSV export (lib/admissions/insights.ts) so the
+  // selection can never drift between the two.
+  const reasonBars = selectTopReasonBars(terminal.overall);
+
+  // Top reason per level — the label shown in each TopReasonRow, resolved
+  // once here so the JSX list and the CSV export read the identical value.
+  const terminalByLevelRows = terminal.byLevel.map((lvl) => ({
+    level: lvl.level,
+    count: lvl.count,
+    topReasonLabel: lvl.reasons[0] ? reasonLabel(lvl.reasons[0].reason) : null,
+  }));
 
   // ────────────────────────────────────────────────────────────────────────
   // Derived narrative — every finding-title + RecommendationCallout below is
@@ -708,6 +687,32 @@ export default async function AdmissionsInsightsPage({
     (r: CategoryMixRow) => r.count > 0
   );
 
+  const exportData = buildAdmissionsInsightsExport({
+    ayCode: selectedAy,
+    compareAy,
+    applicationsCount,
+    applicationsDelta,
+    priorApplications,
+    conversionPct,
+    conversionDelta,
+    priorConversionPct,
+    timeToEnroll,
+    haveIntakeData,
+    intakeTrend,
+    hasRatingData: feedback.stats.ratingCount > 0,
+    ratingChartData,
+    withdrawnByLevel,
+    assessmentGroupedData,
+    hasTerminalData: terminal.total > 0,
+    reasonBars,
+    terminalByLevel: terminalByLevelRows,
+    referralVolume: referralDonutData,
+    hasCategoryMixData: haveCategoryMixData,
+    categoryMixData,
+    nationalityMix,
+    nationalityByLevel,
+  });
+
   return (
     <PageShell>
       <Link
@@ -736,6 +741,7 @@ export default async function AdmissionsInsightsPage({
           },
           growthBadge,
         ]}
+        actions={<ExportCsvButton data={exportData} />}
       />
 
       <div className="flex justify-end">
@@ -993,19 +999,14 @@ export default async function AdmissionsInsightsPage({
               icon={GraduationCap}
             >
               <div>
-                {terminal.byLevel.map((lvl) => {
-                  const lvlTopReason = lvl.reasons[0];
-                  return (
-                    <TopReasonRow
-                      key={lvl.level}
-                      level={lvl.level}
-                      reason={
-                        lvlTopReason ? reasonLabel(lvlTopReason.reason) : '—'
-                      }
-                      count={lvl.count}
-                    />
-                  );
-                })}
+                {terminalByLevelRows.map((lvl) => (
+                  <TopReasonRow
+                    key={lvl.level}
+                    level={lvl.level}
+                    reason={lvl.topReasonLabel ?? '—'}
+                    count={lvl.count}
+                  />
+                ))}
               </div>
             </InsightChartCard>
           </div>

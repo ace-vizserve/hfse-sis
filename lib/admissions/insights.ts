@@ -4,6 +4,7 @@ import { unstable_cache } from 'next/cache';
 
 import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
 
 export type ReasonCount = { reason: string; count: number };
 export type TerminalReasonRollup = {
@@ -55,6 +56,60 @@ export function rollupTerminalReasons(
 }
 
 export { growthDelta, type Growth } from '@/lib/dashboard/growth';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cancellation-reason presentation — shared between the Insights page's
+// "Cancellation reasons" donut and its CSV export, so the top-N + overflow
+// selection can never drift between the two (design-and-constraints.md's
+// "never re-implement a selection rule" rule).
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Humanize a terminal-reason code via the schema label map; fall back to the
+ *  raw stored string (e.g. 'Unspecified' / 'Other free-text') when unmapped. */
+export function reasonLabel(reason: string): string {
+  return (
+    (APPLICATION_TERMINAL_REASON_LABELS as Record<string, string>)[reason] ??
+    reason
+  );
+}
+
+export type ReasonBar = { key: string; label: string; count: number };
+
+/** How many individual reasons the donut names before folding the rest into
+ *  a single "Other reasons" bucket. */
+export const TOP_REASON_COUNT = 5;
+
+/**
+ * Top `TOP_REASON_COUNT` cancellation reasons + an overflow bucket, for the
+ * sorted donut list. `overall` must already be sorted desc by count
+ * (rollupTerminalReasons's own output). The overflow bucket carries a
+ * sentinel key + the label "Other reasons" — deliberately distinct from the
+ * real `other` reason code, whose display label is already "Other"
+ * (APPLICATION_TERMINAL_REASON_LABELS) and which can legitimately rank in
+ * the top N alongside the overflow row.
+ */
+export function selectTopReasonBars(overall: ReasonCount[]): ReasonBar[] {
+  const topReasons = overall.slice(0, TOP_REASON_COUNT);
+  const otherReasonsCount = overall
+    .slice(TOP_REASON_COUNT)
+    .reduce((s, r) => s + r.count, 0);
+  return [
+    ...topReasons.map((r) => ({
+      key: r.reason,
+      label: reasonLabel(r.reason),
+      count: r.count,
+    })),
+    ...(otherReasonsCount > 0
+      ? [
+          {
+            key: 'other_reasons',
+            label: 'Other reasons',
+            count: otherReasonsCount,
+          },
+        ]
+      : []),
+  ];
+}
 
 const CACHE_TTL_SECONDS = 60;
 
