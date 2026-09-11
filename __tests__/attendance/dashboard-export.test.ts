@@ -10,6 +10,7 @@ import {
   buildAttendanceDashboardExport,
   type BuildAttendanceDashboardExportInput,
 } from '@/lib/attendance/dashboard-export';
+import { roundTo } from '@/lib/export/dashboard-export';
 
 const kpis: RangeResult<AttendanceKpis> = {
   current: {
@@ -239,11 +240,28 @@ describe('buildAttendanceDashboardExport', () => {
       'Change',
     ]);
     expect(keyFigures.rows).toEqual([
-      ['Attendance rate (%)', 94.2, 90.1, 4.1],
-      ['Late incidents', 5, 6, -1],
-      ['Excused', 3, 2, 1],
-      ['Absences', 2, 2, 0],
+      ['Attendance rate (%)', 94.2, 90.1, 4.6],
+      ['Late incidents', 5, 6, null],
+      ['Excused', 3, 2, null],
+      ['Absences', 2, 2, null],
     ]);
+  });
+
+  it('carries the same Change number the delta chip shows, not current−previous', () => {
+    // kpis.delta.pct (4.6) is deliberately NOT current−previous (94.2345 −
+    // 90.1 = 4.1345, rounds to 4.1) — this fixture would pass a naive
+    // current−previous implementation, so it pins the chip's own value.
+    // The card only renders a delta chip for Attendance rate (page.tsx
+    // passes `delta` to that <MetricCard> only); the other three KPI cards
+    // show "N prior" subtext instead of a chip, so their Change is null.
+    const result = buildAttendanceDashboardExport(baseInput);
+    const keyFigures = result.sections[0];
+    const attendanceRateRow = keyFigures.rows[0];
+    expect(attendanceRateRow[3]).toBe(roundTo(kpis.delta!.pct, 1));
+    expect(attendanceRateRow[3]).toBe(4.6);
+    for (const row of keyFigures.rows.slice(1)) {
+      expect(row[3]).toBeNull();
+    }
   });
 
   it('aligns the daily trend comparison series by position, like the chart', () => {

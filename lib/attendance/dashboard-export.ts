@@ -73,6 +73,15 @@ export function buildAttendanceDashboardExport(
   // 4 MetricCards → one Key figures section. Attendance rate is the only
   // card whose card renders a rounded percent (toFixed(1) in MetricCard);
   // the other three show raw counts.
+  //
+  // Change must carry the SAME number the card's delta chip shows, never a
+  // re-derived current−previous. Only the Attendance rate card passes a
+  // `delta` prop to <MetricCard> (page.tsx) — and it passes no `deltaFormat`,
+  // so `formatDeltaLabel` (lib/dashboard/range.ts) uses its default
+  // `'percent'` mode, which renders `delta.pct` (already signed — a fall is
+  // negative, computeDelta never needs a separate direction combined back
+  // in). The other three cards show "N prior" subtext instead of a chip —
+  // that's `previous`, not `change` — so their Change cells stay blank.
   const kpiRows: KpiRow[] = [
     {
       label: 'Attendance rate (%)',
@@ -80,33 +89,22 @@ export function buildAttendanceDashboardExport(
       previous: kpis.comparison
         ? roundTo(kpis.comparison.attendancePct, 1)
         : undefined,
-      change: kpis.comparison
-        ? roundTo(kpis.current.attendancePct - kpis.comparison.attendancePct, 1)
-        : undefined,
+      change: kpis.delta ? roundTo(kpis.delta.pct, 1) : undefined,
     },
     {
       label: 'Late incidents',
       current: kpis.current.late,
       previous: kpis.comparison ? kpis.comparison.late : undefined,
-      change: kpis.comparison
-        ? kpis.current.late - kpis.comparison.late
-        : undefined,
     },
     {
       label: 'Excused',
       current: kpis.current.excused,
       previous: kpis.comparison ? kpis.comparison.excused : undefined,
-      change: kpis.comparison
-        ? kpis.current.excused - kpis.comparison.excused
-        : undefined,
     },
     {
       label: 'Absences',
       current: kpis.current.absent,
       previous: kpis.comparison ? kpis.comparison.absent : undefined,
-      change: kpis.comparison
-        ? kpis.current.absent - kpis.comparison.absent
-        : undefined,
     },
   ];
   sections.push(kpiSection(kpiRows));
