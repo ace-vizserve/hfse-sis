@@ -33,6 +33,7 @@ import {
   type BulkNotifyItem,
 } from '@/components/p-files/bulk-notify-dialog';
 import type { AdmissionsCompleteness } from '@/lib/admissions/dashboard';
+import { isEnrolledStatus } from '@/lib/p-files/_shared';
 import type { StudentCompleteness } from '@/lib/p-files/queries';
 import {
   DOCUMENT_SLOTS,
@@ -203,22 +204,44 @@ function pfilesBulkTargets(
   return out;
 }
 
-// ─── Enrolled vs applicant ───────────────────────────────────────────────────
-// Two values, on purpose. P-Files lists everyone in the year — applicants and
-// enrolled students share one documents row and one 21-slot list — so the only
-// distinction the list needs to draw is which of the two you are looking at.
-//
-// Anything that is not one of the two enrolled statuses reads as 'Applicant',
-// including Cancelled / Withdrawn / Rejected: they are people whose enrolment
-// did not complete, and splitting them out here would put the application
-// pipeline's whole vocabulary into a documents list. The exact stage is on the
-// student's own file.
-const ENROLLED_APPLICATION_STATUSES = ['Enrolled', 'Enrolled (Conditional)'];
-
+// ─── What kind of row is this ────────────────────────────────────────────────
+/**
+ * What this row IS, for the Type column.
+ *
+ * ⚠ IT USED TO ANSWER A DIFFERENT QUESTION THAN THE COLUMN ASKS, and that was
+ * the bug. It returned 'Enrolled' or 'Applicant' and nothing else, so
+ * `Withdrawn` and `Cancelled` fell through to 'Applicant' — a child who sat in
+ * a class for a term and then left was listed, and filtered, as an applicant.
+ * They never applied in the sense that word means here; they enrolled and
+ * left. Withdrawal really does write the status (`app/api/sections/[id]/
+ * students/[enrolmentId]/route.ts` flips `applicationStatus` on withdrawal and
+ * back to 'Enrolled' on re-enrolment), so this was reachable, not theoretical.
+ *
+ * The two terminal states now carry their own names. That is four values
+ * rather than two, but it is not "the application pipeline's whole vocabulary"
+ * — the live funnel stages (Submitted, Ongoing Verification, Processing) still
+ * collapse into 'Applicant', because the exact stage belongs on the student's
+ * own file. The facet is built from the rows present, so a year with nobody
+ * withdrawn never offers the filter.
+ *
+ * ⚠ WITHDRAWN / CANCELLED DOES NOT IMPLY THEY WERE ONCE ENROLLED. An
+ * application can be cancelled before it ever gets there, and nothing on this
+ * row can tell the two apart — so the tag states the status, and claims
+ * nothing about the history behind it.
+ *
+ * ⚠ THE ENROLLED TEST IS IMPORTED, NOT RESTATED. This file used to carry its
+ * own copy of the status list, and the two had already drifted: the canonical
+ * `isEnrolledStatus` trims before comparing and the copy did not, so a status
+ * stored as "Enrolled " made the student page treat them as enrolled while
+ * this table tagged them an applicant. `_shared.ts`'s own docstring says the
+ * test "lives here once… not a second copy of it".
+ */
 function enrolmentTag(applicationStatus: string | null | undefined): string {
-  return ENROLLED_APPLICATION_STATUSES.includes(applicationStatus ?? '')
-    ? 'Enrolled'
-    : 'Applicant';
+  const status = (applicationStatus ?? '').trim();
+  if (isEnrolledStatus(status)) return 'Enrolled';
+  if (status === 'Withdrawn') return 'Withdrawn';
+  if (status === 'Cancelled') return 'Cancelled';
+  return 'Applicant';
 }
 
 // ─── Common row base (fields shared by both row types) ───────────────────────
@@ -410,14 +433,19 @@ function buildColumns(
       meta: { label: 'Type' },
       cell: ({ row }) => {
         const tag = enrolmentTag(row.original.applicationStatus);
+        // §9.3 recipes: mint for the healthy state, destructive for one that
+        // ended, muted for in-progress. A withdrawn child reading exactly like
+        // an applicant is what made the old two-value tag hard to notice.
+        const tone =
+          tag === 'Enrolled'
+            ? 'border-brand-mint/60 bg-brand-mint/15 text-ink'
+            : tag === 'Withdrawn' || tag === 'Cancelled'
+              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              : 'border-hairline text-muted-foreground';
         return (
           <Badge
             variant="outline"
-            className={
-              tag === 'Enrolled'
-                ? 'h-5.5 border-brand-mint/60 bg-brand-mint/15 px-2 text-[11px] font-medium text-ink'
-                : 'h-5.5 border-hairline px-2 text-[11px] font-medium text-muted-foreground'
-            }
+            className={`h-5.5 px-2 text-[11px] font-medium ${tone}`}
           >
             {tag}
           </Badge>

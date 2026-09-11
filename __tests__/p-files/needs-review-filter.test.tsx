@@ -194,23 +194,45 @@ describe('P-Files completeness table — Enrolled vs Applicant', () => {
     expect(within(table).getByText('Applicant')).toBeInTheDocument();
   });
 
-  it('tags anything outside the two enrolled statuses as Applicant', () => {
-    // Withdrawn/Cancelled/Rejected read as Applicant on purpose — they are
-    // enrolments that did not complete, and the exact stage lives on the file.
-    render(
-      <DocumentCompletenessTable
-        module="p-files"
-        students={[
-          student({
-            enroleeNumber: 'E-500',
-            fullName: 'Withdrawn Wendy',
-            applicationStatus: 'Withdrawn',
-          }),
-        ]}
-      />
-    );
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('Applicant')).toBeInTheDocument();
+  it('does not call a withdrawn or cancelled student an applicant', () => {
+    // ⚠ THIS TEST ASSERTED THE OPPOSITE UNTIL 2026-09-11, and the assertion was
+    // the bug written down. Withdrawal writes `applicationStatus` (see the
+    // section-students route, which flips it on withdrawal and back to
+    // 'Enrolled' on re-enrolment), so a child who sat in a class for a term and
+    // left was listed — and filtered — as an applicant. They never applied in
+    // the sense the column means; they enrolled and left.
+    //
+    // The live funnel stages still collapse into 'Applicant'; only the two
+    // TERMINAL statuses carry their own name.
+    for (const [status, expected] of [
+      ['Withdrawn', 'Withdrawn'],
+      ['Cancelled', 'Cancelled'],
+      ['Submitted', 'Applicant'],
+      ['Ongoing Verification', 'Applicant'],
+      // Whitespace is why the copy of this rule that used to live in the table
+      // disagreed with `isEnrolledStatus`, which trims. One test now, one
+      // implementation.
+      ['Enrolled ', 'Enrolled'],
+    ] as const) {
+      const { unmount } = render(
+        <DocumentCompletenessTable
+          module="p-files"
+          students={[
+            student({
+              enroleeNumber: 'E-500',
+              fullName: 'Wendy Example',
+              applicationStatus: status,
+            }),
+          ]}
+        />
+      );
+      const table = screen.getByRole('table');
+      expect(
+        within(table).getByText(expected),
+        `${status} should read as ${expected}`
+      ).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it('offers a Type facet trigger in the toolbar', () => {
