@@ -3,6 +3,7 @@ import {
   computeActivePublishedTermNumbers,
   filterPayloadToActiveTerms,
   selectEarlierComments,
+  termNumbersUpToViewed,
   type PublicationRow,
   type TermNumberRow,
   type PayloadLike,
@@ -203,6 +204,44 @@ describe('filterPayloadToActiveTerms', () => {
     const withExtra = { ...payload(), studentName: 'Jane Doe' };
     const result = filterPayloadToActiveTerms(withExtra, new Set([2]));
     expect(result.studentName).toBe('Jane Doe');
+  });
+});
+
+describe('termNumbersUpToViewed', () => {
+  it('a Term 3 card carries Terms 1, 2 and 3', () => {
+    expect(termNumbersUpToViewed(3)).toEqual(new Set([1, 2, 3]));
+  });
+
+  it('a Term 1 card carries Term 1 alone', () => {
+    expect(termNumbersUpToViewed(1)).toEqual(new Set([1]));
+  });
+
+  it('the final card carries all four terms', () => {
+    expect(termNumbersUpToViewed(4)).toEqual(new Set([1, 2, 3, 4]));
+  });
+
+  it('never reaches ABOVE the viewed term — an open T3 window leaks no T4', () => {
+    expect(termNumbersUpToViewed(3).has(4)).toBe(false);
+  });
+
+  it('clamps out-of-range input instead of looping', () => {
+    expect(termNumbersUpToViewed(99)).toEqual(new Set([1, 2, 3, 4]));
+    expect(termNumbersUpToViewed(0)).toEqual(new Set([1]));
+    expect(termNumbersUpToViewed(-5)).toEqual(new Set([1]));
+  });
+
+  it('composed with the filter, a T3 request keeps T1-T3 and drops T4', () => {
+    // This is exactly what app/api/parent/v2/report-card/route.ts does at
+    // step 5. The portal draws its grade and attendance columns by mapping
+    // over `terms`, so these three entries are what put Term 1 and Term 2 on
+    // the parent's card at all.
+    const result = filterPayloadToActiveTerms(
+      payload(),
+      termNumbersUpToViewed(3)
+    );
+    expect(result.terms.map((t) => t.term_number)).toEqual([1, 2, 3]);
+    expect(result.attendance.map((a) => a.term_id)).toEqual(['t1', 't2', 't3']);
+    expect(result.comments.map((c) => c.term_id)).toEqual(['t1', 't2', 't3']);
   });
 });
 

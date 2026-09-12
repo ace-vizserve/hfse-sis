@@ -9,6 +9,7 @@ import {
   computeActivePublishedTermNumbers,
   filterPayloadToActiveTerms,
   selectEarlierComments,
+  termNumbersUpToViewed,
   type PublicationRow,
   type TermNumberRow,
 } from '@/lib/report-card/publication-window';
@@ -188,13 +189,26 @@ export async function GET(request: Request) {
     );
   }
 
-  // 5. Narrow subjects/attendance down to exactly the terms with a
-  //    currently-active publication window — never a term outside that set.
-  //    A specific requested term narrows to just that one; an omitted
-  //    termNumber narrows to every currently-active term (never the full
-  //    unfiltered payload).
-  const targetTermNumbers =
-    termNumber !== null ? new Set([termNumber]) : activeTermNumbers;
+  // 5. Narrow the payload down to the card the open window releases: terms
+  //    1..viewed. Never a term ABOVE the viewed one — a T3 window must not leak
+  //    the unpublished T4 column.
+  //
+  //    This used to narrow to the viewed term ALONE, which quietly cost the
+  //    parent card its earlier columns. The portal builds both the grades table
+  //    and the attendance table by mapping over `payload.terms`, so one term in
+  //    meant one column out — a Term 3 card showing only Term 3, while the same
+  //    card on the staff screen showed Terms 1, 2 and 3. The marks themselves
+  //    were never missing: each `subjects[]` row carries its own t1/t2/t3/t4
+  //    cells and the narrowing never touched them. What was missing was the
+  //    `terms` entry that gives each cell its heading, and the earlier
+  //    attendance rows.
+  //
+  //    A report card is cumulative by design (KD #129) and the window gates the
+  //    CARD, not each column on it — the same reasoning `selectEarlierComments`
+  //    already applies to the adviser write-ups below.
+  const viewedTermNumber =
+    termNumber ?? Math.max(...Array.from(activeTermNumbers));
+  const targetTermNumbers = termNumbersUpToViewed(viewedTermNumber);
 
   const narrowed = filterPayloadToActiveTerms(
     result.payload,
@@ -204,24 +218,29 @@ export async function GET(request: Request) {
   // 6. The earlier terms' form-adviser write-ups, as a SEPARATE list.
   //
   //    A report card is cumulative on comments (KD #129) — a Term 3 card shows
-  //    Term 1, 2 and 3 — but the narrowing above keeps only the viewed term, so
-  //    parents saw a single comment while advisers had written three.
+  //    Term 1, 2 and 3 — and the portal renders those earlier boxes from this
+  //    list, each one self-contained.
   //
-  //    Deliberately NOT merged into `comments`: the portal reads `comments[0]` /
-  //    `terms[0]` / `attendance[0]`, so appending would make it render an
-  //    EARLIER term's comment under the viewed term's heading. Wrong data is
-  //    worse than missing data. As a new field, nothing existing can read it, so
-  //    this cannot change what the portal renders today.
+  //    Deliberately NOT merged into `comments`: the portal reads the viewed
+  //    term's comment out of `comments` by term id and renders THIS list above
+  //    it, so an earlier comment appended to `comments` would either be ignored
+  //    or — on any consumer that takes the first element — be printed under the
+  //    viewed term's heading. Wrong data is worse than missing data.
+  //
+  //    ⚠ KEEP THIS FIELD even though step 5 now sends terms 1..N. The earlier
+  //    terms' `comments` rows do ride along in the payload today, but the portal
+  //    that is deployed reads its earlier boxes from HERE, and it is a separate
+  //    app we neither own nor release. Dropping this would blank the earlier
+  //    comments on the live card with nothing on our side able to fix it.
   //
   //    Each entry carries its own label + virtue theme, so the portal never has
-  //    to look a term up in `terms` (which still holds only the viewed term).
+  //    to look a term up in `terms`.
   //
   //    Authorisation is the viewed term's window, checked above — the card that
   //    window releases is by design the one carrying terms 1..N's comments. An
   //    earlier term does NOT need its own window: a school that publishes only
   //    the current term (the normal case) has no publication row for the earlier
   //    ones, and requiring one made this field arrive empty every time.
-  const viewedTermNumber = termNumber ?? Math.max(...targetTermNumbers);
   const earlierComments = selectEarlierComments(
     result.payload.terms,
     result.payload.comments,

@@ -37,6 +37,33 @@ export function computeActivePublishedTermNumbers(
   return result;
 }
 
+/**
+ * The term numbers a card for `viewedTermNumber` is supposed to SHOW: 1..N.
+ *
+ * A report card is cumulative (KD #129) — the Term 3 card carries the Term 1
+ * and Term 2 columns beside Term 3, and the final card carries all four. That
+ * is what staff print and what `buildReportCard` returns.
+ *
+ * The parent route used to narrow the payload to the viewed term ALONE, so the
+ * portal — which draws its grade and attendance columns from `payload.terms` —
+ * had exactly one column to draw. The earlier terms' marks were in the payload
+ * the whole time (every `subjects[]` row carries its own t1/t2/t3/t4 cells,
+ * which the narrowing never touched); what was missing was the `terms` entries
+ * that give those cells a heading, and the earlier attendance rows.
+ *
+ * AUTHORISATION IS STILL THE VIEWED TERM'S WINDOW, and nothing more. The caller
+ * has already 403'd unless the viewed term has an active publication window, and
+ * the card that window releases is BY DESIGN the cumulative one. This is the
+ * same reasoning `selectEarlierComments` already applies to the adviser
+ * write-ups: the window gates the CARD, not each column on it.
+ */
+export function termNumbersUpToViewed(viewedTermNumber: number): Set<number> {
+  const out = new Set<number>();
+  const top = Math.min(Math.max(viewedTermNumber, 1), 4);
+  for (let n = 1; n <= top; n++) out.add(n);
+  return out;
+}
+
 export type PayloadLike<T extends { term_number: number; id: string }> = {
   terms: T[];
   attendance: Array<{ term_id: string }>;

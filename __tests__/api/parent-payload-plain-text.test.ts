@@ -128,11 +128,15 @@ describe('parent report-card payload', () => {
   it('ships the viewed term comment as plain text', async () => {
     const payload = await fetchPayload(2);
 
-    expect(payload.comments).toHaveLength(1);
-    expect(payload.comments[0].comment).toBe(
+    // The card is cumulative, so terms 1..2 ride along; the portal picks the
+    // viewed term out by term id rather than by position.
+    const viewed = payload.comments.find((c) => c.term_id === 'term-2');
+    expect(viewed?.comment).toBe(
       'Ravi has settled in well.\nHe leads group work with real care.'
     );
-    expect(payload.comments[0].comment).not.toContain('<');
+    for (const c of payload.comments) {
+      expect(c.comment).not.toContain('<');
+    }
   });
 
   it('ships the earlier terms comments as plain text too', async () => {
