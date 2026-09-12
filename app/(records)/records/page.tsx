@@ -163,11 +163,10 @@ export default async function RecordsDashboard({
     getWithdrawalVelocityRange(rangeInput),
     getClassAssignmentReadiness(selectedAy),
     countUnsyncedEnrolledStudents(selectedAy),
-    // Export-only read of <DocumentChaseQueueStrip>'s own tile counts — it's
-    // a self-fetching async component below, not fed from this Promise.all.
-    // `getDocumentChaseQueueCounts` is cached (60s, `sis:${ayCode}` tag), so
-    // this doesn't repeat the strip's query, and it's skipped entirely for a
-    // non-operational viewer, who never sees the strip either.
+    // Fetched once here and threaded into BOTH <DocumentChaseQueueStrip>
+    // (via its `counts` prop, below) and the CSV export, so the two never
+    // issue separate queries for the same (ayCode, lens). Skipped entirely
+    // for a non-operational viewer, who never sees the strip either.
     isOperational
       ? getDocumentChaseQueueCounts(selectedAy, 'p-files')
       : Promise.resolve(null),

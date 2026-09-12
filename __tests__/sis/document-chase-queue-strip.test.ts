@@ -23,7 +23,33 @@ vi.mock('@/lib/sis/document-chase-queue', async (importOriginal) => ({
 }));
 
 import { DocumentChaseQueueStrip } from '@/components/sis/document-chase-queue-strip';
-import type { DocumentChaseQueueCounts } from '@/lib/sis/document-chase-queue';
+import {
+  CHASE_TILE_ORDER,
+  type DocumentChaseQueueCounts,
+} from '@/lib/sis/document-chase-queue';
+
+// The component under test returns a plain (already-resolved, since the
+// component itself is the only async part) React element tree — walk its
+// `props.children` chain collecting every string leaf, without needing a DOM
+// renderer. Used to prove a tile's rendered label came from a specific
+// source string rather than a hardcoded duplicate.
+function collectStrings(node: unknown, out: string[] = []): string[] {
+  if (typeof node === 'string') {
+    out.push(node);
+  } else if (Array.isArray(node)) {
+    for (const child of node) collectStrings(child, out);
+  } else if (
+    node &&
+    typeof node === 'object' &&
+    'props' in (node as Record<string, unknown>)
+  ) {
+    collectStrings(
+      (node as { props?: { children?: unknown } }).props?.children,
+      out
+    );
+  }
+  return out;
+}
 
 const NOTHING_VISIBLE: DocumentChaseQueueCounts = {
   promised: 0,
@@ -86,5 +112,45 @@ describe('DocumentChaseQueueStrip', () => {
     });
     expect(getDocumentChaseQueueCountsMock).toHaveBeenCalledTimes(1);
     expect(element).toBeNull();
+  });
+
+  it('renders every tile label from the shared CHASE_TILE_ORDER list, not a private copy — a future edit to only one list would fail this', async () => {
+    const labelFor = (target: string) =>
+      CHASE_TILE_ORDER.find((t) => t.target === target)!.label;
+
+    // Admissions lens shows revalidation + validation + promised (expiringSoon
+    // is always zeroed for this lens).
+    const admissionsElement = await DocumentChaseQueueStrip({
+      ayCode: 'AY2026',
+      lens: 'admissions',
+      counts: {
+        promised: 1,
+        validation: 1,
+        revalidation: 1,
+        expiringSoon: 0,
+      },
+    });
+    const admissionsText = collectStrings(admissionsElement);
+    expect(admissionsText).toContain(
+      labelFor('awaiting-document-revalidation')
+    );
+    expect(admissionsText).toContain(labelFor('awaiting-document-validation'));
+    expect(admissionsText).toContain(labelFor('awaiting-promised-documents'));
+
+    // P-Files lens shows revalidation + expiringSoon (validation + promised
+    // are always zeroed for this lens) — covers the remaining tile.
+    const pFilesElement = await DocumentChaseQueueStrip({
+      ayCode: 'AY2026',
+      lens: 'p-files',
+      counts: {
+        promised: 0,
+        validation: 0,
+        revalidation: 1,
+        expiringSoon: 1,
+      },
+    });
+    const pFilesText = collectStrings(pFilesElement);
+    expect(pFilesText).toContain(labelFor('awaiting-document-revalidation'));
+    expect(pFilesText).toContain(labelFor('awaiting-expiring-documents'));
   });
 });

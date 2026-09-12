@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/card';
 import { Sheet, SheetTrigger } from '@/components/ui/sheet';
 import {
+  CHASE_TILE_ORDER,
   getDocumentChaseQueueCounts,
   selectVisibleChaseTiles,
   type ChaseQueueLens,
@@ -59,44 +60,48 @@ export type DocumentChaseQueueStripProps = {
   counts?: DocumentChaseQueueCounts;
 };
 
-type ChaseTile = {
+type ChaseTilePresentation = {
   target: LifecycleDrillTarget;
-  label: string;
   description: string;
   icon: typeof AlertTriangle;
   severity: 'bad' | 'warn';
 };
 
-const TILES: ChaseTile[] = [
+type ChaseTile = ChaseTilePresentation & { label: string };
+
+// Presentation only — label comes from CHASE_TILE_ORDER (lib/sis/
+// document-chase-queue.ts) below, the SAME list the CSV export reads, so the
+// screen and the file can never disagree about what a tile is called.
+const TILES: ChaseTilePresentation[] = [
   {
     target: 'awaiting-document-revalidation',
-    label: 'Awaiting revalidation',
     description: 'Rejected or expired — parent must re-upload',
     icon: AlertTriangle,
     severity: 'bad',
   },
   {
     target: 'awaiting-document-validation',
-    label: 'Awaiting validation',
     description: 'Parent uploaded — registrar to validate',
     icon: FileWarning,
     severity: 'warn',
   },
   {
     target: 'awaiting-promised-documents',
-    label: 'Awaiting promised',
     description: 'Parent committed — file not sent yet',
     icon: MailQuestion,
     severity: 'warn',
   },
   {
     target: 'awaiting-expiring-documents',
-    label: 'Expiring soon',
     description: 'Valid now, expiry within 30 days — chase parent for renewal',
     icon: CalendarClock,
     severity: 'warn',
   },
 ];
+
+const CHASE_TILE_LABEL_BY_TARGET = new Map(
+  CHASE_TILE_ORDER.map((t) => [t.target, t.label])
+);
 
 // Neutral card wash matching MetricCard's pattern — severity is communicated
 // by the gradient icon tile + ChartLegendChip on each card, so the card body
@@ -132,7 +137,12 @@ export async function DocumentChaseQueueStrip({
   if (visible.length === 0) return null;
 
   const valueByTarget = new Map(visible.map((v) => [v.target, v.value]));
-  const visibleTiles = TILES.filter((tile) => valueByTarget.has(tile.target));
+  const visibleTiles: ChaseTile[] = TILES.filter((tile) =>
+    valueByTarget.has(tile.target)
+  ).map((tile) => ({
+    ...tile,
+    label: CHASE_TILE_LABEL_BY_TARGET.get(tile.target) ?? tile.target,
+  }));
 
   // Adapt grid to tile count — keeps the layout balanced across both
   // modules without an awkward 4-col grid for 2 tiles.

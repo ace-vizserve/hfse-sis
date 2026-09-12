@@ -2,6 +2,16 @@ import { unstable_cache } from 'next/cache';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
+import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard-select';
+// Re-exported so existing server-side callers of these two symbols keep
+// working unchanged — see lib/sis/dashboard-select.ts for why they moved
+// (a client component now imports them at runtime, and this module is not
+// safe for the browser bundle).
+export type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard-select';
+export {
+  CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT,
+  selectVisibleClassAssignmentReadiness,
+} from '@/lib/sis/dashboard-select';
 import {
   loadActorActivity,
   buildRecordsDrillRows,
@@ -1107,13 +1117,8 @@ export function getAuditActivityByModule(
 // gap between "enrolled" and "fully placed", actionable for registrars
 // during the section-assignment workflow.
 
-export type ClassAssignmentReadinessRow = {
-  enroleeNumber: string;
-  fullName: string;
-  level: string | null;
-  enrollmentDate: string | null; // ISO
-  daysSinceEnrollment: number | null;
-};
+// `ClassAssignmentReadinessRow` lives in lib/sis/dashboard-select.ts (imported
+// above) and is re-exported near the top of this file for back-compat.
 
 async function loadClassAssignmentReadinessUncached(
   ayCode: string
@@ -1258,18 +1263,10 @@ export function getClassAssignmentReadiness(
   )();
 }
 
-// Rows already arrive sorted desc by daysSinceEnrollment (oldest gap first)
-// from loadClassAssignmentReadinessUncached — this only applies the card's
-// own "top 8" cutoff. Pulled out so the Records dashboard CSV export
-// (lib/sis/records-dashboard-export.ts) can mirror <ClassAssignmentReadinessCard>'s
-// visible rows exactly, without re-implementing the cutoff a second time.
-export const CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT = 8;
-
-export function selectVisibleClassAssignmentReadiness(
-  rows: ClassAssignmentReadinessRow[]
-): ClassAssignmentReadinessRow[] {
-  return rows.slice(0, CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT);
-}
+// `CLASS_ASSIGNMENT_READINESS_VISIBLE_LIMIT` and
+// `selectVisibleClassAssignmentReadiness` live in lib/sis/dashboard-select.ts
+// (re-exported near the top of this file) — see that module's header comment
+// for why.
 
 export async function getActivityByActor(range?: {
   from: string;

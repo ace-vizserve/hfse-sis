@@ -16,10 +16,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
-import {
-  selectVisibleClassAssignmentReadiness,
-  type ClassAssignmentReadinessRow,
-} from '@/lib/sis/dashboard';
+import { selectVisibleClassAssignmentReadiness } from '@/lib/sis/dashboard-select';
+import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard-select';
 
 const BADGE_BASE =
   'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';

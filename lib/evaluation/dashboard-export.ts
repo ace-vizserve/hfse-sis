@@ -30,7 +30,13 @@ export type BuildEvaluationDashboardExportInput = {
   rangeInput: RangeInput;
   kpis: RangeResult<EvaluationKpis>;
   velocity: RangeResult<VelocityPoint[]>;
-  /** Null on T4 / no current writeup term — the card itself shows "—". */
+  /**
+   * Null when `!canToggle` (a teacher — the page never renders an export
+   * button for that view, so this is never actually null in practice).
+   * `getEvaluationChaseKpis` itself never returns null: on T4 / no current
+   * writeup term it resolves to `{ available: false, ... }`, and the card
+   * shows "—" from that flag, not from this field being null.
+   */
   chaseKpis: EvaluationChaseKpis | null;
   /** `drillRowSets?.bySection` — null when buildAllRowSets didn't run. */
   bySection: SectionWriteupRow[] | null;

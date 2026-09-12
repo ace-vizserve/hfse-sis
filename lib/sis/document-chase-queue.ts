@@ -69,7 +69,11 @@ export type DocumentChaseQueueCounts = {
 // components/sis/document-chase-queue-strip.tsx.
 // ──────────────────────────────────────────────────────────────────────────
 
-const CHASE_TILE_ORDER: ReadonlyArray<{
+// Exported (not just used internally) so <DocumentChaseQueueStrip> can pull
+// its tile labels from here too, keyed by `target` — the screen and the CSV
+// export used to each hold their own copy of these four labels, which agreed
+// only by coincidence. One list now, so a future copy edit can't desync them.
+export const CHASE_TILE_ORDER: ReadonlyArray<{
   target: LifecycleDrillTarget;
   label: string;
 }> = [

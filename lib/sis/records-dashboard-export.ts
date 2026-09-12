@@ -10,13 +10,15 @@
 // the screen it was exported from.
 
 import type {
-  ClassAssignmentReadinessRow,
   DocumentBacklogRow,
   ExpiringDocRow,
   LevelCount,
   RecordsRangeKpis,
 } from '@/lib/sis/dashboard';
-import { selectVisibleClassAssignmentReadiness } from '@/lib/sis/dashboard';
+import {
+  selectVisibleClassAssignmentReadiness,
+  type ClassAssignmentReadinessRow,
+} from '@/lib/sis/dashboard-select';
 import {
   selectVisibleChaseTiles,
   type DocumentChaseQueueCounts,
@@ -57,14 +59,9 @@ export type BuildRecordsDashboardExportInput = {
    * when `!isOperational` — the page never mounts the strip for an
    * oversight viewer, so it never needs these counts either.
    *
-   * `getDocumentChaseQueueCounts` is the strip component's OWN loader (it is
-   * a self-contained async server component, not fed from the page's
-   * Promise.all) — page.tsx calls it a second time, for the export, only
-   * when isOperational. That is not a second real query: the loader is
-   * wrapped in `unstable_cache` with a 60s TTL and the `sis:${ayCode}` tag
-   * specifically so more than one consumer can read it (see the loader's own
-   * comment in lib/sis/document-chase-queue.ts) — the same sharing model the
-   * strip already relies on across /admissions, /p-files and /records.
+   * page.tsx fetches this ONCE (in its own Promise.all) and threads it into
+   * both the strip's `counts` prop and this builder, so the strip and the
+   * export never issue separate queries for the same (ayCode, lens).
    */
   chaseQueueCounts: DocumentChaseQueueCounts | null;
 };
