@@ -13,6 +13,7 @@ import { RecommendationCallout } from '@/components/dashboard/insights/recommend
 
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { InsightsPanel } from '@/components/dashboard/insights-panel';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
@@ -59,9 +60,11 @@ import {
   getRevisionsOverTime,
   getSlotStatusMix,
 } from '@/lib/p-files/dashboard';
+import { buildPFilesDashboardExport } from '@/lib/p-files/dashboard-export';
 import { getDocumentDashboardData } from '@/lib/p-files/queries';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getExpiringDocuments } from '@/lib/sis/dashboard';
+import { getDocumentChaseQueueCounts } from '@/lib/sis/document-chase-queue';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -355,6 +358,7 @@ export default async function PFilesDashboard({
     velocity,
     slotMix,
     priority,
+    chaseQueueCounts,
   ] = await Promise.all([
     getDocumentDashboardData(selectedAy),
     getCompletionByLevel(selectedAy),
@@ -368,6 +372,13 @@ export default async function PFilesDashboard({
     isOfficer
       ? getPFilesPriority({ ayCode: selectedAy })
       : Promise.resolve(null),
+    // Fetched once here and threaded into BOTH <DocumentChaseQueueStrip> (via
+    // its `counts` prop, below) and the CSV export, so the two never issue
+    // separate queries for the same (ayCode, lens). Skipped entirely for a
+    // non-officer viewer, who never sees the strip either.
+    isOfficer
+      ? getDocumentChaseQueueCounts(selectedAy, 'p-files')
+      : Promise.resolve(null),
   ]);
 
   // Freshen runs in parallel with the data fetches above; awaited here so
@@ -377,6 +388,22 @@ export default async function PFilesDashboard({
   const comparisonLabel = kpisResult.comparisonRange
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
+
+  // Everything the export needs is already loaded above — no page is
+  // streamed via Suspense here, so the button is built inline rather than
+  // behind its own fallback.
+  const csvExport = buildPFilesDashboardExport({
+    ayCode: selectedAy,
+    rangeInput,
+    isOfficer,
+    kpis: kpisResult,
+    summary,
+    revisions,
+    byLevel,
+    slotMix,
+    expiring,
+    chaseQueueCounts,
+  });
 
   const insights = pfilesInsights({
     revisionsInRange: kpisResult.current.revisionsInRange,
@@ -415,6 +442,7 @@ export default async function PFilesDashboard({
             tone: isCurrentAy ? 'mint' : 'muted',
           },
         ]}
+        actions={<ExportCsvButton data={csvExport} />}
       />
 
       <ComparisonToolbar
@@ -445,7 +473,11 @@ export default async function PFilesDashboard({
           officer's voice ("you owe these reminders"). */}
       {isOfficer && priority && <PriorityPanel payload={priority} />}
       {isOfficer && (
-        <DocumentChaseQueueStrip ayCode={selectedAy} lens="p-files" />
+        <DocumentChaseQueueStrip
+          ayCode={selectedAy}
+          lens="p-files"
+          counts={chaseQueueCounts ?? undefined}
+        />
       )}
 
       <InsightsPanel insights={insights} />
