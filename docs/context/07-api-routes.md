@@ -137,7 +137,6 @@ The Attendance module is the sole writer of daily attendance (KD #47).
 | --------------------------------------------- | ----------------- | ----------------------------- | ---------------------------------------------------------------------- |
 | `/api/attendance/daily`                       | PATCH             | teacher+                      | Write daily marks (P/A/EX/L); 409s on non-encodable day-types (KD #50) |
 | `/api/attendance/:sectionId/export`           | GET               | registrar+ / assigned teacher | `.xlsx` term-sheet export (KD #151)                                    |
-| `/api/attendance/import`                      | POST              | registrar+                    | Bulk Excel import                                                      |
 | `/api/attendance/student-summary`             | GET               | staff                         | Per-student attendance summary (lookup sheet)                          |
 | `/api/attendance/calendar`                    | POST/DELETE       | registrar+                    | Day-type overrides on the school calendar (KD #50/#76)                 |
 | `/api/attendance/calendar/events`             | POST/PATCH/DELETE | registrar+                    | Calendar events overlay                                                |
@@ -248,6 +247,8 @@ The only parent-facing surface. Consumed cross-origin by the external admissions
 | `/api/parent/v2/declarations/evidence` | POST   | same, multipart                        | Upload a medical certificate into `parent-portal/declarations/<parent user id>/`. Returns the object path to send with the filing                                 |
 
 Tokens are verified via `service.auth.getUser(token)`; CORS allowlist in `lib/cors.ts` (`ADMISSIONS_PORTAL_ORIGIN`); IP + per-user rate limiting via `lib/rate-limit.ts`.
+
+⚠ **`/api/parent/v2/report-card` returns the CUMULATIVE card: terms 1..viewed, never above.** The portal draws its grade and attendance columns by mapping over `payload.terms`, so narrowing that array to the viewed term alone left a Term 3 card with a single column while the staff screen showed three (the marks were always there — every `subjects[]` row carries its own `t1`–`t4` cells). `termNumbersUpToViewed` in `lib/report-card/publication-window.ts` is what decides the span. Authorisation is unchanged and is still the viewed term's publication window: the window gates the CARD, not each column on it (KD #10 + #129). The earlier terms' adviser write-ups keep travelling in their own `earlierComments` list — the deployed portal reads its earlier boxes from there, and it is a separate app we do not release.
 
 ⚠ **`POST /api/parent/v2/declarations` also opens the approval ladder** (KD #196). If that write fails the just-inserted rows are DELETED and the parent gets a 500 — a declaration with no ladder is invisible to every staff queue while the parent reads "With the school" forever. A flow with no steps configured is the one exception: the filing stands, and `scripts/repair-declaration-approvals.ts --apply` opens its request once the steps exist.
 

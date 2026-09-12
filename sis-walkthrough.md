@@ -165,7 +165,6 @@ Open **Attendance → [Your Section]**. The grid shows students down the left an
 - Holidays are greyed out automatically (set in the school calendar).
 - Special events (field trips, assemblies) show a ★ overlay — still school days, but noted.
 - Each student shows a **compassionate-leave quota chip** — you'll see if they're approaching their 5-day annual allowance.
-- Bulk-import from Excel is supported at `/attendance/import` for registrar-driven backfills.
 
 ### Step 8 — Lock Grades (Registrar)
 
@@ -358,9 +357,7 @@ You are **not** in the grade-change approval pool. Your job is structural oversi
 
 **Calendar** (`/attendance/calendar`) — registrar admin surface. Toggle holidays, set event overlays, copy holidays forward from prior AY.
 
-**Import** (`/attendance/import`) — bulk xlsx upload with dry-run report before committing.
-
-**Audit log** — every attendance write, correction, calendar change, and bulk import.
+**Audit log** — every attendance write, correction, and calendar change.
 
 ### SIS Admin Hub (`/sis`)
 

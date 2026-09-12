@@ -53,11 +53,6 @@
         "count": 1
       }
     },
-    "app/(attendance)/attendance/import/page.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
     "app/(attendance)/attendance/page.tsx": {
       "crap_critical": {
         "count": 1
@@ -514,17 +509,6 @@
         "count": 1
       }
     },
-    "app/api/attendance/import/route.ts": {
-      "complexity_critical": {
-        "count": 2
-      },
-      "crap_critical": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 2
-      }
-    },
     "app/api/audit-log/export/route.ts": {
       "crap_critical": {
         "count": 1
@@ -944,17 +928,6 @@
       },
       "crap_moderate": {
         "count": 2
-      }
-    },
-    "components/attendance/import-form.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 1
       }
     },
     "components/attendance/wide-grid.tsx": {
@@ -1799,7 +1772,6 @@
     "app/api/p-files/[enroleeNumber]/upload/route.ts:complexity",
     "app/api/change-requests/[id]/route.ts:complexity",
     "app/(sis)/sis/calendar/page.tsx:complexity",
-    "app/api/attendance/import/route.ts:complexity",
     "app/(markbook)/markbook/page.tsx:complexity",
     "lib/attendance/queries.ts:complexity",
     "lib/sync/students.ts:complexity",

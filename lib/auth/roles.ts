@@ -360,11 +360,6 @@ const ATTENDANCE_NAV: NavSection[] = [
         label: 'School Calendar',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
-      {
-        href: '/attendance/import',
-        label: 'Import',
-        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
-      },
     ],
   },
   {
@@ -1096,10 +1091,6 @@ export const ROUTE_ACCESS: Array<{
   {
     prefix: '/classroom',
     allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
-  },
-  {
-    prefix: '/attendance/import',
-    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   {
     prefix: '/attendance/calendar',

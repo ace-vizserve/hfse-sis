@@ -20,7 +20,6 @@ import {
   FileQuestion,
   FileStack,
   FileText,
-  FileUp,
   FolderOpen,
   Gavel,
   Handshake,
@@ -221,7 +220,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/attendance/declarations': ICON_APPROVAL_INBOX,
       '/attendance/insights': ICON_INSIGHTS,
       '/sis/calendar': ICON_SCHOOL_CALENDAR,
-      '/attendance/import': FileUp,
       '/attendance/audit-log': ICON_AUDIT_LOG,
       // Term-wide, read across a span of dates rather than marked on one.
       '/attendance/summary': CalendarRange,

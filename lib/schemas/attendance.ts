@@ -324,22 +324,3 @@ export const DailyBulkSchema = z.object({
 });
 
 export type DailyBulkInput = z.infer<typeof DailyBulkSchema>;
-
-// ─────────────────────────────────────────────────────────────────────────
-// Bulk import — POST /api/attendance/import
-// ─────────────────────────────────────────────────────────────────────────
-//
-// The Excel file itself arrives as multipart/form-data; this schema
-// validates the JSON sidecar (term_id + any operator-supplied overrides).
-// Per-sheet parsing happens in the route handler after we see the workbook.
-
-export const ImportConfigSchema = z.object({
-  termId: uuidString,
-  // Optional: cap import to a specific section (sheet name). When omitted the
-  // route imports every sheet whose name matches a known section.
-  sectionId: uuidString.optional(),
-  // Dry run returns the parse report without writing to the DB.
-  dryRun: z.boolean().optional().default(false),
-});
-
-export type ImportConfigInput = z.infer<typeof ImportConfigSchema>;

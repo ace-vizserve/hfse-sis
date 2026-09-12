@@ -19,7 +19,7 @@ load: on-demand
 - **`cmdk`** for the global Cmd+K command palette (`components/ui/command.tsx` is the shadcn-style wrapper; `components/sis/command-palette.tsx` is the wired-up palette mounted in the root layout). Trigger lives in the module-sidebar header + topbar.
 - **`countries-list`** (MIT) supplies the canonical country-NAME list for the Student Profile nationality picker (`lib/data/countries.ts`). Deliberately NOT `country-state-city`, which ships the same dataset but is **GPL-3.0** — caught in review and swapped before merge (KD #157).
 - **`pdf-merger-js`** (server-only) for P-Files upload merge.
-- **`xlsx`** / SheetJS (server-only, trusted registrar input only) for attendance bulk import.
+- **`xlsx`** / SheetJS (server-only) for the attendance-sheet and masterfile `.xlsx` exports, and for reading trusted workbooks in `scripts/backfill/`.
 - **Resend** for best-effort parent + change-request emails.
 - **Vercel** deploy. **PDF generation deferred** — browser Print covers current volume.
 

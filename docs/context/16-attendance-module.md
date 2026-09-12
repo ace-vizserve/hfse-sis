@@ -144,12 +144,7 @@ Role strategy stays consistent with the rest of the SIS — no new role needed.
 
 ## Workflows
 
-1. **Excel bulk import** (registrar). `POST /api/attendance/import` with the term's Excel file. Per sheet (one per section — naming convention matches grading sheets: `P1 Patience(G)`, etc.):
-   - Match each student row by `index_number` + `section_id` + `term_id`; flag unmatched rows as import errors (don't skip silently).
-   - Insert `attendance_daily` rows for every date column in the header (Jan 8 – Mar 13 in the T1 reference), status codes direct from cells.
-   - Recompute + upsert `attendance_records` rollup per student in the same transaction.
-   - Import summary response: `{ sections, studentsMatched, studentsUnmatched, dailyRowsWritten, errors[] }`.
-   - Audit log: one `attendance.import.bulk` row per sheet with `{ section_id, term_id, rows_written, unmatched }` context.
+1. ~~**Excel bulk import**~~ — **REMOVED 2026-09-11** (Mr Ace: _"remove the import feature its useles"_). `/attendance/import`, `POST /api/attendance/import` and `writeDailyBulk` are gone. Historical backfills run from `scripts/backfill/` instead. Past `attendance.import.bulk` audit rows still render in the audit log (labels kept on purpose — the log is append-only).
 2. **Live daily entry** (teacher / form adviser). Teacher opens `/attendance/[sectionId]`, lands on today's date, sees the roster with status defaulting to "unmarked". Clicks cells to set `P / L / EX / A` (`NC` is reserved for the registrar — used for holidays and not-yet-enrolled rows, not a teacher-facing option). Autosave per cell, mirroring the Markbook grading grid pattern (see `11-performance-patterns.md` §5 for the stale-closure guard). Rollup recomputes on every save.
 3. **Historical correction** (adviser / registrar). Same grid, pick a past date via the DatePicker, edit status. Writes a **new** `attendance_daily` row that supersedes the prior by `recorded_at desc` — Hard Rule #6 — and recomputes the rollup. Audit log row is `attendance.daily.correct`.
 4. **Per-student review** (registrar + student profile visitors). Records student detail → Attendance tab → chronological log grouped by month, term-summary chips at the top (`Present: N · Late: N · Excused: N · Absent: N · %: NN`).
@@ -225,7 +220,7 @@ Built by `lib/attendance/sheet-export.ts::buildAttendanceSheetWorkbook` via Shee
 
 - ✅ Status vocabulary: `P / L / EX / A / NC`. NC = school holidays / HBL / public holidays / not-yet-enrolled (non-teacher-selectable; used for column tagging only in the term sheet).
 - ✅ Reason codes for EX: `mc` (MC / excuse leave), `compassionate`, `vacation` (migration 070 trimmed `school_activity`). Quotas: vacation 1/term · compassionate 5/year, per-student override on `section_students`.
-- ✅ Who enters attendance: **both** — Excel import (registrar, `POST /api/attendance/import`) AND live daily entry (teacher / form adviser). Both paths shipped.
+- ✅ Who enters attendance: live daily entry (teacher / form adviser). The Excel import path was removed 2026-09-11.
 - ✅ School-calendar pre-publication: handled by `/sis/calendar` (registrar pre-marks day types; the term sheet only activates write-enabled cells on encodable days).
 - ✅ Paper palette (KD #132): P = light blue · A = yellow · EX = cyan · L = pink.
 - ✅ Per-month summary and Bus No. / Student Care columns shipped as Details / Summary collapsible groups (KD #151).
