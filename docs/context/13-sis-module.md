@@ -85,6 +85,8 @@ Coordination notes:
 
 `/records` (this module's dashboard) treats `registrar` as the operational role and other allowed roles (`school_admin` / `admin` / `superadmin`) as read-only oversight. The page RSC computes `isOperational = role === 'registrar'` and gates `<DocumentChaseQueueStrip>` + the "Documents to collect" `ActionList` + `<ClassAssignmentReadinessCard>` behind it; oversight roles see the analytical surface only (KPIs + charts + drill cards). Hero copy is unchanged — Records reads the same to both audiences. KD #57 (Layout archetypes) stays the umbrella; this is the four-module role-split implementation under it.
 
+Both `/records` and `/records/insights` have an **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.
+
 ## Open questions for HFSE discussion
 
 These need answers before a sprint opens:

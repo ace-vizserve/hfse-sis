@@ -91,6 +91,7 @@ Both `school_calendar` and `calendar_events` now carry `audience IN ('all', 'pri
 - `/attendance/students/[studentNumber]` — per-student attendance detail page. Compassionate leave quota card + vacation leave quota card.
 - `/attendance/insights` — Attendance Health Insights (KD #142). Over-time: rate trend, chronic-absentee watchlist, absence causes, leave-quota risk.
 - `/attendance/audit-log` — module-scoped audit log (`attendance.*` prefix allowlist).
+- Both `/attendance` and `/attendance/insights` have an **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.
 - `/sis/calendar` — school-calendar admin (SIS Admin, KD #76). Primary/secondary audience tabs; carry-forward dialog. The Attendance sidebar keeps a cross-module link.
 
 ## Data model

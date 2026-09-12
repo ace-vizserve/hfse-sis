@@ -6,6 +6,8 @@ The Admissions module of the HFSE SIS — a read-only dashboard that provides de
 
 This module is scoped to **Phase 2** of development, after the Markbook module (Phase 1) is complete and stable.
 
+As shipped, both `/admissions` and `/admissions/insights` have an **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.
+
 ---
 
 ## Section 1 — Applications Dashboard

@@ -166,6 +166,43 @@ Oversight roles always keep the analytical surface (KPIs, charts, drill cards) �
 - `Promise.all(modules.map(async → out.push))` produces non-deterministic order → return from each mapped promise and index the result (see `getAuditActivityByModule` in `lib/sis/dashboard.ts`).
 - Function props on `'use client'` chart components are not serializable → use enum string props (`yFormat: 'number' | 'percent' | 'days'`) instead of `yFormatter: (n) => string`.
 
+## CSV export
+
+Every module dashboard (`/attendance`, `/markbook`, `/admissions`, `/records`, `/p-files`, `/evaluation`) and every Insights page (`/attendance/insights`, `/markbook/insights`, `/admissions/insights`, `/records/insights`) has an **Export CSV** button. Clicking it downloads one file with everything that page is showing that viewer, in the same order the page shows it — nothing more, nothing less. (Out of scope: the teacher-facing views of Markbook/Evaluation/Attendance, `/sis` and its sub-pages, and the "focused" filtered views like `/admissions?status=…` — those already have their own DataTable CSV.)
+
+### What's in the file
+
+- A few **scope lines** at the top — the page name, the academic year, the date range (dashboards) or the compared-against academic year (Insights), and `Exported`: the moment the download button was clicked (Singapore time), not when the page was generated.
+- One **section per widget** the page renders for that viewer, in the order it appears on screen:
+  - The KPI strip becomes one "Key figures" section (`Figure, This period, Previous period, Change`). `Change` is always the same number the KPI card's own delta chip already shows — never a value worked out by subtracting one column from the other.
+  - Each chart becomes a table of the numbers it plots.
+  - Each list/table card becomes its rows exactly as shown on the card (every tab of a tabbed card), not the larger dataset behind a drill-down sheet.
+
+### Mirror the page — exactly
+
+- A widget the page doesn't render for this viewer at all (hidden by role, or hidden because there's nothing to show) gets **no section** in the file.
+- A widget that IS rendered but showing an empty state still gets a section — just with headers and zero rows, so the reader can tell the widget existed and had nothing in it.
+- Numbers are rounded to whatever precision the widget shows on screen, which is usually coarser than the underlying data. A chart labelled "85%" exports `85`, never the raw `84.7` the loader fetched — check each widget's own formatter rather than assuming one decimal place everywhere.
+
+### Where the code lives
+
+- `components/dashboard/export-csv-button.tsx` — the button (`<ExportCsvButton>`, and `<ExportCsvButtonPending>` for a page whose export data is still loading). It is client-side only: it turns already-built data into a CSV string and triggers the download in the browser. It never fetches anything itself.
+- `lib/export/dashboard-export.ts` — the shared shape (`DashboardExport`, `ExportSection`) plus small shared helpers (`kpiSection`, `roundTo`, `dashboardFilename`, `insightsFilename`).
+- `lib/<module>/dashboard-export.ts` and `lib/<module>/insights-export.ts` — one plain, pure `build<Module>DashboardExport` / `build<Module>InsightsExport` function per page, turning values the page already loaded into a `DashboardExport`. No database calls, no clock reads — everything arrives as an argument, so the same input always produces the same file. (Records is the one exception to the file name: its builders live under `lib/sis/` — `records-dashboard-export.ts` / `records-insights-export.ts` — because that's where the rest of the Records module's server code already lives.)
+- The page's own server component calls its builder and hands the result straight to `<ExportCsvButton data={...} />`. It never calls a data-loading function a second time just to feed the export — the builder only ever sees values the page has already fetched for rendering.
+
+### Streamed pages share one promise
+
+The Attendance dashboard streams its heaviest data (a large day-by-day scan) below the fold behind `<Suspense>`. Its Export CSV button needs that same data, so rather than run the scan twice, the page creates the scan's promise **once**, un-awaited, and hands that same promise to both the streamed section and to a small async server component that renders the button behind its own `<Suspense fallback={<ExportCsvButtonPending />}>`. Both places `await` it independently; the scan still runs exactly once per page load. Any future page that streams part of its data should follow this pattern rather than give the export its own copy of the loader.
+
+### The coverage test
+
+`__tests__/dashboard/export-csv-coverage.test.ts` reads the source of all ten pages in plain text and asserts each one renders `<ExportCsvButton` (or a wrapper component ending in `ExportButton`, to allow for the Attendance-style Suspense wrapper). It's a source-text guard, not a rendered-DOM check — its job is to stop a future dashboard or Insights page shipping without the button. Bringing a new page under the rule is one line: add its path to the test's `PAGES` list.
+
+### What's deliberately left out
+
+The file is figures, not prose or navigation. It never includes the narrative `InsightsPanel` sentences, `RecommendationCallout` text, the `PriorityPanel` headline, quick links, or "recent activity" feeds of audit events — none of that is a number a school admin would put in a spreadsheet. Student-level detail stays where it already lived: the existing drill-sheet downloads (e.g. the attendance register, the masterfile export). This file is the dashboard's own numbers, not a replacement for those.
+
 ## Full spec
 
 See `docs/superpowers/specs/2026-04-24-comprehensive-dashboard-redesign.md` for per-module business questions, KPI formulas, wireframes, insight rules, and deviation notes.

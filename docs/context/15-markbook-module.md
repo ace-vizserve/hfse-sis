@@ -26,6 +26,7 @@ All under the `(markbook)` route group. Auth + role gate via `proxy.ts` + `ROUTE
 - `/markbook/report-cards/[studentId]` — HTML preview + browser-print; interim (T1–T3) vs final (T4) template switcher (KD #27).
 - `/markbook/audit-log` — module-scoped audit log (grade + change-request + lock + publication actions).
 - `/markbook/insights` — Academic Performance Insights (KD #143): subject trend chart, grade distribution, grading throughput.
+- Both `/markbook` (registrar dashboard) and `/markbook/insights` have an **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.
 
 ## Tables owned
 

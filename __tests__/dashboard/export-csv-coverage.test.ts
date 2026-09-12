@@ -1,0 +1,26 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+// Every module dashboard and Insights page offers "Export CSV" (2026-09-11).
+// Adding a page here is how a new dashboard joins the rule.
+const PAGES = [
+  'app/(attendance)/attendance/page.tsx',
+  'app/(attendance)/attendance/insights/page.tsx',
+  'app/(markbook)/markbook/page.tsx',
+  'app/(markbook)/markbook/insights/page.tsx',
+  'app/(admissions)/admissions/page.tsx',
+  'app/(admissions)/admissions/insights/page.tsx',
+  'app/(records)/records/page.tsx',
+  'app/(records)/records/insights/page.tsx',
+  'app/(p-files)/p-files/page.tsx',
+  'app/(evaluation)/evaluation/page.tsx',
+];
+
+describe('dashboard and Insights pages offer CSV export', () => {
+  it.each(PAGES)('%s renders ExportCsvButton', (page) => {
+    const source = readFileSync(join(process.cwd(), page), 'utf8');
+    expect(source).toMatch(/<ExportCsvButton\b|<\w+ExportButton\b/);
+  });
+});

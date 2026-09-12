@@ -159,6 +159,7 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 - Section/level filter + status filter (Complete / Has missing / Has expired / Pending review)
 - Summary stats: total students, fully complete, students with expired docs, students with missing docs
 - AY switcher (same pattern as admissions dashboard)
+- **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.
 
 ### 2. Student detail view
 
