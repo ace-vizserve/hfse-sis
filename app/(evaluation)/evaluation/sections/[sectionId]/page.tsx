@@ -13,7 +13,6 @@ import {
   getSectionRoster,
   listAdvisedSectionIds,
 } from '@/lib/evaluation/queries';
-import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
 import { loadFormAdvisersBySection } from '@/lib/sis/staff';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -142,10 +141,6 @@ export default async function EvaluationSectionRosterPage({
   // Emptiness comes from the shared KD #120 helper: the column holds formatted
   // text, so a submitted-but-never-typed-in write-up is `<p></p>`, which the
   // `.trim().length > 0` test this replaces counted as written.
-  const submittedCount = roster.filter(
-    (r) => r.submitted && hasWriteupContent(r.writeup)
-  ).length;
-  const totalCount = roster.length;
 
   return (
     <PageShell>
@@ -183,10 +178,20 @@ export default async function EvaluationSectionRosterPage({
               </Badge>
             )}
           </div>
+          {/* The counts live on the Submitted/Drafted/Empty chips a few lines
+              below, inside <WriteupRosterClient>, where they update as the
+              adviser works. Repeating "X of Y submitted" here meant a
+              server-rendered number that only moved on a full page render —
+              which is why saving one write-up used to wait for one.
+
+              The old copy also claimed this page "autosaves per keystroke". It
+              does not, and never did: there are Save as draft and Submit
+              buttons, and the client's own explainer says so. Two sentences on
+              one screen disagreeing about whether your work is being saved is
+              worse than either being wrong alone. */}
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {submittedCount} of {totalCount} write-ups submitted. Autosaves per
-            keystroke; Submit stamps a write-up as finalised (edits stay
-            possible).
+            One holistic comment per student, for this term. Submit marks a
+            write-up as finalised — you can still edit it afterwards.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">

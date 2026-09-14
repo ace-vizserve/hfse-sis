@@ -9,7 +9,7 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { createClient } from '@/lib/supabase/client';
 import { isEmptyRichText } from '@/lib/rich-text';
 import type { EvaluationRosterStudent } from '@/lib/evaluation/queries';
 
@@ -81,17 +81,34 @@ export function WriteupRosterClient({
   type SaveResult = { submitted?: boolean; submitted_at?: string | null };
 
   const saveMutation = useMutation({
-    mutationFn: ({ studentId, text, submit }: SaveVars) =>
-      apiFetch<SaveResult>(
-        '/api/evaluation/writeups',
-        jsonInit('PATCH', {
-          termId,
-          sectionId,
-          studentId,
-          writeup: text,
-          submit,
-        })
-      ),
+    // Straight to Supabase — no API route. Migration 150 put the rules where
+    // they belong: the RLS policy checks in one clause that this (section,
+    // student) pair is a live roster row in a section the caller advises, and
+    // triggers derive `updated_at`, `submitted_at`, `created_by` and the audit
+    // action. None of those are sent from here, because a browser must not get
+    // to backdate a submission or attribute a write-up to another teacher.
+    //
+    // `onConflict` is the table's own unique key (term_id, student_id), so this
+    // is the same upsert the route performed.
+    mutationFn: async ({ studentId, text, submit }: SaveVars) => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('evaluation_writeups')
+        .upsert(
+          {
+            term_id: termId,
+            section_id: sectionId,
+            student_id: studentId,
+            writeup: text,
+            submitted: submit,
+          },
+          { onConflict: 'term_id,student_id' }
+        )
+        .select('submitted, submitted_at')
+        .single();
+      if (error) throw new Error(error.message);
+      return data as SaveResult;
+    },
     onMutate: ({ studentId }) => {
       setRows((prev) =>
         prev.map((r) =>
@@ -132,10 +149,15 @@ export function WriteupRosterClient({
 
   const run = useWriteAction();
 
-  // The per-row state (saving flag, inline error, saved baseline) stays on the
-  // mutation callbacks; only the toast and the refresh move. The refresh is
-  // what keeps the section header's "X of Y submitted" count honest, so the
-  // toast waits for it.
+  // ⚠ NO PAGE REFRESH. `onSuccess` above already folds the saved row back into
+  // `rows`, and every count on this screen — the Submitted/Drafted/Empty chips —
+  // is derived from `rows`. So there was nothing left for a server render to
+  // tell us except the header's duplicate "X of Y submitted", which has been
+  // removed in favour of the live chips.
+  //
+  // That header was the whole reason a save waited for a full page render.
+  // Writing straight to Supabase (migration 150/151 moved the rules into RLS
+  // and triggers) leaves the save as one round trip.
   const save = useCallback(
     (studentId: string, text: string, submit: boolean) => {
       void run(() => saveMutation.mutateAsync({ studentId, text, submit }), {
@@ -143,6 +165,7 @@ export function WriteupRosterClient({
         success: (body) =>
           submit ? (body?.submitted ? 'Submitted' : 'Saved') : 'Saved as draft',
         error: (e) => (e instanceof Error ? e.message : 'save failed'),
+        refresh: false,
       });
     },
     [run, saveMutation]
