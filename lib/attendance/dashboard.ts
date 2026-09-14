@@ -70,27 +70,30 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
 
   // attendance_daily can exceed PostgREST's 1000-row response cap on the
   // HFSE instance (200 students × 60+ school days = 12K+ rows for a full
-  // term). Chunk by 100 IDs to bound the IN-clause URL: each id is a 36-char
-  // UUID, and the gateway resets the connection — surfacing as a bare
-  // "TypeError: fetch failed", not a 4xx — once the request URL exceeds ~8 KB.
-  // 100 UUIDs ≈ 3.7 KB is safe; the old 500 (~18 KB) overflowed for any AY
-  // with 400+ students. Then paginate each chunk's response via .range().
-  const chunks: string[][] = [];
-  for (let i = 0; i < studentRowIds.length; i += 100) {
-    chunks.push(studentRowIds.slice(i, i + 100));
-  }
-  const all: DailyRow[] = [];
-  for (const chunk of chunks) {
-    const rows = await fetchAllPages<DailyRow>((from, to) =>
+  // term), and an unbounded `.in()` of UUIDs overflows the gateway's URL cap.
+  // Both are what `fetchInChunks` exists for, so use it rather than the
+  // hand-rolled loop that was here.
+  //
+  // THAT LOOP WAS SERIAL, and it was the slowest read in the app. Measured on
+  // AY2026: 53 round trips, 5.0s, for a page that shows a handful of KPIs —
+  // ~400 students became 5 chunks, awaited one after another, each then paging
+  // attendance_daily 1000 rows at a time. `fetchInChunks` sends the chunks as
+  // one wave (see its header), so only the paging inside a chunk stays serial,
+  // which it must be: page N+1's existence is only known once page N comes
+  // back short.
+  //
+  // Chunk size is the shared default (200) rather than the old local 100 —
+  // ~7.4KB of filter against a measured ~14.3KB ceiling, so still conservative,
+  // and it halves the number of chunks.
+  return fetchInChunks<DailyRow>(studentRowIds, (slice) =>
+    fetchAllPages<DailyRow>((from, to) =>
       service
         .from('attendance_daily')
         .select('date, status, ex_reason, section_student_id')
-        .in('section_student_id', chunk)
+        .in('section_student_id', slice)
         .range(from, to)
-    );
-    all.push(...rows);
-  }
-  return all;
+    )
+  );
 }
 
 // loadDailyRows: request-scoped memoization via React's cache(), NOT
