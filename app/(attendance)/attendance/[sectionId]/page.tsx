@@ -13,6 +13,7 @@ import { formatDayRange } from '@/lib/declarations/format';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DailyEntry } from '@/components/attendance/daily-entry';
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
+import { RegisterStatCards } from '@/components/attendance/register-stat-cards';
 import SheetContextCard from '@/components/attendance/sheet-context';
 import { StudentLookupSheet } from '@/components/attendance/student-lookup-sheet';
 import {
@@ -456,66 +457,23 @@ export default async function SectionAttendancePage({
       )}
 
       {/* Term-level stats — sheet view only. The daily view renders its own
-          day-focused stat cards inside <DailyEntry>. */}
+          day-focused stat cards inside <DailyEntry>.
+
+          A CLIENT COMPONENT, so the two summary-driven cards can refetch on
+          their own after a mark instead of the grid awaiting a whole-page
+          render for them. `initialSummary` is this render's own copy, so the
+          first paint is unchanged. */}
       {view === 'sheet' && (
-        <div className="@container/main">
-          <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-4">
-            <StatCard
-              description="Students"
-              value={activeCount.toLocaleString('en-SG')}
-              icon={Users}
-              footerTitle="Active roster"
-              footerDetail={`${enrolments.length - activeCount} withdrawn`}
-            />
-            <StatCard
-              description="School days"
-              value={schoolDayCount.toLocaleString('en-SG')}
-              icon={CalendarDays}
-              footerTitle={
-                schoolDayCount === 0
-                  ? 'Not configured'
-                  : `${holidayCount} ${holidayCount === 1 ? 'holiday' : 'holidays'}`
-              }
-              footerDetail={selectedTerm?.label ?? ''}
-            />
-            {/* presentRate, not averageAttendancePct. The old figure was the
-                mean of per-student percentages, which weights a child with four
-                marks the same as one with forty-six — and the footer under it
-                said "Present ÷ school days", which is what it was NOT doing.
-                This one is the real ratio over the student-days marked, and the
-                footer now names its own denominator. */}
-            <StatCard
-              description="Attendance"
-              value={
-                summary.presentRate != null
-                  ? `${summary.presentRate.toFixed(1)}%`
-                  : '—'
-              }
-              icon={Percent}
-              footerTitle={
-                summary.markedStudentDays > 0
-                  ? `Across ${summary.markedStudentDays.toLocaleString('en-SG')} student-days marked`
-                  : 'Nothing marked yet'
-              }
-              footerDetail={
-                summary.unmarkedStudentDays > 0
-                  ? `${summary.unmarkedStudentDays.toLocaleString('en-SG')} still to mark`
-                  : 'Fully marked'
-              }
-            />
-            <StatCard
-              description="Perfect attendance"
-              value={summary.perfectAttendanceCount.toLocaleString('en-SG')}
-              icon={CalendarCheck}
-              footerTitle={
-                summary.perfectAttendanceCount === 0
-                  ? 'None yet'
-                  : 'Zero absences'
-              }
-              footerDetail={`of ${activeCount} students`}
-            />
-          </div>
-        </div>
+        <RegisterStatCards
+          sectionId={sectionId}
+          termId={selectedTermId}
+          initialSummary={summary}
+          activeCount={activeCount}
+          withdrawnCount={enrolments.length - activeCount}
+          schoolDayCount={schoolDayCount}
+          holidayCount={holidayCount}
+          termLabel={selectedTerm?.label ?? ''}
+        />
       )}
 
       {view === 'sheet' && (
@@ -584,41 +542,5 @@ export default async function SectionAttendancePage({
         </Card>
       )}
     </PageShell>
-  );
-}
-
-function StatCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[28px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[34px]">
-          {value}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }

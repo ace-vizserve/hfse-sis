@@ -27,7 +27,7 @@ import Link from 'next/link';
 // or a paginated-by-week view.
 
 import { Bus, CalendarDays, Star, Users } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   memo,
   useCallback,
@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { createClient } from '@/lib/supabase/client';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
 
 // Local-tz ISO for today. Inline helper — the file doesn't pull from
 // lib/attendance/calendar.ts to stay a pure client leaf.
@@ -413,6 +414,7 @@ export function AttendanceWideGrid({
       ),
   });
 
+  const queryClient = useQueryClient();
   const run = useWriteAction();
   // Not `metaMutation.isPending` — that goes false when the PATCH resolves,
   // which is before the roster pane behind the editor has re-rendered.
@@ -540,20 +542,26 @@ export function AttendanceWideGrid({
         // A clear says what it did. "Saved." over a cell that just went blank
         // reads as though something was written into it.
         success: status === null ? 'Mark cleared.' : 'Saved.',
-        // ⚠ STILL AWAITING A PAGE RENDER, AND THIS IS THE REMAINING COST.
+        // ⚠ NO PAGE REFRESH. This is what makes marking fast.
         //
-        // The insert itself is now one round trip to Supabase. What is left is
-        // the refresh, and it is here for a reason that survives the rewrite:
-        // the stat cards above this grid come from `getSectionAttendanceSummary`,
-        // which reads the ROLLUP, the calendar and the enrolment list — not the
-        // marks this grid holds. So the grid cannot recompute them, and dropping
-        // the refresh would leave them quietly stale.
+        // The refresh existed for the four stat cards above this grid, which
+        // arrived as server props — so the only way to move one number was to
+        // re-render the page, and this write AWAITED it: 800ms to 3.3s per
+        // cell, with the grid locked throughout.
         //
-        // Removing it needs the cards to fetch their own summary (a small
-        // client query against `attendance_records`) instead of arriving as
-        // server props. That is the piece this app has no pattern for yet —
-        // there is no client-owned store here — and it is the actual reason
-        // writes are slower than the parent portal's, rather than the API hop.
+        // Those cards own their data now (<RegisterStatCards>, a client
+        // component on TanStack Query), so the write invalidates that one query
+        // instead. A save is an insert plus a small read of four numbers.
+        //
+        // Invalidated rather than refetched-and-awaited on purpose: the mark is
+        // already on screen optimistically, and the teacher should not wait on
+        // a summary card to type the next one.
+        refresh: false,
+        onResolved: () => {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.attendanceSectionSummary(sectionId, termId),
+          });
+        },
         // Same wording the inline handler used. `run` hands over the thrown
         // error rather than a string so the server's own message survives.
         error: (e) =>

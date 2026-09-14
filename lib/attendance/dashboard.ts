@@ -172,26 +172,20 @@ export const loadMarkCounts = cache(
       ex_reason: string | null;
       mark_count: number;
     };
-    let error: { message: string } | null = null;
-    const data = await fetchAllPages<CountRow>((from, to) =>
-      service
-        .rpc('attendance_mark_counts_by_date', { p_academic_year_id: ayId })
-        // Ordering is REQUIRED, not cosmetic: `.range()` paging over an
-        // unordered result may repeat rows on one page and skip them on the
-        // next. These three columns are the function's own GROUP BY key, so
-        // they order it uniquely.
-        .order('mark_date')
-        .order('status')
-        .order('ex_reason')
-        .range(from, to)
-    ).catch((e: Error) => {
-      error = { message: e.message };
-      return [] as CountRow[];
-    });
-    if (error) {
+    let data: CountRow[];
+    try {
+      data = await fetchAllPages<CountRow>((from, to) =>
+        service
+          .rpc('attendance_mark_counts_by_date', { p_academic_year_id: ayId })
+          .order('mark_date')
+          .order('status')
+          .order('ex_reason')
+          .range(from, to)
+      );
+    } catch (e) {
       console.warn(
         '[attendance] attendance_mark_counts_by_date unavailable, falling back to row scan:',
-        error.message
+        e instanceof Error ? e.message : e
       );
       return countsFromRows(await loadDailyRows(ayCode));
     }
@@ -233,21 +227,19 @@ export const loadAbsenceMarks = cache(
       mark_date: string;
       status: string;
     };
-    let error: { message: string } | null = null;
-    const data = await fetchAllPages<AbsenceRow>((from, to) =>
-      service
-        .rpc('attendance_absence_marks', { p_academic_year_id: ayId })
-        .order('section_student_id')
-        .order('mark_date')
-        .range(from, to)
-    ).catch((e: Error) => {
-      error = { message: e.message };
-      return [] as AbsenceRow[];
-    });
-    if (error) {
+    let data: AbsenceRow[];
+    try {
+      data = await fetchAllPages<AbsenceRow>((from, to) =>
+        service
+          .rpc('attendance_absence_marks', { p_academic_year_id: ayId })
+          .order('section_student_id')
+          .order('mark_date')
+          .range(from, to)
+      );
+    } catch (e) {
       console.warn(
         '[attendance] attendance_absence_marks unavailable, falling back to row scan:',
-        error.message
+        e instanceof Error ? e.message : e
       );
       const rows = await loadDailyRows(ayCode);
       return rows

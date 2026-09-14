@@ -27,6 +27,13 @@ export const queryKeys = {
   ) => ['attendance-drill', target, range] as const,
   attendanceStudentSummary: (sectionStudentId: string, termId: string) =>
     ['attendance-student-summary', sectionStudentId, termId] as const,
+  /**
+   * The stat cards above the register. Invalidated by the grid after every
+   * mark, which is what replaced awaiting a whole-page `router.refresh()` for
+   * four numbers.
+   */
+  attendanceSectionSummary: (sectionId: string, termId: string) =>
+    ['attendance-section-summary', sectionId, termId] as const,
   classroomStudentDetails: (sectionId: string, studentNumber: string) =>
     ['classroom-student-details', sectionId, studentNumber] as const,
   classroomStudentDiscipline: (sectionId: string, studentNumber: string) =>
