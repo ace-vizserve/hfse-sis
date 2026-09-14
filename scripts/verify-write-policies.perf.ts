@@ -87,6 +87,18 @@ describe('grade_entries write policy', () => {
       is_locked: boolean;
     }>;
 
+    // Every (section, subject) each teacher covers, so a "not theirs" sheet is
+    // genuinely not theirs.
+    const pairKey = (s: { section_id: string; subject_id: string }) =>
+      `${s.section_id}|${s.subject_id}`;
+    const taughtBy = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (!taughtBy.has(r.teacher_user_id)) {
+        taughtBy.set(r.teacher_user_id, new Set());
+      }
+      taughtBy.get(r.teacher_user_id)!.add(pairKey(r));
+    }
+
     const shouldWrite: string[] = [];
     const wronglyRefused: string[] = [];
     const wronglyAllowed: string[] = [];
@@ -94,16 +106,37 @@ describe('grade_entries write policy', () => {
     let checked = 0;
 
     for (const a of rows.slice(0, 60)) {
-      // One sheet they DO teach, and one they do not, per teacher.
-      const mine = sheets.find(
+      // ⚠ PREFER AN UNLOCKED SHEET FOR THE POSITIVE CASE.
+      //
+      // A plain `.find()` returns the first sheet for that (section, subject),
+      // and with four terms per pair and 848 of 1,116 sheets locked, that is
+      // almost always a locked one — so the check that matters, "a teacher CAN
+      // save their own marks", ran twice in 120 evaluations while the run
+      // reported a clean pass. 225 unlocked sheets have an assigned teacher;
+      // this picks from those.
+      const theirs = sheets.filter(
         (s) => s.section_id === a.section_id && s.subject_id === a.subject_id
       );
+      const mine = theirs.find((s) => !s.is_locked) ?? theirs[0];
+      // A locked sheet they DO teach, so Hard Rule #5 is tested on a row the
+      // policy would otherwise admit — the only case where the lock is what
+      // stops the write, rather than the assignment.
+      const mineLocked = theirs.find((s) => s.is_locked);
+      // ⚠ EXCLUDE EVERY PAIR THIS TEACHER HOLDS, not just the row in hand.
+      //
+      // Teachers routinely teach several subjects in one section — the first
+      // version compared against the current assignment only, picked a sheet
+      // covered by the same teacher's OTHER assignment, and reported the policy
+      // as letting a teacher write somebody else's sheet. It was allowing a
+      // sheet they genuinely teach. A negative test has to be sure the case is
+      // actually negative, or it manufactures a bug report.
       const notMine = sheets.find(
-        (s) => s.section_id !== a.section_id || s.subject_id !== a.subject_id
+        (s) => !s.is_locked && !taughtBy.get(a.teacher_user_id)?.has(pairKey(s))
       );
 
       for (const [sheet, expectTeach] of [
         [mine, true],
+        [mineLocked, true],
         [notMine, false],
       ] as const) {
         if (!sheet) continue;
@@ -169,5 +202,19 @@ describe('grade_entries write policy', () => {
       checked,
       'No policy evaluations ran — the probe is not testing anything.'
     ).toBeGreaterThan(0);
+
+    // ⚠ AND NEITHER MUST A RUN THAT ONLY EVER PROVED THE REFUSALS.
+    //
+    // The first version of this script reported a clean pass having tested the
+    // "a teacher can save their own marks" case exactly twice out of 120
+    // evaluations, because it kept picking locked sheets. Refusals are easy to
+    // get right by accident — a policy that denies everyone passes every
+    // negative assertion. The positive case is the one that says the feature
+    // works at all.
+    expect(
+      shouldWrite.length,
+      'Almost nothing exercised the CAN-write path, so a policy that refuses ' +
+        'everybody would also pass this. The probe is picking the wrong sheets.'
+    ).toBeGreaterThan(10);
   }, 180_000);
 });
