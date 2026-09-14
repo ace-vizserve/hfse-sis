@@ -24,6 +24,7 @@ import {
 } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
+import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -61,6 +62,7 @@ import {
 import {
   computeDelta,
   resolveRange,
+  TERM_SCOPED_PRESETS,
   type DashboardSearchParams,
   type RangeInput,
 } from '@/lib/dashboard/range';
@@ -559,7 +561,31 @@ export default async function AttendanceInsightsPage({
         actions={<ExportCsvButton data={exportData} />}
       />
 
-      <div className="flex justify-end">
+      {/* ⚠ THE RANGE WAS ALREADY BEING READ HERE — only the control was
+          missing. `resolveRange` above pulls `from`/`to`/`preset` out of the
+          URL and every figure below is scoped to what it returns, so this page
+          has always supported a date window; there was simply no way to set one
+          except by typing the query string. Same toolbar the module dashboards
+          use, so the two surfaces are driven the same way.
+
+          `showAySwitcher={false}` because the year is not chosen here — the
+          picker beside it chooses what to COMPARE AGAINST, which is a different
+          question, and two year dropdowns in one row would read as a bug. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ComparisonToolbar
+          ayCode={selectedAy}
+          ayCodes={ayCodes}
+          range={{ from: rangeInput.from, to: rangeInput.to }}
+          comparison={
+            rangeInput.cmpFrom && rangeInput.cmpTo
+              ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
+              : null
+          }
+          termWindows={windows.term}
+          ayWindows={windows.ay}
+          showAySwitcher={false}
+          presets={TERM_SCOPED_PRESETS}
+        />
         <CompareAyPicker
           primaryAy={selectedAy}
           ayCodes={ayCodes}
