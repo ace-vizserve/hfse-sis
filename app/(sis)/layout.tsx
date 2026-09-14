@@ -74,53 +74,86 @@ export default async function SisLayout({
     redirect('/');
   }
 
-  const capabilities = await getCapabilitiesForRole(role);
+  // ⚠ TWO WAVES, NOT SIX. Everything here feeds the SIDEBAR and the header —
+  // `{children}` reads none of it — but it sat in the layout body as a chain of
+  // separate `await`s, so every page in this module waited for the whole chain
+  // before rendering a pixel. Measured against AY2026 on a warm connection:
+  // capabilities 295ms, then readiness 581ms (20 queries, for one "3/8" chip),
+  // then sections+staff 296ms — 1,172ms of chrome decoration on the critical
+  // path, and that is before the three counts below, which were two more waves.
+  //
+  // Only `readiness` and `sectionsCount` genuinely depend on anything (the
+  // current AY). The rest were sequential by habit. Wave 1 issues every
+  // independent read together; wave 2 issues the two that need the AY.
+  //
+  // Role conditionals are unchanged — a role that skipped a fetch before still
+  // skips it, it just skips it in parallel. `Promise.resolve(null)` keeps the
+  // tuple positions stable so the skip stays as readable as the fetch.
+  //
+  // Sections/Staff are fetched only for the roles that see those nav items
+  // (academic coordinator + school_admin + superadmin); admissions (a single
+  // Discount Codes link) and any other role skip them entirely.
+  const canSeeYearNav =
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
+  // Same three roles as `canSeeYearNav` today, named separately because they
+  // answer different questions — one is "does this nav group exist for you",
+  // the other "can you decide a change request". Collapsing them would make a
+  // future divergence silent.
+  const canSeeChangeRequests =
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
+  const service = createServiceClient();
 
-  const cookieStore = await cookies();
+  const [
+    cookieStore,
+    capabilities,
+    currentAy,
+    staffCount,
+    changeRequestCount,
+    // Not gated on role: being an approver is decided by being ON a step, not
+    // by holding a role, so the count answers that itself and returns 0.
+    declarationCount,
+    gradeChangeStepCount,
+    // Always empty here, and cheaply so — the only tiles this hides are the
+    // ones a subject-teacher-only account cannot use, and `/sis` does not admit
+    // a teacher at all. Called anyway so all eight layouts read the same and
+    // none has to carry that rule in its head. It costs no query:
+    // `resolveHiddenModules` returns early for a non-teacher role. See
+    // lib/sidebar/module-visibility.ts.
+    hiddenModules,
+  ] = await Promise.all([
+    cookies(),
+    getCapabilitiesForRole(role),
+    getCurrentAcademicYear(),
+    canSeeYearNav ? getStaffCount() : Promise.resolve(null),
+    canSeeChangeRequests
+      ? getSidebarChangeRequestCount(service, role, id)
+      : Promise.resolve(null),
+    getDeclarationWaitingCount(service, role, id),
+    // Grade changes decided step by step — same "on a step" rule.
+    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    resolveHiddenModules(role, id),
+  ]);
+
   const defaultOpen = cookieStore.get('sidebar:state')?.value !== 'false';
   const expandedGroups = expandedGroupsFor(
     cookieStore.get(SIDEBAR_GROUPS_COOKIE)?.value,
     'sis'
   );
 
-  const currentAy = await getCurrentAcademicYear();
-  const readiness =
+  // Wave 2 — the only two reads that needed the AY resolved first. AY Setup's
+  // chip reuses `readiness` (the same data powers the floating readiness pill),
+  // so it costs no extra query.
+  const [readiness, sectionsCount] = await Promise.all([
     (role === 'school_admin' || role === 'superadmin') && currentAy
-      ? await getAyReadiness(currentAy.ay_code)
-      : null;
-
-  // Sidebar "This year" group count chips (SIS Admin visual pass, Task V2).
-  // AY Setup reuses the `readiness` fetch above (same data already powers
-  // the floating readiness pill) — no extra query. Sections/Staff are only
-  // fetched for the roles that actually see those nav items (registrar +
-  // school_admin + superadmin); admissions (single Discount Codes link)
-  // and any other role skip the fetch entirely.
-  const canSeeYearNav =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin';
-  const [sectionsCount, staffCount] =
+      ? getAyReadiness(currentAy.ay_code)
+      : Promise.resolve(null),
     canSeeYearNav && currentAy
-      ? await Promise.all([
-          getSectionsCount(currentAy.ay_code),
-          getStaffCount(),
-        ])
-      : [null, null];
-
-  const service = createServiceClient();
-  const changeRequestCount =
-    role === 'academic_coordinator' ||
-    role === 'school_admin' ||
-    role === 'superadmin'
-      ? await getSidebarChangeRequestCount(service, role, id)
-      : null;
-
-  // Not gated on role: being an approver is decided by being ON a step, not by
-  // holding a role, so the count answers that itself and returns 0 otherwise.
-  const [declarationCount, gradeChangeStepCount] = await Promise.all([
-    getDeclarationWaitingCount(service, role, id),
-    // Grade changes decided step by step — same "on a step" rule.
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+      ? getSectionsCount(currentAy.ay_code)
+      : Promise.resolve(null),
   ]);
 
   const sidebarCounts: SidebarCounts = {};
@@ -133,14 +166,6 @@ export default async function SisLayout({
   if (staffCount != null) {
     sidebarCounts.staffCount = String(staffCount);
   }
-
-  // Always empty here, and cheaply so — the only tiles this hides are the ones
-  // a subject-teacher-only account cannot use, and `/sis` does not admit a
-  // teacher at all. Called anyway so all eight layouts read the same and none
-  // has to carry that rule in its head. It also costs no query:
-  // `resolveHiddenModules` returns early for a non-teacher role. See
-  // lib/sidebar/module-visibility.ts.
-  const hiddenModules = await resolveHiddenModules(role, id);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
