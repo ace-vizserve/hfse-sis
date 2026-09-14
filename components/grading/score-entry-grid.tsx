@@ -8,12 +8,15 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { createClient } from '@/lib/supabase/client';
+import { queryKeys } from '@/lib/query/keys';
+import type { GradedProgress } from '@/components/grading/graded-stat-card';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -411,40 +414,60 @@ export function ScoreEntryGrid({
     });
   }, [rows, wwTotals, ptTotals, qaTotal, currentTermNumber, priorGrades]);
 
-  // Tier-3 autosave: the per-cell PATCH is routed through useMutation purely so
-  // it gets retry:0 + the shared apiFetch error handling. The optimistic UX is
-  // UNCHANGED — cells still update via local state (updateLocal) and reconcile
-  // from data.entry on success; this mutation owns no cache and does not touch
-  // the optimistic flow. The 422 error codes the autosave surfaces + the exact
-  // per-cell revert/toast are preserved in patchEntry below.
-  // The sheet's "Graded n/N · % complete" card is computed by the page's server
-  // component from `grade_entries`, so it would otherwise sit at its page-load
-  // value while the teacher filled the grid. `useWriteAction` AWAITS that
-  // refresh before it reports success, which is what lets the grid stay locked
-  // until the numbers on screen are really the new ones — so the old debounced,
-  // coalesced refresh is gone: coalescing exists to let edits keep arriving
-  // during a burst, and this surface now deliberately refuses the burst.
+  // Tier-3 autosave. Cells update optimistically via local state (updateLocal)
+  // and reconcile from the saved row; this mutation owns no cache and does not
+  // touch the optimistic flow.
   const run = useWriteAction();
+  const queryClient = useQueryClient();
 
+  // ⚠ TWO WRITE PATHS, AND THE SPLIT IS DELIBERATE.
+  //
+  // An ordinary save on an UNLOCKED sheet goes straight to Supabase. Migration
+  // 152 moved everything the route enforced for that path into Postgres — who
+  // may write (RLS: assigned subject teacher, relief cover included, unlocked
+  // sheets only), the score range checks, the letter-override rule, the audit
+  // row, and the whole formula (Hard Rule #2, proven against
+  // lib/compute/quarterly.ts on all 21,280 stored entries). The row comes back
+  // with `ww_ps / pt_ps / qa_ps / initial_grade / quarterly_grade` already
+  // computed by the trigger, which is exactly what the route used to return.
+  //
+  // A POST-LOCK edit still goes through the route, untouched. Those are not a
+  // save, they are a workflow: an approved change request gets applied through
+  // an atomic RPC and flipped to applied, the requester is emailed, a
+  // `grade_audit_log` row is appended with a server-derived
+  // `approval_reference` (Hard Rule #5). None of that belongs in a trigger, and
+  // the RLS policy refuses a browser write to a locked sheet outright, so this
+  // split cannot be bypassed by sending the direct path instead.
   const entryMutation = useMutation({
-    mutationFn: (vars: { entryId: string; payload: Record<string, unknown> }) =>
-      apiFetch<{
-        entry: {
-          ww_scores: (number | null)[];
-          pt_scores: (number | null)[];
-          qa_score: number | null;
-          ww_ps: number | null;
-          pt_ps: number | null;
-          qa_ps: number | null;
-          initial_grade: number | null;
-          quarterly_grade: number | null;
-          letter_grade: string | null;
-          is_na: boolean;
-        };
-      }>(
-        `/api/grading-sheets/${sheetId}/entries/${vars.entryId}`,
-        jsonInit('PATCH', vars.payload)
-      ),
+    mutationFn: async (vars: {
+      entryId: string;
+      payload: Record<string, unknown>;
+      /** Post-lock: an approved change request or a registrar correction. */
+      viaRoute: boolean;
+    }) => {
+      if (vars.viaRoute) {
+        return apiFetch<{ entry: SavedEntry }>(
+          `/api/grading-sheets/${sheetId}/entries/${vars.entryId}`,
+          jsonInit('PATCH', vars.payload)
+        );
+      }
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('grade_entries')
+        .update(vars.payload)
+        .eq('id', vars.entryId)
+        .select(
+          'ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, letter_grade, is_na'
+        )
+        .single();
+
+      if (error) throw new Error(humanizeGradeWriteError(error));
+
+      // An update that matches no row comes back as a PostgREST "no rows"
+      // error rather than a silent success, so reaching here means it wrote.
+      return { entry: data as unknown as SavedEntry };
+    },
   });
 
   const patchEntry = useCallback(
@@ -519,29 +542,73 @@ export function ScoreEntryGrid({
         }
       }
 
-      const payload = {
-        ...body,
-        ...(bodyOverride ?? {}),
-        ...extraPayload,
-        ...(slotLabel ? { slot_label: slotLabel } : {}),
-      };
+      // Two cases still need the route, and everything else goes straight to
+      // the table:
+      //
+      //   requireApproval — a LOCKED sheet. Not a save but a workflow: an
+      //     approved change request applied through an atomic RPC and flipped
+      //     to applied, the requester emailed, a `grade_audit_log` row written
+      //     with a server-derived `approval_reference` (Hard Rule #5).
+      //
+      //   slotLabel — the FIRST score in a slot, which must land together with
+      //     the activity description. That description lives on
+      //     `grading_sheets`, not on this row, and a browser cannot write that
+      //     table. The route already writes both in one request, so this rare
+      //     save (once per slot, per sheet) keeps using it rather than growing
+      //     a second code path to re-do it.
+      const viaRoute = requireApproval || !!slotLabel;
+
+      const payload = viaRoute
+        ? {
+            ...body,
+            ...(bodyOverride ?? {}),
+            ...extraPayload,
+            ...(slotLabel ? { slot_label: slotLabel } : {}),
+          }
+        : // Straight to the table: columns only. `slot_label` and the approval
+          // keys are route vocabulary and would be rejected as unknown columns.
+          { ...body };
 
       setIsSaving(true);
       // `run` NEVER rejects — it resolves the parsed body, or `undefined` if
       // the write failed. That is the failure signal here; there is no catch.
       const result = await run(
-        () => entryMutation.mutateAsync({ entryId, payload }),
+        () => entryMutation.mutateAsync({ entryId, payload, viaRoute }),
         {
           pending: 'Saving…',
-          // Reconcile the row from the server's own computed values BEFORE the
-          // refresh is awaited — the grid catches up at once while the toast
-          // keeps holding until the page's "Graded n/N" card is really new.
+          // ⚠ NO PAGE REFRESH. This is what makes encoding fast.
+          //
+          // The refresh existed for one number: the "Graded n/N" card above
+          // the grid, which arrived as a server prop — so the only way to move
+          // it was to re-render the whole page, and this write AWAITED that
+          // render before saying "Saved", with the grid locked throughout.
+          //
+          // That card owns its own data now (<GradedStatCard>), and the count
+          // is derived from rows already in memory, so `onResolved` below just
+          // writes the new figure into its cache slot. No fetch, no render.
+          refresh: false,
           onResolved: (data) => {
-            setRows((current) =>
-              current.map((r) =>
-                r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
-              )
+            const next = rowsRef.current.map((r) =>
+              r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
             );
+            setRows(next);
+
+            // The same rule the page used: a student counts as graded once
+            // they have a quarterly grade, a letter grade, or are marked N/A.
+            const active = next.filter((r) => !r.withdrawn);
+            queryClient.setQueryData<GradedProgress>(
+              queryKeys.gradingSheetProgress(sheetId),
+              {
+                graded: active.filter(
+                  (r) =>
+                    r.quarterly_grade !== null ||
+                    r.letter_grade !== null ||
+                    r.is_na
+                ).length,
+                total: active.length,
+              }
+            );
+
             // Advance the last-saved snapshot to the server-confirmed state so
             // a later failed commit reverts to THIS save, not the page-load
             // values.
@@ -1807,6 +1874,53 @@ function ComputedCell({
       {value != null ? value.toFixed(dp) : '—'}
     </TableCell>
   );
+}
+
+/**
+ * The saved row, as both write paths return it. The five derived fields are
+ * computed by the database (Hard Rule #2 — migration 152's trigger), never by
+ * the browser; the grid only displays what comes back.
+ */
+type SavedEntry = {
+  ww_scores: (number | null)[];
+  pt_scores: (number | null)[];
+  qa_score: number | null;
+  ww_ps: number | null;
+  pt_ps: number | null;
+  qa_ps: number | null;
+  initial_grade: number | null;
+  quarterly_grade: number | null;
+  letter_grade: string | null;
+  is_na: boolean;
+};
+
+/**
+ * Turn a PostgREST error into the sentence a teacher should read.
+ *
+ * The route used to phrase these. Writing directly means the database's own
+ * message arrives instead, so the custom SQLSTATEs migration 152 raises are
+ * translated here — they were written for exactly this, and their text is
+ * already plain ("W2 score 15 is outside the allowed range 0 to 10.").
+ *
+ * The one that needs rewording is the RLS refusal, which surfaces as an empty
+ * result rather than an error a person can act on: PostgREST reports a row
+ * that policy hid as "no rows", and "JSON object requested, multiple (or no)
+ * rows returned" tells a teacher nothing about why their score did not save.
+ */
+function humanizeGradeWriteError(error: {
+  code?: string;
+  message: string;
+}): string {
+  switch (error.code) {
+    case 'HFRNG': // score outside [0, max]
+    case 'HFLTR': // letter grade misuse
+    case 'HFCFG': // sheet has no weights configured
+      return error.message;
+    case 'PGRST116':
+      return 'This sheet is locked, or you are not the assigned teacher for it, so the score was not saved.';
+    default:
+      return error.message;
+  }
 }
 
 function replaceAt(

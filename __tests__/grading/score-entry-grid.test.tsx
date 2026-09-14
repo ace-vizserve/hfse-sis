@@ -24,15 +24,65 @@ const { toastSuccess, toastError } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
-// The grid now signals a debounced router.refresh() after each saved cell, so
-// the "Graded n/N" stat card catches up without a manual reload. That needs an
-// app-router context these tests don't render inside — same mock shape the
-// other client-component suites use.
+// Still mocked because the component tree reaches for a router, but the grid
+// no longer CALLS refresh — see the "does not re-render the page" test below.
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshMock, replace: vi.fn(), push: vi.fn() }),
   usePathname: () => '/markbook/grading/sheet-1',
   useSearchParams: () => new URLSearchParams(),
+}));
+
+// ⚠ AN ORDINARY SAVE NO LONGER GOES THROUGH `fetch`.
+//
+// Migration 152 moved the rules into Postgres, so a score on an unlocked sheet
+// is written straight to the table with supabase-js and the route is not
+// involved. These tests used to assert on a PATCH; the ones that still do are
+// the two that SHOULD — a first score carrying an activity description, which
+// keeps using the route because the description lives on `grading_sheets` and
+// a browser cannot write that table.
+//
+// `updateCalls` records what reached the table so a test can assert the write
+// happened and check its payload, the way `fetchSpy` used to.
+const { updateCalls, supabaseUpdate } = vi.hoisted(() => ({
+  updateCalls: [] as { table: string; payload: Record<string, unknown> }[],
+  supabaseUpdate: {
+    /** Swap in a slow or failing write for a single test. */
+    impl: null as null | (() => Promise<{ data: unknown; error: unknown }>),
+  },
+}));
+
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    from: (table: string) => ({
+      update: (payload: Record<string, unknown>) => {
+        updateCalls.push({ table, payload });
+        const result = {
+          eq: () => result,
+          select: () => result,
+          single: () =>
+            supabaseUpdate.impl
+              ? supabaseUpdate.impl()
+              : Promise.resolve({
+                  data: {
+                    ww_scores: null,
+                    pt_scores: null,
+                    qa_score: null,
+                    ww_ps: null,
+                    pt_ps: null,
+                    qa_ps: null,
+                    initial_grade: null,
+                    quarterly_grade: null,
+                    letter_grade: null,
+                    is_na: false,
+                  },
+                  error: null,
+                }),
+        };
+        return result;
+      },
+    }),
+  }),
 }));
 
 vi.mock('sonner', async () => ({
@@ -46,6 +96,8 @@ vi.mock('sonner', async () => ({
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  updateCalls.length = 0;
+  supabaseUpdate.impl = null;
 });
 
 function makeRow(overrides: Partial<GradeRow> = {}): GradeRow {
@@ -262,41 +314,40 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     const [aliceWw] = scoreInputs(container);
     await typeAndBlur(aliceWw, '8');
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    // Straight to the table, and the route is not touched at all.
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(getFirstScoreDialog()).not.toBeInTheDocument();
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toEqual({ ww_scores: [8] });
-    expect(body.slot_label).toBeUndefined();
+    expect(updateCalls[0].table).toBe('grade_entries');
+    // Columns only. `slot_label` is route vocabulary and would be rejected by
+    // PostgREST as an unknown column.
+    expect(updateCalls[0].payload).toEqual({ ww_scores: [8] });
   });
 
-  // The "Graded n/N · % complete" card is computed by the page's server
-  // component, so before this it sat at its page-load value while the teacher
-  // filled the grid.
+  // ⚠ THE OPPOSITE OF WHAT THIS TEST USED TO ASSERT, DELIBERATELY.
   //
-  // The refresh used to be debounced, to coalesce a burst of cells into one
-  // server render. It is not any more: the grid now goes inert for the
-  // duration of a save (useWriteAction awaits the refresh before it reports
-  // success), so there is no burst left to coalesce — one save, one refresh,
-  // and the success toast lands only once the new numbers are really on
-  // screen.
-  it('refreshes the server-rendered stat cards as part of the save', async () => {
+  // It was called "refreshes the server-rendered stat cards as part of the
+  // save", because the "Graded n/N" card was a server prop and the only way to
+  // move it was to re-render the page — which the save AWAITED, at 800ms–3.3s
+  // a cell with the grid locked throughout. That card is a client component
+  // now (<GradedStatCard>) reading a count derived from rows already in
+  // memory, so the save writes the number into its cache slot and never asks
+  // the server for anything.
+  //
+  // Keeping the test and inverting it, rather than deleting it: the refresh
+  // coming back would be the regression, and a deleted test cannot say so.
+  it('does not re-render the page to update the stat cards', async () => {
     refreshMock.mockClear();
-    const fetchSpy = stubFetch(() =>
-      Promise.resolve(okEntryResponse({ ww_scores: [8] }))
-    );
     const { container } = renderGrid({
       rows: [alice(), bob({ ww_scores: [10] })],
     });
 
     const [aliceWw] = scoreInputs(container);
     await typeAndBlur(aliceWw, '8');
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
-    // The save reports itself through the standard lifecycle now, rather than
-    // through the inline "Saving…" chip this replaced.
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Saved.'));
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 
   // A score grid is typed blind — tab, type, tab — so the failure to prevent
@@ -304,13 +355,11 @@ describe('ScoreEntryGrid — first-score label gate', () => {
   // refuses it outright while one is in flight, and says so with `aria-busy`
   // for anyone who cannot see the blur.
   it('marks itself busy while a save is in flight, and releases when it lands', async () => {
-    let release!: (v: Response) => void;
-    stubFetch(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        })
-    );
+    let release!: (v: { data: unknown; error: unknown }) => void;
+    supabaseUpdate.impl = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
     const { container } = renderGrid({
       rows: [alice({ ww_scores: [5] }), bob({ ww_scores: [10] })],
     });
@@ -323,7 +372,21 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     await waitFor(() => expect(grid.getAttribute('aria-busy')).toBe('true'));
     expect(grid.className).toContain('pointer-events-none');
 
-    release(okEntryResponse({ ww_scores: [8] }));
+    release({
+      data: {
+        ww_scores: [8],
+        pt_scores: null,
+        qa_score: null,
+        ww_ps: null,
+        pt_ps: null,
+        qa_ps: null,
+        initial_grade: null,
+        quarterly_grade: null,
+        letter_grade: null,
+        is_na: false,
+      },
+      error: null,
+    });
     await waitFor(() => expect(grid.getAttribute('aria-busy')).toBe('false'));
     expect(grid.className).not.toContain('pointer-events-none');
   });
@@ -340,12 +403,10 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     const [aliceWw] = scoreInputs(container);
     await typeAndBlur(aliceWw, '7');
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(getFirstScoreDialog()).not.toBeInTheDocument();
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toEqual({ ww_scores: [7] });
-    expect(body.slot_label).toBeUndefined();
+    expect(updateCalls[0].payload).toEqual({ ww_scores: [7] });
   });
 
   it('a slot whose metadata already satisfies the rule commits the first score directly, no dialog', async () => {
@@ -364,12 +425,10 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     const [aliceWw] = scoreInputs(container);
     await typeAndBlur(aliceWw, '8');
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(getFirstScoreDialog()).not.toBeInTheDocument();
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toEqual({ ww_scores: [8] });
-    expect(body.slot_label).toBeUndefined();
+    expect(updateCalls[0].payload).toEqual({ ww_scores: [8] });
   });
 
   it('QA slot: same first-score gate, description-only dialog', async () => {

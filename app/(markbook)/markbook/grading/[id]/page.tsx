@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { ScoreEntryGrid } from '@/components/grading/score-entry-grid';
+import { GradedStatCard } from '@/components/grading/graded-stat-card';
 import { LockToggle } from '@/components/grading/lock-toggle';
 import { TotalsEditor } from '@/components/grading/totals-editor';
 import {
@@ -475,8 +476,8 @@ export default async function GradingSheetPage({
   const gradedCount = activeRows.filter(
     (r) => r.quarterly_grade !== null || r.letter_grade !== null || r.is_na
   ).length;
-  const gradedPct =
-    totalStudents > 0 ? Math.round((gradedCount / totalStudents) * 100) : 0;
+  // The percentage is worked out inside <GradedStatCard> now, from whichever
+  // count is current — this one at first paint, the grid's after a save.
 
   // Who may edit the activity labels inline in the scoring guide — mirrors the
   // gate that previously controlled the (now removed) Activity Labels dialog:
@@ -598,18 +599,14 @@ export default async function GradingSheetPage({
             footerTitle={`${totalStudents} on the roster`}
             footerDetail="Withdrawn students excluded"
           />
-          <StatCard
-            description="Graded"
-            value={`${gradedCount}/${totalStudents || 0}`}
-            icon={CheckCircle2}
-            footerTitle={
-              totalStudents > 0 ? `${gradedPct}% complete` : 'No students yet'
-            }
-            footerDetail={
-              isExaminable
-                ? 'Quarterly grade computed'
-                : 'Letter grade recorded'
-            }
+          {/* A client component, unlike its two neighbours, because this is
+              the one number a teacher changes while looking at it. As a server
+              prop it could only move by re-rendering the page, and the grid
+              waited for that before reporting a save. */}
+          <GradedStatCard
+            sheetId={sheet.id}
+            initialProgress={{ graded: gradedCount, total: totalStudents }}
+            isExaminable={isExaminable}
           />
           <StatCard
             description="Weights · WW / PT / QA"

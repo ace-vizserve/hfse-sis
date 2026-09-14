@@ -40,6 +40,17 @@ export const queryKeys = {
    */
   evaluationRoster: (sectionId: string, termId: string) =>
     ['evaluation-roster', sectionId, termId] as const,
+  /**
+   * The "Graded n/N" card above a grading sheet.
+   *
+   * ⚠ A CACHE SLOT, NOT AN ENDPOINT — there is no `queryFn` behind this key and
+   * nothing fetches it. The count is derived from rows the grid already holds,
+   * so the card reads it out of the cache and the grid writes it there with
+   * `setQueryData` after each save. Same job the awaited `router.refresh()` was
+   * doing for these two numbers, at no network cost at all.
+   */
+  gradingSheetProgress: (sheetId: string) =>
+    ['grading-sheet-progress', sheetId] as const,
   classroomStudentDetails: (sectionId: string, studentNumber: string) =>
     ['classroom-student-details', sectionId, studentNumber] as const,
   classroomStudentDiscipline: (sectionId: string, studentNumber: string) =>
