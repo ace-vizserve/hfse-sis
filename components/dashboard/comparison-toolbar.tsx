@@ -163,6 +163,7 @@ export function ComparisonToolbar({
         <DateRangePicker
           value={range}
           onChange={onRangeChange}
+          pending={pending}
           termWindows={termWindows}
           ayWindows={ayWindows}
           presets={presets}

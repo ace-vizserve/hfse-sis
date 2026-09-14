@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CalendarIcon, ArrowRightIcon } from 'lucide-react';
+import { CalendarIcon, ArrowRightIcon, Loader2 } from 'lucide-react';
 import type { DateRange as DayPickerRange, Matcher } from 'react-day-picker';
 
 import { Calendar } from '@/components/ui/calendar';
@@ -45,6 +45,18 @@ export type DateRangePickerProps = {
   maxDate?: string;
   id?: string;
   disabled?: boolean;
+  /**
+   * A range change is in flight — swaps the calendar icon for a spinner.
+   *
+   * The dashboards' only progress indicator used to live inside the AY
+   * switcher, which four of them hide (`showAySwitcher={false}`: attendance,
+   * evaluation, markbook, the audit-log overview). On those pages a range
+   * change computed a `pending` state and threw it away, so picking a date did
+   * nothing visible until the new numbers appeared. Showing it on the control
+   * that was actually operated fixes those four and is more honest on the rest,
+   * where changing a DATE used to spin the AY picker.
+   */
+  pending?: boolean;
   className?: string;
 };
 
@@ -68,6 +80,7 @@ export function DateRangePicker({
   maxDate,
   id,
   disabled,
+  pending = false,
   className,
 }: DateRangePickerProps) {
   const [open, setOpen] = React.useState(false);
@@ -270,7 +283,20 @@ export function DateRangePicker({
             className
           )}
         >
-          <CalendarIcon className="size-4 shrink-0 text-ink-4" />
+          {/* Same swap the AY switcher makes, so the two controls report
+              progress identically. aria-live announces it, because the icon
+              alone tells a screen-reader user nothing. */}
+          {pending ? (
+            <Loader2
+              className="size-4 shrink-0 animate-spin text-ink-4"
+              aria-hidden="true"
+            />
+          ) : (
+            <CalendarIcon className="size-4 shrink-0 text-ink-4" />
+          )}
+          <span className="sr-only" aria-live="polite">
+            {pending ? 'Updating for the new dates' : ''}
+          </span>
 
           <input
             type="text"
