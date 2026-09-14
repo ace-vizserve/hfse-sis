@@ -140,6 +140,98 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
   return dedupeLatestMarks(raw);
 }
 
+/**
+ * Per-(date, status) mark counts for a year — migration 148's RPC.
+ *
+ * Request-scoped via `React.cache()` for the same reason `loadDailyRows` is:
+ * four loaders on one page render ask for the same year, and they should share
+ * one call rather than making four.
+ *
+ * ⚠ FALLS BACK when the RPC is missing. Migration 148 and this code can land in
+ * either order, and an attendance dashboard that 500s because a migration is
+ * five minutes behind a deploy is a worse failure than a slow one. The fallback
+ * is the old path — read the year's rows and bucket them here — so behaviour is
+ * identical either way, only slower. Remove the fallback once 148 is applied
+ * everywhere.
+ */
+export const loadMarkCounts = cache(
+  async (ayCode: string): Promise<MarkCount[]> => {
+    const service = createServiceClient();
+    const ayId = await getAyIdByCode(ayCode);
+    if (!ayId) return [];
+    const { data, error } = await service.rpc(
+      'attendance_mark_counts_by_date',
+      { p_academic_year_id: ayId }
+    );
+    if (error) {
+      console.warn(
+        '[attendance] attendance_mark_counts_by_date unavailable, falling back to row scan:',
+        error.message
+      );
+      return countsFromRows(await loadDailyRows(ayCode));
+    }
+    return (
+      (data ?? []) as Array<{
+        mark_date: string;
+        status: string;
+        ex_reason: string | null;
+        mark_count: number;
+      }>
+    ).map((r) => ({
+      date: r.mark_date,
+      status: r.status,
+      ex_reason: r.ex_reason,
+      count: r.mark_count,
+    }));
+  }
+);
+
+/**
+ * The surviving A and L marks per student — migration 148's second RPC.
+ *
+ * ⚠ THE FILTER CANNOT MOVE TO THE CLIENT. `attendance_daily` is append-only, so
+ * filtering to A/L in the query and deduping the result would keep an absence a
+ * later correction had already replaced with Present — the superseding row is
+ * not in the filtered set to beat it. The RPC dedupes first and filters second.
+ * The fallback below therefore dedupes the FULL year (via `loadDailyRows`)
+ * before filtering, which is the same order.
+ */
+export const loadAbsenceMarks = cache(
+  async (ayCode: string): Promise<AbsenceMark[]> => {
+    const service = createServiceClient();
+    const ayId = await getAyIdByCode(ayCode);
+    if (!ayId) return [];
+    const { data, error } = await service.rpc('attendance_absence_marks', {
+      p_academic_year_id: ayId,
+    });
+    if (error) {
+      console.warn(
+        '[attendance] attendance_absence_marks unavailable, falling back to row scan:',
+        error.message
+      );
+      const rows = await loadDailyRows(ayCode);
+      return rows
+        .filter((r) => r.status === 'A' || r.status === 'L')
+        .map((r) => ({
+          section_student_id: r.section_student_id,
+          date: r.date,
+          status: r.status as 'A' | 'L',
+        }));
+    }
+    return (
+      (data ?? []) as Array<{
+        section_student_id: string;
+        mark_date: string;
+        status: string;
+      }>
+    ).map((r) => ({
+      section_student_id: r.section_student_id,
+      date: r.mark_date,
+      status: r.status as 'A' | 'L',
+    }));
+  }
+);
+
 /** A ledger row as fetched, before superseded entries are dropped. */
 export type DailyRowRaw = DailyRow & { period_id: string | null };
 
@@ -202,6 +294,68 @@ export type AttendanceKpis = {
   nc: number;
 };
 
+/**
+ * One (date, status, ex_reason) bucket and how many marks fell in it.
+ *
+ * This is what the dashboard actually consumes. Four of the six loaders below
+ * need nothing finer than per-date status counts, and the EX donut needs only
+ * the reason alongside — so the year's ~48,000 marks collapse to a few thousand
+ * buckets before they cross the wire (migration 148).
+ *
+ * `ex_reason` is null for every status except EX.
+ */
+export type MarkCount = {
+  date: string;
+  status: string; // P | L | EX | A | NC
+  ex_reason: string | null;
+  count: number;
+};
+
+/** One surviving A or L mark. The only per-student grain anything still needs. */
+export type AbsenceMark = {
+  section_student_id: string;
+  date: string;
+  status: 'A' | 'L';
+};
+
+export function sliceMarkCounts(
+  counts: readonly MarkCount[],
+  from: string,
+  to: string
+): MarkCount[] {
+  return counts.filter((c) => c.date >= from && c.date <= to);
+}
+
+/**
+ * Aggregate raw rows into buckets — the same shape migration 148's RPC returns.
+ *
+ * Three jobs: it is the fallback when that migration has not been applied yet,
+ * it is what the unit tests exercise, and it is the oracle
+ * `scripts/verify-attendance-aggregates.perf.ts` compares the RPC against.
+ * Keeping one definition of "what the aggregate means" is what lets those three
+ * agree.
+ */
+export function countsFromRows(rows: readonly DailyRow[]): MarkCount[] {
+  const buckets = new Map<string, MarkCount>();
+  for (const r of rows) {
+    if (r.status == null) continue;
+    // EX is the only status carrying a reason; folding the others on a null
+    // keeps the key space small and matches the RPC's GROUP BY exactly.
+    const reason = r.status === 'EX' ? (r.ex_reason ?? null) : null;
+    const key = `${r.date}|${r.status}|${reason ?? ''}`;
+    const hit = buckets.get(key);
+    if (hit) hit.count += 1;
+    else
+      buckets.set(key, {
+        date: r.date,
+        status: r.status,
+        ex_reason: reason,
+        count: 1,
+      });
+  }
+  return [...buckets.values()];
+}
+
 export function sliceDailyRows(
   rows: DailyRow[],
   from: string,
@@ -210,9 +364,43 @@ export function sliceDailyRows(
   return rows.filter((r) => r.date >= from && r.date <= to);
 }
 
-// Internal alias used by the functions below (backwards compat).
-function slice(rows: DailyRow[], from: string, to: string): DailyRow[] {
-  return sliceDailyRows(rows, from, to);
+/** Same arithmetic as `kpisFor`, over buckets instead of one row per mark. */
+export function kpisFromCounts(counts: readonly MarkCount[]): AttendanceKpis {
+  let present = 0,
+    late = 0,
+    excused = 0,
+    absent = 0,
+    nc = 0;
+  for (const c of counts) {
+    switch (c.status) {
+      case 'P':
+        present += c.count;
+        break;
+      case 'L':
+        late += c.count;
+        break;
+      case 'EX':
+        excused += c.count;
+        break;
+      case 'A':
+        absent += c.count;
+        break;
+      case 'NC':
+        nc += c.count;
+        break;
+    }
+  }
+  const encoded = present + late + excused + absent;
+  return {
+    attendancePct:
+      encoded > 0 ? ((present + late + excused) / encoded) * 100 : 0,
+    encodedDays: encoded,
+    present,
+    late,
+    excused,
+    absent,
+    nc,
+  };
 }
 
 export function kpisFor(rows: DailyRow[]): AttendanceKpis {
@@ -257,8 +445,8 @@ export function kpisFor(rows: DailyRow[]): AttendanceKpis {
 async function loadAttendanceKpisRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<AttendanceKpis>> {
-  const rows = await loadDailyRows(input.ayCode);
-  const current = kpisFor(slice(rows, input.from, input.to));
+  const counts = await loadMarkCounts(input.ayCode);
+  const current = kpisFromCounts(sliceMarkCounts(counts, input.from, input.to));
   if (input.cmpFrom == null || input.cmpTo == null) {
     return {
       current,
@@ -268,7 +456,9 @@ async function loadAttendanceKpisRangeUncached(
       comparisonRange: null,
     };
   }
-  const comparison = kpisFor(slice(rows, input.cmpFrom, input.cmpTo));
+  const comparison = kpisFromCounts(
+    sliceMarkCounts(counts, input.cmpFrom, input.cmpTo)
+  );
   return {
     current,
     comparison,
@@ -301,7 +491,7 @@ export function getAttendanceKpisRange(
 export type DailyAttendancePoint = { x: string; y: number };
 
 function dailyPctSeries(
-  rows: DailyRow[],
+  counts: readonly MarkCount[],
   from: string,
   to: string
 ): DailyAttendancePoint[] {
@@ -319,13 +509,13 @@ function dailyPctSeries(
   }
   const byDate = new Map<string, { encoded: number; attended: number }>();
   for (const l of labels) byDate.set(l, { encoded: 0, attended: 0 });
-  for (const r of rows) {
-    if (!byDate.has(r.date)) continue;
-    const bucket = byDate.get(r.date)!;
-    if (r.status === 'NC') continue;
-    bucket.encoded += 1;
-    if (r.status === 'P' || r.status === 'L' || r.status === 'EX')
-      bucket.attended += 1;
+  for (const c of counts) {
+    if (!byDate.has(c.date)) continue;
+    const bucket = byDate.get(c.date)!;
+    if (c.status === 'NC') continue;
+    bucket.encoded += c.count;
+    if (c.status === 'P' || c.status === 'L' || c.status === 'EX')
+      bucket.attended += c.count;
   }
   return labels.map((x) => {
     const b = byDate.get(x)!;
@@ -336,9 +526,9 @@ function dailyPctSeries(
 async function loadDailyAttendanceRangeUncached(
   input: RangeInput
 ): Promise<RangeResult<DailyAttendancePoint[]>> {
-  const rows = await loadDailyRows(input.ayCode);
+  const counts = await loadMarkCounts(input.ayCode);
   const current = dailyPctSeries(
-    slice(rows, input.from, input.to),
+    sliceMarkCounts(counts, input.from, input.to),
     input.from,
     input.to
   );
@@ -352,7 +542,7 @@ async function loadDailyAttendanceRangeUncached(
     };
   }
   const comparison = dailyPctSeries(
-    slice(rows, input.cmpFrom, input.cmpTo),
+    sliceMarkCounts(counts, input.cmpFrom, input.cmpTo),
     input.cmpFrom,
     input.cmpTo
   );
@@ -398,14 +588,14 @@ export type ExReasonMix = { name: string; value: number };
 async function loadExReasonMixRangeUncached(
   input: RangeInput
 ): Promise<ExReasonMix[]> {
-  const rows = await loadDailyRows(input.ayCode);
-  const windowed = slice(rows, input.from, input.to).filter(
-    (r) => r.status === 'EX'
+  const marks = await loadMarkCounts(input.ayCode);
+  const windowed = sliceMarkCounts(marks, input.from, input.to).filter(
+    (c) => c.status === 'EX'
   );
   const counts: Record<string, number> = {};
-  for (const r of windowed) {
-    const key = r.ex_reason || 'Other';
-    counts[key] = (counts[key] ?? 0) + 1;
+  for (const c of windowed) {
+    const key = c.ex_reason || 'Other';
+    counts[key] = (counts[key] ?? 0) + c.count;
   }
   const LABEL: Record<string, string> = {
     mc: 'MC / Excuse leave',
@@ -441,18 +631,25 @@ async function loadTopAbsentRangeUncached(
   input: RangeInput,
   limit: number
 ): Promise<TopAbsentRow[]> {
-  const rows = await loadDailyRows(input.ayCode);
-  const windowed = slice(rows, input.from, input.to);
+  // Only A and L ever mattered here, and they are 2% of the ledger — so this
+  // asks for them specifically (migration 148) instead of reading the year and
+  // discarding the 95% that are `P`. The RPC dedupes BEFORE filtering, which is
+  // the part that cannot be done client-side: an absence later corrected to
+  // Present would otherwise survive, because the row that supersedes it is not
+  // in the filtered set to beat it.
+  const marks = await loadAbsenceMarks(input.ayCode);
+  const windowed = marks.filter(
+    (m) => m.date >= input.from && m.date <= input.to
+  );
   const counts = new Map<string, { absences: number; lates: number }>();
-  for (const r of windowed) {
-    if (r.status !== 'A' && r.status !== 'L') continue;
-    const bucket = counts.get(r.section_student_id) ?? {
+  for (const m of windowed) {
+    const bucket = counts.get(m.section_student_id) ?? {
       absences: 0,
       lates: 0,
     };
-    if (r.status === 'A') bucket.absences += 1;
+    if (m.status === 'A') bucket.absences += 1;
     else bucket.lates += 1;
-    counts.set(r.section_student_id, bucket);
+    counts.set(m.section_student_id, bucket);
   }
   const ids = Array.from(counts.keys());
   if (ids.length === 0) return [];

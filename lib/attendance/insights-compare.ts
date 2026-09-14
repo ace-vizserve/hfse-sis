@@ -11,9 +11,9 @@ import 'server-only';
 
 import { getDashboardWindows } from '@/lib/dashboard/windows';
 import {
-  kpisFor,
-  loadDailyRows,
-  sliceDailyRows,
+  kpisFromCounts,
+  loadMarkCounts,
+  sliceMarkCounts,
 } from '@/lib/attendance/dashboard';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 
@@ -89,7 +89,8 @@ export function shapeRateTrendPoints(
  * Terms with no encoded rows produce `value: null` so the chart renders a gap
  * rather than a misleading zero (recharts `connectNulls={false}`).
  *
- * Data source: `loadDailyRows(ay)` (cached per-AY, 300s TTL) sliced per term
+ * Data source: `loadMarkCounts(ay)` (per-date status counts, migration 148)
+ * sliced per term
  * windows from `getDashboardWindows(ay).term.byNumber`.
  */
 export async function getAttendanceRateTrendByAy(
@@ -97,11 +98,11 @@ export async function getAttendanceRateTrendByAy(
 ): Promise<AyTrendPoint[]> {
   if (ays.length === 0) return [];
 
-  // Fan out: one loadDailyRows + one getDashboardWindows per AY in parallel.
+  // Fan out: one loadMarkCounts + one getDashboardWindows per AY in parallel.
   const results = await Promise.all(
     ays.map(async (ayCode) => {
       const [rows, windows] = await Promise.all([
-        loadDailyRows(ayCode),
+        loadMarkCounts(ayCode),
         getDashboardWindows(ayCode),
       ]);
       return { ayCode, rows, windows };
@@ -120,8 +121,8 @@ export async function getAttendanceRateTrendByAy(
         // so the chart doesn't show an empty T3/T4 slot for a partial AY).
         continue;
       }
-      const sliced = sliceDailyRows(rows, range.from, range.to);
-      const kpis = kpisFor(sliced);
+      const sliced = sliceMarkCounts(rows, range.from, range.to);
+      const kpis = kpisFromCounts(sliced);
       // Treat zero encoded days as null so the chart renders a gap, not 0%.
       termMap.set(t, kpis.encodedDays > 0 ? kpis.attendancePct : null);
     }
@@ -182,7 +183,7 @@ export function shapeAttendanceMixPoints(
  * Per-term Present/Late/Excused/Absent counts for one AY, shaped for
  * `AttritionStackedBarChart`. Complements `getAttendanceRateTrendByAy` (which
  * keeps only the derived rate) — this keeps the sub-counts that loader
- * discards, from the SAME `React.cache()`-deduped `loadDailyRows(ay)` call,
+ * discards, from the SAME `React.cache()`-deduped `loadMarkCounts(ay)` call,
  * so this adds no extra Supabase round-trip when both are used on one page
  * render.
  */
@@ -190,7 +191,7 @@ export async function getAttendanceMixByTerm(
   ay: string
 ): Promise<AttendanceTermMixPoint[]> {
   const [rows, windows] = await Promise.all([
-    loadDailyRows(ay),
+    loadMarkCounts(ay),
     getDashboardWindows(ay),
   ]);
 
@@ -198,7 +199,10 @@ export async function getAttendanceMixByTerm(
   for (let t = 1; t <= 4; t++) {
     const range = windows.term.byNumber[t as 1 | 2 | 3 | 4];
     if (!range) continue;
-    countsByTerm.set(t, kpisFor(sliceDailyRows(rows, range.from, range.to)));
+    countsByTerm.set(
+      t,
+      kpisFromCounts(sliceMarkCounts(rows, range.from, range.to))
+    );
   }
   return shapeAttendanceMixPoints(countsByTerm);
 }
