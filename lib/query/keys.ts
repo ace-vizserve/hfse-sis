@@ -34,6 +34,12 @@ export const queryKeys = {
    */
   attendanceSectionSummary: (sectionId: string, termId: string) =>
     ['attendance-section-summary', sectionId, termId] as const,
+  /**
+   * The evaluation write-up roster. Server truth only — unsaved drafts live in
+   * component state, so a refetch can never overwrite what somebody is typing.
+   */
+  evaluationRoster: (sectionId: string, termId: string) =>
+    ['evaluation-roster', sectionId, termId] as const,
   classroomStudentDetails: (sectionId: string, studentNumber: string) =>
     ['classroom-student-details', sectionId, studentNumber] as const,
   classroomStudentDiscipline: (sectionId: string, studentNumber: string) =>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Save, Send } from 'lucide-react';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -9,6 +9,8 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { apiFetch } from '@/lib/query/fetcher';
+import { queryKeys } from '@/lib/query/keys';
 import { createClient } from '@/lib/supabase/client';
 import { isEmptyRichText } from '@/lib/rich-text';
 import type { EvaluationRosterStudent } from '@/lib/evaluation/queries';
@@ -50,32 +52,70 @@ export function WriteupRosterClient({
   roster: EvaluationRosterStudent[];
   canEdit: boolean;
 }) {
-  const [rows, setRows] = useState<RowState[]>(() =>
-    roster.map((r) => {
-      // NORMALISE ONCE, HERE, AND EVERY LATER "HAS THIS BEEN WRITTEN?" TEST
-      // STAYS A CHEAP STRING CHECK.
-      //
-      // The column holds HTML now, so a blank write-up can arrive from the
-      // database as `<p></p>` — non-empty by `.trim().length`, which is what
-      // the roster summary, the workflow pill and the Save button all use.
-      // Parsing on every render instead would mean re-parsing 30 students'
-      // write-ups on every keystroke. The editor itself never emits `<p></p>`,
-      // so once the incoming value is clean, everything downstream stays clean.
-      const writeup = isEmptyRichText(r.writeup) ? '' : (r.writeup ?? '');
-      return {
-        student_id: r.student_id,
-        index_number: r.index_number,
-        student_number: r.student_number,
-        student_name: r.student_name,
-        writeup,
-        savedWriteup: writeup,
-        submitted: r.submitted,
-        submittedAt: r.submitted_at,
-        saving: false,
-        error: null,
-      };
-    })
+  const queryClient = useQueryClient();
+
+  // ── Server truth, in the cache ──────────────────────────────────────────
+  // Seeded from the page's own render, so first paint is unchanged and this
+  // only refetches when a save invalidates it.
+  const { data: serverRoster } = useQuery({
+    queryKey: queryKeys.evaluationRoster(sectionId, termId),
+    queryFn: () =>
+      apiFetch<EvaluationRosterStudent[]>(
+        `/api/evaluation/sections/${sectionId}/roster?term=${encodeURIComponent(termId)}`
+      ),
+    initialData: roster,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  // ── Unsaved work, deliberately NOT in the cache ─────────────────────────
+  // ⚠ THE DRAFTS MUST NOT LIVE IN THE QUERY. An adviser types for minutes
+  // before pressing Save; if the text lived in query data, any refetch — a save
+  // on another row, a remount, a window focus — would replace what they are
+  // still writing with what the server last heard. Keeping drafts in their own
+  // map means a refetch can only ever move server truth, and typing is
+  // untouchable by it.
+  //
+  // A student with no entry here has no unsaved edit, so their editor shows the
+  // saved value.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [uiState, setUiState] = useState<
+    Record<string, { saving: boolean; error: string | null }>
+  >({});
+
+  const rows: RowState[] = useMemo(
+    () =>
+      serverRoster.map((r) => {
+        // NORMALISE ONCE, HERE, AND EVERY LATER "HAS THIS BEEN WRITTEN?" TEST
+        // STAYS A CHEAP STRING CHECK.
+        //
+        // The column holds HTML now, so a blank write-up can arrive from the
+        // database as `<p></p>` — non-empty by `.trim().length`, which is what
+        // the roster summary, the workflow pill and the Save button all use.
+        // Parsing on every render instead would mean re-parsing 30 students'
+        // write-ups on every keystroke. The editor itself never emits `<p></p>`,
+        // so once the incoming value is clean, everything downstream stays clean.
+        const saved = isEmptyRichText(r.writeup) ? '' : (r.writeup ?? '');
+        const ui = uiState[r.student_id];
+        return {
+          student_id: r.student_id,
+          index_number: r.index_number,
+          student_number: r.student_number,
+          student_name: r.student_name,
+          writeup: drafts[r.student_id] ?? saved,
+          savedWriteup: saved,
+          submitted: r.submitted,
+          submittedAt: r.submitted_at,
+          saving: ui?.saving ?? false,
+          error: ui?.error ?? null,
+        };
+      }),
+    [serverRoster, drafts, uiState]
   );
+
+  const setRowDraft = useCallback((studentId: string, text: string) => {
+    setDrafts((d) => ({ ...d, [studentId]: text }));
+  }, []);
 
   type SaveVars = { studentId: string; text: string; submit: boolean };
   type SaveResult = { submitted?: boolean; submitted_at?: string | null };
@@ -110,40 +150,38 @@ export function WriteupRosterClient({
       return data as SaveResult;
     },
     onMutate: ({ studentId }) => {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.student_id === studentId ? { ...r, saving: true, error: null } : r
-        )
-      );
+      setUiState((u) => ({ ...u, [studentId]: { saving: true, error: null } }));
     },
-    onSuccess: (body, { studentId, text }) => {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.student_id === studentId
-            ? {
-                ...r,
-                saving: false,
-                error: null,
-                savedWriteup: text,
-                submitted: body?.submitted ?? r.submitted,
-                submittedAt: body?.submitted_at ?? null,
-              }
-            : r
-        )
-      );
+    onSuccess: (_body, { studentId }) => {
+      setUiState((u) => ({
+        ...u,
+        [studentId]: { saving: false, error: null },
+      }));
+      // The draft has landed, so it stops being a draft — drop it and let the
+      // editor render server truth again. Doing this BEFORE the refetch is what
+      // keeps the "Saved / unsaved" indicator from flickering back to dirty.
+      setDrafts((d) => {
+        if (!(studentId in d)) return d;
+        const rest = { ...d };
+        delete rest[studentId];
+        return rest;
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluationRoster(sectionId, termId),
+      });
     },
     onError: (e, { studentId }) => {
-      // ApiError.message already equals the route's `error` body field, so the
-      // route-specific message (not a generic one) is surfaced + stored on the
-      // row as well as toasted.
+      // The Postgres error message survives — a policy rejection says which
+      // rule refused, which is more use than a generic failure.
+      //
+      // ⚠ THE DRAFT IS KEPT. A failed save must never discard what the adviser
+      // wrote; they should be able to fix the problem and press Save again with
+      // their text still on screen.
       const message = e instanceof Error ? e.message : 'save failed';
-      setRows((prev) =>
-        prev.map((r) =>
-          r.student_id === studentId
-            ? { ...r, saving: false, error: message }
-            : r
-        )
-      );
+      setUiState((u) => ({
+        ...u,
+        [studentId]: { saving: false, error: message },
+      }));
     },
   });
 
@@ -249,15 +287,17 @@ export function WriteupRosterClient({
               <div className="min-w-0">
                 <RichTextEditor
                   value={r.writeup}
-                  onChange={(next) =>
-                    setRows((prev) =>
-                      prev.map((row) =>
-                        row.student_id === r.student_id
-                          ? { ...row, writeup: next, error: null }
-                          : row
-                      )
-                    )
-                  }
+                  onChange={(next) => {
+                    setRowDraft(r.student_id, next);
+                    // Typing clears a previous failure — the message referred to
+                    // text that no longer exists.
+                    if (r.error) {
+                      setUiState((u) => ({
+                        ...u,
+                        [r.student_id]: { saving: false, error: null },
+                      }));
+                    }
+                  }}
                   disabled={!canEdit}
                   rows={4}
                   maxLength={WRITEUP_MAX}
