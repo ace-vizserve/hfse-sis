@@ -13,13 +13,13 @@ import {
   loadAcademicYearsList,
   loadActorActivity,
   loadAuditEventsUncached,
-  modulePrefixFor,
   type AcademicYearDrillRow,
   type ActorActivityDrillRow,
   type AuditDrillRow,
   type GradeChangeStepDrillRow,
   type SisAdminDrillTarget,
 } from '@/lib/sis/drill';
+import { auditModuleByKey } from '@/lib/audit/modules';
 import { createServiceClient } from '@/lib/supabase/service';
 
 const VALID_TARGETS: SisAdminDrillTarget[] = [
@@ -64,9 +64,15 @@ export async function GET(
 
   switch (target) {
     case 'audit-events': {
-      const prefix = segment ? modulePrefixFor(segment) : '';
-      rows = await loadAuditEventsUncached(prefix, range);
-      title = segment ? `Audit · ${segment}` : 'All audit events';
+      // `segment` is a module KEY from `lib/audit/modules.ts` (e.g. "markbook"),
+      // not a label and not a raw action prefix. The heading resolves back
+      // through the same list so it reads "Audit · Markbook" rather than the
+      // key, and an unknown key lists nothing instead of everything.
+      const module = segment ? auditModuleByKey(segment) : null;
+      rows = await loadAuditEventsUncached(segment ?? null, range);
+      title = segment
+        ? `Audit · ${module?.label ?? segment}`
+        : 'All audit events';
       eyebrow = 'Drill · Audit';
       break;
     }
@@ -93,7 +99,10 @@ export async function GET(
       // When a segment (actor user_id) is provided, pivot to that actor's
       // audit events instead of returning the actor list.
       if (segment) {
-        const events = await loadAuditEventsUncached('', range);
+        // null = every module. This was `''`, which used to mean "empty LIKE
+        // prefix, match everything" and now means "not a module key" — passing
+        // it here would filter this drill down to nothing.
+        const events = await loadAuditEventsUncached(null, range);
         rows = events.filter((e) => {
           // Filter by actor — we don't have actor_id on AuditDrillRow, so
           // we filter by the email match heuristic if context contains it,

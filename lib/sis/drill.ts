@@ -6,6 +6,7 @@ import {
   STAGE_TERMINAL_STATUS,
   ENROLLED_PREREQ_STAGES,
 } from '@/lib/schemas/sis';
+import { auditModuleOrFilter } from '@/lib/audit/modules';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import {
   fetchAllPages,
@@ -1190,17 +1191,27 @@ export type ActorActivityDrillRow = {
   lastEventAt: string | null;
 };
 
-const MODULE_ACTION_PREFIXES: Record<string, string> = {
-  markbook: 'sheet.',
-  entry: 'entry.',
-  pfile: 'pfile.',
-  sis: 'sis.',
-  attendance: 'attendance.',
-  evaluation: 'evaluation.',
-};
+// MODULE_ACTION_PREFIXES lived here — six slugs mapped to six prefixes, a
+// second copy of a list the chart also kept, and the two had diverged in both
+// directions: it covered 51 of 152 audit actions, and it was keyed by slug
+// while the chart emitted labels. `lib/audit/modules.ts` is now the single
+// list, covering every action and enforced by
+// `__tests__/audit/module-coverage.test.ts`.
 
+/**
+ * Audit rows for one module (or all of them when `moduleKey` is null).
+ *
+ * TAKES A MODULE KEY, NOT A PREFIX. It used to take a raw string that went
+ * straight into `.like('action', \`${prefix}%\`)`, and the caller passed the
+ * chart's display LABEL — so every drill ran `action LIKE 'Markbook — sheet%'`
+ * and returned nothing. A key is validated against `AUDIT_MODULES`; an
+ * unrecognised one now yields no rows instead of a pattern that silently
+ * matches none.
+ *
+ * A module owns several prefixes, hence `or=` rather than a single `like`.
+ */
 export async function loadAuditEventsUncached(
-  modulePrefix: string,
+  moduleKey: string | null,
   range?: { from: string; to: string }
 ): Promise<AuditDrillRow[]> {
   const service = createServiceClient();
@@ -1216,18 +1227,29 @@ export async function loadAuditEventsUncached(
   // Paginated — PostgREST caps a single response at 1000 rows; audit_log
   // already exceeds that in production, so a plain .limit() silently
   // truncates the drill sheet.
+  // An unknown key selects nothing. Returning early rather than falling through
+  // to an unfiltered query matters: a bad segment must never open the whole
+  // audit log under a heading claiming it is one module.
+  const orFilter = moduleKey === null ? null : auditModuleOrFilter(moduleKey);
+  if (moduleKey !== null && orFilter === null) return [];
+
   const rows = await fetchAllPages<AuditRow>((from, to) => {
     let q = service
       .from('audit_log')
       .select(
         'id, action, actor_email, entity_type, entity_id, context, created_at'
       )
-      .like('action', `${modulePrefix}%`)
       .order('created_at', { ascending: false });
+    if (orFilter) q = q.or(orFilter);
     if (range?.from && range?.to) {
+      // Singapore boundaries, matching the chart's own count
+      // (`lib/sis/dashboard.ts` uses +08:00). These were `Z` — eight hours
+      // adrift — so the drill listed a different day's events than the bar had
+      // counted, breaking count-equals-drill (KD #82/#124) even when the
+      // filter was right.
       q = q
-        .gte('created_at', range.from)
-        .lte('created_at', `${range.to}T23:59:59.999Z`);
+        .gte('created_at', `${range.from}T00:00:00+08:00`)
+        .lte('created_at', `${range.to}T23:59:59+08:00`);
     }
     return q.range(from, to);
   });
@@ -1371,10 +1393,6 @@ export async function loadActorActivity(range?: {
   }
   out.sort((a, b) => b.count - a.count);
   return out;
-}
-
-export function modulePrefixFor(slug: string): string {
-  return MODULE_ACTION_PREFIXES[slug] ?? slug;
 }
 
 // ─── Lifecycle aggregate drill ──────────────────────────────────────────────

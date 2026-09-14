@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
+import { AUDIT_MODULES, auditModuleOrFilter } from '@/lib/audit/modules';
 
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import type { ClassAssignmentReadinessRow } from '@/lib/sis/dashboard-select';
@@ -1029,6 +1030,9 @@ export function getWithdrawalVelocityRange(
 // Audit activity by module — for SIS admin dashboard.
 
 export type AuditModulePoint = {
+  /** Stable module id — what a drill segment carries. */
+  moduleKey: string;
+  /** Display name for the chart axis. */
   module: string;
   count: number;
 };
@@ -1037,14 +1041,13 @@ async function loadAuditActivityByModuleUncached(
   input: RangeInput
 ): Promise<RangeResult<AuditModulePoint[]>> {
   const service = createServiceClient();
-  const modules: Array<{ key: string; label: string }> = [
-    { key: 'sheet.', label: 'Markbook — sheet' },
-    { key: 'entry.', label: 'Markbook — entry' },
-    { key: 'pfile.', label: 'P-Files' },
-    { key: 'sis.', label: 'SIS' },
-    { key: 'attendance.', label: 'Attendance' },
-    { key: 'evaluation.', label: 'Evaluation' },
-  ];
+
+  // Modules come from `lib/audit/modules.ts`, shared with the drill this chart
+  // opens. The six prefixes hardcoded here before covered 51 of 152 audit
+  // actions, so 51% of rows — every `enrolment.`, `user.`, `student.`,
+  // `publication.` and `ay.` event — were counted in no module and the chart
+  // answered "where is the system most active" from half the data.
+  const modules = AUDIT_MODULES;
 
   async function countsFor(
     from: string,
@@ -1054,13 +1057,18 @@ async function loadAuditActivityByModuleUncached(
     // current[i] to comparison[i] deterministically.
     const results = await Promise.all(
       modules.map(async (m) => {
-        const { count } = await service
+        // A module owns several prefixes, so this is an `or=` of LIKEs rather
+        // than one `.like()`. Built from the same helper the drill uses, which
+        // is what keeps the bar's count and the drill's row list equal.
+        const filter = auditModuleOrFilter(m.key);
+        let q = service
           .from('audit_log')
           .select('id', { count: 'exact', head: true })
-          .like('action', `${m.key}%`)
           .gte('created_at', `${from}T00:00:00+08:00`)
           .lte('created_at', `${to}T23:59:59+08:00`);
-        return { module: m.label, count: count ?? 0 };
+        if (filter) q = q.or(filter);
+        const { count } = await q;
+        return { moduleKey: m.key, module: m.label, count: count ?? 0 };
       })
     );
     return results;
