@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   Card,
   CardAction,
@@ -18,7 +19,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { AuditLogDataTable, type MergedRow } from './audit-log-data-table';
+import {
+  AuditLogDataTable,
+  type MergedRow,
+} from '@/components/audit/audit-log-data-table';
 
 // Explicit allowlist — every action emitted by the markbook module.
 // Positive filter prevents non-markbook prefixes from leaking in
@@ -66,6 +70,8 @@ export default async function AuditLogPage({
     sheet_id?: string;
     action?: string;
     actor?: string;
+    from?: string;
+    to?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -99,25 +105,24 @@ export default async function AuditLogPage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  // Validate action filter against allowlist to prevent injection
-  const actionFilter =
-    params.action &&
-    (MARKBOOK_AUDIT_ALLOWLIST as readonly string[]).includes(params.action)
-      ? params.action
-      : null;
-  const actorFilter =
-    params.actor && params.actor.trim().length > 0 ? params.actor.trim() : null;
+  // Action is validated against the allowlist to prevent injection; the date
+  // window is validated and applied server-side for the same reason the other
+  // two are — see lib/audit/filters.ts.
+  const filters = parseAuditFilters(params, MARKBOOK_AUDIT_ALLOWLIST);
+  const actionFilter = filters.action;
+  const actorFilter = filters.actor;
 
-  let q = supabase
-    .from('audit_log')
-    .select(
-      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-      { count: 'exact' }
-    )
-    .in('action', MARKBOOK_AUDIT_ALLOWLIST);
+  let q = applyAuditFilters(
+    supabase
+      .from('audit_log')
+      .select(
+        'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+        { count: 'exact' }
+      )
+      .in('action', MARKBOOK_AUDIT_ALLOWLIST),
+    filters
+  );
 
-  if (actionFilter) q = q.eq('action', actionFilter);
-  if (actorFilter) q = q.eq('actor_email', actorFilter);
   if (params.sheet_id)
     q = q.contains('context', { grading_sheet_id: params.sheet_id });
 
@@ -256,6 +261,8 @@ export default async function AuditLogPage({
         initialSheetIdFilter={params.sheet_id ?? null}
         currentAction={actionFilter}
         currentActor={actorFilter}
+        currentFrom={filters.from}
+        currentTo={filters.to}
         actionOptions={[...MARKBOOK_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         canExport={canExport}

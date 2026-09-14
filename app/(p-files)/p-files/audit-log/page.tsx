@@ -17,15 +17,24 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   AuditLogDataTable,
   type MergedRow,
-} from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
+} from '@/components/audit/audit-log-data-table';
 
 export default async function PFilesAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    pageSize?: string;
+    action?: string;
+    actor?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -43,8 +52,6 @@ export default async function PFilesAuditLogPage({
   const page = Math.max(Number(params.page ?? 1), 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
-  const actorFilter = params.actor?.trim();
-
   const supabase = await createClient();
 
   const PFILES_AUDIT_ALLOWLIST = [
@@ -58,19 +65,24 @@ export default async function PFilesAuditLogPage({
     'sis.documents.auto-revive',
   ] as const;
 
-  let q = supabase
-    .from('audit_log')
-    .select(
-      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-      { count: 'exact' }
+  const filters = parseAuditFilters(params, PFILES_AUDIT_ALLOWLIST);
+
+  const [actorOptions, logResult] = await Promise.all([
+    loadAuditActorEmails(supabase, PFILES_AUDIT_ALLOWLIST, 'p-files'),
+    applyAuditFilters(
+      supabase
+        .from('audit_log')
+        .select(
+          'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+          { count: 'exact' }
+        )
+        .in('action', PFILES_AUDIT_ALLOWLIST),
+      filters
     )
-    .in('action', PFILES_AUDIT_ALLOWLIST);
-
-  if (actorFilter) q = q.eq('actor_email', actorFilter);
-
-  const { data, count, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to);
+      .order('created_at', { ascending: false })
+      .range(from, to),
+  ]);
+  const { data, count, error } = logResult;
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -180,6 +192,12 @@ export default async function PFilesAuditLogPage({
 
       <AuditLogDataTable
         rows={rows}
+        currentAction={filters.action}
+        currentActor={filters.actor}
+        currentFrom={filters.from}
+        currentTo={filters.to}
+        actionOptions={[...PFILES_AUDIT_ALLOWLIST]}
+        actorOptions={actorOptions}
         canExport={canExport}
         pagination={{
           page,

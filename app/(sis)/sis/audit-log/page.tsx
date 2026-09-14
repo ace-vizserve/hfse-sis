@@ -4,10 +4,12 @@ import { AlertTriangle, ListChecks, Settings2, Users } from 'lucide-react';
 import { HubStat } from '@/components/sis/hub-stat';
 import { type DashboardSearchParams } from '@/lib/dashboard/range';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   AuditLogDataTable,
   type MergedRow,
-} from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
+} from '@/components/audit/audit-log-data-table';
 
 // Config-axis actions owned by SIS Admin. Student-record-axis actions
 // (sis.profile.update, student.section.transfer, ay.*, pfile.*, etc.)
@@ -116,7 +118,10 @@ type SisAuditLogSearchParams = DashboardSearchParams & {
   view?: string;
   page?: string;
   pageSize?: string;
+  action?: string;
   actor?: string;
+  from?: string;
+  to?: string;
 };
 
 // The Log cut — the paginated, allowlisted table. Session and role are guarded
@@ -143,23 +148,26 @@ export default async function SisAuditLogPage({
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    const actorFilter = params.actor?.trim();
+    const filters = parseAuditFilters(params, SIS_AUDIT_ALLOWLIST);
 
     const supabase = await createClient();
 
-    let q = supabase
-      .from('audit_log')
-      .select(
-        'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-        { count: 'exact' }
+    const [actorOptions, logResult] = await Promise.all([
+      loadAuditActorEmails(supabase, SIS_AUDIT_ALLOWLIST, 'sis'),
+      applyAuditFilters(
+        supabase
+          .from('audit_log')
+          .select(
+            'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+            { count: 'exact' }
+          )
+          .in('action', SIS_AUDIT_ALLOWLIST),
+        filters
       )
-      .in('action', SIS_AUDIT_ALLOWLIST);
-
-    if (actorFilter) q = q.eq('actor_email', actorFilter);
-
-    const { data, count, error } = await q
-      .order('created_at', { ascending: false })
-      .range(from, to);
+        .order('created_at', { ascending: false })
+        .range(from, to),
+    ]);
+    const { data, count, error } = logResult;
 
     const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -206,6 +214,8 @@ export default async function SisAuditLogPage({
       totalPages,
       uniqueActors,
       configChanges,
+      filters,
+      actorOptions,
     };
   })();
 
@@ -262,6 +272,12 @@ export default async function SisAuditLogPage({
 
       <AuditLogDataTable
         rows={logView.rows}
+        currentAction={logView.filters.action}
+        currentActor={logView.filters.actor}
+        currentFrom={logView.filters.from}
+        currentTo={logView.filters.to}
+        actionOptions={[...SIS_AUDIT_ALLOWLIST]}
+        actorOptions={logView.actorOptions}
         canExport={sessionUser.role === 'superadmin'}
         pagination={{
           page: logView.page,

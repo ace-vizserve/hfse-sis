@@ -89,6 +89,9 @@ type Props = {
   currentActor?: string | null;
   actionOptions?: string[];
   actorOptions?: string[];
+  /** Server-side date window, same reason as the two above. ISO yyyy-mm-dd. */
+  currentFrom?: string | null;
+  currentTo?: string | null;
   canExport?: boolean;
   pagination?: PaginationInfo;
 };
@@ -100,18 +103,6 @@ function toIsoDay(d: Date): string {
 
 function formatDay(d: Date): string {
   return d.toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
-}
-
-function startOfDay(d: Date): Date {
-  const n = new Date(d);
-  n.setHours(0, 0, 0, 0);
-  return n;
-}
-
-function endOfDay(d: Date): Date {
-  const n = new Date(d);
-  n.setHours(23, 59, 59, 999);
-  return n;
 }
 
 const COLUMNS: ColumnDef<MergedRow>[] = [
@@ -211,16 +202,20 @@ export function AuditLogDataTable({
   currentActor = null,
   actionOptions = [],
   actorOptions = [],
+  currentFrom = null,
+  currentTo = null,
   canExport = false,
   pagination,
 }: Props) {
   const router = useRouter();
 
-  // Action + Actor are filtered SERVER-side (the log is server-paginated, so a
-  // client facet would only filter the loaded page). Each Select writes a URL
-  // param and resets to page 1; the page RSC re-queries.
+  // Every filter is SERVER-side, because the log is server-paginated: a
+  // client-side facet can only ever filter the page you are looking at, so it
+  // reports "3 results" out of the 50 rows that happen to be loaded and hides
+  // the rest of the match. Each control writes a URL param and resets to page
+  // 1; the page RSC re-queries.
   const setServerParam = React.useCallback(
-    (key: 'action' | 'actor', value: string) => {
+    (key: 'action' | 'actor' | 'from' | 'to', value: string) => {
       const params = new URLSearchParams(window.location.search);
       if (value && value !== 'all') params.set(key, value);
       else params.delete(key);
@@ -229,6 +224,28 @@ export function AuditLogDataTable({
     },
     [router]
   );
+
+  const setDateWindow = React.useCallback(
+    (range: DateRange | undefined) => {
+      const params = new URLSearchParams(window.location.search);
+      if (range?.from) params.set('from', toIsoDay(range.from));
+      else params.delete('from');
+      if (range?.to) params.set('to', toIsoDay(range.to));
+      else params.delete('to');
+      params.delete('page');
+      router.push(`?${params.toString()}`);
+    },
+    [router]
+  );
+
+  const hasAnyFilter = Boolean(
+    currentAction || currentActor || currentFrom || currentTo
+  );
+  const clearAllFilters = React.useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    for (const k of ['action', 'actor', 'from', 'to', 'page']) params.delete(k);
+    router.push(params.toString() ? `?${params.toString()}` : '?');
+  }, [router]);
 
   const [exportRange, setExportRange] = React.useState<DateRange | undefined>(
     undefined
@@ -242,25 +259,29 @@ export function AuditLogDataTable({
   const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
     initialSheetIdFilter ?? null
   );
-  const [dateRange, setDateRange] = React.useState<DateRange | undefined>(
-    undefined
-  );
+  // ⚠ THE DATE WINDOW COMES FROM THE URL, NOT FROM LOCAL STATE.
+  //
+  // It used to be `useState` + a `.filter()` over `rows` — a client facet on a
+  // server-paginated list, which is exactly what the comment above the action
+  // and actor filters warns against. Picking a week would keep only the rows of
+  // the CURRENT PAGE that fell inside it and silently drop every match on every
+  // other page, so a real filter looked like an empty log.
+  const dateRange: DateRange | undefined = React.useMemo(() => {
+    if (!currentFrom && !currentTo) return undefined;
+    return {
+      from: currentFrom ? new Date(`${currentFrom}T00:00:00`) : undefined,
+      to: currentTo ? new Date(`${currentTo}T00:00:00`) : undefined,
+    };
+  }, [currentFrom, currentTo]);
   const [dateRangeOpen, setDateRangeOpen] = React.useState(false);
 
-  // Apply date + sheet-id pre-filters before passing to DataTable
+  // Only the sheet chip is still a client filter, and it may stay one: it
+  // narrows to a single sheet the user arrived from, not to a window that could
+  // span pages.
   const filteredRows = React.useMemo(() => {
-    let data = rows;
-    if (sheetIdFilter) data = data.filter((r) => r.sheet_id === sheetIdFilter);
-    if (dateRange?.from) {
-      const from = startOfDay(dateRange.from).getTime();
-      const to = dateRange.to ? endOfDay(dateRange.to).getTime() : Infinity;
-      data = data.filter((r) => {
-        const ts = new Date(r.at).getTime();
-        return ts >= from && ts <= to;
-      });
-    }
-    return data;
-  }, [rows, sheetIdFilter, dateRange]);
+    if (!sheetIdFilter) return rows;
+    return rows.filter((r) => r.sheet_id === sheetIdFilter);
+  }, [rows, sheetIdFilter]);
 
   // Toolbar leading: server-side Action + Actor filters, date-range, sheet chip
   const toolbarLeading = (
@@ -327,7 +348,7 @@ export function AuditLogDataTable({
           <Calendar
             mode="range"
             selected={dateRange}
-            onSelect={setDateRange}
+            onSelect={setDateWindow}
             numberOfMonths={2}
             captionLayout="dropdown"
           />
@@ -336,7 +357,7 @@ export function AuditLogDataTable({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setDateRange(undefined)}
+              onClick={() => setDateWindow(undefined)}
               disabled={!dateRange?.from}
             >
               Clear
@@ -368,6 +389,23 @@ export function AuditLogDataTable({
             <X className="h-3 w-3" />
           </button>
         </Badge>
+      )}
+
+      {/* Only once something is actually filtered — an always-present "Clear"
+          on an unfiltered table is a button that does nothing. Attendance's
+          own copy of this table had one and the other six did not; this is
+          that idea, kept, and now on all of them. */}
+      {hasAnyFilter && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8"
+          onClick={clearAllFilters}
+        >
+          <X className="h-3.5 w-3.5" />
+          Clear filters
+        </Button>
       )}
     </>
   );

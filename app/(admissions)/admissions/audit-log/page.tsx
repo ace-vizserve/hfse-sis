@@ -12,10 +12,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   AuditLogDataTable,
   type MergedRow,
-} from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
+} from '@/components/audit/audit-log-data-table';
 
 // Admissions-relevant audit actions per KD #42 / KD #70.
 // `sis.*` prefix covers identity + stage + doc edits made by the admissions
@@ -41,7 +43,14 @@ const ADMISSIONS_AUDIT_ACTIONS = [
 export default async function AdmissionsAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    pageSize?: string;
+    action?: string;
+    actor?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -61,25 +70,28 @@ export default async function AdmissionsAuditLogPage({
   const page = Math.max(Number(params.page ?? 1), 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
-  const actorFilter = params.actor?.trim();
+  const filters = parseAuditFilters(params, ADMISSIONS_AUDIT_ACTIONS);
 
   const supabase = await createClient();
 
   // Widen prefix filter per KD #83: section transfers emit student.*, AY
   // accepting-applications toggles emit ay.*, so limit to sis.% missed them.
-  let q = supabase
-    .from('audit_log')
-    .select(
-      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-      { count: 'exact' }
+  const [actorOptions, logResult] = await Promise.all([
+    loadAuditActorEmails(supabase, ADMISSIONS_AUDIT_ACTIONS, 'admissions'),
+    applyAuditFilters(
+      supabase
+        .from('audit_log')
+        .select(
+          'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+          { count: 'exact' }
+        )
+        .in('action', ADMISSIONS_AUDIT_ACTIONS),
+      filters
     )
-    .in('action', ADMISSIONS_AUDIT_ACTIONS);
-
-  if (actorFilter) q = q.eq('actor_email', actorFilter);
-
-  const { data, count, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to);
+      .order('created_at', { ascending: false })
+      .range(from, to),
+  ]);
+  const { data, count, error } = logResult;
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -176,6 +188,12 @@ export default async function AdmissionsAuditLogPage({
 
       <AuditLogDataTable
         rows={rows}
+        currentAction={filters.action}
+        currentActor={filters.actor}
+        currentFrom={filters.from}
+        currentTo={filters.to}
+        actionOptions={[...ADMISSIONS_AUDIT_ACTIONS]}
+        actorOptions={actorOptions}
         canExport={canExport}
         pagination={{
           page,

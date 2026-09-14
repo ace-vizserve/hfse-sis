@@ -12,15 +12,24 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   AuditLogDataTable,
   type MergedRow,
-} from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
+} from '@/components/audit/audit-log-data-table';
 
 export default async function SisAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; pageSize?: string; actor?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    pageSize?: string;
+    action?: string;
+    actor?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -93,21 +102,24 @@ export default async function SisAuditLogPage({
     'discipline.record.file',
     'discipline.record.update',
   ] as const;
-  const actorFilter = params.actor?.trim();
+  const filters = parseAuditFilters(params, RECORDS_AUDIT_ALLOWLIST);
 
-  let q = supabase
-    .from('audit_log')
-    .select(
-      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-      { count: 'exact' }
+  const [actorOptions, logResult] = await Promise.all([
+    loadAuditActorEmails(supabase, RECORDS_AUDIT_ALLOWLIST, 'records'),
+    applyAuditFilters(
+      supabase
+        .from('audit_log')
+        .select(
+          'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+          { count: 'exact' }
+        )
+        .in('action', RECORDS_AUDIT_ALLOWLIST),
+      filters
     )
-    .in('action', RECORDS_AUDIT_ALLOWLIST);
-
-  if (actorFilter) q = q.eq('actor_email', actorFilter);
-
-  const { data, count, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to);
+      .order('created_at', { ascending: false })
+      .range(from, to),
+  ]);
+  const { data, count, error } = logResult;
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
@@ -204,6 +216,12 @@ export default async function SisAuditLogPage({
       <AuditLogDataTable
         rows={rows}
         canExport={canExport}
+        currentAction={filters.action}
+        currentActor={filters.actor}
+        currentFrom={filters.from}
+        currentTo={filters.to}
+        actionOptions={[...RECORDS_AUDIT_ALLOWLIST]}
+        actorOptions={actorOptions}
         pagination={{
           page,
           pageSize: PAGE_SIZE,
