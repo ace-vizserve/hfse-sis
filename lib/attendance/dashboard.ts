@@ -85,15 +85,86 @@ async function loadDailyRowsUncached(ayCode: string): Promise<DailyRow[]> {
   // Chunk size is the shared default (200) rather than the old local 100 —
   // ~7.4KB of filter against a measured ~14.3KB ceiling, so still conservative,
   // and it halves the number of chunks.
-  return fetchInChunks<DailyRow>(studentRowIds, (slice) =>
-    fetchAllPages<DailyRow>((from, to) =>
+  // ⚠ ORDERING IS LOAD-BEARING, AND SO IS THE `id` TIE-BREAK.
+  //
+  // `attendance_daily` is an append-only ledger: a correction is a NEW row that
+  // supersedes the old one by `recorded_at desc`. This read had no ordering and
+  // no dedupe, so every corrected mark was counted TWICE — measured on live
+  // AY2026: 48,574 rows over 48,401 real (student, date) pairs, 106 of them
+  // marks whose value had actually changed. An absence corrected to Excused
+  // still counted as an absence, in the KPIs, the EX-reason mix and the
+  // top-absentees ranking.
+  //
+  // `recorded_at desc` alone is not enough. A class register submit writes one
+  // row per student in a single statement, so ~25 rows share one `recorded_at`
+  // to the microsecond, and PostgREST is free to order tied rows differently on
+  // each `.range()` request — a tie straddling a page boundary then repeats
+  // rows on the next page and skips others. `.order('id')` breaks every tie the
+  // same way on every page. It is a TIE-break only; `recorded_at desc` still
+  // decides which correction wins. Same reasoning as
+  // `lib/attendance/queries.ts::listDailyEntries`, which walks 1,610 rows —
+  // this walks ~48,000, so it crosses far more page boundaries.
+  //
+  // Ordering columns need not be selected, so only `period_id` is added to the
+  // payload — it is part of the dedupe key (migration 014 keys the ledger on
+  // `(section_student_id, date, period_id)`; it is NULL everywhere today, but
+  // keying on it now means a future multi-period day is not silently collapsed
+  // into one mark).
+  //
+  // Chunking stays safe: a student belongs to exactly one chunk, so ordering
+  // only has to hold WITHIN a chunk, which it does.
+  const raw = await fetchInChunks<DailyRowRaw>(studentRowIds, (slice) =>
+    fetchAllPages<DailyRowRaw>((from, to) =>
       service
         .from('attendance_daily')
-        .select('date, status, ex_reason, section_student_id')
+        .select('date, status, ex_reason, section_student_id, period_id')
         .in('section_student_id', slice)
+        // Grouped order, not global order. The dedupe only needs the latest row
+        // FIRST WITHIN each (student, date) group — it does not care how groups
+        // are ordered relative to each other, and neither do the consumers,
+        // which all reduce into maps.
+        //
+        // That freedom is worth taking: this leading triple matches migration
+        // 014's `(section_student_id, date desc, recorded_at desc)` index
+        // exactly, so Postgres walks the index instead of sorting ~48k rows.
+        // A global `recorded_at desc` matched no index and measured ~700ms
+        // slower for an ordering nothing needed.
+        .order('section_student_id', { ascending: true })
+        .order('date', { ascending: false })
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(from, to)
     )
   );
+
+  return dedupeLatestMarks(raw);
+}
+
+/** A ledger row as fetched, before superseded entries are dropped. */
+export type DailyRowRaw = DailyRow & { period_id: string | null };
+
+/**
+ * Keep only the surviving mark for each (student, date, period).
+ *
+ * Pure, and exported so the rule can be tested without a database. Assumes the
+ * caller fetched in `recorded_at desc, id asc` order — the FIRST row seen for a
+ * key is therefore the latest one, and everything after it is history.
+ */
+export function dedupeLatestMarks(rows: readonly DailyRowRaw[]): DailyRow[] {
+  const seen = new Set<string>();
+  const out: DailyRow[] = [];
+  for (const r of rows) {
+    const key = `${r.section_student_id}|${r.date}|${r.period_id ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      date: r.date,
+      status: r.status,
+      ex_reason: r.ex_reason,
+      section_student_id: r.section_student_id,
+    });
+  }
+  return out;
 }
 
 // loadDailyRows: request-scoped memoization via React's cache(), NOT
