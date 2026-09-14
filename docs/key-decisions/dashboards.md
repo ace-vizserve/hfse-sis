@@ -63,3 +63,27 @@ Dashboard scope correctness — term-scoped count==drill, current-term picker de
 ### KD #128
 
 Academic Summary drill sheets — client-side, in-memory (Sprint 57, 2026-06-06). The Academic Summary dashboard (`/records/academic-summary`, KD #127/#122) was monitoring-only — most aggregates were dead-ends. Six high-value aggregates are now clickable → a sheet listing the students behind the number. **Crucially this is NOT the KD #56 drill framework** (no API route, no `unstable_cache`, no lazy fetch): this dashboard is computed **entirely client-side from the full `MasterfilePayload` already in the browser**, so a "drill" just derives a subset of rows already loaded. **Drillable (6):** Grades recorded / Comments in / Full results / "Still coming in" groups (completeness) + award tiers + GA bands (outcomes). Skipped (lower value): Sheets locked, Attendance, Subject performance; "Standing out" already links to Records. **count == drill is structural** (KD #124 lesson): `buildMasterfileDrillRows(payload, filters, target)` (`lib/markbook/masterfile-drill.ts`, pure + unit-tested) and `computeMasterfileDashboard` share the **same exported predicates** (`enrolledScopeRows`/`awardTierForRow`/`gaBandTierForRow`/`studentHasMissingGradeInScope`/…) — no duplication. The one subtlety: the cards count **cells / write-up slots** while the drills list **students**, so (a) `incomplete-results` includes zero-examinable-row students so its count equals the card's `rosterCount − gradableCount` gap, and (b) the unit is surfaced in-UI — the drill sheet carries a `description` + a **self-labeling badge** ("N students" / "N sheets"), and `ActionList` gained an optional `metaLabel` so "Still coming in" rows read in their own unit ("6 cells", "3 sheets", "4 comments"). **Component** `components/markbook/masterfile-drill-sheet.tsx` — shadcn `Sheet` + plain bounded `<table>` (no TanStack/virtualization), names via `<IdentifierLink>` → Records (KD #81), enrollment `<StatusBadge>`. Award/GA drills fire from accessible legend/band **buttons** (not chart-internal onClick — the shared `DonutChart`/`ComparisonBarChart` are untouched). Drills respect the active Term/Subject/Status filters. Lib + components live in `lib/markbook`/`components/markbook` per KD #127 (they read grade data). Not Hard Rule #2 — that governs _grade computation_ (server-side); these are display-only aggregates over already-computed data, like the KD #122 dashboard. No migration.
+
+---
+
+### KD #213
+
+**Dashboards are scoped by a date range; term-based Insights are scoped by a TERM** (2026-09-15). Mr Ace's principle, checked against the data before building.
+
+**The split already existed in the code** as which presets went in the picker — `TERM_SCOPED_PRESETS` (`thisTerm, t1…t4, thisAY, custom`) for attendance/evaluation/markbook, `FLEXIBLE_PRESETS` for admissions/p-files/records. On a term module the presets **are** terms; the date picker was a term selector in a costume.
+
+**Dashboards keep the date range — all six, no exceptions.** Every one draws a day-level series: daily attendance trend, grade-entry velocity, applications per day, new students per day, submissions per day, document replacements over time. A term-only control would break those. The comparison there is already honest: the immediately preceding window of **equal length** (`cmpTo = from-1`, `cmpFrom = cmpTo-(length-1)`).
+
+**Only ONE Insights page needed the change.** Markbook, Admissions and Records insights have **no windowed figure at all** — every number is an AY-level cohort measure (Population by level, Nationality mix, Retention, Attrition) or an already-complete breakdown (Term-over-term movement, Applications per month). A term selector there would have nothing to act on. They are correct as compare-AY only, which is also what `20-dashboards.md` specifies: scope lines carry _"the date range (dashboards) or the compared-against academic year (Insights)"_.
+
+🔴 **The date range on attendance Insights was producing a FALSE comparison.** The page resolved a free range, then recovered the term by string-matching the window against each term's dates:
+
+```ts
+.find(([, w]) => w && w.from === rangeInput.from && w.to === rangeInput.to)
+```
+
+When that failed — precisely when somebody used the freedom a date picker is for — it fell through to `resolveRange({}, compareWindows, compareAy, { defaultPreset: 'thisAY' })`: **your custom window against the comparison year's entire year**, labelled like-for-like. Naming the term makes the alignment exact and removes the failure mode. **There is no whole-year fallback now** — if the comparison year has no dates for that term, no comparison is drawn.
+
+⚠ **Terms are not the same length across years.** Calendar days measured: AY2025 `T1=68 T2=68 T3=67 T4=61`, AY2026 `T1=65 T2=66 T3=68 T4=67`. T4 differs by 10%. Rates compare cleanly; **raw counts do not** — worth a denominator note on any count tile.
+
+⚠ **Applied bluntly, "term modules get a term selector" would have stripped the date range off five dashboards and broken six daily charts.** The principle describes which _Insights_ page needs a term scope, not a term-vs-non-term split across the app.

@@ -89,3 +89,19 @@ Two rules, both **no-ops at the start of an AY** so the SOW workflow keeps zero 
 - **Still unbuilt:** Koh said "the subject teacher **or the FCA**". A form class adviser has no grading sheet, so none of this reaches them. That half needs a different surface in a different module and is the larger part of what she asked for.
 
 **Do not build same-slot-across-terms comparison.** Slots are array positions with index-positional free-text labels; the arrays resize per sheet; KD #105 records 1,662 scored-but-unlabeled pairs that are permanently grandfathered; and the labels carry page numbers — i.e. sequential curriculum, not repeated instruments. Even executed perfectly, comparing a fractions quiz to a geometry quiz is noise dressed as signal. **Components are normalised percentages and comparable; slots are not.**
+
+---
+
+### KD #211
+
+**A grading sheet lists the ROSTER, not the grade rows** (2026-09-15, migration 156).
+
+The page loaded its students with `from('grade_entries')`, so it could only draw a child who already had a row on that sheet. A student placed after the sheet was generated **disappeared from their own teacher's sheet**.
+
+Everything built around that was a workaround. The page called `seed_grade_entries_for_sheet` **on every render** to manufacture blank rows — a write on a page view, measured at 71–121ms, awaited before the page's parallel fetches. Its own comment claimed it was "typically a no-op insert"; five of five sampled sheets were each missing two or three students, and **929 rows across 469 sheets** were still absent. Seeding those rows earlier (a trigger at placement) was tried first and rejected: it keeps the false requirement that a blank row must exist before a student is visible, and only moves who creates it. Mr Ace: _"its simple students should just show bruh."_
+
+**Now:** the page reads `section_students` and attaches whatever grade row exists. `entry_id: ''` means unscored, not absent. Nothing needs a row in advance, so nothing seeds one — not on render, not at placement. The **first saved score creates the row**, via `upsert` on the `(grading_sheet_id, section_student_id)` unique constraint (migration 035), so two teachers typing the same child's first score produce one row rather than a duplicate. Migration 156 adds the matching INSERT policy; 152 had deliberately left INSERT denied on the reasoning that only the seeder created rows.
+
+⚠ **The grid's row identity had to change with it.** It keyed React rows, `savedRowsRef` and every commit callback on `entry_id`, which worked only because every student was guaranteed a pre-created row — the very thing the render-time write existed to guarantee. Unscored students all share `''`, so rows are keyed on `section_student_id` now. **`tsc` cannot catch that** (both are `string`); the tests did, because two fixtures had been sharing one `section_student_id` all along. `StudentAlertRow.entryId` was renamed `rowId` rather than left holding something that is not an entry id.
+
+`seed_grade_entries_for_sheet` survives as a manual repair and is still called by `create_grading_sheets_for_ay`; it is simply off the read path.

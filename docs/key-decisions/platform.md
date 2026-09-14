@@ -627,3 +627,41 @@ app_metadata.active_role = 'teacher'                     // what it IS right now
   - Ladder rows match their config step by `config_stage_id`; the label is only a fallback for old rows.
 - ⚠ **Decisions carry no FK to `auth.users`** (history must survive account deletion). Deleting an account re-points the steps it was on. Readiness flags a turned-off account on an "everyone" step as blocking.
 - 🔴 **Apply 146 before deploying.** Every approver or rule edit calls the new RPC.
+
+---
+
+### KD #210
+
+**Writes go straight to Supabase, and the rules that guarded them live in Postgres** (2026-09-14/15, migrations 149, 150, 151, 152, 153, 154, 156, 157). Attendance marks, evaluation write-ups and grading scores.
+
+**The problem.** Every write went `client → API route → service-role client → page re-render`, and `useWriteAction` **awaited** that re-render before reporting success. Measured: 800ms–3.3s per cell, with the grid locked throughout, for a mark the teacher could already see. Mr Ace's diagnosis, and it was right: _"my VITE SPA parent portal is fast because its directly interacting with supabase"_.
+
+**The shape now.** `supabase.from(...).insert/upsert(...)` from the browser; the row comes back with everything the trigger derived. The awaited refresh is gone — the one number it existed for (stat cards, "Graded n/N") is a client component fed from rows already in memory or one small query.
+
+**What had to move, per surface:**
+
+| Was enforced by the route                                           | Now                            |
+| ------------------------------------------------------------------- | ------------------------------ |
+| who may write                                                       | RLS insert/update policies     |
+| closed-day / locked-sheet gate                                      | policy clause + BEFORE trigger |
+| derived values (rollups, `submitted_at`, the whole grading formula) | triggers                       |
+| one audit row per user action                                       | AFTER trigger                  |
+
+**Hard Rule #2 is satisfied in Postgres now.** `compute_quarterly` is a line-by-line port of `lib/compute/quarterly.ts` — **`double precision`, not `numeric`**, because JavaScript has one number type and `double precision` is that same type with the same rounding; operator order copied rather than simplified, since in floating point `(sum/max)*100` and `sum*100/max` are different expressions. `quarterly_grade` is floored from the **unrounded** initial, then rounded for storage — the other order changes the answer at a boundary. Migration 152 asserts the canonical 93 at apply time and aborts if it fails. `scripts/verify-grading-formula-port.perf.ts` proves it against the real TS module on **all 21,280 stored entries**.
+
+🔴 **THE LESSON THAT COST TWO MIGRATIONS: A TRIGGER FIRES FOR EVERY WRITER, A ROUTE DOES NOT.** 152 shipped two data-loss bugs, both because rules that were harmless in the route became destructive as triggers — the fragile rows all sit on **locked** sheets the route could never reach, while a trigger has no such luck.
+
+- **153** — the derive trigger erased imported grades. 3,476 entries hold a final grade with **no component marks**; the formula returns null and a bulk `UPDATE` (`create_grading_sheets_for_ay` step 3) would have wiped them.
+- **154** — normalisation deleted marks. **232 of 1,116 sheets have no maxes configured**, so rebuilding score arrays to the sheet's slot count emptied them: **3,908 marks across 513 entries**.
+
+The guard, in its general form: **derive only when something meaningful can be derived, and never let a computed null overwrite a stored value.** `coalesce(new.col, old.col)` keeps an explicitly supplied value winning, so imports still write; only a null meaning "I could not work this out" is refused. Pad arrays, never truncate.
+
+**Before porting a rule into a trigger, query production for rows that violate its assumptions.** Do it first, not after.
+
+⚠ **The route does not disappear.** Post-lock grade edits stay on it — an approved change request applied through an atomic RPC, the request flipped, the requester emailed, `grade_audit_log` appended with a server-derived `approval_reference` (Hard Rule #5). The RLS policy refuses a browser write to a locked sheet outright, so the split cannot be bypassed by sending the direct path instead. The first score in a slot also stays on the route, because its activity description lives on `grading_sheets`, which a browser cannot write.
+
+⚠ **Audit triggers fire only for a signed-in caller** (`auth.uid()` present). The service role has none, and the route still writes its own rows for the paths it keeps — without the check every post-lock correction would be logged twice, the second time without an approval reference, making an approved change look unapproved.
+
+**Verified from both sides.** Triggers by the formula and no-erase probes; **policies** by `scripts/verify-write-policies.perf.ts` + migration 157's read-only `rls_probe_*` functions, which evaluate a policy as a given user by setting `request.jwt.claims` **local to the transaction**. That gap was real: every other script runs as the service role, which bypasses RLS by definition, and an admin click-test cannot close it either because `is_registrar_or_above()` short-circuits these policies. 178 evaluations, 60 on the can-write path, zero wrong.
+
+⚠ **A green policy run is not automatically a proof.** The first one passed having exercised "a teacher can save" **twice in 120 evaluations** — `.find()` kept returning locked sheets (848 of 1,116 are locked). Refusals are easy to get right by accident: a policy denying everyone passes every negative assertion. The script now asserts the positive path stays above 10. Its next failure was also the test's fault, not the policy's — teachers hold several assignments in one section, so a "not theirs" sheet must exclude **every** pair that teacher holds.

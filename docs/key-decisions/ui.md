@@ -245,3 +245,31 @@ And `/attendance/declarations` was **the only staff queue that had never opted i
 **`Textarea` is retired** — kept in `components/ui/` as the shadcn primitive, imported by nothing, guarded by `__tests__/ui/textarea-retired.test.ts`. The risk that guard covers is not a revert; it is the next multi-line field, added months from now, reaching for the plain box because it is still sitting there looking like a normal choice.
 
 ⚠ **PROCESS, AND IT WAS MY ERROR.** I handed the sub-agents a **sampled** list of schemas to convert rather than making them sweep. Four gates were missed and every one was found later by an agent swapping call sites — including the two parent-facing ones. `feedback_exhaustive_audits` already says this. **Enumerate the class, then assign it; do not assign a list of examples.** Separately: several agents sharing one working tree raced on the git index, and a bare `git add` repeatedly swept another agent's staged files into the wrong commit. No work was lost, but **`git add <pathspec> && git commit` must be one command**.
+
+---
+
+### KD #212
+
+**One audit-log table for all seven modules, and every filter is server-side** (2026-09-15).
+
+Mr Ace: _"audit log pages are not sharing identical page layout, table filters etc which is weird as fuck… filters in audit log, like actors date range picker and all actions dropdown select not working too."_ Both halves were true, and the second was the real problem.
+
+**Why they did not work:**
+
+- **Four pages passed no dropdown options at all.** Admissions, P-Files, Records and SIS rendered both selects containing nothing but "All actions" / "All actors" — `actionOptions` and `actorOptions` defaulted to `[]`. Every one of those pages already had its action allowlist in the file; it just never reached the table. Those four also never read an `action` param, so even a hand-typed URL was ignored.
+- **All seven filtered the DATE RANGE client-side over a server-PAGINATED list.** Picking a week kept only the rows of the page you happened to be on and hid every match elsewhere, so a working filter looked like an empty log. The component's own comment warned against exactly this for the other two filters.
+
+**Now:** `lib/audit/filters.ts` — one `parseAuditFilters` + `applyAuditFilters`, used by all seven, so a page cannot wire three of four filters and look finished. The table moved to `components/audit/` (five modules were importing it out of Markbook's route folder), and attendance's 439-line copy folded in, gaining `actorDisplay` and a `link` field so nothing was lost.
+
+⚠ **`link` is resolved on the SERVER onto the row.** Each module builds its deep link from its own action names and context keys, which would naturally be a `(row) => href` prop — but the table is a client component and functions do not cross that boundary.
+
+⚠ **THE DATE BOUNDS CARRY TWO TRAPS, AND BOTH HIDE ROWS SILENTLY.**
+
+1. **`to` must cover the whole day.** `created_at` is a timestamptz and the picker returns a date, so `lte('created_at', '2026-09-14')` means midnight and excludes the last day chosen — usually the day that matters most. `lt` of the next midnight is the honest reading.
+2. **The day is a SINGAPORE day, so the offset is explicit.** A bare `'2026-09-14T00:00:00'` resolves in the server's zone — UTC in production, 08:00 in Singapore — so a day filter dropped everything staff did before 8am and quietly included the same hours of the next day. Attendance's hand-rolled version had the mirror-image bug (`T23:59:59.999Z`, running to 07:59 the following morning). `lib/dates.ts` documents this trap for calendar dates; it applies to audit windows too, because the table renders each timestamp in the viewer's own zone.
+
+Attendance also matched actors with `ilike '%value%'` where every sibling used an exact match, so one address could select another's rows.
+
+**Guarded by** `__tests__/audit/filters.test.ts`, which caught a third bug on its first run: `2026-13-99` matches `^\d{4}-\d{2}-\d{2}$` and is not a date — it would have reached Postgres and errored the page. Validation round-trips through `Date`, which also rejects `2026-02-30` (parses fine, normalises to 2 March).
+
+**Not changed:** `/sis/audit-log`'s `HubStat`-instead-of-`StatCard` shell, which carries a comment calling it "a deliberate, documented split, not a silent inconsistency".
