@@ -40,6 +40,7 @@ import {
 import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { createClient } from '@/lib/supabase/client';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // Local-tz ISO for today. Inline helper — the file doesn't pull from
@@ -340,18 +341,56 @@ export function AttendanceWideGrid({
   // handling, and through `useWriteAction` so it reports itself the way every
   // other write in the app does — one pending/success/error toast lifecycle,
   // with the success held until the server re-render lands.
+  // ⚠ WRITES STRAIGHT TO SUPABASE — no API route, no `router.refresh()`.
+  //
+  // Marking a cell used to POST to /api/attendance/daily and then AWAIT a full
+  // page re-render so the stat cards above could catch up. The render was 800ms
+  // to 3.3s of an edit the teacher had already seen land, and the grid locked
+  // for all of it — one mark at a time.
+  //
+  // Migration 149 moved everything the route enforced into Postgres: who may
+  // write (RLS), no marks on a closed day (BEFORE trigger), the rollup
+  // (AFTER trigger, now atomic with the insert), and the audit row (AFTER
+  // trigger). `recorded_by` is stamped from `auth.uid()` there too, so it is
+  // deliberately NOT sent from here — a browser must not get to say who marked
+  // a register.
+  //
+  // What remains is one insert. The ledger is append-only, so a correction and
+  // a clear are both inserts like any other (migration 134: a `null` status
+  // supersedes the prior mark and falls out of every rollup, so the cell reads
+  // as never marked).
   const saveCellMutation = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       sectionStudentId: string;
       termId: string;
       date: string;
-      // `null` CLEARS the day (migration 134) — the route appends a row with
-      // no status, which supersedes the prior mark and falls out of every
-      // rollup, so the cell reads as never marked.
       status: AttendanceStatus | null;
       exReason: ExReason | null;
       exNote?: string | null;
-    }) => apiFetch('/api/attendance/daily', jsonInit('PATCH', payload)),
+    }) => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('attendance_daily')
+        .insert({
+          section_student_id: payload.sectionStudentId,
+          term_id: payload.termId,
+          date: payload.date,
+          status: payload.status,
+          // Only an EX carries a reason; the table's
+          // `attendance_daily_cleared_has_no_reason_chk` requires the rest to
+          // be null, so normalise here rather than trust the caller.
+          ex_reason: payload.status === 'EX' ? payload.exReason : null,
+          ex_note: payload.status === 'EX' ? (payload.exNote ?? null) : null,
+        })
+        .select('id, status, ex_reason, ex_note')
+        .single();
+      if (error) {
+        // The closed-day trigger raises 22023 with a sentence meant for a
+        // teacher; anything else is unexpected and keeps its own wording.
+        throw new Error(error.message);
+      }
+      return data;
+    },
   });
 
   // The stat cards above this grid (average attendance, perfect attendance)
@@ -501,6 +540,20 @@ export function AttendanceWideGrid({
         // A clear says what it did. "Saved." over a cell that just went blank
         // reads as though something was written into it.
         success: status === null ? 'Mark cleared.' : 'Saved.',
+        // ⚠ STILL AWAITING A PAGE RENDER, AND THIS IS THE REMAINING COST.
+        //
+        // The insert itself is now one round trip to Supabase. What is left is
+        // the refresh, and it is here for a reason that survives the rewrite:
+        // the stat cards above this grid come from `getSectionAttendanceSummary`,
+        // which reads the ROLLUP, the calendar and the enrolment list — not the
+        // marks this grid holds. So the grid cannot recompute them, and dropping
+        // the refresh would leave them quietly stale.
+        //
+        // Removing it needs the cards to fetch their own summary (a small
+        // client query against `attendance_records`) instead of arriving as
+        // server props. That is the piece this app has no pattern for yet —
+        // there is no client-owned store here — and it is the actual reason
+        // writes are slower than the parent portal's, rather than the API hop.
         // Same wording the inline handler used. `run` hands over the thrown
         // error rather than a string so the server's own message survives.
         error: (e) =>
