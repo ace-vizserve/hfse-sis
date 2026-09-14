@@ -159,10 +159,35 @@ export const loadMarkCounts = cache(
     const service = createServiceClient();
     const ayId = await getAyIdByCode(ayCode);
     if (!ayId) return [];
-    const { data, error } = await service.rpc(
-      'attendance_mark_counts_by_date',
-      { p_academic_year_id: ayId }
-    );
+    // ⚠ PAGINATE THE RPC. A set-returning function is served through PostgREST
+    // like any other relation, so it obeys the same 1000-row cap — and it
+    // truncates SILENTLY, with no error and no flag. Caught by
+    // scripts/verify-attendance-aggregates.perf.ts: the A/L function returned
+    // exactly 1000 rows against 1271 real ones, which is the shape of this bug
+    // every time. Buckets are ~500 today and would not truncate yet; paginating
+    // both means the one that grows past the cap does not start lying.
+    type CountRow = {
+      mark_date: string;
+      status: string;
+      ex_reason: string | null;
+      mark_count: number;
+    };
+    let error: { message: string } | null = null;
+    const data = await fetchAllPages<CountRow>((from, to) =>
+      service
+        .rpc('attendance_mark_counts_by_date', { p_academic_year_id: ayId })
+        // Ordering is REQUIRED, not cosmetic: `.range()` paging over an
+        // unordered result may repeat rows on one page and skip them on the
+        // next. These three columns are the function's own GROUP BY key, so
+        // they order it uniquely.
+        .order('mark_date')
+        .order('status')
+        .order('ex_reason')
+        .range(from, to)
+    ).catch((e: Error) => {
+      error = { message: e.message };
+      return [] as CountRow[];
+    });
     if (error) {
       console.warn(
         '[attendance] attendance_mark_counts_by_date unavailable, falling back to row scan:',
@@ -201,8 +226,23 @@ export const loadAbsenceMarks = cache(
     const service = createServiceClient();
     const ayId = await getAyIdByCode(ayCode);
     if (!ayId) return [];
-    const { data, error } = await service.rpc('attendance_absence_marks', {
-      p_academic_year_id: ayId,
+    // Paginated for the same reason as `loadMarkCounts` above — this is the
+    // call that actually hit the cap.
+    type AbsenceRow = {
+      section_student_id: string;
+      mark_date: string;
+      status: string;
+    };
+    let error: { message: string } | null = null;
+    const data = await fetchAllPages<AbsenceRow>((from, to) =>
+      service
+        .rpc('attendance_absence_marks', { p_academic_year_id: ayId })
+        .order('section_student_id')
+        .order('mark_date')
+        .range(from, to)
+    ).catch((e: Error) => {
+      error = { message: e.message };
+      return [] as AbsenceRow[];
     });
     if (error) {
       console.warn(
