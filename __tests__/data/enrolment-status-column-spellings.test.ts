@@ -123,9 +123,22 @@ function postgrestColumns(
     for (const field of m[2].split(',')) {
       const token = field.trim();
       if (!token) continue;
-      const dbSide = token.includes(':')
-        ? token.slice(token.indexOf(':') + 1).trim()
-        : token;
+      // A field may be written as a QUOTED identifier — `"suppliesUpdatedby"` —
+      // which is how every camelCase admissions column has to be spelled for
+      // PostgREST. The quotes are syntax, not part of the name, so strip them
+      // before the lookup. Without this the extracted name still carried them
+      // and could match nothing in REAL_COLUMNS, so a correctly-spelled quoted
+      // column was reported as "does not exist in the database" — which is how
+      // scripts/backfill/probe-cacao-supplies.ts:68 came to fail this test
+      // while using the exact spelling REAL_COLUMNS lists.
+      //
+      // This makes the check STRICTER, not looser: a genuinely misspelled
+      // quoted column (`"classUpdatedBy"`) now reaches the lookup and is
+      // flagged, where before it was invisible for the same reason.
+      const unquote = (s: string) => s.trim().replace(/^"(.*)"$/, '$1');
+      const dbSide = unquote(
+        token.includes(':') ? token.slice(token.indexOf(':') + 1) : token
+      );
       if (FAMILY.test(dbSide)) {
         found.push({
           name: dbSide,
