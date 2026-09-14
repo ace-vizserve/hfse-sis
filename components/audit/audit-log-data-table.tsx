@@ -61,6 +61,23 @@ export type MergedRow = {
   id: string;
   at: string;
   actor: string;
+  /**
+   * A staff name to show instead of the raw email, when the page can resolve
+   * one. Attendance always could and every other module showed an address;
+   * the name is the better answer, so it wins wherever it is supplied.
+   */
+  actorDisplay?: string | null;
+  /**
+   * Where this row's row-action goes, if anywhere — "Open section" on
+   * attendance, "Open sheet" on markbook.
+   *
+   * ⚠ RESOLVED ON THE SERVER, NOT PASSED AS A FUNCTION. Each module builds its
+   * deep link from its own action names and context keys, which would naturally
+   * be a `(row) => href` prop — but this is a client component rendered by a
+   * server one, and functions do not cross that boundary. The page computes the
+   * href while it is already mapping rows; the table just renders it.
+   */
+  link?: { href: string; label: string } | null;
   /** The role that authorised the action (migration 141). Null for a system
    *  write, and for every row logged before the column existed — those are not
    *  the same thing as "no role", but neither can be shown as one. */
@@ -131,7 +148,9 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     // plain email rather than sprouting a guessed label.
     cell: ({ row }) => (
       <div>
-        <span className="text-xs">{row.original.actor}</span>
+        <span className="text-xs">
+          {row.original.actorDisplay || row.original.actor}
+        </span>
         {row.original.actorRole && (
           <p className="text-[10px] text-muted-foreground">
             {auditRoleLabel(row.original.actorRole)}
@@ -176,15 +195,26 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
   },
   {
     id: 'open',
-    header: () => <span className="sr-only">Open sheet</span>,
+    header: () => <span className="sr-only">Open</span>,
     cell: ({ row }) => {
-      if (!row.original.sheet_id) return null;
+      // `link` is the general form. `sheet_id` is markbook's older shorthand,
+      // still honoured so that page needs no change — it also drives the sheet
+      // chip filter, so it cannot simply be replaced by `link`.
+      const link =
+        row.original.link ??
+        (row.original.sheet_id
+          ? {
+              href: `/markbook/grading/${row.original.sheet_id}`,
+              label: 'Open sheet',
+            }
+          : null);
+      if (!link) return null;
       return (
         <RowActionsMenu>
           <DropdownMenuItem asChild>
-            <Link href={`/markbook/grading/${row.original.sheet_id}`}>
+            <Link href={link.href}>
               <ExternalLink className="size-3.5" />
-              Open sheet
+              {link.label}
             </Link>
           </DropdownMenuItem>
         </RowActionsMenu>

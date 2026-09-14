@@ -13,8 +13,8 @@ import {
  * Shape taken from the real page, in its order: the back link, the header
  * (eyebrow / serif title / lede, nothing on the right), THREE `StatCard`s
  * inside an `@container/main` on `@xl/main:grid-cols-3`, then the
- * `AttendanceAuditLogDataTable` and the server-paging bar it renders beneath
- * the table shell.
+ * `AuditLogDataTable` (components/audit) and the server-paging bar it renders
+ * beneath the table shell.
  *
  * The card grid is passed via `grid`, not `className`: the page breaks on its
  * CONTAINER (`@xl/main:grid-cols-3`), which does not override the archetype's

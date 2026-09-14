@@ -49,6 +49,23 @@ export type AuditFilters = {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * A real calendar day, not merely a string shaped like one.
+ *
+ * ⚠ THE SHAPE CHECK ALONE IS NOT ENOUGH. `2026-13-99` matches the pattern and
+ * is not a date; it would reach Postgres as `2026-13-99T00:00:00+08:00` and
+ * fail the whole query, turning a typo in the query string into a broken page.
+ * Round-tripping through `Date` rejects it, and also catches the subtler case
+ * — `2026-02-30` parses without throwing but normalises to 2 March, so
+ * comparing the formatted result back to the input is what proves the day
+ * exists.
+ */
+function isRealDay(day: string): boolean {
+  if (!ISO_DAY.test(day)) return false;
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
+/**
  * Read the four filters out of the URL.
  *
  * ⚠ `action` IS CHECKED AGAINST THE MODULE'S OWN ALLOWLIST, not merely
@@ -71,8 +88,8 @@ export function parseAuditFilters(
   // A malformed date is dropped rather than passed through. `new Date('week')`
   // is Invalid Date, and an invalid bound silently matches nothing, which would
   // read to the user as "there are no entries" instead of "that is not a date".
-  const from = params.from && ISO_DAY.test(params.from) ? params.from : null;
-  const to = params.to && ISO_DAY.test(params.to) ? params.to : null;
+  const from = params.from && isRealDay(params.from) ? params.from : null;
+  const to = params.to && isRealDay(params.to) ? params.to : null;
 
   // A backwards window returns nothing and looks like an empty log; swap it.
   if (from && to && from > to) return { action, actor, from: to, to: from };
@@ -80,14 +97,35 @@ export function parseAuditFilters(
   return { action, actor, from, to };
 }
 
+/** Singapore is a fixed +08:00 and has had no DST since 1935. */
+const SGT_OFFSET = '+08:00';
+
+/** The day after `yyyy-mm-dd`, as `yyyy-mm-dd`. */
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * Apply them to an `audit_log` query.
  *
- * ⚠ THE `to` BOUND COVERS THE WHOLE DAY. `created_at` is a timestamptz and the
- * picker hands back a date, so `lte('created_at', '2026-09-14')` means midnight
- * — it would exclude everything that happened ON the last day the user chose,
- * which is usually the day they care about most. `lt` of the NEXT midnight is
- * the honest reading of "up to and including the 14th".
+ * ⚠ TWO SEPARATE TRAPS IN THE DATE BOUNDS, BOTH OF WHICH SILENTLY HIDE ROWS.
+ *
+ * 1. THE `to` BOUND MUST COVER THE WHOLE DAY. `created_at` is a timestamptz and
+ *    the picker hands back a date, so `lte('created_at', '2026-09-14')` means
+ *    MIDNIGHT — it excludes everything that happened on the last day the user
+ *    chose, usually the day they care about most. `lt` of the next midnight is
+ *    the honest reading of "up to and including the 14th".
+ *
+ * 2. THE DAY IS A SINGAPORE DAY, SO THE OFFSET IS EXPLICIT. A bare
+ *    `'2026-09-14T00:00:00'` is resolved in the SERVER's zone, which in
+ *    production is UTC — that is 08:00 in Singapore, so filtering "the 14th"
+ *    would drop everything staff did between midnight and 8am and quietly
+ *    include the same hours of the 15th. `lib/dates.ts` documents this exact
+ *    trap for school-calendar dates; it applies here too, because the table
+ *    renders each timestamp in the viewer's own zone, so the window has to mean
+ *    the same day the user is reading.
  */
 export function applyAuditFilters<T>(
   query: T,
@@ -97,11 +135,9 @@ export function applyAuditFilters<T>(
   let q = query as unknown as Filterable;
   if (filters.action) q = q.eq('action', filters.action);
   if (filters.actor) q = q.eq('actor_email', filters.actor);
-  if (filters.from) q = q.gte(column, `${filters.from}T00:00:00`);
+  if (filters.from) q = q.gte(column, `${filters.from}T00:00:00${SGT_OFFSET}`);
   if (filters.to) {
-    const next = new Date(`${filters.to}T00:00:00`);
-    next.setDate(next.getDate() + 1);
-    q = q.lt(column, next.toISOString());
+    q = q.lt(column, `${nextDay(filters.to)}T00:00:00${SGT_OFFSET}`);
   }
   return q as unknown as T;
 }

@@ -11,6 +11,7 @@ import {
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
+import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
 import {
   Card,
   CardAction,
@@ -21,9 +22,10 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import {
-  AttendanceAuditLogDataTable,
-  type AttendanceAuditRow,
-} from './audit-log-data-table';
+  AuditLogDataTable,
+  type MergedRow,
+} from '@/components/audit/audit-log-data-table';
+import { attendanceAuditLink } from '@/lib/audit/attendance-links';
 
 // ---------------------------------------------------------------------------
 // Explicit allowlist — every action emitted by the attendance module.
@@ -47,8 +49,6 @@ export const ATTENDANCE_AUDIT_ACTIONS = [
   'declaration.approve',
   'declaration.reject',
 ] as const satisfies readonly string[];
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function AttendanceAuditLogPage({
   searchParams,
@@ -78,32 +78,32 @@ export default async function AttendanceAuditLogPage({
   const rangeFrom = (page - 1) * PAGE_SIZE;
   const rangeTo = rangeFrom + PAGE_SIZE - 1;
 
-  // Validate and extract filter params
-  const actionFilter =
-    params.action && ATTENDANCE_AUDIT_ACTIONS.includes(params.action as never)
-      ? params.action
-      : null;
-  const actorFilter =
-    params.actor && params.actor.trim().length > 0 ? params.actor.trim() : null;
-  const fromFilter =
-    params.from && DATE_RE.test(params.from) ? params.from : null;
-  const toFilter = params.to && DATE_RE.test(params.to) ? params.to : null;
+  // This page parsed and applied its own filters, and two of them were subtly
+  // wrong in ways nobody would report as a bug:
+  //
+  //   * the actor was an `ilike '%email%'` where every sibling page uses an
+  //     exact match, so a substring of one address could select another;
+  //   * the `to` bound was `${day}T23:59:59.999Z` — UTC — which on a +08:00
+  //     school means it ran to 07:59 the NEXT morning, so a day filter
+  //     included eight hours it should not have.
+  //
+  // Both go away by using the shared parser.
+  const filters = parseAuditFilters(params, ATTENDANCE_AUDIT_ACTIONS);
+  const actionFilter = filters.action;
+  const actorFilter = filters.actor;
 
   const supabase = await createClient();
 
-  // Build the main query with server-side filters
-  let q = supabase
-    .from('audit_log')
-    .select(
-      'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
-      { count: 'exact' }
-    )
-    .in('action', ATTENDANCE_AUDIT_ACTIONS);
-
-  if (actionFilter) q = q.eq('action', actionFilter);
-  if (actorFilter) q = q.ilike('actor_email', `%${actorFilter}%`);
-  if (fromFilter) q = q.gte('created_at', fromFilter);
-  if (toFilter) q = q.lte('created_at', `${toFilter}T23:59:59.999Z`);
+  const q = applyAuditFilters(
+    supabase
+      .from('audit_log')
+      .select(
+        'id, actor_email, actor_role, action, entity_type, entity_id, context, created_at',
+        { count: 'exact' }
+      )
+      .in('action', ATTENDANCE_AUDIT_ACTIONS),
+    filters
+  );
 
   const [{ data: rows, count, error }, staffEntries, actorOptions] =
     await Promise.all([
@@ -138,19 +138,32 @@ export default async function AttendanceAuditLogPage({
   const rawEntries = (rows ?? []) as RawRow[];
   const actorMap = new Map<string, string>(staffEntries);
 
-  const entries: AttendanceAuditRow[] = rawEntries.map((r) => ({
-    id: r.id,
-    at: r.created_at,
-    actor_email: r.actor_email,
-    actor_display: actorMap.get(r.actor_email) ?? r.actor_email,
-    actor_role: r.actor_role,
-    action: r.action,
-    entity_type: r.entity_type,
-    entity_id: r.entity_id,
-    context: r.context ?? {},
-  }));
+  const entries: MergedRow[] = rawEntries.map((r) => {
+    const context = r.context ?? {};
+    return {
+      id: r.id,
+      at: r.created_at,
+      actor: r.actor_email,
+      // A name where we have one. This module was the only audit log showing
+      // staff names instead of email addresses; the shared table now renders
+      // whichever it is given, so the better answer survived the merge.
+      actorDisplay: actorMap.get(r.actor_email) ?? null,
+      actorRole: r.actor_role,
+      action: r.action,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      context,
+      sheet_id: null,
+      source: 'audit_log' as const,
+      link: attendanceAuditLink({
+        action: r.action,
+        entity_id: r.entity_id,
+        context,
+      }),
+    };
+  });
 
-  const uniqueActors = new Set(entries.map((r) => r.actor_email)).size;
+  const uniqueActors = new Set(entries.map((r) => r.actor)).size;
   const corrections = entries.filter(
     (r) => r.action === 'attendance.daily.correct'
   ).length;
@@ -229,7 +242,7 @@ export default async function AttendanceAuditLogPage({
         </div>
       )}
 
-      <AttendanceAuditLogDataTable
+      <AuditLogDataTable
         rows={entries}
         pagination={{
           page,
@@ -241,8 +254,8 @@ export default async function AttendanceAuditLogPage({
         actorOptions={actorOptions}
         currentAction={actionFilter}
         currentActor={actorFilter}
-        currentFrom={fromFilter}
-        currentTo={toFilter}
+        currentFrom={filters.from}
+        currentTo={filters.to}
       />
     </PageShell>
   );
