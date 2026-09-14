@@ -1,3 +1,4 @@
+import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import { YearSetupChecklist } from '@/components/sis/year-setup/year-setup-checklist';
 import { listAcademicYears, listTermsByAy } from '@/lib/sis/ay-setup/queries';
 import { getAyReadiness } from '@/lib/sis/readiness';
@@ -15,6 +16,15 @@ export default async function AySetupPage({
 }: {
   searchParams: Promise<{ ay?: string }>;
 }) {
+  // Matches this path's ROUTE_ACCESS row. The middleware and the module
+  // layout check too; this is the page stating it in its own file rather
+  // than inheriting it silently (lib/auth/require-page-roles.ts).
+  await requirePageRoles([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
+
   const sp = await searchParams;
 
   const [ays, termsByAy] = await Promise.all([

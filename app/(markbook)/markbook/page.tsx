@@ -1,3 +1,4 @@
+import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import {
   ArrowUpRight,
   BarChart3,
@@ -109,6 +110,16 @@ export default async function MarkbookHome({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
+  // Matches this path's ROUTE_ACCESS row. The middleware and the module
+  // layout check too; this is the page stating it in its own file rather
+  // than inheriting it silently (lib/auth/require-page-roles.ts).
+  await requirePageRoles([
+    'teacher',
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
+
   const resolvedSearchParams = await searchParams;
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();

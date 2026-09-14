@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { LineChart } from 'lucide-react';
+import * as React from 'react';
 
 import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
 import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
@@ -79,7 +79,7 @@ export function AttendanceBySectionCard({
             <ComparisonBarChart
               data={chartData}
               orientation="horizontal"
-              height={Math.min(420, Math.max(220, data.length * 26))}
+              height={Math.min(620, Math.max(620, data.length * 26))}
               yFormat="percent"
               onSegmentClick={setOpenSection}
             />

@@ -1,3 +1,4 @@
+import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import Link from 'next/link';
 import {
   AlarmClock,
@@ -104,6 +105,18 @@ export default async function GradingListPage({
   const supabase = await createClient();
   const sp = searchParams ? await searchParams : undefined;
   const initialSearch = sp?.['grading.q'] ?? undefined;
+
+  // Matches this path's ROUTE_ACCESS row. This page READ the role already —
+  // `getRoleFromClaims` below — and used it to decide which controls to draw,
+  // but it never turned anyone away: no redirect, no notFound, no role check.
+  // Rendering fewer buttons is not a gate. The middleware and the module layout
+  // were the only things refusing the request (lib/auth/require-page-roles.ts).
+  await requirePageRoles([
+    'teacher',
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const claims = claimsData?.claims ?? null;

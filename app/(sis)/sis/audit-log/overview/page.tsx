@@ -1,3 +1,4 @@
+import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import {
   Activity,
   History,
@@ -70,6 +71,11 @@ export default async function SisAuditLogOverviewPage({
 }: {
   searchParams: Promise<DashboardSearchParams>;
 }) {
+  // Matches this path's ROUTE_ACCESS row. The middleware and the module
+  // layout check too; this is the page stating it in its own file rather
+  // than inheriting it silently (lib/auth/require-page-roles.ts).
+  await requirePageRoles(['school_admin', 'superadmin']);
+
   const params = await searchParams;
 
   const service = createServiceClient();

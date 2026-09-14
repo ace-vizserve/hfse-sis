@@ -1,3 +1,4 @@
+import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import { redirect } from 'next/navigation';
 
 import {
@@ -22,6 +23,16 @@ export default async function LegacyEnroleeRedirect({
   params: Promise<{ enroleeNumber: string }>;
   searchParams: Promise<{ ay?: string }>;
 }) {
+  // Matches this path's ROUTE_ACCESS row. The middleware and the module
+  // layout check too; this is the page stating it in its own file rather
+  // than inheriting it silently (lib/auth/require-page-roles.ts).
+  await requirePageRoles([
+    'admissions',
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
+
   const { enroleeNumber } = await params;
   const { ay } = await searchParams;
   const { studentNumber } = await studentNumberFromEnroleeNumber(enroleeNumber);
