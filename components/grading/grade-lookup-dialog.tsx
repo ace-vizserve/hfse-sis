@@ -101,7 +101,7 @@ export type SheetOutlier = {
 };
 
 export type StudentAlertRow = {
-  entryId: string;
+  rowId: string;
   indexNumber: number;
   studentName: string;
   withdrawn: boolean;
@@ -209,7 +209,7 @@ export function GradeLookupDialog({
       .sort((a, b) => a.row.indexNumber - b.row.indexNumber);
   }, [withCounts, query, onlyFlagged]);
 
-  const selected = rows.find((r) => r.entryId === selectedId) ?? null;
+  const selected = rows.find((r) => r.rowId === selectedId) ?? null;
 
   function reset(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -290,10 +290,10 @@ export function GradeLookupDialog({
                 <ul className="divide-y divide-border">
                   {filtered.map(({ row, count }) => (
                     <StudentRow
-                      key={row.entryId}
+                      key={row.rowId}
                       row={row}
                       count={count}
-                      onOpen={() => setSelectedId(row.entryId)}
+                      onOpen={() => setSelectedId(row.rowId)}
                     />
                   ))}
                 </ul>

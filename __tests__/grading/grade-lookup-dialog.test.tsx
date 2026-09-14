@@ -18,7 +18,7 @@ import {
 
 /** A fall across two earlier terms, so the all-terms view has something to show. */
 const FALLEN: StudentAlertRow = {
-  entryId: 'e-2',
+  rowId: 'e-2',
   indexNumber: 2,
   studentName: 'Bautista, Joaquin P.',
   withdrawn: false,
@@ -78,7 +78,7 @@ const FALLEN: StudentAlertRow = {
 };
 
 const STEADY: StudentAlertRow = {
-  entryId: 'e-5',
+  rowId: 'e-5',
   indexNumber: 5,
   studentName: 'Flores, Miguel A.',
   withdrawn: false,
@@ -98,7 +98,7 @@ const STEADY: StudentAlertRow = {
 };
 
 const GONE: StudentAlertRow = {
-  entryId: 'e-9',
+  rowId: 'e-9',
   indexNumber: 9,
   studentName: 'Reyes, Carmela D.',
   withdrawn: true,

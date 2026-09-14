@@ -200,7 +200,7 @@ export function ScoreEntryGrid({
   // update happens while TYPING via onLocalChange, so by commit time the rows
   // state no longer holds the pre-edit value — this snapshot does.)
   const savedRowsRef = useRef<Map<string, GradeRow>>(
-    new Map(initialRows.map((r) => [r.entry_id, r]))
+    new Map(initialRows.map((r) => [r.section_student_id, r]))
   );
 
   // Roster-wide "does this slot already hold a committed score?" — read from
@@ -222,7 +222,7 @@ export function ScoreEntryGrid({
   // persistent instance would leak a previously-labeled slot's state into a
   // newly-gated one.
   const [pendingFirstScore, setPendingFirstScore] = useState<{
-    entryId: string;
+    rowId: string;
     kind: SlotKind;
     slotIndex: number | null;
     target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>;
@@ -386,7 +386,7 @@ export function ScoreEntryGrid({
             )
           : [];
       return {
-        entryId: r.entry_id,
+        rowId: r.section_student_id,
         indexNumber: r.index_number,
         studentName: r.student_name,
         withdrawn: r.withdrawn,
@@ -440,7 +440,9 @@ export function ScoreEntryGrid({
   // split cannot be bypassed by sending the direct path instead.
   const entryMutation = useMutation({
     mutationFn: async (vars: {
+      /** Empty until this student has been scored on this sheet at least once. */
       entryId: string;
+      sectionStudentId: string;
       payload: Record<string, unknown>;
       /** Post-lock: an approved change request or a registrar correction. */
       viaRoute: boolean;
@@ -452,27 +454,50 @@ export function ScoreEntryGrid({
         );
       }
 
+      // ⚠ UPSERT, KEYED ON THE STUDENT — NOT AN UPDATE KEYED ON `entryId`.
+      //
+      // Nothing pre-creates blank grade rows any more (migration 156). The
+      // page lists the ROSTER, so a student with no marks yet appears with no
+      // `entry_id` at all, and their first score is what creates the row.
+      //
+      // One statement rather than "look, then insert or update": the unique
+      // constraint on (grading_sheet_id, section_student_id) is the conflict
+      // target, so two teachers typing that child's first score at the same
+      // moment produce one row, not a duplicate or an error.
       const supabase = createClient();
       const { data, error } = await supabase
         .from('grade_entries')
-        .update(vars.payload)
-        .eq('id', vars.entryId)
+        .upsert(
+          {
+            grading_sheet_id: sheetId,
+            section_student_id: vars.sectionStudentId,
+            ...vars.payload,
+          },
+          { onConflict: 'grading_sheet_id,section_student_id' }
+        )
         .select(
-          'ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, letter_grade, is_na'
+          'id, ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, letter_grade, is_na'
         )
         .single();
 
       if (error) throw new Error(humanizeGradeWriteError(error));
 
-      // An update that matches no row comes back as a PostgREST "no rows"
-      // error rather than a silent success, so reaching here means it wrote.
       return { entry: data as unknown as SavedEntry };
     },
   });
 
+  // ⚠ ROWS ARE IDENTIFIED BY `section_student_id`, NOT BY `entry_id`.
+  //
+  // They used to be keyed by `entry_id`, which worked only because every
+  // student was guaranteed a blank grade row before the grid ever rendered —
+  // the thing the page was doing a write on every load to guarantee. Now the
+  // grid lists the roster, so an unscored student has NO entry id at all, and
+  // several of them would collide on the empty string. `section_student_id` is
+  // the child's place on this roster: always present, always unique, and it
+  // does not depend on whether anyone has marked them yet.
   const patchEntry = useCallback(
     async (
-      entryId: string,
+      rowId: string,
       target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>,
       body: Partial<
         Pick<
@@ -499,16 +524,23 @@ export function ScoreEntryGrid({
       // N/A checkbox flip) and the cell would otherwise keep showing a value
       // that was never saved.
       const revertEntry = () => {
-        const saved = savedRowsRef.current.get(entryId);
+        const saved = savedRowsRef.current.get(rowId);
         if (!saved) return;
         setRows((current) =>
           current.map((r) =>
-            r.entry_id === entryId
+            r.section_student_id === rowId
               ? revertPatchedFields(r, saved, body as EntryPatchBody)
               : r
           )
         );
       };
+
+      // The real database id, where one is genuinely needed. Empty until this
+      // student has been scored once — which cannot happen on the approval
+      // path below, since a locked sheet is one that has already been graded.
+      const entryId =
+        rowsRef.current.find((r) => r.section_student_id === rowId)?.entry_id ??
+        '';
 
       if (requireApproval) {
         const ref = await requireChangeReference({
@@ -529,7 +561,7 @@ export function ScoreEntryGrid({
             target.field,
             target.slotIndex ?? null,
             ref.proposed_value,
-            rowsRef.current.find((r) => r.entry_id === entryId) ?? null,
+            rowsRef.current.find((r) => r.section_student_id === rowId) ?? null,
             wwTotals.length,
             ptTotals.length
           );
@@ -573,7 +605,13 @@ export function ScoreEntryGrid({
       // `run` NEVER rejects — it resolves the parsed body, or `undefined` if
       // the write failed. That is the failure signal here; there is no catch.
       const result = await run(
-        () => entryMutation.mutateAsync({ entryId, payload, viaRoute }),
+        () =>
+          entryMutation.mutateAsync({
+            entryId,
+            sectionStudentId: rowId,
+            payload,
+            viaRoute,
+          }),
         {
           pending: 'Saving…',
           // ⚠ NO PAGE REFRESH. This is what makes encoding fast.
@@ -589,7 +627,9 @@ export function ScoreEntryGrid({
           refresh: false,
           onResolved: (data) => {
             const next = rowsRef.current.map((r) =>
-              r.entry_id === entryId ? applyServerEntry(r, data.entry) : r
+              r.section_student_id === rowId
+                ? applyServerEntry(r, data.entry)
+                : r
             );
             setRows(next);
 
@@ -612,10 +652,10 @@ export function ScoreEntryGrid({
             // Advance the last-saved snapshot to the server-confirmed state so
             // a later failed commit reverts to THIS save, not the page-load
             // values.
-            const savedPrev = savedRowsRef.current.get(entryId);
+            const savedPrev = savedRowsRef.current.get(rowId);
             if (savedPrev) {
               savedRowsRef.current.set(
-                entryId,
+                rowId,
                 applyServerEntry(savedPrev, data.entry)
               );
             }
@@ -646,7 +686,9 @@ export function ScoreEntryGrid({
           // 'Failed to save entry'.
           error: (e) => {
             if (e instanceof ApiError) {
-              const row = rowsRef.current.find((r) => r.entry_id === entryId);
+              const row = rowsRef.current.find(
+                (r) => r.section_student_id === rowId
+              );
               const serverError =
                 (e.body as { error?: string } | null)?.error ?? 'save failed';
               return `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${serverError}`;
@@ -683,7 +725,7 @@ export function ScoreEntryGrid({
   // server independently agree on when a label is required.
   const commitScore = useCallback(
     (
-      entryId: string,
+      rowId: string,
       kind: SlotKind,
       slotIndex: number | null,
       target: Omit<ChangeReferenceTarget, 'sheetId' | 'entryId'>,
@@ -711,7 +753,7 @@ export function ScoreEntryGrid({
                 page: '',
               });
         setPendingFirstScore({
-          entryId,
+          rowId,
           kind,
           slotIndex,
           target,
@@ -720,7 +762,7 @@ export function ScoreEntryGrid({
         });
         return;
       }
-      patchEntry(entryId, target, body);
+      patchEntry(rowId, target, body);
     },
     [readOnly, requireApproval, slotAlreadyScored, patchEntry]
   );
@@ -731,13 +773,13 @@ export function ScoreEntryGrid({
   const handleFirstScoreConfirm = useCallback(
     (meta: SlotMeta) => {
       if (!pendingFirstScore) return;
-      const { entryId, kind, slotIndex, target, body } = pendingFirstScore;
+      const { rowId, kind, slotIndex, target, body } = pendingFirstScore;
       if (kind === 'qa') {
         onQaChange(meta.label ?? '');
       } else {
         onSlotChange(kind, slotIndex as number, meta);
       }
-      patchEntry(entryId, target, body, {
+      patchEntry(rowId, target, body, {
         kind,
         index: slotIndex,
         meta: kind === 'qa' ? { label: meta.label ?? null } : meta,
@@ -752,12 +794,12 @@ export function ScoreEntryGrid({
   // revert-on-failure path).
   const handleFirstScoreCancel = useCallback(() => {
     if (!pendingFirstScore) return;
-    const { entryId, body } = pendingFirstScore;
-    const saved = savedRowsRef.current.get(entryId);
+    const { rowId, body } = pendingFirstScore;
+    const saved = savedRowsRef.current.get(rowId);
     if (saved) {
       setRows((current) =>
         current.map((r) =>
-          r.entry_id === entryId
+          r.section_student_id === rowId
             ? revertPatchedFields(r, saved, body as EntryPatchBody)
             : r
         )
@@ -767,9 +809,9 @@ export function ScoreEntryGrid({
   }, [pendingFirstScore]);
 
   const updateLocal = useCallback(
-    (entryId: string, patch: (row: GradeRow) => GradeRow) => {
+    (rowId: string, patch: (row: GradeRow) => GradeRow) => {
       setRows((current) =>
-        current.map((r) => (r.entry_id === entryId ? patch(r) : r))
+        current.map((r) => (r.section_student_id === rowId ? patch(r) : r))
       );
     },
     []
@@ -1050,7 +1092,7 @@ export function ScoreEntryGrid({
 
               return (
                 <TableRow
-                  key={r.entry_id}
+                  key={r.section_student_id}
                   className={`transition-colors duration-75 hover:bg-accent/30 ${rowClass}`}
                 >
                   {/* # */}
@@ -1091,7 +1133,7 @@ export function ScoreEntryGrid({
                         plaintext={locked}
                         disabled={inputsDisabled}
                         onLocalChange={(v) =>
-                          updateLocal(r.entry_id, (row) => ({
+                          updateLocal(r.section_student_id, (row) => ({
                             ...row,
                             ww_scores: replaceAt(
                               row.ww_scores,
@@ -1109,7 +1151,7 @@ export function ScoreEntryGrid({
                             wwTotals.length
                           );
                           commitScore(
-                            r.entry_id,
+                            r.section_student_id,
                             'ww',
                             i,
                             { field: 'ww_scores', slotIndex: i },
@@ -1135,7 +1177,7 @@ export function ScoreEntryGrid({
                             plaintext={locked}
                             disabled={inputsDisabled}
                             onLocalChange={(v) =>
-                              updateLocal(r.entry_id, (row) => ({
+                              updateLocal(r.section_student_id, (row) => ({
                                 ...row,
                                 pt_scores: replaceAt(
                                   row.pt_scores,
@@ -1153,7 +1195,7 @@ export function ScoreEntryGrid({
                                 ptTotals.length
                               );
                               commitScore(
-                                r.entry_id,
+                                r.section_student_id,
                                 'pt',
                                 i,
                                 { field: 'pt_scores', slotIndex: i },
@@ -1178,14 +1220,14 @@ export function ScoreEntryGrid({
                       plaintext={locked}
                       disabled={inputsDisabled}
                       onLocalChange={(v) =>
-                        updateLocal(r.entry_id, (row) => ({
+                        updateLocal(r.section_student_id, (row) => ({
                           ...row,
                           qa_score: v,
                         }))
                       }
                       onCommit={(v) =>
                         commitScore(
-                          r.entry_id,
+                          r.section_student_id,
                           'qa',
                           null,
                           { field: 'qa_score', slotIndex: null },
@@ -1244,7 +1286,7 @@ export function ScoreEntryGrid({
                             return;
                           }
                           patchEntry(
-                            r.entry_id,
+                            r.section_student_id,
                             {
                               field: letterChanged ? 'letter_grade' : 'is_na',
                               slotIndex: null,
@@ -1276,12 +1318,12 @@ export function ScoreEntryGrid({
                         aria-label="Mark late enrollee N/A"
                         onCheckedChange={(v) => {
                           const next = v === true;
-                          updateLocal(r.entry_id, (row) => ({
+                          updateLocal(r.section_student_id, (row) => ({
                             ...row,
                             is_na: next,
                           }));
                           patchEntry(
-                            r.entry_id,
+                            r.section_student_id,
                             { field: 'is_na', slotIndex: null },
                             { is_na: next }
                           );
@@ -1882,6 +1924,8 @@ function ComputedCell({
  * the browser; the grid only displays what comes back.
  */
 type SavedEntry = {
+  /** Present on the direct path; the row's id, new on a first score. */
+  id?: string;
   ww_scores: (number | null)[];
   pt_scores: (number | null)[];
   qa_score: number | null;

@@ -55,7 +55,9 @@ const { updateCalls, supabaseUpdate } = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     from: (table: string) => ({
-      update: (payload: Record<string, unknown>) => {
+      // `upsert`, because a student with no marks yet has no row to update —
+      // the first score creates it (migration 156).
+      upsert: (payload: Record<string, unknown>) => {
         updateCalls.push({ table, payload });
         const result = {
           eq: () => result,
@@ -123,9 +125,14 @@ function makeRow(overrides: Partial<GradeRow> = {}): GradeRow {
   };
 }
 
+// ⚠ DISTINCT `section_student_id`, not just distinct `entry_id`. That is the
+// grid's row identity now — `entry_id` is empty until a student has been
+// scored, so several unscored students would otherwise collide on ''. These
+// fixtures shared `ss1` from makeRow and the identity switch exposed it.
 function alice(overrides: Partial<GradeRow> = {}): GradeRow {
   return makeRow({
     entry_id: 'e1',
+    section_student_id: 'ss1',
     index_number: 1,
     student_name: 'Alice',
     student_number: 'S001',
@@ -136,6 +143,7 @@ function alice(overrides: Partial<GradeRow> = {}): GradeRow {
 function bob(overrides: Partial<GradeRow> = {}): GradeRow {
   return makeRow({
     entry_id: 'e2',
+    section_student_id: 'ss2',
     index_number: 2,
     student_name: 'Bob',
     student_number: 'S002',
@@ -321,7 +329,11 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     expect(updateCalls[0].table).toBe('grade_entries');
     // Columns only. `slot_label` is route vocabulary and would be rejected by
     // PostgREST as an unknown column.
-    expect(updateCalls[0].payload).toEqual({ ww_scores: [8] });
+    expect(updateCalls[0].payload).toEqual({
+      grading_sheet_id: 'sheet-1',
+      section_student_id: 'ss1',
+      ww_scores: [8],
+    });
   });
 
   // ⚠ THE OPPOSITE OF WHAT THIS TEST USED TO ASSERT, DELIBERATELY.
@@ -406,7 +418,11 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     await waitFor(() => expect(updateCalls).toHaveLength(1));
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(getFirstScoreDialog()).not.toBeInTheDocument();
-    expect(updateCalls[0].payload).toEqual({ ww_scores: [7] });
+    expect(updateCalls[0].payload).toEqual({
+      grading_sheet_id: 'sheet-1',
+      section_student_id: 'ss1',
+      ww_scores: [7],
+    });
   });
 
   it('a slot whose metadata already satisfies the rule commits the first score directly, no dialog', async () => {
@@ -428,7 +444,11 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     await waitFor(() => expect(updateCalls).toHaveLength(1));
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(getFirstScoreDialog()).not.toBeInTheDocument();
-    expect(updateCalls[0].payload).toEqual({ ww_scores: [8] });
+    expect(updateCalls[0].payload).toEqual({
+      grading_sheet_id: 'sheet-1',
+      section_student_id: 'ss1',
+      ww_scores: [8],
+    });
   });
 
   it('QA slot: same first-score gate, description-only dialog', async () => {
