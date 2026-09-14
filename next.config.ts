@@ -32,7 +32,6 @@ const nextConfig: NextConfig = {
   // fix a page that feels slow in development; build it and measure first.
   cacheComponents: true,
   partialPrefetching: true,
-
   serverExternalPackages: ['pdf-merger-js'],
   experimental: {
     // Default is 'warning', which validates EVERY page in dev — that is the
