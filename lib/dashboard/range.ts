@@ -405,6 +405,12 @@ export type DashboardSearchParams = {
   cmpFrom?: string | string[];
   cmpTo?: string | string[];
   compareAy?: string | string[];
+  /**
+   * Term number, on the term-scoped Insights surfaces that name a term instead
+   * of a date window (see components/dashboard/insights/term-picker.tsx).
+   * Dashboards keep `from`/`to` — they draw day-by-day series.
+   */
+  term?: string | string[];
 };
 
 function pickString(v: string | string[] | undefined): string | undefined {

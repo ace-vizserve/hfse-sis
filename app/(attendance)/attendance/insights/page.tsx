@@ -24,7 +24,10 @@ import {
 } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
-import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
+import {
+  TermPicker,
+  type TermOption,
+} from '@/components/dashboard/insights/term-picker';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -62,7 +65,6 @@ import {
 import {
   computeDelta,
   resolveRange,
-  TERM_SCOPED_PRESETS,
   type DashboardSearchParams,
   type RangeInput,
 } from '@/lib/dashboard/range';
@@ -261,9 +263,58 @@ export default async function AttendanceInsightsPage({
   );
 
   const windows = await getDashboardWindows(selectedAy);
-  // Attendance is term-scoped (KD #79) — mirror the operational dashboard,
-  // which resolves the default range via the thisTerm cascade (no preset).
-  const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+
+  // ⚠ THE TERM IS THE SCOPE HERE, NOT A DATE RANGE.
+  //
+  // Attendance is term-scoped (KD #79) and this page's whole reason for
+  // existing is "this term against the same term last year". It used to resolve
+  // a free date range and then try to work out which term that was by matching
+  // the window's start and end against each term's — see the comment on
+  // <TermPicker>. Naming the term makes that alignment exact.
+  //
+  // Unlike the module DASHBOARD, which keeps its date range because it draws a
+  // day-by-day trend, nothing on this page is day-granular: every figure is
+  // either a term KPI or an already-complete term-by-term breakdown.
+  const termOptions = ([1, 2, 3, 4] as const)
+    .map((n) => {
+      const w = windows.term.byNumber[n];
+      return w ? { termNumber: n, from: w.from, to: w.to } : null;
+    })
+    .filter((t): t is TermOption => t !== null);
+
+  // Default to the term in progress, else the first one that has dates.
+  const currentTermNumber = ([1, 2, 3, 4] as const).find(
+    (n) =>
+      windows.term.thisTerm &&
+      windows.term.byNumber[n]?.from === windows.term.thisTerm.from
+  );
+  const termParam = Number(
+    Array.isArray(resolvedSearch.term)
+      ? resolvedSearch.term[0]
+      : resolvedSearch.term
+  );
+  const selectedTermNumber: 1 | 2 | 3 | 4 = termOptions.some(
+    (t) => t.termNumber === termParam
+  )
+    ? (termParam as 1 | 2 | 3 | 4)
+    : (currentTermNumber ?? termOptions[0]?.termNumber ?? 1);
+
+  // An AY with no term dates at all falls back to the whole year — that is a
+  // setup gap, not a user choice, and the page still has to render.
+  const selectedTermWindow =
+    windows.term.byNumber[selectedTermNumber] ?? windows.ay.thisAY;
+
+  const rangeInput: RangeInput = selectedTermWindow
+    ? {
+        ayCode: selectedAy,
+        from: selectedTermWindow.from,
+        to: selectedTermWindow.to,
+        cmpFrom: null,
+        cmpTo: null,
+      }
+    : resolveRange({}, windows, selectedAy, undefined, {
+        defaultPreset: 'thisAY',
+      });
 
   // Resolve current term so the vacation-leave quota (per-term, KD #94) can be
   // counted. Prefer the current-flagged term in the selected AY; fall back to
@@ -288,47 +339,29 @@ export default async function AttendanceInsightsPage({
 
   const schoolConfig = await getSchoolConfig();
 
-  // Comparison-AY headline rate, when a comparison year is set. Align the
-  // comparison to the SAME term when it's derivable — find which term number
-  // `rangeInput` resolved to (by matching it against the selected AY's own
-  // `windows.term.byNumber`), then look up that same term number in the
-  // comparison AY's own terms. When `rangeInput` doesn't match a term window
-  // (custom range, or between-terms/cross-AY fallback), fall back to the
-  // comparison AY's whole year (the card copy reads generically, so the
-  // fallback never overclaims scope parity).
-  const selectedTermNumber = compareAy
-    ? (
-        Object.entries(windows.term.byNumber) as [
-          string,
-          { from: string; to: string } | null,
-        ][]
-      ).find(
-        ([, w]) => w && w.from === rangeInput.from && w.to === rangeInput.to
-      )?.[0]
-    : undefined;
-
+  // The comparison is the SAME TERM in the comparison year. The term number is
+  // now known outright rather than recovered by matching date strings, so the
+  // alignment is exact.
   const compareWindows = compareAy
     ? await getDashboardWindows(compareAy)
     : null;
   const compareTermWindow =
-    compareWindows && selectedTermNumber
-      ? compareWindows.term.byNumber[
-          Number(selectedTermNumber) as 1 | 2 | 3 | 4
-        ]
-      : null;
+    compareWindows?.term.byNumber[selectedTermNumber] ?? null;
 
-  const priorRangeInput: RangeInput | null = compareAy
-    ? compareTermWindow
-      ? {
-          ayCode: compareAy,
-          from: compareTermWindow.from,
-          to: compareTermWindow.to,
-          cmpFrom: null,
-          cmpTo: null,
-        }
-      : resolveRange({}, compareWindows!, compareAy, undefined, {
-          defaultPreset: 'thisAY',
-        })
+  // 🔴 NO WHOLE-YEAR FALLBACK. This used to compare the selected window against
+  // the comparison year's ENTIRE YEAR whenever the term could not be resolved,
+  // and present that as a comparison — one term against four, labelled as
+  // like-for-like. If the comparison year has no dates set for this term there
+  // is no honest comparison to draw, so none is drawn and the cards fall back
+  // to their no-comparison state.
+  const priorRangeInput: RangeInput | null = compareTermWindow
+    ? {
+        ayCode: compareAy!,
+        from: compareTermWindow.from,
+        to: compareTermWindow.to,
+        cmpFrom: null,
+        cmpTo: null,
+      }
     : null;
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
@@ -561,31 +594,13 @@ export default async function AttendanceInsightsPage({
         actions={<ExportCsvButton data={exportData} />}
       />
 
-      {/* ⚠ THE RANGE WAS ALREADY BEING READ HERE — only the control was
-          missing. `resolveRange` above pulls `from`/`to`/`preset` out of the
-          URL and every figure below is scoped to what it returns, so this page
-          has always supported a date window; there was simply no way to set one
-          except by typing the query string. Same toolbar the module dashboards
-          use, so the two surfaces are driven the same way.
-
-          `showAySwitcher={false}` because the year is not chosen here — the
-          picker beside it chooses what to COMPARE AGAINST, which is a different
-          question, and two year dropdowns in one row would read as a bug. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ComparisonToolbar
-          ayCode={selectedAy}
-          ayCodes={ayCodes}
-          range={{ from: rangeInput.from, to: rangeInput.to }}
-          comparison={
-            rangeInput.cmpFrom && rangeInput.cmpTo
-              ? { from: rangeInput.cmpFrom, to: rangeInput.cmpTo }
-              : null
-          }
-          termWindows={windows.term}
-          ayWindows={windows.ay}
-          showAySwitcher={false}
-          presets={TERM_SCOPED_PRESETS}
-        />
+      {/* The two questions this page answers, in order: which term am I
+          looking at, and what am I holding it against. A date range picker sat
+          here briefly and was the wrong control — see <TermPicker>. */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {termOptions.length > 0 && (
+          <TermPicker terms={termOptions} selectedTerm={selectedTermNumber} />
+        )}
         <CompareAyPicker
           primaryAy={selectedAy}
           ayCodes={ayCodes}
