@@ -40,6 +40,10 @@ export const ALL_AUDIT_ACTIONS = [
   'section.delete',
   'section.realphabetize',
   'section.index.generate',
+  // A single manual correction, kept distinct from a whole-roster generate:
+  // "who moved these two numbers, and when" is a different question from
+  // "when was this class renumbered", and only one of them names students.
+  'section.index.swap',
   'section.subject.assign',
   'section.subject.remove',
   'section.subjects.load_defaults',

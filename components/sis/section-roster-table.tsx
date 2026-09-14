@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowRightLeft, Pencil, Users } from 'lucide-react';
+import { ArrowDownUp, ArrowRightLeft, Pencil, Users } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/data-table';
@@ -15,6 +15,10 @@ import {
   SectionTransferDialog,
   type SiblingSection,
 } from '@/components/sis/section-transfer-dialog';
+import {
+  SwapIndexDialog,
+  type SwapCandidateRow,
+} from '@/components/sis/swap-index-dialog';
 
 export type SectionRosterRow = {
   enrolmentId: string;
@@ -64,6 +68,23 @@ export function SectionRosterTable({
   sectionId: string;
   siblings: SiblingSection[];
 }) {
+  // Who can trade class numbers: on the roster and already numbered. A student
+  // who has left keeps their number permanently — it is never handed to anyone
+  // else — so they are not offered, and an unnumbered row has nothing to trade.
+  const swappable: SwapCandidateRow[] = React.useMemo(
+    () =>
+      rows
+        .filter(
+          (r) => r.enrollmentStatus !== 'withdrawn' && r.indexNumber != null
+        )
+        .map((r) => ({
+          enrolmentId: r.enrolmentId,
+          indexNumber: r.indexNumber,
+          studentName: r.studentName,
+        })),
+    [rows]
+  );
+
   const columns: ColumnDef<SectionRosterRow>[] = React.useMemo(
     () => [
       {
@@ -268,6 +289,30 @@ export function SectionRosterTable({
                   <span className="sr-only">Edit enrolment</span>
                 </Button>
               </EnrolmentEditSheet>
+              {r.enrollmentStatus !== 'withdrawn' && r.indexNumber != null && (
+                <SwapIndexDialog
+                  sectionId={sectionId}
+                  subject={{
+                    enrolmentId: r.enrolmentId,
+                    indexNumber: r.indexNumber,
+                    studentName: r.studentName,
+                  }}
+                  candidates={swappable.filter(
+                    (c) => c.enrolmentId !== r.enrolmentId
+                  )}
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      title="Swap class number"
+                    >
+                      <ArrowDownUp className="size-3" />
+                      <span className="sr-only">Swap class number</span>
+                    </Button>
+                  }
+                />
+              )}
               {r.enrollmentStatus !== 'withdrawn' && r.enroleeNumber && (
                 <SectionTransferDialog
                   enroleeNumber={r.enroleeNumber}
@@ -294,7 +339,7 @@ export function SectionRosterTable({
         enableHiding: false,
       },
     ],
-    [ayCode, sectionId, sectionName, siblings]
+    [ayCode, sectionId, sectionName, siblings, swappable]
   );
 
   // Defaults to All, not Active.

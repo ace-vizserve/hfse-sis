@@ -104,3 +104,18 @@ export const SectionUpdateSchema = z.object({
 });
 
 export type SectionUpdateInput = z.infer<typeof SectionUpdateSchema>;
+
+// POST /api/sections/[id]/swap-index — exchange two students' index numbers.
+//
+// A swap, not a set: the two enrolments trade values, so the set of numbers the
+// section holds is unchanged. Setting one student's number to a free-typed
+// value could open a gap, duplicate a number, or revive a retired one, which is
+// why the route takes a pair and never a target number (migration 147).
+//
+// Both ids are section_students.id (the enrolment row), not students.id — the
+// number belongs to the placement, not the person.
+export const SectionIndexSwapSchema = z.object({
+  enrolment_a: z.string().uuid('Pick a student'),
+  enrolment_b: z.string().uuid('Pick a student to swap with'),
+});
+export type SectionIndexSwapInput = z.infer<typeof SectionIndexSwapSchema>;

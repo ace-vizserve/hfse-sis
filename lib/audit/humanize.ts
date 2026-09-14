@@ -105,6 +105,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'section.delete': 'Section removed',
   'section.realphabetize': 'Roster re-alphabetized',
   'section.index.generate': 'Class index generated',
+  'section.index.swap': 'Index numbers swapped',
   'section.track.assign': 'Section track set',
   'section.schedule.update': 'Section schedule set',
   'section.subject.assign': 'Subject attached to section',
@@ -807,6 +808,30 @@ function templateSummary(
       if (section) parts.push(section);
       const n = numish(ctx.rows_renumbered);
       if (n !== null) parts.push(`${n} student${n === 1 ? '' : 's'} indexed`);
+      return joinParts(parts);
+    }
+
+    case 'section.index.swap': {
+      // Reads as: "P5 Perseverance · Cruz, Ana #3 → #4 · Dizon, Ben #4 → #3".
+      // Both sides are spelled out rather than summarised as "2 students
+      // swapped" — the whole point of logging a manual correction is that
+      // someone can later see WHICH numbers moved without opening the diff.
+      const parts: string[] = [];
+      const section = str(ctx.sectionName ?? ctx.section_name ?? ctx.section);
+      if (section) parts.push(section);
+
+      const side = (v: unknown): string | null => {
+        if (!v || typeof v !== 'object') return null;
+        const o = v as Record<string, unknown>;
+        const name = str(o.name);
+        const from = numish(o.old_index);
+        const to = numish(o.new_index);
+        if (!name) return null;
+        if (from === null || to === null) return name;
+        return `${name} #${from}${ARROW}#${to}`;
+      };
+
+      for (const v of [side(ctx.a), side(ctx.b)]) if (v) parts.push(v);
       return joinParts(parts);
     }
 
