@@ -1166,35 +1166,62 @@ export type CrossAyMatch = {
   enroleeNumber: string;
   studentNumber: string | null;
   fullName: string;
-  firstName: string | null;
-  lastName: string | null;
-  middleName: string | null;
   level: string | null;
   section: string | null;
   status: string | null;
+  /** Full-text relevance, best first. Ranking is why the result order is now
+   *  meaningful: the previous version sorted by application date, so the best
+   *  name match was wherever it happened to fall. */
+  rank: number;
+};
+
+// `mergeSearchHits` lived here: a pure union/dedupe/sort/cap over the
+// per-column result lists, because the search fanned out into one query per
+// column per academic year and something had to reassemble them in JS.
+// Migration 160 moved that work into SQL, where the ordering and the limit
+// belong, so the helper and its test file are gone.
+
+/** One row as `search_students_across_ay` returns it (snake_case, per SQL). */
+export type SearchRow = {
+  ay_code: string;
+  enrolee_number: string | null;
+  student_number: string | null;
+  full_name: string | null;
+  level: string | null;
+  section: string | null;
+  status: string | null;
+  rank: number | null;
 };
 
 /**
- * Union + dedupe the per-column search result lists (first occurrence wins,
- * keyed by enroleeNumber; rows without one are dropped), then sort newest
- * application first and cap. Pure — exported for unit testing; the DB-side
- * `.or()` this replaces did the ordering/limit in one query, so this is the
- * client-side equivalent over the per-column `.ilike()` result lists.
+ * RPC rows → `CrossAyMatch`. Pure, and exported for testing: the search's
+ * matching and ordering now live in SQL where a unit test cannot reach them,
+ * so this is the seam worth pinning.
+ *
+ * Ordering is NOT re-sorted here — the function already returns best match
+ * first, and re-sorting in JS is what this change set out to stop doing.
  */
-export function mergeSearchHits<
-  T extends { enroleeNumber: string | null; created_at?: string | null },
->(lists: T[][], limit: number): T[] {
-  const byEnrolee = new Map<string, T>();
-  for (const list of lists) {
-    for (const row of list) {
-      if (row.enroleeNumber && !byEnrolee.has(row.enroleeNumber)) {
-        byEnrolee.set(row.enroleeNumber, row);
-      }
-    }
-  }
-  return Array.from(byEnrolee.values())
-    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-    .slice(0, limit);
+export function mapSearchRows(rows: readonly SearchRow[]): CrossAyMatch[] {
+  return rows
+    .filter((r): r is SearchRow & { enrolee_number: string } =>
+      // enroleeNumber is the row's identity — the old code dropped these too.
+      Boolean(r.enrolee_number)
+    )
+    .map((r) => ({
+      ayCode: r.ay_code,
+      enroleeNumber: r.enrolee_number,
+      studentNumber: r.student_number,
+      // Empty rather than a placeholder. The old code had a
+      // `?? '(no name on file)'` fallback that could never fire — the
+      // expression before it returned '' and `??` only catches null — so a
+      // nameless row already rendered blank. Keeping that, rather than
+      // silently starting to print invented text on screen.
+      fullName: r.full_name ?? '',
+      level: r.level,
+      section: r.section,
+      status: r.status,
+      rank: r.rank ?? 0,
+    }));
 }
 
 export async function searchStudentsAcrossAY(
@@ -1205,124 +1232,26 @@ export async function searchStudentsAcrossAY(
 
   const supabase = createAdmissionsClient();
 
-  // 1) Pull every active AY code from academic_years (sorted desc so the most
-  //    recent matches surface first).
-  const { data: ays, error: ayErr } = await supabase
-    .from('academic_years')
-    .select('ay_code')
-    .order('ay_code', { ascending: false });
-  if (ayErr) {
-    console.error(
-      '[sis] searchStudentsAcrossAY academic_years lookup failed:',
-      ayErr.message
-    );
-    return [];
-  }
-  const ayCodes = ((ays ?? []) as { ay_code: string }[]).map((a) => a.ay_code);
-
-  // 2) For each AY, query the apps + status tables in parallel. Bail on per-AY
-  //    failures so a single missing table doesn't kill the whole search.
+  // ONE call. This used to be `1 + (academic_years * 6)` requests — an
+  // academic_years lookup, then five `.ilike('%term%')` calls per year (one
+  // per searched column) plus a status lookup — reassembled in JavaScript.
+  // That count grew by six on every AY rollover, permanently.
   //
-  //    One `.ilike()` call per searched column, unioned + deduped via
-  //    mergeSearchHits below — NOT a single `.or()` with the query spliced
-  //    into the raw filter string. `.or()`'s argument is a PostgREST DSL
-  //    where `,` and `(`/`)` are grammar — a search like "Tan, Wei Ming"
-  //    corrupted the condition list and silently returned no matches.
-  //    `.ilike('col', pattern)` passes the pattern as a parameterized filter
-  //    value, so only genuine ILIKE wildcards matter — and the user's own
-  //    literal `%`/`_` are escaped below (unchanged search semantics).
-  const escaped = trimmed.replace(/[%_]/g, (m) => `\\${m}`);
-  const pattern = `%${escaped}%`;
-  const SEARCH_COLUMNS = [
-    'enroleeNumber',
-    'studentNumber',
-    'enroleeFullName',
-    'firstName',
-    'lastName',
-  ] as const;
-
-  type AppHit = {
-    enroleeNumber: string | null;
-    studentNumber: string | null;
-    enroleeFullName: string | null;
-    firstName: string | null;
-    lastName: string | null;
-    middleName: string | null;
-    created_at: string | null;
-  };
-
-  const perAyPromises = ayCodes.map(async (ayCode) => {
-    const prefix = prefixFor(ayCode);
-    const appsSelect =
-      'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName, created_at';
-    const perColumn = await Promise.all(
-      SEARCH_COLUMNS.map((col) =>
-        supabase
-          .from(`${prefix}_enrolment_applications`)
-          .select(appsSelect)
-          .ilike(col, pattern)
-          .order('created_at', { ascending: false })
-          .limit(20)
-      )
-    );
-    const failed = perColumn.find((res) => res.error);
-    if (failed?.error) {
-      console.warn(
-        `[sis] cross-AY search apps fail (${ayCode}):`,
-        failed.error.message
-      );
-      return [] as CrossAyMatch[];
-    }
-    const apps = mergeSearchHits(
-      perColumn.map((res) => (res.data ?? []) as AppHit[]),
-      20
-    );
-    if (apps.length === 0) return [] as CrossAyMatch[];
-
-    const enroleeNumbers = apps
-      .map((a) => a.enroleeNumber)
-      .filter((x): x is string => !!x);
-    const { data: statusData } = await supabase
-      .from(`${prefix}_enrolment_status`)
-      .select('enroleeNumber, classLevel, classSection, applicationStatus')
-      .in('enroleeNumber', enroleeNumbers);
-    type StatusHit = {
-      enroleeNumber: string | null;
-      classLevel: string | null;
-      classSection: string | null;
-      applicationStatus: string | null;
-    };
-    const byEnrolee = new Map<string, StatusHit>();
-    for (const s of (statusData ?? []) as StatusHit[]) {
-      if (s.enroleeNumber) byEnrolee.set(s.enroleeNumber, s);
-    }
-
-    return apps
-      .filter((a) => a.enroleeNumber)
-      .map((a) => {
-        const s = byEnrolee.get(a.enroleeNumber!);
-        const fullName =
-          a.enroleeFullName ??
-          [a.firstName, a.lastName].filter(Boolean).join(' ') ??
-          '(no name on file)';
-        return {
-          ayCode,
-          enroleeNumber: a.enroleeNumber!,
-          studentNumber: a.studentNumber,
-          fullName,
-          firstName: a.firstName,
-          lastName: a.lastName,
-          middleName: a.middleName,
-          level: s?.classLevel ?? null,
-          section: s?.classSection ?? null,
-          status: s?.applicationStatus ?? null,
-        };
-      });
+  // The function searches three things (migration 160): "enroleeFullName" by
+  // full-text match, and the two identifier columns by ILIKE. Identifiers stay
+  // out of the tsvector because `to_tsvector` does not treat '2024-0117' as an
+  // identifier, and studentNumber lookup has to remain exact (Hard Rule #4).
+  const { data, error } = await supabase.rpc('search_students_across_ay', {
+    p_query: trimmed,
+    p_limit: 50,
   });
 
-  const perAy = await Promise.all(perAyPromises);
-  // Flatten + cap at 50 most recent (AY-sorted) so the API stays bounded.
-  return perAy.flat().slice(0, 50);
+  if (error) {
+    console.error('[sis] searchStudentsAcrossAY failed:', error.message);
+    return [];
+  }
+
+  return mapSearchRows((data ?? []) as SearchRow[]);
 }
 
 export type EnrollmentHistoryEntry = {
