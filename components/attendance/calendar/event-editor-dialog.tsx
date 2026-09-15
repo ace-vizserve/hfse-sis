@@ -46,6 +46,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { CalendarEventRow } from '@/lib/attendance/calendar';
+import type { LevelCode } from '@/lib/sis/levels';
+import { EventScopeField } from './event-scope-field';
 import {
   AUDIENCE_LABELS,
   AUDIENCE_VALUES,
@@ -205,6 +207,11 @@ export function EventEditorDialog({
   const [label, setLabel] = useState('');
   const [typeKey, setTypeKey] = useState<string>('public_holiday');
   const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
+  // Level / class scope (migration 158). Informational events only — a closure
+  // is still whole-school-or-band, because school_calendar has no level column
+  // and nothing in two years of HFSE's calendar closes school for one level.
+  const [levels, setLevels] = useState<LevelCode[]>([]);
+  const [sectionIds, setSectionIds] = useState<string[]>([]);
   // Past-date warning confirm (future/today saves directly; a passed date warns).
   const [pastWarnOpen, setPastWarnOpen] = useState(false);
 
@@ -227,12 +234,16 @@ export function EventEditorDialog({
       setLabel(editing.label);
       setTypeKey(entryKeyForEvent(editing.category));
       setEventAudience(editing.audience);
+      setLevels(editing.levels ?? []);
+      setSectionIds(editing.sectionIds ?? []);
     } else {
       setStart(seedStart);
       setEnd(seedEnd);
       setLabel('');
       setTypeKey('public_holiday');
       setEventAudience(defaultAudience);
+      setLevels([]);
+      setSectionIds([]);
     }
   }
   if (!open && initKey !== null) setInitKey(null);
@@ -268,6 +279,10 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category: selected.category,
                 audience: eventAudience,
+                // Explicit [] -> null CLEARS the scope; the route forwards only
+                // what is sent, so an omitted key would leave it untouched.
+                levels: levels.length > 0 ? levels : null,
+                sectionIds: sectionIds.length > 0 ? sectionIds : null,
                 pastDateOverride: end < sgToday(),
               }
             : {
@@ -277,6 +292,8 @@ export function EventEditorDialog({
                 label: label.trim(),
                 category: selected.category,
                 audience: eventAudience,
+                levels: levels.length > 0 ? levels : null,
+                sectionIds: sectionIds.length > 0 ? sectionIds : null,
                 pastDateOverride: end < sgToday(),
               }
         )
@@ -355,25 +372,42 @@ export function EventEditorDialog({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Level</Label>
-                <Select
-                  value={eventAudience}
-                  onValueChange={(v) => setEventAudience(v as Audience)}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Pick a level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AUDIENCE_VALUES.map((a) => (
-                      <SelectItem key={a} value={a}>
-                        {a === 'all' ? 'Whole school' : AUDIENCE_LABELS[a]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* A closure is whole-school or one half of it — school_calendar
+                  has no level column, and nothing in two years of HFSE's
+                  calendar closes school for a single level. Informational
+                  events get the real scope picker below instead. */}
+              {selected.target === 'day' ? (
+                <div className="space-y-1.5">
+                  <Label>Who is it for?</Label>
+                  <Select
+                    value={eventAudience}
+                    onValueChange={(v) => setEventAudience(v as Audience)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Pick a level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AUDIENCE_VALUES.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a === 'all' ? 'Whole school' : AUDIENCE_LABELS[a]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
             </div>
+
+            {selected.target === 'event' ? (
+              <EventScopeField
+                levels={levels}
+                sectionIds={sectionIds}
+                onChange={(next) => {
+                  setLevels(next.levels);
+                  setSectionIds(next.sectionIds);
+                }}
+              />
+            ) : null}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

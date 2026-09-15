@@ -34,7 +34,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  getCalendarEventsForTerm,
+  getCalendarEventsForSection,
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
 import {
@@ -51,7 +51,7 @@ import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { levelTypeForAudienceLookup, type LevelCode } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -243,11 +243,13 @@ export default async function SectionAttendancePage({
   // Audience scope (KD #76): the section's level type drives which calendar
   // rows + events are visible. `getDedupedSchoolCalendarForTerm` returns
   // exactly one row per date (level-specific override wins over the 'all'
-  // baseline) so the grid never renders the same date twice. Calendar
-  // events filter to ['all', levelType] so primary/secondary-only events
-  // stay scoped to the right cohort.
+  // baseline) so the grid never renders the same date twice.
+  //
+  // Events are scoped by the section's LEVEL, not its band (migration 158).
+  // `getCalendarEventsForSection` still honours `audience` for the rows that
+  // carry no level, so a pre-158 event behaves exactly as it did — but "P6
+  // Fieldtrip" no longer tags a P1 teacher's column.
   const sectionLevelType = levelTypeForAudienceLookup(level?.code ?? null);
-  const audienceForEvents = sectionLevelType ?? 'all';
   const [
     calendar,
     events,
@@ -259,7 +261,11 @@ export default async function SectionAttendancePage({
     rollups,
   ] = await Promise.all([
     getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
-    getCalendarEventsForTerm(selectedTermId, audienceForEvents),
+    getCalendarEventsForSection(
+      selectedTermId,
+      (level?.code as LevelCode | null) ?? null,
+      sectionId
+    ),
     getDailyForSection(sectionId, selectedTermId),
     getCompassionateUsageForSection(sectionId, section.academic_year_id),
     getVacationLeaveUsageForSection(

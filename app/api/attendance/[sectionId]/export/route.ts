@@ -6,11 +6,11 @@ import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
-  getCalendarEventsForTerm,
+  getCalendarEventsForSection,
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
 import { getDailyForSection, isMarked } from '@/lib/attendance/queries';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { levelTypeForAudienceLookup, type LevelCode } from '@/lib/sis/levels';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
@@ -153,7 +153,11 @@ export async function GET(
   const levelType = levelTypeForAudienceLookup(level?.code ?? null);
   const [calendar, events, daily] = await Promise.all([
     getDedupedSchoolCalendarForTerm(termId, levelType),
-    getCalendarEventsForTerm(termId, levelType ?? 'all'),
+    getCalendarEventsForSection(
+      termId,
+      (level?.code as LevelCode | null) ?? null,
+      sectionId
+    ),
     getDailyForSection(sectionId, termId),
   ]);
 
