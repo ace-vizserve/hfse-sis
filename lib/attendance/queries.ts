@@ -3,15 +3,6 @@ import { cache } from 'react';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
-import {
-  isEncodableDayType,
-  type Audience,
-  type AttendanceStatus,
-  type DayType,
-  type ExReason,
-} from '@/lib/schemas/attendance';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
-import { getSchoolConfig } from '@/lib/sis/school-config';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { expandSchoolDays } from '@/lib/attendance/school-days';
 import {
@@ -21,6 +12,15 @@ import {
 } from '@/lib/attendance/section-summary';
 import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 import { sgToday } from '@/lib/dates';
+import {
+  isEncodableDayType,
+  type AttendanceStatus,
+  type Audience,
+  type DayType,
+  type ExReason,
+} from '@/lib/schemas/attendance';
+import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { getSchoolConfig } from '@/lib/sis/school-config';
 
 // Attendance module — server-side read helpers.
 //
