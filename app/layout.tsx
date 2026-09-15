@@ -87,6 +87,7 @@ async function CommandPaletteMount() {
   return (
     <CommandPalette
       role={role}
+      viewerId={viewer.id}
       capabilities={capabilities}
       hiddenModules={hiddenModules}
     />

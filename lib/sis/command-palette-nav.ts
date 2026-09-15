@@ -19,7 +19,11 @@ import { can, type Capability } from '@/lib/auth/capabilities';
 import type { Role } from '@/lib/auth/roles';
 import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
 import { isHiddenModuleHref } from '@/lib/sidebar/module-visibility';
-import type { SidebarModule } from '@/lib/sidebar/registry';
+import {
+  MODULE_ORDER,
+  SIDEBAR_REGISTRY,
+  type SidebarModule,
+} from '@/lib/sidebar/registry';
 
 // The ⌘K palette's static nav data + its visibility rule, extracted out of
 // components/sis/command-palette.tsx so both can be imported by a plain test.
@@ -369,4 +373,154 @@ export function visibleNavEntries(
       !isHiddenModuleHref(entry.href, hiddenModules) &&
       (!entry.requiresCapability || can(capabilities, entry.requiresCapability))
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Quick actions — the per-module CTA the sidebar already renders, surfaced
+// across EVERY module instead of only the one you are standing in.
+//
+// The sidebar shows exactly one (module-sidebar.tsx:207, keyed on the current
+// module + role), so Admissions' "To follow" does not exist for you until you
+// navigate to Admissions first. In the palette they are all reachable at once.
+//
+// No new data: this reads `quickActionByRole` straight off SIDEBAR_REGISTRY.
+// Gated by the same isRouteAllowed() + hiddenModules pair as visibleNavEntries
+// below it, so a CTA never offers a route the proxy would bounce.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type QuickActionEntry = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** Module the action belongs to — rendered as the row's mono micro-copy,
+   *  because a bare "To follow" is meaningless once these are pooled out of
+   *  their module context. */
+  module: SidebarModule;
+  moduleLabel: string;
+};
+
+export function visibleQuickActions(
+  role: Role | null,
+  hiddenModules: readonly SidebarModule[] = []
+): QuickActionEntry[] {
+  if (!role) return [];
+
+  const out: QuickActionEntry[] = [];
+  // `moduleKey`, not `module` — a bare `module` binding trips
+  // @next/next/no-assign-module-variable.
+  for (const moduleKey of MODULE_ORDER) {
+    const action = SIDEBAR_REGISTRY[moduleKey].quickActionByRole[role];
+    if (!action) continue;
+    if (isHiddenModuleHref(action.href, hiddenModules)) continue;
+    if (!isRouteAllowed(hrefPathname(action.href), role)) continue;
+    out.push({
+      href: action.href,
+      label: action.label,
+      icon: action.icon,
+      module: moduleKey,
+      moduleLabel: SIDEBAR_REGISTRY[moduleKey].label,
+    });
+  }
+  return out;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Student verbs — the noun-then-verb half of the palette.
+//
+// Selecting a student used to go to exactly one hardcoded destination. These
+// are the other surfaces of the same record, reachable from the keys the
+// search result already carries. ONE LIST FOR EVERYONE, filtered by
+// isRouteAllowed() — not a list authored per role. Five hand-maintained lists
+// would drift, and the registry already carries role-coverage gaps
+// (registry.ts:311).
+//
+// ⚠ Every enrolled verb is keyed on `studentNumber` — the only stable student
+// ID (Hard Rule #4). `enroleeNumber` resets each AY and must never key these.
+// A match with no studentNumber is an APPLICANT: no Records or Attendance row
+// exists for them, so they get the admissions verb alone.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type StudentVerb = {
+  /** Stable key — also the cmdk value suffix, so it must not contain spaces. */
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  href: string;
+  /** Shown right-aligned in mono micro, matching the nav rows. */
+  hint: string;
+};
+
+/** Identity a verb list is built for. Mirrors the fields of the
+ *  `/api/sis/search` match the palette already holds. */
+export type StudentVerbTarget = {
+  studentNumber: string | null;
+  enroleeNumber: string;
+  ayCode: string;
+};
+
+export function visibleStudentVerbs(
+  target: StudentVerbTarget,
+  role: Role | null
+): StudentVerb[] {
+  const candidates: StudentVerb[] = [];
+  const sn = target.studentNumber;
+
+  if (sn) {
+    const base = `/records/students/${encodeURIComponent(sn)}`;
+    candidates.push(
+      {
+        key: 'record',
+        label: 'Open record',
+        icon: UserIcon,
+        href: base,
+        hint: 'Records',
+      },
+      {
+        key: 'attendance',
+        label: 'Attendance',
+        icon: CalendarClockIcon,
+        href: `/attendance/students/${encodeURIComponent(sn)}`,
+        hint: 'Attendance',
+      },
+      {
+        key: 'academic',
+        label: 'Academic',
+        icon: GraduationCapIcon,
+        // The Records detail page reads ?tab= and validates it against
+        // TAB_KEYS, so these deep-link straight to the tab.
+        href: `${base}?tab=academic`,
+        hint: 'Records',
+      },
+      {
+        key: 'discipline',
+        label: 'Discipline',
+        icon: ClipboardListIcon,
+        href: `${base}?tab=discipline`,
+        hint: 'Records',
+      }
+    );
+  } else {
+    candidates.push({
+      key: 'application',
+      label: 'Open application',
+      icon: FileTextIcon,
+      href: `/admissions/applications/${encodeURIComponent(target.enroleeNumber)}?ay=${encodeURIComponent(target.ayCode)}`,
+      hint: 'Admissions',
+    });
+  }
+
+  return candidates.filter((verb) =>
+    isRouteAllowed(hrefPathname(verb.href), role)
+  );
+}
+
+/** The verb Enter runs — today's behaviour, unchanged. The first surviving
+ *  verb is the record for an enrolled student and the application for an
+ *  applicant, which is exactly what studentHref() resolved to before the
+ *  sub-view existed. Null when the role can reach none of them. */
+export function primaryStudentVerb(
+  target: StudentVerbTarget,
+  role: Role | null
+): StudentVerb | null {
+  return visibleStudentVerbs(target, role)[0] ?? null;
 }
