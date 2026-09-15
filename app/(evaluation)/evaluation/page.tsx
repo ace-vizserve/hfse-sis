@@ -12,12 +12,16 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 
 import { ComparisonToolbar } from '@/components/dashboard/comparison-toolbar';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
-import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
+import {
+  ExportCsvButton,
+  ExportCsvButtonPending,
+} from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { PriorityPanel } from '@/components/dashboard/priority-panel';
 import {
@@ -41,6 +45,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   formatRangeLabel,
   resolveRange,
@@ -59,6 +64,55 @@ import { buildEvaluationDashboardExport } from '@/lib/evaluation/dashboard-expor
 import { buildAllRowSets } from '@/lib/evaluation/drill';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
+
+// Both of these await the page's un-awaited `buildAllRowSets` promise so the
+// year-wide write-up scan stays off the critical path. They are the only two
+// things on the page that need it — see the note at the promise itself.
+
+async function EvaluationExportButton(
+  props: Omit<
+    Parameters<typeof buildEvaluationDashboardExport>[0],
+    'bySection'
+  > & {
+    rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  }
+) {
+  const { rowSetsPromise, ...rest } = props;
+  const rowSets = await rowSetsPromise;
+  return (
+    <ExportCsvButton
+      data={buildEvaluationDashboardExport({
+        ...rest,
+        bySection: rowSets.bySection,
+      })}
+    />
+  );
+}
+
+async function WriteupsBySectionSection({
+  rowSetsPromise,
+  ayCode,
+  rangeFrom,
+  rangeTo,
+}: {
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  ayCode: string;
+  rangeFrom: string;
+  rangeTo: string;
+}) {
+  const rowSets = await rowSetsPromise;
+  if (rowSets.bySection.length === 0) return null;
+  return (
+    <WriteupsBySectionCard
+      data={rowSets.bySection}
+      ayCode={ayCode}
+      rangeFrom={rangeFrom}
+      rangeTo={rangeTo}
+      initialBySection={rowSets.bySection}
+      initialWriteups={rowSets.writeups}
+    />
+  );
+}
 
 // Evaluation module landing page. The real work happens on /evaluation/sections
 // (Bite 4) — this page is a light orientation surface describing what the
@@ -136,14 +190,34 @@ export default async function EvaluationHub({
     : null;
   // Chase metrics are live-state + current-term-scoped + oversight-only — no
   // date window, so they don't depend on rangeInput. T4 → not available → "—".
-  const [kpisResult, velocity, drillRowSets, chaseKpis] = rangeInput
+  // ⚠ CREATED, NOT AWAITED. `buildAllRowSets` walks every write-up in the year
+  // and nothing above the fold needs it: the KPI values come from `kpisResult`,
+  // and this feeds only the CSV export payload and the by-section card near the
+  // bottom. Awaiting it here made the whole page wait — measured 2026-09-15 at
+  // 3,012ms cold against ~500ms for the rest of the fan-out, the slowest
+  // dashboard in the app by a factor of five. Both consumers now sit behind
+  // their own <Suspense> and await this one promise, so the scan still runs
+  // exactly once per render. Same shape as /attendance (KD #56/#57).
+  //
+  // The KPI cards' drill sheets lost their `initialWriteups` seed with this —
+  // that seed was `placeholderData` (KD #24), painted for an instant and then
+  // replaced by the route's own narrowed fetch, so the sheets behave the same
+  // and the page no longer blocks to produce it.
+  //
+  // Do not add a `.catch` here: an un-awaited promise that later rejects is
+  // still awaited by both consumers, and swallowing it would hide the failure
+  // from the one that needs to show it.
+  const rowSetsPromise = rangeInput
+    ? buildAllRowSets({ ayCode, from: rangeInput.from, to: rangeInput.to })
+    : null;
+
+  const [kpisResult, velocity, chaseKpis] = rangeInput
     ? await Promise.all([
         getEvaluationKpisRange(rangeInput),
         getSubmissionVelocityRange(rangeInput),
-        buildAllRowSets({ ayCode, from: rangeInput.from, to: rangeInput.to }),
         canToggle ? getEvaluationChaseKpis(ayCode) : Promise.resolve(null),
       ])
-    : [null, null, null, null];
+    : [null, null, null];
   const comparisonLabel = kpisResult?.comparisonRange
     ? `vs ${formatRangeLabel(kpisResult.comparisonRange)}`
     : undefined;
@@ -267,17 +341,25 @@ export default async function EvaluationHub({
           // below it is (`canToggle && rangeInput && kpisResult &&
           // velocity`) so the button never appears without the Key figures
           // data it depends on.
-          canToggle && rangeInput && kpisResult && velocity && ayCode ? (
-            <ExportCsvButton
-              data={buildEvaluationDashboardExport({
-                ayCode,
-                rangeInput,
-                kpis: kpisResult,
-                velocity,
-                chaseKpis,
-                bySection: drillRowSets?.bySection ?? null,
-              })}
-            />
+          canToggle &&
+          rangeInput &&
+          kpisResult &&
+          velocity &&
+          ayCode &&
+          rowSetsPromise ? (
+            // Behind its own boundary: the button is in the hero, and the
+            // by-section figures it exports come from the deferred scan. The
+            // disabled fallback keeps the hero's shape while it lands.
+            <Suspense fallback={<ExportCsvButtonPending />}>
+              <EvaluationExportButton
+                ayCode={ayCode}
+                rangeInput={rangeInput}
+                kpis={kpisResult}
+                velocity={velocity}
+                chaseKpis={chaseKpis}
+                rowSetsPromise={rowSetsPromise}
+              />
+            </Suspense>
           ) : undefined
         }
       />
@@ -372,7 +454,6 @@ export default async function EvaluationHub({
                   ayCode={ayCode}
                   initialFrom={rangeInput.from}
                   initialTo={rangeInput.to}
-                  initialWriteups={drillRowSets?.writeups}
                 />
               )}
             />
@@ -388,7 +469,6 @@ export default async function EvaluationHub({
                   ayCode={ayCode}
                   initialFrom={rangeInput.from}
                   initialTo={rangeInput.to}
-                  initialWriteups={drillRowSets?.writeups}
                 />
               )}
             />
@@ -461,19 +541,20 @@ export default async function EvaluationHub({
               ayCode={ayCode}
               rangeFrom={rangeInput.from}
               rangeTo={rangeInput.to}
-              initialWriteups={drillRowSets?.writeups}
             />
           )}
 
-          {drillRowSets && drillRowSets.bySection.length > 0 && (
-            <WriteupsBySectionCard
-              data={drillRowSets.bySection}
-              ayCode={ayCode}
-              rangeFrom={rangeInput.from}
-              rangeTo={rangeInput.to}
-              initialBySection={drillRowSets.bySection}
-              initialWriteups={drillRowSets.writeups}
-            />
+          {rowSetsPromise && (
+            <Suspense
+              fallback={<Skeleton className="h-64 w-full rounded-xl" />}
+            >
+              <WriteupsBySectionSection
+                rowSetsPromise={rowSetsPromise}
+                ayCode={ayCode}
+                rangeFrom={rangeInput.from}
+                rangeTo={rangeInput.to}
+              />
+            </Suspense>
           )}
         </>
       )}
