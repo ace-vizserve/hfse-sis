@@ -1,0 +1,219 @@
+Sources: published calendar (107 entries)
+         register T1 (17 entries)
+         register T2 (29 entries)
+         register T3 (32 entries)
+
+
+══ A. CLOSURES — what teachers can and cannot mark ═══════════════════════
+
+── 🔴 8 closure(s) teachers can still mark attendance on ─────────────────
+  2026-02-20 Fri T1  stored=school_day           want=hbl                  Homebased Learning (HBL)  (369 mark(s), still valid — target day takes attendance)
+  2026-05-22 Fri T2  stored=school_day           want=school_holiday       Term 2 Marking Day
+  2026-05-25 Mon T2  stored=school_day           want=school_holiday       In-Lieu of Family Sportsfest
+  2026-10-02 Fri T4  stored=school_day           want=public_holiday       Children's Day
+  2026-10-23 Fri T4  stored=school_day           want=school_holiday       Term 4 Marking Day
+  2026-11-06 Fri T4  stored=school_day           want=school_holiday       Awards Deliberation Day
+  2026-11-08 Sun T4  stored=(no row)             want=public_holiday       Deepavali
+  2026-11-09 Mon T4  stored=school_day           want=public_holiday       In Lieu of Deepavali
+
+── ⚠ 5 closure(s) stored as the wrong kind of day ────────────────────────
+  2026-03-06 Fri T1  stored=no_class             want=school_holiday       Term 1 Marking Day
+  2026-04-10 Fri T2  stored=no_class             want=school_holiday       Staff Development Day
+  2026-07-05 Sun T3  stored=no_class             want=public_holiday       Youth Day
+  2026-07-17 Fri T3  stored=school_holiday       want=school_holiday+hbl   Staff Development Day
+  2026-09-04 Fri T3  stored=school_holiday       want=public_holiday       Teacher's Day
+
+── ✓ 9 closure(s) already correct ────────────────────────────────────────
+
+── 43 closure(s) fall outside every term window — nowhere to store them ──
+  2026-01-01              public_holiday       New Year's Day
+  2026-03-21              public_holiday       Hari Raya Puasa
+  2026-03-23              public_holiday       In Lieu of Hari Raya Puasa
+  2026-05-31              public_holiday       Vesak Day
+  2026-06-01              public_holiday       In Lieu of Vesak Day
+  2026-11-24..2026-12-24  school_holiday       Yearend School Holiday
+  2026-12-25              public_holiday       Christmas Day
+  2026-12-26..2026-12-31  school_holiday       Yearend School Holiday
+
+── 0 stored day row(s) carry a primary/secondary override ────────────────
+
+── Stored closures that neither source mentions ──────────────────────────
+  13 row(s): 11 on a weekend (harmless — a blank column the importer called no_class), 2 on a weekday
+  2026-04-08 Wed  no_class        General PTC
+  2026-04-09 Thu  no_class        (no label)
+
+
+══ B. EVENTS — the labels on the calendar ════════════════════════════════
+
+── 🔴 72 event(s) missing from the database ──────────────────────────────
+  2026-01-08              start_of_term     whole school             Start of 11th Academic Year
+  2026-01-12              school_event      whole school             ID Photoshoot Day (New students)
+  2026-01-17              parents_dialogue  whole school             First General Parent Engagement Session
+  2026-01-19              school_event      whole school             ID Photoshoot Day (New students)
+  2026-01-26              school_event      whole school             ID Photoshoot Day (New students)
+  2026-02-07              school_event      whole school             Learn as your Child Learns (LAYCL-Mathematics)
+  2026-02-13              school_event      whole school             Friendship Night
+  2026-02-16              school_event      whole school             Chinese New Year Celebration
+  2026-02-25..2026-02-27  term_exam         S1,S2,S3,S4              Secondary School Term 1 Exam
+  2026-02-27              school_event      P1                       Primary One Fieldtrip
+  2026-03-02..2026-03-05  term_exam         S1,S2,S3,S4              Secondary School Term 1 Exam
+  2026-03-04..2026-03-05  term_exam         P1,P2,P3,P4,P5,P6        Primary School Term 1 Exam
+  2026-03-11..2026-03-13  pfe               whole school             Eye and Dental Check up / First vaccination
+  2026-03-12              school_event      P4                       Primary Four Fieldtrip
+  2026-03-13              parents_dialogue  whole school             HAPI Community Meeting (6-7:30PM)
+  2026-03-13              school_event      whole school             Term 1 End party
+  2026-03-24              start_of_term     whole school             Start of Term 2
+  2026-04-08..2026-04-09  ptc               whole school             General PTC (Online)
+  2026-04-12              pfe               whole school             Outreach Programme
+  2026-04-17              school_event      P2,P3                    Primary Two and Three Fieldtrip
+  2026-04-24              school_event      P5                       Primary Five Fieldtrip
+  2026-04-30              pfe               whole school             Partner's recognition night
+  2026-05-08              school_event      P6                       Primary Six Fieldtrip
+  2026-05-09              pfe               whole school             Mommies Day Out
+  2026-05-13..2026-05-15  term_exam         S1,S2,S3,S4              Secondary School Term 2 Exam
+  2026-05-23              pfe               whole school             Family Sportsfest
+  2026-06-29              start_of_term     whole school             Start of Term 3
+  2026-07-03              school_event      whole school             Youth Day Celebration
+  2026-07-05              school_event      S1,S2,S3,S4              Youth Day Celebration
+  2026-07-08..2026-07-10  school_event      P4,P5,P6,S1,S2,S3,S4     Leadership Camp (UpperPri - Secondary)
+  2026-07-13              school_event      whole school             Moving up photoshoot
+  2026-07-18              parents_dialogue  whole school             Second General Parent Engagement Session
+  2026-07-20              school_event      whole school             Moving up photoshoot
+  2026-07-21              school_event      whole school             Racial Harmony Day Celebration
+  2026-07-27              school_event      whole school             Moving up and Graduation photoshoot
+  2026-07-27..2026-07-31  subject_week      whole school             STAR Week
+  2026-07-31              pfe               whole school             Second Vaccination
+  2026-08-01              pfe               whole school             Daddies Day Out
+  2026-08-10..2026-08-14  subject_week      whole school             Mother Tongue Week
+  2026-08-19..2026-08-21  term_exam         S1,S2,S3,S4              Secondary School Term 3 Exam
+  2026-08-24..2026-08-27  term_exam         S1,S2,S3,S4              Secondary School Term 3 Exam
+  2026-08-24              term_exam         S3                       Term 3 Exam (Biology, Math Paper 1)
+  2026-08-24              term_exam         S4                       Term 3 Exam (Chemistry, Math Paper 1)
+  2026-08-25              term_exam         S1,S2                    Term 3 Exam (History, Science)
+  2026-08-25              term_exam         S3                       Term 3 Exam (Literature Paper 2, Geography)
+  2026-08-25              term_exam         S4                       Term 3 Exam (Social Studies, Literature Paper 1)
+  2026-08-26..2026-08-27  term_exam         P1,P2,P3,P4,P5,P6        Primary School Term 3 Exam
+  2026-08-26              term_exam         S4                       Term 3 Exam (Biology, Math Paper 2)
+  2026-08-26              term_exam         S3                       Term 3 Exam (Chemistry, Social Studies)
+  2026-08-26              term_exam         S1,S2                    Term 3 Exam (Humanities, Math Paper 2)
+  2026-08-26              term_exam         S1,S2                    Term 3 Exam (Science, Computing)
+  2026-08-27              term_exam         S4                       Term 3 Exam (Geography, Literature Paper 2)
+  2026-08-27              term_exam         S1,S2                    Term 3 Exam (Humanities, Math Paper 2)
+  2026-08-27              term_exam         S3                       Term 3 Exam (Literature Paper 1, Math Paper 2)
+  2026-08-28              parents_dialogue  whole school             HAPI Community Meeting (6-7:30PM)
+  2026-09-14              start_of_term     whole school             Start of Term 4
+  2026-09-17..2026-09-18  school_event      S4                       Secondary Four Retreat
+  2026-09-21..2026-09-25  term_exam         S4                       Secondary Four Final Exam
+  2026-09-28..2026-09-30  term_exam         S4                       Secondary Four Final Exam
+  2026-10-01              school_event      whole school             Children's Day Celebration
+  2026-10-14..2026-10-16  term_exam         S1,S2,S3,S4              Secondary School Term 4 Exam
+  2026-10-19..2026-10-22  term_exam         S1,S2,S3,S4              Secondary School Term 4 Exam
+  2026-10-21..2026-10-22  term_exam         P1,P2,P3,P4,P5,P6        Primary School Term 4 Exam
+  2026-10-30              parents_dialogue  whole school             HAPI Community Meeting (6-7:30PM)
+  2026-10-30              school_event      P6                       Primary Six Retreat
+  2026-11-04..2026-11-05  ptc               whole school             General PTC (Online)
+  2026-11-10..2026-11-12  school_event      whole school             Intramurals and Foundation Week
+  2026-11-13              school_event      whole school             Yearend Party
+  2026-11-16              school_event      whole school             Moving-up ceremony / Baccalaureate Mass
+  2026-11-17              school_event      whole school             Moving-up ceremony
+  2026-11-18              school_event      whole school             Moving-up ceremony
+  2026-11-19              school_event      whole school             Primary | Secondary Graduation
+
+── ✓ 15 event(s) already stored ──────────────────────────────────────────
+
+── 9 event(s) fall outside every term window — nowhere to store them ─────
+  2026-03-14..2026-03-22  term_break        whole school             Term Break
+  2026-05-29              parents_dialogue  whole school             HAPI Community Meeting (6-7:30PM)
+  2026-05-29              school_event      S1,S2,S3,S4              Secondary One to Four Fieldtrip
+  2026-05-29              school_event      whole school             Term 2 End party
+  2026-05-30..2026-06-28  term_break        whole school             Term Break
+  2026-09-07..2026-09-11  term_break        whole school             Term Break
+  2026-11-23              school_event      whole school             HFSE 11th Anniversary
+  2026-12-04              pfe               whole school             Parent Orientation AY2027
+  2026-12-07..2026-12-11  pfe               whole school             Collection Day for AY2027 Materials
+
+── Stored events that neither source mentions ────────────────────────────
+  2026-03-04..2026-03-05 term_exam         aud=all       Term 1 Exams
+  2026-05-08..2026-05-08 school_event      aud=all       P6 Fieldtrip
+  2026-05-25..2026-05-25 school_event      aud=all       In Lieu of Family Sportsfest
+  2026-02-16..2026-02-16 school_event      aud=all       CNY Celebration
+  2026-03-11..2026-03-13 other             aud=all       Eye & Dental Check-up / First Vaccination
+  2026-04-24..2026-04-24 school_event      aud=all       P5 Fieldtrip
+  2026-07-13..2026-07-13 school_event      aud=all       Moving up and Grad Photoshoot
+  2026-07-20..2026-07-20 school_event      aud=all       Moving up and Grad Photoshoot
+  2026-07-21..2026-07-21 school_event      aud=all       Racial Harmony Celebration
+  2026-07-27..2026-07-27 school_event      aud=all       Moving up and Grad Photoshoot
+  2026-02-20..2026-02-20 other             aud=all       Staff Development Day
+  2026-05-22..2026-05-22 other             aud=all       Marking Day
+
+
+══ C. LEVEL SCOPE — what the schema cannot hold yet ══════════════════════
+43 of 96 events name specific levels.
+The schema stores audience all/primary/secondary only, so these degrade:
+  2026-02-27              P1                       → stored as 'primary'   Primary One Fieldtrip
+  2026-03-12              P4                       → stored as 'primary'   Primary Four Fieldtrip
+  2026-04-17              P2,P3                    → stored as 'primary'   Primary Two and Three Fieldtrip
+  2026-04-24              P5                       → stored as 'primary'   Primary Five Fieldtrip
+  2026-05-08              P6                       → stored as 'primary'   Primary Six Fieldtrip
+  2026-07-08..2026-07-10  P4,P5,P6,S1,S2,S3,S4     → stored as 'all'   Leadership Camp (UpperPri - Secondary)
+  2026-07-14..2026-07-16  P4,P5,P6,S1,S2,S3,S4     → stored as 'all'   Leadership Camp
+  2026-08-20              S4                       → stored as 'secondary'   Term 3 Exam (Science Paper 1)
+  2026-08-21              S3,S4                    → stored as 'secondary'   Term 3 Exam (English Paper 1&2)
+  2026-08-24              S3                       → stored as 'secondary'   Term 3 Exam (Biology, Math Paper 1)
+  2026-08-24              S4                       → stored as 'secondary'   Term 3 Exam (Chemistry, Math Paper 1)
+  2026-08-24              S1,S2                    → stored as 'secondary'   Term 3 Exam (Math Paper 1, MT)
+  2026-08-25              S1,S2                    → stored as 'secondary'   Term 3 Exam (History, Science)
+  2026-08-25              S3                       → stored as 'secondary'   Term 3 Exam (Literature Paper 2, Geography)
+  2026-08-25              S1,S2                    → stored as 'secondary'   Term 3 Exam (Math Paper 1, English)
+  2026-08-25              S4                       → stored as 'secondary'   Term 3 Exam (Social Studies, Literature Paper 1)
+  2026-08-26              S4                       → stored as 'secondary'   Term 3 Exam (Biology, Math Paper 2)
+  2026-08-26              S3                       → stored as 'secondary'   Term 3 Exam (Chemistry, Social Studies)
+  2026-08-26              S1,S2                    → stored as 'secondary'   Term 3 Exam (Humanities, Math Paper 2)
+  2026-08-26              S1,S2                    → stored as 'secondary'   Term 3 Exam (Science, Computing)
+  2026-08-27              S4                       → stored as 'secondary'   Term 3 Exam (Geography, Literature Paper 2)
+  2026-08-27              S1,S2                    → stored as 'secondary'   Term 3 Exam (Humanities, Math Paper 2)
+  2026-08-27              S3                       → stored as 'secondary'   Term 3 Exam (Literature Paper 1, Math Paper 2)
+  2026-09-17..2026-09-18  S4                       → stored as 'secondary'   Secondary Four Retreat
+  2026-09-21..2026-09-25  S4                       → stored as 'secondary'   Secondary Four Final Exam
+  2026-09-28..2026-09-30  S4                       → stored as 'secondary'   Secondary Four Final Exam
+  2026-10-30              P6                       → stored as 'primary'   Primary Six Retreat
+
+→ 27 event(s) lose real scope on the way in. That is the case for the level field.
+
+
+══ D. SOURCE CONFLICTS — a human decides these ═══════════════════════════
+  2026-07-06 Mon  day type
+      published: public_holiday "In Lieu of Youth Day"
+      register:  school_holiday "In Lieu of Youth Day" (T3)
+      → register wins — term already taught
+  2026-09-03 Thu  register says closed, but the day has attendance marks
+      published: (nothing on this date)
+      register:  school_holiday "Teacher's Day" (T3)
+      → register masthead REJECTED — its own grid recorded a full day of marks
+  2026-07-05 Sun  "Youth Day Celebration" appears on different dates in each source
+      published: 2026-07-03..2026-07-03 "Youth Day Celebration"
+      register:  2026-07-05..2026-07-05 "Youth Day Celebration" (T3)
+      → both kept — the register date is what happened; drop the planned one unless you want the history
+  2026-07-14 Tue  "Leadership Camp" appears on different dates in each source
+      published: 2026-07-08..2026-07-10 "Leadership Camp (UpperPri - Secondary)"
+      register:  2026-07-14..2026-07-16 "Leadership Camp" (T3)
+      → both kept — the register date is what happened; drop the planned one unless you want the history
+
+── 3 register entr(ies) with no category and no published match ──────────
+  2026-02-25              [T1] Secondary T1 Exams
+      ↳ published on these dates: 2026-02-25..2026-02-27 term_exam "Secondary School Term 1 Exam"
+  2026-03-04              [T1] Primary T1 Exam
+      ↳ published on these dates: 2026-03-02..2026-03-05 term_exam "Secondary School Term 1 Exam"
+      ↳ published on these dates: 2026-03-04..2026-03-05 term_exam "Primary School Term 1 Exam"
+  2026-05-12              [T2] Vesak Day
+      ↳ nothing published on this date
+
+
+══ E. SUMMARY ════════════════════════════════════════════════════════════
+T4 (2026-09-14 .. 2026-11-19, live now): 49 rows stored, 0 closures, 0 events.
+T4 per the sources: 5 closures, 17 events.
+
+Closures:  8 markable that should not be, 5 wrong kind, 9 correct.
+Events:    72 missing, 15 stored.
+Conflicts: 4 to decide, 3 register entries to categorise.
+Unstorable: 43 closures + 9 events fall outside every term window.
