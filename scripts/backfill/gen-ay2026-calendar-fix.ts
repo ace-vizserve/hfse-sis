@@ -33,7 +33,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 import { PUBLISHED_AY2026 } from '../../lib/sis/backfill/calendar/published-ay2026';
-import { reconcile } from '../../lib/sis/backfill/calendar/reconcile';
+import {
+  KNOWN_SOURCE_ERRORS,
+  reconcile,
+} from '../../lib/sis/backfill/calendar/reconcile';
 import { extractRegisterCalendar } from '../../lib/sis/backfill/calendar/register-legend';
 import {
   audienceFor,
@@ -454,7 +457,7 @@ async function main() {
   const pastDays = dayChanges.filter((d) => d.termNumber !== 4);
   const t4Events = eventInserts.filter((e) => e.termNumber === 4);
   const pastEvents = eventInserts.filter((e) => e.termNumber !== 4);
-  const TOTAL = 7;
+  const TOTAL = 8;
 
   writeFileSync(
     `${OUT_DIR}/01-t4-closures.sql`,
@@ -497,6 +500,22 @@ async function main() {
   writeFileSync(
     `${OUT_DIR}/06-verify.sql`,
     verifyFile(HEADER('Verification (read-only)', 6, TOTAL))
+  );
+  // Rows a source put in that the same source's grid later disproved. Only
+  // emitted when such a row is actually stored, so the file is usually a no-op.
+  const disproved = storedEvents.filter((s2) =>
+    KNOWN_SOURCE_ERRORS.some(
+      (k) =>
+        k.startDate === s2.start_date &&
+        k.label.toLowerCase() === s2.label.toLowerCase()
+    )
+  );
+  writeFileSync(
+    `${OUT_DIR}/08-remove-disproved.sql`,
+    disprovedFile(
+      HEADER('Remove rows the sources disproved', 8, TOTAL),
+      disproved
+    )
   );
   writeFileSync(
     `${OUT_DIR}/07-level-scope.sql`,
@@ -732,6 +751,59 @@ join terms t on t.academic_year_id = ay.id
 where ce.term_id = t.id
   and ce.start_date = a.start_date
   and ce.label = a.label;
+
+commit;
+`;
+}
+
+function disprovedFile(
+  header: string,
+  rows: { start_date: string; end_date: string; label: string }[]
+): string {
+  if (rows.length === 0) {
+    return `${header}--
+-- Nothing to remove.
+
+select 'no changes' as note;
+`;
+  }
+  const reasons = KNOWN_SOURCE_ERRORS.map(
+    (k) => `--   ${k.startDate} "${k.label}"\n--     ${k.why}`
+  ).join('\n');
+  const values = rows
+    .map(
+      (r, i) =>
+        `  (date ${q(r.start_date)}, ${q(r.label)})${i === rows.length - 1 ? ';' : ','}`
+    )
+    .join('\n');
+  return `${header}--
+-- A register masthead is typed by hand at the start of term and is sometimes
+-- copied from last year. Where it disagrees with the grid beside it, the grid
+-- is what teachers actually recorded. These rows came from a masthead and the
+-- grid disproves them, so they are removed rather than left to mislead.
+--
+-- Deleting is correct here and NOT a Hard Rule #6 problem: that rule is about
+-- grade entries and audit logs. A calendar event is a label, has its own
+-- DELETE route, and carries no history anyone can cite.
+--
+${reasons}
+
+begin;
+
+drop table if exists _calfix_disproved;
+create temp table _calfix_disproved (start_date, label) as
+values
+${values}
+
+delete from calendar_events ce
+using _calfix_disproved d,
+     academic_years ay,
+     terms t
+where ay.ay_code = 'AY2026'
+  and t.academic_year_id = ay.id
+  and ce.term_id = t.id
+  and ce.start_date = d.start_date
+  and ce.label = d.label;
 
 commit;
 `;

@@ -189,7 +189,15 @@ Applied: 12 closures corrected, 63 events added, 4 audiences fixed. Before: 8 pu
 
 ⚠ **43 closures and 9 events fall outside every term window** — New Year's Day, the three term breaks, the Nov–Dec yearend block. Both calendar tables are term-scoped, so there is nowhere to store them. Reported by the audit, never silently dropped. **Still open.**
 
-⚠ **Four source conflicts are deliberately NOT applied** and need a human: Leadership Camp (published 8–10 Jul, register 14–16 Jul), Youth Day Celebration (3 vs 5 Jul), the 5–6 Jul closure kinds, and Vesak Day, whose T2 masthead carries the **AY2025** date (12 May; 2026's is 31 May).
+✅ **THE SOURCE CONFLICTS WERE SETTLED BY THE SOURCES, NOT BY A JUDGEMENT CALL — 2026-09-15.** Mr Ace: _"i mean the documents cant answer your concern?"_ They could, and asking him first was the error. Each was decided by evidence already on disk:
+
+- **"UpperPri" is P4–S4**, stated outright on every AY2025 register sheet: _"Leadership Camp P4 - Sec 4"_. Not an inference.
+- **The camp ran 14–16 Jul, not the published 8–10 Jul.** The T3 register's row-11 tags carry `SE` on **13 of 20 section sheets** for 14–16 Jul and on **none** for 8–10 Jul, which also hold 402/402/390 live marks — ordinary teaching days. Those 13 sheets are exactly P4→S4; the 7 blank ones are P1–P3, so the grid confirms the dates **and** the level scope independently.
+- **Vesak Day 12 May is AY2025's date.** 12 May 2026 carries **370 live marks**. Vesak 2026 is 31 May (zero marks, as is 1 Jun in lieu).
+- **Youth Day Celebration is 3 Jul, not 5 Jul.** 5 Jul 2026 is a **Sunday** and is Youth Day itself — the register tags 6 Jul `SH` for the day in lieu. 3 Jul carries 401 marks. The S1–S4 mastheads filed the public holiday under SCHOOL EVENTS, which is also why it read secondary-only.
+- **5–6 Jul closure kind is the one the documents do not settle, and it does not matter** — `public_holiday` and `school_holiday` are both non-encodable. (Singapore's Youth Day is a school holiday rather than a gazetted public one, which makes the register's `SH` the better label.)
+
+⚠ **THE RESOLUTIONS ARE ENCODED, NOT JUST APPLIED.** `reconcile.ts::KNOWN_SOURCE_ERRORS` drops a masthead entry the register's own grid disproves, each with the evidence that retired it, so a corrected row is not silently re-created on the next generator run. Apply file **08** removes such rows already stored. **Deleting is correct here and is not a Hard Rule #6 problem** — that rule covers grade entries and audit logs; a calendar event is a label with its own DELETE route and no history anyone can cite.
 
 ### KD #215
 

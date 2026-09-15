@@ -98,6 +98,45 @@ const CLOSURE_KINDS: ReadonlySet<CalendarKind> = new Set([
   'hbl',
 ]);
 
+/**
+ * Register masthead entries proven wrong by the register's OWN grid.
+ *
+ * A masthead is typed by hand at the start of term and sometimes copied from
+ * last year; the grid beside it is what teachers actually recorded. Where the
+ * two disagree and the grid settles it, the entry is dropped here rather than
+ * argued with every time the generator runs — otherwise a corrected row is
+ * silently re-created on the next run.
+ *
+ * Each entry carries the evidence that retired it. Do not add one without.
+ */
+export const KNOWN_SOURCE_ERRORS: {
+  startDate: string;
+  label: string;
+  why: string;
+}[] = [
+  {
+    startDate: '2026-05-12',
+    label: 'Vesak Day',
+    why: "12 May 2026 carries 370 live marks — a full teaching day. Vesak 2026 is 31 May (the published calendar's date, a Sunday, with 1 Jun in lieu; both show zero marks). The T2 masthead is holding AY2025's date, when Vesak fell on 12 May.",
+  },
+  {
+    startDate: '2026-07-05',
+    label: 'Youth Day Celebration',
+    why: '5 Jul 2026 is a SUNDAY and is Youth Day itself — the register tags 6 Jul SH for the day in lieu. A celebration did not happen on it. The published calendar puts the celebration on Friday 3 Jul, which carries 401 marks. The S1-S4 mastheads filed the public holiday under SCHOOL EVENTS, which also made it look secondary-only.',
+  },
+];
+
+function isKnownSourceError(entry: {
+  startDate: string;
+  label: string;
+}): boolean {
+  return KNOWN_SOURCE_ERRORS.some(
+    (k) =>
+      k.startDate === entry.startDate &&
+      k.label.toLowerCase() === entry.label.toLowerCase()
+  );
+}
+
 /** Loose equality for two labels naming the same thing in different words. */
 function sameThing(a: string, b: string): boolean {
   const norm = (s: string) =>
@@ -159,6 +198,7 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   // ── 2. Closures from the registers ─────────────────────────────────────
   for (const reg of input.registers) {
     for (const entry of reg.entries) {
+      if (isKnownSourceError(entry)) continue;
       if (entry.kind === null || !CLOSURE_KINDS.has(entry.kind)) continue;
       const dayType = targetFor(entry.kind).dayType;
       if (!dayType || dayType === 'no_class') continue;
@@ -242,6 +282,7 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   // are added alongside rather than replacing.
   for (const reg of input.registers) {
     for (const entry of reg.entries) {
+      if (isKnownSourceError(entry)) continue;
       if (entry.kind !== null && CLOSURE_KINDS.has(entry.kind)) continue;
 
       const overlaps = (e: ResolvedEvent) =>

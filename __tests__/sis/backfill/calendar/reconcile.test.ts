@@ -370,10 +370,10 @@ describe('uncategorised register entries', () => {
   it('reports a free-text entry neither source can place', () => {
     const { uncategorised } = run(
       [],
-      [reg('2026-05-12', '2026-05-12', 'Vesak Day', null)]
+      [reg('2026-06-15', '2026-06-15', 'Some unlabelled thing', null)]
     );
     expect(uncategorised).toEqual([
-      { date: '2026-05-12', label: 'Vesak Day', termLabel: 'T3' },
+      { date: '2026-06-15', label: 'Some unlabelled thing', termLabel: 'T3' },
     ]);
   });
 
@@ -381,10 +381,75 @@ describe('uncategorised register entries', () => {
     const { uncategorised } = run(
       [],
       [
-        reg('2026-05-12', '2026-05-12', 'Vesak Day', null),
-        reg('2026-05-12', '2026-05-12', 'vesak day', null),
+        reg('2026-06-15', '2026-06-15', 'Some thing', null),
+        reg('2026-06-15', '2026-06-15', 'some THING', null),
       ]
     );
     expect(uncategorised).toHaveLength(1);
+  });
+});
+
+describe('known source errors', () => {
+  // Masthead entries the register's OWN grid disproves. Dropped at ingest so a
+  // corrected row is not silently re-created the next time the generator runs.
+  it("drops Vesak Day's stale AY2025 date", () => {
+    // 12 May 2026 carries 370 live marks; Vesak 2026 is 31 May.
+    const { uncategorised, days, events } = run(
+      [],
+      [reg('2026-05-12', '2026-05-12', 'Vesak Day', null)]
+    );
+    expect(uncategorised).toEqual([]);
+    expect(days).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it('drops the Youth Day Celebration the register put on a Sunday', () => {
+    // 5 Jul 2026 is Youth Day itself; the celebration was Friday the 3rd.
+    const { events } = run(
+      [],
+      [
+        reg(
+          '2026-07-05',
+          '2026-07-05',
+          'Youth Day Celebration',
+          'school_event',
+          ['S1']
+        ),
+      ]
+    );
+    expect(events).toEqual([]);
+  });
+
+  it('keeps the published entry the register error was masking', () => {
+    const { events } = run(
+      [
+        pub(
+          '2026-07-03',
+          '2026-07-03',
+          'Youth Day Celebration',
+          'school_event'
+        ),
+      ],
+      [
+        reg(
+          '2026-07-05',
+          '2026-07-05',
+          'Youth Day Celebration',
+          'school_event',
+          ['S1']
+        ),
+      ]
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].startDate).toBe('2026-07-03');
+    expect(events[0].levels).toBeNull();
+  });
+
+  it('matches on the exact date only — a real entry elsewhere survives', () => {
+    const { events } = run(
+      [],
+      [reg('2026-08-12', '2026-08-12', 'Vesak Day', 'school_event')]
+    );
+    expect(events).toHaveLength(1);
   });
 });
