@@ -118,3 +118,56 @@ export const SubjectReportMapUpdateSchema = z.object({
 export type SubjectReportMapUpdateInput = z.infer<
   typeof SubjectReportMapUpdateSchema
 >;
+
+// PATCH /api/sis/admin/subjects/[configId]/term-weights — which components a
+// subject is graded on IN ONE TERM, and at what weights (migration 159).
+//
+// Miss Joann, 2026-09-15: S3 Filipino has an exam in some terms and not
+// others, and Global Perspectives had no exam in Term 3 — "those subjects have
+// PT scores only, and the PT score effectively is the exam". Before migration
+// 159 a missing component's weight was multiplied by zero rather than handed
+// back, so a term with no exam graded every student out of 80.
+//
+// Two ways to say it, because they are two different intentions:
+//
+//   { termId, components: { ww: true, pt: true, qa: false } }
+//     "no exam this term" — the weights follow, proportionally. This is what
+//     the tick boxes send and what Joann described.
+//
+//   { termId, ww_weight: 30, pt_weight: 70, qa_weight: 0 }
+//     the exact figures, for when the term's own workbook masthead states
+//     them. HFSE's workbooks print weights per term and they move between
+//     terms, which is how the AY2026 T2 Filipino / Global Perspectives error
+//     was found in the first place.
+//
+//   { termId, inherit: true }
+//     stop overriding — fall back to the subject config's weights.
+//
+// Integer percentages summing to 100, same contract as the config schemas
+// above; converted to numeric(4,2) on write to satisfy migration 159's CHECK.
+export const SubjectTermWeightsSchema = z.union([
+  z.object({
+    term_id: z.string().uuid(),
+    inherit: z.literal(true),
+  }),
+  z.object({
+    term_id: z.string().uuid(),
+    components: z.object({
+      ww: z.boolean(),
+      pt: z.boolean(),
+      qa: z.boolean(),
+    }),
+  }),
+  z
+    .object({
+      term_id: z.string().uuid(),
+      ww_weight: z.number().int().min(0).max(100),
+      pt_weight: z.number().int().min(0).max(100),
+      qa_weight: z.number().int().min(0).max(100),
+    })
+    .refine((v) => v.ww_weight + v.pt_weight + v.qa_weight === 100, {
+      message: 'WW + PT + QA must sum to 100',
+      path: ['qa_weight'],
+    }),
+]);
+export type SubjectTermWeightsInput = z.infer<typeof SubjectTermWeightsSchema>;

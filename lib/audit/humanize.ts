@@ -215,6 +215,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
   'subject_config.create': 'Subject weights set',
+  // Plain words for a school admin: this is "Filipino has no exam in Term 3",
+  // not "qa_weight set to 0 on 20 grading sheets".
+  'subject_config.term_weights': 'Subject weights changed for one term',
   'subject_level_offering.toggle': 'Subject level attachment updated',
   'subject_report_map.update': 'Subject report mapping updated',
   'subject.catalog.update': 'Subject grade type or grading method updated',

@@ -5,6 +5,7 @@ import {
   type AtRiskStudentRef,
 } from '@/lib/classroom/at-risk';
 import { loadPriorTermGrades, sumTaken } from '@/lib/markbook/grade-diff';
+import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
@@ -41,6 +42,10 @@ type SheetRow = {
   ww_totals: (number | null)[] | null;
   pt_totals: (number | null)[] | null;
   qa_total: number | null;
+  // Migration 159 — this term's own weights, or null to inherit the config's.
+  ww_weight: number | string | null;
+  pt_weight: number | string | null;
+  qa_weight: number | string | null;
   subject: SubjectLite | SubjectLite[] | null;
   config: ConfigLite | ConfigLite[] | null;
 };
@@ -108,7 +113,7 @@ export async function loadSectionAtRisk(
         // display_name rides in on the config embed that was already here for
         // the weights — a config is the per-(subject, year) row, so this
         // year's name for the subject is on it (migration 137).
-        'id, subject_id, ww_totals, pt_totals, qa_total, subject:subjects(name, is_examinable), config:subject_configs(display_name, ww_weight, pt_weight, qa_weight)'
+        'id, subject_id, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight, subject:subjects(name, is_examinable), config:subject_configs(display_name, ww_weight, pt_weight, qa_weight)'
       )
       .eq('section_id', sectionId)
       .eq('term_id', termId),
@@ -197,18 +202,21 @@ export async function loadSectionAtRisk(
   // Decimals to whole percents, so the pills read "30%" rather than "0.3".
   // Dropped entirely when a sheet has no config rather than guessed at — a
   // wrong weight beside a figure is worse than no weight at all.
+  // Since migration 159 a sheet may state its own weights, because a term can
+  // have no exam. These are printed beside the term comparison, so taking the
+  // config's would explain a grade with numbers that did not produce it.
   const weightsBySheet = new Map(
     sheets.map((s) => {
       const c = firstOf(s.config);
+      if (!c) return [s.id, undefined] as const;
+      const w = resolveSheetWeights(s, c);
       return [
         s.id,
-        c
-          ? {
-              ww: Math.round(Number(c.ww_weight) * 100),
-              pt: Math.round(Number(c.pt_weight) * 100),
-              qa: Math.round(Number(c.qa_weight) * 100),
-            }
-          : undefined,
+        {
+          ww: Math.round(w.ww_weight * 100),
+          pt: Math.round(w.pt_weight * 100),
+          qa: Math.round(w.qa_weight * 100),
+        },
       ] as const;
     })
   );

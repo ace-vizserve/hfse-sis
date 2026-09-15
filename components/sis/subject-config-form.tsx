@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { GradingSheetPreview } from '@/components/sis/grading-sheet-preview';
+import { SubjectTermWeights } from '@/components/sis/subject-term-weights';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -695,6 +696,18 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               />
             </div>
           </FieldRow>
+
+          {/* Per-term components — edit mode only. A subject with no config
+              row yet has no grading sheets either, so there is no term to set
+              apart until the weights above are saved once. */}
+          {mode === 'edit' && (
+            <FieldRow eyebrow="Terms">
+              <SubjectTermWeights
+                configId={props.draft.configId}
+                subjectCode={subjectCode}
+              />
+            </FieldRow>
+          )}
 
           {/* Max slots row. */}
           <FieldRow eyebrow="Max slots" helper="Hard cap 5 per KD #5.">

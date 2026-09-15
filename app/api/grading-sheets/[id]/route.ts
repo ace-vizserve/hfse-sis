@@ -28,6 +28,7 @@ export async function GET(
        term:terms(id, term_number, label),
        subject:subjects(id, code, name, is_examinable),
        section:sections(id, name, level:levels(id, code, label, level_type)),
+       ww_weight, pt_weight, qa_weight,
        subject_config:subject_configs(display_name, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
     .eq('id', id)

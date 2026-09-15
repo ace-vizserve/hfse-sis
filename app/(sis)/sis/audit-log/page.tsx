@@ -31,6 +31,10 @@ const SIS_AUDIT_ALLOWLIST = [
   'subject.create',
   'subject_config.create',
   'subject_config.update',
+  // Per-term weights (migration 159) — "Filipino has no exam in Term 3". It
+  // moves every grade on every sheet for that subject in that term, so it
+  // belongs beside its year-wide sibling above rather than anywhere quieter.
+  'subject_config.term_weights',
   'subject_level_offering.toggle',
   'subject_report_map.update',
   'subject.catalog.update',

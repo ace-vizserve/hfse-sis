@@ -172,7 +172,12 @@ export async function POST(request: NextRequest) {
   // unique per (academic_year_id, subject_id) alone (Pattern B).
   const { data: config, error: cfgErr } = await service
     .from('subject_configs')
-    .select('id, ww_max_slots, pt_max_slots, ww_weight, pt_weight, qa_weight')
+    // Slot ceilings only. The weights used to ride along here and were never
+    // read — this route validates shape and inserts the sheet, it computes no
+    // grade. Since migration 159 a stray weight read is worth not having at
+    // all: `lib/grading/resolve-sheet-weights.ts` is the one place that answers
+    // "which weights is this sheet graded by".
+    .select('id, ww_max_slots, pt_max_slots')
     .eq('academic_year_id', section.academic_year_id)
     .eq('subject_id', subject_id)
     .maybeSingle();

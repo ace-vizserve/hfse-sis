@@ -5,6 +5,7 @@ import {
   type SheetTotals,
   type SheetWeights,
 } from '@/lib/grading/recompute-sheet';
+import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 
 // The half of `sync_grading_sheets_from_config` that SQL cannot do.
 //
@@ -159,6 +160,10 @@ type SheetRow = {
   ww_totals: number[] | null;
   pt_totals: number[] | null;
   qa_total: number | null;
+  // Migration 159 — this term's own weights, or null to inherit the config's.
+  ww_weight: number | string | null;
+  pt_weight: number | string | null;
+  qa_weight: number | string | null;
 };
 
 /**
@@ -240,11 +245,13 @@ export async function recomputeSyncedSheets(
     if (cfgErr) throw new Error(cfgErr.message);
     if (!config) throw new Error(`subject_config ${configId} not found`);
 
-    const weights: SheetWeights = {
-      ww_weight: Number((config as SheetWeights).ww_weight),
-      pt_weight: Number((config as SheetWeights).pt_weight),
-      qa_weight: Number((config as SheetWeights).qa_weight),
-    };
+    // The config's weights are the DEFAULT, not the value to broadcast. Since
+    // migration 159 a sheet may state its own, because a term can have no exam
+    // — and this fan-out runs over all four terms at once, so applying one set
+    // of weights to every sheet would re-grade a no-exam Term 3 against Term
+    // 2's 20% exam. Resolved per sheet below, the same way KD #176 already
+    // treats `qa_total`: the config is a default, the sheet holds the live value.
+    const configWeights = config as SheetWeights;
 
     const sheetIds = await resolveSyncedSheetIds(service, configId, syncResult);
     if (sheetIds.length === 0) return empty;
@@ -254,7 +261,9 @@ export async function recomputeSyncedSheets(
     // recompute must never be a post-lock edit.
     const { data: sheetData, error: sheetErr } = await service
       .from('grading_sheets')
-      .select('id, is_locked, ww_totals, pt_totals, qa_total')
+      .select(
+        'id, is_locked, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
+      )
       .in('id', sheetIds);
     if (sheetErr) throw new Error(sheetErr.message);
 
@@ -318,7 +327,12 @@ export async function recomputeSyncedSheets(
             pt_totals: (sheet.pt_totals ?? []).map(Number),
             qa_total: qaBySheet.get(sheet.id) ?? null,
           };
-          return recomputeSheetEntries(service, sheet.id, totals, weights);
+          return recomputeSheetEntries(
+            service,
+            sheet.id,
+            totals,
+            resolveSheetWeights(sheet, configWeights)
+          );
         })
       );
       for (const r of results) {

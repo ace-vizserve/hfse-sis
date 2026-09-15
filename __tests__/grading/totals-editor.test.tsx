@@ -51,6 +51,12 @@ function renderEditor() {
       wwMaxSlots={5}
       ptMaxSlots={5}
       isLocked={false}
+      // Hard Rule #1's canonical 40/40/20, following the subject — migration
+      // 159. A sheet that states nothing of its own is the default case, so it
+      // is what these tests exercise.
+      weights={{ ww: 40, pt: 40, qa: 20 }}
+      subjectWeights={{ ww: 40, pt: 40, qa: 20 }}
+      weightsOverridden={false}
     />
   );
 }

@@ -12,6 +12,10 @@ import {
   Users,
 } from 'lucide-react';
 import { gradingSheetGates } from '@/lib/markbook/grading-gates';
+import {
+  resolveSheetWeights,
+  sheetOverridesWeights,
+} from '@/lib/grading/resolve-sheet-weights';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -158,6 +162,7 @@ export default async function GradingSheetPage({
     .from('grading_sheets')
     .select(
       `id, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
+       ww_weight, pt_weight, qa_weight,
        term:terms(id, term_number, label),
        subject:subjects(id, code, name, is_examinable),
        section:sections(id, name, level:levels(id, code, label)),
@@ -525,9 +530,14 @@ export default async function GradingSheetPage({
   // assigned subject teachers on an unlocked sheet, or any manager.
   const canEditLabels = (isAssignedTeacher && !sheet.is_locked) || canManage;
 
-  const wwW = Math.round(Number(config?.ww_weight ?? 0) * 100);
-  const ptW = Math.round(Number(config?.pt_weight ?? 0) * 100);
-  const qaW = Math.round(Number(config?.qa_weight ?? 0) * 100);
+  // The weights THIS sheet grades by — its own if this term states them,
+  // otherwise the subject config's (migration 159). The header prints these
+  // beside the grades, so reading the config here would explain a grade with
+  // numbers that did not produce it.
+  const weights = resolveSheetWeights(sheet, config);
+  const wwW = Math.round(weights.ww_weight * 100);
+  const ptW = Math.round(weights.pt_weight * 100);
+  const qaW = Math.round(weights.qa_weight * 100);
 
   return (
     <PageShell>
@@ -622,6 +632,15 @@ export default async function GradingSheetPage({
               wwMaxSlots={Number(config?.ww_max_slots ?? 5)}
               ptMaxSlots={Number(config?.pt_max_slots ?? 5)}
               isLocked={sheet.is_locked}
+              // Migration 159 — what THIS sheet grades by, what its subject
+              // grades by, and whether the two already differ.
+              weights={{ ww: wwW, pt: ptW, qa: qaW }}
+              subjectWeights={{
+                ww: Math.round(Number(config?.ww_weight ?? 0) * 100),
+                pt: Math.round(Number(config?.pt_weight ?? 0) * 100),
+                qa: Math.round(Number(config?.qa_weight ?? 0) * 100),
+              }}
+              weightsOverridden={sheetOverridesWeights(sheet)}
             />
           )}
           {canManage && (
@@ -857,9 +876,9 @@ export default async function GradingSheetPage({
         wwTotals={(sheet.ww_totals ?? []) as number[]}
         ptTotals={(sheet.pt_totals ?? []) as number[]}
         qaTotal={sheet.qa_total as number | null}
-        wwWeight={Number(config?.ww_weight ?? 0)}
-        ptWeight={Number(config?.pt_weight ?? 0)}
-        qaWeight={Number(config?.qa_weight ?? 0)}
+        wwWeight={weights.ww_weight}
+        ptWeight={weights.pt_weight}
+        qaWeight={weights.qa_weight}
         rows={rows}
         readOnly={readOnly}
         requireApproval={requireApproval}

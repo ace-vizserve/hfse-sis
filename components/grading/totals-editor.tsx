@@ -4,8 +4,16 @@ import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Minus, Pencil, Plus, Save } from 'lucide-react';
 
+import { toast } from 'sonner';
+
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import {
+  ComponentWeightChips,
+  redistributePercents,
+  type ComponentWeights,
+  type GradeComponent,
+} from '@/components/grading/component-weight-chips';
 
 import {
   AlertDialog,
@@ -67,6 +75,15 @@ type Props = {
   wwMaxSlots: number;
   ptMaxSlots: number;
   isLocked: boolean;
+  /**
+   * The weights IN FORCE for this sheet, as integer percentages — its own if it
+   * has them, its subject config's otherwise (migration 159).
+   */
+  weights: ComponentWeights;
+  /** The subject's own weights, to go back to when the override is dropped. */
+  subjectWeights: ComponentWeights;
+  /** Does this sheet already differ from its subject? */
+  weightsOverridden: boolean;
 };
 
 export function TotalsEditor({
@@ -77,11 +94,16 @@ export function TotalsEditor({
   wwMaxSlots,
   ptMaxSlots,
   isLocked,
+  weights: initialWeights,
+  subjectWeights,
+  weightsOverridden,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [ww, setWw] = useState<number[]>(initialWw);
   const [pt, setPt] = useState<number[]>(initialPt);
   const [qa, setQa] = useState<number | null>(initialQa);
+  const [weights, setWeights] = useState<ComponentWeights>(initialWeights);
+  const [followsSubject, setFollowsSubject] = useState(!weightsOverridden);
   const [shrinkConfirmOpen, setShrinkConfirmOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionReason, setCorrectionReason] =
@@ -118,6 +140,40 @@ export function TotalsEditor({
     setWw(initialWw);
     setPt(initialPt);
     setQa(initialQa);
+    setWeights(initialWeights);
+    setFollowsSubject(!weightsOverridden);
+  }
+
+  /**
+   * Tick or untick a component for THIS class. The remaining ones take the
+   * share, so the grade stays out of 100 — the arithmetic Miss Joann described
+   * as "the PT score effectively is the exam".
+   *
+   * Redistribution always starts from the SUBJECT's weights, never from what is
+   * currently on screen. Starting from the current values compounds: untick the
+   * exam (30/50/20 → 37/63), tick it back, and you would land on 30/50/20's
+   * neighbour rather than back where you started.
+   */
+  function toggleComponent(component: GradeComponent) {
+    const inUse: Record<GradeComponent, boolean> = {
+      ww: weights.ww > 0,
+      pt: weights.pt > 0,
+      qa: weights.qa > 0,
+    };
+    inUse[component] = !inUse[component];
+
+    if (!inUse.ww && !inUse.pt && !inUse.qa) {
+      toast.error('A class has to be graded on at least one component.');
+      return;
+    }
+
+    setWeights(redistributePercents(subjectWeights, inUse));
+    setFollowsSubject(false);
+  }
+
+  function followSubjectAgain() {
+    setWeights(subjectWeights);
+    setFollowsSubject(true);
   }
 
   function updateAt(
@@ -188,6 +244,15 @@ export function TotalsEditor({
           ww_totals: ww,
           pt_totals: pt,
           qa_total: qa,
+          // All three or all null — migration 159's CHECK, and the route's own
+          // contract. Null means this class goes back to following the subject.
+          ...(followsSubject
+            ? { ww_weight: null, pt_weight: null, qa_weight: null }
+            : {
+                ww_weight: weights.ww,
+                pt_weight: weights.pt,
+                qa_weight: weights.qa,
+              }),
           ...lockExtras,
         }),
       {
@@ -269,6 +334,42 @@ export function TotalsEditor({
                   />
                   <FieldDescription>
                     Single quarterly assessment denominator.
+                  </FieldDescription>
+                </Field>
+
+                {/* Which components this ONE class is graded on. Subject setup
+                    sets it for every class in a term; this is the exception for
+                    a class that differs. Same chips and same colours as that
+                    screen — see components/grading/component-weight-chips.tsx. */}
+                <Field>
+                  <FieldLabel>Counts towards the grade</FieldLabel>
+                  <ComponentWeightChips
+                    values={weights}
+                    onToggle={toggleComponent}
+                    disabled={saving}
+                    scopeLabel="this class"
+                  />
+                  <FieldDescription>
+                    {followsSubject ? (
+                      <>
+                        Following the subject&rsquo;s split for this term.
+                        Untick anything this class doesn&rsquo;t sit and its
+                        share moves to the rest.
+                      </>
+                    ) : (
+                      <>
+                        This class is graded differently from the rest of the
+                        subject.{' '}
+                        <button
+                          type="button"
+                          onClick={followSubjectAgain}
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          Follow the subject again
+                        </button>
+                        .
+                      </>
+                    )}
                   </FieldDescription>
                 </Field>
               </FieldGroup>

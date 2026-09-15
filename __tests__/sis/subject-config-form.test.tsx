@@ -70,6 +70,23 @@ function weightInputs() {
   return { ww: inputs[0], pt: inputs[1], qa: inputs[2] };
 }
 
+/**
+ * The WRITES this form made, in order — GETs filtered out.
+ *
+ * In edit mode the form mounts `<SubjectTermWeights/>`, which reads this
+ * subject's per-term weights as soon as the drawer opens (migration 159). That
+ * read is not what any test below is about, and it arrives first, so these
+ * assertions select the call they mean by method rather than by position.
+ * Indexing into `mock.calls[0]` made every test here hostage to the next read
+ * anyone adds to the form.
+ */
+function writeCalls(spy: { mock: { calls: unknown[][] } }) {
+  return spy.mock.calls.filter(([, init]) => {
+    const method = (init as RequestInit | undefined)?.method;
+    return method != null && method !== 'GET';
+  }) as [RequestInfo | URL, RequestInit | undefined][];
+}
+
 describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
   it('pre-fills 30/50/20 for a Language-bucket subject code', () => {
     renderCreate('ENG');
@@ -246,8 +263,8 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
     await user.type(nameBox(), 'STAR');
     await user.tab();
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    const [url, init] = fetchSpy.mock.calls[0];
+    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
+    const [url, init] = writeCalls(fetchSpy)[0];
     expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
     expect((init as RequestInit).method).toBe('PATCH');
     const body = JSON.parse((init as RequestInit).body as string);
@@ -272,8 +289,8 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
     await user.clear(nameBox());
     await user.tab();
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    const [, init] = fetchSpy.mock.calls[0];
+    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
+    const [, init] = writeCalls(fetchSpy)[0];
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
       display_name: '',
     });
@@ -289,7 +306,9 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
     await user.click(nameBox());
     await user.tab();
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    // No WRITE. The drawer does read the per-term weights on open, and that is
+    // not what this test is about — an untouched name must not SAVE anything.
+    expect(writeCalls(fetchSpy)).toHaveLength(0);
   });
 
   it('puts the box back to the saved name when the save fails', async () => {
@@ -339,8 +358,8 @@ describe('SubjectConfigForm (edit mode — report card name and description)', (
     await user.type(reportLabelBox(), 'Mother Tongue');
     await user.tab();
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    const [url, init] = fetchSpy.mock.calls[0];
+    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
+    const [url, init] = writeCalls(fetchSpy)[0];
     // The catalogue route would be /catalog/<subjectId>. This must be the
     // per-year config route.
     expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
@@ -368,8 +387,8 @@ describe('SubjectConfigForm (edit mode — report card name and description)', (
     await user.type(descriptionBox(), 'Sports, Talent, Arts and Rhythm');
     await user.tab();
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-    const [url, init] = fetchSpy.mock.calls[0];
+    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
+    const [url, init] = writeCalls(fetchSpy)[0];
     expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body).toMatchObject({

@@ -7,6 +7,7 @@ import {
   isSubjectTeacher,
 } from '@/lib/auth/teacher-assignments';
 import { computeQuarterly } from '@/lib/compute/quarterly';
+import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 import { OVERRIDE_LETTERS, isOverrideLetter } from '@/lib/compute/letter-grade';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
 import { proseLength } from '@/lib/rich-text';
@@ -105,6 +106,7 @@ export async function PATCH(
       .from('grading_sheets')
       .select(
         `id, section_id, subject_id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
+         ww_weight, pt_weight, qa_weight,
          subject:subjects(is_examinable),
          subject_config:subject_configs(ww_weight, pt_weight, qa_weight)`
       )
@@ -134,6 +136,10 @@ export async function PATCH(
     qa_total: number | null;
     is_locked: boolean;
     slot_labels: SlotLabels | null;
+    // Migration 159 — this term's own weights, or null to inherit the config's.
+    ww_weight: number | string | null;
+    pt_weight: number | string | null;
+    qa_weight: number | string | null;
     subject: { is_examinable: boolean } | { is_examinable: boolean }[] | null;
     subject_config:
       | { ww_weight: number; pt_weight: number; qa_weight: number }
@@ -460,6 +466,11 @@ export async function PATCH(
     letter_grade = (entry.letter_grade as string | null) ?? null;
   }
 
+  // The sheet's own weights when it states them, the subject config's
+  // otherwise (migration 159). Reading `config` directly here would grade a
+  // term with no exam out of 80 while the sheet says the exam does not count.
+  const weights = resolveSheetWeights(sheet, config);
+
   const computed = computeQuarterly({
     ww_scores,
     ww_totals: sheet.ww_totals,
@@ -467,9 +478,7 @@ export async function PATCH(
     pt_totals: sheet.pt_totals,
     qa_score,
     qa_total: sheet.qa_total,
-    ww_weight: Number(config.ww_weight),
-    pt_weight: Number(config.pt_weight),
-    qa_weight: Number(config.qa_weight),
+    ...weights,
   });
 
   // ----- First-score label gate (unlocked/direct path only; Hard Rule #5's

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { recomputeSheetEntries } from '@/lib/grading/recompute-sheet';
+import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 import {
   buildTotalsAuditRows,
   writeAuditRows,
@@ -41,6 +42,17 @@ export async function PATCH(
     ww_totals?: number[];
     pt_totals?: number[];
     qa_total?: number | null;
+    // Migration 159 — THIS sheet's own weights, as integer percentages summing
+    // to 100. Explicit null on all three clears the override and the sheet goes
+    // back to inheriting its subject config. Absent means "leave alone".
+    //
+    // They ride along with the totals rather than getting their own endpoint
+    // because both change what a grade MEANS and both need the same recompute
+    // afterwards. Two endpoints would be two writes, two recomputes and two
+    // audit rows for one edit, and a chance to interleave.
+    ww_weight?: number | null;
+    pt_weight?: number | null;
+    qa_weight?: number | null;
     correction_reason?: string;
     correction_justification?: string;
     approval_reference?: string; // legacy — rejected
@@ -63,6 +75,7 @@ export async function PATCH(
     .from('grading_sheets')
     .select(
       `id, ww_totals, pt_totals, qa_total, is_locked,
+       ww_weight, pt_weight, qa_weight,
        subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
     .eq('id', sheetId)
@@ -144,6 +157,57 @@ export async function PATCH(
     );
   }
 
+  // ---- This sheet's own weights (migration 159) -------------------------
+  //
+  // Set together or not at all — migration 159's CHECK says the same thing at
+  // the database, and a half-set row would silently mix the sheet's answer with
+  // its config's. `touchesWeights` distinguishes "leave these alone" (absent)
+  // from "go back to inheriting" (all three null), which a truthiness test
+  // could not: 0 is a legitimate weight and is exactly the one this feature
+  // exists to store.
+  const weightKeys = ['ww_weight', 'pt_weight', 'qa_weight'] as const;
+  const touchesWeights = weightKeys.some((k) => k in body);
+  let weightPatch: Record<string, number | null> | null = null;
+
+  if (touchesWeights) {
+    const given = weightKeys.map((k) => (k in body ? body[k] : undefined));
+    const allNull = given.every((v) => v === null);
+    const allNumbers = given.every((v) => typeof v === 'number');
+
+    if (!allNull && !allNumbers) {
+      return NextResponse.json(
+        {
+          error:
+            'Set all three weights together, or send all three as null to go back to the subject default.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (allNull) {
+      weightPatch = { ww_weight: null, pt_weight: null, qa_weight: null };
+    } else {
+      const pcts = given as number[];
+      if (
+        pcts.some((v) => !Number.isInteger(v) || v < 0 || v > 100) ||
+        pcts.reduce((a, b) => a + b, 0) !== 100
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Weights must be whole numbers from 0 to 100 adding up to 100.',
+          },
+          { status: 400 }
+        );
+      }
+      weightPatch = {
+        ww_weight: pcts[0] / 100,
+        pt_weight: pcts[1] / 100,
+        qa_weight: pcts[2] / 100,
+      };
+    }
+  }
+
   // Apply totals update.
   const { error: upErr } = await service
     .from('grading_sheets')
@@ -151,6 +215,7 @@ export async function PATCH(
       ww_totals: after.ww_totals,
       pt_totals: after.pt_totals,
       qa_total: after.qa_total,
+      ...(weightPatch ?? {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', sheetId);
@@ -168,11 +233,17 @@ export async function PATCH(
   // and every entry whose score array has to resize, is still written.
   let recompute;
   try {
-    recompute = await recomputeSheetEntries(service, sheetId, after, {
-      ww_weight: Number(config.ww_weight),
-      pt_weight: Number(config.pt_weight),
-      qa_weight: Number(config.qa_weight),
-    });
+    recompute = await recomputeSheetEntries(
+      service,
+      sheetId,
+      after,
+      // The weights this sheet grades by AFTER this edit — the ones just sent
+      // if the request changed them, the sheet's own if it already had some,
+      // the config's otherwise (migration 159). Resolving against the
+      // pre-update row would recompute every grade against the weights the
+      // coordinator just replaced.
+      resolveSheetWeights(weightPatch ?? sheet, config)
+    );
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'recompute failed' },
@@ -225,6 +296,51 @@ export async function PATCH(
         });
       }
     }
+  }
+
+  // A weight change gets its own row, and NOT via `buildTotalsAuditLog` above:
+  // that walks the totals field-by-field and only writes when there is an
+  // anchor entry to hang a `grade_audit_log` row on, so a weight change on a
+  // sheet nobody has scored yet would leave no trace at all. This one moves
+  // every grade on the sheet, so it is logged whether or not a score exists.
+  if (weightPatch) {
+    const pct = (v: number | string | null) =>
+      v == null ? null : Math.round(Number(v) * 100);
+    await logAction({
+      service,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      action: actionForAudit,
+      entityType: 'grading_sheet',
+      entityId: sheetId,
+      context: {
+        field: 'weights',
+        old: {
+          ww: pct(sheet.ww_weight),
+          pt: pct(sheet.pt_weight),
+          qa: pct(sheet.qa_weight),
+        },
+        new: {
+          ww: pct(weightPatch.ww_weight),
+          pt: pct(weightPatch.pt_weight),
+          qa: pct(weightPatch.qa_weight),
+        },
+        // Null on both sides means "follows the subject", which is the thing a
+        // reader of this row most needs to be able to tell apart from 0%.
+        scope: 'this class only',
+        was_locked: sheet.is_locked,
+        ...(sheet.is_locked ? { approval_reference } : {}),
+        ...(correctionMeta
+          ? {
+              correction_reason: correctionMeta.reason,
+              correction_justification: correctionMeta.justification,
+            }
+          : {}),
+      },
+    });
   }
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));

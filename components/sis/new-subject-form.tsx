@@ -9,7 +9,6 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { apiFetch, ApiError, jsonInit } from '@/lib/query/fetcher';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -162,24 +161,48 @@ export function NewSubjectForm({
             </FormItem>
           )}
         />
+        {/* Grade type — the SAME control the edit form shows, worded the same
+            way (components/sis/subject-config-form.tsx).
+
+            It used to be a checkbox labelled "Examinable", described only as
+            "counted toward the term/annual academic average". That never said
+            what the flag actually decides — whether the subject carries a
+            NUMBER or a LETTER — and "examinable" is the word that sent Miss
+            Joann looking for a per-term exam switch at the 2026-09-15 training.
+            Two screens told two stories about one column; this is the one that
+            was left behind when the edit form was fixed.
+
+            ⚠ The flag itself is untouched and must be: `subjects.is_examinable`
+            drives letter-vs-numeric across ~47 files — MUSIC, ARTS, PE, HE, CL,
+            CA, PEH and PMPD are all letter-graded through it (migration 049).
+            "Does this term have an exam" is a different question entirely, and
+            it lives on the grading sheet now (migration 159). */}
         <FormField
           control={form.control}
           name="is_examinable"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={(v) => field.onChange(v === true)}
-                />
-              </FormControl>
-              <div className="space-y-0.5 leading-tight">
-                <FormLabel className="font-medium">Examinable</FormLabel>
-                <FormDescription>
-                  Counted toward the term/annual academic average. Uncheck for
-                  advisory or enrichment subjects.
-                </FormDescription>
-              </div>
+            <FormItem>
+              <FormLabel>Grade type</FormLabel>
+              <Select
+                value={field.value ? 'numeric' : 'letter'}
+                onValueChange={(v) => field.onChange(v === 'numeric')}
+              >
+                <FormControl>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="numeric">Numeric</SelectItem>
+                  <SelectItem value="letter">Letter</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Numeric subjects get a mark out of 100 and count towards the
+                general average. Letter subjects show a letter on the report
+                card instead — music, art, PE and the like.
+              </FormDescription>
+              <FormMessage />
             </FormItem>
           )}
         />

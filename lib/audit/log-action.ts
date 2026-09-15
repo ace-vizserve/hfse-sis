@@ -126,6 +126,7 @@ export const ALL_AUDIT_ACTIONS = [
   'approver.revoke',
   'subject_config.update',
   'subject_config.create',
+  'subject_config.term_weights',
   'subject_level_offering.toggle',
   'subject_report_map.update',
   'subject.catalog.update',
