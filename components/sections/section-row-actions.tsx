@@ -238,7 +238,7 @@ export function SectionRowActions({
             }}
           >
             <ArrowDownAZ className="size-4 shrink-0" />
-            Generate index
+            Renumber A–Z
           </DropdownMenuItem>
         )}
 

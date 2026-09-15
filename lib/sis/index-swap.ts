@@ -107,7 +107,7 @@ export function validateSwap(
     return {
       ok: false,
       reason: 'unnumbered',
-      message: `${unnumbered.studentName} doesn't have a number yet. Use "Generate index" to number the class first.`,
+      message: `${unnumbered.studentName} doesn't have a number yet. Use "Renumber A–Z" to number the class first.`,
     };
   }
 

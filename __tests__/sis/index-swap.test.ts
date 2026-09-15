@@ -85,7 +85,7 @@ describe('validateSwap', () => {
     if (!result.ok) expect(result.message).toContain('Lim, Jo');
   });
 
-  it('rejects an unnumbered student and points at Generate index', () => {
+  it('rejects an unnumbered student and points at Renumber A–Z', () => {
     const a = candidate({ enrolmentId: 'e-1' });
     const b = candidate({
       enrolmentId: 'e-2',
@@ -94,7 +94,7 @@ describe('validateSwap', () => {
     });
     const result = validateSwap(SECTION, a, b);
     expect(result).toMatchObject({ ok: false, reason: 'unnumbered' });
-    if (!result.ok) expect(result.message).toContain('Generate index');
+    if (!result.ok) expect(result.message).toContain('Renumber A–Z');
   });
 
   it('reports the wrong section before the withdrawn rule when a row is both', () => {

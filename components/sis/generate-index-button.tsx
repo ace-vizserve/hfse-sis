@@ -155,7 +155,7 @@ export function GenerateIndexDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Generate class index?</AlertDialogTitle>
+          <AlertDialogTitle>Renumber {sectionName} A–Z?</AlertDialogTitle>
           <AlertDialogDescription>
             This numbers <strong>{sectionName}</strong> alphabetically by
             surname (last name, then first name). Students who joined after the
@@ -233,8 +233,12 @@ export function GenerateIndexDialog({
             <AlertTitle>School year is in session</AlertTitle>
             <AlertDescription>
               Students may already know their current numbers and teachers may
-              call them by these during class. Regenerating will renumber
-              everyone — only do this if you&apos;re correcting a setup mistake.
+              call them by these during class. This renumbers{' '}
+              <strong>everyone</strong> — it does not fill in gaps. The master
+              list is permanent: a student who has left keeps their number, and
+              nobody moves up into it. To correct one student, swap their number
+              with another instead. Only renumber if the whole class was set up
+              wrongly.
             </AlertDescription>
           </Alert>
         )}
@@ -250,7 +254,7 @@ export function GenerateIndexDialog({
             disabled={busy || preview.isPending || nothingChanges}
             variant={termStarted ? 'destructive' : 'default'}
           >
-            Generate
+            Renumber
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -285,7 +289,7 @@ export function GenerateIndexButton({
         onClick={() => setOpen(true)}
       >
         <ArrowDownAZ className="size-3.5" />
-        {variant === 'default' && 'Generate index'}
+        {variant === 'default' && 'Renumber A–Z'}
       </Button>
       <GenerateIndexDialog
         sectionId={sectionId}
@@ -458,20 +462,20 @@ export function GenerateAllIndexButton({
       <AlertDialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <ArrowDownAZ className="size-3.5" />
-          Generate all indexes
+          Renumber every class A–Z
         </Button>
       </AlertDialogTrigger>
 
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Generate index for all sections?</AlertDialogTitle>
+          <AlertDialogTitle>Renumber every class A–Z?</AlertDialogTitle>
           <AlertDialogDescription>
             Numbers every student in{' '}
             <strong>
               all {count} section{count === 1 ? '' : 's'}
             </strong>{' '}
             alphabetically by surname (last name, then first name). This is the
-            same as clicking &ldquo;Generate index&rdquo; on each section
+            same as clicking &ldquo;Renumber A–Z&rdquo; on each section
             individually.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -530,9 +534,11 @@ export function GenerateAllIndexButton({
             </AlertIcon>
             <AlertTitle>School year is in session</AlertTitle>
             <AlertDescription>
-              Students in all sections may already know their current numbers.
-              Regenerating will renumber everyone — only do this if you&apos;re
-              correcting a setup mistake across the board.
+              Students in every class may already know their current numbers.
+              This renumbers <strong>everyone, in every class</strong> — it does
+              not fill in gaps. The master list is permanent: a student who has
+              left keeps their number, and nobody moves up into it. Only
+              renumber if every class was set up wrongly.
             </AlertDescription>
           </Alert>
         )}
@@ -548,7 +554,7 @@ export function GenerateAllIndexButton({
             disabled={busy || previewAll.isPending || allQuiet}
             variant={termStarted ? 'destructive' : 'default'}
           >
-            Generate all
+            Renumber all
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
