@@ -31,6 +31,51 @@ const CANDIDATE_FK_TABLES = [
 
 const MISSING_TABLE = '42P01';
 
+// ⚠ PAIRS THE AUTOMATIC MATCHER CANNOT SEE.
+//
+// `nameKey` below compares the WHOLE cleaned first name, and in each of these
+// the AY2026 record dropped a second given name that the AY2025 record carries:
+//
+//   CALIMBAS|AUDREY ELIZABETH   vs   CALIMBAS|AUDREY
+//   AJITH KUMAR|SARWAN MICHEAL  vs   AJITH KUMAR|SARWAN
+//   AJITH KUMAR|BHAWAN MICHEAL  vs   AJITH KUMAR|BHAWAN
+//
+// So the keys never collide and the 2026-09-11 run reported "0 split records"
+// while these three were sitting there. Loosening the matcher to compare only
+// the first given name is NOT the fix — across ~400 children it would start
+// pairing siblings and half-namesakes, and a false pair repoints one child's
+// records onto another. They are listed explicitly instead.
+//
+// Keyed on `student_number` (Hard Rule #4 — the only stable student id) and
+// re-resolved to row ids from live data on every run, so nothing is baked in.
+//
+// Verified individually on 2026-09-15: each pair is ONE child advancing ONE
+// level (S2→S3, S3→S4, S1→S2), and each AY2026 number is that child's enrolee
+// number with the prefix swapped (E260441 → H260441) — the signature of a
+// record created for an applicant instead of linked to the child who already
+// existed.
+const EXPLICIT_PAIRS: Array<{
+  oldNumber: string;
+  keepNumber: string;
+  who: string;
+}> = [
+  {
+    oldNumber: 'H180138',
+    keepNumber: 'H260441',
+    who: 'Audrey Elizabeth Lanting Calimbas',
+  },
+  {
+    oldNumber: 'H250785',
+    keepNumber: 'H260481',
+    who: 'Sarwan Micheal Ajith Kumar',
+  },
+  {
+    oldNumber: 'H250796',
+    keepNumber: 'H260482',
+    who: 'Bhawan Micheal Ajith Kumar',
+  },
+];
+
 async function resolveTables(svc: any): Promise<string[]> {
   const live: string[] = [];
   for (const t of CANDIDATE_FK_TABLES) {
@@ -134,6 +179,46 @@ async function main() {
       where: `AY2025 ${a.sections.levels.code} ${a.sections.name} #${a.index_number} -> AY2026 ${b.sections.levels.code} ${b.sections.name} #${b.index_number}`,
     });
   }
+  // Add the hand-verified pairs (see EXPLICIT_PAIRS). Resolved here, from the
+  // same live `placements` the automatic pass used, so a number that no longer
+  // has the placement this expects stops the run rather than being skipped
+  // quietly — an already-merged pair simply has no AY2025 placement left under
+  // the old number, which reads as "nothing to do", so it is reported, not an
+  // error.
+  const placementByNumberAndAy = new Map<string, any>();
+  for (const p of placements) {
+    const ay = ayById.get(p.sections.academic_year_id);
+    if (!ay) continue;
+    placementByNumberAndAy.set(`${p.students.student_number}|${ay}`, p);
+  }
+  for (const ex of EXPLICIT_PAIRS) {
+    const oldP = placementByNumberAndAy.get(`${ex.oldNumber}|AY2025`);
+    const keepP = placementByNumberAndAy.get(`${ex.keepNumber}|AY2026`);
+    if (!oldP || !keepP) {
+      console.log(
+        `  explicit pair ${ex.oldNumber} -> ${ex.keepNumber} (${ex.who}): ` +
+          `${!oldP ? 'no AY2025 placement under the old number' : ''}` +
+          `${!oldP && !keepP ? ' and ' : ''}` +
+          `${!keepP ? 'no AY2026 placement under the survivor' : ''}` +
+          ' — already merged, or the data moved. Skipping.'
+      );
+      continue;
+    }
+    if (oldP.students.id === keepP.students.id) {
+      console.log(`  explicit pair ${ex.who}: already one record. Skipping.`);
+      continue;
+    }
+    if (pairs.some((p) => p.oldId === oldP.students.id)) continue;
+    pairs.push({
+      name: ex.who,
+      oldId: oldP.students.id,
+      oldNumber: oldP.students.student_number,
+      keepId: keepP.students.id,
+      keepNumber: keepP.students.student_number,
+      where: `AY2025 ${oldP.sections.levels.code} ${oldP.sections.name} #${oldP.index_number} -> AY2026 ${keepP.sections.levels.code} ${keepP.sections.name} #${keepP.index_number}`,
+    });
+  }
+
   pairs.sort((x, y) => x.name.localeCompare(y.name));
 
   console.log(
