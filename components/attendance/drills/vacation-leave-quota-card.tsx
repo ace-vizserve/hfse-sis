@@ -155,7 +155,9 @@ export function VacationLeaveQuotaCard({
           target="vacation-leave-quota"
           ayCode={ayCode}
           termId={termId}
-          initialVacationLeave={data}
+          // At-risk only — same reasoning as CompassionateQuotaCard: the drill
+          // returns this set, so the seed must not paint a wider one first.
+          initialVacationLeave={atRisk}
         />
       )}
     </Sheet>

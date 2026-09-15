@@ -334,6 +334,9 @@ async function loadEntryRowsUncached(
         'id, term_id, section_id, subject_id, qa_total, is_locked, locked_at'
       )
       .in('term_id', allowedTermIds)
+      // Total order for the OFFSET pagination — see the note on the
+      // grade_entries read below. 1,116 sheets today, so this pages.
+      .order('id', { ascending: true })
       .range(from, to)
   );
   if (sheets.length === 0) return [];
@@ -405,6 +408,16 @@ async function loadEntryRowsUncached(
               'id, grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score, quarterly_grade, letter_grade, is_na, created_at'
             )
             .in('grading_sheet_id', sheetIds.slice(i * CHUNK, (i + 1) * CHUNK))
+            // ⚠ A PAGINATED READ NEEDS A TOTAL ORDER, OR IT REPEATS AND SKIPS.
+            // `.range()` is OFFSET/LIMIT; without an ORDER BY, Postgres may
+            // return rows in a different order for each page, so a row can
+            // arrive on two pages while another arrives on none. Measured on
+            // AY2026 (2026-09-15): this read returned 3,473 rows holding only
+            // 2,744 distinct entry ids — 729 duplicates — and the count moved
+            // between calls (3,473 / 3,456 / 3,380 across five band queries).
+            // `id` is the primary key, so ordering by it is a total order and
+            // an index walk. Same rule as lib/attendance/dashboard.ts.
+            .order('id', { ascending: true })
             .range(from, to)
         )
       )
@@ -560,6 +573,8 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
         'id, term_id, section_id, subject_id, is_locked, locked_at, teacher_name'
       )
       .in('term_id', ctx.termIds)
+      // Total order for the OFFSET pagination — see the grade_entries note.
+      .order('id', { ascending: true })
       .range(from, to)
   );
   const sheetIdsForRollup = sheets.map((s) => s.id);
@@ -604,6 +619,10 @@ async function loadSheetRowsUncached(ayCode: string): Promise<SheetRow[]> {
             .from('grade_entries')
             .select('grading_sheet_id')
             .in('grading_sheet_id', slice)
+            // Total order for the OFFSET pagination — see the note above. This
+            // one only counts rows per sheet, but a repeated row inflates the
+            // count just the same.
+            .order('id', { ascending: true })
             .range(from, to)
       );
       out.push(...rows);

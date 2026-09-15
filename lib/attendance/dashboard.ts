@@ -174,13 +174,18 @@ export const loadMarkCounts = cache(
     };
     let data: CountRow[];
     try {
-      data = await fetchAllPages<CountRow>((from, to) =>
-        service
-          .rpc('attendance_mark_counts_by_date', { p_academic_year_id: ayId })
-          .order('mark_date')
-          .order('status')
-          .order('ex_reason')
-          .range(from, to)
+      data = await fetchAllPages<CountRow>(
+        (from, to) =>
+          service
+            .rpc('attendance_mark_counts_by_date', { p_academic_year_id: ayId })
+            .order('mark_date')
+            .order('status')
+            .order('ex_reason')
+            .range(from, to),
+        undefined,
+        // No `id` to tie-break on: this is a set-returning function, and its
+        // three keys are already a total order over (date, status, reason).
+        { tieBreak: null }
       );
     } catch (e) {
       console.warn(
@@ -229,12 +234,16 @@ export const loadAbsenceMarks = cache(
     };
     let data: AbsenceRow[];
     try {
-      data = await fetchAllPages<AbsenceRow>((from, to) =>
-        service
-          .rpc('attendance_absence_marks', { p_academic_year_id: ayId })
-          .order('section_student_id')
-          .order('mark_date')
-          .range(from, to)
+      data = await fetchAllPages<AbsenceRow>(
+        (from, to) =>
+          service
+            .rpc('attendance_absence_marks', { p_academic_year_id: ayId })
+            .order('section_student_id')
+            .order('mark_date')
+            .range(from, to),
+        undefined,
+        // Set-returning function — no `id` column. See the sibling above.
+        { tieBreak: null }
       );
     } catch (e) {
       console.warn(

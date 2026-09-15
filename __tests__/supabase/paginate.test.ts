@@ -91,3 +91,82 @@ describe('fetchAllPages', () => {
     ).rejects.toThrow('boom');
   });
 });
+
+// `.range()` is OFFSET/LIMIT, and SQL promises nothing about row order without
+// an ORDER BY — so an unordered paginated read can hand the same row back on
+// two pages and never hand back another. Measured on AY2026 (2026-09-15)
+// before this: the markbook grade-entry read returned 3,473 rows holding 2,744
+// distinct ids. Sixty-one call sites had no ordering, so the tie-break lives in
+// the helper and cannot be forgotten by a new read.
+describe('fetchAllPages — total order', () => {
+  type Chain = PromiseLike<{
+    data: Array<{ id: number }> | null;
+    error: null;
+  }> & {
+    order: (col: string, opts?: { ascending?: boolean }) => Chain;
+  };
+
+  function fakeChain(
+    rows: Array<{ id: number }>,
+    seen: Array<[string, boolean | undefined]>
+  ): Chain {
+    const chain = {
+      order(col: string, opts?: { ascending?: boolean }) {
+        seen.push([col, opts?.ascending]);
+        return chain as Chain;
+      },
+      then(resolve: (v: unknown) => unknown) {
+        return Promise.resolve({ data: rows, error: null }).then(resolve);
+      },
+    };
+    return chain as unknown as Chain;
+  }
+
+  it('appends id as the last order key on every page request', async () => {
+    const seen: Array<[string, boolean | undefined]> = [];
+    const rows = await fetchAllPages<{ id: number }>((from) =>
+      fakeChain(
+        from === 0
+          ? Array.from({ length: 1000 }, (_, i) => ({ id: i }))
+          : [{ id: 1000 }],
+        seen
+      )
+    );
+    expect(rows).toHaveLength(1001);
+    // Two page requests, each ordered.
+    expect(seen).toEqual([
+      ['id', true],
+      ['id', true],
+    ]);
+  });
+
+  it('leaves a caller ordering in front of it, as a tie-break only', async () => {
+    const seen: Array<[string, boolean | undefined]> = [];
+    await fetchAllPages<{ id: number }>(() =>
+      fakeChain([{ id: 1 }], seen).order('recorded_at', { ascending: false })
+    );
+    expect(seen).toEqual([
+      ['recorded_at', false],
+      ['id', true],
+    ]);
+  });
+
+  it('can be opted out for a source with no id — a set-returning RPC', async () => {
+    const seen: Array<[string, boolean | undefined]> = [];
+    await fetchAllPages<{ id: number }>(
+      () => fakeChain([{ id: 1 }], seen),
+      undefined,
+      { tieBreak: null }
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it('passes through a builder that cannot be ordered', async () => {
+    // A plain promise-returning builder (what most tests hand it) has no
+    // `.order`, and must keep working untouched.
+    const rows = await fetchAllPages<{ id: number }>(() =>
+      Promise.resolve({ data: [{ id: 7 }], error: null })
+    );
+    expect(rows).toEqual([{ id: 7 }]);
+  });
+});

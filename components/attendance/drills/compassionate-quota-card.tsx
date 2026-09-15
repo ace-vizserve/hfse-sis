@@ -145,7 +145,11 @@ export function CompassionateQuotaCard({
         <AttendanceDrillSheet
           target="compassionate-quota"
           ayCode={ayCode}
-          initialCompassionate={data}
+          // The at-risk list, not `data` — the drill narrows to exactly this
+          // set server-side, and the seed only exists to paint the sheet
+          // before that lands. Seeding the full roster made the sheet open
+          // claiming 398 rows for a card showing none.
+          initialCompassionate={atRisk}
         />
       )}
     </Sheet>

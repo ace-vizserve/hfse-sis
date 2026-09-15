@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache';
 
 import { parseLocalDate } from '@/lib/dashboard/range';
+import { sgToday } from '@/lib/dates';
 import {
   DOCUMENT_SLOTS,
   isSlotApplicable,
@@ -220,6 +221,12 @@ async function loadPFilesRowsUncached(
           .from('p_file_revisions')
           .select('enrolee_number, slot_key, ay_code, replaced_at')
           .eq('ay_code', ayCode)
+          // ⚠ ORDERED, because `.range()` is OFFSET/LIMIT and this table holds
+          // 2,547 rows for AY2026 — past the 1000-row page size. With no
+          // ORDER BY, Postgres may order rows differently per page, so one
+          // comes back twice and another not at all; the revisions KPI and its
+          // drill both count these rows. `id` is the primary key.
+          .order('id', { ascending: true })
           .range(from, to) as unknown as P<RevisionLite>
     ),
   ]);
@@ -266,7 +273,16 @@ async function loadPFilesRowsUncached(
     else revEventsByKey.set(k, [r]);
   }
 
-  const today = Date.now();
+  // ⚠ LOCAL MIDNIGHT OF THE SGT DATE, NOT `Date.now()`.
+  //
+  // `daysToExpiry` is a count of CALENDAR DAYS, and it gates the
+  // "Expiring ≤30d / ≤60d" cards' drills. Measuring from the current instant
+  // instead meant flooring a partial day, so a document expiring 61 calendar
+  // days out came back as 60 and slipped inside the 60-day window: measured on
+  // AY2026 (2026-09-15) the card said 72 and its sheet listed 75, the three
+  // extras all expiring 2026-11-15. Both ends now land on midnight, so the
+  // subtraction is a whole number of days and "expires today" is 0, not -1.
+  const todayMidnight = parseLocalDate(sgToday())?.getTime() ?? Date.now();
   const out: PFilesDrillRow[] = [];
   const revisionEvents: PFilesDrillRow[] = [];
   for (const app of apps) {
@@ -299,7 +315,7 @@ async function loadPFilesRowsUncached(
         expiryDate = rawExpiry;
         const parsedExpiry = rawExpiry ? parseLocalDate(rawExpiry) : null;
         daysToExpiry = parsedExpiry
-          ? Math.floor((parsedExpiry.getTime() - today) / 86_400_000)
+          ? Math.round((parsedExpiry.getTime() - todayMidnight) / 86_400_000)
           : null;
       }
 

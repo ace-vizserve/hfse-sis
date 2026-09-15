@@ -251,6 +251,17 @@ export function TopAbsentDrillCard({
       : activeData.slice(0, TOP_ATTENDANCE_LIST_LIMIT);
   const drillTarget: AttendanceDrillTarget =
     tab === 'absent' ? 'top-absent' : 'top-active';
+  // The drill is this card's query unsliced — the same ranking, without the
+  // 10-row cut. It is NOT the whole roster: a "most absences" list padded with
+  // students who were never absent is a different question. The server applies
+  // the same two predicates (lib/attendance/drill.ts::applyTargetFilter); this
+  // is only the seed that paints before the fetch lands, so it has to agree.
+  const drillSeed = React.useMemo(() => {
+    const base = initialTopAbsent ?? data;
+    return tab === 'absent'
+      ? base.filter((r) => r.absences > 0)
+      : sortTopActive(base.filter((r) => r.encodedDays > 0));
+  }, [tab, initialTopAbsent, data]);
   const emptyMessage =
     tab === 'absent'
       ? 'No absences in range.'
@@ -334,7 +345,7 @@ export function TopAbsentDrillCard({
           ayCode={ayCode}
           initialFrom={rangeFrom}
           initialTo={rangeTo}
-          initialTopAbsent={initialTopAbsent}
+          initialTopAbsent={drillSeed}
         />
       )}
     </Sheet>

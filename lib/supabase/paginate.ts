@@ -16,16 +16,70 @@ export type PageBuilder<T> = (
   to: number,
 ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
+export type FetchAllPagesOptions = {
+  /**
+   * Column appended as the LAST `ORDER BY` key on every page request, to give
+   * the walk a total order. Defaults to `'id'`. Pass `null` for a source with
+   * no such column — a set-returning RPC, or a view without a key.
+   */
+  tieBreak?: string | null;
+};
+
+/**
+ * ⚠ A PAGINATED READ WITHOUT A TOTAL ORDER REPEATS ROWS AND SKIPS ROWS.
+ *
+ * `.range()` is OFFSET/LIMIT. SQL guarantees nothing about row order without
+ * an `ORDER BY`, so Postgres may order the rows differently for each page
+ * request — and then a row lands on two pages while another lands on none.
+ * Concurrent writes make it likelier, and it is SILENT: you get a plausible
+ * number, slightly wrong, different next time.
+ *
+ * Measured on AY2026 (2026-09-15), before this: the markbook grade-entry read
+ * returned 3,473 rows holding only 2,744 distinct entry ids — 729 duplicates —
+ * and the count moved between calls (3,473 / 3,456 / 3,380). The attendance
+ * drill's read dropped 9 students and 1,844 marks that the dashboard's own
+ * (ordered) read kept.
+ *
+ * Sixty-one call sites had no ordering at all, so the rule lives HERE rather
+ * than in each of them: every page request gets `ORDER BY … id` appended, and
+ * a new read cannot forget it. Call sites that order for their own reasons —
+ * `attendance_daily`'s supersede reads, which need the surviving mark first —
+ * keep doing so; their keys stay ahead of this one, which only breaks ties.
+ *
+ * The append is duck-typed because `PageBuilder` is declared as a PromiseLike:
+ * a PostgREST builder really is chainable at runtime, and anything that isn't
+ * (a hand-rolled async builder in a test) is passed through untouched.
+ */
+type Orderable<T> = {
+  order: (
+    column: string,
+    options?: { ascending?: boolean },
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+};
+
+function isOrderable<T>(value: unknown): value is Orderable<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { order?: unknown }).order === 'function'
+  );
+}
+
 export async function fetchAllPages<T>(
   build: PageBuilder<T>,
   pageSize: number = DEFAULT_PAGE_SIZE,
+  options: FetchAllPagesOptions = {},
 ): Promise<T[]> {
+  const { tieBreak = 'id' } = options;
   const out: T[] = [];
   let page = 0;
   while (true) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
-    const { data, error } = await build(from, to);
+    const query = build(from, to);
+    const { data, error } = await (tieBreak && isOrderable<T>(query)
+      ? query.order(tieBreak, { ascending: true })
+      : query);
     if (error) {
       throw new Error(`paginate fetch failed: ${error.message}`);
     }

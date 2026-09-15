@@ -263,6 +263,14 @@ async function loadWriteupRowsUncached(ayCode: string): Promise<WriteupRow[]> {
         'id, student_id, section_id, term_id, writeup, submitted, submitted_at, created_at, updated_at'
       )
       .in('term_id', termIds)
+      // ⚠ AND ORDERED, because `.range()` is OFFSET/LIMIT: with no ORDER BY
+      // Postgres may order the rows differently for each page, so a row can
+      // come back on two pages while another comes back on none. The comment
+      // above is right that this read pages — that is exactly when it matters.
+      // `id` is the primary key, so this is a total order and an index walk.
+      // Measured equivalent in lib/markbook/drill.ts: 3,473 rows holding 2,744
+      // distinct ids.
+      .order('id', { ascending: true })
       .range(from, to)
   );
   // Writeup uniqueness in DB is (term_id, student_id) per migration 018 —

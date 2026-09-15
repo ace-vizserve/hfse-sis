@@ -15,6 +15,7 @@ import {
 } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { parseLocalDate } from '@/lib/dashboard/range';
+import { sgToday } from '@/lib/dates';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import { EXPIRING_SOON_THRESHOLD_DAYS } from '@/lib/sis/process';
 import { inChaseLensScope, type ChaseQueueLens } from '@/lib/sis/chase-lens';
@@ -119,6 +120,53 @@ const CORE_DOC_STATUS_COLUMNS = [
 // enrollee from drill results, producing card-vs-drill mismatches.
 const ENROLLED_STATUS_SET = new Set<string>(ENROLLED_STATUSES);
 const SOFT_CLOSED_APPLICATION_STATUSES = new Set(['Cancelled', 'Withdrawn']);
+
+/**
+ * One row per enrolee, preferring a live enrolment row over a withdrawn one.
+ *
+ * ⚠ FOR APPLICANT-SHAPED TARGETS ONLY. A drill row is a `section_students`
+ * row, so a student who transferred or re-enrolled mid-year has TWO of them
+ * (KD #67 keeps the withdrawn source row). The charts these targets back count
+ * the APPLICANT — `getLevelDistribution` and
+ * `loadDocumentValidationBacklogUncached` both read one row per enrolee out of
+ * `_enrolment_status` / `_enrolment_documents` — so listing both enrolment
+ * rows put the same child on screen twice and made every segment read one too
+ * high. Measured on AY2026 (2026-09-15): the level chart said 407 against 408
+ * drill rows (Primary One 32 vs 33), and the document backlog was +1 on all 18
+ * of its non-zero segments, one student holding both a `late_enrollee` and a
+ * `withdrawn` row.
+ *
+ * Targets whose own KPI counts enrolment rows — 'active-enrolled',
+ * 'enrollments-range' — are deliberately NOT deduped here: they already agree
+ * with their cards, and 'withdrawals-range' does its own per-student dedupe on
+ * the latest withdrawal date.
+ */
+function dedupeByEnrolee(rows: RecordsDrillRow[]): RecordsDrillRow[] {
+  const byEnrolee = new Map<string, RecordsDrillRow>();
+  const out: RecordsDrillRow[] = [];
+  for (const r of rows) {
+    if (!r.enroleeNumber) {
+      // No enrolee number to key on — keep the row rather than silently drop a
+      // child off the list.
+      out.push(r);
+      continue;
+    }
+    const prev = byEnrolee.get(r.enroleeNumber);
+    if (!prev) {
+      byEnrolee.set(r.enroleeNumber, r);
+      continue;
+    }
+    // Prefer the row that is still live, so the level / section / status shown
+    // is the current one rather than the abandoned enrolment.
+    if (
+      prev.enrollmentStatus === 'withdrawn' &&
+      r.enrollmentStatus !== 'withdrawn'
+    ) {
+      byEnrolee.set(r.enroleeNumber, r);
+    }
+  }
+  return [...out, ...byEnrolee.values()];
+}
 
 // A row whose ADMISSIONS applicationStatus is soft-closed (Cancelled/Withdrawn)
 // should be excluded from "enrolled"/application analytics — an active
@@ -451,10 +499,17 @@ async function enrichWithDocs(
     if (typeof en === 'string') docsByEnrolee.set(en, d);
   }
 
-  // 60-day window matching `dashboard.ts::loadRecordsKpisRangeUncached` —
-  // anchored to today since the drill is range-agnostic at row build
-  // time (range-shaped filters happen at `applyTargetFilter`).
-  const today = new Date();
+  // 60-day window, anchored to today since the drill is range-agnostic at row
+  // build time (range-shaped filters happen at `applyTargetFilter`). This is
+  // now the ONLY place the records 60-day window is defined — the
+  // "Docs expiring ≤60d" KPI counts `expiring-docs` rows rather than
+  // re-implementing it (lib/sis/dashboard.ts).
+  //
+  // ⚠ MIDNIGHT, NOT `new Date()`: a bare `new Date()` carries the time of day,
+  // so a document expiring TODAY (parsed to midnight) compared as earlier than
+  // "now" and was left out of its own expiry window. Same fix as
+  // lib/p-files/dashboard.ts + lib/p-files/drill.ts.
+  const today = parseLocalDate(sgToday()) ?? new Date();
   const windowEnd = new Date(today);
   windowEnd.setDate(windowEnd.getDate() + 60);
 
@@ -839,17 +894,27 @@ export function applyTargetFilter(
         (r) => ENROLLED_STATUS_SET.has(r.enrollmentStatus) && !isSoftClosed(r)
       );
     case 'expiring-docs':
-      return rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r));
+      // Deduped: the card counts children with an expiring document, and a
+      // transferred child holds two enrolment rows. See dedupeByEnrolee.
+      return dedupeByEnrolee(
+        rows.filter((r) => r.expiringDocsCount > 0 && !isSoftClosed(r))
+      );
     case 'students-by-level':
-      if (!segment) return rows.filter((r) => !isSoftClosed(r));
-      return rows.filter(
-        (r) => (r.level ?? 'Unknown') === segment && !isSoftClosed(r)
+      if (!segment)
+        return dedupeByEnrolee(rows.filter((r) => !isSoftClosed(r)));
+      return dedupeByEnrolee(
+        rows.filter(
+          (r) => (r.level ?? 'Unknown') === segment && !isSoftClosed(r)
+        )
       );
     case 'backlog-by-document': {
       // No-segment path — "view all backlog" (also the CSV-export scope) —
-      // is unchanged: every row with any incomplete core doc.
+      // is unchanged: every row with any incomplete core doc. Deduped per
+      // enrolee, like the segment paths below (see dedupeByEnrolee).
       if (!segment)
-        return rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r));
+        return dedupeByEnrolee(
+          rows.filter((r) => r.hasMissingDocs && !isSoftClosed(r))
+        );
 
       // segment format = "{slotLabel}|{bucket}" e.g. "Birth Certificate|missing"
       // (components/sis/document-backlog-chart.client.tsx). Split on the LAST
@@ -862,8 +927,10 @@ export function applyTargetFilter(
       const slotKey = BACKLOG_SLOT_KEY_BY_LABEL.get(slotLabel);
       if (!slotKey || !isBacklogBucketValue(bucketName)) return [];
 
-      return rows.filter(
-        (r) => !isSoftClosed(r) && r.docSlotBuckets?.[slotKey] === bucketName
+      return dedupeByEnrolee(
+        rows.filter(
+          (r) => !isSoftClosed(r) && r.docSlotBuckets?.[slotKey] === bucketName
+        )
       );
     }
     case 'class-assignment-readiness':

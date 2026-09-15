@@ -79,7 +79,7 @@ export function AttendanceBySectionCard({
             <ComparisonBarChart
               data={chartData}
               orientation="horizontal"
-              height={Math.min(620, Math.max(620, data.length * 26))}
+              height={Math.min(620, Math.max(420, data.length * 26))}
               yFormat="percent"
               onSegmentClick={setOpenSection}
             />

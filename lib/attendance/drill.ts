@@ -341,7 +341,8 @@ async function loadEntryRowsUncached(
     date: string;
     term_id: string;
     section_student_id: string;
-    status: string;
+    period_id: string | null;
+    status: string | null;
     ex_reason: string | null;
     ex_note: string | null;
   };
@@ -353,9 +354,30 @@ async function loadEntryRowsUncached(
           service
             .from('attendance_daily')
             .select(
-              'id, date, term_id, section_student_id, status, ex_reason, ex_note'
+              'id, date, term_id, section_student_id, period_id, status, ex_reason, ex_note'
             )
             .in('section_student_id', ssIds.slice(i * CHUNK, (i + 1) * CHUNK))
+            // ⚠ ORDERING IS LOAD-BEARING, AND SO IS THE `id` TIE-BREAK.
+            // Identical rule to lib/attendance/dashboard.ts::loadDailyRows —
+            // read its note for the full reasoning; the short version is that
+            // `attendance_daily` is an append-only ledger, so this read has to
+            // be ordered before it can be deduped, and `recorded_at desc` alone
+            // is not enough because a register submit writes ~25 rows sharing
+            // one microsecond and PostgREST may order tied rows differently on
+            // each `.range()` page. Without the order this read was ALSO losing
+            // rows: measured on AY2026 (2026-09-15) two calls in one process
+            // disagreed, one of them dropping 9 students and 1,844 marks that
+            // the dashboard's read kept.
+            //
+            // Grouped order, not global: the dedupe only needs the surviving
+            // row FIRST WITHIN each (student, date, period) group, and this
+            // leading triple matches migration 014's index so Postgres walks it
+            // instead of sorting. Chunking by student keeps that valid — a
+            // student belongs to exactly one chunk.
+            .order('section_student_id', { ascending: true })
+            .order('date', { ascending: false })
+            .order('recorded_at', { ascending: false })
+            .order('id', { ascending: true })
             .range(from, to)
         )
       )
@@ -363,7 +385,27 @@ async function loadEntryRowsUncached(
   ).flat();
 
   const out: AttendanceEntryRow[] = [];
+  // Surviving mark per (student, date, period) — the first row seen for a key,
+  // given the order above. Everything after it is superseded history, and a
+  // drill listing it showed a corrected absence twice: on AY2026 the Absences
+  // card read 880 against a sheet of 983 rows, Lates 392 against 404, Excused
+  // 1,231 against 1,269.
+  //
+  // `period_id` is part of the key because migration 014 keys the ledger on it.
+  // It is NULL everywhere today; keying on it now means a future multi-period
+  // day is not silently collapsed into one mark.
+  const seen = new Set<string>();
   for (const e of all) {
+    const key = `${e.section_student_id}|${e.date}|${e.period_id ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // A cleared mark is an appended row with a NULL status (migration 134 —
+    // never a delete), which means "this child has no mark on this date". It is
+    // not a mark, the KPI cards exclude it (`where status is not null`, both
+    // RPCs in migration 148), and `AttendanceEntryRow.status` has never allowed
+    // null — so 11 of these were being cast through the type and rendered as
+    // blank-status rows in the sheet.
+    if (e.status == null) continue;
     const ss = ssById.get(e.section_student_id);
     if (!ss) continue;
     const section = sectionById.get(ss.section_id);
@@ -745,10 +787,10 @@ async function rollupCompassionate(
 
 // Fast, narrow sibling of `rollupCompassionate` — for callers (the priority
 // panel + hero lede) that only need the OVER-quota verdict and can't afford
-// to wait on the ~180k-row `buildAllRowSets` scan. Queries `attendance_daily`
-// pre-filtered to the compassionate-EX rows instead of loading every status,
-// then runs the SAME `computeCompassionateRows` used by `rollupCompassionate`
-// — so the two can't drift on allowance/over-quota logic or the KD #67
+// to wait on the ~180k-row `buildAllRowSets` scan. It finds the days that ever
+// carried a compassionate leave, then reads the ledger for only those days, and
+// runs the SAME `computeCompassionateRows` used by `rollupCompassionate` — so
+// the two can't drift on allowance/over-quota logic or the KD #67
 // withdrawn/transfer union (both derive from the same `ctx.sectionStudents`).
 export async function getCompassionateOverQuota(
   ayCode: string
@@ -762,18 +804,19 @@ export async function getCompassionateOverQuota(
 
   type LeaveEntryLite = {
     section_student_id: string;
+    date: string;
     term_id: string;
     status: string;
     ex_reason: string | null;
   };
   const CHUNK = 100; // same URL-length reasoning as loadEntryRowsUncached
-  const rows = (
+  const candidates = (
     await Promise.all(
       Array.from({ length: Math.ceil(ssIds.length / CHUNK) }, (_, i) =>
         fetchAllPages<LeaveEntryLite>((from, to) =>
           service
             .from('attendance_daily')
-            .select('section_student_id, term_id, status, ex_reason')
+            .select('section_student_id, date, term_id, status, ex_reason')
             .in('section_student_id', ssIds.slice(i * CHUNK, (i + 1) * CHUNK))
             .eq('status', 'EX')
             .eq('ex_reason', 'compassionate')
@@ -782,13 +825,85 @@ export async function getCompassionateOverQuota(
       )
     )
   ).flat();
+  if (candidates.length === 0) return [];
 
-  const entries = rows.map((r) => ({
-    studentSectionId: r.section_student_id,
-    termId: r.term_id,
-    status: r.status as AttendanceEntryRow['status'],
-    exReason: r.ex_reason,
-  }));
+  // ⚠ CANDIDATES, NOT USAGE. A pre-filtered read of an append-only ledger
+  // cannot be deduped on its own: the row that SUPERSEDED a compassionate
+  // leave — the teacher changing it to Present, or clearing it — does not
+  // match `status = 'EX'`, so it never comes back and the dead row looks live.
+  // Filtering first would also double-count a leave saved twice.
+  //
+  // So the narrow read only says WHICH (student, date) pairs ever carried a
+  // compassionate leave. Those pairs are few (a handful per year), so reading
+  // every ledger row for just those students on just those dates is still far
+  // cheaper than the full-year scan this function exists to avoid — and it can
+  // be ordered and deduped exactly like `loadEntryRows`, which is what makes
+  // the answer right.
+  const pairKeys = new Set(
+    candidates.map((r) => `${r.section_student_id}|${r.date}`)
+  );
+  const candidateStudentIds = Array.from(
+    new Set(candidates.map((r) => r.section_student_id))
+  );
+  const candidateDates = Array.from(new Set(candidates.map((r) => r.date)));
+
+  type LedgerLite = {
+    section_student_id: string;
+    date: string;
+    term_id: string;
+    period_id: string | null;
+    status: string | null;
+    ex_reason: string | null;
+  };
+  const ledger = (
+    await Promise.all(
+      Array.from(
+        { length: Math.ceil(candidateStudentIds.length / CHUNK) },
+        (_, i) =>
+          fetchAllPages<LedgerLite>((from, to) =>
+            service
+              .from('attendance_daily')
+              .select(
+                'section_student_id, date, term_id, period_id, status, ex_reason'
+              )
+              .in(
+                'section_student_id',
+                candidateStudentIds.slice(i * CHUNK, (i + 1) * CHUNK)
+              )
+              .in('date', candidateDates)
+              .order('section_student_id', { ascending: true })
+              .order('date', { ascending: false })
+              .order('recorded_at', { ascending: false })
+              .order('id', { ascending: true })
+              .range(from, to)
+          )
+      )
+    )
+  ).flat();
+
+  // Surviving mark per (student, date, period), same rule as loadEntryRows.
+  // The `.in()` pair above is a cross product of candidate students × candidate
+  // dates, so narrow it back to the pairs that actually carried a leave.
+  const seen = new Set<string>();
+  const entries: Array<
+    Pick<
+      AttendanceEntryRow,
+      'studentSectionId' | 'termId' | 'status' | 'exReason'
+    >
+  > = [];
+  for (const r of ledger) {
+    const key = `${r.section_student_id}|${r.date}|${r.period_id ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (r.status == null) continue;
+    if (!pairKeys.has(`${r.section_student_id}|${r.date}`)) continue;
+    entries.push({
+      studentSectionId: r.section_student_id,
+      termId: r.term_id,
+      status: r.status as AttendanceEntryRow['status'],
+      exReason: r.ex_reason,
+    });
+  }
 
   return computeCompassionateRows(ctx, entries).filter((r) => r.isOverQuota);
 }
@@ -1025,25 +1140,42 @@ export async function buildAttendanceDrillRows(
       input.segment ?? null
     ) as AttendanceDrillRow[];
   }
+  // ⚠ EVERY KIND ENDS AT applyTargetFilter. The rollup kinds used to return
+  // straight from their branch, which is how four cards ended up disagreeing
+  // with their own drill sheets (see the target filter's own note) and how the
+  // 'top-active' sort became unreachable. Adding a target now means adding a
+  // case there; it cannot be silently skipped by returning early here.
   if (kind === 'top-absent') {
     let entries = await loadEntryRows(input.ayCode);
     entries = applyScopeFilter(entries, input);
-    return rollupTopAbsent(entries) as AttendanceDrillRow[];
+    return applyTargetFilter(
+      rollupTopAbsent(entries) as AttendanceDrillRow[],
+      input.target,
+      input.segment ?? null
+    );
   }
   if (kind === 'section-rollup') {
     let entries = await loadEntryRows(input.ayCode);
     entries = applyScopeFilter(entries, input);
-    return rollupBySection(entries) as AttendanceDrillRow[];
+    return applyTargetFilter(
+      rollupBySection(entries) as AttendanceDrillRow[],
+      input.target,
+      input.segment ?? null
+    );
   }
   if (kind === 'vacation-leave') {
-    return (await rollupVacationLeave(
+    const rows = (await rollupVacationLeave(
       input.ayCode,
       input.termId ?? null,
       input.defaultVlAllowance ?? 1
     )) as AttendanceDrillRow[];
+    return applyTargetFilter(rows, input.target, input.segment ?? null);
   }
   // compassionate
-  return (await rollupCompassionate(input.ayCode)) as AttendanceDrillRow[];
+  const compassionate = (await rollupCompassionate(
+    input.ayCode
+  )) as AttendanceDrillRow[];
+  return applyTargetFilter(compassionate, input.target, input.segment ?? null);
 }
 
 export type AllRowSets = {
@@ -1168,7 +1300,13 @@ export function getTopAbsentByTerm(
 
 // ─── Target filter ──────────────────────────────────────────────────────────
 
-function applyTargetFilter(
+// Exported so the parity between a card's number and its drill's rows can be
+// asserted without a database (__tests__/attendance/drill-card-parity.test.ts).
+// Same reason `lib/markbook/drill-filter.ts` is its own module: the predicate
+// that produces a card's headline figure and the predicate that produces the
+// drill's rows have to be ONE thing, and the only way to keep them one thing
+// is to make it testable in isolation.
+export function applyTargetFilter(
   rows: AttendanceDrillRow[],
   target: AttendanceDrillTarget,
   segment: string | null
@@ -1229,13 +1367,48 @@ function applyTargetFilter(
         (r) => r.dayType === target
       ) as AttendanceDrillRow[];
     }
+    // ⚠ THE NEXT FOUR CASES EXIST BECAUSE THEY WERE MISSING, AND A CARD
+    // READING 0 OPENED A SHEET OF 398 ROWS.
+    //
+    // Each of these four cards computes its figure by filtering the rollup in
+    // the COMPONENT (selectAtRiskCompassionate / selectAtRiskVacationLeave /
+    // the TOP_ATTENDANCE_LIST_LIMIT preview), and the drill used to hand back
+    // the raw rollup — every non-withdrawn student in the year, zero-usage
+    // rows included. Measured on AY2026 (2026-09-15): the compassionate card
+    // said "0 over / 0 near" and its sheet opened with 398 rows, 397 of them
+    // zero usage; vacation leave said "0 over / 2 at limit" against 398 rows,
+    // 396 zero. The rule now is the one the rest of the app already follows
+    // (KD #82/#124, and see lib/markbook/drill-filter.ts): the drill returns
+    // the set the card's number is made of, and nothing else.
     case 'top-absent':
-      return rows;
+      // The card is a top-10 PREVIEW of this ranking, so the drill is the same
+      // query unsliced — but a list titled "most absences" must not be padded
+      // with students who were never absent. `rollupTopAbsent` already sorts
+      // by absences desc.
+      return (rows as TopAbsentDrillRow[]).filter(
+        (r) => r.absences > 0
+      ) as AttendanceDrillRow[];
     case 'top-active':
-      return sortTopActive(rows as TopAbsentDrillRow[]) as AttendanceDrillRow[];
-    case 'attendance-by-section':
+      // Mirror of the above for the card's "Top-active" tab: students who have
+      // any encoded day, ordered fewest-absences-first.
+      //
+      // ⚠ This sort was previously DEAD CODE — `buildAttendanceDrillRows`
+      // returned `rollupTopAbsent(...)` straight from the top-absent branch
+      // without ever calling this filter, so "Students with the best
+      // attendance" listed the most-absent students first.
+      return sortTopActive(
+        (rows as TopAbsentDrillRow[]).filter((r) => r.encodedDays > 0)
+      ) as AttendanceDrillRow[];
     case 'compassionate-quota':
+      return selectAtRiskCompassionate(
+        rows as CompassionateUsageRow[]
+      ) as AttendanceDrillRow[];
     case 'vacation-leave-quota':
+      return selectAtRiskVacationLeave(
+        rows as VacationLeaveUsageRow[]
+      ) as AttendanceDrillRow[];
+    case 'attendance-by-section':
+      // No narrowing: the card is a bar per section over exactly this set.
       return rows;
     default:
       return rows;
@@ -1422,7 +1595,7 @@ export function drillHeaderForTarget(
     case 'top-absent':
       return {
         eyebrow: 'Needs attention',
-        title: 'Students with the most absences',
+        title: 'Every student with at least one absence, most first',
       };
     case 'top-active':
       return {
@@ -1437,14 +1610,14 @@ export function drillHeaderForTarget(
     case 'compassionate-quota':
       return {
         eyebrow: 'Attendance',
-        title: 'Compassionate-leave quota usage by student',
+        title: 'Students near or over their compassionate-leave quota',
       };
     case 'vacation-leave-quota':
       return {
         eyebrow: 'Attendance',
         title: segment
           ? `Vacation-leave quota — ${segment}`
-          : 'Vacation-leave quota usage by student this term',
+          : 'Students at or over their vacation-leave quota this term',
       };
     default:
       return { eyebrow: 'Drill', title: 'Attendance' };

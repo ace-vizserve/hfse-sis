@@ -669,9 +669,9 @@ export type RecordsRangeKpis = {
 async function loadRecordsKpisForRange(
   input: RangeInput
 ): Promise<RecordsRangeKpis> {
-  const service = createServiceClient();
-  const admissions = createAdmissionsClient();
-  const prefix = prefixFor(input.ayCode);
+  // No clients needed here any more — every figure on this card strip is now
+  // derived from the drill's own rows + filters (see below), which own the
+  // queries.
 
   // Resolve AY id once. `section_students` has no `academic_year_id` column
   // — AY-scoping requires a `sections!inner` join. Without this, counts
@@ -701,42 +701,18 @@ async function loadRecordsKpisForRange(
   // velocity by construction (KD #82/#124).
   // Withdrawals + active-enrolled are now ALSO derived from the same drill rows
   // (below) so card == drill (KD #124). Only the docs scan stays a direct query.
-  const [drillRows, docsRes] = await Promise.all([
-    buildRecordsDrillRows({ ayCode: input.ayCode }),
-    // Records is enrolled-only per KD #51 — narrow the docs scan to the
-    // enrolled set so the "Docs expiring ≤60d" KPI doesn't count slots
-    // belonging to pre-enrolment funnel applicants. Without this filter
-    // the card was showing 47 when the drill (which IS enrolled-filtered)
-    // would show 3 — classic card-vs-drill disagreement.
-    (async () => {
-      const { data: enrolledStatus } = await admissions
-        .from(`${prefix}_enrolment_status`)
-        .select('enroleeNumber, applicationStatus')
-        .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
-      const enrolledNumbers = (
-        (enrolledStatus ?? []) as { enroleeNumber: string | null }[]
-      )
-        .map((s) => s.enroleeNumber)
-        .filter((v): v is string => v !== null);
-      if (enrolledNumbers.length === 0) {
-        return {
-          data: [] as Array<Record<string, string | null>>,
-          error: null,
-        };
-      }
-      return admissions
-        .from(`${prefix}_enrolment_documents`)
-        .select(
-          [
-            'enroleeNumber',
-            ...DOCUMENT_SLOTS.flatMap((s) =>
-              s.expires ? [`${s.key}Expiry`] : []
-            ),
-          ].join(', ')
-        )
-        .in('enroleeNumber', enrolledNumbers);
-    })(),
-  ]);
+  // ⚠ `withDocs: true` so the expiring KPI can come off these same rows. It
+  // used to run a SEPARATE docs query and count one per expiring DOCUMENT,
+  // while its drill listed one row per STUDENT — measured on AY2026
+  // (2026-09-15) the card read 72 against a sheet of 43 rows, and those 43
+  // students' `expiringDocsCount` summed to exactly 72. Same children, two
+  // different units. Deriving it from the drill's own filter, the way
+  // enrollments / withdrawals / active-enrolled already do, is what makes
+  // "click the number, see those rows" true (KD #124).
+  const drillRows = await buildRecordsDrillRows(
+    { ayCode: input.ayCode },
+    { withDocs: true }
+  );
 
   // Re-use the drill's enrollments-range filter so the card count == the drill
   // rows (KD #124). lateEnroleesInRange is the late_enrollee subset of the same
@@ -773,29 +749,15 @@ async function loadRecordsKpisForRange(
     null
   ).length;
 
-  type DocRow = Record<string, string | null>;
-  // "Docs expiring ≤60d" is a LIVE state, not range activity — anchor the
-  // window to TODAY, not the picker's range endpoint. The drill
-  // (lib/sis/drill.ts::enrichWithDocs) already anchors today → today+60d;
-  // anchoring the count to the range end made the card diverge from the drill
-  // whenever the picker range wasn't "ending today". Matches the drill's
-  // raw `new Date()` exactly so count == drill rows.
-  const today = new Date();
-  const windowEnd = new Date(today);
-  windowEnd.setDate(windowEnd.getDate() + 60);
-  let expiringSoon = 0;
-  for (const row of (docsRes.data ?? []) as unknown as DocRow[]) {
-    for (const slot of DOCUMENT_SLOTS) {
-      if (!slot.expires) continue;
-      const exp = row[`${slot.key}Expiry`];
-      if (!exp) continue;
-      // Slice to the date portion first so a full-ISO timestamp still yields its
-      // date (parseLocalDate is strict ^\d{4}-\d{2}-\d{2}$); bare dates are
-      // unaffected. Mirrors lib/sis/drill.ts::enrichWithDocs so count == drill.
-      const d = parseLocalDate(exp.slice(0, 10));
-      if (d && d >= today && d <= windowEnd) expiringSoon += 1;
-    }
-  }
+  // "Docs expiring ≤60d" is a LIVE state, not range activity, so it takes no
+  // range — and it counts STUDENTS with at least one expiring document, which
+  // is exactly what its drill lists. The 60-day window itself lives in
+  // `lib/sis/drill.ts::enrichWithDocs`, one place instead of two.
+  const expiringSoon = applyTargetFilter(
+    drillRows,
+    'expiring-docs',
+    null
+  ).length;
 
   return {
     enrollmentsInRange,

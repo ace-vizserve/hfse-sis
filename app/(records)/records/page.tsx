@@ -408,11 +408,11 @@ export default async function RecordsDashboard({
           )}
         />
         <MetricCard
-          label="Docs expiring ≤60d"
+          label="Students with a document expiring"
           value={kpisResult.current.expiringSoon}
           icon={AlertTriangle}
           intent={kpisResult.current.expiringSoon > 0 ? 'warning' : 'good'}
-          subtext="From today"
+          subtext="Expiring within 60 days"
           drillSheet={() => (
             <RecordsDrillSheet target="expiring-docs" ayCode={selectedAy} />
           )}

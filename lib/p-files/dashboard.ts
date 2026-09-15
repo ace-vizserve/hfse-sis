@@ -16,6 +16,7 @@ import {
   type RangeResult,
 } from '@/lib/dashboard/range';
 import type { VelocityPoint } from '@/lib/dashboard/velocity';
+import { sgToday } from '@/lib/dates';
 import { getExpiringDocuments } from '@/lib/sis/dashboard';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
@@ -441,7 +442,13 @@ async function loadPFilesKpisForRange(
   // 0 ≤ daysToExpiry ≤ N; anchoring the count to the range end made the two
   // expiring cards diverge from their drills whenever the picker range wasn't
   // "ending today". Now count == drill regardless of the picker.
-  const today = new Date();
+  // ⚠ MIDNIGHT, NOT `new Date()`. A bare `new Date()` carries the current
+  // time-of-day, so `exp >= today` excluded a document expiring TODAY (its
+  // parsed expiry is midnight, which is earlier than "now"), and the 60-day
+  // edge landed mid-day — disagreeing with the drill's whole-day
+  // `daysToExpiry` at both ends. Both sides are calendar days now: a document
+  // expiring today counts, and one expiring on day 61 does not.
+  const today = parseLocalDate(sgToday()) ?? new Date();
   const sixtyDaysOut = new Date(today);
   sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
   const thirtyDaysOut = new Date(today);
