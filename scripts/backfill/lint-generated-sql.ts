@@ -3,11 +3,14 @@
 // against production. Catches the mistakes a generator makes that a human
 // reading the first twenty lines would not notice.
 //
-// Written after two real bugs shipped into a generated file:
+// Written after real bugs shipped into a generated file:
 //   1. a row comment placed AFTER a VALUES row swallowed the comma that
 //      separates entries, silently truncating the list;
 //   2. a DO block emitted with repeated begin/end pairs instead of one,
-//      which does not parse at all.
+//      which does not parse at all;
+//   3. a `create temp table` grew a column while its VALUES rows kept the old
+//      arity — SQL that cannot run, and which every other check here passed
+//      because the commas, quotes and parens were all balanced.
 //
 // Checks per file:
 //   - begin / commit are balanced and in order
@@ -16,6 +19,8 @@
 //   - every VALUES list is comma-separated and terminated with a semicolon
 //   - balanced parentheses and an even number of single quotes per statement
 //   - no empty VALUES list
+//   - every VALUES row supplies exactly as many values as the temp table
+//     above it declares columns
 //
 // Run: npx tsx scripts/backfill/lint-generated-sql.ts [dir ...]
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -45,6 +50,30 @@ function stripComment(line: string): string {
   return line;
 }
 
+// Splits a comma-separated list, ignoring commas inside parens, brackets or
+// quotes — `array['P4', 'P5']` is ONE value, not two.
+function splitTopLevel(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inQuote = false;
+  let cur = '';
+  for (const c of s) {
+    if (c === "'") inQuote = !inQuote;
+    if (!inQuote) {
+      if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if (c === ',' && depth === 0) {
+        parts.push(cur.trim());
+        cur = '';
+        continue;
+      }
+    }
+    cur += c;
+  }
+  if (cur.trim() !== '') parts.push(cur.trim());
+  return parts;
+}
+
 function lint(file: string): Problem[] {
   const out: Problem[] = [];
   const raw = readFileSync(file, 'utf8');
@@ -56,6 +85,8 @@ function lint(file: string): Problem[] {
   let inValues = false;
   let valuesRows = 0;
   let valuesStart = 0;
+  let declaredCols: number | null = null;
+  let declaredAt = 0;
   let parens = 0;
 
   lines.forEach((rawLine, idx) => {
@@ -106,6 +137,20 @@ function lint(file: string): Problem[] {
         out.push({ file, line: n, message: 'commit without a matching begin' });
     }
 
+    // `create temp table X (a, b, c) as` declares the arity every VALUES row
+    // below must match. A generator that grows a column and updates the
+    // declaration but not the rows (or the reverse) emits SQL that does not
+    // run — and every other check here passes it, because the commas, quotes
+    // and parens are all balanced. That happened while generating the
+    // AY2026 calendar level-scope file.
+    const createCols = /create\s+temp\s+table\s+\S+\s*\(([^)]*)\)\s*as\b/i.exec(
+      code
+    );
+    if (createCols) {
+      declaredCols = splitTopLevel(createCols[1]).length;
+      declaredAt = n;
+    }
+
     if (/\bvalues\s*$/.test(lower)) {
       inValues = true;
       valuesRows = 0;
@@ -115,6 +160,17 @@ function lint(file: string): Problem[] {
     if (inValues) {
       if (/^\(/.test(trimmed)) {
         valuesRows++;
+        if (declaredCols !== null) {
+          const inner = trimmed.replace(/^\(/, '').replace(/\)[,;]?$/, '');
+          const got = splitTopLevel(inner).length;
+          if (got !== declaredCols) {
+            out.push({
+              file,
+              line: n,
+              message: `VALUES row has ${got} value(s) but the table declared at line ${declaredAt} has ${declaredCols} column(s)`,
+            });
+          }
+        }
         const endsProperly = /\),$/.test(trimmed) || /\);$/.test(trimmed);
         if (!endsProperly)
           out.push({
