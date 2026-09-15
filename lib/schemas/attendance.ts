@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { isEmptyRichText, proseLength } from '@/lib/rich-text';
+import { LEVEL_CODES } from '@/lib/sis/levels';
 
 // Attendance module — zod schemas for /api/attendance/* write surfaces.
 //
@@ -223,6 +224,21 @@ export function resolveDayType(entry: {
   return entry.isHoliday ? 'public_holiday' : 'school_day';
 }
 
+// Level / section scope (migration 158). `levels` is the real scope and
+// `audience` is derived from it by a trigger, so a caller that sends `levels`
+// need not send `audience` — and if it sends both, the database wins. The two
+// scopes are mutually exclusive, matching calendar_events_one_scope_chk;
+// validating it here turns a 500 from the CHECK into a 400 with a reason.
+const LevelScopeFields = {
+  levels: z.array(z.enum(LEVEL_CODES)).min(1).nullable().optional(),
+  sectionIds: z.array(uuidString).min(1).nullable().optional(),
+};
+
+const oneScopeOnly = (v: {
+  levels?: readonly string[] | null;
+  sectionIds?: readonly string[] | null;
+}) => !(v.levels && v.sectionIds);
+
 export const CalendarEventCreateSchema = z
   .object({
     termId: uuidString,
@@ -232,10 +248,15 @@ export const CalendarEventCreateSchema = z
     category: z.enum(EVENT_CATEGORY_VALUES).optional().default('other'),
     audience: z.enum(AUDIENCE_VALUES).optional().default('all'),
     tentative: z.boolean().optional().default(false),
+    ...LevelScopeFields,
   })
   .refine((v) => v.endDate >= v.startDate, {
     message: 'endDate must be on or after startDate',
     path: ['endDate'],
+  })
+  .refine(oneScopeOnly, {
+    message: 'An event is scoped by levels or by sections, not both',
+    path: ['sectionIds'],
   });
 export type CalendarEventCreateInput = z.infer<
   typeof CalendarEventCreateSchema
@@ -253,6 +274,7 @@ export const CalendarEventUpdateSchema = z
     category: z.enum(EVENT_CATEGORY_VALUES).optional(),
     audience: z.enum(AUDIENCE_VALUES).optional(),
     tentative: z.boolean().optional(),
+    ...LevelScopeFields,
   })
   .refine(
     (v) =>
@@ -260,7 +282,11 @@ export const CalendarEventUpdateSchema = z
       v.endDate === undefined ||
       v.endDate >= v.startDate,
     { message: 'endDate must be on or after startDate', path: ['endDate'] }
-  );
+  )
+  .refine(oneScopeOnly, {
+    message: 'An event is scoped by levels or by sections, not both',
+    path: ['sectionIds'],
+  });
 export type CalendarEventUpdateInput = z.infer<
   typeof CalendarEventUpdateSchema
 >;

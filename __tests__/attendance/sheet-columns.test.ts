@@ -18,6 +18,8 @@ function ev(
     label: 'x',
     category,
     audience: 'all',
+    levels: null,
+    sectionIds: null,
     tentative: false,
   };
 }

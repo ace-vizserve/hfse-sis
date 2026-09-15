@@ -5,6 +5,8 @@ import {
   type DayType,
   type EventCategory,
 } from '@/lib/schemas/attendance';
+import { eventAppliesToSection } from '@/lib/attendance/event-scope';
+import type { LevelCode } from '@/lib/sis/levels';
 
 // Attendance module — school-calendar helpers. Server-only reads.
 //
@@ -38,7 +40,16 @@ export type CalendarEventRow = {
   endDate: string;
   label: string;
   category: EventCategory;
+  /**
+   * Coarse scope, DERIVED from `levels` by a trigger (migration 158). Kept
+   * because the teacher's sheet, the register export and the SIS calendar
+   * filter all branch on it. Prefer `levels` for anything new.
+   */
   audience: Audience;
+  /** Level codes this event is for; null means whole school (migration 158). */
+  levels: LevelCode[] | null;
+  /** Sections it is for when narrower than a level; null otherwise. */
+  sectionIds: string[] | null;
   tentative: boolean;
 };
 
@@ -62,6 +73,8 @@ type RawCalendarEventRow = {
   label: string;
   category: EventCategory;
   audience: Audience;
+  levels: LevelCode[] | null;
+  section_ids: string[] | null;
   tentative: boolean;
 };
 
@@ -118,7 +131,7 @@ export async function getCalendarEventsForTerm(
   const { data, error } = await service
     .from('calendar_events')
     .select(
-      'id, term_id, start_date, end_date, label, category, audience, tentative'
+      'id, term_id, start_date, end_date, label, category, audience, levels, section_ids, tentative'
     )
     .eq('term_id', termId)
     .in('audience', audienceFilterValues(audience))
@@ -138,8 +151,37 @@ export async function getCalendarEventsForTerm(
     label: r.label,
     category: r.category,
     audience: r.audience,
+    levels: r.levels ?? null,
+    sectionIds: r.section_ids ?? null,
     tentative: r.tentative,
   }));
+}
+
+/**
+ * The events that belong on ONE section's register.
+ *
+ * Separate from `getCalendarEventsForTerm`, which answers the admin calendar's
+ * question ("show me the primary view") and still filters on `audience`. This
+ * answers the teacher's ("what is on MY class's sheet?"), which since migration
+ * 158 can be narrower than a band.
+ *
+ * Filtered in TypeScript rather than SQL on purpose: the predicate is a
+ * three-level precedence over two nullable array columns, which reads as one
+ * clear function and as an unmaintainable `.or()` string. A term holds a couple
+ * of dozen events, so there is nothing to win by pushing it down.
+ */
+export async function getCalendarEventsForSection(
+  termId: string,
+  levelCode: LevelCode | null,
+  sectionId: string | null
+): Promise<CalendarEventRow[]> {
+  const all = await getCalendarEventsForTerm(termId, 'all');
+  return all.filter((e) =>
+    eventAppliesToSection(
+      { audience: e.audience, levels: e.levels, sectionIds: e.sectionIds },
+      { levelCode, sectionId }
+    )
+  );
 }
 
 // Returns the term's `school_calendar` rows with audience precedence

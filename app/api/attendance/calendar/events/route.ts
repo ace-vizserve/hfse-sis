@@ -27,8 +27,17 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { termId, startDate, endDate, label, category, audience, tentative } =
-    parsed.data;
+  const {
+    termId,
+    startDate,
+    endDate,
+    label,
+    category,
+    audience,
+    tentative,
+    levels,
+    sectionIds,
+  } = parsed.data;
   // Accountability flag from the client warning (a passed date was changed).
   // Read from the raw body — it's not part of the row schema.
   const pastDateOverride =
@@ -43,7 +52,12 @@ export async function POST(request: NextRequest) {
       end_date: endDate,
       label,
       category,
+      // `audience` is derived from `levels` by a trigger (migration 158) when
+      // a scope is given, so what we send here only stands for a whole-school
+      // event. Sending it regardless keeps the pre-158 callers working.
       audience,
+      levels: levels ?? null,
+      section_ids: sectionIds ?? null,
       tentative,
       created_by: auth.user.id,
     })
@@ -73,6 +87,8 @@ export async function POST(request: NextRequest) {
       label,
       category,
       audience,
+      levels: levels ?? null,
+      sectionIds: sectionIds ?? null,
       tentative,
       ...(pastDateOverride ? { pastDateOverride: true } : {}),
     },
@@ -122,6 +138,12 @@ export async function PATCH(request: NextRequest) {
   if (fields.category !== undefined) patch.category = fields.category;
   if (fields.audience !== undefined) patch.audience = fields.audience;
   if (fields.tentative !== undefined) patch.tentative = fields.tentative;
+  // An explicit null CLEARS the scope back to whole-school; omitting the key
+  // leaves it alone. The two are not interchangeable, so both are forwarded
+  // only when the caller actually sent them. `audience` is re-derived by the
+  // migration-158 trigger whenever a scope is present.
+  if (fields.levels !== undefined) patch.levels = fields.levels;
+  if (fields.sectionIds !== undefined) patch.section_ids = fields.sectionIds;
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 });

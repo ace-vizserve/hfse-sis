@@ -21,6 +21,8 @@ const ev = (over: Partial<CalendarEventRow>): CalendarEventRow => ({
   label: 'X',
   category: 'school_event',
   audience: 'all',
+  levels: null,
+  sectionIds: null,
   tentative: false,
   ...over,
 });
