@@ -183,7 +183,12 @@ export async function PATCH(
   const { data: config, error: cfgErr } = await service
     .from('subject_configs')
     .select(
-      'id, subject_id, academic_year_id, ww_weight, pt_weight, qa_weight, subject:subjects(code, name)'
+      // `code` only, never `name`. The audit row wants a stable identifier, and
+      // a subject's NAME is per academic year since migration 137 (KD #203) —
+      // reading the raw one here would stamp AY2026's "STAR" onto an AY2025 row.
+      // `subjects.code` is untouched by a rename, which is what makes it the
+      // right thing to log. Enforced by __tests__/sis/subject-name-read-sweep.ts.
+      'id, subject_id, academic_year_id, ww_weight, pt_weight, qa_weight, subject:subjects(code)'
     )
     .eq('id', configId)
     .maybeSingle();

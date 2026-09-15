@@ -13,6 +13,7 @@ import {
   masterfileToCsv,
 } from '@/lib/markbook/masterfile-export';
 import { loadMasterfile } from '@/lib/markbook/masterfile';
+import { loadAttendanceDates } from '@/lib/markbook/masterfile-attendance-dates';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // GET /api/markbook/masterfile/export
@@ -130,6 +131,29 @@ export async function GET(req: NextRequest) {
     return new Response('Could not load Masterfile data.', { status: 404 });
   }
 
+  // WHICH DAYS each student missed, per term. Loaded HERE rather than inside
+  // `loadMasterfile` on purpose: that payload is `unstable_cache`d and the
+  // on-screen dashboard does not show dates, so they must not ride along in a
+  // cached payload every view pays for — and Next silently refuses to store one
+  // over 2MB, which this codebase has already shipped once.
+  //
+  // A failure here degrades to the export without date columns rather than
+  // failing the download: the counts are still the counts, and a registrar
+  // waiting on a masterfile is better served by most of it than by an error.
+  let attendanceDates;
+  try {
+    attendanceDates = await loadAttendanceDates(
+      payload.sections.map((s) => s.id),
+      payload.terms.map((t) => t.id)
+    );
+  } catch (err) {
+    console.error(
+      '[masterfile/export] attendance dates failed, exporting without them:',
+      err instanceof Error ? err.message : err
+    );
+    attendanceDates = undefined;
+  }
+
   // Filename base: Masterfile_{level}_{class|all}_{AY} — sanitize to safe chars.
   // One selected section → its name; multiple → "{n}_classes"; none / all → "all".
   const sanitize = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '_');
@@ -151,7 +175,7 @@ export async function GET(req: NextRequest) {
   // Branch on ?format=csv — everything else (including unset) serves xlsx.
   const fmt = searchParams.get('format')?.toLowerCase();
   if (fmt === 'csv') {
-    const table = flattenMasterfileRows(payload);
+    const table = flattenMasterfileRows(payload, attendanceDates);
     const csv = masterfileToCsv(table);
     const filename = `masterfile-${levelPart}-${ayCode}.csv`;
     return new Response(csv, {
@@ -165,7 +189,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Default: xlsx (existing path — unchanged).
-  const buffer = buildMasterfileWorkbook(payload);
+  const buffer = buildMasterfileWorkbook(payload, attendanceDates);
   const filename = `Masterfile_${levelPart}_${classPart}_${ayCode}.xlsx`;
   return new Response(new Uint8Array(buffer), {
     status: 200,

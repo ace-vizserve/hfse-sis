@@ -8,6 +8,7 @@ import type {
   MasterfileStudentRow,
 } from '@/lib/markbook/masterfile';
 import { toPlainText } from '@/lib/rich-text';
+import type { AttendanceDateIndex } from '@/lib/markbook/masterfile-attendance-dates';
 
 // HFSE Masterfile → Excel report-book export (KD #95).
 //
@@ -97,7 +98,15 @@ function commentsText(row: MasterfileStudentRow): string {
  * Builds an `.xlsx` workbook from the computed Masterfile payload and returns
  * it as a Node Buffer (`Content-Type` xlsx). Server-only.
  */
-export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
+export function buildMasterfileWorkbook(
+  payload: MasterfilePayload,
+  /**
+   * WHICH DAYS each student missed, per term (KD #218's sibling ask). Optional:
+   * a caller without it still gets the counts, and the columns simply do not
+   * appear. A missing date index must never block an export.
+   */
+  dates?: AttendanceDateIndex
+): Buffer {
   const examinable = payload.subjects.filter((s) => s.isExaminable);
   const nonExam = payload.subjects.filter((s) => !s.isExaminable);
   const terms = payload.terms; // already ordered by term_number
@@ -110,6 +119,10 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
       `T${t.termNumber} Present`,
       `T${t.termNumber} Late`
     );
+    // The dates behind the counts — "12 Aug absent · 3 Sep late". The
+    // consolidated file this export replaces carried dates, and a count alone
+    // cannot answer the question a parent phones about.
+    if (dates) attendancePerTermSubcols.push(`T${t.termNumber} Days missed`);
   }
   const attendanceTotalSubcols = [
     'Total School Days',
@@ -263,6 +276,7 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
       cells.push(att.schoolDays ?? '');
       cells.push(att.present ?? '');
       cells.push(att.late ?? '');
+      if (dates) cells.push(dates.get(row.studentId, att.termId));
     }
     // `?? ''` not `|| ''` — a real 0 (e.g. withdrawn / no attendance) must
     // print as 0 so downstream SUMs stay correct, not collapse to blank.
@@ -341,7 +355,9 @@ export interface MasterfileFlatTable {
  * of the export route.  Pure — no xlsx dependency.
  */
 export function flattenMasterfileRows(
-  payload: MasterfilePayload
+  payload: MasterfilePayload,
+  /** Same optional date index as the workbook builder — see its note. */
+  dates?: AttendanceDateIndex
 ): MasterfileFlatTable {
   const examinable = payload.subjects.filter((s) => s.isExaminable);
   const nonExam = payload.subjects.filter((s) => !s.isExaminable);
@@ -387,6 +403,7 @@ export function flattenMasterfileRows(
       `T${t.termNumber} Present`,
       `T${t.termNumber} Late`
     );
+    if (dates) headers.push(`T${t.termNumber} Days missed`);
   }
   headers.push('Total School Days', 'Total Present', 'Total Late');
   headers.push("Teacher's Comments");
@@ -454,6 +471,7 @@ export function flattenMasterfileRows(
       cells.push(att.schoolDays ?? null);
       cells.push(att.present ?? null);
       cells.push(att.late ?? null);
+      if (dates) cells.push(dates.get(row.studentId, att.termId));
     }
     cells.push(row.attendanceTotal.schoolDays ?? null);
     cells.push(row.attendanceTotal.present ?? null);

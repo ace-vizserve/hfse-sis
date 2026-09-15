@@ -62,6 +62,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
+import { buildStudentRecordExport } from '@/lib/sis/student-record-export';
 import { RichText } from '@/components/ui/rich-text';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toPlainText } from '@/lib/rich-text';
@@ -553,6 +555,21 @@ export default async function RecordsStudentCrossYearPage({
           >
             #{student.studentNumber}
           </Badge>
+          {/* One child's whole record as a file. The masterfile export covers
+              the cohort but is level-scoped, so handing somebody ONE student's
+              record meant exporting a year group and deleting the rest — which
+              is why the consolidated spreadsheet was still being kept by hand.
+              Built from what this page has already loaded; it fetches nothing. */}
+          <div className="ml-auto">
+            <ExportCsvButton
+              data={buildStudentRecordExport({
+                student,
+                placements,
+                academic: academics,
+                attendance,
+              })}
+            />
+          </div>
         </div>
 
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
