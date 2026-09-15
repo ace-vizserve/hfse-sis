@@ -170,3 +170,43 @@ Attendance section register + export are gated on **form adviser, per section** 
 ⚠ **`ex_note` AND `parent_note` ARE DIFFERENT FACTS AND BOTH NOW SHOW.** The filing card used to replace the note field; Mr Ace: _"show the note regardless its internal notes"_. `ex_note` is the school's own record and never leaves the school (109 keeps it out of `audit_log`, no parent route returns it); `parent_note` is the parent's message coming in.
 
 ⚠ **"NO CLASS" LEFT THE PICKER** (Mr Ace: _"there is no NC type of attendance mark"_) — a day the class did not meet belongs to the school calendar, not a student's row. **Existing NC rows still render**, and the server's registrar-only NC guard is untouched: the API is reachable without the component, so the guard is what enforces the rule.
+
+### KD #214
+
+**The school calendar is sourced from HFSE's published calendar, not reverse-engineered from attendance registers — 2026-09-15, applied to production.**
+
+Every AY2026 calendar row had been inferred from finished registers, one ad-hoc importer per term. A register only reports what teachers wrote in the columns they were given: it shows THAT a day was blank, never why; it has no columns for anything with no attendance footprint (Partners for Excellence, parents dialogues, term breaks, start of term, PTC); each sheet is one section, so primary and secondary sittings of the same exam collapse into one row; and it does not exist until the term is over. **AY2026 T4 is the proof — it opened 14 Sep with 49 rows, every one a plain school day.**
+
+`lib/sis/backfill/calendar/` holds the three pieces: `published-ay2026.ts` transcribes the school's own one-page calendar (`AY 2026 Calendar.png`, 107 entries, with each entry's TRUE level scope); `register-legend.ts` reads the masthead block out of all three register layouts; `reconcile.ts` merges them. **The published calendar is the plan and the spine; the register is the record and wins for days already taught.** `scripts/audit-calendar-vs-sources.ts` re-runs the whole comparison read-only at any time.
+
+Applied: 12 closures corrected, 63 events added, 4 audiences fixed. Before: 8 published closures were still markable school days and 5 were the wrong kind of day.
+
+⚠ **MARKS BEAT A MASTHEAD.** The T3 register lists "3-Sep Teacher's Day" under SCHOOL HOLIDAY, the published calendar puts Teacher's Day on the 4th, and the 3rd carries **338 attendance marks**. Teachers plainly taught, so the register's own GRID overrules its own HEADER. `reconcile` takes `datesWithMarks` for exactly this and refuses a register closure claim on a day that has live marks.
+
+⚠ **LEVEL SCOPE IS DERIVED ONLY FROM T3's STRUCTURED MASTHEAD.** T1/T2's free-text strip is the same text copied onto every sheet, so a gap there is a typing omission, not a scope — Vesak Day came back scoped to eight of ten levels because two form advisers never typed it. Only T3's four-column block varies per sheet by design, and only for events and exams; a closure is never level-scoped.
+
+⚠ **`extractLegendGroups` in `attendance-workbook-t3.ts` STOPS AT ROW 7** and truncates the longest masthead columns (S4's sixth exam paper, "Teachers and ANTS Day"). `register-legend.ts::extractLegendGroupsWide` reads to the end instead; the shipped function is deliberately left alone so the applied T3 attendance import stays reproducible.
+
+⚠ **43 closures and 9 events fall outside every term window** — New Year's Day, the three term breaks, the Nov–Dec yearend block. Both calendar tables are term-scoped, so there is nowhere to store them. Reported by the audit, never silently dropped. **Still open.**
+
+⚠ **Four source conflicts are deliberately NOT applied** and need a human: Leadership Camp (published 8–10 Jul, register 14–16 Jul), Youth Day Celebration (3 vs 5 Jul), the 5–6 Jul closure kinds, and Vesak Day, whose T2 masthead carries the **AY2025** date (12 May; 2026's is 31 May).
+
+### KD #215
+
+**A calendar event says which LEVELS it is for — migration 158, applied to production 2026-09-15.**
+
+Mr Ace: _"i have seen events named P6 Fieldtrip and its assigned to whole school which is wrong."_ `audience` (KD #50, migration 037) offers three values, and HFSE's published calendar names a level on **43 of its ~100 entries**; 27 of those cannot be expressed at all — P6 flattens to `primary`, and Leadership Camp running P4→S4 flattens to `all`, which is to say to nothing. The cost was not cosmetic: `resolveColumnTag` turns any event into an `SE` tag on that date's column, in the live grid **and the exported register**, so "P6 Fieldtrip" stamped every P1 teacher's sheet.
+
+`calendar_events.levels text[]` (NULL = whole school, matching KD's migration-128 convention) plus `section_ids uuid[]`, **mutually exclusive by CHECK**. An empty array is refused: whole-school is NULL, and "no levels" would be an event for nobody. A text[] rather than a join table — the set is fixed at ten and changes roughly never (migration 086), and the CHECK mirrors `public.levels.code` and `lib/sis/levels.ts::LEVEL_CODES`.
+
+**`audience` STAYS, and stays DERIVED by trigger.** Three live readers branch on it; dropping it would break all three in one commit. Set `levels`, and `audience` follows.
+
+⚠ **THE TRIGGER ONLY SPEAKS WHEN IT HAS SOMETHING TO SAY** — migrations 153/154's lesson applied _before_ the fact. A derive trigger fires for every writer, including rows written long before the rule existed. Production was queried first: 56 rows, 52 `all` + 4 `secondary`. Deriving unconditionally would have overwritten those 4 correct rows on the next touch of any kind. It derives only when `levels` or `section_ids` is present. Verified after applying: audience unchanged on all 56.
+
+⚠ **THE RULE IS WRITTEN TWICE** — `calendar_events_derive_audience()` in SQL and `types.ts::audienceFor` in TypeScript. File 06's query 3b is the parity check; `__tests__/attendance/calendar-event-scope.test.ts` pins the TS half.
+
+`lib/attendance/event-scope.ts::eventAppliesToSection` is where it lands for the reader: **classes, then levels, then `audience` for pre-158 rows.** Both per-section readers already knew the section's level code and were throwing it away to pass a band. Measured on production after the backfill: a P1 register shows 7 July events and **none is the camp**; a P6 register shows 10, camp 3 of 3.
+
+⚠ **A MULTI-DAY EVENT IS NOT NECESSARILY ONE ROW.** The original T3 import wrote one row per tagged date, so Leadership Camp is three rows that all read "Leadership Camp". The first backfill matched on `start_date` and scoped the 14th while leaving the 15th and 16th whole-school — **with the count still reading 40, which looked right**. Match the whole span.
+
+⚠ **Closures are deliberately NOT level-scoped.** `school_calendar` has no level column, and all 28 labelled day rows are whole-school. The event dialog keeps the old three-value control for day-affecting entries.
