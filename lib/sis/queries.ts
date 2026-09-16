@@ -43,6 +43,17 @@ export type StudentListRow = {
   /** Country name as supplied on the application. Hidden column by default —
    *  shown/exported via the Columns menu (training action item #10). */
   nationality: string | null;
+  /** New intake vs returning student, straight off the application form.
+   *  A DIFFERENT axis from `applicationStatus`, which says where someone is in
+   *  the pipeline — a 'Current' student can be 'Submitted', and a 'New' one
+   *  can be 'Enrolled'.
+   *
+   *  Measured across production 2026-09-16: 'Current' and 'New' in every year,
+   *  plus 4 AY2026 rows reading 'VizSchool Current'. Fully populated — no
+   *  nulls, no blanks — which is why it is safe to filter on. The facet is
+   *  built from the values present, so 'VizSchool Current' surfaces as its own
+   *  chip and is NOT folded into 'Current'. */
+  category: string | null;
   classLevel: string | null;
   classSection: string | null;
   applicationStatus: string | null;
@@ -106,7 +117,7 @@ export type StudentListRow = {
 // export's field picker, so a field that is not a column cannot be exported
 // without dumping all ~118 raw columns). Training action item #10, Samiksha.
 const LIST_APP_COLUMNS =
-  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, nationality, created_at';
+  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied, nationality, category, created_at';
 const LIST_STATUS_COLUMNS =
   'enroleeNumber, classLevel, classSection, applicationStatus, applicationUpdatedDate, "applicationTerminalReason", "applicationTerminalNotes", enroleeType, enrolmentDate, assessmentStatus, assessmentGradeMath, assessmentGradeEnglish, contractStatus, feeStatus, registrationStatus, documentStatus, classStatus, suppliesStatus, orientationStatus, registrationUpdateDate, documentUpdatedDate, assessmentUpdatedDate, contractUpdatedDate, feeUpdatedDate, classUpdatedDate, suppliesUpdatedDate, orientationUpdatedDate';
 
@@ -174,6 +185,7 @@ export async function listStudents(
         enroleeFullName: string | null;
         levelApplied: string | null;
         nationality: string | null;
+        category: string | null;
         created_at: string | null;
       };
       type StatusLite = {
@@ -227,6 +239,7 @@ export async function listStudents(
           enroleeFullName: a.enroleeFullName,
           levelApplied: a.levelApplied,
           nationality: a.nationality,
+          category: a.category,
           classLevel: s?.classLevel ?? null,
           classSection: s?.classSection ?? null,
           applicationStatus: s?.applicationStatus ?? null,

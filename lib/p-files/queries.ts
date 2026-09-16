@@ -28,6 +28,10 @@ export type StudentCompleteness = {
   /** 'Submitted' | 'Processing' | 'Enrolled' | 'Withdrawn' | … — the column
    *  and facet that tell applicants from enrolled students in the one list. */
   applicationStatus: string | null;
+  /** 'New' | 'Current' | 'VizSchool Current' — new intake vs returning, from
+   *  the application form. A different axis from `applicationStatus` above:
+   *  that one is pipeline position, this one is who the child is. */
+  category: string | null;
   total: number;
   complete: number;
   expired: number;
@@ -137,7 +141,7 @@ async function loadRawDataUncached(ayCode: string) {
     service
       .from(`${prefix}_enrolment_applications`)
       .select(
-        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail"'
+        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail", "category"'
       ),
     service
       .from(`${prefix}_enrolment_status`)
@@ -236,6 +240,9 @@ function computeForStudent(
     // students together — it is the column that tells them apart, and the
     // facet that filters between them.
     applicationStatus: str(statusRow ?? {}, 'applicationStatus'),
+    // New intake vs returning — read off the APPLICATION row, not the status
+    // row, because it is a property of the child rather than of the pipeline.
+    category: str(app, 'category'),
     total,
     complete,
     expired,

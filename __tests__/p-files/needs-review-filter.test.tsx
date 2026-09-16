@@ -27,6 +27,7 @@ function student(
     level: 'Primary One',
     section: 'Patience',
     applicationStatus: 'Enrolled',
+    category: 'Current',
     total: 2,
     complete: 2,
     expired: 0,

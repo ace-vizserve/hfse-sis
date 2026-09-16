@@ -1222,6 +1222,10 @@ export type AdmissionsCompleteness = {
   level: string | null;
   section: string | null;
   applicationStatus: string | null;
+  /** 'New' | 'Current' | 'VizSchool Current' — new intake vs returning, from
+   *  the application form. Distinct from `applicationStatus`, which is where
+   *  they sit in the pipeline. */
+  category: string | null;
   submittedDate: string | null;
   total: number;
   complete: number;
@@ -1262,7 +1266,7 @@ async function loadAdmissionsCompletenessForChaseUncached(
     supabase
       .from(`${prefix}_enrolment_applications`)
       .select(
-        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail", "stpApplicationType", "created_at"'
+        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail", "stpApplicationType", "category", "created_at"'
       ),
     supabase
       .from(`${prefix}_enrolment_status`)
@@ -1375,6 +1379,9 @@ async function loadAdmissionsCompletenessForChaseUncached(
       level,
       section,
       applicationStatus,
+      // From the APPLICATION row — a property of the child, not of the
+      // pipeline position beside it.
+      category: (a.category as string | null) ?? null,
       submittedDate,
       total,
       complete,

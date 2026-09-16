@@ -313,6 +313,28 @@ export function StudentDataTable({
         // is the only place on the list it can come from. `accessorFn` rather
         // than `accessorKey` so the facet filters on the NAME (what a person
         // picks) while the cell still gets the colour token from the row.
+        accessorFn: (row: StudentListRow) => row.category ?? '',
+        id: 'category',
+        header: 'Category',
+        meta: { label: 'Category' },
+        // New intake vs returning student, from the application form. Distinct
+        // from the pipeline stage facets: a 'Current' student can still be
+        // 'Submitted'. Values come from the rows, so production's third value
+        // ('VizSchool Current') gets its own chip rather than disappearing.
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {row.original.category ?? '—'}
+          </span>
+        ),
+        filterFn: (row, id, value) => {
+          if (!value || (Array.isArray(value) && value.length === 0))
+            return true;
+          return Array.isArray(value)
+            ? value.includes(row.getValue(id))
+            : row.getValue(id) === value;
+        },
+      },
+      {
         accessorFn: (row: StudentListRow) => row.house ?? '',
         id: 'house',
         header: 'House',
@@ -624,6 +646,10 @@ export function StudentDataTable({
       facets={[
         { columnId: 'level', label: 'Level' },
         { columnId: 'section', label: 'Section' },
+        // No valueOptions — the DataTable derives the chips from the rows, so
+        // a year holding 'VizSchool Current' offers it and one that does not
+        // never shows an empty chip.
+        { columnId: 'category', label: 'Category' },
         { columnId: 'house', label: 'House' },
         ...(showStaleness
           ? [

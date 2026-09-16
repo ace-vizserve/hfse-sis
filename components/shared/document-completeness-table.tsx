@@ -254,6 +254,10 @@ type CommonRow = {
   /** Both row types carry it. On P-Files it is what tells an applicant from
    *  an enrolled student now that one list holds both. */
   applicationStatus?: string | null;
+  /** 'New' | 'Current' | 'VizSchool Current' — new intake vs returning, from
+   *  the application form. Both row types carry it; it answers a different
+   *  question from `applicationStatus` above, which is pipeline position. */
+  category?: string | null;
   total: number;
   complete: number;
   expired: number;
@@ -391,6 +395,28 @@ function buildColumns(
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           {row.original.level ?? '—'}
+        </span>
+      ),
+      filterFn: facetFilterFn,
+    },
+    {
+      // New intake vs returning student, straight off the application form.
+      // A different question from the enrolment facet beside it: that one is
+      // where someone sits in the pipeline, this is who they are. A 'Current'
+      // student can still be 'Submitted'.
+      //
+      // The facet values come from the rows present, never a hardcoded list —
+      // so 'VizSchool Current' (4 AY2026 rows) appears as its own chip rather
+      // than being folded into 'Current' or silently dropped by both filters.
+      id: 'category',
+      accessorFn: (row) => row.category ?? '',
+      header: ({ column }) => (
+        <SortableHeader column={column}>Category</SortableHeader>
+      ),
+      meta: { label: 'Category' },
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {row.original.category ?? '—'}
         </span>
       ),
       filterFn: facetFilterFn,
@@ -601,6 +627,20 @@ export function DocumentCompletenessTable(props: Props) {
     ].sort();
   }, [module, students]);
 
+  // Built from the values actually present, not a fixed ['New', 'Current']
+  // list. Production carries a third value — 'VizSchool Current', 4 rows in
+  // AY2026 — and a hardcoded pair would have hidden those rows under BOTH
+  // filters with nothing on screen to say they existed.
+  const categories = React.useMemo(
+    () =>
+      [
+        ...new Set(
+          students.map((s) => s.category).filter((c): c is string => !!c)
+        ),
+      ].sort(),
+    [students]
+  );
+
   const slotHeaders = React.useMemo(() => {
     const seen = new Map<string, string>();
     for (const s of students) {
@@ -725,6 +765,18 @@ export function DocumentCompletenessTable(props: Props) {
           searchPlaceholder="Search by name or number…"
           facets={[
             { columnId: 'level', label: 'Level', valueOptions: levels },
+            // Both modules — Mr Ace asked for it on Admissions and P-Files
+            // alike. Hidden when a year happens to hold only one value, since
+            // a facet with a single chip filters nothing.
+            ...(categories.length > 1
+              ? [
+                  {
+                    columnId: 'category',
+                    label: 'Category',
+                    valueOptions: categories,
+                  },
+                ]
+              : []),
             ...(module === 'p-files' && enrolmentTags.length > 1
               ? [
                   {
