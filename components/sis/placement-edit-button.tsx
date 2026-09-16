@@ -28,6 +28,9 @@ export function PlacementEditButton(props: {
     enrollment_status: EnrollmentStatus;
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
+    /** Last day of attendance — what `withdrawal_date` means since 163. */
+    withdrawal_date: string | null;
+    withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
     academics_notes: string | null;
     admin_notes: string | null;

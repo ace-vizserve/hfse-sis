@@ -128,7 +128,7 @@ export default async function SisSectionDetailPage({
     supabase
       .from('section_students')
       .select(
-        'id, index_number, enrollment_status, bus_no, classroom_officer_role, academics_notes, admin_notes, withdrawal_reason, withdrawal_notes, late_enrollee_term_number, student:students(id, student_number, last_name, first_name, middle_name)'
+        'id, index_number, enrollment_status, bus_no, classroom_officer_role, academics_notes, admin_notes, withdrawal_reason, withdrawal_notes, withdrawal_date, withdrawal_approved_date, late_enrollee_term_number, student:students(id, student_number, last_name, first_name, middle_name)'
       )
       .eq('section_id', id)
       .order('index_number', { ascending: true }),
@@ -210,6 +210,8 @@ export default async function SisSectionDetailPage({
     admin_notes: string | null;
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
+    withdrawal_date: string | null;
+    withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
     student:
       | {
@@ -360,6 +362,8 @@ export default async function SisSectionDetailPage({
         admin_notes: r.admin_notes,
         withdrawal_reason: r.withdrawal_reason,
         withdrawal_notes: r.withdrawal_notes,
+        withdrawal_date: r.withdrawal_date,
+        withdrawal_approved_date: r.withdrawal_approved_date,
         late_enrollee_term_number: r.late_enrollee_term_number,
         student_number: s.student_number,
         last_name: s.last_name,
@@ -411,6 +415,8 @@ export default async function SisSectionDetailPage({
     adminNotes: s.admin_notes,
     withdrawalReason: s.withdrawal_reason ?? null,
     withdrawalNotes: s.withdrawal_notes ?? null,
+    withdrawal_date: s.withdrawal_date ?? null,
+    withdrawal_approved_date: s.withdrawal_approved_date ?? null,
     lateEnrolleTermNumber: s.late_enrollee_term_number ?? null,
   }));
 

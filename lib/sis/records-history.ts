@@ -28,6 +28,8 @@ export type PlacementRow = {
   indexNumber: number;
   enrollmentDate: string | null;
   withdrawalDate: string | null;
+  /** When the school approved it — may fall after the last day (migration 163). */
+  withdrawalApprovedDate: string | null;
   busNo: string | null;
   classroomOfficerRole: string | null;
   withdrawalReason: string | null;
@@ -107,7 +109,7 @@ export async function getPlacementHistory(
     .from('section_students')
     .select(
       `
-        id, enrollment_status, enrollment_date, withdrawal_date, index_number,
+        id, enrollment_status, enrollment_date, withdrawal_date, withdrawal_approved_date, index_number,
         bus_no, classroom_officer_role, academics_notes, admin_notes,
         withdrawal_reason, withdrawal_notes, late_enrollee_term_number,
         section:sections(
@@ -124,6 +126,7 @@ export async function getPlacementHistory(
     enrollment_status: 'active' | 'late_enrollee' | 'withdrawn';
     enrollment_date: string | null;
     withdrawal_date: string | null;
+    withdrawal_approved_date: string | null;
     index_number: number;
     bus_no: string | null;
     classroom_officer_role: string | null;
@@ -170,6 +173,7 @@ export async function getPlacementHistory(
         indexNumber: r.index_number,
         enrollmentDate: r.enrollment_date,
         withdrawalDate: r.withdrawal_date,
+        withdrawalApprovedDate: r.withdrawal_approved_date,
         busNo: r.bus_no,
         classroomOfficerRole: r.classroom_officer_role,
         withdrawalReason: r.withdrawal_reason,

@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -75,6 +76,9 @@ export function EnrolmentEditSheet({
     enrollment_status: EnrollmentStatus;
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
+    /** Last day of attendance — what `withdrawal_date` means since 163. */
+    withdrawal_date: string | null;
+    withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
     academics_notes: string | null;
     admin_notes: string | null;
@@ -104,6 +108,13 @@ export function EnrolmentEditSheet({
   );
   const [showTermOverride, setShowTermOverride] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  // The two dates the school keeps. `lastDay` is what `withdrawal_date` means
+  // since migration 163 — it used to be stamped as today by the server, which
+  // recorded when a registrar clicked rather than when the child left.
+  const [lastDay, setLastDay] = useState(initial.withdrawal_date ?? '');
+  const [approvedDate, setApprovedDate] = useState(
+    initial.withdrawal_approved_date ?? ''
+  );
   const [confirmReEnrol, setConfirmReEnrol] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -265,6 +276,8 @@ export function EnrolmentEditSheet({
     if (isWithdrawing) {
       body.withdrawal_reason = withdrawalReason || null;
       body.withdrawal_notes = withdrawalNotes.trim() || null;
+      body.withdrawal_date = lastDay || null;
+      body.withdrawal_approved_date = approvedDate || null;
     }
     // Correction path: row is already withdrawn — allow the registrar to
     // update the reason without a status change.
@@ -719,6 +732,39 @@ export function EnrolmentEditSheet({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="px-6 pb-2 space-y-4">
+            {/* The two dates the school keeps (migration 163).
+                Before it, the server stamped today and called that the
+                withdrawal date — so the stored value meant "when a registrar
+                opened this screen", not anything about the child. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Last day at school <span className="text-destructive">*</span>
+                </label>
+                <DatePicker
+                  value={lastDay}
+                  onChange={setLastDay}
+                  placeholder="Pick the last day"
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  The last day they actually attended.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Withdrawal approved
+                </label>
+                <DatePicker
+                  value={approvedDate}
+                  onChange={setApprovedDate}
+                  placeholder="Pick a date"
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Can be after the last day, if the paperwork followed later.
+                </p>
+              </div>
+            </div>
+
             {/* Required reason picker */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">
@@ -766,6 +812,10 @@ export function EnrolmentEditSheet({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={
                 !withdrawalReason ||
+                // The schema refuses a withdrawal without a last day
+                // (migration 163), so the button refuses it here too rather
+                // than sending a request that cannot succeed.
+                !lastDay ||
                 (withdrawalReason === 'other' && !withdrawalNotes.trim()) ||
                 saving
               }

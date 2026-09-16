@@ -1004,6 +1004,9 @@ function PlacementSection({
                                   enrollment_status: r.enrollmentStatus,
                                   withdrawal_reason: r.withdrawalReason ?? null,
                                   withdrawal_notes: r.withdrawalNotes ?? null,
+                                  withdrawal_date: r.withdrawalDate ?? null,
+                                  withdrawal_approved_date:
+                                    r.withdrawalApprovedDate ?? null,
                                   late_enrollee_term_number:
                                     r.lateEnrolleTermNumber ?? null,
                                   academics_notes: r.academicsNotes ?? null,

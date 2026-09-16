@@ -38,7 +38,10 @@ export type SectionRosterRow = {
   // Pages that query enrollment_date + withdrawal_date from section_students
   // can pass them; components that don't will see "—" in those columns.
   enrollment_date?: string | null;
+  /** Since migration 163 this is the LAST DAY OF ATTENDANCE, not the day a
+   *  registrar marked the student withdrawn. */
   withdrawal_date?: string | null;
+  withdrawal_approved_date?: string | null;
   // termJoined is resolved server-side via lib/sis/terms.ts::getTermForDate.
   // TODO: wire once the page passes it; for now left undefined → "—" in column.
   termJoined?: string | null;
@@ -274,6 +277,8 @@ export function SectionRosterTable({
                   enrollment_status: r.enrollmentStatus,
                   withdrawal_reason: r.withdrawalReason ?? null,
                   withdrawal_notes: r.withdrawalNotes ?? null,
+                  withdrawal_date: r.withdrawal_date ?? null,
+                  withdrawal_approved_date: r.withdrawal_approved_date ?? null,
                   late_enrollee_term_number: r.lateEnrolleTermNumber ?? null,
                   academics_notes: r.academicsNotes ?? null,
                   admin_notes: r.adminNotes ?? null,

@@ -36,6 +36,7 @@ const PLACEMENTS = [
     indexNumber: 3,
     enrollmentDate: '2026-04-01',
     withdrawalDate: null,
+    withdrawalApprovedDate: null,
     busNo: null,
     classroomOfficerRole: null,
     withdrawalReason: null,

@@ -184,7 +184,19 @@ export async function PATCH(
       parsed.data.enrollment_status === 'withdrawn' &&
       !before.withdrawal_date
     ) {
-      patch.withdrawal_date = sgToday();
+      // 🔴 THIS USED TO BE `sgToday()`, AND THAT WAS THE BUG.
+      // It stamped the day the registrar opened the screen and called it the
+      // withdrawal date, so every downstream reader — the Withdrawals count,
+      // the permanent record, any question about when attendance should stop —
+      // was reading an admin-action timestamp as a fact about a child. Ashley
+      // Rae Cama's real dates are 26 April (last day) and 11 May (approved);
+      // whatever this line produced would have matched neither.
+      //
+      // The registrar supplies it now. The schema requires it on this boundary
+      // (migration 163), so it cannot arrive empty.
+      patch.withdrawal_date = parsed.data.withdrawal_date ?? null;
+      patch.withdrawal_approved_date =
+        parsed.data.withdrawal_approved_date ?? null;
       // Persist structured withdrawal reason + notes on the → withdrawn boundary.
       patch.withdrawal_reason = parsed.data.withdrawal_reason ?? null;
       patch.withdrawal_notes = parsed.data.withdrawal_notes ?? null;
@@ -192,9 +204,10 @@ export async function PATCH(
       parsed.data.enrollment_status !== 'withdrawn' &&
       before.withdrawal_date
     ) {
-      // Reactivation: only clear withdrawal_date. Withdrawal reason + notes are
+      // Reactivation: clear both dates. Withdrawal reason + notes are
       // intentionally preserved so the audit history stays intact.
       patch.withdrawal_date = null;
+      patch.withdrawal_approved_date = null;
     }
     // Late-enrollee transition: refresh enrollment_date to today so the
     // joining-term lookup reflects when the registrar actually tagged the

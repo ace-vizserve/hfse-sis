@@ -140,6 +140,19 @@ export const EnrolmentMetadataSchema = z
     withdrawal_reason: z.enum(WITHDRAWAL_REASON_VALUES).nullable().optional(),
     // Freetext notes (replaces the old unstructured `reason` field).
     withdrawal_notes: optionalRichText(WITHDRAWAL_REASON_MAX).optional(),
+    // The two dates the school actually keeps (migration 163). Before it, the
+    // route stamped `sgToday()` and captured neither — so the stored date meant
+    // "when a registrar opened the screen", which for Ashley Rae Cama would
+    // have matched neither the 26 April last day nor the 11 May approval.
+    //
+    // `withdrawal_date` IS the last day of attendance. Required on the
+    // → withdrawn boundary, below: it is the date every downstream reader
+    // treats as fact about the child, so a blank one is worse than a refusal.
+    withdrawal_date: z.string().date().nullable().optional(),
+    // Approval may legitimately fall AFTER the last day — a family often leaves
+    // before the paperwork completes — so the two are not ordered and nothing
+    // here enforces a relationship between them.
+    withdrawal_approved_date: z.string().date().nullable().optional(),
     // Explicit late-enrollee term override (null = derive from enrollment_date).
     late_enrollee_term_number: z
       .number()
@@ -165,6 +178,17 @@ export const EnrolmentMetadataSchema = z
         code: z.ZodIssueCode.custom,
         path: ['withdrawal_reason'],
         message: 'Reason is required when withdrawing a student.',
+      });
+    }
+    // The last day is a fact about the child, and the SIS used to make it up.
+    // Requiring it on the boundary is what stops that returning — a withdrawal
+    // saved without one leaves every later reader guessing again.
+    if (data.enrollment_status === 'withdrawn' && !data.withdrawal_date) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['withdrawal_date'],
+        message:
+          'Last day of attendance is required when withdrawing a student.',
       });
     }
     if (data.withdrawal_reason === 'other' && !data.withdrawal_notes?.trim()) {
