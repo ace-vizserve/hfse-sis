@@ -222,11 +222,22 @@ export function EditStageDialog({
           levelType: 'primary' | 'secondary';
         } | null;
         sections: { id: string; name: string; activeCount: number }[];
+        /** Set when this student already sits in a class this year. */
+        currentSection: {
+          sectionName: string;
+          levelCode: string | null;
+          status: string;
+        } | null;
       }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
       ),
     enabled: canPickSectionNow,
   });
+
+  // Where this student already sits, if anywhere. Resolved server-side by the
+  // query above rather than threaded in as a prop — the roster is the only
+  // thing that knows, and a prop would be stale by the time the dialog opens.
+  const alreadyPlaced = sectionsQuery.data?.currentSection ?? null;
 
   useEffect(() => {
     if (!canPickSectionNow) setSectionId(null);
@@ -604,14 +615,42 @@ export function EditStageDialog({
                   {canPickSectionNow && (
                     <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
                       <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        Assign a class now (optional)
+                        {alreadyPlaced
+                          ? 'Class'
+                          : 'Assign a class now (optional)'}
                       </p>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Leave this empty to enrol now — the student will appear
-                        under Records → Students needing setup, waiting for a
-                        class. Attendance starts on the day they are placed.
-                      </p>
-                      {sectionsQuery.isLoading ? (
+                      {/* Offering to place a student who is already placed was
+                          the bug Mr Ace reported on 2026-09-16 — the picker was
+                          gated on stage, status, permission and prerequisites,
+                          every question except whether there was anything left
+                          to assign. Saying where they ARE is more useful than
+                          hiding the block, and it points at the screen that can
+                          change it. */}
+                      {alreadyPlaced ? (
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Already in{' '}
+                          <span className="font-medium text-foreground">
+                            {[
+                              alreadyPlaced.levelCode,
+                              alreadyPlaced.sectionName,
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                          </span>
+                          {alreadyPlaced.status === 'withdrawn'
+                            ? ' — withdrawn, and the place is kept.'
+                            : '.'}{' '}
+                          To move them, use Records → Students.
+                        </p>
+                      ) : (
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Leave this empty to enrol now — the student will
+                          appear under Records → Students needing setup, waiting
+                          for a class. Attendance starts on the day they are
+                          placed.
+                        </p>
+                      )}
+                      {alreadyPlaced ? null : sectionsQuery.isLoading ? (
                         <p className="text-xs text-muted-foreground">
                           Loading classes…
                         </p>
