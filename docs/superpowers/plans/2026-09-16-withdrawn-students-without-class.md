@@ -14,7 +14,7 @@ Two training sessions on 2026-09-15 (Miss Joann; the Admissions team) produced 2
 
 ## State of the repo
 
-**Branch `main`, 9 commits ahead of `origin/main`, nothing pushed.** One of them (`5c4607f1` student search) is from another session — check before pushing.
+**Branch `main`, 11 commits ahead of `origin/main`, nothing pushed.** One of them (`5c4607f1` student search) is from another session — check before pushing.
 
 ```
 f6a123f2  fix(sis): don't offer to assign a class to a student who has one
@@ -28,10 +28,11 @@ f65bdfbe  docs: record the two 2026-09-15 training sessions
 1e2af350  feat(markbook): a term can say it has no exam (migration 159)
 ```
 
-### 🔴 Two blockers before any deploy
+### Blocker before any deploy
 
-1. **Migration 163 is NOT applied.** `c81f9f03` selects `withdrawal_approved_date`, so the section page, the roster and the student record fail against a database without it. Migration first, then deploy — the same trap as 138 and 159.
-2. **Nothing from either day has been browser-verified.** Not one of these screens has been clicked by a human.
+✅ **Migration 163 APPLIED 2026-09-16** and verified against production: both columns readable, `withdrawal_approved_date` on 0 rows, `withdrawal_date` on 11 (the pre-163 auto-stamped dates plus Cama). Migration 159 was applied the day before. **Nothing is blocked on a migration any more.**
+
+🔴 **Nothing from either day has been browser-verified.** Not one of these screens has been clicked by a human — see the list at the end.
 
 ### Uncommitted, deliberately
 
