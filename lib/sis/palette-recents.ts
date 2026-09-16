@@ -20,8 +20,38 @@ import type { StudentVerbTarget } from '@/lib/sis/command-palette-nav';
  * and reads the previous user's students before typing anything. Scoping by
  * viewer id means a different account simply finds no rows.
  */
+export const RECENTS_KEY_PREFIX = 'sis:palette:recents:';
+
 export function recentsStorageKey(viewerId: string): string {
-  return `sis:palette:recents:${viewerId}`;
+  return `${RECENTS_KEY_PREFIX}${viewerId}`;
+}
+
+/**
+ * Wipe every account's recents from this browser. Called on sign-out.
+ *
+ * ⚠ EVERY account's, not just the one signing out — deliberately. HFSE's
+ * staff machines are shared front-desk PCs, and namespacing the key only stops
+ * the next person SEEING the previous one's students in the palette; the rows
+ * are still on disk, readable in devtools. Sign-out is the moment we know a
+ * shift ended, so it clears the lot, including entries an earlier session left
+ * behind before this existed.
+ *
+ * Keys are collected before removing: mutating localStorage while iterating it
+ * by index shifts the later ones and silently skips half the list.
+ */
+export function clearAllRecents(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(RECENTS_KEY_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) window.localStorage.removeItem(key);
+  } catch {
+    // Storage can throw on access in a private window or with site data
+    // blocked. Sign-out must complete regardless — there is nothing the user
+    // could do about it and nothing worth blocking the redirect for.
+  }
 }
 
 /** Per kind, not overall — 5 students AND 5 destinations. Raycast-ish recall

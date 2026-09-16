@@ -13,7 +13,7 @@
  * the behaviour actually lives.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   primaryStudentVerb,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/sis/command-palette-nav';
 import {
   addRecent,
+  clearAllRecents,
   parseRecents,
   recentKey,
   recentsStorageKey,
@@ -247,6 +248,56 @@ describe('recents', () => {
     expect(parseRecents(null)).toEqual([]);
     expect(parseRecents('{not json')).toEqual([]);
     expect(parseRecents('{"not":"an array"}')).toEqual([]);
+  });
+
+  it('clears every account on sign-out, not just the one signing out', () => {
+    // Shared front-desk machines: namespacing stops the next person SEEING
+    // the previous user's students, but the rows stay on disk and are
+    // readable in devtools. Sign-out is when we know a shift ended.
+    const store = new Map<string, string>([
+      [recentsStorageKey('user-a'), '[]'],
+      [recentsStorageKey('user-b'), '[]'],
+      ['unrelated:key', 'keep me'],
+    ]);
+    vi.stubGlobal('window', {
+      localStorage: {
+        get length() {
+          return store.size;
+        },
+        key: (i: number) => [...store.keys()][i] ?? null,
+        removeItem: (k: string) => store.delete(k),
+      },
+    });
+
+    clearAllRecents();
+
+    expect(store.has(recentsStorageKey('user-a'))).toBe(false);
+    expect(store.has(recentsStorageKey('user-b'))).toBe(false);
+    // Only our own keys — never anyone else's storage.
+    expect(store.get('unrelated:key')).toBe('keep me');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not skip keys while removing them', () => {
+    // Removing during an index walk shifts the remaining keys down, so a
+    // naive loop silently clears only half. Five keys, none may survive.
+    const store = new Map<string, string>(
+      ['a', 'b', 'c', 'd', 'e'].map((id) => [recentsStorageKey(id), '[]'])
+    );
+    vi.stubGlobal('window', {
+      localStorage: {
+        get length() {
+          return store.size;
+        },
+        key: (i: number) => [...store.keys()][i] ?? null,
+        removeItem: (k: string) => store.delete(k),
+      },
+    });
+
+    clearAllRecents();
+
+    expect(store.size).toBe(0);
+    vi.unstubAllGlobals();
   });
 
   it('gives two accounts different storage keys', () => {

@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import type { Role } from '@/lib/auth/roles';
 import { useRoleSwitch } from '@/lib/hooks/use-role-switch';
+import { clearAllRecents } from '@/lib/sis/palette-recents';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,11 @@ export function SidebarProfile({ email, roles, role }: SidebarProfileProps) {
 
   async function signOut() {
     const supabase = createClient();
+    // Clear the ⌘K recents BEFORE the session goes, so a failure in signOut
+    // cannot leave the previous user's students readable on a shared machine.
+    // These are front-desk PCs: the palette's per-account key stops the next
+    // person seeing them in the UI, not on disk.
+    clearAllRecents();
     await supabase.auth.signOut();
     router.replace('/login');
     router.refresh();
