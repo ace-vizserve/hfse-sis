@@ -56,9 +56,10 @@ export type PFilesDrillRow = {
   revisionCount: number;
   lastRevisionAt: string | null; // ISO
   /**
-   * True when this slot is conditionally gated (fatherEmail / guardianEmail)
-   * AND the gate field is empty on the applicant — i.e. the slot isn't
-   * actually required for this student. Mirrors
+   * True when this slot is conditionally gated (fatherEmail / guardianEmail /
+   * enrolee category / conditional enrolment) AND the gate does not pass for
+   * this applicant — i.e. the slot isn't actually required for this student.
+   * Mirrors
    * `lib/p-files/dashboard.ts::getCompletionByLevel`'s per-slot gate check.
    * Only the `level-applicants` target excludes gated rows (KD #82
    * count==drill parity with the completion-by-level chart) — every other
@@ -78,6 +79,10 @@ type AppLite = {
   levelApplied: string | null;
   fatherEmail: string | null;
   guardianEmail: string | null;
+  /** Applications-row copy of the enrolee category — what `resolveCategory`
+   *  reads first. The status row's `enroleeType` is merged in as the fallback
+   *  where the gate is built. */
+  category: string | null;
 };
 type DocLite = Record<string, string | null>;
 type RevisionLite = {
@@ -186,6 +191,7 @@ async function loadPFilesRowsUncached(
     enroleeNumber: string | null;
     classLevel: string | null;
     applicationStatus: string | null;
+    enroleeType: string | null;
   };
 
   const [apps, docs, statuses, revisions] = await Promise.all([
@@ -194,7 +200,7 @@ async function loadPFilesRowsUncached(
         admissions
           .from(appsTable)
           .select(
-            'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, fatherEmail, guardianEmail'
+            'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, fatherEmail, guardianEmail, category'
           )
           .range(from, to) as unknown as P<AppLite>
     ),
@@ -211,7 +217,7 @@ async function loadPFilesRowsUncached(
       (from, to) =>
         admissions
           .from(statusTable)
-          .select('enroleeNumber, classLevel, applicationStatus')
+          .select('enroleeNumber, classLevel, applicationStatus, enroleeType')
           .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)'])
           .range(from, to) as unknown as P<StatusLite>
     ),
@@ -243,9 +249,17 @@ async function loadPFilesRowsUncached(
   }
 
   const classLevelByEnrolee = new Map<string, string>();
-  // Gates the Conditional Enrolment slot. Lives on the status row, which
-  // this loader already fetches — no extra query.
+  // Gates the Conditional Enrolment slot; `enroleeType` gates the five
+  // New-only school forms. Both live on the status row, which this loader
+  // already fetches — no extra query.
+  //
+  // ⚠ `appStatusByEnrolee` was declared with this comment on 2026-08-31 and
+  // then never filled in or read, so the Conditional Enrolment gate has never
+  // actually run on this sheet — the slot resolved to "cannot tell", i.e.
+  // gated out, for every student including the conditionally-enrolled ones it
+  // is meant to name. Populated and passed through below.
   const appStatusByEnrolee = new Map<string, string>();
+  const enroleeTypeByEnrolee = new Map<string, string>();
   // Set of enrolled enroleeNumbers — only these emit drill rows below.
   // The status fetch already filtered at SQL but we materialize the Set
   // for the iteration filter (`apps` is not pre-filtered).
@@ -254,6 +268,9 @@ async function loadPFilesRowsUncached(
     if (!s.enroleeNumber) continue;
     enrolledEnrolees.add(s.enroleeNumber);
     if (s.classLevel) classLevelByEnrolee.set(s.enroleeNumber, s.classLevel);
+    if (s.applicationStatus)
+      appStatusByEnrolee.set(s.enroleeNumber, s.applicationStatus);
+    if (s.enroleeType) enroleeTypeByEnrolee.set(s.enroleeNumber, s.enroleeType);
   }
 
   // Revisions counted per (enrolee, slot) — aggregate for `rows`, and the
@@ -334,8 +351,17 @@ async function loadPFilesRowsUncached(
       // on this projection, and the evaluator reads "cannot tell" as not
       // applicable — which lands on `gated: true`, i.e. excluded rather than
       // held against the student. That is the safe direction.
+      //
+      // `applicationStatus` + `enroleeType` come off the status row and are
+      // merged in so the Conditional Enrolment and New-only school forms gate
+      // the same way here as on the card this sheet backs (KD #124 — a drill
+      // that disagrees with its own count is the bug class this guards).
       const gated = !isSlotApplicable(slot, {
-        app: app as unknown as Record<string, unknown>,
+        app: {
+          ...(app as unknown as Record<string, unknown>),
+          applicationStatus: appStatusByEnrolee.get(app.enroleeNumber) ?? null,
+          enroleeType: enroleeTypeByEnrolee.get(app.enroleeNumber) ?? null,
+        },
       });
 
       const k = revKey(app.enroleeNumber, slot.key);

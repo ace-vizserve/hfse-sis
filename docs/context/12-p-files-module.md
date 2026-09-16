@@ -40,7 +40,7 @@ The academic coordinator's exclusion is deliberate and predates this change: mig
 
 ⚠ **THERE ARE NO STP-CONDITIONAL DOCUMENT SLOTS.** This section used to list three — ICA Photo, Financial Support Docs, Vaccination Information. **Migration 050 removed them from the enrolment process (KD #96): parents file those with ICA directly, and the school never collects them.** The columns survive on `ay{YY}_enrolment_documents` for historical preservation but are enumerated nowhere, so the seeder, the UI and every gate skip them. `STP_CONDITIONAL_SLOT_KEYS` is retained only as an **empty tuple** for back-compat with importers that do a `.includes()` that now folds to false; new code should not reference it. STP progress is tracked on `ay{YY}_enrolment_status.stpApplicationStatus` instead — see `21-stp-application.md`.
 
-### Non-expiring documents — student's own (5 slots)
+### Non-expiring documents — student's own (4 slots)
 
 | Document                | DB column (URL) | DB column (status) |
 | ----------------------- | --------------- | ------------------ |
@@ -48,22 +48,73 @@ The academic coordinator's exclusion is deliberate and predates this change: mig
 | Birth Certificate       | `birthCert`     | `birthCertStatus`  |
 | Educational Certificate | `educCert`      | `educCertStatus`   |
 | Medical Exam            | `medical`       | `medicalStatus`    |
-| Form 12                 | `form12`        | `form12Status`     |
 
-### Non-expiring documents — school forms (8 slots, migration 135)
+⚠ **Form 12 moved to School Forms on 2026-09-16.** The parent portal stopped offering it — Mr Ace: _"yes form 12 is not being collected on the parent portal thats correct"_ — and AY2025 holds 515 while AY2026 and AY2027 hold zero. Left here it stayed chaseable, giving ~1,300 students a permanent "Remind parent about Form 12" row nobody could clear.
+
+### Non-expiring documents — school forms (9 slots: migration 135's eight, plus Form 12)
 
 ⚠ **`group: 'school'` is load-bearing, not cosmetic.** The parent portal offers none of these — Mr Ace: _"these files are not gonna be uploaded in the parent portal, this will be uploaded in p-files module"_. Filed under `student` they would show up in the parent-chase Action Queue offering to "Remind parent" about a form no parent can produce. See `isChaseableGroup`.
 
 | Document                                | DB column (URL)            | DB column (status)               | Conditional?                                      |
 | --------------------------------------- | -------------------------- | -------------------------------- | ------------------------------------------------- |
-| Last School Recommendation & Good Moral | `lastSchoolRecommendation` | `lastSchoolRecommendationStatus` | —                                                 |
-| Assessment Result and Interview         | `assessmentResult`         | `assessmentResultStatus`         | —                                                 |
+| Last School Recommendation & Good Moral | `lastSchoolRecommendation` | `lastSchoolRecommendationStatus` | ✅ New only                                       |
+| Assessment Result and Interview         | `assessmentResult`         | `assessmentResultStatus`         | ✅ New only                                       |
 | Signed Student Contract                 | `signedContract`           | `signedContractStatus`           | —                                                 |
-| New Student Checksheet                  | `newStudentChecksheet`     | `newStudentChecksheetStatus`     | —                                                 |
-| Student P-Files Checklist               | `pfilesChecklist`          | `pfilesChecklistStatus`          | —                                                 |
-| Pre-Counselling Acknowledgement Form    | `preCounsellingAck`        | `preCounsellingAckStatus`        | —                                                 |
+| New Student Checksheet                  | `newStudentChecksheet`     | `newStudentChecksheetStatus`     | ✅ New only                                       |
+| Student P-Files Checklist               | `pfilesChecklist`          | `pfilesChecklistStatus`          | ✅ New only                                       |
+| Pre-Counselling Acknowledgement Form    | `preCounsellingAck`        | `preCounsellingAckStatus`        | ✅ New only                                       |
+| Form 12                                 | `form12`                   | `form12Status`                   | —                                                 |
 | Conditional Enrolment                   | `conditionalEnrolment`     | `conditionalEnrolmentStatus`     | ✅ `applicationStatus = 'Enrolled (Conditional)'` |
 | Late Enrolment Form                     | `lateEnrolmentForm`        | `lateEnrolmentFormStatus`        | ✅ late enrollee                                  |
+
+### Who is asked for what — the enrolee-category gate (KD #219)
+
+The school keeps two lists, supplied by Mr Ace on 2026-09-16. A **New** student
+is asked for the long one; a **Current** (returning) student for a short one
+holding only Form 12 and the Signed Student Contract. "New only" above means
+`enroleeType ∈ ('New', 'VizSchool New')` — the VizSchool pair follow their
+namesakes.
+
+⚠ **The gate is NOT applied to the family-supplied documents**, even though the
+Current list does not name those either. That list says what the office
+**re-collects**, not what the file should hold: a returning student's row
+already carries them (367 of 381 an ID picture, 379 a birth certificate), so
+gating them on category would mark real uploaded documents "not applicable" and
+hide them from the repository that exists to keep them.
+
+⚠ **"if previous copy are expired" needs no condition.** `resolveStatus`
+already returns `expired` from the stored expiry date — 246 of 501 AY2026
+students carry at least one expired pass or passport today.
+
+⚠ **The medical report stays unconditional.** "If there's a new medical
+condition to declare" is a parent's disclosure with no column behind it; it
+maps to the existing Medical Exam slot and no staff toggle was invented.
+
+⚠ **Read the category through `resolveCategory`, which takes `category` on the
+APPLICATIONS row first and falls back to `enroleeType` on the status row.** The
+two copies are not interchangeable despite the claim in `lib/schemas/sis.ts`:
+measured 2026-09-16 they disagree on 241 of 828 AY2025 rows, 4 of 495 AY2026
+rows and 3 of 290 AY2027 rows, and `category` is blank for 232 AY2025 students
+where `enroleeType` is filled. **`category` wins because it is the only one a
+human can change** — the Records profile sheet writes it and no screen writes
+`enroleeType`, so keying on the status copy would leave a mis-tagged child's
+forms wrong with nowhere in the product to fix it.
+
+⚠ **A slot that does not apply but already holds a file is still shown.** The
+applicable list is what the student page can render at all, so dropping a
+gated-but-non-empty slot would strand a real uploaded document. Nothing is
+stranded today (all eight school forms hold zero uploads across AY2025-27).
+
+⚠ **Where the two columns disagree, the rule decides — there is nothing to
+escalate.** Mr Ace, asked about the four AY2026 children affected: _"i mean
+just follow the rules"_. `category` wins, full stop.
+`scripts/verify-category-document-gate.ts` still lists them (`E260342`,
+`E260385`, `E260339`, `E260515`) so the count stays visible, not so somebody
+has to arbitrate it.
+
+Re-runnable checks: `scripts/audit-document-needs-by-category.ts` (what the
+data holds) and `scripts/verify-category-document-gate.ts` (what every student
+now sees, through the real evaluator).
 
 ### Expiring documents (8 slots)
 

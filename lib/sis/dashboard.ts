@@ -205,7 +205,7 @@ async function loadDocumentValidationBacklogUncached(
   // applicants that aren't Records's responsibility.
   const { data: statusRows, error: statusErr } = await supabase
     .from(`${prefix}_enrolment_status`)
-    .select('enroleeNumber, applicationStatus')
+    .select('enroleeNumber, applicationStatus, enroleeType')
     .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
   if (statusErr) {
     console.error(
@@ -240,7 +240,9 @@ async function loadDocumentValidationBacklogUncached(
       .in('enroleeNumber', enrolledNumbers),
     supabase
       .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, fatherEmail, guardianEmail, stpApplicationType')
+      .select(
+        'enroleeNumber, fatherEmail, guardianEmail, stpApplicationType, category'
+      )
       .in('enroleeNumber', enrolledNumbers),
   ]);
 
@@ -264,10 +266,40 @@ async function loadDocumentValidationBacklogUncached(
     fatherEmail: string | null;
     guardianEmail: string | null;
     stpApplicationType: string | null;
+    /** Applications-row copy of the enrolee category — read first by
+     *  `resolveCategory`, with `enroleeType` below as the fallback. */
+    category: string | null;
+    applicationStatus?: string | null;
+    enroleeType?: string | null;
   };
+  // `applicationStatus` + `enroleeType` are status-row columns, merged onto
+  // the applications-row gate so the Conditional Enrolment slot and the five
+  // New-only school forms resolve here exactly as they do on the student's
+  // own page. The status fetch above already selects both.
+  const statusGateByEnrolee = new Map<
+    string,
+    { applicationStatus: string | null; enroleeType: string | null }
+  >();
+  for (const s of (statusRows ?? []) as unknown as {
+    enroleeNumber: string | null;
+    applicationStatus: string | null;
+    enroleeType: string | null;
+  }[]) {
+    if (!s.enroleeNumber) continue;
+    statusGateByEnrolee.set(s.enroleeNumber, {
+      applicationStatus: s.applicationStatus,
+      enroleeType: s.enroleeType,
+    });
+  }
   const gates = new Map<string, GateRow>();
   for (const a of (appsRes.data ?? []) as unknown as GateRow[]) {
-    if (a.enroleeNumber) gates.set(a.enroleeNumber, a);
+    if (!a.enroleeNumber) continue;
+    const s = statusGateByEnrolee.get(a.enroleeNumber);
+    gates.set(a.enroleeNumber, {
+      ...a,
+      applicationStatus: s?.applicationStatus ?? null,
+      enroleeType: s?.enroleeType ?? null,
+    });
   }
 
   const rows = (docsRes.data ?? []) as unknown as Array<

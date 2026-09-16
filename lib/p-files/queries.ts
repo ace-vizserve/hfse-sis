@@ -7,6 +7,7 @@ import {
   type DocumentStatus,
 } from './document-config';
 import { isEnrolledStatus } from './_shared';
+import { loadLateEnrolleeNumbers } from './late-enrollees';
 
 const CACHE_TTL_SECONDS = 600;
 
@@ -136,8 +137,11 @@ async function loadRawDataUncached(ayCode: string) {
   const service = createServiceClient();
   const prefix = prefixFor(ayCode);
 
-  // Fetch all three tables in parallel
-  const [appsRes, statusRes, docsRes] = await Promise.all([
+  // Fetch all three tables, plus the roster's late-enrollee set, in parallel.
+  // That fourth read is what keeps this list agreeing with the student page:
+  // both must decide the Late Enrolment Form the same way, or one child reads
+  // "x of 22" on their own file and "x of 21" in the list beside it.
+  const [appsRes, statusRes, docsRes, lateEnrollees] = await Promise.all([
     service
       .from(`${prefix}_enrolment_applications`)
       .select(
@@ -146,7 +150,7 @@ async function loadRawDataUncached(ayCode: string) {
     service
       .from(`${prefix}_enrolment_status`)
       .select(
-        '"enroleeNumber", "applicationStatus", "classLevel", "classSection"'
+        '"enroleeNumber", "applicationStatus", "classLevel", "classSection", "enroleeType"'
       ),
     service.from(`${prefix}_enrolment_documents`).select(
       // Dashboard only needs status + expiry columns for completeness computation.
@@ -161,12 +165,17 @@ async function loadRawDataUncached(ayCode: string) {
         .filter((c, i, a) => a.indexOf(c) === i) // dedupe enroleeNumber
         .join(', ')
     ),
+    loadLateEnrolleeNumbers(ayCode),
   ]);
 
   return {
     apps: (appsRes.data ?? []) as RawAppRow[],
     statuses: (statusRes.data ?? []) as RawStatusRow[],
     docs: (docsRes.data ?? []) as unknown as RawDocRow[],
+    // Serialised as an array: this payload goes through `unstable_cache`,
+    // which round-trips it as JSON and would hand back an empty object for a
+    // Set. Rebuilt into a Set by the consumer below.
+    lateEnrollees,
   };
 }
 
@@ -188,7 +197,14 @@ function str(row: Record<string, unknown>, key: string): string | null {
 function computeForStudent(
   app: RawAppRow,
   statusRow: RawStatusRow | undefined,
-  docRow: RawDocRow | undefined
+  docRow: RawDocRow | undefined,
+  /**
+   * Whether this student joined after the year started — the gate on the Late
+   * Enrolment Form. `undefined` means the caller could not tell, which hides
+   * the slot; only the single-student loader below joins the roster, so the
+   * dashboard aggregator leaves it undefined on purpose. See `SlotFacts`.
+   */
+  isLateEnrollee?: boolean
 ): StudentCompleteness {
   const enroleeNumber = str(app, 'enroleeNumber') ?? '';
   const studentNumber = str(app, 'studentNumber');
@@ -199,20 +215,36 @@ function computeForStudent(
   const level = str(statusRow ?? {}, 'classLevel');
   const section = str(statusRow ?? {}, 'classSection');
 
-  // `applicationStatus` lives on the enrolment_status row, not the
-  // applications row, so it is merged into the facts bag here — this
-  // loader already fetches both. `isLateEnrollee` is left undefined: it
-  // comes from `section_students`, which this loader does not read, so
-  // the Late Enrolment Form slot stays hidden here rather than being
-  // demanded of students we can't classify.
+  // `applicationStatus` and `enroleeType` live on the enrolment_status row,
+  // not the applications row, so both are merged into the facts bag here —
+  // this loader already fetches both tables. The applications row's own
+  // `category` (spread in via `...app`) is what `resolveCategory` reads FIRST
+  // to gate the five New-only school forms, with `enroleeType` as its
+  // fallback. `isLateEnrollee` is passed through from the caller — it comes
+  // from `section_students`, so only a loader that joins the roster has it.
   const facts = {
     app: {
       ...app,
       applicationStatus: str(statusRow ?? {}, 'applicationStatus'),
+      enroleeType: str(statusRow ?? {}, 'enroleeType'),
     },
+    isLateEnrollee,
   };
-  const applicableSlots = DOCUMENT_SLOTS.filter((slot) =>
-    isSlotApplicable(slot, facts)
+  // ⚠ A SLOT THAT DOES NOT APPLY BUT ALREADY HOLDS A FILE STILL SHOWS.
+  //
+  // This is the same rule the family documents are spared the category gate
+  // for, applied to the gated slots too: P-Files is a REPOSITORY, and dropping
+  // a slot from this list is the only thing that decides whether the student
+  // page can render it at all. Without this, a New Student Checksheet uploaded
+  // before a child was re-tagged `Current` — or before a mis-tag was corrected
+  // — would sit in `ay{YY}_enrolment_documents` with no screen able to show it
+  // and no count including it. Nothing is hidden today (all eight school forms
+  // hold zero uploads across AY2025-27, measured 2026-09-16); this keeps it
+  // that way once staff start filling them.
+  const applicableSlots = DOCUMENT_SLOTS.filter(
+    (slot) =>
+      isSlotApplicable(slot, facts) ||
+      (docRow ? (str(docRow, slot.key) ?? '').trim().length > 0 : false)
   );
 
   const slots = applicableSlots.map((slot) => {
@@ -258,7 +290,8 @@ export async function getDocumentDashboardData(ayCode: string): Promise<{
   students: StudentCompleteness[];
   summary: DashboardSummary;
 }> {
-  const { apps, statuses, docs } = await loadRawData(ayCode);
+  const { apps, statuses, docs, lateEnrollees } = await loadRawData(ayCode);
+  const lateEnrolleeSet = new Set(lateEnrollees ?? []);
 
   const statusByEnrolee = new Map(
     statuses.map((s) => [str(s, 'enroleeNumber'), s])
@@ -277,9 +310,15 @@ export async function getDocumentDashboardData(ayCode: string): Promise<{
   );
 
   const students = withStatus.map((app) => {
-    const statusRow = statusByEnrolee.get(str(app, 'enroleeNumber'));
-    const docRow = docsByEnrolee.get(str(app, 'enroleeNumber'));
-    return computeForStudent(app, statusRow, docRow);
+    const enroleeNumber = str(app, 'enroleeNumber');
+    const statusRow = statusByEnrolee.get(enroleeNumber);
+    const docRow = docsByEnrolee.get(enroleeNumber);
+    return computeForStudent(
+      app,
+      statusRow,
+      docRow,
+      enroleeNumber ? lateEnrolleeSet.has(enroleeNumber) : undefined
+    );
   });
 
   // Sort by completeness ascending (least complete first)
@@ -418,35 +457,51 @@ export async function getStudentDocumentDetail(
   const service = createServiceClient();
   const prefix = prefixFor(ayCode);
 
-  const [appRes, statusRes, docRes, outreachRes] = await Promise.all([
-    service
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        '"enroleeNumber", "studentNumber", "firstName", "lastName", "motherEmail", "fatherEmail", "guardianEmail", "motherFirstName", "motherLastName", "fatherFirstName", "fatherLastName", "guardianFirstName", "guardianLastName", "stpApplicationType"'
-      )
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle(),
-    service
-      .from(`${prefix}_enrolment_status`)
-      .select(
-        '"enroleeNumber", "applicationStatus", "classLevel", "classSection"'
-      )
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle(),
-    service
-      .from(`${prefix}_enrolment_documents`)
-      .select('*')
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle(),
-    service
-      .from('p_file_outreach')
-      .select(
-        'slot_key, kind, promised_until, note, recipient_email, created_at'
-      )
-      .eq('ay_code', ayCode)
-      .eq('enrolee_number', enroleeNumber)
-      .order('created_at', { ascending: false }),
-  ]);
+  const [appRes, statusRes, docRes, outreachRes, lateEnrollees] =
+    await Promise.all([
+      service
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          '"enroleeNumber", "studentNumber", "firstName", "lastName", "motherEmail", "fatherEmail", "guardianEmail", "motherFirstName", "motherLastName", "fatherFirstName", "fatherLastName", "guardianFirstName", "guardianLastName", "stpApplicationType", "category"'
+        )
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle(),
+      service
+        .from(`${prefix}_enrolment_status`)
+        .select(
+          '"enroleeNumber", "applicationStatus", "classLevel", "classSection", "enroleeType"'
+        )
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle(),
+      service
+        .from(`${prefix}_enrolment_documents`)
+        .select('*')
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle(),
+      service
+        .from('p_file_outreach')
+        .select(
+          'slot_key, kind, promised_until, note, recipient_email, created_at'
+        )
+        .eq('ay_code', ayCode)
+        .eq('enrolee_number', enroleeNumber)
+        .order('created_at', { ascending: false }),
+      // THE ROSTER ROW, SOLELY TO ANSWER "DID THIS CHILD JOIN LATE?".
+      //
+      // That fact gates the Late Enrolment Form and lives nowhere in admissions
+      // — it is `section_students.enrollment_status`. Because no loader read it,
+      // the slot resolved to "cannot tell" and was hidden for EVERY student on
+      // EVERY screen since it shipped (2026-08-31), while 21 AY2026 children are
+      // actually marked `late_enrollee`. This page is the one surface that can
+      // afford the join: one student, one row.
+      //
+      // ⚠ THE WHOLE AY'S SET, NOT THIS STUDENT'S ROW — deliberately. The same
+      // helper backs the list, so the two cannot disagree about whether this
+      // child gets a Late Enrolment Form, and there is one place that knows a
+      // transfer (KD #67) leaves a withdrawn row behind with the same
+      // `enrolee_number`. It is ~410 rows of three columns for the AY.
+      loadLateEnrolleeNumbers(ayCode),
+    ]);
 
   if (!appRes.data) return null;
 
@@ -454,7 +509,8 @@ export async function getStudentDocumentDetail(
   const completeness = computeForStudent(
     appRes.data as RawAppRow,
     (statusRes.data ?? undefined) as RawStatusRow | undefined,
-    docRow.enroleeNumber ? docRow : undefined
+    docRow.enroleeNumber ? docRow : undefined,
+    lateEnrollees.includes(enroleeNumber)
   );
 
   // Reduce outreach rows (newest-first) into a per-slot summary. Only

@@ -571,6 +571,7 @@ async function enrichWithDocSlotBuckets(
   const prefix = prefixFor(ayCode);
   const docsTable = `${prefix}_enrolment_documents`;
   const appsTable = `${prefix}_enrolment_applications`;
+  const statusTable = `${prefix}_enrolment_status`;
   const admissions = createAdmissionsClient();
   const enroleeNumbers = rows.map((r) => r.enroleeNumber);
 
@@ -590,12 +591,28 @@ async function enrichWithDocSlotBuckets(
     fatherEmail: string | null;
     guardianEmail: string | null;
     stpApplicationType: string | null;
+    /** Applications-row copy of the enrolee category — read first by
+     *  `resolveCategory`, with the status row's `enroleeType` as fallback. */
+    category: string | null;
+  };
+  // `applicationStatus` + `enroleeType` gate the Conditional Enrolment slot
+  // and the five New-only school forms, and BOTH live on the status row, not
+  // the applications row. That is why this takes a third query rather than
+  // reading the applications row's own `category`: the two copies of the
+  // category disagree (4 of 495 AY2026 rows, 241 of 828 in AY2025), and the
+  // dashboard this sheet backs reads the status copy. A sheet that gated on
+  // the other copy would disagree with its own card for exactly those rows —
+  // the KD #124 count-vs-drill bug class this function exists to avoid.
+  type StatusGateRow = {
+    enroleeNumber: string | null;
+    applicationStatus: string | null;
+    enroleeType: string | null;
   };
 
   // .in('enroleeNumber', [...]) chunked — a full-AY enrolled roster
   // combined with ~20 selected columns can overflow the PostgREST URL-length
   // cap, which comes back as a bare HTTP 400 before any JSON error.
-  const [docsRows, gateRows] = await Promise.all([
+  const [docsRows, gateRows, statusGateRows] = await Promise.all([
     fetchInChunks<DocRow>(enroleeNumbers, async (slice) => {
       const { data, error } = await admissions
         .from(docsTable)
@@ -607,10 +624,20 @@ async function enrichWithDocSlotBuckets(
     fetchInChunks<GateRow>(enroleeNumbers, async (slice) => {
       const { data, error } = await admissions
         .from(appsTable)
-        .select('enroleeNumber, fatherEmail, guardianEmail, stpApplicationType')
+        .select(
+          'enroleeNumber, fatherEmail, guardianEmail, stpApplicationType, category'
+        )
         .in('enroleeNumber', slice);
       if (error) return [];
       return (data ?? []) as unknown as GateRow[];
+    }),
+    fetchInChunks<StatusGateRow>(enroleeNumbers, async (slice) => {
+      const { data, error } = await admissions
+        .from(statusTable)
+        .select('enroleeNumber, applicationStatus, enroleeType')
+        .in('enroleeNumber', slice);
+      if (error) return [];
+      return (data ?? []) as unknown as StatusGateRow[];
     }),
   ]);
 
@@ -623,11 +650,20 @@ async function enrichWithDocSlotBuckets(
   for (const g of gateRows) {
     if (g.enroleeNumber) gatesByEnrolee.set(g.enroleeNumber, g);
   }
+  const statusGatesByEnrolee = new Map<string, StatusGateRow>();
+  for (const s of statusGateRows) {
+    if (s.enroleeNumber) statusGatesByEnrolee.set(s.enroleeNumber, s);
+  }
 
   return rows.map((r) => {
     const d = docsByEnrolee.get(r.enroleeNumber);
     if (!d) return r;
-    const gate = gatesByEnrolee.get(r.enroleeNumber);
+    const statusGate = statusGatesByEnrolee.get(r.enroleeNumber);
+    const gate = {
+      ...(gatesByEnrolee.get(r.enroleeNumber) ?? {}),
+      applicationStatus: statusGate?.applicationStatus ?? null,
+      enroleeType: statusGate?.enroleeType ?? null,
+    };
     const docSlotBuckets: Record<
       string,
       'valid' | 'pending' | 'rejected' | 'missing'

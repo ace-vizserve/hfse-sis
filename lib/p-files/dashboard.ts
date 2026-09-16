@@ -63,7 +63,7 @@ async function loadCompletionByLevelUncached(
   // pre-enrolment funnel applicants don't inflate per-level completion %.
   const { data: statusRows, error: statusErr } = await supabase
     .from(`${prefix}_enrolment_status`)
-    .select('enroleeNumber, classLevel, applicationStatus')
+    .select('enroleeNumber, classLevel, applicationStatus, enroleeType')
     .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
   if (statusErr) {
     console.error(
@@ -83,7 +83,7 @@ async function loadCompletionByLevelUncached(
     supabase
       .from(`${prefix}_enrolment_applications`)
       .select(
-        'enroleeNumber, levelApplied, fatherEmail, guardianEmail, stpApplicationType'
+        'enroleeNumber, levelApplied, fatherEmail, guardianEmail, stpApplicationType, category'
       )
       .in('enroleeNumber', enrolledNumbers),
     supabase
@@ -120,29 +120,42 @@ async function loadCompletionByLevelUncached(
     fatherEmail: string | null;
     guardianEmail: string | null;
     stpApplicationType: string | null;
+    /** Applications-row copy of the enrolee category — read first by
+     *  `resolveCategory`, with the status row's `enroleeType` as fallback. */
+    category: string | null;
   };
   type StatusRow = {
     enroleeNumber: string | null;
     classLevel: string | null;
     applicationStatus: string | null;
+    enroleeType: string | null;
   };
 
   const statusByEnrolee = new Map<string, string>();
-  // `applicationStatus` gates the Conditional Enrolment slot but lives on
-  // the status row, not the applications row — the status fetch above
-  // already selects it, so no extra query is needed to carry it through.
+  // `applicationStatus` gates the Conditional Enrolment slot and `enroleeType`
+  // gates the five New-only school forms. Both live on the status row, not the
+  // applications row — the status fetch above already selects them, so no
+  // extra query is needed to carry them through.
   const appStatusByEnrolee = new Map<string, string>();
+  const enroleeTypeByEnrolee = new Map<string, string>();
   for (const s of (statusRes.data ?? []) as StatusRow[]) {
     if (!s.enroleeNumber) continue;
     if (s.classLevel) statusByEnrolee.set(s.enroleeNumber, s.classLevel);
     if (s.applicationStatus)
       appStatusByEnrolee.set(s.enroleeNumber, s.applicationStatus);
+    if (s.enroleeType) enroleeTypeByEnrolee.set(s.enroleeNumber, s.enroleeType);
   }
 
   // level + gate info per enrollee
   const byEnrolee = new Map<
     string,
-    { level: string; gate: AppRow & { applicationStatus: string | null } }
+    {
+      level: string;
+      gate: AppRow & {
+        applicationStatus: string | null;
+        enroleeType: string | null;
+      };
+    }
   >();
   for (const a of (appsRes.data ?? []) as AppRow[]) {
     if (!a.enroleeNumber) continue;
@@ -155,6 +168,7 @@ async function loadCompletionByLevelUncached(
       gate: {
         ...a,
         applicationStatus: appStatusByEnrolee.get(a.enroleeNumber) ?? null,
+        enroleeType: enroleeTypeByEnrolee.get(a.enroleeNumber) ?? null,
       },
     });
   }
@@ -638,7 +652,7 @@ async function loadSlotStatusMixUncached(
   // funnel rows.
   const { data: statusRows, error: statusErr } = await admissions
     .from(`${prefix}_enrolment_status`)
-    .select('enroleeNumber, applicationStatus')
+    .select('enroleeNumber, applicationStatus, enroleeType')
     .in('applicationStatus', ['Enrolled', 'Enrolled (Conditional)']);
   if (statusErr) {
     console.error(
@@ -647,31 +661,75 @@ async function loadSlotStatusMixUncached(
     );
     return { valid: 0, pending: 0, rejected: 0, missing: 0 };
   }
-  const enrolledNumbers = (
-    (statusRows ?? []) as { enroleeNumber: string | null }[]
-  )
-    .map((s) => s.enroleeNumber)
-    .filter((v): v is string => v !== null);
+  const statusByEnrolee = new Map<
+    string,
+    { applicationStatus: string | null; enroleeType: string | null }
+  >();
+  for (const s of (statusRows ?? []) as unknown as {
+    enroleeNumber: string | null;
+    applicationStatus: string | null;
+    enroleeType: string | null;
+  }[]) {
+    if (!s.enroleeNumber) continue;
+    statusByEnrolee.set(s.enroleeNumber, {
+      applicationStatus: s.applicationStatus,
+      enroleeType: s.enroleeType,
+    });
+  }
+  const enrolledNumbers = [...statusByEnrolee.keys()];
   if (enrolledNumbers.length === 0)
     return { valid: 0, pending: 0, rejected: 0, missing: 0 };
 
-  const { data } = await admissions
-    .from(`${prefix}_enrolment_documents`)
-    .select(
-      [
-        'enroleeNumber',
-        ...DOCUMENT_SLOTS.flatMap((s) =>
-          s.expires
-            ? [s.key, `${s.key}Status`, `${s.key}Expiry`]
-            : [s.key, `${s.key}Status`]
-        ),
-      ].join(', ')
-    )
-    .in('enroleeNumber', enrolledNumbers);
+  // ⚠ THE GATE COLUMNS ARE NEEDED HERE TOO. This donut sits beside the
+  // completeness table and is read as the same population — but it used to
+  // walk DOCUMENT_SLOTS ungated, so it already counted father/guardian slots
+  // for households that have neither. Gating five more slots for every
+  // returning student would have widened that from a handful of slots to
+  // roughly 5 × every Current student (~1,900 on AY2026), all landing in the
+  // "Missing" slice against a table that excludes them.
+  const [docsRes, gateRes] = await Promise.all([
+    admissions
+      .from(`${prefix}_enrolment_documents`)
+      .select(
+        [
+          'enroleeNumber',
+          ...DOCUMENT_SLOTS.flatMap((s) =>
+            s.expires
+              ? [s.key, `${s.key}Status`, `${s.key}Expiry`]
+              : [s.key, `${s.key}Status`]
+          ),
+        ].join(', ')
+      )
+      .in('enroleeNumber', enrolledNumbers),
+    admissions
+      .from(`${prefix}_enrolment_applications`)
+      .select(
+        'enroleeNumber, fatherEmail, guardianEmail, stpApplicationType, category'
+      )
+      .in('enroleeNumber', enrolledNumbers),
+  ]);
+  const gateByEnrolee = new Map<string, Record<string, unknown>>();
+  for (const g of (gateRes.data ?? []) as unknown as Record<
+    string,
+    unknown
+  >[]) {
+    const en = g.enroleeNumber;
+    if (typeof en === 'string') gateByEnrolee.set(en, g);
+  }
   type Row = Record<string, string | null>;
   const mix: SlotStatusMix = { valid: 0, pending: 0, rejected: 0, missing: 0 };
-  for (const row of (data ?? []) as unknown as Row[]) {
+  for (const row of (docsRes.data ?? []) as unknown as Row[]) {
+    const en = String(row.enroleeNumber ?? '');
+    const st = statusByEnrolee.get(en);
+    const gate = {
+      ...(gateByEnrolee.get(en) ?? {}),
+      applicationStatus: st?.applicationStatus ?? null,
+      enroleeType: st?.enroleeType ?? null,
+    };
     for (const slot of DOCUMENT_SLOTS) {
+      // `isLateEnrollee` is not supplied — this never joins the roster, and
+      // "cannot tell" hides, matching every other whole-AY aggregator.
+      if (!isSlotApplicable(slot, { app: gate })) continue;
       const url = row[slot.key];
       const rawStatus = row[`${slot.key}Status`];
       const expiry = slot.expires ? row[`${slot.key}Expiry`] : null;

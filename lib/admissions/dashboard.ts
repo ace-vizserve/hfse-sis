@@ -1271,7 +1271,7 @@ async function loadAdmissionsCompletenessForChaseUncached(
     supabase
       .from(`${prefix}_enrolment_status`)
       .select(
-        '"enroleeNumber", "applicationStatus", "classLevel", "classSection"'
+        '"enroleeNumber", "applicationStatus", "classLevel", "classSection", "enroleeType"'
       ),
     supabase.from(`${prefix}_enrolment_documents`).select(
       PFILES_SLOTS.flatMap((s) => {
@@ -1342,16 +1342,24 @@ async function loadAdmissionsCompletenessForChaseUncached(
     const submittedDate = (a.created_at as string | null) ?? null;
 
     // Per-slot resolution mirrors P-Files queries.computeForStudent — the
-    // conditional gate (fatherEmail / guardianEmail / stpApplicationType)
-    // hides slots not relevant for this applicant so chase counts only
-    // surface the documents the parent is actually expected to upload.
+    // conditional gate (fatherEmail / guardianEmail / stpApplicationType /
+    // enrolee category) hides slots not relevant for this applicant so chase
+    // counts only surface the documents the parent is actually expected to
+    // upload. `applicationStatus` and `enroleeType` are status-row columns
+    // merged in here, the same way the P-Files loader does it.
     // `isLateEnrollee` is deliberately not supplied: this is an admissions
     // surface reading the applications row, and late-enrollee status lives on
     // section_students, which it never joins. The evaluator treats that as NOT
     // applicable, so the Late Enrolment Form is simply absent from admissions
     // chase counts — correct, since it is a school form nobody chases anyway.
     const applicableSlots = PFILES_SLOTS.filter((slot) =>
-      isSlotApplicable(slot, { app: a as unknown as Record<string, unknown> })
+      isSlotApplicable(slot, {
+        app: {
+          ...(a as unknown as Record<string, unknown>),
+          applicationStatus,
+          enroleeType: (statusRow?.enroleeType as string | null) ?? null,
+        },
+      })
     );
 
     const slots = applicableSlots.map((slot) => {

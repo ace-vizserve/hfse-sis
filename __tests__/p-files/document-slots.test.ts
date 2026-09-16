@@ -11,19 +11,29 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  CURRENT_CATEGORIES,
   DOCUMENT_SLOTS,
   GROUP_LABELS,
+  NEW_CATEGORIES,
   isChaseableGroup,
   isSlotApplicable,
+  resolveCategory,
   type DocumentGroup,
 } from '@/lib/p-files/document-config';
 import {
   DOCUMENT_SLOTS as SIS_DOCUMENT_SLOTS,
   OPTIONAL_DOCUMENT_SLOT_KEYS,
 } from '@/lib/sis/queries';
+import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 
-/** The eight added alongside migration 135. */
+/**
+ * The eight added alongside migration 135, plus Form 12, which joined them on
+ * 2026-09-16 when Mr Ace confirmed the parent portal no longer offers it
+ * ("yes form 12 is not being collected on the parent portal thats correct").
+ * Nine slots nobody can chase a family for.
+ */
 const SCHOOL_FORM_KEYS = [
+  'form12',
   'lastSchoolRecommendation',
   'assessmentResult',
   'signedContract',
@@ -169,5 +179,127 @@ describe('isSlotApplicable', () => {
       expect(() => isSlotApplicable(slot, { app: undefined })).not.toThrow();
       expect(() => isSlotApplicable(slot, { app: null })).not.toThrow();
     }
+  });
+});
+
+/**
+ * The school's two document lists, supplied by Mr Ace on 2026-09-16: a long
+ * "New Students / Additional" list, and a short "Current Student" one holding
+ * only Form 12 and the Signed Student Contract.
+ */
+describe('the enrolee-category gate', () => {
+  /** School forms asked of new students only. */
+  const NEW_ONLY_KEYS = [
+    'lastSchoolRecommendation',
+    'assessmentResult',
+    'newStudentChecksheet',
+    'pfilesChecklist',
+    'preCounsellingAck',
+  ] as const;
+
+  /** On BOTH of the school's lists, so they must stay ungated by category. */
+  const BOTH_LISTS_KEYS = ['form12', 'signedContract'] as const;
+
+  const slotFor = (key: string) => {
+    const slot = DOCUMENT_SLOTS.find((s) => s.key === key);
+    if (!slot) throw new Error(`no slot named ${key}`);
+    return slot;
+  };
+
+  // The two lists are plain strings in document-config.ts so that module keeps
+  // no dependency on the schema layer. This is what stops them drifting: a
+  // typo, or a fifth category added to the enum, fails here.
+  it('splits exactly the four real enrolee categories in two', () => {
+    expect([...NEW_CATEGORIES, ...CURRENT_CATEGORIES].sort()).toEqual(
+      [...ENROLEE_CATEGORIES].sort()
+    );
+    for (const c of NEW_CATEGORIES) {
+      expect(CURRENT_CATEGORIES as readonly string[]).not.toContain(c);
+    }
+  });
+
+  it('shows the five New-only forms to New, and hides them from Current', () => {
+    for (const key of NEW_ONLY_KEYS) {
+      const slot = slotFor(key);
+      for (const cat of NEW_CATEGORIES) {
+        expect(isSlotApplicable(slot, { app: { enroleeType: cat } }), key).toBe(
+          true
+        );
+      }
+      for (const cat of CURRENT_CATEGORIES) {
+        expect(isSlotApplicable(slot, { app: { enroleeType: cat } }), key).toBe(
+          false
+        );
+      }
+    }
+  });
+
+  it('keeps Form 12 and the Signed Contract for everyone', () => {
+    for (const key of BOTH_LISTS_KEYS) {
+      for (const cat of [...NEW_CATEGORIES, ...CURRENT_CATEGORIES]) {
+        expect(
+          isSlotApplicable(slotFor(key), { app: { enroleeType: cat } }),
+          key
+        ).toBe(true);
+      }
+    }
+  });
+
+  // The school's Current-student list names only what the office RE-COLLECTS.
+  // Measured on production, a returning student's file already holds these —
+  // 367 of 381 an ID picture, 379 a birth certificate. Gating them on category
+  // would mark real uploaded documents "not applicable" and hide them.
+  it('never gates a family-supplied document on category', () => {
+    for (const slot of DOCUMENT_SLOTS) {
+      if (slot.group === 'school') continue;
+      expect(slot.conditional?.kind, slot.key).not.toBe('category');
+    }
+  });
+
+  it('hides a category-gated form when the category is unknown', () => {
+    const slot = slotFor('newStudentChecksheet');
+    expect(isSlotApplicable(slot, { app: {} })).toBe(false);
+    expect(isSlotApplicable(slot, { app: { enroleeType: '' } })).toBe(false);
+    expect(isSlotApplicable(slot, { app: { enroleeType: '   ' } })).toBe(false);
+    expect(isSlotApplicable(slot, { app: { enroleeType: null } })).toBe(false);
+    expect(isSlotApplicable(slot, { app: null })).toBe(false);
+    // A value outside the taxonomy is "cannot tell", not "New".
+    expect(isSlotApplicable(slot, { app: { enroleeType: 'Nonsense' } })).toBe(
+      false
+    );
+  });
+});
+
+/**
+ * The same fact is stored twice and the two copies do not agree: measured on
+ * production 2026-09-16, they differ on 241 of 828 AY2025 rows, 4 of 495
+ * AY2026 rows and 3 of 290 AY2027 rows, and the applications copy is blank
+ * for 232 AY2025 students where the status copy is filled.
+ */
+describe('resolveCategory', () => {
+  // `category` wins because it is the ONLY copy a human can change — the
+  // Records profile sheet writes it and nothing in this app writes
+  // `enroleeType`. A gate keyed on the uneditable copy cannot be corrected
+  // when the office finds it wrong.
+  it('prefers `category`, the only copy the app can edit', () => {
+    expect(resolveCategory({ enroleeType: 'Current', category: 'New' })).toBe(
+      'New'
+    );
+  });
+
+  it('falls back to the status row when `category` is blank', () => {
+    expect(resolveCategory({ enroleeType: 'Current', category: null })).toBe(
+      'Current'
+    );
+    expect(resolveCategory({ enroleeType: 'Current', category: '  ' })).toBe(
+      'Current'
+    );
+    expect(resolveCategory({ enroleeType: 'New' })).toBe('New');
+  });
+
+  it('returns empty when neither copy is present', () => {
+    expect(resolveCategory({})).toBe('');
+    expect(resolveCategory(null)).toBe('');
+    expect(resolveCategory(undefined)).toBe('');
   });
 });
