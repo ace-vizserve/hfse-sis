@@ -415,7 +415,7 @@ describe('a step finished by an approver change (via repoint)', () => {
     });
   });
 
-  it('writes nothing and says so when the closed step cannot be read', async () => {
+  it('writes nothing to the request, but still audits the decision, when the closed step cannot be read', async () => {
     closedStep = null;
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const handled = await gradeChangeApprovalHandler(repoint());
@@ -426,7 +426,12 @@ describe('a step finished by an approver change (via repoint)', () => {
     });
     // Never falls back to the admin.
     expect(updates).toEqual([]);
-    expect(logAction).not.toHaveBeenCalled();
+    // The step closed on the engine; that is recorded, and flagged.
+    expect(logAction).toHaveBeenCalledTimes(1);
+    expect(logAction.mock.calls[0][0]).toMatchObject({
+      action: 'grade_change_approved',
+      context: { projection_failed: true, partial: true },
+    });
     errors.mockRestore();
   });
 
@@ -449,7 +454,7 @@ describe('the teacher’s copy does not move', () => {
     ],
     ['no pending row', { data: null, error: null }],
   ] as const)(
-    '%s says the decision was recorded and audits nothing',
+    '%s says the decision was recorded, audits it as a failed projection, and emails nobody',
     async (_label, result) => {
       updateResult = result as typeof updateResult;
       const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -462,7 +467,19 @@ describe('the teacher’s copy does not move', () => {
         body: { error: GRADE_CHANGE_PROJECTION_FAILED, outcome: 'completed' },
       });
       expect(GRADE_CHANGE_PROJECTION_FAILED).toMatch(/decision was recorded/i);
-      expect(logAction).not.toHaveBeenCalled();
+      // `approval_advance` has already committed the step. Its audit row is
+      // written regardless, marked so the gap can be found.
+      expect(logAction).toHaveBeenCalledTimes(1);
+      expect(logAction.mock.calls[0][0]).toMatchObject({
+        action: 'grade_change_approved',
+        entityId: 'gcr-1',
+        context: {
+          final: true,
+          projection_failed: true,
+          partial: true,
+          grading_sheet_id: 'sheet-1',
+        },
+      });
       await flush();
       expect(notifyRequestApproved).not.toHaveBeenCalled();
       errors.mockRestore();
@@ -477,7 +494,10 @@ describe('the teacher’s copy does not move', () => {
     const handled = await gradeChangeApprovalHandler(ctx({}));
 
     expect(handled).toMatchObject({ ok: false, status: 500 });
-    expect(logAction).not.toHaveBeenCalled();
+    expect(logAction).toHaveBeenCalledTimes(1);
+    expect(logAction.mock.calls[0][0]).toMatchObject({
+      context: { projection_failed: true },
+    });
     errors.mockRestore();
   });
 });

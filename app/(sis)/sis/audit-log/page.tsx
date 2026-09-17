@@ -116,6 +116,8 @@ const SIS_AUDIT_ALLOWLIST = [
   // changed, and this is read the same way a sign-in is — as the line that
   // explains the entries under it.
   'user.view.switch',
+  // A person changed their own password on the Account page.
+  'user.password.change',
 ] as const;
 
 type SisAuditLogSearchParams = DashboardSearchParams & {

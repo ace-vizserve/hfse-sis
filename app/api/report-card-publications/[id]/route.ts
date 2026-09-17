@@ -24,7 +24,9 @@ export async function DELETE(
 
   const { data: existing } = await service
     .from('report_card_publications')
-    .select('id, section_id, term_id, publish_from, publish_until')
+    .select(
+      'id, section_id, term_id, publish_from, publish_until, section:sections(name), term:terms(label, term_number)'
+    )
     .eq('id', id)
     .maybeSingle();
 
@@ -44,6 +46,20 @@ export async function DELETE(
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
 
+  type One<T> = T | T[] | null;
+  const pick = <T>(v: One<T>): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : v;
+  const sectionRow = pick(
+    (existing as { section?: One<{ name: string | null }> }).section ?? null
+  );
+  const termRow = pick(
+    (
+      existing as {
+        term?: One<{ label: string | null; term_number: number | null }>;
+      }
+    ).term ?? null
+  );
+
   await logAction({
     service,
     actor: {
@@ -57,6 +73,9 @@ export async function DELETE(
     context: {
       section_id: existing.section_id,
       term_id: existing.term_id,
+      section_name: sectionRow?.name ?? null,
+      term_label: termRow?.label ?? null,
+      term_number: termRow?.term_number ?? null,
       publish_from: existing.publish_from,
       publish_until: existing.publish_until,
     },

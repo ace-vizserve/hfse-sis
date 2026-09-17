@@ -115,7 +115,12 @@ export async function POST(request: NextRequest) {
     action: 'user.view.switch',
     entityType: 'user_account',
     entityId: user.id,
+    // `from_role` / `to_role` say what this is: a change of the role in force,
+    // which every permission check then reads. `from_view` / `to_view` are the
+    // older names, kept so rows written before and after read the same way.
     context: {
+      from_role: currentRole,
+      to_role: requested,
       from_view: currentRole,
       to_view: requested,
     },

@@ -27,6 +27,10 @@ import {
   type SlotKind,
 } from '@/lib/grading/first-score-gate';
 import { mergeSlotLabel } from '@/lib/grading/slot-label-sanitize';
+import {
+  loadEntryStudentLabels,
+  loadOneSheetAuditLabels,
+} from '@/lib/grading/sheet-audit-labels';
 import type { SlotLabels, SlotMeta } from '@/lib/schemas/grading-sheet';
 import { GRADE_CHANGE_AEB_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 
@@ -563,10 +567,49 @@ export async function PATCH(
         .eq('id', sheetId);
       if (lblErr)
         return NextResponse.json({ error: lblErr.message }, { status: 500 });
+
+      // Logged NOW, before the score write, because the label has committed
+      // whether or not the score that follows it does. Same action and the
+      // same slot keys as the Activity Labels panel's own save, so a label
+      // named in this dialog reads no differently in the log.
+      const kind = body.slot_label.kind;
+      const idx = body.slot_label.index ?? null;
+      const before = sheet.slot_labels as SlotLabels | null;
+      await logAction({
+        service,
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
+        action: 'sheet.labels.update',
+        entityType: 'grading_sheet',
+        entityId: sheetId,
+        context: {
+          ...(await loadOneSheetAuditLabels(service, sheetId)),
+          changes: [
+            {
+              slot:
+                kind === 'qa' ? 'QA' : `${kind.toUpperCase()}${(idx ?? 0) + 1}`,
+              old:
+                kind === 'qa'
+                  ? (before?.qa ?? null)
+                  : ((before?.[kind]?.[idx ?? 0] as unknown) ?? null),
+              new:
+                kind === 'qa'
+                  ? ((merged as SlotLabels).qa ?? null)
+                  : (((merged as SlotLabels)[kind]?.[idx ?? 0] as unknown) ??
+                    null),
+            },
+          ],
+          with_first_score: true,
+        },
+      });
     }
   }
 
   let updated: Record<string, unknown> | null = null;
+  let derivedFailure: string | null = null;
   if (sheet.is_locked && appliedChangeRequest) {
     // Path A — route the raw entry patch + request flip through the atomic
     // RPC. The RPC owns the lock re-check, so a concurrent unlock between
@@ -628,9 +671,12 @@ export async function PATCH(
       .eq('id', entryId)
       .select('*')
       .single();
-    if (derivedErr)
-      return NextResponse.json({ error: derivedErr.message }, { status: 500 });
-    updated = derivedUpdated;
+    // ⚠ NOT AN EARLY RETURN. The RPC has already COMMITTED the approved value
+    // and flipped the request to applied — returning here skipped the
+    // `grade_audit_log` row Hard Rule #5 requires for exactly this change. The
+    // failure is carried to the audit rows below and answered after them.
+    if (derivedErr) derivedFailure = derivedErr.message;
+    else updated = derivedUpdated;
   } else {
     const { data: directUpdated, error } = await service
       .from('grade_entries')
@@ -674,10 +720,23 @@ export async function PATCH(
       approval_reference,
     }
   );
+  // Which child and which sheet, so a row in the activity log can be read
+  // without looking anything up. Only fetched when there is something to log.
+  const whoAndWhere =
+    diffRows.length > 0 || (sheet.is_locked && appliedChangeRequest)
+      ? {
+          ...(await loadOneSheetAuditLabels(service, sheetId)),
+          ...((await loadEntryStudentLabels(service, [entryId])).get(entryId) ??
+            {}),
+        }
+      : {};
   if (diffRows.length > 0) {
-    if (sheet.is_locked) {
-      await writeAuditRows(service, diffRows);
-    }
+    // Never throws (lib/audit/log-grade-change.ts). A failure is carried onto
+    // the audit_log rows below rather than aborting them over a grade that is
+    // already saved.
+    const gradeAuditLogFailed = sheet.is_locked
+      ? !(await writeAuditRows(service, diffRows))
+      : false;
     for (const row of diffRows) {
       await logAction({
         service,
@@ -698,6 +757,7 @@ export async function PATCH(
         context: {
           grading_sheet_id: sheetId,
           grade_entry_id: entryId,
+          ...whoAndWhere,
           field: row.field_changed,
           old: row.old_value,
           new: row.new_value,
@@ -710,6 +770,14 @@ export async function PATCH(
             ? {
                 correction_reason: correctionMeta.reason,
                 correction_justification: correctionMeta.justification,
+              }
+            : {}),
+          ...(gradeAuditLogFailed ? { grade_audit_log_failed: true } : {}),
+          ...(derivedFailure
+            ? {
+                partial: true,
+                failed_step: 'recompute_grade',
+                error: derivedFailure,
               }
             : {}),
         },
@@ -733,6 +801,7 @@ export async function PATCH(
       context: {
         grading_sheet_id: sheetId,
         grade_entry_id: entryId,
+        ...whoAndWhere,
         field: appliedChangeRequest.field_changed,
         no_op: true,
         was_locked: true,
@@ -750,6 +819,15 @@ export async function PATCH(
   });
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
+
+  if (derivedFailure) {
+    return NextResponse.json(
+      {
+        error: `The approved change was applied, but recalculating this student's grade failed: ${derivedFailure}. Tell an administrator.`,
+      },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ entry: updated, computed });
 }

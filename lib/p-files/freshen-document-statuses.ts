@@ -4,6 +4,10 @@ import { unstable_cache } from 'next/cache';
 
 import { logAction } from '@/lib/audit/log-action';
 import { sgToday } from '@/lib/dates';
+import {
+  buildFreshenFlips,
+  loadApplicantIdentities,
+} from '@/lib/p-files/audit';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
@@ -48,7 +52,7 @@ import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 export type FreshenResult = {
   flippedCount: number;
   flippedBySlot: Record<string, number>;
-  enroleeNumbers: string[]; // capped at 50 in the audit context
+  enroleeNumbers: string[]; // every distinct enrolee flipped — no cap
   revivedCount: number;
   revivedBySlot: Record<string, number>;
   revivedEnroleeNumbers: string[];
@@ -79,6 +83,12 @@ async function freshenAyDocumentsUncached(
   const prefix = prefixFor(ayCode);
   const expiredSeen = new Set<string>();
   const revivedSeen = new Set<string>();
+  // Per-slot enrolee lists, so the audit row can say WHICH document of WHICH
+  // child flipped rather than a count per slot beside an unsplit name list.
+  const expiredBySlot: Array<{ slotKey: string; enroleeNumbers: string[] }> =
+    [];
+  const revivedBySlot: Array<{ slotKey: string; enroleeNumbers: string[] }> =
+    [];
   const today = sgToday();
 
   try {
@@ -132,16 +142,19 @@ async function freshenAyDocumentsUncached(
 
     for (const { slotKey, direction, rows } of taskResults) {
       if (rows.length === 0) continue;
+      const enrolees = rows
+        .map((row) => row.enroleeNumber)
+        .filter((n): n is string => Boolean(n));
       if (direction === 'expire') {
         result.flippedCount += rows.length;
         result.flippedBySlot[slotKey] = rows.length;
-        for (const row of rows)
-          if (row.enroleeNumber) expiredSeen.add(row.enroleeNumber);
+        for (const n of enrolees) expiredSeen.add(n);
+        expiredBySlot.push({ slotKey, enroleeNumbers: enrolees });
       } else {
         result.revivedCount += rows.length;
         result.revivedBySlot[slotKey] = rows.length;
-        for (const row of rows)
-          if (row.enroleeNumber) revivedSeen.add(row.enroleeNumber);
+        for (const n of enrolees) revivedSeen.add(n);
+        revivedBySlot.push({ slotKey, enroleeNumbers: enrolees });
       }
     }
   } catch (e) {
@@ -153,8 +166,24 @@ async function freshenAyDocumentsUncached(
     return result;
   }
 
-  result.enroleeNumbers = Array.from(expiredSeen).slice(0, 50);
-  result.revivedEnroleeNumbers = Array.from(revivedSeen).slice(0, 50);
+  // NO CAP. These used to be cut at 50 with a `truncated` count beside them,
+  // which meant a busy expiry day recorded the first fifty children and a
+  // number for the rest. The audit row is the only record of an automatic
+  // flip — nobody clicked anything — so it has to be complete.
+  result.enroleeNumbers = Array.from(expiredSeen);
+  result.revivedEnroleeNumbers = Array.from(revivedSeen);
+
+  // Student numbers for the flip lists: one read, only when something flipped.
+  // Best-effort (lib/p-files/audit.ts) — a miss leaves `student_number` null.
+  const studentNumbers = new Map<string, string | null>();
+  if (expiredSeen.size + revivedSeen.size > 0) {
+    const identities = await loadApplicantIdentities(admissions, ayCode, [
+      ...expiredSeen,
+      ...revivedSeen,
+    ]);
+    for (const [enrolee, who] of identities)
+      studentNumbers.set(enrolee, who.studentNumber);
+  }
 
   // Two audit rows when both directions had flips, so each is independently
   // filterable on /sis/audit-log.
@@ -179,7 +208,9 @@ async function freshenAyDocumentsUncached(
           flippedCount: result.flippedCount,
           flippedBySlot: result.flippedBySlot,
           enroleeNumbers: result.enroleeNumbers,
-          truncated: expiredSeen.size > 50 ? expiredSeen.size - 50 : 0,
+          // Complete — kept for rows that read `truncated`; always 0 now.
+          truncated: 0,
+          flips: buildFreshenFlips('expire', expiredBySlot, studentNumbers),
         },
       });
     } catch (e) {
@@ -210,7 +241,8 @@ async function freshenAyDocumentsUncached(
           revivedCount: result.revivedCount,
           revivedBySlot: result.revivedBySlot,
           enroleeNumbers: result.revivedEnroleeNumbers,
-          truncated: revivedSeen.size > 50 ? revivedSeen.size - 50 : 0,
+          truncated: 0,
+          flips: buildFreshenFlips('revive', revivedBySlot, studentNumbers),
         },
       });
     } catch (e) {

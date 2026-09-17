@@ -321,6 +321,105 @@ export function buildSyncPlan(
   return plan;
 }
 
+/**
+ * One line per student a sync plan touches, for the audit row. Pure: reads
+ * only the plan and the snapshot it was built from.
+ *
+ * Exists because the bulk sync logged totals alone — "3 withdrawn" with no way
+ * to learn which three children. `student_number` leads every entry because it
+ * is the only id that survives the year (Hard Rule #4).
+ */
+export type SyncChangeEntry = {
+  student_number: string;
+  change: 'added' | 'renamed' | 'enrolled' | 'withdrawn' | 'reactivated';
+  name: string;
+  name_before?: string;
+  section?: string | null;
+  level?: string | null;
+  index_number?: number | null;
+  enrollment_id?: string;
+  from?: string;
+  to?: string;
+};
+
+export function describeSyncPlanChanges(
+  plan: SyncPlan,
+  snapshot: GradingSnapshot
+): SyncChangeEntry[] {
+  const fullName = (p: {
+    first_name: string | null;
+    middle_name: string | null;
+    last_name: string | null;
+  }) =>
+    [p.first_name, p.middle_name, p.last_name]
+      .map((s) => (s ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+  const studentByNumber = new Map(
+    snapshot.students.map((s) => [s.student_number, s])
+  );
+  const plannedByNumber = new Map(
+    plan.student_upserts.map((u) => [u.student_number, u])
+  );
+  const sectionById = new Map(snapshot.sections.map((s) => [s.id, s]));
+  const levelById = new Map(snapshot.levels.map((l) => [l.id, l]));
+  const enrollmentById = new Map(snapshot.enrollments.map((e) => [e.id, e]));
+
+  const nameOf = (studentNumber: string): string => {
+    const planned = plannedByNumber.get(studentNumber);
+    if (planned) return fullName(planned);
+    const existing = studentByNumber.get(studentNumber);
+    return existing ? fullName(existing) : '';
+  };
+  const placeOf = (sectionId: string) => {
+    const section = sectionById.get(sectionId);
+    const level = section ? levelById.get(section.level_id) : undefined;
+    return { section: section?.name ?? null, level: level?.label ?? null };
+  };
+
+  const out: SyncChangeEntry[] = [];
+  for (const u of plan.student_upserts) {
+    if (u.kind === 'insert') {
+      out.push({
+        student_number: u.student_number,
+        change: 'added',
+        name: fullName(u),
+      });
+    } else {
+      const existing = studentByNumber.get(u.student_number);
+      out.push({
+        student_number: u.student_number,
+        change: 'renamed',
+        name: fullName(u),
+        name_before: existing ? fullName(existing) : '',
+      });
+    }
+  }
+  for (const e of plan.enrollment_inserts) {
+    out.push({
+      student_number: e.student_number,
+      change: 'enrolled',
+      name: nameOf(e.student_number),
+      ...placeOf(e.section_id),
+      index_number: e.index_number,
+    });
+  }
+  for (const c of plan.enrollment_status_changes) {
+    out.push({
+      student_number: c.student_number,
+      change: c.to === 'withdrawn' ? 'withdrawn' : 'reactivated',
+      name: nameOf(c.student_number),
+      ...placeOf(c.section_id),
+      index_number: enrollmentById.get(c.enrollment_id)?.index_number ?? null,
+      enrollment_id: c.enrollment_id,
+      from: c.from,
+      to: c.to,
+    });
+  }
+  return out;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Single-student sync (Sprint 13.3)
 //
@@ -694,12 +793,15 @@ export async function syncOneStudent(
     }
 
     for (const change of plan.enrollment_status_changes) {
-      const patch: Record<string, unknown> = { enrollment_status: change.to };
-      if (change.to === 'withdrawn') {
-        patch.withdrawal_date = sgToday();
-      } else {
-        patch.withdrawal_date = null;
-      }
+      // Both dates are cleared either way. A withdrawal found by a sync has no
+      // known last day — it used to stamp `sgToday()`, which recorded the day
+      // the sync ran as the day the child left (migration 163) — and a
+      // reactivated row must not keep the previous spell's dates.
+      const patch: Record<string, unknown> = {
+        enrollment_status: change.to,
+        withdrawal_date: null,
+        withdrawal_approved_date: null,
+      };
       const { error } = await service
         .from('section_students')
         .update(patch)

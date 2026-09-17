@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
   // enforcement point.
   const { data: level } = await service
     .from('levels')
-    .select('level_type')
+    .select('level_type, code, label')
     .eq('id', level_id)
     .maybeSingle();
   if (level?.level_type === 'secondary' && !class_type) {
@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
   // static subject bundle now. Otherwise the section stays empty until the
   // registrar attaches subjects via the Section Subjects panel.
   let trackBundleInserted = 0;
+  let trackBundleError: string | null = null;
   if (class_type) {
     try {
       const bundleResult = await applyTrackBundle(service, {
@@ -162,9 +163,10 @@ export async function POST(request: NextRequest) {
       });
       trackBundleInserted = bundleResult.inserted;
     } catch (e) {
+      trackBundleError = e instanceof Error ? e.message : String(e);
       console.error(
         '[sections POST] track bundle-apply failed:',
-        e instanceof Error ? e.message : e
+        trackBundleError
       );
     }
   }
@@ -203,11 +205,17 @@ export async function POST(request: NextRequest) {
     context: {
       academic_year_id: ay.id,
       ay_code: ay.ay_code,
-      name,
+      // `section_name`, not `name`: a bare `name` key renders as a person's
+      // name in the audit log.
+      section_name: name,
       level_id,
+      level_code: level?.code ?? null,
+      level_label: level?.label ?? null,
       class_type: class_type ?? null,
       track_bundle_inserted: trackBundleInserted,
+      ...(trackBundleError ? { track_bundle_error: trackBundleError } : {}),
       grading_sheets_created: sheetsInserted,
+      ...(bulkErr ? { grading_sheets_error: bulkErr.message } : {}),
     },
   });
 

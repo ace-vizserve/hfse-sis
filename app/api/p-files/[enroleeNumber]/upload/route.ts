@@ -6,6 +6,7 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
+import { loadApplicantIdentity } from '@/lib/p-files/audit';
 import { createRevision } from '@/lib/p-files/mutations';
 import { isStudentEnrolled } from '@/lib/p-files/queries';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -271,10 +272,13 @@ export async function POST(
       ? (currentRow[`${slotKey}Expiry`] as string)
       : null;
 
-  // Snapshot passport / pass metadata if we'll be archiving
+  // Snapshot passport / pass metadata. Read whenever the slot carries it, not
+  // only when there is a file to archive: the audit row records the before
+  // value either way, and a number typed against an empty slot still
+  // overwrote whatever the application held.
   let currentPassportNumber: string | null = null;
   let currentPassType: string | null = null;
-  if (currentUrl && slot.meta) {
+  if (slot.meta) {
     const metaCol = slot.meta.numberCol;
     const { data: appRow } = await service
       .from(`${prefix}_enrolment_applications`)
@@ -323,10 +327,91 @@ export async function POST(
 
   const canonicalPath = `${prefix}/${enroleeNumber}/${slotKey}.${ext}`;
 
+  // ── The audit row, written on EVERY path that changed something ──
+  //
+  // This route makes up to five writes in sequence — archive move, revision
+  // row, storage upload, documents row, application metadata — and used to
+  // log only when all five succeeded. Any failure after the first returned
+  // early with nothing in the audit log, even though storage or the record had
+  // already changed: an archived-then-failed upload left the slot pointing at a
+  // file that had been moved away, and a failed metadata update left a Valid
+  // document with a stale passport number, both invisible to history.
+  //
+  // So the row is built in one place and written from each exit that follows a
+  // committed step, with `partial: true` and the step that failed. What it says
+  // about the prior state (status, expiry, number, file) is read BEFORE any
+  // write, so it is the true "before" whichever exit writes it.
+  const outcome = {
+    // A file was there and this upload displaced it — true even when the
+    // archive move failed and the old object was overwritten in place. The
+    // old flag meant "archived", and read `false` in exactly that case.
+    replaced: currentUrl !== null,
+    archived: false,
+    archivedUrl: null as string | null,
+    archiveError: null as string | null,
+    revisionError: null as string | null,
+    uploaded: false,
+    newUrl: null as string | null,
+    documentUpdated: false,
+  };
+
+  const logUpload = async (
+    failure: { step: string; error: string } | null
+  ): Promise<void> => {
+    const who = await loadApplicantIdentity(service, ayCode, enroleeNumber);
+    await logAction({
+      service,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      action: 'pfile.upload',
+      entityType: 'enrolment_document',
+      entityId: enroleeNumber,
+      context: {
+        ay_code: ayCode,
+        ...who,
+        slotKey,
+        label: slot.label,
+        fileCount: files.length,
+        merged: files.length > 1,
+        replaced: outcome.replaced,
+        archived: outcome.archived,
+        ...(outcome.archiveError
+          ? { archiveFailed: true, archiveError: outcome.archiveError }
+          : {}),
+        ...(outcome.archivedUrl ? { archivedUrl: outcome.archivedUrl } : {}),
+        ...(outcome.revisionError
+          ? { revisionFailed: true, revisionError: outcome.revisionError }
+          : {}),
+        oldUrl: currentUrl,
+        newUrl: outcome.uploaded ? outcome.newUrl : null,
+        priorStatus: currentStatus,
+        newStatus: outcome.documentUpdated ? 'Valid' : currentStatus,
+        ...(slot.expires ? { priorExpiry: currentExpiry } : {}),
+        expiryDate: expiryDate ?? undefined,
+        ...(note ? { note } : {}),
+        ...(slot.meta?.kind === 'passport'
+          ? { priorPassportNumber: currentPassportNumber, passportNumber }
+          : {}),
+        ...(slot.meta?.kind === 'pass'
+          ? { priorPassType: currentPassType, passType }
+          : {}),
+        ...(failure
+          ? { partial: true, failedStep: failure.step, error: failure.error }
+          : {}),
+      },
+    });
+  };
+
   // ── Archive the current file (if any) before overwriting ──
-  let didReplace = false;
   if (currentUrl) {
     const currentPath = extractStoragePath(currentUrl, BUCKET);
+    if (!currentPath) {
+      outcome.archiveError =
+        'The stored link does not point into the documents bucket, so the old file could not be archived.';
+    }
     if (currentPath) {
       const currentExt = extFromPath(currentPath);
       const iso = new Date().toISOString().replace(/[:.]/g, '-');
@@ -344,6 +429,7 @@ export async function POST(
           `[p-files] archive move failed for ${enroleeNumber}/${slotKey}:`,
           moveError.message
         );
+        outcome.archiveError = moveError.message;
       } else {
         const { data: archiveUrlData } = service.storage
           .from(BUCKET)
@@ -376,8 +462,10 @@ export async function POST(
             `[p-files] createRevision failed for ${enroleeNumber}/${slotKey}:`,
             revResult.error
           );
+          outcome.revisionError = revResult.error;
         }
-        didReplace = true;
+        outcome.archived = true;
+        outcome.archivedUrl = archivedUrl;
       }
     }
   }
@@ -388,6 +476,12 @@ export async function POST(
     .upload(canonicalPath, uploadBuffer, { upsert: true, contentType });
 
   if (uploadError) {
+    // The old file may already have been moved into revisions, which leaves the
+    // record pointing at a path with nothing in it. Nothing is logged when no
+    // earlier step committed — then nothing changed.
+    if (outcome.archived) {
+      await logUpload({ step: 'storage_upload', error: uploadError.message });
+    }
     return NextResponse.json(
       { error: `storage upload failed: ${uploadError.message}` },
       { status: 500 }
@@ -399,6 +493,8 @@ export async function POST(
     .from(BUCKET)
     .getPublicUrl(canonicalPath);
   const publicUrl = urlData.publicUrl;
+  outcome.uploaded = true;
+  outcome.newUrl = publicUrl;
 
   // --- Table 1: enrolment_documents (file URL + status + expiry) ---
   const docFields: Record<string, unknown> = {
@@ -424,6 +520,9 @@ export async function POST(
     .select('"enroleeNumber"');
 
   if (docError) {
+    // The new file is in storage (and may have overwritten the old one in
+    // place); the record did not change.
+    await logUpload({ step: 'document_update', error: docError.message });
     return NextResponse.json(
       { error: `db update failed: ${docError.message}` },
       { status: 500 }
@@ -431,6 +530,10 @@ export async function POST(
   }
 
   if (((updated as unknown[] | null)?.length ?? 0) === 0) {
+    await logUpload({
+      step: 'no_document_row',
+      error: 'No documents row for this enrolee in this academic year.',
+    });
     return NextResponse.json(
       {
         error:
@@ -440,6 +543,7 @@ export async function POST(
       { status: 409 }
     );
   }
+  outcome.documentUpdated = true;
 
   // --- Table 2: enrolment_applications (passport number / pass type + expiry) ---
   if (slot.meta) {
@@ -463,11 +567,19 @@ export async function POST(
         `[p-files] enrolment_applications update failed for ${enroleeNumber}:`,
         appError.message
       );
+      // The file is uploaded and the slot reads Valid — a real change that
+      // used to leave no audit row at all, because this returned before the
+      // log below.
+      await logUpload({
+        step: 'application_metadata',
+        error: appError.message,
+      });
+      revalidateTag(`sis:${ayCode}`, 'max');
       invalidateDrillTags('p-files', ayCode);
       return NextResponse.json({
         ok: true,
         url: publicUrl,
-        replaced: didReplace,
+        replaced: outcome.replaced,
         warning:
           'Document uploaded but application metadata update failed. Please update manually.',
       });
@@ -475,31 +587,14 @@ export async function POST(
   }
 
   // --- Audit log ---
-  await logAction({
-    service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
-    action: 'pfile.upload',
-    entityType: 'enrolment_document',
-    entityId: enroleeNumber,
-    context: {
-      slotKey,
-      label: slot.label,
-      fileCount: files.length,
-      merged: files.length > 1,
-      replaced: didReplace,
-      expiryDate: expiryDate ?? undefined,
-      ...(note ? { note } : {}),
-      ...(slot.meta?.kind === 'passport' ? { passportNumber } : {}),
-      ...(slot.meta?.kind === 'pass' ? { passType } : {}),
-    },
-  });
+  await logUpload(null);
 
   revalidateTag(`sis:${ayCode}`, 'max');
   invalidateDrillTags('p-files', ayCode);
 
-  return NextResponse.json({ ok: true, url: publicUrl, replaced: didReplace });
+  return NextResponse.json({
+    ok: true,
+    url: publicUrl,
+    replaced: outcome.replaced,
+  });
 }

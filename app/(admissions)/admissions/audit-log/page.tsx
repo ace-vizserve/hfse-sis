@@ -31,6 +31,15 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.stage.update',
   'sis.stp.update',
   'sis.precourse.update',
+  // lib/audit/modules.ts files discount codes under Admissions, but this list
+  // never carried them, so the page that owns them could not show them.
+  'sis.discount_code.create',
+  'sis.discount_code.update',
+  'sis.discount_code.expire',
+  // Reconciling an applicant's typed level to a real one (the admissions
+  // level-review queue). A re-point of an existing mapping is its own action.
+  'level.alias.create',
+  'level.alias.remap',
   'sis.document.approve',
   'sis.document.reject',
   'sis.documents.auto-expire',

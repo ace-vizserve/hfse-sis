@@ -120,13 +120,41 @@ export function buildAuditRows(
   return rows;
 }
 
+// Returns whether the rows landed. NEVER THROWS.
+//
+// ⚠ IT USED TO THROW, AND EVERY CALLER CALLS IT AFTER THE GRADE IS SAVED. A
+// failed insert here therefore aborted the route with a 500 over a change that
+// had already happened — skipping the `audit_log` rows that follow it, and on
+// an applied change request the email that tells the teacher. So one missing
+// record became three, and the person saving was told nothing was saved.
+//
+// Now the failure is reported loudly and handed back; callers mark their
+// `audit_log` rows with `grade_audit_log_failed: true` so the gap can be found
+// and closed from the rows that did land.
 export async function writeAuditRows(
   service: SupabaseClient,
   rows: ReturnType<typeof buildAuditRows>
-) {
-  if (rows.length === 0) return;
-  const { error } = await service.from('grade_audit_log').insert(rows);
-  if (error) throw new Error(`audit log insert failed: ${error.message}`);
+): Promise<boolean> {
+  if (rows.length === 0) return true;
+  try {
+    const { error } = await service.from('grade_audit_log').insert(rows);
+    if (error) {
+      console.error('[grade-audit] grade_audit_log insert failed', {
+        rows: rows.length,
+        grading_sheet_id: rows[0]?.grading_sheet_id,
+        error: error.message,
+      });
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[grade-audit] grade_audit_log insert threw', {
+      rows: rows.length,
+      grading_sheet_id: rows[0]?.grading_sheet_id,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return false;
+  }
 }
 
 // Helper for sheet-totals changes, which don't live on a grade_entry.

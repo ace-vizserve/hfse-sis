@@ -40,6 +40,8 @@ export type CoverGroup = {
   reliefTeacherName: string;
   startedOn: string | null;
   endedOn: string | null;
+  /** Why cover was booked (migration 164). Null on covers booked before it. */
+  reason: string | null;
   status: ReliefStatus;
   classes: CoverClass[];
   /**
@@ -63,6 +65,7 @@ type Raw = {
   role: AssignmentRole;
   relief_started_on: string | null;
   relief_ended_on: string | null;
+  relief_reason: string | null;
   section: { id: string; name: string; level: { code: string | null } | null };
   subject: { id: string; name: string } | null;
 };
@@ -112,7 +115,7 @@ export async function getCoverBoard(
       .from('teacher_assignments')
       .select(
         `id, teacher_user_id, relief_teacher_user_id, role,
-         relief_started_on, relief_ended_on,
+         relief_started_on, relief_ended_on, relief_reason,
          section:sections!inner(id, name, academic_year_id, level:levels(code)),
          subject:subjects(id, name)`
       )
@@ -189,6 +192,10 @@ export async function getCoverBoard(
 
     const existing = groups.get(key);
     if (existing) {
+      // A booking writes one reason to every class, but a class edited on its
+      // own may carry a different one or none — the group shows the first it
+      // finds rather than splitting one absence into two rows over wording.
+      existing.reason ??= raw.relief_reason;
       existing.classes.push({
         assignmentId: raw.id,
         sectionId: section.id,
@@ -205,6 +212,7 @@ export async function getCoverBoard(
       reliefTeacherName: nameOf(raw.relief_teacher_user_id),
       startedOn: raw.relief_started_on,
       endedOn: raw.relief_ended_on,
+      reason: raw.relief_reason,
       status,
       classes: [{ assignmentId: raw.id, sectionId: section.id, label }],
       endsInDays:

@@ -588,7 +588,52 @@ export function ScoreEntryGrid({
       //     table. The route already writes both in one request, so this rare
       //     save (once per slot, per sheet) keeps using it rather than growing
       //     a second code path to re-do it.
-      const viaRoute = requireApproval || !!slotLabel;
+      //
+      // ⚠ EXCEPT WHEN THIS STUDENT HAS NO ROW YET. The route edits an existing
+      // entry by id, and since migration 156 a student with no marks has no
+      // entry — so the URL went out as `/entries/` with nothing after it,
+      // matched no route, and the first score in a new slot for a new student
+      // failed. On a freshly generated sheet that is every first score. For
+      // that case the description is saved on its own through the labels route
+      // (the same one the Activity Labels panel uses), then the score goes
+      // straight to the table like any other first score.
+      const labelThenUpsert = !!slotLabel && !requireApproval && entryId === '';
+      const viaRoute = requireApproval || (!!slotLabel && !labelThenUpsert);
+
+      if (labelThenUpsert && slotLabel) {
+        const { kind, index, meta } = slotLabel;
+        const labelBody =
+          kind === 'qa'
+            ? { qa: meta.label?.trim() || null }
+            : (() => {
+                const current = labelsRef.current[kind];
+                return {
+                  [kind]: Array.from(
+                    {
+                      length: kind === 'ww' ? wwTotals.length : ptTotals.length,
+                    },
+                    (_, i) =>
+                      i === index
+                        ? meta
+                        : ((current[i] as SlotMeta | null) ?? null)
+                  ),
+                };
+              })();
+        try {
+          await apiFetch(
+            `/api/grading-sheets/${sheetId}/labels`,
+            jsonInit('PATCH', labelBody)
+          );
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : 'Failed to save the activity description.'
+          );
+          revertEntry();
+          return;
+        }
+      }
 
       const payload = viaRoute
         ? {

@@ -34,6 +34,46 @@ export type ApprovalConfigActor = NonNullable<
   Parameters<typeof repointWaitingStages>[2]
 >;
 
+/**
+ * A configuration write COMMITTED, and a later step in the same call failed.
+ *
+ * Every write here is followed by `repointWaitingStages`, which can throw after
+ * the row is already inserted, deleted or updated. A plain Error would reach
+ * the route's catch indistinguishable from "nothing happened", and the route
+ * would return a 500 with no audit row for a change that is live. This carries
+ * what was written so the route can record it before failing.
+ */
+export class ApprovalConfigPartialError<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends Error {
+  readonly committed: T;
+  readonly failedStep: string;
+  constructor(message: string, committed: T, failedStep: string) {
+    super(message);
+    this.name = 'ApprovalConfigPartialError';
+    this.committed = committed;
+    this.failedStep = failedStep;
+  }
+}
+
+/** Run the repoint after a committed write, tagging a failure as partial. */
+async function repointAfterCommit<T extends Record<string, unknown>>(
+  service: SupabaseClient,
+  stageId: string,
+  actor: ApprovalConfigActor,
+  committed: T
+): Promise<number> {
+  try {
+    return await repointWaitingStages(service, stageId, actor);
+  } catch (e) {
+    throw new ApprovalConfigPartialError(
+      e instanceof Error ? e.message : String(e),
+      committed,
+      'repoint_waiting_requests'
+    );
+  }
+}
+
 /** The sentence for the one refusal a superadmin can act on. */
 export const EVERYONE_NEEDS_NAMED_PEOPLE = `${APPROVAL_RULE_ALL_NEEDS_NAMED} Who advises a class changes when someone covers it, so on that step any one adviser approves.`;
 
@@ -394,7 +434,10 @@ export async function setStageRule(
     .eq('id', stageId);
   if (writeErr) throw new Error(writeErr.message);
 
-  const repointed = await repointWaitingStages(service, stageId, actor);
+  const repointed = await repointAfterCommit(service, stageId, actor, {
+    previous,
+    rule,
+  });
   return { ok: true, changed: true, previous, repointed };
 }
 
@@ -534,15 +577,17 @@ export async function assignStageApprover(
     throw new Error(error.message);
   }
 
-  const repointed = await repointWaitingStages(
+  const id = (data as unknown as { id: string }).id;
+  const repointed = await repointAfterCommit(
     service,
     input.stageId,
-    input.actor
+    input.actor,
+    { id }
   );
 
   return {
     alreadyAssigned: false,
-    id: (data as unknown as { id: string }).id,
+    id,
     repointed,
   };
 }
@@ -582,7 +627,11 @@ export async function removeStageApprover(
     applies_to_level_type: ApproverLevelScope | null;
   };
 
-  const repointed = await repointWaitingStages(service, row.stage_id, actor);
+  const repointed = await repointAfterCommit(service, row.stage_id, actor, {
+    stageId: row.stage_id,
+    userId: row.user_id,
+    appliesToLevelType: row.applies_to_level_type ?? null,
+  });
 
   return {
     stageId: row.stage_id,

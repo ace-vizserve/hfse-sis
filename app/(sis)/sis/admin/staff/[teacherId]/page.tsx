@@ -425,6 +425,7 @@ function ClassRow({
         reliefTeacherId={row.cover?.reliefTeacherId ?? null}
         reliefStartedOn={row.cover?.startedOn ?? null}
         reliefEndedOn={row.cover?.endedOn ?? null}
+        reliefReason={row.cover?.reason ?? null}
         teacherOptions={reliefOptions}
         canManage={canManageRelief}
       />

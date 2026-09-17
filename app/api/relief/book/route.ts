@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import {
+  buildPreviousReliefContext,
+  classLabel,
+  type PreviousRelief,
+} from '@/lib/audit/assignment-context';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -9,7 +14,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 // POST /api/relief/book — put ONE substitute on EVERY class a teacher holds.
 //
 // Body: { covered_teacher_user_id, relief_teacher_user_id,
-//         relief_started_on?, relief_ended_on? }
+//         relief_started_on?, relief_ended_on?, relief_reason }
+//
+// `relief_reason` is required when a substitute is named (migration 164) and
+// cleared, like the dates, when the cover is ended.
 //
 // WHY A SECOND WRITE PATH EXISTS ALONGSIDE PATCH /api/teacher-assignments/[id].
 // Nobody arranges cover class by class. Leave gets approved and the fact is
@@ -54,6 +62,7 @@ export async function POST(request: NextRequest) {
     relief_teacher_user_id: reliefId,
     relief_started_on: startedOn = null,
     relief_ended_on: endedOn = null,
+    relief_reason: reason = null,
   } = parsed.data;
 
   // null ends the whole absence — every class that teacher holds goes back to
@@ -124,9 +133,17 @@ export async function POST(request: NextRequest) {
 
   // Only this year's classes. A teacher's rows from a closed year are history
   // and must not quietly gain a substitute.
+  //
+  // The class names and the cover each row currently carries come back too,
+  // for the audit row alone: the update below overwrites or clears the cover,
+  // and after it the log is the only place the replaced substitute survives.
   const { data: rows, error: readError } = await service
     .from('teacher_assignments')
-    .select('id, section:sections!inner(academic_year_id)')
+    .select(
+      `id, relief_teacher_user_id, relief_started_on, relief_ended_on, relief_reason,
+       section:sections!inner(academic_year_id, name, level:levels(code)),
+       subject:subjects(code)`
+    )
     .eq('teacher_user_id', coveredId)
     .eq('section.academic_year_id', ayId);
 
@@ -134,10 +151,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: readError.message }, { status: 400 });
   }
 
-  // `section_id` came back here too, purely to build the per-class `done` list
-  // the serial loop reported on. The join stays — it is what scopes the read to
-  // this academic year — but the column is gone with the loop.
-  const assignments = (rows ?? []) as unknown as Array<{ id: string }>;
+  type One<T> = T | T[] | null;
+  const one = <T>(v: One<T>): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : v;
+  const assignments = (rows ?? []) as unknown as Array<
+    PreviousRelief & {
+      id: string;
+      section: One<{
+        name: string | null;
+        level: One<{ code: string | null }>;
+      }>;
+      // CODE, not name: a code is the subject's identity and never changes
+      // with a per-year rename (migration 137).
+      subject: One<{ code: string | null }>;
+    }
+  >;
 
   if (assignments.length === 0) {
     return NextResponse.json(
@@ -164,6 +192,7 @@ export async function POST(request: NextRequest) {
       // waiting to mean something.
       relief_started_on: ending ? null : startedOn,
       relief_ended_on: ending ? null : endedOn,
+      relief_reason: ending ? null : reason,
     })
     .in('id', assignmentIds);
 
@@ -182,6 +211,53 @@ export async function POST(request: NextRequest) {
   // Marrie's classes this week"; N rows saying the same thing with different
   // ids would make the log harder to read, not more complete — and each row's
   // own id is in the context.
+  //
+  // Names are resolved best-effort: a failed staff lookup degrades to the ids,
+  // never fails a booking that has already been written.
+  const nameById = await import('@/lib/auth/staff-list')
+    .then(async (m) => new Map(await m.getStaffDisplayNameById()))
+    .catch(() => new Map<string, string>());
+
+  const labelOf = (a: (typeof assignments)[number]) => {
+    const section = one(a.section);
+    return classLabel(
+      section?.name,
+      one(section?.level ?? null)?.code,
+      one(a.subject)?.code
+    );
+  };
+  const classLabels = assignments.map(labelOf).filter((l): l is string => !!l);
+
+  // What each class was covered by BEFORE this write. Usually every class
+  // carries the same earlier booking (or none), so the flat previous_* keys
+  // describe it when there is exactly one; `previous_covers` keeps the
+  // per-class detail whenever any class had cover.
+  const previousCovers: Array<Record<string, unknown>> = await Promise.all(
+    assignments
+      .filter((a) => a.relief_teacher_user_id)
+      .map(async (a) => ({
+        assignment_id: a.id,
+        class_label: labelOf(a),
+        ...(await buildPreviousReliefContext(a, nameById)),
+      }))
+  );
+  const distinctPrevious = new Set(
+    previousCovers.map((p) =>
+      JSON.stringify([
+        p.previous_relief_teacher_user_id,
+        p.previous_relief_started_on,
+        p.previous_relief_ended_on,
+        p.previous_relief_reason,
+      ])
+    )
+  );
+  let flatPrevious: Record<string, unknown> = {};
+  if (distinctPrevious.size === 1) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { assignment_id, class_label, ...rest } = previousCovers[0];
+    flatPrevious = rest;
+  }
+
   await logAction({
     service,
     actor: {
@@ -195,11 +271,22 @@ export async function POST(request: NextRequest) {
     context: {
       bulk: true,
       covered_teacher_user_id: coveredId,
+      covered_teacher_name: nameById.get(coveredId) ?? null,
       relief_teacher_user_id: reliefId,
+      relief_teacher_name: reliefId ? (nameById.get(reliefId) ?? null) : null,
       relief_started_on: ending ? null : startedOn,
       relief_ended_on: ending ? null : endedOn,
+      relief_reason: ending ? null : reason,
       assignment_ids: assignmentIds,
+      class_labels: classLabels,
       classes_covered: assignmentIds.length,
+      ...flatPrevious,
+      ...(previousCovers.length > 0
+        ? {
+            previous_covers: previousCovers,
+            classes_previously_covered: previousCovers.length,
+          }
+        : {}),
     },
   });
 

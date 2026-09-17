@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 
@@ -39,7 +40,11 @@ export async function POST(
   // is deliberate and audit-logged.
   const { data: sheetTermRow } = await service
     .from('grading_sheets')
-    .select('is_locked, term:terms(grading_lock_date, label)')
+    // `locked_at` / `locked_by` are read HERE, before the update clears them,
+    // because afterwards nothing anywhere says who had locked the sheet.
+    .select(
+      'is_locked, locked_at, locked_by, term:terms(grading_lock_date, label)'
+    )
     .eq('id', id)
     .maybeSingle();
 
@@ -138,12 +143,23 @@ export async function POST(
     action: unlockAction,
     entityType: 'grading_sheet',
     entityId: id,
-    context:
-      force && deadlinePassed
+    context: {
+      ...(await loadOneSheetAuditLabels(service, id)),
+      // Who had locked it and when — cleared by the update above, so this row
+      // is the only place that survives. `system:grading-deadline` here means
+      // the nightly deadline sweep had locked it.
+      previously_locked_at:
+        (sheetTermRow as { locked_at?: string | null } | null)?.locked_at ??
+        null,
+      previously_locked_by:
+        (sheetTermRow as { locked_by?: string | null } | null)?.locked_by ??
+        null,
+      ...(force && deadlinePassed
         ? { lockDate: termMeta?.grading_lock_date, pendingCount: pending }
         : force && pending > 0
           ? { pendingCount: pending }
-          : {},
+          : {}),
+    },
   });
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));

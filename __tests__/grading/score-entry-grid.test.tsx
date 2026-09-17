@@ -451,6 +451,43 @@ describe('ScoreEntryGrid — first-score label gate', () => {
     });
   });
 
+  // A student with no grade row yet has no entry id (migration 156). Sending
+  // the route `/entries/` with nothing after it matched no route, so on a new
+  // sheet every first score in a new slot failed. The description now goes to
+  // the labels route and the score straight to the table.
+  it('a student with no row yet: description saved via the labels route, score upserted directly', async () => {
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    const { container } = renderGrid({
+      rows: [alice({ entry_id: '' }), bob({ entry_id: '' })],
+    });
+
+    const [aliceWw] = scoreInputs(container);
+    await typeAndBlur(aliceWw, '8');
+    await screen.findByRole('dialog');
+    await fillDescriptionAndSave('Worksheet 1');
+    await markOngoing();
+    await clickSave();
+
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('/api/grading-sheets/sheet-1/labels');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      ww: [{ label: 'Worksheet 1', date: 'Ongoing', page: '' }],
+    });
+    expect(updateCalls[0].payload).toEqual({
+      grading_sheet_id: 'sheet-1',
+      section_student_id: 'ss1',
+      ww_scores: [8],
+    });
+    // No call ever went to an entries URL with an empty id.
+    expect(
+      fetchSpy.mock.calls.some(([u]) => String(u).includes('/entries/'))
+    ).toBe(false);
+  });
+
   it('QA slot: same first-score gate, description-only dialog', async () => {
     const fetchSpy = stubFetch(() =>
       Promise.resolve(okEntryResponse({ qa_score: 25 }))

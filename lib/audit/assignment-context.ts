@@ -144,3 +144,56 @@ export async function buildReliefAuditContext(
 
   return base;
 }
+
+/** The cover a row held BEFORE a relief write overwrote or cleared it. */
+export type PreviousRelief = {
+  relief_teacher_user_id: string | null;
+  relief_started_on: string | null;
+  relief_ended_on: string | null;
+  relief_reason: string | null;
+};
+
+/**
+ * Flat `previous_relief_*` keys describing the cover a relief write replaced or
+ * ended. The assignment row keeps nothing once cover is overwritten, so without
+ * these a "cover ended" entry could not say whose cover it was, and a
+ * re-booking would silently erase the substitute it replaced.
+ *
+ * Returns `{}` when the row carried no cover. `nameById` may be passed to reuse
+ * an already-loaded staff map. Never throws.
+ */
+export async function buildPreviousReliefContext(
+  previous: PreviousRelief | null,
+  nameById?: Map<string, string>
+): Promise<Record<string, unknown>> {
+  if (!previous?.relief_teacher_user_id) return {};
+  const out: Record<string, unknown> = {
+    previous_relief_teacher_user_id: previous.relief_teacher_user_id,
+    previous_relief_started_on: previous.relief_started_on ?? null,
+    previous_relief_ended_on: previous.relief_ended_on ?? null,
+    previous_relief_reason: previous.relief_reason ?? null,
+  };
+  try {
+    const names =
+      nameById ??
+      new Map(
+        await (await import('@/lib/auth/staff-list')).getStaffDisplayNameById()
+      );
+    const name = names.get(previous.relief_teacher_user_id);
+    if (name) out.previous_relief_teacher_name = name;
+  } catch {
+    // Best-effort — the id is recorded.
+  }
+  return out;
+}
+
+/** "P4 Diligence" / "P4 Diligence · Mathematics" — the way staff name a class. */
+export function classLabel(
+  sectionName: string | null | undefined,
+  levelCode: string | null | undefined,
+  subjectName?: string | null
+): string | null {
+  if (!sectionName) return null;
+  const section = levelCode ? `${levelCode} ${sectionName}` : sectionName;
+  return subjectName ? `${section} · ${subjectName}` : section;
+}

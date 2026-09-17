@@ -148,11 +148,12 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/(markbook)/markbook/sections/page.tsx': ['act', 'name'],
 
   // ── evaluation (substantive only, no DB backstop) ───────────────────────
-  // The two `of_record` members, and the ONLY evaluation surfaces that keep
-  // the `form_adviser` literal: everything beside them widened to
-  // ADVISER_ROLES so a co-adviser can READ their own class's write-ups, and
-  // these did not, so they cannot write them.
-  'app/api/evaluation/writeups/route.ts': ['evaluation', 'of_record'],
+  // The `of_record` member, and the ONLY evaluation surface that keeps the
+  // `form_adviser` literal: everything beside it widened to ADVISER_ROLES so a
+  // co-adviser can READ their own class's write-ups, and this did not, so they
+  // cannot write them. (`app/api/evaluation/writeups/route.ts` was the second
+  // member until 2026-09-17, when it became a 410 stub — saves go through
+  // supabase-js and migration 150's RLS, and it no longer reads assignments.)
   // The write scope itself, extracted from lib/evaluation/queries.ts where it
   // sat four lines from its read-scope twin — one `.eq` against the other's
   // `.in`, which is a difference a sweep deletes by accident.
@@ -220,6 +221,11 @@ const CLASSIFIED: Record<string, Category[]> = {
   'app/api/teacher-assignments/route.ts': ['crud'],
   // Also the cover switch — PATCH sets and clears relief_teacher_user_id.
   'app/api/teacher-assignments/[id]/route.ts': ['crud'],
+  // Both read assignments only to RECORD them in an audit row — the section
+  // delete names the assignments its cascade removes, the year copy names the
+  // ones the RPC created. Neither decides access nor prints a name of record.
+  'app/api/sections/[id]/route.ts': ['crud'],
+  'app/api/sis/ay-setup/copy-teacher-assignments/route.ts': ['crud'],
 
   // ── self-profile ────────────────────────────────────────────────────────
   // "Your sections" on /account — the viewer's own list, not a gate and not a

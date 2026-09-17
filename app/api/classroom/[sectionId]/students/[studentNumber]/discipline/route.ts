@@ -6,6 +6,7 @@ import type { Role } from '@/lib/auth/roles';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadRoster } from '@/lib/classroom/scope';
+import { disciplineFileAuditContext } from '@/lib/discipline/audit';
 import { createDisciplineRecord } from '@/lib/discipline/mutations';
 import { listDisciplineForStudent } from '@/lib/discipline/queries';
 import { DisciplineRecordSchema } from '@/lib/schemas/discipline';
@@ -204,7 +205,9 @@ export async function POST(
     // answer that cannot disagree with the section the record is filed under.
     const { data: section, error: sectionError } = await service
       .from('sections')
-      .select('academic_year_id, academic_year:academic_years(ay_code)')
+      .select(
+        'name, academic_year_id, academic_year:academic_years(ay_code), level:levels(label)'
+      )
       .eq('id', sectionId)
       .maybeSingle();
     if (sectionError) throw new Error(`sections: ${sectionError.message}`);
@@ -212,12 +215,15 @@ export async function POST(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
 
     const row = section as {
+      name: string | null;
       academic_year_id: string;
       academic_year: { ay_code: string } | { ay_code: string }[] | null;
+      level: { label: string | null } | { label: string | null }[] | null;
     };
     const ayRel = row.academic_year;
     const ayCode =
       (Array.isArray(ayRel) ? ayRel[0]?.ay_code : ayRel?.ay_code) ?? null;
+    const levelRel = Array.isArray(row.level) ? row.level[0] : row.level;
 
     step = 'insert';
     const result = await createDisciplineRecord(
@@ -245,28 +251,20 @@ export async function POST(
       action: 'discipline.record.file',
       entityType: 'student_discipline_record',
       entityId: result.id,
-      context: {
-        studentNumber,
-        student_id: access.studentId,
-        student_name: access.studentName,
-        section_id: sectionId,
-        record_type: parsed.data.record_type,
-        occurred_on: parsed.data.occurred_on,
-        nature: parsed.data.nature,
-        // Whether a link was given, never the link. A SharePoint or Drive URL
-        // routinely carries a sharing token in its query string, and audit_log
-        // is append-only and readable by every coordinator and above — so
-        // logging the value would put a credential somewhere it can never be
-        // taken back out of. Same shape as `ex_note_present` on the attendance
-        // route.
-        document_url_present: Boolean(parsed.data.document_url),
-        // `details` and `remarks` are DELIBERATELY absent. audit_log is
-        // append-only and readable by every coordinator and above, so a
-        // child's behavioural narrative typed in error would be permanent and
-        // widely visible. Same PRIVACY line as attendance `ex_note`
-        // (migration 109) and classroom notes. The record itself is where the
-        // story is read.
-      },
+      // Whether a link was given, never the link (it can carry a sharing
+      // token), and the narrative's length, never its words (migration 120).
+      // See lib/discipline/audit.ts.
+      context: disciplineFileAuditContext(
+        {
+          studentNumber,
+          studentId: access.studentId,
+          studentName: access.studentName,
+          sectionId,
+          sectionName: row.name,
+          levelLabel: levelRel?.label ?? null,
+        },
+        parsed.data
+      ),
     });
 
     // Best-effort, and never a reason to fail a write that already landed.

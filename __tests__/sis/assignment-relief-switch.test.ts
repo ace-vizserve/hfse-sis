@@ -138,7 +138,22 @@ const source = (rel: string) =>
     .filter((line) => !line.trim().startsWith('//'))
     .join('\n');
 
-async function patch(body: unknown): Promise<Response> {
+const REASON = 'Medical leave';
+
+/**
+ * A cover needs a reason since migration 164, so a body naming a substitute
+ * gets one unless the test sends its own — `rawPatch` skips that for the tests
+ * about the reason itself.
+ */
+async function patch(body: Record<string, unknown>): Promise<Response> {
+  const withReason =
+    body.relief_teacher_user_id && !('relief_reason' in body)
+      ? { ...body, relief_reason: REASON }
+      : body;
+  return rawPatch(withReason);
+}
+
+async function rawPatch(body: unknown): Promise<Response> {
   const res = await PATCH(
     new Request(`http://localhost/api/teacher-assignments/${ASSIGNMENT}`, {
       method: 'PATCH',
@@ -180,8 +195,24 @@ describe('putting someone on cover', () => {
         relief_teacher_user_id: TEACHER_B,
         relief_started_on: null,
         relief_ended_on: null,
+        relief_reason: REASON,
       },
     ]);
+  });
+
+  it('refuses a cover with no reason', async () => {
+    // Mr Ace, 2026-09-17: the reason "should be required" (migration 164).
+    for (const body of [
+      { relief_teacher_user_id: TEACHER_B },
+      { relief_teacher_user_id: TEACHER_B, relief_reason: '   ' },
+    ]) {
+      const res = await rawPatch(body);
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toEqual({
+        error: 'Say why cover is needed.',
+      });
+    }
+    expect(updateCalls).toEqual([]);
   });
 
   it('gates on staff.manage_relief, not staff.edit_assignments', async () => {
@@ -218,6 +249,7 @@ describe('putting someone on cover', () => {
         relief_teacher_user_id: TEACHING_ADMIN,
         relief_started_on: null,
         relief_ended_on: null,
+        relief_reason: REASON,
       },
     ]);
   });
@@ -269,6 +301,7 @@ describe('taking someone off cover', () => {
         relief_teacher_user_id: null,
         relief_started_on: null,
         relief_ended_on: null,
+        relief_reason: null,
       },
     ]);
   });
@@ -277,7 +310,7 @@ describe('taking someone off cover', () => {
     // `null` is a real value here, not an absence. Treating a missing key as
     // "end the cover" would let an empty or malformed body silently revoke a
     // substitute's access.
-    const res = await patch({});
+    const res = await rawPatch({});
 
     expect(res.status).toBe(400);
     expect(updateCalls).toEqual([]);
@@ -351,6 +384,7 @@ describe('the cover window (migration 123)', () => {
         relief_teacher_user_id: TEACHER_B,
         relief_started_on: '2026-09-01',
         relief_ended_on: '2026-09-05',
+        relief_reason: REASON,
       },
     ]);
   });
@@ -412,6 +446,7 @@ describe('the cover window (migration 123)', () => {
       relief_teacher_user_id: null,
       relief_started_on: null,
       relief_ended_on: null,
+      relief_reason: null,
     });
   });
 
@@ -444,6 +479,7 @@ describe('the cover window (migration 123)', () => {
     expect(context).toMatchObject({
       relief_started_on: '2026-09-01',
       relief_ended_on: '2026-09-05',
+      relief_reason: REASON,
     });
   });
 });

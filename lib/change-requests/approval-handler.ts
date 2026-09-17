@@ -133,9 +133,16 @@ export const gradeChangeApprovalHandler: SubjectHandler = async (
   // (`buildGradeChangeProjectionPatch`).
   const closedByStepEdit = ctx.via === 'repoint';
   let row: GradeChangeRow | null = null;
+  // ⚠ A FAILED PROJECTION IS STILL AUDITED. `approval_advance` has already
+  // committed this decision before the handler runs, so returning early here
+  // used to leave a decided step with no audit row at all — the one decision
+  // an administrator would then have to repair had no record of who made it.
+  // The failure is noted, the audit row below is written with
+  // `projection_failed: true`, and only then is the failure answered.
+  let projectionFailure: string | null = null;
   if (outcome === 'completed' || outcome === 'rejected') {
     const targetStatus = outcome === 'completed' ? 'approved' : 'rejected';
-    let patch: Record<string, unknown>;
+    let patch: Record<string, unknown> | null = null;
     if (closedByStepEdit) {
       const built = await buildGradeChangeProjectionPatch(
         service,
@@ -148,13 +155,10 @@ export const gradeChangeApprovalHandler: SubjectHandler = async (
           subjectId,
           built.message
         );
-        return {
-          ok: false,
-          status: 500,
-          body: { error: GRADE_CHANGE_PROJECTION_FAILED, outcome },
-        };
+        projectionFailure = built.message;
+      } else {
+        patch = built.patch;
       }
-      patch = built.patch;
     } else {
       patch = {
         status: targetStatus,
@@ -166,38 +170,50 @@ export const gradeChangeApprovalHandler: SubjectHandler = async (
       else patch.decision_note = note;
     }
 
-    const { data, error } = await service
-      .from('grade_change_requests')
-      .update(patch)
-      .eq('id', subjectId)
-      .eq('status', 'pending')
-      .select(ROW_COLUMNS)
-      .maybeSingle();
+    if (patch) {
+      const { data, error } = await service
+        .from('grade_change_requests')
+        .update(patch)
+        .eq('id', subjectId)
+        .eq('status', 'pending')
+        .select(ROW_COLUMNS)
+        .maybeSingle();
 
-    let projected = (data ?? null) as unknown as GradeChangeRow | null;
-    if (!error && !projected) {
+      let projected = (data ?? null) as unknown as GradeChangeRow | null;
+      if (!error && !projected) {
+        const { data: current } = await service
+          .from('grade_change_requests')
+          .select(`${ROW_COLUMNS}, status`)
+          .eq('id', subjectId)
+          .maybeSingle();
+        const already = current as
+          | (GradeChangeRow & { status?: string })
+          | null;
+        if (already?.status === targetStatus) projected = already;
+      }
+
+      if (error || !projected) {
+        console.error(
+          '[approvals] grade change status projection failed:',
+          subjectId,
+          error?.message ?? 'no pending row to update'
+        );
+        projectionFailure = error?.message ?? 'no pending row to update';
+      } else {
+        row = projected;
+      }
+    }
+
+    // Still describe the request on the audit row when its status did not
+    // move — a read, not a write, so it cannot make anything worse.
+    if (projectionFailure) {
       const { data: current } = await service
         .from('grade_change_requests')
-        .select(`${ROW_COLUMNS}, status`)
+        .select(ROW_COLUMNS)
         .eq('id', subjectId)
         .maybeSingle();
-      const already = current as (GradeChangeRow & { status?: string }) | null;
-      if (already?.status === targetStatus) projected = already;
+      row = (current ?? null) as GradeChangeRow | null;
     }
-
-    if (error || !projected) {
-      console.error(
-        '[approvals] grade change status projection failed:',
-        subjectId,
-        error?.message ?? 'no pending row to update'
-      );
-      return {
-        ok: false,
-        status: 500,
-        body: { error: GRADE_CHANGE_PROJECTION_FAILED, outcome },
-      };
-    }
-    row = projected;
   } else {
     const { data } = await service
       .from('grade_change_requests')
@@ -247,8 +263,26 @@ export const gradeChangeApprovalHandler: SubjectHandler = async (
               ctx.closedStepApprover?.email ?? row?.reviewed_by_email ?? null,
           }
         : {}),
+      ...(projectionFailure
+        ? {
+            partial: true,
+            projection_failed: true,
+            error: projectionFailure,
+          }
+        : {}),
     },
   });
+
+  // The decision is recorded and audited; the teacher's copy is not in line
+  // with it. No emails — they would announce a status the request does not
+  // show — and the approver is told plainly.
+  if (projectionFailure) {
+    return {
+      ok: false,
+      status: 500,
+      body: { error: GRADE_CHANGE_PROJECTION_FAILED, outcome },
+    };
+  }
 
   // The same tag the legacy decision path busts — the change-request queue,
   // the sheet's open-requests banner and the markbook drill cards read it.

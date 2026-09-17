@@ -31,6 +31,8 @@ export type CoverSummary = {
   startedOn: string | null;
   /** Last day, inclusive; null means open-ended. */
   endedOn: string | null;
+  /** Why cover was booked; null on covers booked before migration 164. */
+  reason: string | null;
 };
 
 export type TeacherClassRow = {
@@ -107,7 +109,7 @@ export async function loadTeacherDetail(
     .from('teacher_assignments')
     .select(
       `id, role, subject_id, relief_teacher_user_id,
-       relief_started_on, relief_ended_on,
+       relief_started_on, relief_ended_on, relief_reason,
        section:sections!inner(id, name, academic_year_id, level:levels(code, label)),
        subject:subjects(id, name)`
     )
@@ -121,6 +123,7 @@ export async function loadTeacherDetail(
     relief_teacher_user_id: string | null;
     relief_started_on: string | null;
     relief_ended_on: string | null;
+    relief_reason?: string | null;
     section:
       | { id: string; name: string; level: LevelLite | LevelLite[] | null }
       | Array<{
@@ -171,6 +174,7 @@ export async function loadTeacherDetail(
               nameById.get(a.relief_teacher_user_id) ?? 'Unknown teacher',
             startedOn: a.relief_started_on,
             endedOn: a.relief_ended_on,
+            reason: a.relief_reason ?? null,
           }
         : null,
     };

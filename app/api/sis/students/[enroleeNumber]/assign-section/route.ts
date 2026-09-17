@@ -10,6 +10,7 @@ import { validateSectionChoice } from '@/lib/sis/class-assignment';
 import {
   completePlacement,
   type MidTermPayload,
+  type PlacementCompletion,
 } from '@/lib/sis/placement-completion';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -286,6 +287,43 @@ export async function POST(
       }
     }
     const baseReason = syncResult.reason ?? syncResult.error ?? 'unknown error';
+    // Only a FAILED rollback leaves something committed: the admissions row
+    // now names a class the roster does not have. That is a half-written
+    // placement nobody would otherwise find, so it is audited. A clean
+    // rollback (or a resync that never wrote) leaves nothing to record.
+    if (rollbackFailed) {
+      await logAction({
+        service,
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
+        action: 'sis.student.assign_section',
+        entityType: 'enrolment_status',
+        entityId: enroleeNumber,
+        context: {
+          ay_code: ayCode,
+          enroleeNumber,
+          studentNumber: appsRow.studentNumber,
+          enroleeFullName: appsRow.enroleeFullName,
+          sectionId: section.id,
+          sectionName: section.name,
+          levelLabel: section.levelLabel,
+          partial: true,
+          committed: ['admissions_class_assignment'],
+          failed_step: 'roster_sync',
+          sync_error: baseReason,
+          rollback_failed: true,
+          // What the admissions row held before, so it can be put back by hand.
+          admissions_before: {
+            classSection: statusRow.classSection,
+            classLevel: statusRow.classLevel,
+            classStatus: statusRow.classStatus,
+          },
+        },
+      });
+    }
     const tail = resyncOnly
       ? ' The admissions record was not changed.'
       : rollbackFailed
@@ -310,19 +348,18 @@ export async function POST(
   // best-effort by contract. Before the audit, so the audit row records what
   // actually happened.
   let midTermEnrolment: MidTermPayload | null = null;
-  let enrollmentDateStamped = false;
+  let placement: PlacementCompletion | null = null;
   if (
     syncResult.change === 'enrolled' ||
     syncResult.change === 'inserted' ||
     syncResult.change === 'reactivated'
   ) {
-    const placement = await completePlacement(service, {
+    placement = await completePlacement(service, {
       enroleeNumber,
       ayCode,
       sectionId: section.id,
     });
     midTermEnrolment = placement.midTermEnrolment;
-    enrollmentDateStamped = placement.enrollmentDateStamped;
   }
 
   // ── 6. Step C — audit ────────────────────────────────────────────────
@@ -346,7 +383,14 @@ export async function POST(
       levelLabel: section.levelLabel,
       assignedBy: actorEmail,
       syncChange: syncResult.change,
-      enrollmentDateStamped,
+      section_student_id: placement?.sectionStudentId ?? null,
+      index_number: placement?.indexNumber ?? null,
+      enrollmentDateStamped: placement?.enrollmentDateStamped ?? false,
+      // The start date is overwritten with today on placement — on a
+      // reactivated row that replaces the earlier spell's date, so both sides
+      // are kept here.
+      enrollment_date_before: placement?.enrollmentDateBefore ?? null,
+      enrollment_date_after: placement?.enrollmentDateAfter ?? null,
       lateEnrolleeCandidate: midTermEnrolment?.termLabel ?? null,
     },
   });

@@ -6,10 +6,12 @@ import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   APPROVAL_RULE_LABELS,
+  STAGED_FLOW_LABELS,
   UpdateApprovalStageSchema,
   type ApprovalRule,
 } from '@/lib/schemas/approval-flows';
 import {
+  ApprovalConfigPartialError,
   EVERYONE_NEEDS_NAMED_PEOPLE,
   deactivateStage,
   moveStage,
@@ -95,26 +97,79 @@ export async function PATCH(
     role: auth.role,
   };
 
+  // What has COMMITTED so far. Rename, move and rule are separate writes, so a
+  // later one failing (or refusing on a race) must not erase the record of an
+  // earlier one — the 500 or 4xx below still logs whatever is already live.
+  let renamed = false;
+  let moveDone = false;
+  let moved = true;
+  let rule: {
+    changed: boolean;
+    previous: ApprovalRule;
+    repointed: number | null;
+  } | null = null;
+
+  const baseContext = () => ({
+    flow: existing.flow,
+    flow_label:
+      STAGED_FLOW_LABELS[existing.flow as keyof typeof STAGED_FLOW_LABELS] ??
+      existing.flow,
+    stage_label: existing.label,
+    stage_order: existing.stage_order,
+    ...(renamed && parsed.data.label !== undefined
+      ? { previous_label: existing.label, new_label: parsed.data.label }
+      : {}),
+    ...(moveDone && parsed.data.move ? { move: parsed.data.move, moved } : {}),
+    ...(rule && nextRule !== undefined
+      ? {
+          approval_rule: nextRule,
+          previous_approval_rule: rule.previous,
+          // How many requests already waiting on this step were brought in
+          // line — the same key the approver routes log. null when the
+          // rule was saved but bringing them in line failed.
+          repointed_waiting: rule.repointed,
+        }
+      : {}),
+  });
+
+  const logPartial = async (failedStep: string, error: string) => {
+    if (!renamed && !(moveDone && moved) && !(rule && rule.changed)) return;
+    await logAction({
+      service,
+      actor,
+      action: 'approval_stage.update',
+      entityType: 'approval_stage',
+      entityId: id,
+      context: {
+        ...baseContext(),
+        partial: true,
+        failed_step: failedStep,
+        error,
+      },
+    });
+    revalidateTag('sis-health', 'max');
+  };
+
+  let step = 'rename';
   try {
     if (parsed.data.label !== undefined) {
       await renameStage(service, id, parsed.data.label);
+      renamed = true;
     }
-    let moved = true;
+    step = 'move';
     if (parsed.data.move) {
       const result = await moveStage(service, id, parsed.data.move);
       moved = result.moved;
+      moveDone = true;
     }
 
-    let rule: {
-      changed: boolean;
-      previous: ApprovalRule;
-      repointed: number;
-    } | null = null;
+    step = 'approval_rule';
     if (nextRule !== undefined) {
       const result = await setStageRule(service, id, nextRule, actor);
       if (!result.ok) {
         // Both are races with the read above — the step was retired, or its
         // kind changed, between the two. Say what the screen can act on.
+        await logPartial('approval_rule', result.reason);
         return result.reason === 'needs_named_people'
           ? NextResponse.json(
               { error: EVERYONE_NEEDS_NAMED_PEOPLE },
@@ -134,23 +189,7 @@ export async function PATCH(
       action: 'approval_stage.update',
       entityType: 'approval_stage',
       entityId: id,
-      context: {
-        flow: existing.flow,
-        stage_label: existing.label,
-        ...(parsed.data.label !== undefined
-          ? { new_label: parsed.data.label }
-          : {}),
-        ...(parsed.data.move ? { move: parsed.data.move, moved } : {}),
-        ...(rule && nextRule !== undefined
-          ? {
-              approval_rule: nextRule,
-              previous_approval_rule: rule.previous,
-              // How many requests already waiting on this step were brought in
-              // line — the same key the approver routes log.
-              repointed_waiting: rule.repointed,
-            }
-          : {}),
-      },
+      context: baseContext(),
     });
 
     // A rename, a move or a rule change alters the steps `getSystemHealth`
@@ -171,13 +210,29 @@ export async function PATCH(
               existing.label,
               nextRule,
               rule.changed,
-              rule.repointed
+              rule.repointed ?? 0
             )
           : 'Saved.',
     });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[approval-stages] update failed:', reason);
+    if (
+      e instanceof ApprovalConfigPartialError &&
+      step === 'approval_rule' &&
+      nextRule !== undefined
+    ) {
+      // The rule itself was saved; only bringing waiting requests in line
+      // failed.
+      rule = {
+        changed: true,
+        previous: (e.committed as { previous: ApprovalRule }).previous,
+        repointed: null,
+      };
+      await logPartial(e.failedStep, reason);
+    } else {
+      await logPartial(step, reason);
+    }
     return NextResponse.json(
       { error: 'Could not change that step. Please try again.' },
       { status: 500 }

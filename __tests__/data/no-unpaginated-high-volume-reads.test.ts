@@ -85,7 +85,18 @@ const ALLOWED: Record<string, { rows: number; measured: string; why: string }> =
       why: 'grade_entries of ONE sheet (worst sheet 36 of 21,280 total) to pick each student’s approval route; audit_log publication.create/delete rows for ONE student’s sections this AY (worst section 10, 54 total)',
     },
 
+    'lib/grading/sheet-audit-labels.ts': {
+      rows: 200,
+      measured: '2026-09-17',
+      why: 'grade_entries by id for audit labels, read in `.in()` chunks of CHUNK=200 ids — each query returns at most 200 rows by construction, whatever the caller passes',
+    },
+
     // ── one student's own history ──────────────────────────────────────────
+    'lib/declarations/register.ts': {
+      rows: 274,
+      measured: '2026-08-10',
+      why: "attendance_daily for ONE student filtered to ONE filing's dates (a few weeks); bounded above by the worst student's whole-AY count measured for lib/attendance/queries.ts",
+    },
     'lib/attendance/queries.ts': {
       rows: 274,
       measured: '2026-08-10',

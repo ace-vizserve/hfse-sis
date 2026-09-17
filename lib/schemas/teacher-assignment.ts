@@ -136,7 +136,8 @@ const requiredId = (message: string) =>
  * makes "end the cover" explicit rather than something an empty body could do
  * by accident.
  *
- * No reason and no notes — the audit log records who changed it and when.
+ * A REASON IS REQUIRED to start or change a cover (migration 164), and is
+ * ignored when ending one — see `reliefReasonRule` below.
  *
  * DATES ARE OPTIONAL, and both nulls are meaningful (migration 123):
  *   start null → live from whenever it was set (the original one-step flow);
@@ -154,6 +155,48 @@ const optionalReliefDate = z
   .nullable()
   .optional();
 
+export const RELIEF_REASON_MAX = 200;
+
+/**
+ * Why the cover was booked — free text, one line (migration 164).
+ *
+ * Blank and omitted both parse to null so the rule below has one thing to test.
+ * Mr Ace, 2026-09-17: "we dont add remarks or reason why the booking is
+ * happening should be required".
+ */
+const optionalReliefReason = z
+  .string()
+  .trim()
+  .max(
+    RELIEF_REASON_MAX,
+    `Keep the reason under ${RELIEF_REASON_MAX} characters.`
+  )
+  .transform((s) => (s.length === 0 ? null : s))
+  .nullable()
+  .optional();
+
+/**
+ * Required when a substitute is named. Ignored when the cover is being
+ * ended, because ending clears the reason along with the name and the dates.
+ * Shared by both bodies so the per-class and whole-absence paths cannot
+ * disagree about it.
+ */
+function reliefReasonRule(
+  val: {
+    relief_teacher_user_id: string | null;
+    relief_reason?: string | null;
+  },
+  ctx: z.RefinementCtx
+) {
+  if (val.relief_teacher_user_id !== null && !val.relief_reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['relief_reason'],
+      message: 'Say why cover is needed.',
+    });
+  }
+}
+
 export const AssignmentReliefSchema = z
   .object({
     relief_teacher_user_id: z
@@ -162,8 +205,11 @@ export const AssignmentReliefSchema = z
       .nullable(),
     relief_started_on: optionalReliefDate,
     relief_ended_on: optionalReliefDate,
+    relief_reason: optionalReliefReason,
   })
   .superRefine((val, ctx) => {
+    reliefReasonRule(val, ctx);
+
     // Mirrors `teacher_assignments_relief_dates_ordered` (migration 123). Said
     // here too so the answer arrives as a sentence rather than a constraint
     // name, and before anything is written.
@@ -217,8 +263,10 @@ export const ReliefBookingSchema = z
       .nullable(),
     relief_started_on: optionalReliefDate,
     relief_ended_on: optionalReliefDate,
+    relief_reason: optionalReliefReason,
   })
   .superRefine((val, ctx) => {
+    reliefReasonRule(val, ctx);
     if (
       val.relief_started_on &&
       val.relief_ended_on &&

@@ -21,13 +21,54 @@ vi.mock('@/lib/auth/require-role', () => ({
   ),
 }));
 
+const logAction = vi.fn((_args: Record<string, unknown>) => Promise.resolve());
+const logActions = vi.fn(
+  (_service: unknown, _actor: unknown, _rows: Array<Record<string, unknown>>) =>
+    Promise.resolve()
+);
 vi.mock('@/lib/audit/log-action', () => ({
-  logAction: vi.fn(() => Promise.resolve()),
+  logAction: (args: Record<string, unknown>) => logAction(args),
+  logActions: (
+    service: unknown,
+    actor: unknown,
+    rows: Array<Record<string, unknown>>
+  ) => logActions(service, actor, rows),
 }));
 
-vi.mock('@/lib/audit/log-grade-change', () => ({
-  buildTotalsAuditRows: vi.fn(() => []),
-  writeAuditRows: vi.fn(() => Promise.resolve()),
+// The REAL diff builder, so the tests below see real totals rows; only the
+// grade_audit_log insert is stubbed.
+const writeAuditRows = vi.fn((_s: unknown, _rows: unknown[]) =>
+  Promise.resolve(true)
+);
+vi.mock('@/lib/audit/log-grade-change', async () => {
+  const real = await vi.importActual<
+    typeof import('@/lib/audit/log-grade-change')
+  >('@/lib/audit/log-grade-change');
+  return {
+    buildTotalsAuditRows: real.buildTotalsAuditRows,
+    writeAuditRows: (s: unknown, rows: unknown[]) => writeAuditRows(s, rows),
+  };
+});
+
+vi.mock('@/lib/grading/sheet-audit-labels', () => ({
+  loadOneSheetAuditLabels: vi.fn(() =>
+    Promise.resolve({
+      subject_name: 'Maths',
+      section_name: 'Diamond',
+      level_label: 'Primary 5',
+      term_label: 'Term 2',
+    })
+  ),
+  loadEntryStudentLabels: vi.fn((_s: unknown, ids: string[]) =>
+    Promise.resolve(
+      new Map(
+        ids.map((id) => [
+          id,
+          { student_number: `S-${id}`, student_name: `Student ${id}` },
+        ])
+      )
+    )
+  ),
 }));
 
 vi.mock('@/lib/cache/invalidate-drill-tags', () => ({
@@ -46,6 +87,8 @@ let sheetRow: SbRow;
 let entryRows: SbRow[];
 let sheetPatches: SbRow[];
 let entryPatches: Array<{ id: string; patch: SbRow }>;
+/** Entry ids whose UPDATE should fail, to stage a half-finished recompute. */
+let failingEntryIds: Set<string>;
 
 function buildService() {
   return {
@@ -72,6 +115,8 @@ function buildService() {
           }),
           update: (patch: SbRow) => ({
             eq: (_col: string, id: string) => {
+              if (failingEntryIds.has(id))
+                return Promise.resolve({ error: { message: 'boom' } });
               entryPatches.push({ id, patch });
               return Promise.resolve({ error: null });
             },
@@ -97,8 +142,10 @@ const params = Promise.resolve({ id: SHEET_ID });
 
 describe('totals route — recompute on a denominator change', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     sheetPatches = [];
     entryPatches = [];
+    failingEntryIds = new Set();
     sheetRow = {
       id: SHEET_ID,
       ww_totals: [10, 10],
@@ -168,6 +215,119 @@ describe('totals route — recompute on a denominator change', () => {
 
     expect(entryPatches[0].patch).not.toHaveProperty('letter_grade');
     expect(entryPatches[0].patch).not.toHaveProperty('is_na');
+  });
+
+  it('removing a slot logs every mark it cleared, per student', async () => {
+    entryRows.push({
+      id: 'e-2',
+      ww_scores: [9, null],
+      pt_scores: [5, 5, 5],
+      qa_score: null,
+    });
+    const { PATCH } =
+      await import('@/app/api/grading-sheets/[id]/totals/route');
+    const res = await PATCH(patchRequest({ ww_totals: [10] }), { params });
+    expect(res?.status).toBe(200);
+
+    // e-1 had 10 in WW2; e-2's WW2 was blank, and a blank lost is nothing lost.
+    expect(logActions).toHaveBeenCalledTimes(1);
+    const rows = logActions.mock.calls[0][2];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'entry.update',
+      entityType: 'grade_entry',
+      entityId: 'e-1',
+      context: {
+        field: 'ww_scores[1]',
+        old: '10',
+        new: null,
+        cleared_by_slot_removal: true,
+        student_number: 'S-e-1',
+        section_name: 'Diamond',
+        was_locked: false,
+      },
+    });
+    // Unlocked: the post-lock table is not written.
+    expect(writeAuditRows).not.toHaveBeenCalled();
+    // And the slot going away is its own totals row.
+    expect(
+      logAction.mock.calls.some(
+        (c) => (c[0].context as SbRow).field === 'ww_totals[1]'
+      )
+    ).toBe(true);
+  });
+
+  it('after a lock, cleared marks also land in grade_audit_log with the reference', async () => {
+    sheetRow.is_locked = true;
+    const { PATCH } =
+      await import('@/app/api/grading-sheets/[id]/totals/route');
+    const res = await PATCH(
+      patchRequest({
+        ww_totals: [10],
+        correction_reason: 'formula_fix',
+        correction_justification: 'The second written work was never given.',
+      }),
+      { params }
+    );
+    expect(res?.status).toBe(200);
+
+    const clearedWrite = writeAuditRows.mock.calls
+      .map((c) => c[1] as SbRow[])
+      .find((rows) =>
+        rows.some(
+          (r) =>
+            r.grade_entry_id === 'e-1' &&
+            r.new_value === null &&
+            r.field_changed === 'ww_scores[1]'
+        )
+      );
+    expect(clearedWrite).toBeDefined();
+    expect(clearedWrite![0].approval_reference).toMatch(
+      /^Data entry correction/
+    );
+    expect(logActions.mock.calls[0][2][0]).toMatchObject({
+      action: 'grade_correction',
+    });
+  });
+
+  it('logs a totals change on a sheet nobody has scored yet', async () => {
+    entryRows = [];
+    const { PATCH } =
+      await import('@/app/api/grading-sheets/[id]/totals/route');
+    await PATCH(patchRequest({ qa_total: 60 }), { params });
+
+    expect(logAction).toHaveBeenCalledTimes(1);
+    expect(logAction.mock.calls[0][0]).toMatchObject({
+      action: 'totals.update',
+      context: { field: 'qa_total', old: '30', new: '60' },
+    });
+  });
+
+  it('a failed recompute still logs what was saved, then answers 500', async () => {
+    entryRows.push({
+      id: 'e-2',
+      ww_scores: [9, 7],
+      pt_scores: [5, 5, 5],
+      qa_score: null,
+    });
+    failingEntryIds = new Set(['e-2']);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { PATCH } =
+      await import('@/app/api/grading-sheets/[id]/totals/route');
+    const res = await PATCH(patchRequest({ ww_totals: [10] }), { params });
+    expect(res?.status).toBe(500);
+
+    const totalsRow = logAction.mock.calls.find(
+      (c) => (c[0].context as SbRow).field === 'ww_totals[1]'
+    );
+    expect(totalsRow?.[0].context).toMatchObject({
+      partial: true,
+      failed_step: 'recompute',
+    });
+    // e-1's write landed, so its cleared mark is logged; e-2's did not.
+    const cleared = logActions.mock.calls[0][2];
+    expect(cleared.map((r) => r.entityId)).toEqual(['e-1']);
+    errors.mockRestore();
   });
 
   it('still refuses a post-lock edit with no correction reason', async () => {

@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
 import { sgToday } from '@/lib/dates';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { RELIEF_REASON_MAX } from '@/lib/schemas/teacher-assignment';
 
 // Book one substitute across every class a teacher holds.
 //
@@ -53,6 +55,8 @@ export function BookCoverDialog({
     reliefTeacherId: string;
     startedOn: string | null;
     endedOn: string | null;
+    /** Null on a cover booked before reasons were asked for. */
+    reason: string | null;
     classCount: number;
   };
 }) {
@@ -61,6 +65,7 @@ export function BookCoverDialog({
   const [substitute, setSubstitute] = useState(editing?.reliefTeacherId ?? '');
   const [startsOn, setStartsOn] = useState(editing?.startedOn ?? '');
   const [endsOn, setEndsOn] = useState(editing?.endedOn ?? '');
+  const [reason, setReason] = useState(editing?.reason ?? '');
 
   const mutation = useMutation({
     mutationFn: (body: {
@@ -68,6 +73,7 @@ export function BookCoverDialog({
       relief_teacher_user_id: string;
       relief_started_on: string | null;
       relief_ended_on: string | null;
+      relief_reason: string;
     }) => apiFetch('/api/relief/book', jsonInit('POST', body)),
   });
 
@@ -81,6 +87,7 @@ export function BookCoverDialog({
     setSubstitute(editing?.reliefTeacherId ?? '');
     setStartsOn(editing?.startedOn ?? '');
     setEndsOn(editing?.endedOn ?? '');
+    setReason(editing?.reason ?? '');
   }
 
   const awayName = teacherOptions.find((t) => t.id === away)?.name;
@@ -97,6 +104,7 @@ export function BookCoverDialog({
           relief_teacher_user_id: substitute,
           relief_started_on: startsOn || null,
           relief_ended_on: endsOn || null,
+          relief_reason: reason.trim(),
         }),
       {
         pending: editing
@@ -211,6 +219,20 @@ export function BookCoverDialog({
             </Select>
           </Field>
 
+          <Field>
+            <FieldLabel htmlFor="cover-reason">Reason</FieldLabel>
+            <Input
+              id="cover-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={RELIEF_REASON_MAX}
+              placeholder="e.g. Medical leave, training, family emergency"
+            />
+            <FieldDescription>
+              Shown on the Cover page beside the booking.
+            </FieldDescription>
+          </Field>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="cover-from">First day</FieldLabel>
@@ -254,7 +276,7 @@ export function BookCoverDialog({
             onClick={() => void submit()}
             loading={busy}
             loadingText="Saving…"
-            disabled={!away || !substitute || badOrder}
+            disabled={!away || !substitute || !reason.trim() || badOrder}
           >
             {!busy &&
               (willSchedule ? (

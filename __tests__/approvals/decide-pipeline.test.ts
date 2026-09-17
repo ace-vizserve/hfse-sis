@@ -427,7 +427,7 @@ describe('the declaration handler', () => {
     expect(logAction.mock.calls[0][0].context.via).toBe('email_token');
   });
 
-  it('a failed projection says the decision landed, and skips the audit as before', async () => {
+  it('a failed projection says the decision landed, and still audits it', async () => {
     projectionError = { message: 'permission denied' };
     rpcReturns('completed');
 
@@ -440,7 +440,19 @@ describe('the declaration handler', () => {
       outcome: 'completed',
     });
     expect(writeRegisterForDeclaration).not.toHaveBeenCalled();
-    expect(logAction).not.toHaveBeenCalled();
+    // ⚠ The decision COMMITTED before the projection failed, so returning with
+    // no audit row would leave a landed approval with no trace in the log.
+    expect(logAction).toHaveBeenCalledTimes(1);
+    const audit = logAction.mock.calls[0][0];
+    expect(audit.action).toBe('declaration.approve');
+    expect(audit.context).toMatchObject({
+      outcome: 'completed',
+      partial: true,
+      failed_step: 'status_projection',
+      status_projection_failed: true,
+      register_days_written: null,
+      section_name: 'P4 Diligence',
+    });
   });
 
   it('a failed register write still reports the approval as a success', async () => {

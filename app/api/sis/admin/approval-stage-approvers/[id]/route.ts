@@ -4,7 +4,73 @@ import { NextResponse } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
-import { removeStageApprover } from '@/lib/approvals/config';
+import {
+  ApprovalConfigPartialError,
+  removeStageApprover,
+} from '@/lib/approvals/config';
+import {
+  APPROVER_LEVEL_SCOPE_LABELS,
+  STAGED_FLOW_LABELS,
+  type ApproverLevelScope,
+} from '@/lib/schemas/approval-flows';
+import { listStaffUsers } from '@/lib/sis/users/queries';
+
+type RemovedApprover = {
+  stageId: string;
+  userId: string;
+  appliesToLevelType: ApproverLevelScope | null;
+};
+
+// Who was taken off which step — names, not only ids. Best-effort: a failed
+// lookup degrades to the ids, which are always recorded.
+async function revokeContext(
+  service: ReturnType<typeof createServiceClient>,
+  removed: RemovedApprover,
+  repointed: number | null
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {
+    stage_id: removed.stageId,
+    user_id: removed.userId,
+    applies_to_level_type: removed.appliesToLevelType,
+    applies_to_label: removed.appliesToLevelType
+      ? (APPROVER_LEVEL_SCOPE_LABELS[removed.appliesToLevelType] ??
+        removed.appliesToLevelType)
+      : null,
+    // How many requests still waiting were moved off them. null when the
+    // removal committed but bringing waiting requests in line failed.
+    repointed_waiting: repointed,
+  };
+  try {
+    const [{ data: stage }, staff] = await Promise.all([
+      service
+        .from('approval_stages')
+        .select('label, flow, stage_order')
+        .eq('id', removed.stageId)
+        .maybeSingle(),
+      listStaffUsers(),
+    ]);
+    const s = stage as {
+      label: string;
+      flow: string;
+      stage_order: number;
+    } | null;
+    if (s) {
+      out.stage_label = s.label;
+      out.stage_order = s.stage_order;
+      out.flow = s.flow;
+      out.flow_label =
+        STAGED_FLOW_LABELS[s.flow as keyof typeof STAGED_FLOW_LABELS] ?? s.flow;
+    }
+    const person = staff.find((u) => u.id === removed.userId);
+    if (person) {
+      out.email = person.email;
+      out.display_name = person.display_name;
+    }
+  } catch {
+    // Ids are recorded above.
+  }
+  return out;
+}
 
 // DELETE /api/sis/admin/approval-stage-approvers/[id] — take somebody off a step.
 //
@@ -59,13 +125,7 @@ export async function DELETE(
       action: 'approval_stage.approver.revoke',
       entityType: 'approval_stage_approver',
       entityId: id,
-      context: {
-        stage_id: removed.stageId,
-        user_id: removed.userId,
-        applies_to_level_type: removed.appliesToLevelType,
-        // How many requests still waiting were moved off them.
-        repointed_waiting: removed.repointed,
-      },
+      context: await revokeContext(service, removed, removed.repointed),
     });
 
     // Taking the last person off a step turns the /sis readiness strip from
@@ -76,6 +136,28 @@ export async function DELETE(
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[approval-stages] revoke failed:', reason);
+    if (e instanceof ApprovalConfigPartialError) {
+      // The person IS off the step — only bringing waiting requests in line
+      // failed. Record the removal that is live before reporting the failure.
+      await logAction({
+        service,
+        actor,
+        action: 'approval_stage.approver.revoke',
+        entityType: 'approval_stage_approver',
+        entityId: id,
+        context: {
+          ...(await revokeContext(
+            service,
+            e.committed as RemovedApprover,
+            null
+          )),
+          partial: true,
+          failed_step: e.failedStep,
+          error: reason,
+        },
+      });
+      revalidateTag('sis-health', 'max');
+    }
     return NextResponse.json(
       { error: 'Could not remove that person. Please try again.' },
       { status: 500 }

@@ -176,6 +176,8 @@ export function EnrolmentEditSheet({
         (initial.withdrawal_reason as WithdrawalReason) ?? ''
       );
       setWithdrawalNotes(initial.withdrawal_notes ?? '');
+      setLastDay(initial.withdrawal_date ?? '');
+      setApprovedDate(initial.withdrawal_approved_date ?? '');
       setRevertReason('');
       setLateTermOverride(initial.late_enrollee_term_number);
       setShowTermOverride(false);
@@ -215,6 +217,7 @@ export function EnrolmentEditSheet({
   type SaveResponse = {
     lateEnrolleeTerm?: { termLabel: string } | null;
     admissionsCascade?: { enroleeNumber: string; ayCode: string } | null;
+    admissionsCascadeFailed?: { error: string } | null;
     reEnrolment?: boolean;
     midTermEnrolment?: MidTermPayload | null;
   };
@@ -246,6 +249,9 @@ export function EnrolmentEditSheet({
     if (status === 'late_enrollee') {
       return `Tagged ${studentName} as late enrollee · between terms`;
     }
+    if (resBody.admissionsCascadeFailed) {
+      return `Withdrew ${studentName} from the class · the admissions record could not be updated`;
+    }
     if (admissionsCascade) {
       return `Withdrew ${studentName} · admissions also marked Withdrawn`;
     }
@@ -259,8 +265,15 @@ export function EnrolmentEditSheet({
     const body: Record<string, unknown> = {
       bus_no: busNo,
       classroom_officer_role: officer,
-      enrollment_status: status,
     };
+    // The status is sent only when it CHANGES. Sending the unchanged
+    // 'withdrawn' made every save on a withdrawn student demand a last day
+    // and a reason (the schema requires both whenever the status says
+    // withdrawn), and it hid the reason and date corrections below from the
+    // server, which only applies them when no status change is asked for.
+    if (status !== initial.enrollment_status) {
+      body.enrollment_status = status;
+    }
     // Notes fields are only sent when actually edited — admin_notes is
     // school_admin/superadmin-only server-side (Task 2's 403 backstop), and
     // sending it unconditionally would 403 every save (even an unrelated
@@ -288,6 +301,16 @@ export function EnrolmentEditSheet({
     ) {
       body.withdrawal_reason = withdrawalReason || null;
       body.withdrawal_notes = withdrawalNotes.trim() || null;
+    }
+    // Correction path for the two dates on an already-withdrawn row. Only
+    // sent when changed, so an unrelated edit never rewrites them.
+    if (!isWithdrawing && initial.enrollment_status === 'withdrawn') {
+      if (lastDay && lastDay !== (initial.withdrawal_date ?? '')) {
+        body.withdrawal_date = lastDay;
+      }
+      if (approvedDate !== (initial.withdrawal_approved_date ?? '')) {
+        body.withdrawal_approved_date = approvedDate || null;
+      }
     }
     // New late-enrollee tag — send the registrar's chosen joining term.
     if (
@@ -508,7 +531,7 @@ export function EnrolmentEditSheet({
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">
-                  Withdrawing sets the withdrawal date to today. Restoring to
+                  Withdrawing asks for the last day at school. Restoring to
                   Active reverses the admissions withdrawal. Pre-enrolment /
                   post-withdrawal scores stay as N/A.
                 </p>
@@ -518,8 +541,46 @@ export function EnrolmentEditSheet({
               {initial.enrollment_status === 'withdrawn' && (
                 <div className="space-y-3">
                   <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Withdrawal reason
+                    Withdrawal
                   </p>
+                  {/* Correctable after the fact: a mistyped last day used to
+                      be stuck, because the server ignored dates sent for a row
+                      that was already withdrawn. Same two fields as the
+                      withdraw confirmation below. */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-foreground">
+                        Last day at school
+                      </label>
+                      <DatePicker
+                        value={lastDay}
+                        onChange={setLastDay}
+                        placeholder="Pick the last day"
+                      />
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        {initial.withdrawal_date
+                          ? 'Change it if it was entered wrongly.'
+                          : 'Not recorded yet.'}
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-foreground">
+                        Withdrawal approved
+                      </label>
+                      <DatePicker
+                        value={approvedDate}
+                        onChange={setApprovedDate}
+                        placeholder="Pick a date"
+                      />
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Can be after the last day, if the paperwork followed
+                        later.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="text-sm font-medium text-foreground">
+                    Reason
+                  </label>
                   <Select
                     value={withdrawalReason}
                     onValueChange={(v) =>

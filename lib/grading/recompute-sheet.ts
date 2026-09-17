@@ -148,9 +148,59 @@ export function recomputeEntryRow(
   };
 }
 
+/**
+ * One real mark that a recompute throws away because its slot no longer
+ * exists — a teacher's score in Written Work 4 when the sheet drops to three.
+ */
+export type ClearedScore = {
+  entryId: string;
+  component: 'ww' | 'pt';
+  /** Zero-based, matching the audit log's `ww_scores[3]` notation. */
+  slotIndex: number;
+  oldValue: number;
+};
+
+/**
+ * Every real score `padScores` would cut off this entry.
+ *
+ * A null in a removed slot is "not taken" (Hard Rule #3) and losing it loses
+ * nothing, so only numbers are returned. This is the list the totals route
+ * writes to the audit trail, one row per mark, so that removing a slot is never
+ * a deletion nobody can account for (Hard Rule #6).
+ */
+export function clearedScoresFor(
+  entry: Pick<RecomputableEntry, 'id' | 'ww_scores' | 'pt_scores'>,
+  totals: Pick<SheetTotals, 'ww_totals' | 'pt_totals'>
+): ClearedScore[] {
+  const out: ClearedScore[] = [];
+  const scan = (
+    component: 'ww' | 'pt',
+    scores: (number | null)[] | null,
+    keep: number
+  ) => {
+    (scores ?? []).forEach((v, i) => {
+      if (i >= keep && v != null)
+        out.push({
+          entryId: entry.id,
+          component,
+          slotIndex: i,
+          oldValue: Number(v),
+        });
+    });
+  };
+  scan('ww', entry.ww_scores, totals.ww_totals.length);
+  scan('pt', entry.pt_scores, totals.pt_totals.length);
+  return out;
+}
+
 export type RecomputeResult = {
   entriesScanned: number;
   entriesWritten: number;
+  /**
+   * Real marks cut off by a slot removal, on entries whose write LANDED.
+   * Empty on any recompute that only adds slots or moves a denominator.
+   */
+  clearedScores: ClearedScore[];
   /**
    * First entry id on the sheet. `grade_audit_log.grade_entry_id` is NOT NULL,
    * so a sheet-level totals change is anchored to it (see
@@ -224,9 +274,21 @@ export async function recomputeSheetEntries(
     if (changed) dirty.push({ id: entry.id, patch });
   }
 
+  // Marks a slot removal will cut off, per entry. A truncation always changes
+  // the array's shape, so every entry here is also in `dirty`.
+  const clearedByEntry = new Map<string, ClearedScore[]>();
+  for (const entry of entries) {
+    const cleared = clearedScoresFor(entry, totals);
+    if (cleared.length > 0) clearedByEntry.set(entry.id, cleared);
+  }
+
+  // Only marks on writes that LANDED are reported. A wave that throws leaves
+  // earlier waves applied (see the note above), and the error carries what had
+  // already been cleared so the caller can still log it.
+  const clearedScores: ClearedScore[] = [];
   for (let i = 0; i < dirty.length; i += WRITE_CONCURRENCY) {
     const wave = dirty.slice(i, i + WRITE_CONCURRENCY);
-    await Promise.all(
+    const results = await Promise.allSettled(
       wave.map(async ({ id, patch }) => {
         const { error: upErr } = await service
           .from('grade_entries')
@@ -236,13 +298,45 @@ export async function recomputeSheetEntries(
           throw new Error(
             `recompute: writing entry ${id} failed: ${upErr.message}`
           );
+        return id;
       })
     );
+    let firstFailure: unknown = null;
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        clearedScores.push(...(clearedByEntry.get(r.value) ?? []));
+      } else if (firstFailure == null) {
+        firstFailure = r.reason;
+      }
+    }
+    if (firstFailure != null) {
+      throw new RecomputeWriteError(
+        firstFailure instanceof Error
+          ? firstFailure.message
+          : String(firstFailure),
+        clearedScores
+      );
+    }
   }
 
   return {
     entriesScanned: entries.length,
     entriesWritten: dirty.length,
+    clearedScores,
     anchorEntryId: entries[0]?.id ?? null,
   };
+}
+
+/**
+ * A recompute that failed part-way. `clearedScores` is what had ALREADY been
+ * cut off by the writes that landed before the failure — the caller logs those,
+ * because they are gone whether or not the rest of the recompute finishes.
+ */
+export class RecomputeWriteError extends Error {
+  readonly clearedScores: ClearedScore[];
+  constructor(message: string, clearedScores: ClearedScore[]) {
+    super(message);
+    this.name = 'RecomputeWriteError';
+    this.clearedScores = clearedScores;
+  }
 }

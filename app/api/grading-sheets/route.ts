@@ -9,6 +9,7 @@ import {
   subjectTeacherPairs,
 } from '@/lib/auth/teacher-assignments';
 import { logAction } from '@/lib/audit/log-action';
+import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // GET /api/grading-sheets?term_id=...
@@ -226,15 +227,21 @@ export async function POST(request: NextRequest) {
   }
 
   // Seed grade_entries for every active / late_enrollee student in the section.
+  //
+  // ⚠ THE SHEET EXISTS FROM HERE ON, whatever happens to the seeding. A failure
+  // below used to return before the audit row, so a sheet could appear with
+  // no record of who made it. The failure is carried to the row instead, and
+  // answered after it.
+  let seedError: string | null = null;
+  let entriesSeeded = 0;
   const { data: enrolments, error: enrErr } = await service
     .from('section_students')
     .select('id, enrollment_status')
     .eq('section_id', section_id)
     .in('enrollment_status', ENROLLED_STATUSES);
-  if (enrErr)
-    return NextResponse.json({ error: enrErr.message }, { status: 500 });
-
-  if (enrolments && enrolments.length > 0) {
+  if (enrErr) {
+    seedError = enrErr.message;
+  } else if (enrolments && enrolments.length > 0) {
     const { error: entriesErr } = await service.from('grade_entries').insert(
       enrolments.map((e) => ({
         grading_sheet_id: sheet.id,
@@ -242,9 +249,8 @@ export async function POST(request: NextRequest) {
         is_na: e.enrollment_status === 'late_enrollee',
       }))
     );
-    if (entriesErr) {
-      return NextResponse.json({ error: entriesErr.message }, { status: 500 });
-    }
+    if (entriesErr) seedError = entriesErr.message;
+    else entriesSeeded = enrolments.length;
   }
 
   await logAction({
@@ -258,15 +264,24 @@ export async function POST(request: NextRequest) {
     entityType: 'grading_sheet',
     entityId: sheet.id,
     context: {
+      ...(await loadOneSheetAuditLabels(service, sheet.id)),
       term_id,
       section_id,
       subject_id,
+      teacher_name,
       ww_totals,
       pt_totals,
       qa_total,
-      entries_seeded: enrolments?.length ?? 0,
+      entries_seeded: entriesSeeded,
+      ...(seedError
+        ? { partial: true, failed_step: 'seed_entries', error: seedError }
+        : {}),
     },
   });
+
+  if (seedError) {
+    return NextResponse.json({ error: seedError }, { status: 500 });
+  }
 
   // Resolve ayCode from the section's academic year for drill cache invalidation.
   const { data: ayRow } = await service

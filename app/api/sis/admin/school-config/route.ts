@@ -8,6 +8,30 @@ import { SchoolConfigUpdateSchema } from '@/lib/schemas/school-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 
+// Plain names for the audit trail — what a school admin calls each setting.
+const SCHOOL_CONFIG_FIELD_LABELS: Record<string, string> = {
+  principal_name: 'Principal name',
+  ceo_name: 'CEO name',
+  pei_registration_number: 'PEI registration number',
+  default_publish_window_days: 'Default report card publish window (days)',
+  default_compassionate_allowance_per_year:
+    'Default compassionate leave allowance per year',
+  default_vl_allowance_per_term: 'Default vacation leave allowance per term',
+  subject_award_bronze_min: 'Bronze award minimum',
+  subject_award_silver_min: 'Silver award minimum',
+  subject_award_gold_min: 'Gold award minimum',
+  subject_award_max: 'Award maximum',
+  organization_name: 'School name',
+  address_line_1: 'Address line 1',
+  address_line_2: 'Address line 2',
+  phone_number: 'Phone number',
+  website_url: 'Website',
+  contact_email: 'Contact email',
+  pei_registration_start_date: 'PEI registration start date',
+  pei_registration_end_date: 'PEI registration end date',
+  logo_url: 'School logo',
+};
+
 // PATCH /api/sis/admin/school-config
 //
 // Partial update of the singleton school-wide settings row (id=1 — seeded
@@ -135,6 +159,14 @@ export async function PATCH(request: NextRequest) {
     }
   }
   if (Object.keys(diff).length > 0) {
+    // `changes[]` is the flat shape the audit renderer reads; `diff` stays for
+    // anything already keyed on it (historical rows carry only `diff`).
+    const changes = Object.entries(diff).map(([col, d]) => ({
+      field: SCHOOL_CONFIG_FIELD_LABELS[col] ?? col,
+      column: col,
+      from: d.before ?? null,
+      to: d.after ?? null,
+    }));
     await logAction({
       service,
       actor: {
@@ -145,7 +177,11 @@ export async function PATCH(request: NextRequest) {
       action: 'school_config.update',
       entityType: 'school_config',
       entityId: '1',
-      context: { diff },
+      context: {
+        changes,
+        changed_fields: changes.map((c) => c.field),
+        diff,
+      },
     });
   }
 

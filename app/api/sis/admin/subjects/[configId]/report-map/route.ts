@@ -79,6 +79,30 @@ export async function PUT(
     name: string;
   };
 
+  // What it reported as before, so the audit row can say "moved from X to Y"
+  // and so a failed insert below can say exactly what was lost.
+  const { data: priorRows } = await service
+    .from('subject_report_map')
+    .select('report_subject_id')
+    .eq('subject_id', subjectId);
+  const priorIds = ((priorRows ?? []) as { report_subject_id: string }[]).map(
+    (r) => r.report_subject_id
+  );
+  const { data: priorCodes } =
+    priorIds.length > 0
+      ? await service.from('subjects').select('id, code').in('id', priorIds)
+      : { data: [] as { id: string; code: string }[] };
+  const codeById = new Map(
+    ((priorCodes ?? []) as { id: string; code: string }[]).map((s) => [
+      s.id,
+      s.code,
+    ])
+  );
+  const previous = priorIds.map((id) => ({
+    report_subject_id: id,
+    report_subject_code: codeById.get(id) ?? null,
+  }));
+
   const { error: deleteErr } = await service
     .from('subject_report_map')
     .delete()
@@ -86,11 +110,12 @@ export async function PUT(
   if (deleteErr)
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
 
+  // ⚠ TWO STATEMENTS, NOT ONE TRANSACTION. When the insert fails the old
+  // mapping is already gone, and the subject is left reporting under nothing.
+  // That is logged before the error goes back, so the gap has a record.
   const { error: insertErr } = await service
     .from('subject_report_map')
     .insert({ subject_id: subjectId, report_subject_id });
-  if (insertErr)
-    return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
   await logAction({
     service,
@@ -107,8 +132,20 @@ export async function PUT(
       subject_code: subject.code,
       report_subject_id,
       report_subject_code: reportSubject.code,
+      previous,
+      ...(insertErr
+        ? {
+            partial: true,
+            failed_step: 'insert',
+            error: insertErr.message,
+            mapping_removed_without_replacement: true,
+          }
+        : {}),
     },
   });
+
+  if (insertErr)
+    return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
   return NextResponse.json({
     ok: true,

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { loadSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 
@@ -99,9 +100,14 @@ export async function POST(request: NextRequest) {
   }
 
   const lockedRows = updated ?? [];
+  const labels = await loadSheetAuditLabels(
+    service,
+    lockedRows.map((s) => s.id)
+  );
 
   // One `sheet.lock` audit row per sheet — identical shape to the single-lock
   // route so the audit history is uniform across both entry points.
+  // `via: 'bulk'` is the one addition, so a reader can tell the two apart.
   await Promise.all(
     lockedRows.map((sheet) =>
       logAction({
@@ -114,7 +120,12 @@ export async function POST(request: NextRequest) {
         action: 'sheet.lock',
         entityType: 'grading_sheet',
         entityId: sheet.id,
-        context: { locked_at: sheet.locked_at, locked_by: sheet.locked_by },
+        context: {
+          ...(labels.get(sheet.id) ?? {}),
+          locked_at: sheet.locked_at,
+          locked_by: sheet.locked_by,
+          via: 'bulk',
+        },
       })
     )
   );

@@ -2,6 +2,11 @@ import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import {
+  APPLICANT_IDENTITY_COLUMNS,
+  applicantAuditIdentity,
+  type ApplicantIdentityRow,
+} from '@/lib/admissions/audit-identity';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
@@ -72,7 +77,7 @@ export async function PATCH(
 
   const { data: beforeRow, error: beforeErr } = await admissions
     .from(`${prefix}_enrolment_applications`)
-    .select('enroleeNumber, preCourseAnswer, preCourseDate')
+    .select(`${APPLICANT_IDENTITY_COLUMNS}, preCourseAnswer, preCourseDate`)
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -117,6 +122,10 @@ export async function PATCH(
     entityId: enroleeNumber,
     context: {
       ay_code: ayCode,
+      ...applicantAuditIdentity(
+        enroleeNumber,
+        beforeRow as ApplicantIdentityRow
+      ),
       changes: [
         { field: 'preCourseDate', from: before.preCourseDate, to: date },
         {

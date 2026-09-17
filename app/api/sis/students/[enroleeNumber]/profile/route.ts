@@ -71,9 +71,11 @@ export async function PATCH(
   if (rawKeys.length === 0) {
     return NextResponse.json({ ok: true, changed: 0 });
   }
+  // `studentNumber` rides along for the audit row and the name mirror below
+  // (Hard Rule #4). It is not in the schema, so it can never be written here.
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select(rawKeys.join(', '))
+    .select(Array.from(new Set([...rawKeys, 'studentNumber'])).join(', '))
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -115,6 +117,21 @@ export async function PATCH(
     return NextResponse.json({ ok: true, changed: 0 });
   }
 
+  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
+  for (const [col, next] of Object.entries(update)) {
+    const prev = beforeRow[col] ?? null;
+    if ((prev ?? null) !== (next ?? null)) {
+      changes.push({ field: col, from: prev, to: next });
+    }
+  }
+  // A save that changes nothing writes nothing — not the row, not the name
+  // mirror, and not an audit row claiming an edit that did not happen.
+  if (changes.length === 0) {
+    return NextResponse.json({ ok: true, changed: 0 });
+  }
+  const studentNumber =
+    (beforeRow.studentNumber as string | null | undefined) ?? null;
+
   const { error: upErr } = await supabase
     .from(appsTable)
     .update(update)
@@ -146,14 +163,15 @@ export async function PATCH(
     if (col === 'middle_name') namePatch[col] = str;
     else if (str) namePatch[col] = str;
   }
+  // What happened to the grading copy of the name, for the audit row. The
+  // two records can disagree after a failure here, and the log is the only
+  // place that would say so.
+  let nameMirror: {
+    patch: Record<string, string | null>;
+    outcome: 'written' | 'failed' | 'no_student_number';
+    error?: string;
+  } | null = null;
   if (Object.keys(namePatch).length > 0) {
-    const { data: idRow } = await supabase
-      .from(appsTable)
-      .select('"studentNumber"')
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle();
-    const studentNumber =
-      (idRow as { studentNumber: string | null } | null)?.studentNumber ?? null;
     if (studentNumber) {
       const { error: nameErr } = await supabase
         .from('students')
@@ -164,15 +182,16 @@ export async function PATCH(
           '[sis profile PATCH] name sync to public.students failed:',
           nameErr.message
         );
+        nameMirror = {
+          patch: namePatch,
+          outcome: 'failed',
+          error: nameErr.message,
+        };
+      } else {
+        nameMirror = { patch: namePatch, outcome: 'written' };
       }
-    }
-  }
-
-  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
-  for (const [col, next] of Object.entries(update)) {
-    const prev = beforeRow[col] ?? null;
-    if ((prev ?? null) !== (next ?? null)) {
-      changes.push({ field: col, from: prev, to: next });
+    } else {
+      nameMirror = { patch: namePatch, outcome: 'no_student_number' };
     }
   }
 
@@ -186,7 +205,20 @@ export async function PATCH(
     action: 'sis.profile.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,
-    context: { ay_code: ayCode, changes },
+    context: {
+      ay_code: ayCode,
+      enroleeNumber,
+      studentNumber,
+      changes,
+      ...(nameMirror
+        ? {
+            students_name_sync: nameMirror,
+            ...(nameMirror.outcome === 'failed'
+              ? { partial: true, failed_step: 'students_name_sync' }
+              : {}),
+          }
+        : {}),
+    },
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');

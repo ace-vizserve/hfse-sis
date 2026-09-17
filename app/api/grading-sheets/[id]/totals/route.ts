@@ -1,13 +1,25 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
-import { recomputeSheetEntries } from '@/lib/grading/recompute-sheet';
+import {
+  recomputeSheetEntries,
+  RecomputeWriteError,
+  type ClearedScore,
+} from '@/lib/grading/recompute-sheet';
 import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
+import {
+  loadEntryStudentLabels,
+  loadOneSheetAuditLabels,
+} from '@/lib/grading/sheet-audit-labels';
 import {
   buildTotalsAuditRows,
   writeAuditRows,
 } from '@/lib/audit/log-grade-change';
-import { logAction, type AuditAction } from '@/lib/audit/log-action';
+import {
+  logAction,
+  logActions,
+  type AuditAction,
+} from '@/lib/audit/log-action';
 import {
   CORRECTION_REASONS,
   CORRECTION_REASON_LABELS,
@@ -231,7 +243,16 @@ export async function PATCH(
   // whose values are already identical is no longer rewritten, so its
   // `updated_at` no longer bumps on a no-op. Every entry that genuinely moves,
   // and every entry whose score array has to resize, is still written.
-  let recompute;
+  //
+  // ⚠ A FAILED RECOMPUTE DOES NOT SKIP THE AUDIT. The totals and weights above
+  // are already saved, and a slot removal may already have cleared marks on
+  // the entries written before the failure. All of that is logged below with
+  // `partial: true` before the 500 goes back — "nothing was recorded" must
+  // never be the answer to "what did that half-finished save change?".
+  let recompute: Awaited<ReturnType<typeof recomputeSheetEntries>> | null =
+    null;
+  let recomputeError: string | null = null;
+  let clearedScores: ClearedScore[] = [];
   try {
     recompute = await recomputeSheetEntries(
       service,
@@ -244,79 +265,89 @@ export async function PATCH(
       // coordinator just replaced.
       resolveSheetWeights(weightPatch ?? sheet, config)
     );
+    clearedScores = recompute.clearedScores;
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'recompute failed' },
-      { status: 500 }
-    );
+    recomputeError = err instanceof Error ? err.message : 'recompute failed';
+    if (err instanceof RecomputeWriteError) clearedScores = err.clearedScores;
   }
 
   // Audit-log the totals change (pre-lock AND post-lock in the new generic
   // audit_log; still also write post-lock to grade_audit_log for backward compat).
   const changed_by = auth.user.email ?? auth.user.id;
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
   const actionForAudit: AuditAction = sheet.is_locked
     ? 'grade_correction'
     : 'totals.update';
-  const anchor = recompute.anchorEntryId;
-  if (anchor) {
-    const totalsDiff = buildTotalsAuditRows(before, after, {
-      grading_sheet_id: sheetId,
-      grade_entry_id: anchor,
-      changed_by,
-      approval_reference,
-    });
-    if (totalsDiff.length > 0) {
-      if (sheet.is_locked) {
-        await writeAuditRows(service, totalsDiff);
-      }
-      for (const row of totalsDiff) {
-        await logAction({
-          service,
-          actor: {
-            id: auth.user.id,
-            email: auth.user.email ?? null,
-            role: auth.role,
-          },
-          action: actionForAudit,
-          entityType: 'grading_sheet',
-          entityId: sheetId,
-          context: {
-            field: row.field_changed,
-            old: row.old_value,
-            new: row.new_value,
-            was_locked: sheet.is_locked,
-            ...(sheet.is_locked ? { approval_reference } : {}),
-            ...(correctionMeta
-              ? {
-                  correction_reason: correctionMeta.reason,
-                  correction_justification: correctionMeta.justification,
-                }
-              : {}),
-          },
-        });
-      }
+  const sheetLabels = await loadOneSheetAuditLabels(service, sheetId);
+  const lockContext = {
+    was_locked: sheet.is_locked,
+    ...(sheet.is_locked ? { approval_reference } : {}),
+    ...(correctionMeta
+      ? {
+          correction_reason: correctionMeta.reason,
+          correction_justification: correctionMeta.justification,
+        }
+      : {}),
+  };
+  const partialContext = recomputeError
+    ? { partial: true, failed_step: 'recompute', error: recomputeError }
+    : {};
+
+  // `grade_audit_log.grade_entry_id` is NOT NULL, so its copy of a totals
+  // change hangs off the first entry on the sheet. `audit_log` has no such
+  // constraint, and a totals change on a sheet nobody has scored yet is still
+  // a change — so the diff is built with a placeholder and logged regardless.
+  // (A failed recompute has no anchor to offer either; the read that finds it
+  // is the recompute's own.)
+  const anchor = recompute?.anchorEntryId ?? null;
+  const totalsDiff = buildTotalsAuditRows(before, after, {
+    grading_sheet_id: sheetId,
+    grade_entry_id: anchor ?? '',
+    changed_by,
+    approval_reference,
+  });
+  if (totalsDiff.length > 0) {
+    let gradeAuditLogFailed = false;
+    if (sheet.is_locked && anchor) {
+      gradeAuditLogFailed = !(await writeAuditRows(service, totalsDiff));
+    }
+    for (const row of totalsDiff) {
+      await logAction({
+        service,
+        actor,
+        action: actionForAudit,
+        entityType: 'grading_sheet',
+        entityId: sheetId,
+        context: {
+          ...sheetLabels,
+          field: row.field_changed,
+          old: row.old_value,
+          new: row.new_value,
+          ...lockContext,
+          ...partialContext,
+          ...(gradeAuditLogFailed ? { grade_audit_log_failed: true } : {}),
+        },
+      });
     }
   }
 
-  // A weight change gets its own row, and NOT via `buildTotalsAuditLog` above:
-  // that walks the totals field-by-field and only writes when there is an
-  // anchor entry to hang a `grade_audit_log` row on, so a weight change on a
-  // sheet nobody has scored yet would leave no trace at all. This one moves
-  // every grade on the sheet, so it is logged whether or not a score exists.
+  // A weight change gets its own row: it is one fact about the sheet, not a
+  // per-slot diff, and it moves every grade on it.
   if (weightPatch) {
     const pct = (v: number | string | null) =>
       v == null ? null : Math.round(Number(v) * 100);
     await logAction({
       service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
+      actor,
       action: actionForAudit,
       entityType: 'grading_sheet',
       entityId: sheetId,
       context: {
+        ...sheetLabels,
         field: 'weights',
         old: {
           ww: pct(sheet.ww_weight),
@@ -331,19 +362,84 @@ export async function PATCH(
         // Null on both sides means "follows the subject", which is the thing a
         // reader of this row most needs to be able to tell apart from 0%.
         scope: 'this class only',
-        was_locked: sheet.is_locked,
-        ...(sheet.is_locked ? { approval_reference } : {}),
-        ...(correctionMeta
-          ? {
-              correction_reason: correctionMeta.reason,
-              correction_justification: correctionMeta.justification,
-            }
-          : {}),
+        ...lockContext,
+        ...partialContext,
       },
     });
   }
 
+  // ── Marks cleared by removing a slot ─────────────────────────────────────
+  //
+  // Removing Written Work 4 blanks every student's Written Work 4 score. The
+  // totals row above says the slot went; it does not say that Ravi had 8 in
+  // it. Hard Rule #6 makes a deletion "set to null + audit row", so each mark
+  // gets its own row, shaped exactly like a teacher clearing that cell by hand
+  // — same action, same `field` notation — plus `cleared_by_slot_removal` so a
+  // reader can tell the two apart. After a lock, `grade_audit_log` gets its
+  // copy too, under the same approval reference as the totals change.
+  if (clearedScores.length > 0) {
+    const students = await loadEntryStudentLabels(
+      service,
+      clearedScores.map((c) => c.entryId)
+    );
+    const perMark = clearedScores.map((c) => ({
+      entryId: c.entryId,
+      field: `${c.component === 'ww' ? 'ww_scores' : 'pt_scores'}[${c.slotIndex}]`,
+      old: String(c.oldValue),
+    }));
+
+    let gradeAuditLogFailed = false;
+    if (sheet.is_locked) {
+      gradeAuditLogFailed = !(await writeAuditRows(
+        service,
+        perMark.map((m) => ({
+          grading_sheet_id: sheetId,
+          grade_entry_id: m.entryId,
+          changed_by,
+          field_changed: m.field,
+          old_value: m.old,
+          new_value: null,
+          approval_reference,
+        }))
+      ));
+    }
+
+    await logActions(
+      service,
+      actor,
+      perMark.map((m) => ({
+        action: (sheet.is_locked
+          ? 'grade_correction'
+          : 'entry.update') as AuditAction,
+        entityType: 'grade_entry' as const,
+        entityId: m.entryId,
+        context: {
+          grading_sheet_id: sheetId,
+          grade_entry_id: m.entryId,
+          ...sheetLabels,
+          ...(students.get(m.entryId) ?? {}),
+          field: m.field,
+          old: m.old,
+          new: null,
+          cleared_by_slot_removal: true,
+          ...lockContext,
+          ...partialContext,
+          ...(gradeAuditLogFailed ? { grade_audit_log_failed: true } : {}),
+        },
+      }))
+    );
+  }
+
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
+
+  if (recomputeError) {
+    return NextResponse.json(
+      {
+        error: `The totals were saved, but recalculating the grades failed: ${recomputeError}. Save again to finish.`,
+      },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ ok: true, totals: after });
 }

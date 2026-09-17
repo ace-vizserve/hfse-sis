@@ -37,8 +37,12 @@ import {
 import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { sgToday } from '@/lib/dates';
 import { syncOneStudent } from '@/lib/sync/students';
+import {
+  StageWithdrawalDatesSchema,
+  buildCascadeSectionPatch,
+  withdrawalDateRequiredError,
+} from '@/lib/sis/withdrawal-cascade';
 import {
   invalidateAllOperationalDrills,
   invalidateDrillTags,
@@ -104,6 +108,21 @@ export async function PATCH(
     );
   }
   const { status, remarks, extras } = parsed.data;
+
+  // The two withdrawal dates (migration 163). Read beside the stage payload
+  // rather than inside it: they are written to the class roster by the
+  // Withdrawn / Cancelled cascade (step 7), not to any stage column.
+  const datesParsed = StageWithdrawalDatesSchema.safeParse(body ?? {});
+  if (!datesParsed.success) {
+    return NextResponse.json(
+      {
+        error: 'Dates must be YYYY-MM-DD',
+        details: datesParsed.error.flatten(),
+      },
+      { status: 400 }
+    );
+  }
+  const withdrawalDates = datesParsed.data;
 
   // Validate extras keys match what this stage allows.
   const cols = STAGE_COLUMN_MAP[stageKey];
@@ -550,6 +569,9 @@ export async function PATCH(
     }
   }
 
+  // Filled by 2c on a Withdrawn / Cancelled save; consumed by step 7.
+  let cascadeTarget: CascadeTarget | null = null;
+
   // 2c) Terminal-status reason gate.
   // When the application stage flips to Cancelled / Withdrawn, a reason is
   // REQUIRED (and notes are required when the reason is "Other"). Shared
@@ -569,6 +591,36 @@ export async function PATCH(
     if (!gate.ok) {
       return NextResponse.json(
         { error: gate.error, code: gate.code },
+        { status: 422 }
+      );
+    }
+
+    // Which class rows will step 7 withdraw? Resolved HERE, before anything
+    // is written, because the answer decides whether this save may go ahead:
+    // a child leaving a class needs a last day of attendance, and that date
+    // is the registrar's to give. Until 2026-09-17 the cascade stamped today
+    // instead — migration 163's invented date, arriving through this route.
+    const resolved = await resolveCascadeTarget(
+      supabase,
+      prefix,
+      ayCode,
+      enroleeNumber
+    );
+    if ('error' in resolved) {
+      return NextResponse.json({ error: resolved.error }, { status: 500 });
+    }
+    cascadeTarget = resolved;
+    const dateGate = withdrawalDateRequiredError({
+      activeClassRows: resolved.rows.length,
+      dates: withdrawalDates,
+    });
+    if (dateGate) {
+      return NextResponse.json(
+        {
+          error: dateGate.error,
+          code: dateGate.code,
+          sections: resolved.rows.map((r) => r.section_name),
+        },
         { status: 422 }
       );
     }
@@ -855,136 +907,113 @@ export async function PATCH(
   // withdrawn — otherwise the student keeps appearing on rosters, attendance
   // grids, grading sheets, and dashboard KPIs. Mirrors the symmetric design
   // of the Enrolled auto-sync (admissions writes → grading-side reflects).
-  // Honors Hard Rule #6 (append-only): we flip status + set withdrawal_date,
-  // never delete; the row stays for grade preservation.
+  // Honors Hard Rule #6 (append-only): we flip status + record the dates the
+  // registrar entered, never delete; the row stays for grade preservation.
   let withdrawalCascade: {
     rowsAffected: number;
     sectionStudentIds: string[];
   } | null = null;
+  // Set when the application status HAS been saved but the class rows could
+  // not be withdrawn. The two records then disagree — admissions says
+  // Withdrawn, the roster still lists the child — so it is audited as a
+  // partial write and returned for the dialog to say so.
+  let withdrawalCascadeFailed: { error: string } | null = null;
   if (
     stageKey === 'application' &&
-    (status === 'Withdrawn' || status === 'Cancelled')
+    (status === 'Withdrawn' || status === 'Cancelled') &&
+    cascadeTarget &&
+    cascadeTarget.rows.length > 0
   ) {
-    // Resolve student_number via the admissions apps row — section_students
-    // is keyed off public.students.id, so we go enroleeNumber → studentNumber
-    // → student_id → section_students.
-    const admissions = createAdmissionsClient();
-    const { data: appsRow } = await admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select('studentNumber')
-      .eq('enroleeNumber', enroleeNumber)
-      .maybeSingle();
-    const studentNumber =
-      (appsRow as { studentNumber: string | null } | null)?.studentNumber ??
-      null;
+    const target = cascadeTarget;
+    const terminalReason =
+      ((extras as Record<string, unknown> | undefined)?.terminalReason as
+        | string
+        | undefined) ?? null;
+    const terminalNotes =
+      ((extras as Record<string, unknown> | undefined)?.terminalNotes as
+        | string
+        | undefined) ?? null;
+    // Last day + approved date as the registrar entered them (2c refused the
+    // save without a last day), and the reason carried over from the
+    // application so the roster row does not read "withdrawn, reason blank".
+    const sectionPatch = buildCascadeSectionPatch({
+      dates: withdrawalDates,
+      terminalReason,
+      terminalNotes,
+    });
+    const ids = target.rows.map((r) => r.id);
+    const { error: cascadeErr } = await supabase
+      .from('section_students')
+      .update(sectionPatch)
+      .in('id', ids);
 
-    if (studentNumber) {
-      const { data: studentRow } = await supabase
-        .from('students')
-        .select('id')
-        .eq('student_number', studentNumber)
-        .maybeSingle();
-      const studentId = (studentRow as { id: string } | null)?.id ?? null;
+    const actor = {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    };
+    const cascadeContext = {
+      ay_code: ayCode,
+      trigger: `stage.application.${status.toLowerCase()}`,
+      enroleeNumber,
+      studentNumber: target.studentNumber,
+      ...(target.studentName ? { studentName: target.studentName } : {}),
+      rowsAffected: cascadeErr ? 0 : target.rows.length,
+      sections: target.rows.map((r) => ({
+        section_student_id: r.id,
+        section_id: r.section_id,
+        section_name: r.section_name,
+        index_number: r.index_number,
+        previous_status: r.previous_status,
+      })),
+      withdrawal_date: sectionPatch.withdrawal_date,
+      withdrawal_approved_date: sectionPatch.withdrawal_approved_date,
+      withdrawal_reason: sectionPatch.withdrawal_reason,
+      withdrawal_notes: sectionPatch.withdrawal_notes,
+      applicationStatus_after: status,
+    };
 
-      if (studentId) {
-        // Resolve the AY id so the cascade only touches THIS AY's rows.
-        // section_students.section_id → sections.academic_year_id is the
-        // path; we filter via a join inline.
-        const { data: ayRow } = await supabase
-          .from('academic_years')
-          .select('id')
-          .eq('ay_code', ayCode)
-          .maybeSingle();
-        const ayId = (ayRow as { id: string } | null)?.id ?? null;
-
-        if (ayId) {
-          // Load active+late_enrollee rows for this student in this AY so we
-          // can capture the audit detail (which sections they were on) and
-          // perform a targeted update.
-          // Use 'sections.academic_year_id' (table name, not alias) — PostgREST
-          // requires the unaliased FK table name for embedded column filters.
-          // '.eq("section.academic_year_id", ...)' with the alias 'section:'
-          // is silently ignored and returns rows from all AYs.
-          const { data: activeRows } = await supabase
-            .from('section_students')
-            .select(
-              'id, section_id, enrollment_status, section:sections!inner(id, name, academic_year_id)'
-            )
-            .eq('student_id', studentId)
-            .in('enrollment_status', ENROLLED_STATUSES)
-            .eq('sections.academic_year_id', ayId);
-
-          const rows = (
-            (activeRows ?? []) as Array<{
-              id: string;
-              section_id: string;
-              enrollment_status: string;
-              section:
-                | { id: string; name: string; academic_year_id: string }
-                | { id: string; name: string; academic_year_id: string }[]
-                | null;
-            }>
-          ).map((r) => ({
-            id: r.id,
-            section_id: r.section_id,
-            previous_status: r.enrollment_status,
-            section_name:
-              (Array.isArray(r.section) ? r.section[0] : r.section)?.name ??
-              null,
-          }));
-
-          if (rows.length > 0) {
-            const todayDate = sgToday();
-            const ids = rows.map((r) => r.id);
-            const { error: cascadeErr } = await supabase
-              .from('section_students')
-              .update({
-                enrollment_status: 'withdrawn',
-                withdrawal_date: todayDate,
-              })
-              .in('id', ids);
-            if (cascadeErr) {
-              console.warn(
-                '[stage PATCH] withdrawal cascade update failed:',
-                cascadeErr.message
-              );
-            } else {
-              withdrawalCascade = {
-                rowsAffected: rows.length,
-                sectionStudentIds: ids,
-              };
-              await logAction({
-                service: supabase,
-                actor: {
-                  id: auth.user.id,
-                  email: auth.user.email ?? null,
-                  role: auth.role,
-                },
-                action: 'student.withdrawal.cascade',
-                entityType: 'section_student',
-                entityId: enroleeNumber,
-                context: {
-                  ay_code: ayCode,
-                  trigger: `stage.application.${status.toLowerCase()}`,
-                  enroleeNumber,
-                  studentNumber,
-                  rowsAffected: rows.length,
-                  sections: rows.map((r) => ({
-                    section_student_id: r.id,
-                    section_id: r.section_id,
-                    section_name: r.section_name,
-                    previous_status: r.previous_status,
-                  })),
-                  withdrawal_date: todayDate,
-                },
-              });
-              // Cascade touches grading-side rosters across every operational
-              // module — fan out drill invalidation accordingly.
-              invalidateAllOperationalDrills(ayCode);
-            }
-          }
-        }
-      }
+    if (cascadeErr) {
+      console.warn(
+        '[stage PATCH] withdrawal cascade update failed:',
+        cascadeErr.message
+      );
+      withdrawalCascadeFailed = { error: cascadeErr.message };
+      // The stage row above HAS committed. Record the half that did not, so
+      // the log shows admissions and the roster disagreeing rather than a
+      // clean withdrawal that never reached the class.
+      await logAction({
+        service: supabase,
+        actor,
+        action: 'student.withdrawal.cascade',
+        // Keyed by enrolee number, so typed as the admissions row it names —
+        // same as the class-side cascade. The class rows are in `sections`.
+        entityType: 'enrolment_status',
+        entityId: enroleeNumber,
+        context: {
+          ...cascadeContext,
+          partial: true,
+          committed: ['application_status'],
+          failed_step: 'section_students_update',
+          error: cascadeErr.message,
+        },
+      });
+    } else {
+      withdrawalCascade = {
+        rowsAffected: target.rows.length,
+        sectionStudentIds: ids,
+      };
+      await logAction({
+        service: supabase,
+        actor,
+        action: 'student.withdrawal.cascade',
+        entityType: 'enrolment_status',
+        entityId: enroleeNumber,
+        context: cascadeContext,
+      });
+      // Cascade touches grading-side rosters across every operational
+      // module — fan out drill invalidation accordingly.
+      invalidateAllOperationalDrills(ayCode);
     }
   }
 
@@ -998,6 +1027,116 @@ export async function PATCH(
     autoSync,
     autoSyncFailed,
     withdrawalCascade,
+    withdrawalCascadeFailed,
     midTermEnrolment,
   });
+}
+
+type CascadeTarget = {
+  studentNumber: string | null;
+  studentName: string | null;
+  rows: Array<{
+    id: string;
+    section_id: string;
+    index_number: number | null;
+    previous_status: string;
+    section_name: string | null;
+  }>;
+};
+
+/**
+ * The class rows a Withdrawn / Cancelled save will withdraw: every active or
+ * late-enrollee `section_students` row this student holds in THIS AY.
+ * enroleeNumber → studentNumber → students.id → section_students.
+ *
+ * An applicant with no student number, no `students` row or no class yet
+ * resolves to no rows — a real answer (nobody to take out of a class), not an
+ * error. Only a failed read is an error, because guessing "no rows" there would
+ * let the save through without a last day.
+ */
+async function resolveCascadeTarget(
+  supabase: ReturnType<typeof createServiceClient>,
+  prefix: string,
+  ayCode: string,
+  enroleeNumber: string
+): Promise<CascadeTarget | { error: string }> {
+  const admissions = createAdmissionsClient();
+  const { data: appsRow, error: appsErr } = await admissions
+    .from(`${prefix}_enrolment_applications`)
+    .select('studentNumber')
+    .eq('enroleeNumber', enroleeNumber)
+    .maybeSingle();
+  if (appsErr)
+    return { error: `Application lookup failed: ${appsErr.message}` };
+  const studentNumber =
+    (appsRow as { studentNumber: string | null } | null)?.studentNumber ?? null;
+  const empty: CascadeTarget = { studentNumber, studentName: null, rows: [] };
+  if (!studentNumber) return empty;
+
+  const [studentRes, ayRes] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, first_name, middle_name, last_name')
+      .eq('student_number', studentNumber)
+      .maybeSingle(),
+    supabase
+      .from('academic_years')
+      .select('id')
+      .eq('ay_code', ayCode)
+      .maybeSingle(),
+  ]);
+  if (studentRes.error)
+    return { error: `Student lookup failed: ${studentRes.error.message}` };
+  if (ayRes.error)
+    return { error: `Academic year lookup failed: ${ayRes.error.message}` };
+  const student = studentRes.data as {
+    id: string;
+    first_name: string | null;
+    middle_name: string | null;
+    last_name: string | null;
+  } | null;
+  const ayId = (ayRes.data as { id: string } | null)?.id ?? null;
+  if (!student || !ayId) return empty;
+
+  const studentName =
+    [student.first_name, student.middle_name, student.last_name]
+      .map((p) => (p ?? '').trim())
+      .filter(Boolean)
+      .join(' ') || null;
+
+  // Use 'sections.academic_year_id' (table name, not alias) — PostgREST
+  // requires the unaliased FK table name for embedded column filters.
+  // '.eq("section.academic_year_id", ...)' with the alias 'section:' is
+  // silently ignored and returns rows from all AYs.
+  const { data: activeRows, error: rowsErr } = await supabase
+    .from('section_students')
+    .select(
+      'id, section_id, index_number, enrollment_status, section:sections!inner(id, name, academic_year_id)'
+    )
+    .eq('student_id', student.id)
+    .in('enrollment_status', ENROLLED_STATUSES)
+    .eq('sections.academic_year_id', ayId);
+  if (rowsErr) return { error: `Class lookup failed: ${rowsErr.message}` };
+
+  const rows = (
+    (activeRows ?? []) as Array<{
+      id: string;
+      section_id: string;
+      index_number: number | null;
+      enrollment_status: string;
+      section:
+        | { id: string; name: string; academic_year_id: string }
+        | { id: string; name: string; academic_year_id: string }[]
+        | null;
+    }>
+  ).map((r) => ({
+    id: r.id,
+    section_id: r.section_id,
+    index_number: r.index_number,
+    previous_status: r.enrollment_status,
+    section_name:
+      (Array.isArray(r.section) ? r.section[0] : r.section)?.name ?? null,
+  }));
+
+  return { studentNumber, studentName, rows };
 }

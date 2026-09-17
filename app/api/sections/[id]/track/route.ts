@@ -88,25 +88,64 @@ export async function POST(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  const { inserted, resolvedCodes, missingCodes } = await applyTrackBundle(
-    service,
-    {
+  const previousClassType =
+    (section as { class_type?: string | null }).class_type ?? null;
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
+  let bundle: Awaited<ReturnType<typeof applyTrackBundle>>;
+  try {
+    bundle = await applyTrackBundle(service, {
       sectionId,
       academicYearId: section.academic_year_id,
       classType,
+    });
+  } catch (e) {
+    // The track itself IS saved; attaching its subjects failed. Record the
+    // change that committed before failing.
+    const message = e instanceof Error ? e.message : String(e);
+    if (previousClassType !== classType) {
+      await logAction({
+        service,
+        actor,
+        action: 'section.track.assign',
+        entityType: 'section',
+        entityId: sectionId,
+        context: {
+          section_name: section.name,
+          sectionName: section.name,
+          ay_code: ayCode ?? null,
+          classType,
+          previousClassType,
+          trackChanged: true,
+          inserted: 0,
+          sheetsInserted: 0,
+          partial: true,
+          failed_step: 'attach_track_subjects',
+          error: message,
+        },
+      });
+      if (ayCode) invalidateDrillTags('markbook', ayCode);
     }
-  );
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+  const { inserted, resolvedCodes, missingCodes } = bundle;
 
   // Same "no separate generate step" guarantee as the single-subject
   // attach + load-defaults routes — best-effort, non-fatal (the class_type +
   // section_subjects work above already committed).
   let sheetsInserted = 0;
+  let sheetsError: string | null = null;
   if (inserted > 0) {
     const { data: bulkResult, error: bulkErr } = await service.rpc(
       'create_grading_sheets_for_section',
       { p_section_id: sectionId }
     );
     if (bulkErr) {
+      sheetsError = bulkErr.message;
       console.error(
         '[sections/[id]/track POST] bulk-sheet RPC failed:',
         bulkErr.message
@@ -131,29 +170,28 @@ export async function POST(
   // still writing an audit row claiming a track assignment. audit_log is
   // append-only (Hard Rule #6), so those rows are permanent noise in the
   // evidence trail for how a section's subjects came to be.
-  const trackChanged =
-    (section as { class_type?: string | null }).class_type !== classType;
+  const trackChanged = previousClassType !== classType;
   const changed = trackChanged || inserted > 0;
 
   if (changed) {
     await logAction({
       service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
+      actor,
       action: 'section.track.assign',
       entityType: 'section',
       entityId: sectionId,
       context: {
+        section_name: section.name,
         sectionName: section.name,
+        ay_code: ayCode ?? null,
         classType,
+        previousClassType,
         trackChanged,
         bundleCodes: resolvedCodes,
         missingCodes,
         inserted,
         sheetsInserted,
+        ...(sheetsError ? { grading_sheets_error: sheetsError } : {}),
       },
     });
   }

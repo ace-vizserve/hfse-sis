@@ -92,6 +92,8 @@ type Assignment = {
   relief_started_on: string | null;
   /** Last day of the cover, inclusive; null means open-ended. */
   relief_ended_on: string | null;
+  /** Why cover was booked; null on covers booked before migration 164. */
+  relief_reason?: string | null;
 };
 
 // Teachers tab on /sis/sections/[id]. Moved from
@@ -373,6 +375,7 @@ export function TeacherAssignmentsPanel({
                 reliefTeacherId={formAdviser.relief_teacher_user_id}
                 reliefStartedOn={formAdviser.relief_started_on}
                 reliefEndedOn={formAdviser.relief_ended_on}
+                reliefReason={formAdviser.relief_reason ?? null}
                 canManage={canManageRelief}
                 onChanged={load}
               />
@@ -441,6 +444,7 @@ export function TeacherAssignmentsPanel({
                       reliefTeacherId={a.relief_teacher_user_id}
                       reliefStartedOn={a.relief_started_on}
                       reliefEndedOn={a.relief_ended_on}
+                      reliefReason={a.relief_reason ?? null}
                       canManage={canManageRelief}
                       onChanged={load}
                     />
@@ -548,6 +552,7 @@ export function TeacherAssignmentsPanel({
                       reliefTeacherId={a.relief_teacher_user_id}
                       reliefStartedOn={a.relief_started_on}
                       reliefEndedOn={a.relief_ended_on}
+                      reliefReason={a.relief_reason ?? null}
                       canManage={canManageRelief}
                       onChanged={load}
                     />

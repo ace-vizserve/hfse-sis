@@ -70,6 +70,12 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   'app/api/account/active-role/route.ts':
     'Sets a cookie and nothing else — no table is written, and the lens it ' +
     'names is re-derived per request rather than cached.',
+  'app/api/account/password-changed/route.ts':
+    'Writes one activity-log row about the caller changing their own ' +
+    'password — audit_log only, which no cached surface reads.',
+  'app/api/evaluation/writeups/route.ts':
+    'Retired: answers 410 and writes nothing. Write-ups save from the browser ' +
+    'through supabase-js (migration 150) and the audit trigger logs them.',
 
   // ── nothing that reads this table is cached ────────────────────────────
   // Checked 2026-08-31, not assumed: every reader of `student_declarations`

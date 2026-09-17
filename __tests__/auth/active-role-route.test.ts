@@ -291,6 +291,8 @@ describe('POST /api/account/active-role', () => {
       role: 'school_admin',
     });
     expect(entry.context).toEqual({
+      from_role: 'school_admin',
+      to_role: 'teacher',
       from_view: 'school_admin',
       to_view: 'teacher',
     });

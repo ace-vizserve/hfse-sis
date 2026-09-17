@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import {
   buildAssignmentAuditContext,
+  buildPreviousReliefContext,
   buildReliefAuditContext,
 } from '@/lib/audit/assignment-context';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -66,6 +67,7 @@ async function sectionYearIsUnderway(
 // Body: { relief_teacher_user_id: "<uuid>" } to put someone on cover, or
 //       { relief_teacher_user_id: null }     to take them off.
 //       Optionally relief_started_on / relief_ended_on (yyyy-MM-dd or null).
+//       relief_reason is REQUIRED with a teacher (migration 164).
 //
 // Cover CARRIES A DATE WINDOW since migration 123, but there is still no
 // history table: the window lives on the assignment row itself, and the audit
@@ -114,12 +116,17 @@ export async function PATCH(
   const endedOn = reliefTeacherId
     ? (parsed.data.relief_ended_on ?? null)
     : null;
+  const reason = reliefTeacherId ? (parsed.data.relief_reason ?? null) : null;
 
   const service = createServiceClient();
 
+  // The relief columns are read too: the write below overwrites (or clears)
+  // them, and the audit row is the only place the replaced cover survives.
   const { data: existing } = await service
     .from('teacher_assignments')
-    .select('id, teacher_user_id, section_id, subject_id, role')
+    .select(
+      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on, relief_reason'
+    )
     .eq('id', id)
     .maybeSingle();
 
@@ -192,6 +199,7 @@ export async function PATCH(
       relief_teacher_user_id: reliefTeacherId,
       relief_started_on: startedOn,
       relief_ended_on: endedOn,
+      relief_reason: reason,
     })
     .eq('id', id);
   if (error) {
@@ -216,6 +224,8 @@ export async function PATCH(
     context: await buildReliefAuditContext(service, existing, reliefTeacherId, {
       relief_started_on: startedOn,
       relief_ended_on: endedOn,
+      relief_reason: reason,
+      ...(await buildPreviousReliefContext(existing)),
     }),
   });
 
@@ -230,6 +240,7 @@ export async function PATCH(
     relief_teacher_user_id: reliefTeacherId,
     relief_started_on: startedOn,
     relief_ended_on: endedOn,
+    relief_reason: reason,
   });
 }
 

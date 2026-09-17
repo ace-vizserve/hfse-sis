@@ -4,8 +4,14 @@ import { NextResponse } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { createServiceClient } from '@/lib/supabase/service';
-import { AssignStageApproverSchema } from '@/lib/schemas/approval-flows';
-import { assignStageApprover } from '@/lib/approvals/config';
+import {
+  AssignStageApproverSchema,
+  STAGED_FLOW_LABELS,
+} from '@/lib/schemas/approval-flows';
+import {
+  ApprovalConfigPartialError,
+  assignStageApprover,
+} from '@/lib/approvals/config';
 import { listStaffUsers } from '@/lib/sis/users/queries';
 
 // POST /api/sis/admin/approval-stage-approvers — put somebody on a step.
@@ -64,6 +70,40 @@ export async function POST(request: Request) {
     role: auth.role,
   };
 
+  // The step's name and flow, for the audit row. Best-effort: a failed read
+  // leaves the ids, which are always recorded.
+  const { data: stageRow } = await service
+    .from('approval_stages')
+    .select('label, flow, stage_order')
+    .eq('id', stage_id)
+    .maybeSingle();
+  const stage = stageRow as {
+    label: string;
+    flow: string;
+    stage_order: number;
+  } | null;
+
+  const assignContext = (repointed: number | null) => ({
+    stage_id,
+    stage_label: stage?.label ?? null,
+    stage_order: stage?.stage_order ?? null,
+    flow: stage?.flow ?? null,
+    flow_label: stage
+      ? (STAGED_FLOW_LABELS[stage.flow as keyof typeof STAGED_FLOW_LABELS] ??
+        stage.flow)
+      : null,
+    user_id,
+    email: person.email,
+    display_name: person.display_name,
+    // Which half of the school they cover — null means every child. Worth
+    // logging: it is the difference between the primary officer and the
+    // secondary one, and getting it wrong is what this whole column fixes.
+    applies_to_level_type: appliesToLevelType,
+    // How many requests already waiting were moved onto them. null when the
+    // person was added but bringing waiting requests in line failed.
+    repointed_waiting: repointed,
+  });
+
   try {
     const result = await assignStageApprover(service, {
       stageId: stage_id,
@@ -87,18 +127,7 @@ export async function POST(request: Request) {
       action: 'approval_stage.approver.assign',
       entityType: 'approval_stage_approver',
       entityId: result.id,
-      context: {
-        stage_id,
-        user_id,
-        email: person.email,
-        display_name: person.display_name,
-        // Which half of the school they cover — null means every child. Worth
-        // logging: it is the difference between the primary officer and the
-        // secondary one, and getting it wrong is what this whole column fixes.
-        applies_to_level_type: appliesToLevelType,
-        // How many requests already waiting were moved onto them.
-        repointed_waiting: result.repointed,
-      },
+      context: assignContext(result.repointed),
     });
 
     // Who is on a step is what the /sis readiness strip reports as ready or
@@ -114,6 +143,24 @@ export async function POST(request: Request) {
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[approval-stages] assign failed:', reason);
+    if (e instanceof ApprovalConfigPartialError) {
+      // The person IS on the step — only bringing waiting requests in line
+      // failed. Record the addition that is live before reporting the failure.
+      await logAction({
+        service,
+        actor,
+        action: 'approval_stage.approver.assign',
+        entityType: 'approval_stage_approver',
+        entityId: (e.committed as { id?: string }).id ?? null,
+        context: {
+          ...assignContext(null),
+          partial: true,
+          failed_step: e.failedStep,
+          error: reason,
+        },
+      });
+      revalidateTag('sis-health', 'max');
+    }
     // `assignStageApprover` throws a sentence for the one case a person can
     // actually act on — a step that works its people out from the class.
     return NextResponse.json(

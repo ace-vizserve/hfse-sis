@@ -247,6 +247,15 @@ export type ExistingFiling = {
   endDate: string;
   /** A certificate is already on it — an upload, a link, or both. */
   hasEvidence: boolean;
+  /**
+   * The storage path of the upload already on it, if any. Read ONLY so a
+   * replacement can record where the replaced file still sits in the bucket —
+   * see the attach audit row in `app/api/declarations/staff/route.ts`. Never
+   * sent to a browser.
+   */
+  evidencePath: string | null;
+  /** What proof is already on it: `file`, `link`, `both`, or null for none. */
+  evidenceKind: 'file' | 'link' | 'both' | null;
 };
 
 /**
@@ -297,6 +306,15 @@ export async function findFilingCoveringDays(
     startDate: row.start_date,
     endDate: row.end_date,
     hasEvidence: row.evidence_path != null || row.evidence_url != null,
+    evidencePath: row.evidence_path,
+    evidenceKind:
+      row.evidence_path != null && row.evidence_url != null
+        ? ('both' as const)
+        : row.evidence_path != null
+          ? ('file' as const)
+          : row.evidence_url != null
+            ? ('link' as const)
+            : null,
   }));
   if (rows.length === 0) return null;
 

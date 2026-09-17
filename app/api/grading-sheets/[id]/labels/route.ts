@@ -8,7 +8,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
 import type { SlotMeta } from '@/lib/schemas/grading-sheet';
 import { logAction } from '@/lib/audit/log-action';
-import { sanitizeLabel, sanitizeMeta } from '@/lib/grading/slot-label-sanitize';
+import {
+  diffSlotLabels,
+  sanitizeLabel,
+  sanitizeMeta,
+} from '@/lib/grading/slot-label-sanitize';
+import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 
 // PATCH /api/grading-sheets/[id]/labels
 // Updates slot_labels on a grading sheet. Teachers are blocked when the sheet
@@ -120,17 +125,30 @@ export async function PATCH(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await logAction({
-    service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
-    action: 'sheet.labels.update',
-    entityType: 'grading_sheet',
-    entityId: id,
-  });
+  // Slot by slot, only what moved. The panel saves the FULL arrays on every
+  // blur, so "labels updated" with no detail was written for a save that
+  // renamed one activity and for one that changed nothing at all.
+  const changes = diffSlotLabels(
+    (existing.slot_labels as Record<string, unknown> | null) ?? {},
+    newLabels
+  );
+  if (changes.length > 0) {
+    await logAction({
+      service,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      action: 'sheet.labels.update',
+      entityType: 'grading_sheet',
+      entityId: id,
+      context: {
+        ...(await loadOneSheetAuditLabels(service, id)),
+        changes,
+      },
+    });
+  }
 
   return NextResponse.json({ ok: true, slot_labels: merged });
 }

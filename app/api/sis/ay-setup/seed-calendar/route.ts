@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     // 2. Fetch all terms in this AY that have both start and end dates set.
     const { data: terms, error: termsErr } = await service
       .from('terms')
-      .select('id, start_date, end_date')
+      .select('id, term_number, start_date, end_date')
       .eq('academic_year_id', ayId)
       .not('start_date', 'is', null)
       .not('end_date', 'is', null);
@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
 
     const datedTerms = (terms ?? []) as Array<{
       id: string;
+      term_number: number | null;
       start_date: string;
       end_date: string;
     }>;
@@ -86,15 +87,59 @@ export async function POST(request: NextRequest) {
 
     // 3. Seed each term sequentially (idempotent upsert — safe to parallelise,
     //    but sequential avoids hammering the DB under concurrent wizard clicks).
+    //
+    // ⚠ Each term's seed COMMITS on its own. If a later term fails, the ones
+    // before it are already written — so they are audited before the 500.
     let totalInserted = 0;
+    const seeded: Array<{
+      term_id: string;
+      term_number: number | null;
+      inserted: number;
+    }> = [];
     for (const term of datedTerms) {
-      const inserted = await ensureTermSeeded(
-        term.id,
-        term.start_date,
-        term.end_date,
-        auth.user.id
-      );
+      let inserted: number;
+      try {
+        inserted = await ensureTermSeeded(
+          term.id,
+          term.start_date,
+          term.end_date,
+          auth.user.id
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (totalInserted > 0) {
+          await logAction({
+            service,
+            actor: {
+              id: auth.user.id,
+              email: auth.user.email ?? null,
+              role: auth.role,
+            },
+            action: 'attendance.calendar.autoseed',
+            entityType: 'school_calendar',
+            entityId: ayId,
+            context: {
+              ayCode,
+              inserted: totalInserted,
+              terms: datedTerms.length,
+              terms_seeded: seeded,
+              partial: true,
+              failed_step: 'seed_term',
+              failed_term_id: term.id,
+              failed_term_number: term.term_number,
+              error: message,
+            },
+          });
+          revalidateTag(`sis:${ayCode}`, 'max');
+        }
+        throw e;
+      }
       totalInserted += inserted;
+      seeded.push({
+        term_id: term.id,
+        term_number: term.term_number,
+        inserted,
+      });
     }
 
     // 4. Audit + bust the AY cache so the readiness pill + calendar page
@@ -112,7 +157,12 @@ export async function POST(request: NextRequest) {
         action: 'attendance.calendar.autoseed',
         entityType: 'school_calendar',
         entityId: ayId,
-        context: { ayCode, inserted: totalInserted, terms: datedTerms.length },
+        context: {
+          ayCode,
+          inserted: totalInserted,
+          terms: datedTerms.length,
+          terms_seeded: seeded,
+        },
       });
     }
     revalidateTag(`sis:${ayCode}`, 'max');

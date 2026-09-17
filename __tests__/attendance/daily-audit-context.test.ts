@@ -56,25 +56,36 @@ vi.mock('@/lib/academic-year', () => ({
   requireCurrentAyCode: vi.fn(() => Promise.resolve('AY9999')),
 }));
 
-vi.mock('@/lib/attendance/mutations', () => ({
-  // Mirrors the real contract: one rollup per unique (term, student), keyed
-  // the way the route looks them up. The route writes the whole class in one
-  // call now rather than looping one entry at a time.
-  writeDailyBatch: vi.fn(
-    (
-      _service: unknown,
-      inputs: Array<{ termId: string; sectionStudentId: string }>
-    ) =>
-      Promise.resolve(
-        new Map(
-          inputs.map((i) => [
-            `${i.termId}|${i.sectionStudentId}`,
-            { attendance_pct: 100 },
-          ])
-        )
-      )
-  ),
-}));
+// Flipped per test: the marks landed and a rollup after them failed.
+let rollupFails = false;
+
+vi.mock('@/lib/attendance/mutations', async () => {
+  class MarksWrittenRollupFailedError extends Error {}
+  return {
+    MarksWrittenRollupFailedError,
+    // Mirrors the real contract: one rollup per unique (term, student), keyed
+    // the way the route looks them up. The route writes the whole class in one
+    // call now rather than looping one entry at a time.
+    writeDailyBatch: vi.fn(
+      (
+        _service: unknown,
+        inputs: Array<{ termId: string; sectionStudentId: string }>
+      ) =>
+        rollupFails
+          ? Promise.reject(
+              new MarksWrittenRollupFailedError('recompute failed')
+            )
+          : Promise.resolve(
+              new Map(
+                inputs.map((i) => [
+                  `${i.termId}|${i.sectionStudentId}`,
+                  { attendance_pct: 100 },
+                ])
+              )
+            )
+    ),
+  };
+});
 
 // ── Supabase service stub ──────────────────────────────────────────────────
 // Only the tables the route touches on the happy path. `school_calendar`
@@ -102,7 +113,16 @@ function buildService() {
             in: () =>
               Promise.resolve({
                 data: [
-                  { id: SS_GRIT, section_id: SEC_GRIT },
+                  {
+                    id: SS_GRIT,
+                    section_id: SEC_GRIT,
+                    student: {
+                      student_number: 'H250001',
+                      first_name: 'Ana',
+                      last_name: 'Reyes',
+                    },
+                  },
+                  // No student embed — the route must still log, with nulls.
                   { id: SS_HONESTY, section_id: SEC_HONESTY },
                 ],
                 error: null,
@@ -193,6 +213,121 @@ describe('PATCH /api/attendance/daily — audit context', () => {
     logAction.mockClear();
     priorLedgerRows = [];
     priorQueryCount = 0;
+    rollupFails = false;
+  });
+
+  it('names the child the mark is about', async () => {
+    const { PATCH } = await import('@/app/api/attendance/daily/route');
+    await PATCH(
+      patchRequest([
+        {
+          sectionStudentId: SS_GRIT,
+          termId: TERM,
+          date: '2099-02-10',
+          status: 'A',
+        },
+        {
+          sectionStudentId: SS_HONESTY,
+          termId: TERM,
+          date: '2099-02-10',
+          status: 'A',
+        },
+      ])
+    );
+
+    const [grit, honesty] = contextsFromLog();
+    expect(grit).toMatchObject({
+      section_student_id: SS_GRIT,
+      student_number: 'H250001',
+      student_name: 'Ana Reyes',
+    });
+    expect(honesty.student_number).toBeNull();
+    expect(honesty.student_name).toBeNull();
+  });
+
+  it('records that a note changed, never the note itself', async () => {
+    priorLedgerRows = [
+      {
+        section_student_id: SS_GRIT,
+        date: '2099-02-10',
+        status: 'EX',
+        ex_note: 'Old words',
+        recorded_at: '2099-02-10T02:00:00Z',
+      },
+    ];
+    const { PATCH } = await import('@/app/api/attendance/daily/route');
+    await PATCH(
+      patchRequest([
+        {
+          sectionStudentId: SS_GRIT,
+          termId: TERM,
+          date: '2099-02-10',
+          status: 'EX',
+          exReason: 'mc',
+          exNote: 'New words',
+        },
+      ])
+    );
+
+    const [ctx] = contextsFromLog();
+    expect(ctx).toMatchObject({
+      prior_status: 'EX',
+      status: 'EX',
+      ex_note_present: true,
+      ex_note_changed: true,
+    });
+    const serialised = JSON.stringify(ctx);
+    expect(serialised).not.toContain('Old words');
+    expect(serialised).not.toContain('New words');
+  });
+
+  it('does not claim a note changed when it did not', async () => {
+    priorLedgerRows = [
+      {
+        section_student_id: SS_GRIT,
+        date: '2099-02-10',
+        status: 'A',
+        ex_note: null,
+        recorded_at: '2099-02-10T02:00:00Z',
+      },
+    ];
+    const { PATCH } = await import('@/app/api/attendance/daily/route');
+    await PATCH(
+      patchRequest([
+        {
+          sectionStudentId: SS_GRIT,
+          termId: TERM,
+          date: '2099-02-10',
+          status: 'P',
+        },
+      ])
+    );
+
+    expect('ex_note_changed' in contextsFromLog()[0]).toBe(false);
+  });
+
+  it('logs marks that landed even when a rollup after them failed', async () => {
+    rollupFails = true;
+    const { PATCH } = await import('@/app/api/attendance/daily/route');
+    const res = await PATCH(
+      patchRequest([
+        {
+          sectionStudentId: SS_GRIT,
+          termId: TERM,
+          date: '2099-02-10',
+          status: 'A',
+        },
+      ])
+    );
+
+    expect(res?.status).toBe(500);
+    const [ctx] = contextsFromLog();
+    expect(ctx).toMatchObject({
+      student_number: 'H250001',
+      status: 'A',
+      partial: true,
+      failed_step: 'rollup',
+    });
   });
 
   it('records the class the mark belongs to', async () => {

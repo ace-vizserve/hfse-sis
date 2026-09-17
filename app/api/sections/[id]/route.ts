@@ -6,6 +6,18 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
 import { SectionUpdateSchema } from '@/lib/schemas/section';
 
+type LevelLite = { code: string | null; label: string | null };
+
+// `level_code` / `level_label` for an audit row — "Section renamed" means
+// little without saying which level's section it was.
+function levelKeys(level: unknown): {
+  level_code: string | null;
+  level_label: string | null;
+} {
+  const l = (Array.isArray(level) ? level[0] : level) as LevelLite | null;
+  return { level_code: l?.code ?? null, level_label: l?.label ?? null };
+}
+
 // PATCH /api/sections/[id] — rename a section.
 // Fires `section.rename` audit action only when the name actually changed.
 export async function PATCH(
@@ -38,7 +50,7 @@ export async function PATCH(
 
   const { data: before, error: beforeErr } = await service
     .from('sections')
-    .select('id, name, academic_year_id, level_id')
+    .select('id, name, academic_year_id, level_id, level:levels(code, label)')
     .eq('id', id)
     .maybeSingle();
   if (beforeErr) {
@@ -90,8 +102,11 @@ export async function PATCH(
     context: {
       academic_year_id: before.academic_year_id,
       level_id: before.level_id,
+      ...levelKeys(before.level),
       from: before.name,
       to: name,
+      previous_section_name: before.name,
+      section_name: name,
     },
   });
 
@@ -131,7 +146,7 @@ export async function DELETE(
   const { data: section, error: sectionErr } = await service
     .from('sections')
     .select(
-      'id, name, level_id, academic_year_id, academic_years!inner(ay_code)'
+      'id, name, level_id, academic_year_id, academic_years!inner(ay_code), level:levels(code, label)'
     )
     .eq('id', id)
     .maybeSingle();
@@ -162,12 +177,78 @@ export async function DELETE(
     );
   }
 
+  // The teacher assignments the section delete will CASCADE away. Read first,
+  // because after the delete the audit row is the only place they survive.
+  // Best-effort: a failed read is flagged, never blocks the delete.
+  const { data: assignmentRows, error: assignmentsErr } = await service
+    .from('teacher_assignments')
+    .select(
+      'id, teacher_user_id, role, subject_id, relief_teacher_user_id, subject:subjects(code)'
+    )
+    .eq('section_id', id);
+  let removedAssignments: Array<Record<string, unknown>> | null = null;
+  if (!assignmentsErr) {
+    const rows = (assignmentRows ?? []) as unknown as Array<{
+      id: string;
+      teacher_user_id: string;
+      role: string;
+      subject_id: string | null;
+      relief_teacher_user_id: string | null;
+      // CODE, not name — identity, unaffected by a per-year rename.
+      subject: { code: string | null } | { code: string | null }[] | null;
+    }>;
+    const nameById =
+      rows.length > 0
+        ? await import('@/lib/auth/staff-list')
+            .then(async (m) => new Map(await m.getStaffDisplayNameById()))
+            .catch(() => new Map<string, string>())
+        : new Map<string, string>();
+    removedAssignments = rows.map((r) => {
+      const subject = Array.isArray(r.subject) ? r.subject[0] : r.subject;
+      return {
+        assignment_id: r.id,
+        teacher_user_id: r.teacher_user_id,
+        teacher_name: nameById.get(r.teacher_user_id) ?? null,
+        role: r.role,
+        subject_id: r.subject_id,
+        subject_code: subject?.code ?? null,
+        ...(r.relief_teacher_user_id
+          ? {
+              relief_teacher_user_id: r.relief_teacher_user_id,
+              relief_teacher_name:
+                nameById.get(r.relief_teacher_user_id) ?? null,
+            }
+          : {}),
+      };
+    });
+  }
+
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+  const deleteContext = {
+    section_name: section.name,
+    sectionName: section.name,
+    ay_code: ayCode ?? null,
+    academic_year_id: section.academic_year_id,
+    level_id: section.level_id,
+    ...levelKeys((section as { level?: unknown }).level),
+    ...(removedAssignments
+      ? {
+          removed_teacher_assignments: removedAssignments,
+          removed_teacher_assignment_count: removedAssignments.length,
+        }
+      : { removed_teacher_assignments_unavailable: true }),
+  };
+
   // RESTRICT FK — must go before the section row itself. Guaranteed to
   // have zero grade_entries (they key off section_student_id, and the
   // guard above already confirmed zero section_students).
-  const { error: sheetsErr } = await service
+  const { count: sheetsDeleted, error: sheetsErr } = await service
     .from('grading_sheets')
-    .delete()
+    .delete({ count: 'exact' })
     .eq('section_id', id);
   if (sheetsErr) {
     return NextResponse.json({ error: sheetsErr.message }, { status: 500 });
@@ -178,23 +259,42 @@ export async function DELETE(
     .delete()
     .eq('id', id);
   if (deleteErr) {
+    // The grading sheets above ARE gone; the section is not. Record what
+    // committed before failing.
+    if ((sheetsDeleted ?? 0) > 0) {
+      await logAction({
+        service,
+        actor,
+        action: 'section.delete',
+        entityType: 'section',
+        entityId: id,
+        context: {
+          section_name: section.name,
+          sectionName: section.name,
+          ay_code: ayCode ?? null,
+          academic_year_id: section.academic_year_id,
+          level_id: section.level_id,
+          ...levelKeys((section as { level?: unknown }).level),
+          partial: true,
+          failed_step: 'delete_section',
+          grading_sheets_deleted: sheetsDeleted,
+          error: deleteErr.message,
+        },
+      });
+      if (ayCode) invalidateDrillTags('markbook', ayCode);
+    }
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
   }
 
   await logAction({
     service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
+    actor,
     action: 'section.delete',
     entityType: 'section',
     entityId: id,
     context: {
-      sectionName: section.name,
-      academic_year_id: section.academic_year_id,
-      level_id: section.level_id,
+      ...deleteContext,
+      grading_sheets_deleted: sheetsDeleted ?? null,
     },
   });
 

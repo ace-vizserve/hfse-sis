@@ -54,6 +54,7 @@ function row(over: Partial<DisciplineRecordRow> = {}): DisciplineRecordRow {
     studentName: 'Joaquin Bautista',
     sectionId: 'sec-1',
     className: 'Sec 1 Discipline 1',
+    sectionName: 'Discipline 1',
     levelName: 'Sec 1',
     academicYearId: 'ay-1',
     ayCode: 'AY2026',

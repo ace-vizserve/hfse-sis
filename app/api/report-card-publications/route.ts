@@ -227,6 +227,32 @@ export async function POST(request: NextRequest) {
   // window change still audits. We never skip when a notification actually
   // fired — that's a meaningful event worth recording.
   if (!windowUnchanged || (notification && notification.sent > 0)) {
+    // Which class and term, in words — the ids alone cannot be checked against
+    // "parents in P5 Diamond say they can't see Term 2".
+    const [sectionRes, termRes] = await Promise.all([
+      service
+        .from('sections')
+        .select('name, level:levels(label)')
+        .eq('id', data.section_id)
+        .maybeSingle(),
+      service
+        .from('terms')
+        .select('label, term_number')
+        .eq('id', data.term_id)
+        .maybeSingle(),
+    ]);
+    const sectionRow = sectionRes.data as {
+      name: string | null;
+      level: { label: string | null } | { label: string | null }[] | null;
+    } | null;
+    const levelRow = Array.isArray(sectionRow?.level)
+      ? sectionRow?.level[0]
+      : sectionRow?.level;
+    const termRow = termRes.data as {
+      label: string | null;
+      term_number: number | null;
+    } | null;
+
     await logAction({
       service,
       actor: {
@@ -240,8 +266,17 @@ export async function POST(request: NextRequest) {
       context: {
         section_id: data.section_id,
         term_id: data.term_id,
+        section_name: sectionRow?.name ?? null,
+        level_label: levelRow?.label ?? null,
+        term_label: termRow?.label ?? null,
+        term_number: termRow?.term_number ?? null,
         publish_from: data.publish_from,
         publish_until: data.publish_until,
+        // Null on a first publish. On a re-publish, the window it replaced —
+        // an upsert overwrites it, so this row is the only record of it.
+        previous_publish_from: priorPub?.publish_from ?? null,
+        previous_publish_until: priorPub?.publish_until ?? null,
+        first_publish: priorPub == null,
         notification,
         overridden: readiness.softGaps.length > 0,
         gaps: readiness.softGaps.map((g) => g.code),

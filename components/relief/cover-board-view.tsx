@@ -56,6 +56,7 @@ function Group({
                   reliefTeacherId: g.reliefTeacherId,
                   startedOn: g.startedOn,
                   endedOn: g.endedOn,
+                  reason: g.reason,
                   classCount: g.classes.length,
                 }}
               />
@@ -75,6 +76,7 @@ function Group({
             {g.reliefTeacherName}
           </span>
         </p>
+        {g.reason && <p className="pt-1 text-sm text-foreground">{g.reason}</p>}
         <ul className="flex flex-wrap gap-1.5 pt-2.5">
           {g.classes.map((c) => (
             <li

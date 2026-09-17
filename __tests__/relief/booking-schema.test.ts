@@ -8,12 +8,14 @@ import { ReliefBookingSchema } from '@/lib/schemas/teacher-assignment';
 
 const AWAY = '11111111-1111-4111-8111-111111111111';
 const SUB = '22222222-2222-4222-8222-222222222222';
+const REASON = 'Medical leave';
 
 describe('booking an absence', () => {
-  it('takes a substitute and a window', () => {
+  it('takes a substitute, a reason and a window', () => {
     const r = ReliefBookingSchema.safeParse({
       covered_teacher_user_id: AWAY,
       relief_teacher_user_id: SUB,
+      relief_reason: REASON,
       relief_started_on: '2026-09-01',
       relief_ended_on: '2026-09-05',
     });
@@ -24,14 +26,44 @@ describe('booking an absence', () => {
     const r = ReliefBookingSchema.safeParse({
       covered_teacher_user_id: AWAY,
       relief_teacher_user_id: SUB,
+      relief_reason: REASON,
     });
     expect(r.success).toBe(true);
+  });
+
+  it('requires a reason (migration 164)', () => {
+    for (const relief_reason of [undefined, null, '', '   ']) {
+      const r = ReliefBookingSchema.safeParse({
+        covered_teacher_user_id: AWAY,
+        relief_teacher_user_id: SUB,
+        relief_reason,
+      });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0]?.message).toBe('Say why cover is needed.');
+    }
+  });
+
+  it('trims the reason and refuses one over the limit', () => {
+    const ok = ReliefBookingSchema.safeParse({
+      covered_teacher_user_id: AWAY,
+      relief_teacher_user_id: SUB,
+      relief_reason: '  Training  ',
+    });
+    expect(ok.success && ok.data.relief_reason).toBe('Training');
+
+    const long = ReliefBookingSchema.safeParse({
+      covered_teacher_user_id: AWAY,
+      relief_teacher_user_id: SUB,
+      relief_reason: 'x'.repeat(201),
+    });
+    expect(long.success).toBe(false);
   });
 
   it('rejects an end before the start', () => {
     const r = ReliefBookingSchema.safeParse({
       covered_teacher_user_id: AWAY,
       relief_teacher_user_id: SUB,
+      relief_reason: REASON,
       relief_started_on: '2026-09-05',
       relief_ended_on: '2026-09-01',
     });

@@ -9,6 +9,7 @@ import {
   canManageAnyDisciplineRecord,
   canReadRoster,
 } from '@/lib/classroom/scope';
+import { disciplineUpdateAuditContext } from '@/lib/discipline/audit';
 import { updateDisciplineRecord } from '@/lib/discipline/mutations';
 import { getDisciplineRecord } from '@/lib/discipline/queries';
 import { DisciplineRecordSchema } from '@/lib/schemas/discipline';
@@ -157,34 +158,22 @@ export async function PATCH(
       action: 'discipline.record.update',
       entityType: 'student_discipline_record',
       entityId: recordId,
-      context: {
-        studentNumber,
-        student_id: student.studentId,
-        section_id: sectionId,
-        // Before/after on the fields that classify the record. The narrative
-        // (`details`, `remarks`) is deliberately absent on BOTH sides — a
-        // diff of it would put the very text migration 120 keeps out of
-        // audit_log straight back into audit_log, twice over.
-        before: {
-          record_type: existing.recordType,
-          occurred_on: existing.occurredOn,
-          nature: existing.nature,
-          // Worth a diff of its own: "a parent acknowledged this letter" is
-          // the kind of fact somebody may later need to show they recorded,
-          // and when.
-          acknowledged_on: existing.acknowledgedOn,
+      // Every editable field is accounted for — the narrative and the link
+      // by change + length/presence only, never by value. See
+      // lib/discipline/audit.ts for why.
+      context: disciplineUpdateAuditContext(
+        {
+          studentNumber,
+          studentId: student.studentId,
+          studentName: existing.studentName,
+          sectionId,
+          sectionName: existing.sectionName,
+          levelLabel: existing.levelName,
         },
-        after: {
-          record_type: parsed.data.record_type,
-          occurred_on: parsed.data.occurred_on,
-          nature: parsed.data.nature,
-          acknowledged_on:
-            parsed.data.record_type === 'letter'
-              ? (parsed.data.acknowledged_on ?? null)
-              : null,
-        },
-        edited_by_filer: existing.filedBy === user.id,
-      },
+        existing,
+        parsed.data,
+        existing.filedBy === user.id
+      ),
     });
 
     // Best-effort, and never a reason to fail a write that already landed.

@@ -88,12 +88,18 @@ export async function POST(
       role: auth.role,
     },
     action: 'student.section.transfer',
-    entityType: 'section_student',
+    // The id IS an enrolee number, and every reader finds these rows by it
+    // (lib/sis/section-history.ts, lib/sis/movements.ts, the classroom
+    // timeline). The type used to say `section_student`, which names a uuid
+    // this row never carried; `enrolment_status` is what the other
+    // enrolee-number-keyed placement row (assign_section) already uses.
+    entityType: 'enrolment_status',
     entityId: enroleeNumber,
     context: {
       ay_code: ayCode,
       enroleeNumber,
       studentNumber: result.studentNumber,
+      ...(result.studentName ? { studentName: result.studentName } : {}),
       fromSection: result.fromSection,
       fromLevel: result.fromLevel,
       toSection: result.toSection,
@@ -102,6 +108,26 @@ export async function POST(
       transferDate: result.transferDate,
       termNumber: result.term?.termNumber ?? null,
       termLabel: result.term?.termLabel ?? null,
+      from_section_student_id: result.sourceEnrolmentId,
+      from_index_number: result.sourceIndexNumber,
+      // The source row is left withdrawn, dated the transfer day (migration
+      // 168 explains why that date is kept, not blanked).
+      from_withdrawal_date: result.sourceWithdrawalDate,
+      to_section_student_id: result.targetEnrolmentId,
+      to_index_number: result.targetIndexNumber,
+      returned_to_previous_section: result.reusedEnrolment,
+      // A return reuses the row the student left behind and clears its old
+      // withdrawal. Those values exist nowhere else afterwards.
+      ...(result.targetPrior
+        ? { to_section_prior_withdrawal: result.targetPrior }
+        : {}),
+      ...(result.admissionsMirrorError
+        ? {
+            partial: true,
+            failed_step: 'admissions_class_mirror',
+            admissionsMirrorError: result.admissionsMirrorError,
+          }
+        : {}),
     },
   });
 
@@ -115,5 +141,7 @@ export async function POST(
     toLevel: result.toLevel,
     transferDate: result.transferDate,
     term: result.term,
+    // The move committed; only the admissions copy of the class is stale.
+    admissionsMirrorFailed: result.admissionsMirrorError !== null,
   });
 }

@@ -7,12 +7,28 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { UpdateUserSchema } from '@/lib/schemas/user-admin';
 import {
+  describeApproverRowsForUser,
   getUserFootprint,
   isLastSuperadmin,
   listApprovalStagesNamingUser,
   repointStagesAfterUserDeletion,
 } from '@/lib/sis/user-deletion';
 import { getUserRole, getUserRoleSet, type Role } from '@/lib/auth/roles';
+import { STAGED_FLOW_LABELS } from '@/lib/schemas/approval-flows';
+import { APPROVER_FLOW_LABELS } from '@/lib/schemas/approvers';
+
+// The name the Accounts table shows — same fallback order as
+// lib/sis/users/queries.ts, so an audit row names the person the same way.
+function displayNameOf(user: {
+  email?: string | null;
+  user_metadata?: unknown;
+}): string | null {
+  const meta = (user.user_metadata ?? {}) as {
+    display_name?: string | null;
+    full_name?: string | null;
+  };
+  return meta.display_name || meta.full_name || null;
+}
 
 // PATCH /api/sis/admin/users/[id] — update roles, enabled state, and/or
 // identity fields.
@@ -186,10 +202,20 @@ export async function PATCH(
       entityId: id,
       context: {
         email: before.email,
+        display_name: beforeDisplayName ?? displayNameOf(before),
+        // Role KEYS, as arrays — the wording layer turns keys into labels.
+        previous_roles: [...beforeRoles],
+        new_roles: [...roles],
+        roles_added: roles.filter((r) => !beforeRoles.includes(r)),
+        roles_removed: beforeRoles.filter((r) => !roles.includes(r)),
+        // Kept for rows already read by the joined-string shape.
         before: { role: beforeRoleLabel || null },
         after: { role: afterRoleLabel },
         ...(nextActiveRole !== beforeActiveRole
-          ? { active_role: nextActiveRole }
+          ? {
+              previous_active_role: beforeActiveRole,
+              active_role: nextActiveRole,
+            }
           : {}),
       },
     });
@@ -206,9 +232,19 @@ export async function PATCH(
       action: disabled ? 'user.disable' : 'user.enable',
       entityType: 'user_account',
       entityId: id,
-      context: { email: before.email, role: afterRoleLabel || null },
+      context: {
+        email: before.email,
+        display_name: beforeDisplayName ?? displayNameOf(before),
+        role: afterRoleLabel || null,
+      },
     });
   }
+
+  // An "email" in the body that matches the current address changes nothing,
+  // so it is not reported as a change.
+  const emailChanged =
+    email !== undefined &&
+    email.toLowerCase() !== (before.email ?? '').toLowerCase();
 
   if (displayName !== undefined || email !== undefined) {
     await logAction({
@@ -229,7 +265,19 @@ export async function PATCH(
               after: { displayName },
             }
           : {}),
-        ...(email !== undefined ? { emailChanged: true } : {}),
+        ...(displayName !== undefined
+          ? {
+              previous_display_name: beforeDisplayName,
+              new_display_name: displayName || null,
+            }
+          : {}),
+        ...(emailChanged
+          ? {
+              emailChanged: true,
+              previous_email: before.email ?? null,
+              new_email: email,
+            }
+          : {}),
         ...(password !== undefined ? { passwordReset: true } : {}),
       },
     });
@@ -361,6 +409,13 @@ export async function DELETE(
     );
   }
 
+  // What the delete will cascade away, for the audit row only. Best-effort: a
+  // failed read here must not block the delete (the fail-closed read above is
+  // the one the delete depends on).
+  const cascaded = await describeApproverRowsForUser(service, id).catch(
+    () => null
+  );
+
   const { error: deleteErr } = await service.auth.admin.deleteUser(id);
   if (deleteErr) {
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
@@ -396,7 +451,29 @@ export async function DELETE(
     action: 'user.delete',
     entityType: 'user_account',
     entityId: id,
-    context: { email: before.email, role },
+    context: {
+      email: before.email,
+      display_name: displayNameOf(before),
+      role,
+      // Every role the account held — `role` is only the one in use.
+      roles,
+      // Approval configuration the delete cascaded away with the account.
+      namedStageIds,
+      named_stages: (cascaded?.namedStages ?? []).map((s) => ({
+        ...s,
+        flow_label: s.flow
+          ? (STAGED_FLOW_LABELS[s.flow as keyof typeof STAGED_FLOW_LABELS] ??
+            s.flow)
+          : null,
+      })),
+      approver_assignments: (cascaded?.approverAssignments ?? []).map((a) => ({
+        ...a,
+        flow_label:
+          APPROVER_FLOW_LABELS[a.flow as keyof typeof APPROVER_FLOW_LABELS] ??
+          a.flow,
+      })),
+      ...(cascaded ? {} : { cascade_details_unavailable: true }),
+    },
   });
 
   return NextResponse.json({ ok: true });

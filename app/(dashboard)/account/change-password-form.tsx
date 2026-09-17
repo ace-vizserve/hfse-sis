@@ -39,6 +39,14 @@ export function ChangePasswordForm() {
       toast.error(error.message);
       return;
     }
+    // Records the change in the activity log. Sends no password and no body.
+    // Best-effort: the password has already changed, so a failed log call is
+    // not the person's problem and must not read as the change failing.
+    try {
+      await fetch('/api/account/password-changed', { method: 'POST' });
+    } catch {
+      // Deliberately silent — see above.
+    }
     toast.success('Password updated', {
       description: 'You can keep working — no need to sign out.',
     });

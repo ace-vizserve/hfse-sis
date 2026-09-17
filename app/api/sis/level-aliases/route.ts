@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   const { data: levelRow, error: levelErr } = await service
     .from('levels')
-    .select('id, label')
+    .select('id, code, label')
     .eq('id', toLevelId)
     .maybeSingle();
   if (levelErr || !levelRow) {
@@ -73,6 +73,29 @@ export async function POST(request: Request) {
 
   const current = await getCurrentAcademicYear();
   if (!unchanged) {
+    const toLevel = levelRow as { code: string | null; label: string };
+    const priorLevelId =
+      (priorAlias as { level_id?: string } | null)?.level_id ?? null;
+
+    // A re-point of an existing alias is a different event from a first
+    // mapping, and was once logged as `level.alias.create` with the old level
+    // as a bare uuid nobody could read. It now has its own action and names
+    // both levels. The lookup of the old level runs after the upsert has
+    // committed, so a failed read degrades to the id rather than dropping the
+    // audit row for a change that already happened.
+    let fromLevel: { code: string | null; label: string | null } | null = null;
+    if (priorLevelId) {
+      const { data: priorLevelRow } = await service
+        .from('levels')
+        .select('code, label')
+        .eq('id', priorLevelId)
+        .maybeSingle();
+      fromLevel = (priorLevelRow as {
+        code: string | null;
+        label: string | null;
+      } | null) ?? { code: null, label: null };
+    }
+
     await logAction({
       service,
       actor: {
@@ -80,16 +103,20 @@ export async function POST(request: Request) {
         email: auth.user.email ?? null,
         role: auth.role,
       },
-      action: 'level.alias.create',
+      action: priorLevelId ? 'level.alias.remap' : 'level.alias.create',
       entityType: 'level',
       entityId: toLevelId,
       context: {
         raw_label: fromLabel,
-        mapped_to_label: (levelRow as { label: string }).label,
-        // A re-point of an existing alias is a different event from a first
-        // mapping; record which one this was.
-        remapped_from_level_id:
-          (priorAlias as { level_id?: string } | null)?.level_id ?? null,
+        mapped_to_code: toLevel.code ?? null,
+        mapped_to_label: toLevel.label,
+        ...(priorLevelId
+          ? {
+              remapped_from_level_id: priorLevelId,
+              remapped_from_code: fromLevel?.code ?? null,
+              remapped_from_label: fromLevel?.label ?? null,
+            }
+          : {}),
       },
     });
   }

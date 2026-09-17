@@ -94,6 +94,95 @@ export async function PATCH(
     (before.start_date ?? null) !== startDate ||
     (before.end_date ?? null) !== endDate;
 
+  const virtueChanged =
+    virtueThemeUpdated && (before.virtue_theme ?? null) !== virtueTheme;
+  const gradingLockChanged =
+    gradingLockUpdated &&
+    (before.grading_lock_date ?? null) !== gradingLockDate;
+
+  // The three audit rows. Written on BOTH the success path and the resync
+  // failure path below — the `terms` update has already committed by the time
+  // the resync can throw, so a 500 that logged nothing would leave a real
+  // change to the year with no record of who made it.
+  const writeAuditRows = async (
+    calendarSync: { deleted: number; inserted: number } | null,
+    failure: { step: string; error: string } | null
+  ) => {
+    const actor = {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    };
+    const base = {
+      academic_year_id: before.academic_year_id,
+      term_number: before.term_number,
+      label: before.label,
+    };
+    const failureKeys = failure
+      ? { partial: true, failed_step: failure.step, error: failure.error }
+      : {};
+
+    if (datesChanged) {
+      await logAction({
+        service,
+        actor,
+        action: 'ay.term_dates.update',
+        entityType: 'term',
+        entityId: termId,
+        context: {
+          ...base,
+          old_start_date: before.start_date ?? null,
+          new_start_date: startDate,
+          old_end_date: before.end_date ?? null,
+          new_end_date: endDate,
+          before: {
+            start_date: before.start_date ?? null,
+            end_date: before.end_date ?? null,
+          },
+          after: { start_date: startDate, end_date: endDate },
+          calendar_sync: calendarSync,
+          ...failureKeys,
+        },
+      });
+    }
+
+    if (virtueChanged) {
+      await logAction({
+        service,
+        actor,
+        action: 'ay.term_virtue.update',
+        entityType: 'term',
+        entityId: termId,
+        context: {
+          ...base,
+          old_virtue_theme: before.virtue_theme ?? null,
+          new_virtue_theme: virtueTheme,
+          before: { virtue_theme: before.virtue_theme ?? null },
+          after: { virtue_theme: virtueTheme },
+          ...failureKeys,
+        },
+      });
+    }
+
+    if (gradingLockChanged) {
+      await logAction({
+        service,
+        actor,
+        action: 'ay.term_grading_lock.update',
+        entityType: 'term',
+        entityId: termId,
+        context: {
+          ...base,
+          old_grading_lock_date: before.grading_lock_date ?? null,
+          new_grading_lock_date: gradingLockDate,
+          before: { grading_lock_date: before.grading_lock_date ?? null },
+          after: { grading_lock_date: gradingLockDate },
+          ...failureKeys,
+        },
+      });
+    }
+  };
+
   // When the term window moves, bring its school_calendar into line: prune
   // school days that fell outside the new window and backfill weekdays now
   // inside it (in-range overrides preserved). Only runs with a complete window.
@@ -107,92 +196,23 @@ export async function PATCH(
         auth.user.id
       );
     } catch (e) {
-      // Term dates are saved, but the school-day resync failed — report it so
-      // the registrar retries rather than believing the calendar is in sync.
-      return NextResponse.json(
-        {
-          error:
-            e instanceof Error
-              ? e.message
-              : 'Term dates saved, but updating school days failed. Please retry.',
-        },
-        { status: 500 }
-      );
+      // Term dates are saved, but the school-day resync failed — record what
+      // DID commit, then report it so the registrar retries rather than
+      // believing the calendar is in sync.
+      const message =
+        e instanceof Error
+          ? e.message
+          : 'Term dates saved, but updating school days failed. Please retry.';
+      await writeAuditRows(null, {
+        step: 'calendar_resync',
+        error: message,
+      });
+      revalidateTag('dashboard-windows', 'max');
+      return NextResponse.json({ error: message }, { status: 500 });
     }
   }
 
-  const virtueChanged =
-    virtueThemeUpdated && (before.virtue_theme ?? null) !== virtueTheme;
-  const gradingLockChanged =
-    gradingLockUpdated &&
-    (before.grading_lock_date ?? null) !== gradingLockDate;
-
-  if (datesChanged) {
-    await logAction({
-      service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
-      action: 'ay.term_dates.update',
-      entityType: 'term',
-      entityId: termId,
-      context: {
-        academic_year_id: before.academic_year_id,
-        term_number: before.term_number,
-        label: before.label,
-        before: {
-          start_date: before.start_date ?? null,
-          end_date: before.end_date ?? null,
-        },
-        after: { start_date: startDate, end_date: endDate },
-        calendar_sync: calendarSync,
-      },
-    });
-  }
-
-  if (virtueChanged) {
-    await logAction({
-      service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
-      action: 'ay.term_virtue.update',
-      entityType: 'term',
-      entityId: termId,
-      context: {
-        academic_year_id: before.academic_year_id,
-        term_number: before.term_number,
-        label: before.label,
-        before: { virtue_theme: before.virtue_theme ?? null },
-        after: { virtue_theme: virtueTheme },
-      },
-    });
-  }
-
-  if (gradingLockChanged) {
-    await logAction({
-      service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
-      action: 'ay.term_grading_lock.update',
-      entityType: 'term',
-      entityId: termId,
-      context: {
-        academic_year_id: before.academic_year_id,
-        term_number: before.term_number,
-        label: before.label,
-        before: { grading_lock_date: before.grading_lock_date ?? null },
-        after: { grading_lock_date: gradingLockDate },
-      },
-    });
-  }
+  await writeAuditRows(calendarSync, null);
 
   // Term windows feed the attendance + markbook dashboards/drills (`unstable_cache`d).
   // Only the dates are a cached input — virtue theme / grading-lock are read by

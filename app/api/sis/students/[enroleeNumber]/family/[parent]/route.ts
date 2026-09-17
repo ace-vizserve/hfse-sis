@@ -85,9 +85,11 @@ export async function PATCH(
   if (rawKeys.length === 0) {
     return NextResponse.json({ ok: true, changed: 0 });
   }
+  // `studentNumber` rides along for the audit row (Hard Rule #4). It is not in
+  // any parent schema, so it can never be written here.
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select(rawKeys.join(', '))
+    .select(Array.from(new Set([...rawKeys, 'studentNumber'])).join(', '))
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -131,6 +133,19 @@ export async function PATCH(
   }
   const update = parsed.data as Record<string, unknown>;
 
+  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
+  for (const [col, next] of Object.entries(update)) {
+    const prev = beforeRow[col] ?? null;
+    if ((prev ?? null) !== (next ?? null)) {
+      changes.push({ field: col, from: prev, to: next });
+    }
+  }
+  // A save that changes nothing writes nothing — including an audit row that
+  // would claim an edit to this family's details that did not happen.
+  if (changes.length === 0) {
+    return NextResponse.json({ ok: true, changed: 0 });
+  }
+
   const { error: upErr } = await supabase
     .from(appsTable)
     .update(update)
@@ -138,14 +153,6 @@ export async function PATCH(
   if (upErr) {
     console.error('[sis family PATCH] update failed:', upErr.message);
     return NextResponse.json({ error: upErr.message }, { status: 500 });
-  }
-
-  const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
-  for (const [col, next] of Object.entries(update)) {
-    const prev = beforeRow[col] ?? null;
-    if ((prev ?? null) !== (next ?? null)) {
-      changes.push({ field: col, from: prev, to: next });
-    }
   }
 
   await logAction({
@@ -158,7 +165,14 @@ export async function PATCH(
     action: 'sis.family.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,
-    context: { ay_code: ayCode, parent, changes },
+    context: {
+      ay_code: ayCode,
+      enroleeNumber,
+      studentNumber:
+        (beforeRow.studentNumber as string | null | undefined) ?? null,
+      parent,
+      changes,
+    },
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');

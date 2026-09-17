@@ -341,6 +341,34 @@ describe('PATCH /api/sis/admin/approval-stages/[id]', () => {
     expect(revalidateTagMock).toHaveBeenCalledWith('sis-health', 'max');
   });
 
+  it('records a rule that SAVED even when bringing waiting requests in line then fails', async () => {
+    current = makeService(stageRow('named', 'any'));
+    repointMock.mockImplementationOnce(async () => {
+      throw new Error('lock timeout');
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await patch('st-1', { approval_rule: 'all', label: 'Board 2' });
+    errors.mockRestore();
+    expect(res.status).toBe(500);
+    // Both the rename and the rule committed before the repoint threw.
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    expect(logActionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'approval_stage.update',
+        entityId: 'st-1',
+        context: expect.objectContaining({
+          previous_label: 'Board',
+          new_label: 'Board 2',
+          approval_rule: 'all',
+          previous_approval_rule: 'any',
+          repointed_waiting: null,
+          partial: true,
+          failed_step: 'repoint_waiting_requests',
+        }),
+      })
+    );
+  });
+
   it('refuses "everyone" on a form adviser step before anything is written', async () => {
     current = makeService(stageRow('form_adviser', 'any'));
     const res = await patch('st-1', { approval_rule: 'all', label: 'Renamed' });

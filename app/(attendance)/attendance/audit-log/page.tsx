@@ -48,6 +48,10 @@ export const ATTENDANCE_AUDIT_ACTIONS = [
   // class advisers, and this is their module's log.
   'declaration.approve',
   'declaration.reject',
+  // The filing itself, and a certificate joining one — see log-action.ts.
+  'declaration.file',
+  'declaration.file.staff',
+  'declaration.evidence.attach',
 ] as const satisfies readonly string[];
 
 export default async function AttendanceAuditLogPage({

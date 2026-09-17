@@ -47,7 +47,7 @@ export async function POST(
   const { data: section } = await service
     .from('sections')
     .select(
-      'id, name, level_id, academic_year_id, academic_years!inner(ay_code)'
+      'id, name, level_id, academic_year_id, academic_years!inner(ay_code), level:levels(code, label)'
     )
     .eq('id', sectionId)
     .maybeSingle();
@@ -89,7 +89,11 @@ export async function POST(
   // ensure the offering rows exist rather than 422ing on a step the
   // simplified page has no separate UI for (idempotent upsert, never
   // touches an existing row for a different subject/level).
-  const { error: offeringErr } = await service
+  //
+  // ⚠ LEVEL-WIDE. An offering row applies to every section of the level, not
+  // only this one — so which ones this call CREATED is recorded in the audit
+  // row. `ignoreDuplicates` + `.select` returns only the rows actually inserted.
+  const { data: offeringRows, error: offeringErr } = await service
     .from('subject_level_offerings')
     .upsert(
       configs.map((c) => ({
@@ -101,10 +105,46 @@ export async function POST(
         onConflict: 'subject_id,level_id,academic_year_id',
         ignoreDuplicates: true,
       }
-    );
+    )
+    .select('subject_id');
   if (offeringErr) {
     return NextResponse.json({ error: offeringErr.message }, { status: 500 });
   }
+  const codeOf = (c: (typeof configs)[number]) => {
+    const s = Array.isArray(c.subject) ? c.subject[0] : c.subject;
+    return s?.code ?? null;
+  };
+  const createdOfferingSubjectIds = new Set(
+    ((offeringRows ?? []) as Array<{ subject_id: string }>).map(
+      (r) => r.subject_id
+    )
+  );
+  const offeringsCreatedCodes = configs
+    .filter((c) => createdOfferingSubjectIds.has(c.subject_id))
+    .map(codeOf);
+
+  const levelJoin = (section as { level?: unknown }).level as
+    | { code: string | null; label: string | null }
+    | { code: string | null; label: string | null }[]
+    | null
+    | undefined;
+  const level = Array.isArray(levelJoin) ? levelJoin[0] : levelJoin;
+  const baseContext = {
+    section_name: section.name,
+    sectionName: section.name,
+    ay_code: ayCode ?? null,
+    level_code: level?.code ?? null,
+    level_label: level?.label ?? null,
+    requestedSubjectCodes: configs.map(codeOf),
+    // Offerings are level-wide: these subjects now apply to every section of
+    // the level for the year.
+    level_offerings_created: offeringsCreatedCodes,
+  };
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
 
   const { data: existing } = await service
     .from('section_subjects')
@@ -133,6 +173,26 @@ export async function POST(
       // raw 500 for what is really a no-op. Mirrors applyTrackBundle in
       // lib/sis/section-track.ts, which has handled this correctly all along.
       if ((insertErr as { code?: string }).code !== '23505') {
+        // The level-wide offerings above committed; the attach did not.
+        if (offeringsCreatedCodes.length > 0) {
+          await logAction({
+            service,
+            actor,
+            action: 'section.subjects.attach_many',
+            entityType: 'section',
+            entityId: sectionId,
+            context: {
+              ...baseContext,
+              subjectCodes: [],
+              inserted: 0,
+              sheetsInserted: 0,
+              partial: true,
+              failed_step: 'attach_subjects',
+              error: insertErr.message,
+            },
+          });
+          if (ayCode) invalidateDrillTags('markbook', ayCode);
+        }
         return NextResponse.json({ error: insertErr.message }, { status: 500 });
       }
     }
@@ -140,12 +200,14 @@ export async function POST(
   }
 
   let sheetsInserted = 0;
+  let sheetsError: string | null = null;
   if (inserted > 0) {
     const { data: bulkResult, error: bulkErr } = await service.rpc(
       'create_grading_sheets_for_section',
       { p_section_id: sectionId }
     );
     if (bulkErr) {
+      sheetsError = bulkErr.message;
       console.error(
         '[sections/[id]/subjects/attach-many POST] bulk-sheet RPC failed:',
         bulkErr.message
@@ -159,25 +221,24 @@ export async function POST(
         (bulkResult as { inserted: unknown }).inserted ?? 0
       );
     }
+  }
 
+  // Logged when EITHER the section gained subjects or the level gained
+  // offerings — an all-already-attached call can still have added a
+  // level-wide offering, which reaches every section of the level.
+  if (inserted > 0 || offeringsCreatedCodes.length > 0) {
     await logAction({
       service,
-      actor: {
-        id: auth.user.id,
-        email: auth.user.email ?? null,
-        role: auth.role,
-      },
+      actor,
       action: 'section.subjects.attach_many',
       entityType: 'section',
       entityId: sectionId,
       context: {
-        sectionName: section.name,
-        subjectCodes: missing.map((c) => {
-          const s = Array.isArray(c.subject) ? c.subject[0] : c.subject;
-          return s?.code ?? null;
-        }),
+        ...baseContext,
+        subjectCodes: missing.map(codeOf),
         inserted,
         sheetsInserted,
+        ...(sheetsError ? { grading_sheets_error: sheetsError } : {}),
       },
     });
     if (ayCode) invalidateDrillTags('markbook', ayCode);

@@ -21,9 +21,51 @@ import { writeRegisterForDeclaration } from '@/lib/declarations/register';
 // it: no script imports this file — it busts Next's cache, which a script has
 // no business doing.
 
+type StudentForAudit = {
+  student_number: string | null;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+/** The class's name, or null — a lookup failure never blocks the audit row. */
+async function loadSectionName(
+  service: SubjectHandlerContext['service'],
+  sectionId: string | null
+): Promise<string | null> {
+  if (!sectionId) return null;
+  const { data } = await service
+    .from('sections')
+    .select('name')
+    .eq('id', sectionId)
+    .maybeSingle();
+  return (data as { name: string } | null)?.name ?? null;
+}
+
+/**
+ * The decided step's label, from the request's own copy of its ladder
+ * (`approval_request_stages`, migration 126) — so a step renamed since reads
+ * as it was called when this decision was made.
+ */
+async function loadStageLabel(
+  service: SubjectHandlerContext['service'],
+  requestId: string,
+  stageOrder: number | null
+): Promise<string | null> {
+  if (stageOrder == null) return null;
+  const { data } = await service
+    .from('approval_request_stages')
+    .select('label')
+    .eq('request_id', requestId)
+    .eq('stage_order', stageOrder)
+    .maybeSingle();
+  return (data as { label: string | null } | null)?.label ?? null;
+}
+
 /** Only the fields the audit row describes — never the note's text. */
 type DeclarationForAudit = {
   section_id: string;
+  section_student_id: string | null;
+  student?: StudentForAudit | StudentForAudit[] | null;
   start_date: string;
   end_date: string;
   declaration_type: string;
@@ -53,11 +95,81 @@ export const declarationApprovalHandler: SubjectHandler = async (
   const { data: declaration } = await service
     .from('student_declarations')
     .select(
-      'section_id, start_date, end_date, declaration_type, with_medical, parent_note'
+      'section_id, section_student_id, start_date, end_date, declaration_type, with_medical, parent_note, student:students(student_number, first_name, last_name)'
     )
     .eq('id', subjectId)
     .maybeSingle();
   declarationRow = (declaration ?? null) as DeclarationForAudit | null;
+
+  // ── What the audit row names ─────────────────────────────────────────────
+  //
+  // Read up front, because the row is written on TWO paths: the ordinary one
+  // at the bottom, and the failed projection just below — where the decision
+  // has already committed and returning without a row would leave a landed
+  // approval with no trace in the log.
+  //
+  // ⚠ NEITHER NOTE IS IN HERE. Not the parent's message and not the approver's
+  // reason — only whether one was written. Migration 109 set the rule for
+  // `ex_note` and 125/126 restate it: `audit_log` is readable by every
+  // is_registrar_or_above() user, is append-only, and can never be corrected,
+  // so a sentence about a child's illness put here would be permanent and seen
+  // by more people than the absence itself.
+  const [sectionName, stageLabel] = await Promise.all([
+    loadSectionName(service, declarationRow?.section_id ?? null),
+    loadStageLabel(service, requestId, ctx.decidedStageOrder),
+  ]);
+  const studentEmbed = Array.isArray(declarationRow?.student)
+    ? declarationRow?.student[0]
+    : declarationRow?.student;
+
+  const writeAudit = (extra: Record<string, unknown>) =>
+    logAction({
+      service,
+      actor: { id: actor.id, email: actor.email, role: actor.role },
+      action:
+        action === 'approve' ? 'declaration.approve' : 'declaration.reject',
+      entityType: 'student_declaration',
+      entityId: subjectId,
+      context: {
+        request_id: requestId,
+        flow,
+        outcome,
+        stage_order: ctx.decidedStageOrder,
+        // The step's name as it was when the request was filed (migration 126
+        // copies it onto the request), which is what the log renders.
+        stage_label: stageLabel,
+        next_stage_order: ctx.nextStageOrder,
+        section_student_id: declarationRow?.section_student_id ?? null,
+        section_id: declarationRow?.section_id ?? null,
+        section_name: sectionName,
+        student_number: studentEmbed?.student_number ?? null,
+        student_name: studentEmbed
+          ? `${studentEmbed.first_name ?? ''} ${studentEmbed.last_name ?? ''}`.trim() ||
+            null
+          : null,
+        start_date: declarationRow?.start_date ?? null,
+        end_date: declarationRow?.end_date ?? null,
+        declaration_type: declarationRow?.declaration_type ?? null,
+        with_medical: declarationRow?.with_medical ?? null,
+        // Presence only, for both notes. See above.
+        note_present: ctx.note != null,
+        parent_note_present: declarationRow?.parent_note != null,
+        // Which door the decision came through — the screen or an email link.
+        via: ctx.via,
+        // ⚠ NOBODY CLICKED ON `via: 'repoint'`. The actor is the admin whose
+        // change to the step's people or rule let it finish, not an approver,
+        // so the row says so and names the approval the step closed on — a
+        // staff email, not anything about the child. The register write keeps
+        // the admin as its author: they are who set it moving.
+        ...(ctx.via === 'repoint'
+          ? {
+              closed_by_step_edit: true,
+              final_approver_email: ctx.closedStepApprover?.email ?? null,
+            }
+          : {}),
+        ...extra,
+      },
+    });
 
   if (outcome === 'completed' || outcome === 'rejected') {
     const { error: projectErr } = await service
@@ -75,6 +187,18 @@ export const declarationApprovalHandler: SubjectHandler = async (
         '[approvals] declaration status projection failed:',
         projectErr.message
       );
+      // ⚠ THE DECISION COMMITTED, so it is logged before the error is
+      // returned. Nothing was marked on the register — that step never ran —
+      // and the row says so rather than leaving the counts looking like a
+      // quiet intermediate step.
+      await writeAudit({
+        status_projection_failed: true,
+        partial: true,
+        failed_step: 'status_projection',
+        register_days_written: null,
+        register_days_skipped: null,
+        register_write_failed: false,
+      });
       return {
         ok: false,
         status: 500,
@@ -102,11 +226,13 @@ export const declarationApprovalHandler: SubjectHandler = async (
   // script — and the response still says the approval succeeded.
   if (outcome === 'completed') {
     try {
-      const write = await writeRegisterForDeclaration(
-        service,
-        subjectId,
-        actor.id
-      );
+      // The whole actor, not just the id: the register write logs each day it
+      // marks (migration 166 stopped the trigger doing it as 'system').
+      const write = await writeRegisterForDeclaration(service, subjectId, {
+        id: actor.id,
+        email: actor.email,
+        role: actor.role,
+      });
       if (write.ok) {
         registerDaysWritten = write.written;
         registerDaysSkipped = write.skipped;
@@ -130,64 +256,16 @@ export const declarationApprovalHandler: SubjectHandler = async (
 
   // ── Audit ────────────────────────────────────────────────────────────────
   //
-  // ⚠ NEITHER NOTE IS IN HERE. Not the parent's message and not the approver's
-  // reason — only whether one was written. Migration 109 set the rule for
-  // `ex_note` and 125/126 restate it: `audit_log` is readable by every
-  // is_registrar_or_above() user, is append-only, and can never be corrected,
-  // so a sentence about a child's illness put here would be permanent and seen
-  // by more people than the absence itself.
-  let sectionName: string | null = null;
-  if (declarationRow?.section_id) {
-    const { data: section } = await service
-      .from('sections')
-      .select('name')
-      .eq('id', declarationRow.section_id)
-      .maybeSingle();
-    sectionName = (section as { name: string } | null)?.name ?? null;
-  }
-
-  await logAction({
-    service,
-    actor: { id: actor.id, email: actor.email, role: actor.role },
-    action: action === 'approve' ? 'declaration.approve' : 'declaration.reject',
-    entityType: 'student_declaration',
-    entityId: subjectId,
-    context: {
-      request_id: requestId,
-      flow,
-      outcome,
-      stage_order: ctx.decidedStageOrder,
-      next_stage_order: ctx.nextStageOrder,
-      section_id: declarationRow?.section_id ?? null,
-      section_name: sectionName,
-      start_date: declarationRow?.start_date ?? null,
-      end_date: declarationRow?.end_date ?? null,
-      declaration_type: declarationRow?.declaration_type ?? null,
-      with_medical: declarationRow?.with_medical ?? null,
-      // Presence only, for both notes. See above.
-      note_present: ctx.note != null,
-      parent_note_present: declarationRow?.parent_note != null,
-      // How many register days the approval actually marked. A COUNT, not the
-      // dates — the dates are on the filing, and the log is read by every
-      // registrar-and-above user. Null when nothing was attempted (a
-      // rejection, an intermediate stage, or a travel filing).
-      register_days_written: registerDaysWritten,
-      register_days_skipped: registerDaysSkipped,
-      register_write_failed: registerWriteError != null,
-      // Which door the decision came through — the screen or an email link.
-      via: ctx.via,
-      // ⚠ NOBODY CLICKED ON `via: 'repoint'`. The actor is the admin whose
-      // change to the step's people or rule let it finish, not an approver,
-      // so the row says so and names the approval the step closed on — a staff
-      // email, not anything about the child. The register write above keeps
-      // the admin as its author: they are who set it moving.
-      ...(ctx.via === 'repoint'
-        ? {
-            closed_by_step_edit: true,
-            final_approver_email: ctx.closedStepApprover?.email ?? null,
-          }
-        : {}),
-    },
+  // The fields are shaped by `writeAudit` above. Each day the register write
+  // marked has its own `attendance.daily.*` row as well, written by
+  // `writeRegisterForDeclaration`.
+  await writeAudit({
+    // How many register days the approval actually marked. A COUNT, not the
+    // dates — the dates are on the filing and on the per-day rows. Null when
+    // nothing was attempted (a rejection or an intermediate stage).
+    register_days_written: registerDaysWritten,
+    register_days_skipped: registerDaysSkipped,
+    register_write_failed: registerWriteError != null,
   });
 
   // The queue, the Attendance index panel and the drill cards all read this.

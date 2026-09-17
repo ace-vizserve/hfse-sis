@@ -51,6 +51,15 @@ export async function PATCH(request: NextRequest) {
     if (updErr)
       return NextResponse.json({ error: updErr.message }, { status: 500 });
 
+    // Resolved before the audit row so the row can name the year, and reused
+    // below for the readiness cache bust.
+    const { data: ay } = await service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', before.academic_year_id)
+      .maybeSingle();
+    const ayCode = (ay as { ay_code: string } | null)?.ay_code ?? null;
+
     await logAction({
       service,
       actor: {
@@ -63,20 +72,20 @@ export async function PATCH(request: NextRequest) {
       entityId: termId,
       context: {
         academic_year_id: before.academic_year_id,
+        ay_code: ayCode,
         term_number: before.term_number,
         label: before.label,
+        // Flat twins of before/after, so the log can say "Term 2 theme:
+        // Honesty → Respect" without walking nested objects. The nested pair
+        // stays for rows already written in that shape.
+        old_virtue_theme: before.virtue_theme ?? null,
+        new_virtue_theme: virtueTheme,
         before: { virtue_theme: before.virtue_theme ?? null },
         after: { virtue_theme: virtueTheme },
       },
     });
 
     // Bust the sis: readiness cache — the AY readiness check reads term data.
-    const { data: ay } = await service
-      .from('academic_years')
-      .select('ay_code')
-      .eq('id', before.academic_year_id)
-      .maybeSingle();
-    const ayCode = (ay as { ay_code: string } | null)?.ay_code ?? null;
     if (ayCode) revalidateTag(`sis:${ayCode}`, 'max');
   }
 

@@ -88,6 +88,10 @@ vi.mock('@/lib/sis/user-deletion', () => ({
     stageIds: readonly string[],
     actor: unknown
   ) => mockRepointStagesAfterUserDeletion(service, stageIds, actor),
+  // Audit-only read of what the delete cascades away. Its content is not what
+  // this suite pins, so it answers "nothing".
+  describeApproverRowsForUser: () =>
+    Promise.resolve({ namedStages: [], approverAssignments: [] }),
 }));
 
 type FakeUser = {
@@ -275,7 +279,13 @@ describe('DELETE /api/sis/admin/users/[id]', () => {
     expect(call.entityId).toBe('target-1');
     expect(call.context).toEqual({
       email: 'target@hfse.test',
+      display_name: null,
       role: 'teacher',
+      // Every role held, plus what the delete cascaded away (nothing here).
+      roles: ['teacher'],
+      namedStageIds: [],
+      named_stages: [],
+      approver_assignments: [],
     });
   });
 

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sis/students/raw-columns
 //
@@ -101,6 +103,35 @@ export async function POST(request: Request) {
       if (typeof key === 'string') rows[key] = row;
     }
   }
+
+  // A bulk export of personal data (addresses, passports, medical notes —
+  // whatever the admissions row holds) used to leave no trace at all. Record
+  // who took it, from which year and table, which columns and how many
+  // students. Never the values: the audit log is widely readable and
+  // append-only, so copying the export into it would widen the exposure.
+  const columns = new Set<string>();
+  for (const row of Object.values(rows)) {
+    for (const col of Object.keys(row)) columns.add(col);
+  }
+  await logAction({
+    service: createServiceClient(),
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
+    action: 'sis.student.export_raw',
+    entityType: 'academic_year',
+    entityId: ay.toUpperCase(),
+    context: {
+      ay_code: ay.toUpperCase(),
+      source,
+      table,
+      requested_count: keys.length,
+      row_count: Object.keys(rows).length,
+      columns: Array.from(columns).sort(),
+    },
+  });
 
   return NextResponse.json(
     { rows },

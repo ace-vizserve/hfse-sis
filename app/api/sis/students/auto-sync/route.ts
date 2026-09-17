@@ -12,7 +12,13 @@ import {
   type PreloadedSyncSnapshot,
 } from '@/lib/sync/students';
 
-// POST /api/sis/students/auto-sync — Vercel Cron only.
+// GET /api/sis/students/auto-sync — Vercel Cron.
+// POST is kept for a manual/scripted run with the same secret.
+//
+// 🔴 THIS NEVER RAN UNTIL 2026-09-17. Vercel Cron calls a cron path with GET
+// (vercel.json → "/api/sis/students/auto-sync"), and this file exported only
+// POST, so every nightly call got a 405 and not one `sis.student.auto_sync_batch`
+// audit row was ever written. Both verbs now run the same function.
 //
 // Runs daily at 15:00 UTC (23:00 SGT). Walks the unsynced enrolled-students
 // queue and runs syncOneStudent for every row where gapReason='not_synced'
@@ -22,7 +28,23 @@ import {
 // skipped because a human decision is required to unblock them.
 //
 // Auth: Vercel sets `Authorization: Bearer ${CRON_SECRET}` automatically.
+export async function GET(request: NextRequest) {
+  return runAutoSync(request);
+}
+
 export async function POST(request: NextRequest) {
+  return runAutoSync(request);
+}
+
+type Outcome = {
+  enroleeNumber: string;
+  studentNumber: string | null;
+  name: string | null;
+  classLevel: string | null;
+  classSection: string | null;
+};
+
+async function runAutoSync(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (
     !cronSecret ||
@@ -33,6 +55,7 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
   const admissions = createAdmissionsClient();
+  const systemActor = { id: null, email: 'system:auto-sync', role: null };
 
   let ayCode: string;
   try {
@@ -48,6 +71,10 @@ export async function POST(request: NextRequest) {
 
   const byCounts: Record<string, number> = {};
   const errors: string[] = [];
+  // WHO landed in each outcome, not just how many. A count of "3 enrolled"
+  // cannot be traced to a child; these lists can.
+  const studentsByOutcome: Record<string, Outcome[]> = {};
+  const failures: Array<Outcome & { error: string }> = [];
 
   // Fetch the two AY-invariant lookup tables ONCE for the whole run. Every
   // syncOneStudent call used to re-fetch the full `levels` table and the full
@@ -98,13 +125,28 @@ export async function POST(request: NextRequest) {
       }))
     );
     for (const { row, result } of chunkResults) {
-      if (result.ok) {
-        byCounts[result.change] = (byCounts[result.change] ?? 0) + 1;
-      } else {
-        const errMsg = `${row.enroleeNumber}: ${result.error ?? result.reason ?? 'unknown'}`;
+      const who: Outcome = {
+        enroleeNumber: row.enroleeNumber,
+        studentNumber: row.studentNumber,
+        name:
+          row.enroleeFullName?.trim() ||
+          [row.firstName, row.middleName, row.lastName]
+            .map((p) => (p ?? '').trim())
+            .filter(Boolean)
+            .join(' ') ||
+          null,
+        classLevel: row.classLevel,
+        classSection: row.classSection,
+      };
+      const outcome = result.ok ? result.change : 'skipped';
+      byCounts[outcome] = (byCounts[outcome] ?? 0) + 1;
+      (studentsByOutcome[outcome] ??= []).push(who);
+      if (!result.ok) {
+        const reason = result.error ?? result.reason ?? 'unknown';
+        const errMsg = `${row.enroleeNumber}: ${reason}`;
         errors.push(errMsg);
+        failures.push({ ...who, error: reason });
         console.warn('[auto-sync] syncOneStudent failed:', errMsg);
-        byCounts['skipped'] = (byCounts['skipped'] ?? 0) + 1;
       }
     }
   }
@@ -114,14 +156,18 @@ export async function POST(request: NextRequest) {
   await logAction({
     service,
     // No person, so no role — this batch already writes `actor_id: null`.
-    actor: { id: null, email: 'system:auto-sync', role: null },
+    actor: systemActor,
     action: 'sis.student.auto_sync_batch',
     entityType: 'academic_year',
     entityId: ayCode,
     context: {
+      ay_code: ayCode,
       run_date: runDate,
+      trigger: request.method === 'GET' ? 'cron' : 'manual',
       total_candidates: candidates.length,
       by_outcome: byCounts,
+      students_by_outcome: studentsByOutcome,
+      failures,
       errors,
     },
   });

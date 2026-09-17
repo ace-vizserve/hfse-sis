@@ -65,6 +65,17 @@ export function buildMidTermPayload(
   };
 }
 
+export type PlacementCompletion = {
+  midTermEnrolment: MidTermPayload | null;
+  enrollmentDateStamped: boolean;
+  /** The row that was stamped; null when none was found. */
+  sectionStudentId: string | null;
+  indexNumber: number | null;
+  /** The start date the row held before, and after, this call. */
+  enrollmentDateBefore: string | null;
+  enrollmentDateAfter: string | null;
+};
+
 /**
  * Stamps the attendance start date on the student's `section_students` row
  * and resolves the late-enrollee prompt.
@@ -90,17 +101,21 @@ export async function completePlacement(
     ayCode: string;
     sectionId?: string | null;
   }
-): Promise<{
-  midTermEnrolment: MidTermPayload | null;
-  enrollmentDateStamped: boolean;
-}> {
+): Promise<PlacementCompletion> {
   const { enroleeNumber, ayCode, sectionId } = args;
-  const empty = { midTermEnrolment: null, enrollmentDateStamped: false };
+  const empty: PlacementCompletion = {
+    midTermEnrolment: null,
+    enrollmentDateStamped: false,
+    sectionStudentId: null,
+    indexNumber: null,
+    enrollmentDateBefore: null,
+    enrollmentDateAfter: null,
+  };
 
   try {
     let query = service
       .from('section_students')
-      .select('id, section_id, enrollment_date')
+      .select('id, section_id, index_number, enrollment_date')
       .eq('enrolee_number', enroleeNumber)
       .neq('enrollment_status', 'withdrawn');
     if (sectionId) query = query.eq('section_id', sectionId);
@@ -117,12 +132,16 @@ export async function completePlacement(
     const ssRow = ss as {
       id: string;
       section_id: string;
+      index_number: number | null;
       enrollment_date: string | null;
     } | null;
     if (!ssRow?.id || !ssRow?.section_id) return empty;
 
     let stamped = false;
     const today = sgToday();
+    // This OVERWRITES the row's start date — including on a reactivated row
+    // whose earlier spell had its own. The before/after pair is returned so
+    // the caller's audit row can say what the date was, not only that it moved.
     if (ssRow.enrollment_date !== today) {
       const { error: dateErr } = await service
         .from('section_students')
@@ -138,10 +157,17 @@ export async function completePlacement(
       }
     }
 
+    const identity = {
+      sectionStudentId: ssRow.id,
+      indexNumber: ssRow.index_number ?? null,
+      enrollmentDateBefore: ssRow.enrollment_date ?? null,
+      enrollmentDateAfter: stamped ? today : (ssRow.enrollment_date ?? null),
+    };
     const pos = await getEnrolmentPosition(ayCode);
     return {
       midTermEnrolment: buildMidTermPayload(pos, ssRow.section_id, ssRow.id),
       enrollmentDateStamped: stamped,
+      ...identity,
     };
   } catch (err: unknown) {
     console.warn(

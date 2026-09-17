@@ -117,10 +117,17 @@ export async function POST(request: NextRequest) {
   const dates = entries.map((e) => e.date);
   const { data: beforeRows } = await service
     .from('school_calendar')
-    .select('date, day_type, audience, hbl_overlay')
+    .select('date, day_type, audience, hbl_overlay, label')
     .eq('term_id', termId)
     .eq('audience', audience)
     .in('date', dates);
+  // The label too: renaming "Deepavali" to "Deepavali (observed)" leaves the
+  // day type alone, and without the before value the trail cannot show it.
+  const beforeLabelByDate = new Map<string, string | null>(
+    ((beforeRows ?? []) as Array<{ date: string; label: string | null }>).map(
+      (r) => [r.date, r.label ?? null]
+    )
+  );
   const beforeByDate = new Map<string, string>(
     ((beforeRows ?? []) as Array<{ date: string; day_type: string }>).map(
       (r) => [r.date, r.day_type]
@@ -166,7 +173,11 @@ export async function POST(request: NextRequest) {
     after_day_type: r.day_type,
     before_hbl_overlay: beforeOverlayByDate.get(r.date) ?? false,
     after_hbl_overlay: r.hbl_overlay,
+    // `label` is the value after, kept under its old name so older rows and
+    // new ones read alike; `before_label` is null for a day that had no row.
     label: r.label,
+    before_label: beforeLabelByDate.get(r.date) ?? null,
+    after_label: r.label,
   }));
 
   await logAction({
@@ -208,15 +219,26 @@ export async function DELETE(request: NextRequest) {
   }
 
   const service = createServiceClient();
-  const { error } = await service
+  // `.select()` on the delete hands back the rows it removed, in the same
+  // statement — so the audit row records what the day WAS without a separate
+  // read that could disagree with what was actually deleted.
+  const { data: deletedRows, error } = await service
     .from('school_calendar')
     .delete()
     .eq('term_id', termId)
     .eq('audience', audience)
-    .eq('date', date);
+    .eq('date', date)
+    .select('day_type, label, hbl_overlay');
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const deleted = (
+    (deletedRows ?? []) as Array<{
+      day_type: string | null;
+      label: string | null;
+      hbl_overlay: boolean | null;
+    }>
+  )[0];
 
   await logAction({
     service,
@@ -228,7 +250,16 @@ export async function DELETE(request: NextRequest) {
     action: 'attendance.calendar.delete',
     entityType: 'school_calendar',
     entityId: termId,
-    context: { date, audience },
+    context: {
+      date,
+      audience,
+      // What the day was before it was removed. `removed: false` when there
+      // was no row to remove — the request succeeded and changed nothing.
+      removed: deleted != null,
+      before_day_type: deleted?.day_type ?? null,
+      before_label: deleted?.label ?? null,
+      before_hbl_overlay: deleted?.hbl_overlay ?? false,
+    },
   });
 
   invalidateDrillTags('attendance', await requireCurrentAyCode(service));

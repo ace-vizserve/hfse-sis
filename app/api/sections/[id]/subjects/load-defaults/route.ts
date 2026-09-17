@@ -60,15 +60,23 @@ export async function POST(
 
   // subject_configs no longer carries a level_id (migration 080) — resolve
   // the level's offered subjects' config rows by subject_id + AY instead.
-  let configs: Array<{ id: string }> = [];
+  // The subject CODE rides along for the audit row — a code is the subject's
+  // identity and does not change with a per-year rename.
+  type SubjectCode = { code: string | null };
+  let configs: Array<{
+    id: string;
+    subject: SubjectCode | SubjectCode[] | null;
+  }> = [];
   if (offeredSubjectIds.length > 0) {
     const { data: configRows } = await service
       .from('subject_configs')
-      .select('id')
+      .select('id, subject:subjects(code)')
       .eq('academic_year_id', section.academic_year_id)
       .in('subject_id', offeredSubjectIds);
-    configs = (configRows ?? []) as Array<{ id: string }>;
+    configs = (configRows ?? []) as unknown as typeof configs;
   }
+  const codeOf = (c: (typeof configs)[number]) =>
+    (Array.isArray(c.subject) ? c.subject[0] : c.subject)?.code ?? null;
 
   const existingIds = new Set(
     ((existing ?? []) as Array<{ subject_config_id: string }>).map(
@@ -111,6 +119,7 @@ export async function POST(
       'create_grading_sheets_for_section',
       { p_section_id: sectionId }
     );
+    const sheetsError = bulkErr?.message ?? null;
     if (bulkErr) {
       console.error(
         '[sections/[id]/subjects/load-defaults POST] bulk-sheet RPC failed:',
@@ -136,7 +145,15 @@ export async function POST(
       action: 'section.subjects.load_defaults',
       entityType: 'section',
       entityId: sectionId,
-      context: { sectionName: section.name, inserted, sheetsInserted },
+      context: {
+        section_name: section.name,
+        sectionName: section.name,
+        ay_code: ayCode ?? null,
+        subjectCodes: missing.map(codeOf),
+        inserted,
+        sheetsInserted,
+        ...(sheetsError ? { grading_sheets_error: sheetsError } : {}),
+      },
     });
     if (ayCode) invalidateDrillTags('markbook', ayCode);
   }

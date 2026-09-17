@@ -209,7 +209,8 @@ describe('auditContextSummary — per-action templates', () => {
       was_locked: true,
       approval_reference: 'CR-2026-001',
     });
-    expect(out).toContain('Qa Score: 20 → 25');
+    // The slot is named the way a teacher names it, not the column.
+    expect(out).toContain('Quarterly Assessment: 20 → 25');
     expect(out).toContain('post-lock edit');
     expect(out).toContain('ref CR-2026-001');
   });
@@ -563,16 +564,29 @@ describe('teacher assignment entries', () => {
   });
 });
 
-// The view switch (migration 141). A bespoke branch, because the generic
+// The role switch (migration 141). A bespoke branch, because the generic
 // fallback would print the raw context keys — the session log records that the
 // summary once emitted raw HTML for an action with no branch of its own.
-describe('view switch entries', () => {
-  it('reads as a sentence, in the same words the switcher uses', () => {
+//
+// Reworded 2026-09-17: switching IS a change of the role in force — every
+// permission check reads it — so it no longer reads as a "view" or a "lens".
+describe('role switch entries', () => {
+  it('reads as a sentence, in the same words the switcher uses (old row)', () => {
     const summary = auditContextSummary('user.view.switch', {
       from_view: 'school_admin',
       to_view: 'teacher',
     });
-    expect(summary).toBe('School Admin view → Teacher view');
+    expect(summary).toBe('School Admin → Teacher');
+  });
+
+  it('reads the from_role / to_role keys the route writes now', () => {
+    const summary = auditContextSummary('user.view.switch', {
+      from_role: 'teacher',
+      to_role: 'school_admin',
+      from_view: 'teacher',
+      to_view: 'school_admin',
+    });
+    expect(summary).toBe('Teacher → School Admin');
   });
 
   it('names a role the way the school does, not the way the database does', () => {
@@ -591,13 +605,13 @@ describe('view switch entries', () => {
         from_view: null,
         to_view: 'teacher',
       })
-    ).toBe('Teacher view');
+    ).toBe('Now working as Teacher');
   });
 
-  it('is labelled "Changed view", never "role changed"', () => {
-    // Nobody's role changed. `user.role.update` is the entry that means that,
-    // and the two must not read alike in a log a school admin scans.
-    expect(auditActionLabel('user.view.switch')).toBe('Changed view');
+  it('is labelled as a switch, distinct from an admin changing roles', () => {
+    // `user.role.update` is an admin changing which roles a person HOLDS; the
+    // two must not read alike in a log a school admin scans.
+    expect(auditActionLabel('user.view.switch')).toBe('Switched role');
     expect(auditActionLabel('user.role.update')).toBe('User role changed');
   });
 

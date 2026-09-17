@@ -193,11 +193,12 @@ export async function GET(request: NextRequest) {
     auth.role === 'school_admin' ||
     auth.role === 'superadmin';
 
-  let q = supabase
-    .from('teacher_assignments')
-    .select(
-      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id'
-    );
+  let q = supabase.from('teacher_assignments').select(
+    // The whole cover, not just the name: the Teachers tab reloads from here
+    // after every change, and a bare name dropped the dates and the reason,
+    // so the badge read as live and the edit form opened blank.
+    'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on, relief_reason'
+  );
   if (sectionId) q = q.eq('section_id', sectionId);
   // Teachers always see only their own rows regardless of ?mine param.
   if (!isManager) q = q.eq('teacher_user_id', auth.user.id);
@@ -423,20 +424,16 @@ export async function POST(request: NextRequest) {
   // where the insert SUCCEEDED. If this ever fires, some rows are in the
   // database, and telling an admin otherwise sends them to re-enter work that
   // is already saved. So it reports the count and sends them to look.
-  if (created.length !== rows.length) {
+  //
+  // ⚠ The rows that DID come back are committed, so they are audited (below,
+  // marked partial) BEFORE this answers 500 — returning first left real
+  // assignments with no creation record at all.
+  const countMismatch = created.length !== rows.length;
+  if (countMismatch) {
     console.error('[teacher-assignments] insert returned an unexpected count', {
       requested: rows.length,
       returned: created.length,
     });
-    return NextResponse.json(
-      {
-        error:
-          created.length === 0
-            ? 'Nothing came back from that save, so it may not have been recorded. Check the class before saving again.'
-            : `Only ${created.length} of ${rows.length} assignments came back from that save. Check the classes before saving again — some are already recorded.`,
-      },
-      { status: 500 }
-    );
   }
 
   // NOTE: this used to also mirror the adviser's display name onto
@@ -493,6 +490,14 @@ export async function POST(request: NextRequest) {
           ...(teacherName ? { teacher_name: teacherName } : {}),
           ...(sectionName ? { section_name: sectionName } : {}),
           ...(subjectName ? { subject_name: subjectName } : {}),
+          ...(countMismatch
+            ? {
+                partial: true,
+                failed_step: 'insert_returned_fewer_rows',
+                requested_count: rows.length,
+                returned_count: created.length,
+              }
+            : {}),
         },
       };
     })
@@ -516,6 +521,18 @@ export async function POST(request: NextRequest) {
     invalidateDrillTags('markbook', ayCode);
     invalidateDrillTags('evaluation', ayCode);
     invalidateDrillTags('attendance', ayCode);
+  }
+
+  if (countMismatch) {
+    return NextResponse.json(
+      {
+        error:
+          created.length === 0
+            ? 'Nothing came back from that save, so it may not have been recorded. Check the class before saving again.'
+            : `Only ${created.length} of ${rows.length} assignments came back from that save. Check the classes before saving again — some are already recorded.`,
+      },
+      { status: 500 }
+    );
   }
 
   // The single shape keeps its original response verbatim — the staff sheet

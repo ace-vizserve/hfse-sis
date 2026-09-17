@@ -7,8 +7,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { writeDailyBatch } from '@/lib/attendance/mutations';
+import { logAction, logActions } from '@/lib/audit/log-action';
+import {
+  MarksWrittenRollupFailedError,
+  writeDailyBatch,
+} from '@/lib/attendance/mutations';
 import { expandSchoolDays } from '@/lib/attendance/school-days';
+import { sgToday } from '@/lib/dates';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import type { ExReason } from '@/lib/schemas/attendance';
 import { inclusiveDayCount } from '@/lib/schemas/declarations';
@@ -75,6 +80,12 @@ export type RegisterWriteResult =
   | { ok: true; written: 0; skipped: 0; skippedReason: 'not_applicable' }
   | { ok: false; error: string };
 
+export type RegisterActor = {
+  id: string | null;
+  email: string | null;
+  role: string | null;
+};
+
 type DeclarationRow = {
   id: string;
   declaration_type: string;
@@ -104,8 +115,20 @@ type DeclarationRow = {
 export async function writeRegisterForDeclaration(
   service: SupabaseClient,
   declarationId: string,
-  actorId: string | null
+  /**
+   * Who set the write moving, for `recorded_by` and the audit rows.
+   *
+   * ⚠ A BARE ID IS STILL ACCEPTED, and means "no person to name": the repair
+   * script passes `null`, and it has no email or role to give. The approval
+   * handler passes the whole actor so the audit rows carry the approver.
+   */
+  actor: RegisterActor | string | null
 ): Promise<RegisterWriteResult> {
+  const auditActor: RegisterActor =
+    actor == null || typeof actor === 'string'
+      ? { id: actor ?? null, email: null, role: null }
+      : actor;
+  const actorId = auditActor.id;
   let row: DeclarationRow;
   try {
     const { data, error } = await service
@@ -142,14 +165,17 @@ export async function writeRegisterForDeclaration(
   try {
     // The calendar's audience precedence needs the child's half of the school.
     // Same lookup the daily PATCH route does before its own write-gate.
+    // `name` rides along for the audit rows below — same read.
     const { data: sectionRow } = await service
       .from('sections')
-      .select('levels(code)')
+      .select('name, levels(code)')
       .eq('id', row.section_id)
       .maybeSingle();
     const levelCode =
       (sectionRow as { levels?: { code?: string | null } | null } | null)
         ?.levels?.code ?? null;
+    const sectionName =
+      (sectionRow as { name?: string | null } | null)?.name ?? null;
     const levelType = levelTypeForAudienceLookup(levelCode);
 
     const days = await expandSchoolDays(service, {
@@ -166,23 +192,62 @@ export async function writeRegisterForDeclaration(
     const skipped = Math.max(0, totalDays - days.length);
 
     if (days.length > 0) {
-      await writeDailyBatch(
-        service,
-        days.map((d) => ({
-          sectionStudentId: row.section_student_id,
-          termId: d.termId,
-          date: d.date,
-          status: 'EX' as const,
-          exReason,
-          // ⚠ The parent's note is NOT copied onto every day of the register.
-          // It stays on the filing, which is where the approver reads it in
-          // full. `ex_note` is the teacher's own field (KD #177) and stamping
-          // a parent's sentence about a child's illness across five register
-          // rows spreads it further than the absence itself.
-          exNote: null,
-          recordedBy: actorId,
-        }))
-      );
+      // ── Audit rows, shaped before the write ────────────────────────────
+      //
+      // ⚠ THIS PATH WRITES THROUGH THE SERVICE ROLE, SO IT LOGS ITS OWN MARKS.
+      // Until migration 166 the `attendance_daily_audit` trigger logged them —
+      // as 'system', about no child — and that was the only trace of a day
+      // turning Excused because a certificate was approved. 166 makes the
+      // trigger step aside for service-role writers; these rows replace it,
+      // one per day, in the same shape the daily route writes, naming the
+      // approver and the filing that caused the change.
+      //
+      // The reads are best-effort: an audit lookup that fails must not stop
+      // an approved absence reaching the sheet, so errors leave the fields
+      // null rather than throwing.
+      const auditRows = await shapeRegisterAuditRows(service, {
+        declaration: row,
+        sectionName,
+        exReason,
+        dates: days.map((d) => ({ date: d.date, termId: d.termId })),
+      });
+
+      try {
+        await writeDailyBatch(
+          service,
+          days.map((d) => ({
+            sectionStudentId: row.section_student_id,
+            termId: d.termId,
+            date: d.date,
+            status: 'EX' as const,
+            exReason,
+            // ⚠ The parent's note is NOT copied onto every day of the register.
+            // It stays on the filing, which is where the approver reads it in
+            // full. `ex_note` is the teacher's own field (KD #177) and stamping
+            // a parent's sentence about a child's illness across five register
+            // rows spreads it further than the absence itself.
+            exNote: null,
+            recordedBy: actorId,
+          }))
+        );
+      } catch (e) {
+        // The marks landed and a rollup did not: log what is on the sheet
+        // before the failure is reported, or those days change with no name
+        // against them. A refused insert committed nothing and logs nothing.
+        if (e instanceof MarksWrittenRollupFailedError) {
+          await writeAuditRows(
+            service,
+            auditActor,
+            auditRows.map((r) => ({
+              ...r,
+              context: { ...r.context, partial: true, failed_step: 'rollup' },
+            }))
+          );
+        }
+        throw e;
+      }
+
+      await writeAuditRows(service, auditActor, auditRows);
     }
 
     // Stamp only after the marks land.
@@ -218,4 +283,144 @@ export async function writeRegisterForDeclaration(
       .eq('id', row.id);
     return { ok: false, error: message };
   }
+}
+
+/**
+ * Batched when there is a person to name; one row at a time when there is not.
+ *
+ * `logActions` requires an actor id, and the repair script has none to give —
+ * it passes `null`, and a null actor is the honest answer for a script run.
+ * `logAction` accepts that, so the no-person case goes through it instead.
+ */
+async function writeAuditRows(
+  service: SupabaseClient,
+  actor: RegisterActor,
+  rows: Awaited<ReturnType<typeof shapeRegisterAuditRows>>
+): Promise<void> {
+  if (actor.id != null) {
+    await logActions(
+      service,
+      { id: actor.id, email: actor.email, role: actor.role },
+      rows
+    );
+    return;
+  }
+  await Promise.all(rows.map((row) => logAction({ service, actor, ...row })));
+}
+
+/**
+ * One `attendance.daily.*` audit row per day the approval marks Excused.
+ *
+ * ⚠ THE SAME KEYS AS `PATCH /api/attendance/daily` AND MIGRATION 166's TRIGGER,
+ * so a day excused by an approval reads beside a day a teacher marked, with
+ * `declaration_id` and `source` saying where it came from. A correction or an
+ * update by the same "before today in Singapore" rule the other two use.
+ *
+ * ⚠ NO NOTE. The register write sets `ex_note` to null (see above), and the
+ * parent's words never reach `audit_log` — migration 109's rule.
+ */
+async function shapeRegisterAuditRows(
+  service: SupabaseClient,
+  args: {
+    declaration: DeclarationRow;
+    sectionName: string | null;
+    exReason: ExReason;
+    dates: Array<{ date: string; termId: string }>;
+  }
+) {
+  const { declaration, sectionName, exReason, dates } = args;
+
+  let studentNumber: string | null = null;
+  let studentName: string | null = null;
+  const priorStatusByDate = new Map<string, string | null>();
+  const priorNoteByDate = new Map<string, string | null>();
+
+  try {
+    const [studentRes, priorRes] = await Promise.all([
+      service
+        .from('section_students')
+        .select('student:students(student_number, first_name, last_name)')
+        .eq('id', declaration.section_student_id)
+        .maybeSingle(),
+      // The current mark per day is the newest row — the ledger is superseded
+      // by `recorded_at desc` (migration 014). A filing is at most a few weeks
+      // of days, so one read without paging is enough.
+      service
+        .from('attendance_daily')
+        .select('date, status, ex_note, recorded_at')
+        .eq('section_student_id', declaration.section_student_id)
+        .in(
+          'date',
+          dates.map((d) => d.date)
+        )
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false }),
+    ]);
+
+    type StudentEmbed = {
+      student_number: string;
+      first_name: string;
+      last_name: string;
+    };
+    const embed = (
+      studentRes.data as {
+        student?: StudentEmbed | StudentEmbed[] | null;
+      } | null
+    )?.student;
+    const student = Array.isArray(embed) ? embed[0] : embed;
+    if (student) {
+      studentNumber = student.student_number ?? null;
+      studentName =
+        `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim() || null;
+    }
+
+    for (const p of (priorRes.data ?? []) as Array<{
+      date: string;
+      status: string | null;
+      ex_note: string | null;
+    }>) {
+      if (priorStatusByDate.has(p.date)) continue;
+      priorStatusByDate.set(p.date, p.status);
+      priorNoteByDate.set(p.date, p.ex_note ?? null);
+    }
+  } catch (e) {
+    console.error(
+      '[declarations] register audit lookup failed; logging without it:',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  const today = sgToday();
+  return dates.map((d) => {
+    const prior = priorStatusByDate.get(d.date) ?? null;
+    return {
+      action:
+        d.date < today
+          ? ('attendance.daily.correct' as const)
+          : ('attendance.daily.update' as const),
+      entityType: 'attendance_daily' as const,
+      entityId: null,
+      context: {
+        section_student_id: declaration.section_student_id,
+        section_id: declaration.section_id,
+        section_name: sectionName,
+        student_number: studentNumber,
+        student_name: studentName,
+        term_id: d.termId,
+        date: d.date,
+        status: 'EX',
+        ...(prior !== null ? { prior_status: prior } : {}),
+        ex_reason: exReason,
+        // The approval clears whatever note the teacher had on the day.
+        ...((priorNoteByDate.get(d.date) ?? null) !== null
+          ? { ex_note_changed: true }
+          : {}),
+        // Where the mark came from. Without these the row reads as a person
+        // editing the sheet by hand.
+        source: 'declaration_approval',
+        declaration_id: declaration.id,
+        declaration_type: declaration.declaration_type,
+      },
+    };
+  });
 }

@@ -90,6 +90,22 @@ function toLedgerRow(i: DailyWriteInput) {
   };
 }
 
+/**
+ * The marks were written; a rollup after them was not.
+ *
+ * ⚠ A DIFFERENT FAILURE FROM A REFUSED INSERT, and the caller has to be able to
+ * tell them apart. A refused insert committed nothing. This one committed every
+ * mark in the batch to an append-only ledger — so a caller that answers 500
+ * without writing its audit rows leaves real marks on the sheet that nobody can
+ * attribute. Thrown only once the insert has landed.
+ */
+export class MarksWrittenRollupFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MarksWrittenRollupFailedError';
+  }
+}
+
 /** Rollups run this many at a time. See writeDailyBatch. */
 export const ROLLUP_CONCURRENCY = 8;
 
@@ -129,18 +145,25 @@ export async function writeDailyBatch(
   const pairs = [
     ...new Set(inputs.map((i) => `${i.termId}|${i.sectionStudentId}`)),
   ];
-  for (let i = 0; i < pairs.length; i += ROLLUP_CONCURRENCY) {
-    const wave = pairs.slice(i, i + ROLLUP_CONCURRENCY);
-    const settled = await Promise.all(
-      wave.map(async (key) => {
-        const [termId, sectionStudentId] = key.split('|');
-        return [
-          key,
-          await recomputeRollup(service, termId, sectionStudentId),
-        ] as const;
-      })
+  try {
+    for (let i = 0; i < pairs.length; i += ROLLUP_CONCURRENCY) {
+      const wave = pairs.slice(i, i + ROLLUP_CONCURRENCY);
+      const settled = await Promise.all(
+        wave.map(async (key) => {
+          const [termId, sectionStudentId] = key.split('|');
+          return [
+            key,
+            await recomputeRollup(service, termId, sectionStudentId),
+          ] as const;
+        })
+      );
+      for (const [key, rollup] of settled) rollups.set(key, rollup);
+    }
+  } catch (e) {
+    // The insert above has landed. See `MarksWrittenRollupFailedError`.
+    throw new MarksWrittenRollupFailedError(
+      e instanceof Error ? e.message : String(e)
     );
-    for (const [key, rollup] of settled) rollups.set(key, rollup);
   }
   return rollups;
 }

@@ -10,6 +10,39 @@ import {
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 
+// What an audit row says about an event: every field a person can set, read
+// back from the database. Shared by PATCH (before and after) and DELETE (what
+// was removed) so the two cannot drift.
+const EVENT_AUDIT_COLUMNS =
+  'term_id, start_date, end_date, label, category, audience, levels, section_ids, tentative';
+
+type EventAuditRow = {
+  term_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  label: string | null;
+  category: string | null;
+  audience: string | null;
+  levels: string[] | null;
+  section_ids: string[] | null;
+  tentative: boolean | null;
+};
+
+/** The create route's key names, so every event row in the log reads alike. */
+function eventAuditShape(row: EventAuditRow) {
+  return {
+    termId: row.term_id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    label: row.label,
+    category: row.category,
+    audience: row.audience,
+    levels: row.levels,
+    sectionIds: row.section_ids,
+    tentative: row.tentative,
+  };
+}
+
 // POST /api/attendance/calendar/events
 // Body: { termId, startDate, endDate, label, category?, audience?, tentative? }
 // Creates a calendar_events row (informational overlay; doesn't block attendance).
@@ -150,13 +183,25 @@ export async function PATCH(request: NextRequest) {
   }
 
   const service = createServiceClient();
-  const { error } = await service
+
+  // The event as it stood, for the audit row's before values. Read first and
+  // separately because PostgREST's update returns only the row AFTER. A failed
+  // read does not block the edit — the row is then logged without `before`.
+  const { data: beforeRow } = await service
+    .from('calendar_events')
+    .select(EVENT_AUDIT_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+
+  const { data: afterRows, error } = await service
     .from('calendar_events')
     .update(patch)
-    .eq('id', id);
+    .eq('id', id)
+    .select(EVENT_AUDIT_COLUMNS);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const afterRow = ((afterRows ?? []) as EventAuditRow[])[0] ?? null;
 
   await logAction({
     service,
@@ -171,6 +216,13 @@ export async function PATCH(request: NextRequest) {
     context: {
       id,
       ...fields,
+      // The whole event before and after, in the same shape as each other.
+      // `after` is what the database holds once the audience trigger
+      // (migration 158) has re-derived it, which the request alone cannot say.
+      // `updated: false` means no row matched the id — nothing changed.
+      updated: afterRow != null,
+      before: beforeRow ? eventAuditShape(beforeRow as EventAuditRow) : null,
+      after: afterRow ? eventAuditShape(afterRow) : null,
       ...(pastDateOverride ? { pastDateOverride: true } : {}),
     },
   });
@@ -199,10 +251,18 @@ export async function DELETE(request: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
   const service = createServiceClient();
-  const { error } = await service.from('calendar_events').delete().eq('id', id);
+  // `.select()` on the delete returns the removed row from the same statement,
+  // so the audit row says what was deleted rather than only its id — which,
+  // once the row is gone, points at nothing.
+  const { data: deletedRows, error } = await service
+    .from('calendar_events')
+    .delete()
+    .eq('id', id)
+    .select(EVENT_AUDIT_COLUMNS);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const deleted = ((deletedRows ?? []) as EventAuditRow[])[0] ?? null;
 
   await logAction({
     service,
@@ -214,7 +274,11 @@ export async function DELETE(request: NextRequest) {
     action: 'attendance.event.delete',
     entityType: 'calendar_event',
     entityId: id,
-    context: {},
+    // Flat, with the create route's key names, so a delete reads like the
+    // create it undoes. `removed: false` when no row matched the id.
+    context: deleted
+      ? { removed: true, ...eventAuditShape(deleted) }
+      : { removed: false },
   });
 
   // Calendar events are shared infrastructure: attendance reads day-type

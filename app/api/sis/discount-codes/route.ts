@@ -82,7 +82,17 @@ export async function POST(request: Request) {
     action: 'sis.discount_code.create',
     entityType: 'discount_code',
     entityId: String(id),
-    context: { ay_code: ayCode, values: parsed.data },
+    // Flat keys so the log can name the code without unpacking `values`;
+    // `values` stays for rows that were read by that shape before.
+    context: {
+      ay_code: ayCode,
+      discount_code: parsed.data.discountCode,
+      enrolee_type: parsed.data.enroleeType,
+      start_date: parsed.data.startDate ?? null,
+      end_date: parsed.data.endDate ?? null,
+      details: parsed.data.details ?? null,
+      values: parsed.data,
+    },
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');

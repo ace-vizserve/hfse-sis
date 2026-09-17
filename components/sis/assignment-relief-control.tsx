@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
   coverBadgeLabel,
   reliefStatus,
 } from '@/lib/relief/display';
+import { RELIEF_REASON_MAX } from '@/lib/schemas/teacher-assignment';
 
 // Cover for one class.
 //
@@ -62,6 +64,7 @@ export function AssignmentReliefControl({
   reliefTeacherId = null,
   reliefStartedOn = null,
   reliefEndedOn = null,
+  reliefReason = null,
   teacherOptions,
   canManage,
   onChanged,
@@ -81,6 +84,8 @@ export function AssignmentReliefControl({
   reliefStartedOn?: string | null;
   /** Last day of the cover, inclusive; null means open-ended. */
   reliefEndedOn?: string | null;
+  /** Why cover was booked; null on covers booked before migration 164. */
+  reliefReason?: string | null;
   teacherOptions: ReliefOption[];
   canManage: boolean;
   /**
@@ -94,12 +99,14 @@ export function AssignmentReliefControl({
   const [picked, setPicked] = useState('');
   const [startsOn, setStartsOn] = useState('');
   const [endsOn, setEndsOn] = useState('');
+  const [reason, setReason] = useState('');
 
   const mutation = useMutation({
     mutationFn: (body: {
       relief_teacher_user_id: string | null;
       relief_started_on: string | null;
       relief_ended_on: string | null;
+      relief_reason: string | null;
     }) =>
       apiFetch(
         `/api/teacher-assignments/${assignmentId}`,
@@ -114,6 +121,7 @@ export function AssignmentReliefControl({
     setPicked('');
     setStartsOn('');
     setEndsOn('');
+    setReason('');
   }
 
   // Editing loads the cover that is already there; adding starts blank. Without
@@ -125,6 +133,7 @@ export function AssignmentReliefControl({
       setPicked(reliefTeacherId ?? '');
       setStartsOn(reliefStartedOn ?? '');
       setEndsOn(reliefEndedOn ?? '');
+      setReason(reliefReason ?? '');
     } else {
       resetForm();
     }
@@ -137,7 +146,8 @@ export function AssignmentReliefControl({
   async function setRelief(
     next: string | null,
     start: string | null,
-    end: string | null
+    end: string | null,
+    why: string | null
   ) {
     const who = teacherOptions.find((t) => t.id === next)?.name;
     // A cover that has not started yet gets different words throughout — the
@@ -152,6 +162,7 @@ export function AssignmentReliefControl({
           relief_teacher_user_id: next,
           relief_started_on: next ? (start ?? null) : null,
           relief_ended_on: next ? (end ?? null) : null,
+          relief_reason: next ? why : null,
         }),
       {
         pending: next
@@ -238,6 +249,19 @@ export function AssignmentReliefControl({
               </Select>
             </Field>
 
+            <Field>
+              <FieldLabel htmlFor={`relief-reason-${assignmentId}`}>
+                Reason
+              </FieldLabel>
+              <Input
+                id={`relief-reason-${assignmentId}`}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={RELIEF_REASON_MAX}
+                placeholder="e.g. Medical leave, training, family emergency"
+              />
+            </Field>
+
             {/* Both optional, and the descriptions say what blank does —
                 leaving them alone is the ordinary case and must not feel like
                 skipping a step. */}
@@ -291,12 +315,19 @@ export function AssignmentReliefControl({
               at the moment of committing to it. */}
           <Button
             onClick={() =>
-              void setRelief(picked, startsOn || null, endsOn || null)
+              void setRelief(
+                picked,
+                startsOn || null,
+                endsOn || null,
+                reason.trim()
+              )
             }
             loading={busy}
             loadingText="Saving…"
             disabled={
-              !picked || Boolean(startsOn && endsOn && endsOn < startsOn)
+              !picked ||
+              !reason.trim() ||
+              Boolean(startsOn && endsOn && endsOn < startsOn)
             }
           >
             {!busy &&
@@ -324,9 +355,14 @@ export function AssignmentReliefControl({
           className={`h-6 ${coverBadgeClass(status)}`}
           // The window in full on hover, so the badge itself can stay short.
           title={
-            scheduled
-              ? `${reliefTeacherName} has no access to this class yet.`
-              : undefined
+            [
+              scheduled
+                ? `${reliefTeacherName} has no access to this class yet.`
+                : null,
+              reliefReason,
+            ]
+              .filter(Boolean)
+              .join(' — ') || undefined
           }
         >
           {scheduled ? (
@@ -351,7 +387,7 @@ export function AssignmentReliefControl({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => void setRelief(null, null, null)}
+              onClick={() => void setRelief(null, null, null, null)}
               loading={busy}
               aria-label={
                 scheduled

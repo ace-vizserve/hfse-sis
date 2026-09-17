@@ -67,6 +67,12 @@ const ROLE_FOOTPRINT_COLUMNS: Record<
     { table: 'teacher_assignments', column: 'relief_teacher_user_id' },
   ],
   superadmin: [
+    // The account BEING an approver, not only having named one. A superadmin
+    // holds `grade_changes.approve` as surely as a school admin does, and
+    // `approver_assignments.user_id` cascades on delete (migration 013) — so
+    // leaving this out let a single-role superadmin approver be deleted and
+    // silently vanish from the change-request approver list.
+    { table: 'approver_assignments', column: 'user_id' },
     { table: 'approver_assignments', column: 'created_by' },
     { table: 'grade_change_requests', column: 'applied_by' },
     { table: 'grade_change_requests', column: 'requested_by' },
@@ -170,6 +176,83 @@ export async function listApprovalStagesNamingUser(
       ((data ?? []) as Array<{ stage_id: string }>).map((r) => r.stage_id)
     ),
   ];
+}
+
+/**
+ * Everything the account's delete will cascade away, read BEFORE the delete so
+ * the audit row can say what went with it: the approval steps it was named on
+ * (with their names and flows) and any pooled approver assignments it held.
+ *
+ * Best-effort — used only for the audit row, so a failed read returns what it
+ * has rather than throwing (`listApprovalStagesNamingUser` is the fail-closed
+ * read the delete itself depends on).
+ */
+export async function describeApproverRowsForUser(
+  service: SupabaseClient,
+  userId: string
+): Promise<{
+  namedStages: Array<{
+    approver_row_id: string;
+    stage_id: string;
+    stage_label: string | null;
+    stage_order: number | null;
+    flow: string | null;
+    applies_to_level_type: string | null;
+  }>;
+  approverAssignments: Array<{ id: string; flow: string }>;
+}> {
+  const [approverRes, assignmentsRes] = await Promise.all([
+    service
+      .from('approval_stage_approvers')
+      .select('id, stage_id, applies_to_level_type')
+      .eq('user_id', userId),
+    service
+      .from('approver_assignments')
+      .select('id, flow')
+      .eq('user_id', userId),
+  ]);
+
+  const approverRows = (approverRes.data ?? []) as Array<{
+    id: string;
+    stage_id: string;
+    applies_to_level_type: string | null;
+  }>;
+
+  // Separate read rather than an embed: the only link between the two tables
+  // is migration 126's COMPOSITE (stage_id, resolver) key.
+  type StageLite = {
+    id: string;
+    label: string;
+    stage_order: number;
+    flow: string;
+  };
+  const stageById = new Map<string, StageLite>();
+  const stageIds = [...new Set(approverRows.map((r) => r.stage_id))];
+  if (stageIds.length > 0) {
+    const { data: stageRows } = await service
+      .from('approval_stages')
+      .select('id, label, stage_order, flow')
+      .in('id', stageIds);
+    for (const s of (stageRows ?? []) as StageLite[]) stageById.set(s.id, s);
+  }
+
+  const namedStages = approverRows.map((r) => {
+    const stage = stageById.get(r.stage_id) ?? null;
+    return {
+      approver_row_id: r.id,
+      stage_id: r.stage_id,
+      stage_label: stage?.label ?? null,
+      stage_order: stage?.stage_order ?? null,
+      flow: stage?.flow ?? null,
+      applies_to_level_type: r.applies_to_level_type ?? null,
+    };
+  });
+
+  const approverAssignments = (
+    (assignmentsRes.data ?? []) as Array<{ id: string; flow: string }>
+  ).map((r) => ({ id: r.id, flow: r.flow }));
+
+  return { namedStages, approverAssignments };
 }
 
 /**

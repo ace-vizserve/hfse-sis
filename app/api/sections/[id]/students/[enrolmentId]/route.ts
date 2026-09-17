@@ -127,7 +127,12 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('section_students')
     .select(
-      'id, section_id, bus_no, classroom_officer_role, academics_notes, admin_notes, enrollment_status, enrollment_date, withdrawal_date, withdrawal_reason, withdrawal_notes, late_enrollee_term_number'
+      // Every withdrawal field is read, not just the ones this route used to
+      // branch on: the audit row's `before` is built from this, and a
+      // re-enrolment clears both dates — which, unread, went unrecorded.
+      // The student + section joins name the child in that row (Hard Rule #4:
+      // student_number, not the enrolee number, is what survives the year).
+      'id, section_id, index_number, enrolee_number, bus_no, classroom_officer_role, academics_notes, admin_notes, enrollment_status, enrollment_date, withdrawal_date, withdrawal_approved_date, withdrawal_reason, withdrawal_notes, late_enrollee_term_number, student:students(student_number, first_name, middle_name, last_name), section:sections(name)'
     )
     .eq('id', enrolmentId)
     .maybeSingle();
@@ -156,6 +161,23 @@ export async function PATCH(
   const sectionAyCode =
     (Array.isArray(secAy) ? secAy[0]?.ay_code : secAy?.ay_code) ?? null;
 
+  // Who this row is, for every audit row below. Read off the joins on the
+  // pre-image, so it costs no extra query.
+  const identity = identityFromBefore(before);
+
+  // Set when a cascade to the admissions row fails AFTER the roster row has
+  // committed. Recorded on the main audit row so the log shows the partial.
+  let admissionsCascadeFailed: {
+    enroleeNumber: string;
+    ayCode: string;
+    error: string;
+  } | null = null;
+  let reEnrolmentCascadeFailed: {
+    enroleeNumber: string;
+    ayCode: string;
+    error: string;
+  } | null = null;
+
   // Flag set inside the withdrawal cascade when the admissions row already
   // has a terminal reason — lets us skip overwriting it and record why.
   let terminalCascadeSkipped = false;
@@ -180,9 +202,14 @@ export async function PATCH(
   if (parsed.data.enrollment_status !== undefined) {
     patch.enrollment_status = parsed.data.enrollment_status;
     // Bookkeeping: when transitioning to/from 'withdrawn', manage withdrawal_date.
+    // The boundary is the STATUS, not the date. It used to be
+    // `!before.withdrawal_date`, which silently dropped the registrar's dates
+    // and reason for any active row still carrying an old date (a row the bulk
+    // sync reactivated without clearing it) — the withdrawal saved with
+    // whatever the previous spell had left behind.
     if (
       parsed.data.enrollment_status === 'withdrawn' &&
-      !before.withdrawal_date
+      before.enrollment_status !== 'withdrawn'
     ) {
       // 🔴 THIS USED TO BE `sgToday()`, AND THAT WAS THE BUG.
       // It stamped the day the registrar opened the screen and called it the
@@ -202,10 +229,11 @@ export async function PATCH(
       patch.withdrawal_notes = parsed.data.withdrawal_notes ?? null;
     } else if (
       parsed.data.enrollment_status !== 'withdrawn' &&
-      before.withdrawal_date
+      (before.withdrawal_date || before.withdrawal_approved_date)
     ) {
       // Reactivation: clear both dates. Withdrawal reason + notes are
-      // intentionally preserved so the audit history stays intact.
+      // intentionally preserved so the audit history stays intact. The dates
+      // being cleared are in the audit row's `before`, so they are not lost.
       patch.withdrawal_date = null;
       patch.withdrawal_approved_date = null;
     }
@@ -301,6 +329,28 @@ export async function PATCH(
   ) {
     patch.withdrawal_reason = parsed.data.withdrawal_reason ?? null;
     patch.withdrawal_notes = parsed.data.withdrawal_notes ?? null;
+  }
+
+  // Standalone withdrawal DATE correction on an already-withdrawn row. These
+  // used to be ignored once the row was withdrawn, so a mistyped last day
+  // could never be put right. The prior values are in the audit row's
+  // `before`, so a correction reads as "26 Apr → 24 Apr", not a silent swap.
+  //
+  // A last day can be corrected but not blanked: a withdrawn row without one
+  // leaves every reader guessing again (migration 163). The approval date may
+  // be cleared — "not approved yet" is a real state.
+  const isWithdrawnRowCorrection =
+    before.enrollment_status === 'withdrawn' &&
+    (parsed.data.enrollment_status === undefined ||
+      parsed.data.enrollment_status === 'withdrawn');
+  if (isWithdrawnRowCorrection) {
+    if (parsed.data.withdrawal_date) {
+      patch.withdrawal_date = parsed.data.withdrawal_date;
+    }
+    if (parsed.data.withdrawal_approved_date !== undefined) {
+      patch.withdrawal_approved_date =
+        parsed.data.withdrawal_approved_date ?? null;
+    }
   }
 
   // Idempotency guard. The provided fields (enrollment_status,
@@ -494,10 +544,18 @@ export async function PATCH(
         .update(statusUpdate)
         .eq('enroleeNumber', enroleeNumber);
       if (admErr) {
+        // The roster row is already withdrawn; only the admissions mirror
+        // failed. Carried into the main audit row below, which is written
+        // regardless, so the log shows the two records disagreeing.
         console.warn(
           '[enrolment PATCH] admissions cascade failed:',
           admErr.message
         );
+        admissionsCascadeFailed = {
+          enroleeNumber,
+          ayCode,
+          error: admErr.message,
+        };
       } else {
         admissionsCascade = { enroleeNumber, ayCode };
         await logAction({
@@ -514,9 +572,19 @@ export async function PATCH(
             ay_code: ayCode,
             trigger: 'section_student.withdrawn',
             enroleeNumber,
+            studentNumber: identity.studentNumber,
             ...(studentName ? { studentName } : {}),
             section_student_id: enrolmentId,
             section_id: sectionId,
+            section_name: identity.sectionName,
+            index_number: identity.indexNumber,
+            // The dates the registrar entered — the humanizer reads
+            // `withdrawal_date` for this action and found nothing before.
+            withdrawal_date: patch.withdrawal_date ?? null,
+            withdrawal_approved_date: patch.withdrawal_approved_date ?? null,
+            withdrawal_reason: patch.withdrawal_reason ?? null,
+            // Exactly what was written to the admissions status row.
+            admissions_patch: statusUpdate,
             // applicationStatus (outcome) is NOT changed — outcome is
             // append-only and the application succeeded when the student enrolled.
             ...(terminalCascadeSkipped
@@ -583,6 +651,11 @@ export async function PATCH(
           '[enrolment PATCH] re-enrolment cascade failed:',
           reErr.message
         );
+        reEnrolmentCascadeFailed = {
+          enroleeNumber: reEnroleeNumber,
+          ayCode: reAyCode,
+          error: reErr.message,
+        };
       } else {
         // Capture the enrolment moment (write-once, migration 075). Only
         // stamps when enrolledAt is still NULL, so a student who was already
@@ -612,9 +685,17 @@ export async function PATCH(
             ay_code: reAyCode,
             trigger: 'section_student.re-enrolled',
             enroleeNumber: reEnroleeNumber,
+            studentNumber: identity.studentNumber,
             ...(reStudentName ? { studentName: reStudentName } : {}),
             section_student_id: enrolmentId,
             section_id: sectionId,
+            section_name: identity.sectionName,
+            index_number: identity.indexNumber,
+            // The withdrawal this re-enrolment undoes — both dates are
+            // cleared on the roster row, so this is where they survive.
+            withdrawal_date_cleared: before.withdrawal_date ?? null,
+            withdrawal_approved_date_cleared:
+              before.withdrawal_approved_date ?? null,
             applicationStatus_after: 'Enrolled',
           },
         });
@@ -636,14 +717,43 @@ export async function PATCH(
     entityId: enrolmentId,
     context: {
       section_id: sectionId,
+      ay_code: sectionAyCode,
+      studentNumber: identity.studentNumber,
+      ...(identity.studentName ? { studentName: identity.studentName } : {}),
+      enroleeNumber: identity.enroleeNumber,
+      section_name: identity.sectionName,
+      index_number: identity.indexNumber,
+      // Every column this route can write, as it stood before — so a
+      // re-enrolment's cleared dates, a corrected last day and a corrected
+      // reason all read as "from → to" rather than just "to".
       before: {
         bus_no: before.bus_no ?? null,
         classroom_officer_role: before.classroom_officer_role ?? null,
         academics_notes: before.academics_notes ?? null,
         admin_notes: before.admin_notes ?? null,
         enrollment_status: before.enrollment_status,
+        enrollment_date: before.enrollment_date ?? null,
+        late_enrollee_term_number: before.late_enrollee_term_number ?? null,
+        withdrawal_date: before.withdrawal_date ?? null,
+        withdrawal_approved_date: before.withdrawal_approved_date ?? null,
+        withdrawal_reason: before.withdrawal_reason ?? null,
+        withdrawal_notes: before.withdrawal_notes ?? null,
       },
       after: patch,
+      ...(admissionsCascadeFailed
+        ? {
+            partial: true,
+            failed_step: 'admissions_withdrawal_cascade',
+            admissionsCascadeFailed,
+          }
+        : {}),
+      ...(reEnrolmentCascadeFailed
+        ? {
+            partial: true,
+            failed_step: 'admissions_reenrolment_cascade',
+            reEnrolmentCascadeFailed,
+          }
+        : {}),
       ...(lateEnrolleeTransition
         ? {
             lateEnrolleeTransition: true,
@@ -722,7 +832,37 @@ export async function PATCH(
       ? { lateEnrolleeTerm: lateEnrolleeTerm ?? null }
       : {}),
     admissionsCascade,
-    ...(isReEnrolment ? { reEnrolment: true, reEnrolmentCascade } : {}),
+    admissionsCascadeFailed,
+    ...(isReEnrolment
+      ? { reEnrolment: true, reEnrolmentCascade, reEnrolmentCascadeFailed }
+      : {}),
     midTermEnrolment,
   });
+}
+
+type BeforeIdentityShape = {
+  index_number?: number | null;
+  enrolee_number?: string | null;
+  student?: StudentNameShape | StudentNameShape[] | null;
+  section?: { name: string | null } | { name: string | null }[] | null;
+};
+
+/** Student number, name, section and index number off the pre-image joins. */
+function identityFromBefore(before: unknown): {
+  studentNumber: string | null;
+  studentName: string | null;
+  enroleeNumber: string | null;
+  sectionName: string | null;
+  indexNumber: number | null;
+} {
+  const b = (before ?? {}) as BeforeIdentityShape;
+  const student = Array.isArray(b.student) ? b.student[0] : b.student;
+  const section = Array.isArray(b.section) ? b.section[0] : b.section;
+  return {
+    studentNumber: student?.student_number ?? null,
+    studentName: studentNameFromNode(b.student ?? null) || null,
+    enroleeNumber: b.enrolee_number ?? null,
+    sectionName: section?.name ?? null,
+    indexNumber: b.index_number ?? null,
+  };
 }

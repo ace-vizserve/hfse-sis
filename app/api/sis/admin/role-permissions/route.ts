@@ -118,6 +118,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
   }
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
   if (added.length > 0) {
     const { error } = await service.from('role_permissions').insert(
       added.map((capability) => ({
@@ -127,6 +133,28 @@ export async function PATCH(request: Request) {
       }))
     );
     if (error) {
+      // The removals above HAVE committed — the role has already lost those
+      // permissions. Record that before failing, or the log would show no
+      // change to a role that now gates differently.
+      if (removed.length > 0) {
+        revalidateTag(PERMISSIONS_CACHE_TAG, 'max');
+        await logAction({
+          service,
+          actor,
+          action: 'role.permissions.update',
+          entityType: 'role_permissions',
+          entityId: role,
+          context: {
+            role,
+            added: [],
+            removed,
+            partial: true,
+            failed_step: 'add_permissions',
+            not_added: added,
+            error: error.message,
+          },
+        });
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
   }
@@ -137,11 +165,7 @@ export async function PATCH(request: Request) {
 
   await logAction({
     service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
+    actor,
     action: 'role.permissions.update',
     entityType: 'role_permissions',
     entityId: role,

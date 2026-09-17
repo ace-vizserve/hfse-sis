@@ -3,6 +3,10 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import {
+  loadEntryStudentLabels,
+  loadOneSheetAuditLabels,
+} from '@/lib/grading/sheet-audit-labels';
+import {
   fetchLabels,
   fetchRegistrarEmails,
 } from '@/lib/change-requests/labels';
@@ -519,10 +523,19 @@ export async function POST(request: NextRequest) {
     context: {
       grading_sheet_id: body.grading_sheet_id,
       grade_entry_id: body.grade_entry_id,
+      ...(await loadOneSheetAuditLabels(service, body.grading_sheet_id)),
+      ...((await loadEntryStudentLabels(service, [body.grade_entry_id])).get(
+        body.grade_entry_id
+      ) ?? {}),
       field: body.field_changed,
       slot_index: body.slot_index,
+      // The value on the sheet when the request was filed, and why the teacher
+      // wants it changed. Without these the row said what was asked for but not
+      // what from, or why — the two things an approver reviewing it later asks.
+      current: currentValue,
       proposed: body.proposed_value,
       reason_category: body.reason_category,
+      justification: body.justification,
       flow,
       request_id: opened.requestId,
     },

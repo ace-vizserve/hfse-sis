@@ -20,6 +20,34 @@ export type TransferOk = {
   toLevel: string;
   transferDate: string;
   term: TransferTermInfo;
+  /** For the audit row — the child, by name, not just by number. */
+  studentName: string | null;
+  sourceEnrolmentId: string;
+  sourceIndexNumber: number | null;
+  targetEnrolmentId: string | null;
+  targetIndexNumber: number | null;
+  /** What the source row's `withdrawal_date` now holds: the transfer date. */
+  sourceWithdrawalDate: string | null;
+  /** True when the student returned to a section they had left before. */
+  reusedEnrolment: boolean;
+  /**
+   * The withdrawal the reused row carried before this transfer cleared it
+   * (migration 168). Null when the target section was new to the student, or
+   * when 168 has not been applied yet.
+   */
+  targetPrior: {
+    status: string | null;
+    enrollmentDate: string | null;
+    withdrawalDate: string | null;
+    withdrawalApprovedDate: string | null;
+    withdrawalReason: string | null;
+    withdrawalNotes: string | null;
+  } | null;
+  /**
+   * Set when the move committed but the admissions class mirror did not.
+   * The roster is right; admissions still shows the old class.
+   */
+  admissionsMirrorError: string | null;
 };
 
 export type TransferErr = {
@@ -140,7 +168,7 @@ export async function transferStudentSection(
 
   const { data: studentRow, error: studentErr } = await service
     .from('students')
-    .select('id')
+    .select('id, first_name, middle_name, last_name')
     .eq('student_number', studentNumber)
     .maybeSingle();
   if (studentErr || !studentRow) {
@@ -150,7 +178,18 @@ export async function transferStudentSection(
       status: 404,
     };
   }
-  const studentId = (studentRow as { id: string }).id;
+  const studentRec = studentRow as {
+    id: string;
+    first_name: string | null;
+    middle_name: string | null;
+    last_name: string | null;
+  };
+  const studentId = studentRec.id;
+  const studentName =
+    [studentRec.first_name, studentRec.middle_name, studentRec.last_name]
+      .map((p) => (p ?? '').trim())
+      .filter(Boolean)
+      .join(' ') || null;
 
   // ── 4. Find current active enrolment ───────────────────────────────────
   // Scope to sections in the same AY so a stale row from a prior AY doesn't
@@ -315,16 +354,19 @@ export async function transferStudentSection(
   // late enrollee with its original joining date + term override, so attendance
   // proration (KD #113/#130) and the joining-term badge (KD #68/#117) carry
   // over rather than resetting to today.
-  const { error: transferErr } = await service.rpc('transfer_student_section', {
-    p_source_enrolment_id: sourceEnr.id,
-    p_target_section_id: targetSec.id,
-    // Denormalized AY-scoped key — every other writer (sync, seeder)
-    // populates it; omitting it left transferred rows with NULL
-    // enrolee_number, so enrolee_number-keyed lookups silently missed
-    // transferred students (KD #83).
-    p_enrolee_number: enroleeNumber,
-    p_today: today,
-  });
+  const { data: rpcData, error: transferErr } = await service.rpc(
+    'transfer_student_section',
+    {
+      p_source_enrolment_id: sourceEnr.id,
+      p_target_section_id: targetSec.id,
+      // Denormalized AY-scoped key — every other writer (sync, seeder)
+      // populates it; omitting it left transferred rows with NULL
+      // enrolee_number, so enrolee_number-keyed lookups silently missed
+      // transferred students (KD #83).
+      p_enrolee_number: enroleeNumber,
+      p_today: today,
+    }
+  );
   if (transferErr) {
     return {
       ok: false,
@@ -332,6 +374,25 @@ export async function transferStudentSection(
       status: 500,
     };
   }
+  // The RPC's jsonb. Keys from 168 read as null when the older function is
+  // still deployed, so the audit row loses detail rather than the move failing.
+  const rpc = (rpcData ?? {}) as Record<string, unknown>;
+  const strOrNull = (v: unknown) => (typeof v === 'string' ? v : null);
+  const numOrNull = (v: unknown) => (typeof v === 'number' ? v : null);
+  const reusedEnrolment = rpc.reused_enrolment === true;
+  const targetPrior =
+    reusedEnrolment && 'target_prior_status' in rpc
+      ? {
+          status: strOrNull(rpc.target_prior_status),
+          enrollmentDate: strOrNull(rpc.target_prior_enrollment_date),
+          withdrawalDate: strOrNull(rpc.target_prior_withdrawal_date),
+          withdrawalApprovedDate: strOrNull(
+            rpc.target_prior_withdrawal_approved_date
+          ),
+          withdrawalReason: strOrNull(rpc.target_prior_withdrawal_reason),
+          withdrawalNotes: strOrNull(rpc.target_prior_withdrawal_notes),
+        }
+      : null;
 
   // Step C: update admissions-side classSection / classLevel
   const { error: admissionsErr } = await admissions
@@ -350,8 +411,9 @@ export async function transferStudentSection(
     .eq('enroleeNumber', enroleeNumber);
   if (admissionsErr) {
     // Don't roll back — the grading-side mutation is the source of truth
-    // for the student's current section. Surface the admissions failure so
-    // the caller can decide whether to retry.
+    // for the student's current section. Returned to the caller, which
+    // records it on the transfer's audit row: the move committed, the mirror
+    // did not, and the log should say both.
     console.warn(
       '[section-transfer] grading mutation succeeded but admissions update failed:',
       admissionsErr.message
@@ -367,5 +429,14 @@ export async function transferStudentSection(
     toLevel: targetLevelLabel,
     transferDate: today,
     term,
+    studentName,
+    sourceEnrolmentId: sourceEnr.id,
+    sourceIndexNumber: numOrNull(rpc.source_index_number),
+    targetEnrolmentId: strOrNull(rpc.new_enrolment_id),
+    targetIndexNumber: numOrNull(rpc.index_number),
+    sourceWithdrawalDate: strOrNull(rpc.source_withdrawal_date) ?? today,
+    reusedEnrolment,
+    targetPrior,
+    admissionsMirrorError: admissionsErr ? admissionsErr.message : null,
   };
 }

@@ -5,6 +5,7 @@ import { requireCapability } from '@/lib/auth/require-capability';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadApplicantIdentity } from '@/lib/p-files/audit';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
 import {
   prefixFor,
@@ -170,6 +171,45 @@ export async function PATCH(
     return NextResponse.json({ error: upErr.message }, { status: 500 });
   }
 
+  const action: AuditAction =
+    moduleKey === 'admissions'
+      ? 'admissions.mark.promised'
+      : 'pfile.mark.promised';
+  // Written from both exits below. The status flip above has COMMITTED by the
+  // time either runs, so a failed outreach insert still changed the slot to
+  // "To follow" — and used to return 500 before this row, leaving that change
+  // with no author in the audit log.
+  const logPromise = async (
+    failure: { step: string; error: string } | null
+  ): Promise<void> => {
+    const who = await loadApplicantIdentity(service, ayCode, enroleeNumber);
+    await logAction({
+      service,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      action,
+      entityType: 'enrolment_document',
+      entityId: `${enroleeNumber}:${slotKey}`,
+      context: {
+        ay_code: ayCode,
+        ...who,
+        slot_key: slotKey,
+        label: slot.label,
+        module: moduleKey,
+        promised_until: promisedUntil,
+        prior_status: priorStatus || null,
+        new_status: 'To follow',
+        ...(note ? { note } : {}),
+        ...(failure
+          ? { partial: true, failed_step: failure.step, error: failure.error }
+          : {}),
+      },
+    });
+  };
+
   const { error: insErr } = await service.from('p_file_outreach').insert({
     ay_code: ayCode,
     enrolee_number: enroleeNumber,
@@ -182,6 +222,9 @@ export async function PATCH(
   });
   if (insErr) {
     console.error('[p-files promise] outreach insert failed:', insErr.message);
+    await logPromise({ step: 'outreach_insert', error: insErr.message });
+    revalidateTag(`sis:${ayCode}`, 'max');
+    invalidateDrillTags(moduleKey, ayCode);
     // Status was already flipped — don't revert. Fail loud so the UI
     // knows the badge won't render but the chase strip count is correct.
     return NextResponse.json(
@@ -192,29 +235,7 @@ export async function PATCH(
     );
   }
 
-  const action: AuditAction =
-    moduleKey === 'admissions'
-      ? 'admissions.mark.promised'
-      : 'pfile.mark.promised';
-  await logAction({
-    service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
-    action,
-    entityType: 'enrolment_document',
-    entityId: `${enroleeNumber}:${slotKey}`,
-    context: {
-      ay_code: ayCode,
-      slot_key: slotKey,
-      module: moduleKey,
-      promised_until: promisedUntil,
-      prior_status: priorStatus || null,
-      ...(note ? { note } : {}),
-    },
-  });
+  await logPromise(null);
 
   revalidateTag(`sis:${ayCode}`, 'max');
   // P-Files surface owns the chase-strip + completeness panels; admissions

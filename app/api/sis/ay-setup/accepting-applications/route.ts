@@ -128,7 +128,7 @@ export async function PATCH(request: Request) {
         ay_code: closeCode,
         before: true,
         after: false,
-        autoClosedBy: ayCode,
+        auto_closed_by: ayCode,
       },
     });
     revalidateTag(`sis:${closeCode}`, 'max');
@@ -148,19 +148,26 @@ export async function PATCH(request: Request) {
     }
   }
 
-  await logAction({
-    service: supabase,
-    actor,
-    action: 'ay.accepting_applications.toggle',
-    entityType: 'academic_year',
-    entityId: target.id,
-    context: {
-      ay_code: ayCode,
-      before: target.accepting_applications,
-      after: true,
-      ...(toClose.length ? { autoClosedPrevious: toClose } : {}),
-    },
-  });
+  // Only a real flip earns a row. When the target was already open and this
+  // call only closed other years, those closures are logged above (each
+  // naming this year in `auto_closed_by`); a before:true/after:true row here
+  // would claim a change that did not happen.
+  if (!target.accepting_applications) {
+    await logAction({
+      service: supabase,
+      actor,
+      action: 'ay.accepting_applications.toggle',
+      entityType: 'academic_year',
+      entityId: target.id,
+      context: {
+        ay_code: ayCode,
+        before: false,
+        after: true,
+        // Flat list of AY codes, e.g. ["AY2027"]; empty when nothing closed.
+        auto_closed_previous: [...toClose],
+      },
+    });
+  }
   revalidateTag(`sis:${ayCode}`, 'max');
 
   return NextResponse.json({ ok: true, accepting: true, autoClosed: toClose });

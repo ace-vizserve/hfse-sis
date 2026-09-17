@@ -337,15 +337,11 @@ export async function POST(request: Request) {
   // carries the actor, the child, the class, the days and whether a file or a
   // link was attached.
   //
-  // ⚠ IT REUSES `declaration.approve` RATHER THAN ADDING AN ACTION, and the
-  // row is honest under that name: a declaration did come into being fully
-  // approved. `recorded_by_school` is what tells the two apart, and
-  // `lib/audit/humanize.ts` renders it in words. The alternative — a new
-  // action — needs a line added to `ATTENDANCE_AUDIT_ACTIONS` in
-  // `app/(attendance)/attendance/audit-log/page.tsx` or
-  // `__tests__/audit/allowlist-coverage.test.ts` fails, and that file belongs
-  // to another session's edit; an action nobody can see is worse than a shared
-  // one that reads correctly.
+  // ⚠ ITS OWN ACTION, `declaration.file.staff`. This used to reuse
+  // `declaration.approve` with `recorded_by_school` telling the two apart —
+  // but nobody approved anything here: the office recorded its own evidence,
+  // and a filter on approvals counted it as one. `recorded_by_school` stays in
+  // the context so the older rows and the new ones still read alike.
   //
   // ⚠ NO DOCUMENT AND NO LINK IN THE CONTEXT — presence only, the rule
   // migration 109 set for `ex_note` and 125 restated. `audit_log` is readable
@@ -359,11 +355,13 @@ export async function POST(request: Request) {
       email: auth.user.email ?? null,
       role: auth.role,
     },
-    action: 'declaration.approve',
+    action: 'declaration.file.staff',
     entityType: 'student_declaration',
     entityId: saved.id,
     context: {
       recorded_by_school: true,
+      // The row went in approved with no ladder behind it.
+      status: 'approved',
       declaration_type: 'absence',
       with_medical: true,
       evidence_kind: evidenceKind(input.evidencePath, input.evidenceUrl),
@@ -371,6 +369,7 @@ export async function POST(request: Request) {
       student_number: target.studentNumber,
       section_student_id: target.sectionStudentId,
       section_id: target.sectionId,
+      student_name: target.studentName,
       section_name: target.className ?? target.sectionName,
       start_date: input.startDate,
       end_date: input.endDate,
@@ -492,11 +491,12 @@ async function attachToExistingFiling(args: {
     );
   }
 
-  // ⚠ THE SAME ACTION AS THE CREATE PATH, for the same reason: a new action
-  // needs a line in `ATTENDANCE_AUDIT_ACTIONS` and that file is off limits
-  // here, so an action nobody can see would be worse than a shared one that
-  // reads correctly. `attached_to_existing` is what tells the two apart, and
-  // `lib/audit/humanize.ts` renders it in words.
+  // ⚠ `declaration.evidence.attach`, NOT `declaration.approve`. The filing's
+  // status is untouched by this — a pending filing stays pending and still
+  // needs its approvers — so logging it as an approval claimed a decision
+  // nobody had made. `attached_to_existing` stays in the context so the older
+  // rows and the new ones still read alike, and `status` says where the
+  // filing actually stands.
   //
   // ⚠ THE FILING'S OWN DATES, not the ones typed. The row that changed covers
   // the range the parent filed, which may be wider than the single day the
@@ -504,22 +504,34 @@ async function attachToExistingFiling(args: {
   await logAction({
     service,
     actor,
-    action: 'declaration.approve',
+    action: 'declaration.evidence.attach',
     entityType: 'student_declaration',
     entityId: existing.id,
     context: {
       recorded_by_school: true,
       attached_to_existing: true,
+      // Where the filing stands after the attach — unchanged by it.
+      status: attached.status,
       // ⚠ A REPLACEMENT MUST NOT READ AS A FIRST UPLOAD. Somebody replaced a
       // certificate the school already held, and the log is the only place
       // that fact survives — the row now points at the new file and the UI
       // never mentions the old one again.
       //
-      // ⚠ Still PRESENCE ONLY: no path and no URL, for either file. That is
-      // migration 109's rule, restated by 125 — `audit_log` is readable by
-      // every is_registrar_or_above() user and can never be corrected, and a
-      // link to a child's medical certificate is exactly what it is about.
-      ...(replacing ? { replaced_existing: true } : {}),
+      // ⚠ THE REPLACED FILE'S STORAGE PATH IS RECORDED, and nothing else about
+      // either certificate. `attachEvidenceToFiling` does not delete the old
+      // object, and once the column is overwritten this row is the only thing
+      // that still says where it is — without it a replaced certificate is
+      // unrecoverable in practice. It is a bucket key, not the document: the
+      // new file's path and both external links stay out (migration 109's
+      // presence-only rule, restated by 125). `replaced_evidence_kind` says
+      // what the replaced proof was, including a link that has no path.
+      ...(replacing
+        ? {
+            replaced_existing: true,
+            replaced_evidence_path: existing.evidencePath,
+            replaced_evidence_kind: existing.evidenceKind,
+          }
+        : {}),
       declaration_type: 'absence',
       with_medical: true,
       evidence_kind: evidenceKind(input.evidencePath, input.evidenceUrl),
@@ -527,6 +539,7 @@ async function attachToExistingFiling(args: {
       student_number: target.studentNumber,
       section_student_id: target.sectionStudentId,
       section_id: target.sectionId,
+      student_name: target.studentName,
       section_name: target.className ?? target.sectionName,
       start_date: attached.startDate,
       end_date: attached.endDate,

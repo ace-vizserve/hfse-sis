@@ -62,9 +62,74 @@ export async function POST(request: NextRequest) {
   let dayTypeRowsCopied = 0;
   let eventsCopied = 0;
 
+  // ── What the audit row carries ──────────────────────────────────────────
+  //
+  // ⚠ AN UPSERT OVERWRITES, and the copy is exactly where a registrar's own
+  // edits to this term get replaced by last year's. Without the before values
+  // the trail says "62 days copied" and nothing about the eleven that already
+  // said something else. So each day this copy REPLACED is listed with what it
+  // was; days that had no row are only counted.
+  const overwrittenDays: Array<{
+    date: string;
+    audience: string;
+    before_day_type: string | null;
+    before_label: string | null;
+    after_day_type: string;
+    after_label: string | null;
+  }> = [];
+  let copiedEvents: Array<{
+    id: string;
+    startDate: string;
+    endDate: string;
+    label: string;
+  }> = [];
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+  const auditContext = (extra: Record<string, unknown> = {}) => ({
+    dayTypeRowsCopied,
+    eventsCopied,
+    markTentative,
+    overwrittenDays,
+    copiedEvents,
+    ...extra,
+  });
+
   // 1. school_calendar overrides â€” upsert with onConflict on the widened
   // unique key. Idempotent re-run.
   if (dayTypeRows.length > 0) {
+    // The rows this upsert will replace. A failed read does not block the copy
+    // — the row is then logged without the before values it could not see.
+    const { data: existingRows } = await service
+      .from('school_calendar')
+      .select('date, audience, day_type, label')
+      .eq('term_id', targetTermId)
+      .in('date', Array.from(new Set(dayTypeRows.map((r) => r.date))));
+    const existingByKey = new Map(
+      (
+        (existingRows ?? []) as Array<{
+          date: string;
+          audience: string;
+          day_type: string | null;
+          label: string | null;
+        }>
+      ).map((r) => [`${r.date}|${r.audience}`, r])
+    );
+    for (const r of dayTypeRows) {
+      const before = existingByKey.get(`${r.date}|${r.audience}`);
+      if (!before) continue;
+      overwrittenDays.push({
+        date: r.date,
+        audience: r.audience,
+        before_day_type: before.day_type,
+        before_label: before.label,
+        after_day_type: r.dayType,
+        after_label: r.label ?? null,
+      });
+    }
+
     const rows = dayTypeRows.map((r) => ({
       term_id: targetTermId,
       date: r.date,
@@ -100,33 +165,58 @@ export async function POST(request: NextRequest) {
       tentative: markTentative,
       created_by: auth.user.id,
     }));
-    const { error: insertErr, count } = await service
+    const { data: insertedEvents, error: insertErr } = await service
       .from('calendar_events')
-      .insert(rows, { count: 'exact' });
+      .insert(rows)
+      .select('id, start_date, end_date, label');
     if (insertErr) {
+      // ⚠ THE DAYS ABOVE ARE ALREADY COPIED. The upsert committed on its own;
+      // only the events failed. A 500 with no audit row would leave a term's
+      // calendar overwritten with nobody's name against it — so what landed is
+      // logged, with the step that failed, before the error is returned.
+      if (dayTypeRowsCopied > 0) {
+        await logAction({
+          service,
+          actor,
+          action: 'attendance.calendar.copy_from_prior_ay',
+          entityType: 'school_calendar',
+          entityId: targetTermId,
+          context: auditContext({
+            partial: true,
+            failed_step: 'events_insert',
+            eventsRequested: events.length,
+          }),
+        });
+        invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+      }
       return NextResponse.json(
         { error: `calendar_events insert failed: ${insertErr.message}` },
         { status: 500 }
       );
     }
-    eventsCopied = count ?? rows.length;
+    copiedEvents = (
+      (insertedEvents ?? []) as Array<{
+        id: string;
+        start_date: string;
+        end_date: string;
+        label: string;
+      }>
+    ).map((e) => ({
+      id: e.id,
+      startDate: e.start_date,
+      endDate: e.end_date,
+      label: e.label,
+    }));
+    eventsCopied = copiedEvents.length || rows.length;
   }
 
   await logAction({
     service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
+    actor,
     action: 'attendance.calendar.copy_from_prior_ay',
     entityType: 'school_calendar',
     entityId: targetTermId,
-    context: {
-      dayTypeRowsCopied,
-      eventsCopied,
-      markTentative,
-    },
+    context: auditContext(),
   });
 
   // Cross-cutting: copy-from-prior-AY may bring PTC events with it, so bust

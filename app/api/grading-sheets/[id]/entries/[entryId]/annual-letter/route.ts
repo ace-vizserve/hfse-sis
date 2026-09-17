@@ -3,6 +3,8 @@ import { requireRole } from '@/lib/auth/require-role';
 import { getUserRoleSet } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { writeAuditRows } from '@/lib/audit/log-grade-change';
+import { toPlainText } from '@/lib/rich-text';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { notifyAnnualLetterChanged } from '@/lib/notifications/email-annual-letter';
@@ -12,6 +14,15 @@ import { ANNUAL_LETTER_VALUES } from '@/lib/compute/letter-grade';
 // Registrar-only: sets the freeform annual_letter_grade on a non-examinable
 // subject's T4 grade_entry row. Hard Rule #5 does not apply — this is
 // registrar metadata, not a per-term grade; no approval_reference required.
+//
+// ⚠ BUT A LOCKED SHEET STILL LEAVES THE POST-LOCK RECORD. This value is set at
+// year end, when the Term 4 sheet is normally already locked, so gating it
+// behind a change request would block the routine first entry. What it does
+// NOT get to do is change a locked sheet silently: changing an existing value
+// already requires a correction note, and on a locked sheet that change is
+// also appended to `grade_audit_log` with the note as its reference — the same
+// table every other post-lock change lands in. A first entry (blank → value)
+// is not a correction and is recorded in `audit_log` only, with `was_locked`.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }
@@ -65,8 +76,8 @@ export async function PATCH(
       .from('grading_sheets')
       .select(
         `
-        id,
-        term:terms(term_number),
+        id, is_locked,
+        term:terms(term_number, label),
         subject:subjects(is_examinable, code),
         section:sections(academic_year_id, name)
       `
@@ -79,7 +90,7 @@ export async function PATCH(
         `
         id, grading_sheet_id, annual_letter_grade,
         section_student:section_students(
-          student:students(first_name, last_name)
+          student:students(student_number, first_name, last_name)
         )
       `
       )
@@ -96,7 +107,11 @@ export async function PATCH(
 
   type SheetRow = {
     id: string;
-    term: { term_number: number } | { term_number: number }[] | null;
+    is_locked: boolean;
+    term:
+      | { term_number: number; label: string | null }
+      | { term_number: number; label: string | null }[]
+      | null;
     subject:
       | { is_examinable: boolean; code: string }
       | { is_examinable: boolean; code: string }[]
@@ -217,6 +232,31 @@ export async function PATCH(
     ayCode = await requireCurrentAyCode();
   }
 
+  // Post-lock correction record (see the note at the top of this file).
+  const isLockedCorrection =
+    sheet.is_locked && existingValue !== null && existingValue !== newValue;
+  const approvalReference = isLockedCorrection
+    ? `Final grade correction: ${toPlainText(correctionNote).slice(0, 200)}`
+    : null;
+  let gradeAuditLogFailed = false;
+  if (isLockedCorrection) {
+    gradeAuditLogFailed = !(await writeAuditRows(service, [
+      {
+        grading_sheet_id: sheetId,
+        grade_entry_id: entryId,
+        changed_by: auth.user.email ?? auth.user.id,
+        field_changed: 'annual_letter_grade',
+        old_value: existingValue,
+        new_value: newValue,
+        approval_reference: approvalReference as string,
+      },
+    ]));
+  }
+
+  const studentNumber =
+    (studentData as { student_number?: string | null } | null)
+      ?.student_number ?? null;
+
   await logAction({
     service,
     actor: {
@@ -231,11 +271,18 @@ export async function PATCH(
       grading_sheet_id: sheetId,
       grade_entry_id: entryId,
       student_name: studentName,
+      student_number: studentNumber,
       subject_code: subjectData.code,
       section_name: sectionName,
+      term_label:
+        (Array.isArray(sheet.term) ? sheet.term[0] : sheet.term)?.label ??
+        termLabel,
       before: entry.annual_letter_grade,
       after: newValue,
       correction_note: correctionNote,
+      was_locked: sheet.is_locked,
+      ...(approvalReference ? { approval_reference: approvalReference } : {}),
+      ...(gradeAuditLogFailed ? { grade_audit_log_failed: true } : {}),
     },
   });
 

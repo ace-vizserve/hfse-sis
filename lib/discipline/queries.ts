@@ -24,6 +24,8 @@ export type DisciplineRecordRow = {
   sectionId: string;
   /** "Sec 1 Discipline 1" — the school form's "Level / Class", as one phrase. */
   className: string | null;
+  /** "Discipline 1" — the section's own name, for an audit row naming the class. */
+  sectionName: string | null;
   /**
    * "Sec 1" on its own.
    *
@@ -199,6 +201,7 @@ function toRow(
     studentName: student ? fullName(student) : null,
     sectionId: raw.section_id,
     className,
+    sectionName: section?.name ?? null,
     levelName: level?.label ?? null,
     academicYearId: raw.academic_year_id,
     ayCode: ay?.ay_code ?? null,

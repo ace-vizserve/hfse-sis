@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectTermWeightsSchema } from '@/lib/schemas/subject-config';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   recomputeSheetEntries,
   type SheetTotals,
@@ -183,12 +184,13 @@ export async function PATCH(
   const { data: config, error: cfgErr } = await service
     .from('subject_configs')
     .select(
-      // `code` only, never `name`. The audit row wants a stable identifier, and
-      // a subject's NAME is per academic year since migration 137 (KD #203) —
-      // reading the raw one here would stamp AY2026's "STAR" onto an AY2025 row.
-      // `subjects.code` is untouched by a rename, which is what makes it the
-      // right thing to log. Enforced by __tests__/sis/subject-name-read-sweep.ts.
-      'id, subject_id, academic_year_id, ww_weight, pt_weight, qa_weight, subject:subjects(code)'
+      // `code` is the stable identifier the audit row keys on. The NAME rides
+      // along only so a person reading the row sees one — and it is resolved
+      // through `subjectDisplayName` with this config's own `display_name`,
+      // because a subject's name is per academic year since migration 137
+      // (KD #203): the raw one would stamp AY2026's "STAR" onto an AY2025 row.
+      // Enforced by __tests__/sis/subject-name-read-sweep.ts.
+      'id, subject_id, academic_year_id, ww_weight, pt_weight, qa_weight, display_name, subject:subjects(code, name)'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -206,7 +208,7 @@ export async function PATCH(
   // but a 200 saying "0 sheets updated" reads as success.
   const { data: term, error: termErr } = await service
     .from('terms')
-    .select('id, term_number, academic_year_id')
+    .select('id, term_number, label, academic_year_id')
     .eq('id', input.term_id)
     .maybeSingle();
   if (termErr)
@@ -326,6 +328,8 @@ export async function PATCH(
 
   const effective = next ?? configWeights;
   let entriesRecomputed = 0;
+  const recomputedSheetIds: string[] = [];
+  let recomputeError: string | null = null;
   try {
     for (const sheet of open) {
       const totals: SheetTotals = {
@@ -340,22 +344,26 @@ export async function PATCH(
         effective
       );
       entriesRecomputed += result.entriesWritten;
+      recomputedSheetIds.push(sheet.id);
     }
   } catch (err) {
-    return NextResponse.json(
-      {
-        error: `Weights were saved, but recomputing the grades failed: ${
-          err instanceof Error ? err.message : 'unknown error'
-        }. Re-run this to finish.`,
-      },
-      { status: 500 }
-    );
+    recomputeError = err instanceof Error ? err.message : 'unknown error';
   }
 
   const subject = Array.isArray(config.subject)
     ? config.subject[0]
     : config.subject;
 
+  // ⚠ LOGGED BEFORE THE FAILURE IS ANSWERED. The weights are saved on every
+  // open sheet by the time a recompute can fail, so "nothing was recorded" is
+  // not an option — the row says what was written and how far the grades got.
+  //
+  // Weights are logged as whole percentages, class by class, with
+  // `follows_subject` saying when a class had no weights of its own. That is
+  // what a reader needs to tell "was 0%" from "was following the subject",
+  // and a list of fractions was neither.
+  const pct = (v: number | string | null) =>
+    v == null ? null : Math.round(Number(v) * 100);
   await logAction({
     service,
     actor: {
@@ -368,21 +376,60 @@ export async function PATCH(
     entityId: configId,
     context: {
       subject_code: subject?.code ?? null,
+      subject_name: subject
+        ? subjectDisplayName(
+            { name: subject.name ?? '' },
+            { display_name: config.display_name }
+          ) || null
+        : null,
       term_number: term.term_number,
+      term_label: term.label ?? null,
       term_id: term.id,
       academic_year_id: config.academic_year_id,
-      before: open.map((s) => ({
-        section: sectionName(s),
-        ww_weight: s.ww_weight == null ? null : Number(s.ww_weight),
-        pt_weight: s.pt_weight == null ? null : Number(s.pt_weight),
-        qa_weight: s.qa_weight == null ? null : Number(s.qa_weight),
-      })),
-      after: patch,
+      before: open.map((s) => {
+        const own =
+          s.ww_weight != null && s.pt_weight != null && s.qa_weight != null;
+        const w = resolveSheetWeights(s, configWeights);
+        return {
+          grading_sheet_id: s.id,
+          section: sectionName(s),
+          follows_subject: !own,
+          ww: pct(w.ww_weight),
+          pt: pct(w.pt_weight),
+          qa: pct(w.qa_weight),
+        };
+      }),
+      after: {
+        follows_subject: next == null,
+        ww: pct(effective.ww_weight),
+        pt: pct(effective.pt_weight),
+        qa: pct(effective.qa_weight),
+      },
       sheets_updated: open.length,
       entries_recomputed: entriesRecomputed,
       locked_classes_skipped: lockedNames,
+      ...(recomputeError
+        ? {
+            partial: true,
+            failed_step: 'recompute',
+            error: recomputeError,
+            classes_not_recomputed: open
+              .filter((s) => !recomputedSheetIds.includes(s.id))
+              .map(sectionName)
+              .sort(),
+          }
+        : {}),
     },
   });
+
+  if (recomputeError) {
+    return NextResponse.json(
+      {
+        error: `Weights were saved, but recomputing the grades failed: ${recomputeError}. Re-run this to finish.`,
+      },
+      { status: 500 }
+    );
+  }
 
   const { data: ay } = await service
     .from('academic_years')

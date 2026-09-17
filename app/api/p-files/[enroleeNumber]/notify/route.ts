@@ -138,8 +138,14 @@ export async function POST(
     entityId: `${enroleeNumber}:${slotKey}`,
     context: {
       ay_code: ayCode,
+      ...result.student,
       slot_key: slotKey,
+      label: result.slotLabel,
       module: moduleKey,
+      // Who was emailed, not just how many envelopes — "the parent says they
+      // never got it" needs the address it went to.
+      to: result.to,
+      cc: result.cc,
       recipients: result.recipients,
       sent: result.sent,
       failed: result.failed,

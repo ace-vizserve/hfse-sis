@@ -828,6 +828,7 @@ describe('budget: relief bulk book (10 assignments)', () => {
             body: JSON.stringify({
               covered_teacher_user_id: COVERED,
               relief_teacher_user_id: RELIEF,
+              relief_reason: 'Medical leave',
             }),
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           }) as any

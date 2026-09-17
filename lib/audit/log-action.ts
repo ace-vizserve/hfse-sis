@@ -27,6 +27,10 @@ export const ALL_AUDIT_ACTIONS = [
   'student.reenrolment.cascade',
   'sis.student.assign_section',
   'sis.student.auto_sync_batch',
+  // Somebody downloaded every admissions column for a set of students — a
+  // bulk personal-data export. Logged who / which year / which columns / how
+  // many rows; never the data itself.
+  'sis.student.export_raw',
   'enrolment.metadata.update',
   'assignment.create',
   'assignment.delete',
@@ -103,6 +107,7 @@ export const ALL_AUDIT_ACTIONS = [
   'level.delete',
   'level.offering.toggle',
   'level.alias.create',
+  'level.alias.remap',
   'ay.create',
   'ay.switch_current',
   'ay.accepting_applications.toggle',
@@ -177,6 +182,17 @@ export const ALL_AUDIT_ACTIONS = [
   // material is medical-adjacent and about a child. Presence only.
   'declaration.approve',
   'declaration.reject',
+  // How a declaration came to exist, kept apart from how it was decided.
+  // `declaration.file` is a parent filing from the portal (pending, onto the
+  // ladder); `declaration.file.staff` is the school recording a certificate
+  // itself, which lands already approved with no ladder; and
+  // `declaration.evidence.attach` is a certificate joining a filing that was
+  // already there — nothing decided, the filing's status untouched. The last
+  // two used to be logged as `declaration.approve`, which for an attach to a
+  // still-pending filing claimed an approval nobody gave.
+  'declaration.file',
+  'declaration.file.staff',
+  'declaration.evidence.attach',
   // The configuration of an ordered flow: which steps exist, in what order,
   // and who is on the ones that name people. Distinct from `approver.assign`,
   // which belongs to the older pooled change-request flow.
@@ -200,6 +216,10 @@ export const ALL_AUDIT_ACTIONS = [
   // can tell "reads the lens to log it" from "reads the lens to decide". One
   // entry from the one route that already holds the value says the same thing.
   'user.view.switch',
+  // A person changed their own password on the Account page. Reported by
+  // app/api/account/password-changed/route.ts after Supabase accepted it; the
+  // password itself never reaches the server.
+  'user.password.change',
 ] as const;
 
 export type AuditAction = (typeof ALL_AUDIT_ACTIONS)[number];

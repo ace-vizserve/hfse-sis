@@ -7,6 +7,41 @@ import { logAction } from '@/lib/audit/log-action';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
+import { loadSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
+
+/**
+ * Every grading sheet id in (sections × terms). Paginated — a whole year runs
+ * past PostgREST's 1,000-row cap — and chunked on the section list, which is
+ * the one that can grow. Null on any failure: the caller logs without a list
+ * rather than with a wrong one.
+ */
+async function listSheetIdsInScope(
+  service: ReturnType<typeof createServiceClient>,
+  sectionIds: string[],
+  termIds: string[]
+): Promise<Set<string> | null> {
+  if (sectionIds.length === 0 || termIds.length === 0) return new Set();
+  try {
+    const rows = await fetchInChunks(sectionIds, (slice) =>
+      fetchAllPages<{ id: string }>((from, to) =>
+        service
+          .from('grading_sheets')
+          .select('id')
+          .in('section_id', slice)
+          .in('term_id', termIds)
+          .range(from, to)
+      )
+    );
+    return new Set(rows.map((r) => r.id));
+  } catch (e) {
+    console.error(
+      '[bulk-create] could not list sheets in scope:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return null;
+  }
+}
 
 // POST /api/grading-sheets/bulk-create
 // Body: either { ay_id: uuid } or { section_id: uuid } (exactly one) — the
@@ -89,6 +124,8 @@ export async function POST(request: NextRequest) {
   }
 
   let inserted = 0;
+  let termIdsInScope: string[] = [];
+  let existingBefore: Set<string> | null = null;
 
   try {
     // 1. Load sections with their levels
@@ -165,10 +202,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Which sheets already exist in this scope, so the audit row can name the
+    // ones this run created. The RPC reports only a count, and a count cannot
+    // be checked against "my class has no Term 3 sheet".
+    termIdsInScope = (terms as { id: string }[]).map((t) => t.id);
+    existingBefore = await listSheetIdsInScope(
+      service,
+      targetSectionIds,
+      termIdsInScope
+    );
+
     // 4. Create sheets for ALL scopes (no gate) — the RPC only wants
     //    section_id/subject_id/term_id, so drop the extra subject_config_id
     //    the pure builder carries for the preview route's benefit.
-    const { data: rpcResult } = await service.rpc(
+    //
+    // ⚠ THE ERROR IS READ. It used to be dropped, so a failed RPC came back as
+    // `inserted: 0` and the dialog said everything was already covered. The
+    // RPC is one transaction, so an error means nothing was created and there
+    // is nothing to log — but the person clicking must be told it failed.
+    const { data: rpcResult, error: rpcError } = await service.rpc(
       'create_grading_sheets_for_scopes',
       {
         p_scopes: allScopes.map(({ section_id, subject_id, term_id }) => ({
@@ -178,6 +230,13 @@ export async function POST(request: NextRequest) {
         })),
       }
     );
+    if (rpcError) {
+      console.error('[bulk-create] RPC failed:', rpcError.message);
+      return NextResponse.json(
+        { error: `Could not create the grading sheets: ${rpcError.message}` },
+        { status: 500 }
+      );
+    }
     inserted = (rpcResult as { inserted?: number } | null)?.inserted ?? 0;
   } catch (err) {
     return NextResponse.json(
@@ -193,6 +252,30 @@ export async function POST(request: NextRequest) {
   if (inserted === 0) {
     return NextResponse.json({ ok: true, changed: false, inserted: 0 });
   }
+
+  // The sheets this run created: everything in scope now, minus what was
+  // there before. Null when either read failed — the count still stands, and
+  // the row says the list could not be read rather than showing an empty one.
+  let createdIds: string[] | null = null;
+  if (existingBefore) {
+    const after = await listSheetIdsInScope(
+      service,
+      targetSectionIds,
+      termIdsInScope
+    );
+    if (after) createdIds = [...after].filter((id) => !existingBefore!.has(id));
+  }
+  const labels = createdIds
+    ? await loadSheetAuditLabels(service, createdIds)
+    : new Map();
+  const distinct = (key: 'section_name' | 'term_label' | 'subject_name') =>
+    [
+      ...new Set(
+        [...labels.values()]
+          .map((l) => l[key] as string | null)
+          .filter((v): v is string => !!v)
+      ),
+    ].sort();
 
   await logAction({
     service,
@@ -211,6 +294,15 @@ export async function POST(request: NextRequest) {
       section_ids: body?.section_ids ?? null,
       term_ids: body?.term_ids ?? null,
       inserted,
+      sheets_created: inserted,
+      sheet_ids: createdIds,
+      ...(createdIds
+        ? {
+            section_names: distinct('section_name'),
+            term_labels: distinct('term_label'),
+            subject_names: distinct('subject_name'),
+          }
+        : { sheet_ids_unavailable: true }),
     },
   });
 

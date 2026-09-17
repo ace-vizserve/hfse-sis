@@ -9,6 +9,7 @@ import {
 } from '@/lib/notifications/email-pfile-reminder';
 import { DocumentValidationSchema } from '@/lib/schemas/sis';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
+import { loadApplicantIdentity } from '@/lib/p-files/audit';
 import { isStudentEnrolled } from '@/lib/p-files/queries';
 import { createServiceClient } from '@/lib/supabase/service';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -303,6 +304,7 @@ export async function PATCH(
     }
   }
 
+  const who = await loadApplicantIdentity(supabase, ayCode, enroleeNumber);
   await logAction({
     service: supabase,
     actor: {
@@ -318,9 +320,16 @@ export async function PATCH(
     entityId: `${enroleeNumber}:${slotKey}`,
     context: {
       ay_code: ayCode,
+      ...who,
       slot_key: slotKey,
+      label: slot.label,
       prior_status: priorStatus,
       new_status: parsed.data.status,
+      // The exact file that was judged. The slot's link changes on every
+      // re-upload, so without it a later "which version did they approve?"
+      // cannot be answered from the log.
+      file_url: fileUrl,
+      ...(expiryCol ? { expiry: priorExpiry } : {}),
       ...(rejectionReason
         ? { rejection_reason: rejectionReason, notified }
         : {}),

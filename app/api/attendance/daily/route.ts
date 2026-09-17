@@ -7,6 +7,7 @@ import { logActions } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
 import {
+  MarksWrittenRollupFailedError,
   writeDailyBatch,
   type RollupAfterWrite,
 } from '@/lib/attendance/mutations';
@@ -42,6 +43,12 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 //
 // Audit: logs `attendance.daily.update` for today/future dates,
 // `attendance.daily.correct` for past dates.
+//
+// ⚠ THIS ROUTE'S ROWS ARE THE ONLY ONES FOR ITS MARKS. It writes through the
+// service-role client, so `auth.uid()` is null inside the insert, and the
+// `attendance_daily_audit` trigger steps aside for that case (migration 166).
+// Before 166 the trigger ALSO logged each mark, as 'system' with no class — a
+// duplicate that named nobody.
 
 /**
  * The teacher section gate, over enrolments the CALLER has already resolved.
@@ -159,15 +166,46 @@ export async function PATCH(request: NextRequest) {
   const studentIds = Array.from(
     new Set(entries.map((e) => e.sectionStudentId))
   );
+  //
+  // The student rides along as an embed for the audit context — the same read,
+  // no extra round trip. Without it every mark in the log named a class and a
+  // day but never the child.
   const { data: enrolmentRows, error: enrolmentErr } = await service
     .from('section_students')
-    .select('id, section_id')
-    .in('id', studentIds);
-  const sectionIdByEnrolment = new Map<string, string>(
-    ((enrolmentRows ?? []) as Array<{ id: string; section_id: string }>).map(
-      (r) => [r.id, r.section_id]
+    .select(
+      'id, section_id, student:students(student_number, first_name, last_name)'
     )
+    .in('id', studentIds);
+  type RawEnrolmentRow = {
+    id: string;
+    section_id: string;
+    student?:
+      | { student_number: string; first_name: string; last_name: string }
+      | Array<{
+          student_number: string;
+          first_name: string;
+          last_name: string;
+        }>
+      | null;
+  };
+  const sectionIdByEnrolment = new Map<string, string>(
+    ((enrolmentRows ?? []) as RawEnrolmentRow[]).map((r) => [
+      r.id,
+      r.section_id,
+    ])
   );
+  const studentByEnrolment = new Map<
+    string,
+    { studentNumber: string | null; studentName: string | null }
+  >();
+  for (const r of (enrolmentRows ?? []) as RawEnrolmentRow[]) {
+    const s = Array.isArray(r.student) ? r.student[0] : r.student;
+    if (!s) continue;
+    studentByEnrolment.set(r.id, {
+      studentNumber: s.student_number ?? null,
+      studentName: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || null,
+    });
+  }
 
   // Teacher section gate — ALL touched sections must be ones they form-advise.
   if (auth.role === 'teacher') {
@@ -278,10 +316,12 @@ export async function PATCH(request: NextRequest) {
       date: string;
       // Nullable since migration 134 — a cleared day is a real ledger row.
       status: string | null;
+      // Read only to tell whether the note CHANGED. Never written to the log.
+      ex_note?: string | null;
     }>((from, to) =>
       service
         .from('attendance_daily')
-        .select('section_student_id, date, status, recorded_at')
+        .select('section_student_id, date, status, ex_note, recorded_at')
         .in('section_student_id', slice)
         .in('date', submittedDates)
         .order('recorded_at', { ascending: false })
@@ -296,9 +336,13 @@ export async function PATCH(request: NextRequest) {
   // below is what decides not to render a null prior; this map's job is only
   // to answer "what was on the day", and "nothing" is an answer.
   const priorStatusByKey = new Map<string, string | null>();
+  const priorNoteByKey = new Map<string, string | null>();
   for (const row of priorRows) {
     const key = `${row.section_student_id}|${row.date}`;
-    if (!priorStatusByKey.has(key)) priorStatusByKey.set(key, row.status);
+    if (!priorStatusByKey.has(key)) {
+      priorStatusByKey.set(key, row.status);
+      priorNoteByKey.set(key, row.ex_note ?? null);
+    }
   }
   const levelTypeByEnrolment = new Map<
     string,
@@ -354,40 +398,10 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  // ── Write ────────────────────────────────────────────────────────────────
-  let rollups: Map<string, RollupAfterWrite>;
-  try {
-    rollups = await writeDailyBatch(
-      service,
-      entries.map((entry) => ({
-        sectionStudentId: entry.sectionStudentId,
-        termId: entry.termId,
-        date: entry.date,
-        status: entry.status,
-        exReason: entry.exReason ?? null,
-        exNote: entry.exNote ?? null,
-        recordedBy: auth.user.id,
-      }))
-    );
-  } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    return NextResponse.json(
-      { error: reason, writtenSoFar: 0 },
-      { status: 500 }
-    );
-  }
-
-  for (const entry of entries) {
-    results.push({
-      sectionStudentId: entry.sectionStudentId,
-      termId: entry.termId,
-      date: entry.date,
-      status: entry.status,
-      rollup: rollups.get(`${entry.termId}|${entry.sectionStudentId}`)!,
-    });
-  }
-
-  // ── Audit ────────────────────────────────────────────────────────────────
+  // ── Audit rows ───────────────────────────────────────────────────────────
+  // Shaped BEFORE the write, so a write that half-lands can still be logged:
+  // see `MarksWrittenRollupFailedError` in the write block below.
+  //
   // Written in ONE parallel wave instead of one awaited INSERT per student.
   //
   // Deliberately still awaited, and deliberately NOT moved into `after()`.
@@ -403,6 +417,11 @@ export async function PATCH(request: NextRequest) {
     // cleared. Neither is a transition worth rendering, and only a real prior
     // mark goes in the context — see the comment on `prior_status` below.
     const prior = priorStatusByKey.get(priorKey) ?? null;
+    // What the ledger will actually hold — `toLedgerRow` drops a note on
+    // anything but EX — compared with the note on the mark it supersedes.
+    const nextNote = entry.status === 'EX' ? (entry.exNote ?? null) : null;
+    const noteChanged = nextNote !== (priorNoteByKey.get(priorKey) ?? null);
+    const student = studentByEnrolment.get(entry.sectionStudentId);
     return {
       action:
         entry.date < today
@@ -423,6 +442,10 @@ export async function PATCH(request: NextRequest) {
           sectionNameById.get(
             sectionIdByEnrolment.get(entry.sectionStudentId) ?? ''
           ) ?? null,
+        // The child. Migration 166 writes the same two keys from the trigger,
+        // so a mark from the Term sheet and one from the Daily view read alike.
+        student_number: student?.studentNumber ?? null,
+        student_name: student?.studentName ?? null,
         term_id: entry.termId,
         date: entry.date,
         // ⚠ AN EXPLICIT `null` HERE IS THE RECORD OF A CLEAR, and it is the one
@@ -435,7 +458,11 @@ export async function PATCH(request: NextRequest) {
         // humanize renders just the new status for that case — and it never
         // sees a `null` prior, which it could only render as the word "null".
         ...(prior !== null ? { prior_status: prior } : {}),
-        ...(entry.exReason ? { ex_reason: entry.exReason } : {}),
+        // Only on EX, as the ledger stores it — `toLedgerRow` drops a reason
+        // sent alongside any other status, so the log must not claim one.
+        ...(entry.status === 'EX' && entry.exReason
+          ? { ex_reason: entry.exReason }
+          : {}),
         // PRESENCE ONLY — never the note text. `audit_log` is readable by
         // every `is_registrar_or_above()` user, a wider audience than the
         // mark itself (attendance_daily is registrar+ OR that section's form
@@ -444,17 +471,77 @@ export async function PATCH(request: NextRequest) {
         // permanently un-redactable and visible to more people than the
         // absence it explains. The trail still proves a note was attached or
         // changed and by whom, which is what an audit needs to answer.
-        ...(entry.exNote != null ? { ex_note_present: true } : {}),
+        ...(nextNote != null ? { ex_note_present: true } : {}),
+        // A note added, edited or removed — the only way a note-only change on
+        // an unchanged EX shows up at all. Still presence, never the words.
+        ...(noteChanged ? { ex_note_changed: true } : {}),
       },
     };
   });
 
-  if (results.length > 0) {
-    await logActions(
+  const auditActor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
+  // ── Write ────────────────────────────────────────────────────────────────
+  let rollups: Map<string, RollupAfterWrite>;
+  try {
+    rollups = await writeDailyBatch(
       service,
-      { id: auth.user.id, email: auth.user.email ?? null, role: auth.role },
-      auditRows
+      entries.map((entry) => ({
+        sectionStudentId: entry.sectionStudentId,
+        termId: entry.termId,
+        date: entry.date,
+        status: entry.status,
+        exReason: entry.exReason ?? null,
+        exNote: entry.exNote ?? null,
+        recordedBy: auth.user.id,
+      }))
     );
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    // ⚠ THE MARKS MAY ALREADY BE ON THE SHEET. `writeDailyBatch` inserts first
+    // and recomputes rollups second; a rollup that fails leaves every mark
+    // committed and appended to an append-only ledger, so a 500 with no audit
+    // row would leave real marks nobody can attribute. Log what landed, say
+    // which step failed, then answer.
+    if (e instanceof MarksWrittenRollupFailedError) {
+      await logActions(
+        service,
+        auditActor,
+        auditRows.map((row) => ({
+          ...row,
+          context: { ...row.context, partial: true, failed_step: 'rollup' },
+        }))
+      );
+      for (const ayCode of ayCodesTouched) {
+        invalidateDrillTags('attendance', ayCode);
+      }
+      return NextResponse.json(
+        { error: reason, writtenSoFar: entries.length },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { error: reason, writtenSoFar: 0 },
+      { status: 500 }
+    );
+  }
+
+  for (const entry of entries) {
+    results.push({
+      sectionStudentId: entry.sectionStudentId,
+      termId: entry.termId,
+      date: entry.date,
+      status: entry.status,
+      rollup: rollups.get(`${entry.termId}|${entry.sectionStudentId}`)!,
+    });
+  }
+
+  if (results.length > 0) {
+    await logActions(service, auditActor, auditRows);
 
     // ⚠ A DELIBERATE SEMANTIC CHANGE, not a refactor. This used to invalidate
     // whatever year is CURRENT (`requireCurrentAyCode(service)`, its own round

@@ -74,7 +74,7 @@ export async function PATCH(
 
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select('residenceHistory')
+    .select('residenceHistory, studentNumber')
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -92,6 +92,19 @@ export async function PATCH(
       { error: 'No application row for this enrolee in this AY' },
       { status: 404 }
     );
+  }
+
+  const beforeRow = before as {
+    residenceHistory?: unknown;
+    studentNumber?: string | null;
+  };
+  const prevEntries = normaliseResidence(beforeRow.residenceHistory);
+  const nextEntries = normaliseResidence(next);
+  // A save that changes nothing writes nothing, audit row included. Compared
+  // entry by entry on the normalised shape, because the stored jsonb and the
+  // parsed body differ in key order and in how an absent purpose is spelled.
+  if (JSON.stringify(prevEntries) === JSON.stringify(nextEntries)) {
+    return NextResponse.json({ ok: true, changed: 0 });
   }
 
   const { error: upErr } = await supabase
@@ -118,18 +131,60 @@ export async function PATCH(
     entityId: enroleeNumber,
     context: {
       ay_code: ayCode,
+      enroleeNumber,
+      studentNumber: beforeRow.studentNumber ?? null,
+      // `from` / `to` are lists of readable lines ("2019–2023 · Manila,
+      // Philippines · Study") so the change renders as text. The raw entries
+      // were JSON objects, which a field-diff renderer cannot print.
       changes: [
         {
           field: 'residenceHistory',
-          from:
-            (before as { residenceHistory?: unknown }).residenceHistory ?? null,
-          to: next,
+          from: prevEntries.map(describeResidence),
+          to: nextEntries.map(describeResidence),
         },
       ],
+      residence_history_before: prevEntries,
+      residence_history_after: nextEntries,
     },
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');
   invalidateDrillTags('admissions', ayCode);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, changed: 1 });
+}
+
+type ResidenceLine = {
+  fromYear: number | null;
+  toYear: number | null;
+  country: string;
+  cityOrTown: string;
+  purposeOfStay: string | null;
+};
+
+/** Stored jsonb or parsed body → one comparable, ordered shape. */
+function normaliseResidence(value: unknown): ResidenceLine[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+    .map((e) => ({
+      fromYear: typeof e.fromYear === 'number' ? e.fromYear : null,
+      toYear: typeof e.toYear === 'number' ? e.toYear : null,
+      country: typeof e.country === 'string' ? e.country.trim() : '',
+      cityOrTown: typeof e.cityOrTown === 'string' ? e.cityOrTown.trim() : '',
+      purposeOfStay:
+        typeof e.purposeOfStay === 'string' && e.purposeOfStay.trim()
+          ? e.purposeOfStay.trim()
+          : null,
+    }));
+}
+
+function describeResidence(e: ResidenceLine): string {
+  const years =
+    e.fromYear && e.toYear
+      ? e.fromYear === e.toYear
+        ? String(e.fromYear)
+        : `${e.fromYear}–${e.toYear}`
+      : String(e.fromYear ?? e.toYear ?? '');
+  const place = [e.cityOrTown, e.country].filter(Boolean).join(', ');
+  return [years, place, e.purposeOfStay].filter(Boolean).join(' · ');
 }

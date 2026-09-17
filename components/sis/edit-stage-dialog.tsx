@@ -211,6 +211,15 @@ export function EditStageDialog({
 
   const [sectionId, setSectionId] = useState<string | null>(null);
 
+  const isTerminalStatus = (
+    APPLICATION_TERMINAL_STATUSES as readonly string[]
+  ).includes(effectiveStatus ?? '');
+  // Withdrawing or cancelling the application also takes the child out of
+  // their class, and that needs a last day at school. The same read that
+  // tells the class picker where a student sits answers whether they sit
+  // anywhere at all.
+  const endingApplication = stageKey === 'application' && isTerminalStatus;
+
   const sectionsQuery = useQuery({
     queryKey: ['assignable-sections', enroleeNumber, ayCode],
     queryFn: () =>
@@ -231,7 +240,7 @@ export function EditStageDialog({
       }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
       ),
-    enabled: canPickSectionNow,
+    enabled: canPickSectionNow || endingApplication,
   });
 
   // Where this student already sits, if anywhere. Resolved server-side by the
@@ -243,9 +252,21 @@ export function EditStageDialog({
     if (!canPickSectionNow) setSectionId(null);
   }, [canPickSectionNow]);
 
-  const isTerminalStatus = (
-    APPLICATION_TERMINAL_STATUSES as readonly string[]
-  ).includes(effectiveStatus ?? '');
+  // The two dates the school keeps when a child leaves (migration 163) — the
+  // same pair, in the same words, as the withdrawal on the class roster
+  // (components/sis/enrolment-edit-sheet.tsx). The server used to stamp today
+  // here instead, which recorded when someone clicked, not when the child left.
+  const [lastDay, setLastDay] = useState('');
+  const [approvedDate, setApprovedDate] = useState('');
+  // The server's answer wins over the picker read above: a transferred student
+  // holds two class rows, and that read looks at only one of them.
+  const [serverNeedsLastDay, setServerNeedsLastDay] = useState(false);
+  const placedInClassNow =
+    alreadyPlaced?.status === 'active' ||
+    alreadyPlaced?.status === 'late_enrollee';
+  const lastDayRequired =
+    endingApplication && (placedInClassNow || serverNeedsLastDay);
+
   const [terminalReason, setTerminalReason] = useState<
     ApplicationTerminalReason | ''
   >(
@@ -260,6 +281,9 @@ export function EditStageDialog({
     if (!isTerminalStatus) {
       setTerminalReason('');
       setTerminalNotes('');
+      setLastDay('');
+      setApprovedDate('');
+      setServerNeedsLastDay(false);
     }
   }, [isTerminalStatus]);
 
@@ -338,6 +362,8 @@ export function EditStageDialog({
       rowsAffected: number;
       sectionStudentIds: string[];
     } | null;
+    /** Application saved, but the class roster could not be updated. */
+    withdrawalCascadeFailed?: { error: string } | null;
     midTermEnrolment?: MidTermPayload | null;
   };
 
@@ -364,6 +390,19 @@ export function EditStageDialog({
     const autoSync = body.autoSync;
     const autoSyncFailed = body.autoSyncFailed === true;
     const withdrawalCascade = body.withdrawalCascade;
+
+    // The application was saved but the class roster was not — the two now
+    // disagree, and nothing else on screen would show it.
+    if (body.withdrawalCascadeFailed) {
+      toast.warning(
+        `${STAGE_LABELS[stageKey]} saved, but the student is still on their class list`,
+        {
+          description:
+            'Open the student in Records → Students and withdraw them from their class there.',
+        }
+      );
+      return null;
+    }
 
     // Withdrawn / Cancelled cascade outcome takes priority on the toast.
     // The cascade only fires when the flip actually changed section rows;
@@ -431,7 +470,15 @@ export function EditStageDialog({
       const body = (e.body ?? {}) as {
         blockers?: unknown;
         error?: string;
+        code?: string;
       };
+      // The student sits in a class the picker read did not show (a
+      // transferred student holds two rows). Mark the field required so the
+      // registrar sees where the date goes, and keep the server's words.
+      if (body.code === 'withdrawal_date_required') {
+        setServerNeedsLastDay(true);
+        return body.error ?? 'Enter the last day at school.';
+      }
       if (Array.isArray(body.blockers) && body.blockers.length > 0) {
         if (stageKey === 'documents') {
           const docBlockers = body.blockers as Array<{
@@ -492,6 +539,14 @@ export function EditStageDialog({
           ...values,
           extras: extrasPayload,
           ...(canPickSectionNow && sectionId ? { section_id: sectionId } : {}),
+          // Sent whenever the application is being ended. Blank means "not
+          // known" and is stored as blank — the server never fills it in.
+          ...(endingApplication
+            ? {
+                withdrawal_date: lastDay || null,
+                withdrawal_approved_date: approvedDate || null,
+              }
+            : {}),
         }),
       {
         pending: `Saving ${STAGE_LABELS[stageKey].toLowerCase()}…`,
@@ -546,6 +601,9 @@ export function EditStageDialog({
           setTerminalNotes(
             (initialExtras?.terminalNotes as string | undefined) ?? ''
           );
+          setLastDay('');
+          setApprovedDate('');
+          setServerNeedsLastDay(false);
           form.reset({
             status: initialStatus,
             remarks: initialRemarks,
@@ -884,6 +942,54 @@ export function EditStageDialog({
                         />
                       </div>
 
+                      {/* The two dates the school keeps (migration 163) —
+                          mirrors the withdrawal on the class roster. Required
+                          only when the student already sits in a class: an
+                          applicant who never started has no last day. */}
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-foreground">
+                            Last day at school
+                            {lastDayRequired && (
+                              <span className="text-destructive"> *</span>
+                            )}
+                          </label>
+                          <DatePicker
+                            value={lastDay}
+                            onChange={setLastDay}
+                            placeholder="Pick the last day"
+                          />
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            {lastDayRequired
+                              ? 'The last day they actually attended.'
+                              : 'Only needed if they had already started in a class.'}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-foreground">
+                            Withdrawal approved
+                          </label>
+                          <DatePicker
+                            value={approvedDate}
+                            onChange={setApprovedDate}
+                            placeholder="Pick a date"
+                          />
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Can be after the last day, if the paperwork followed
+                            later.
+                          </p>
+                        </div>
+                      </div>
+
+                      {lastDayRequired && !lastDay && (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="size-3.5 shrink-0" />
+                          {alreadyPlaced && placedInClassNow
+                            ? `They are in ${[alreadyPlaced.levelCode, alreadyPlaced.sectionName].filter(Boolean).join(' ')} — enter their last day at school.`
+                            : 'They are in a class — enter their last day at school.'}
+                        </p>
+                      )}
+
                       {!terminalReason ? (
                         <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
                           <AlertTriangle className="size-3.5 shrink-0" />
@@ -924,6 +1030,7 @@ export function EditStageDialog({
                     disabled={
                       statusMissing ||
                       completionBlockers.length > 0 ||
+                      (lastDayRequired && !lastDay) ||
                       (stageKey === 'application' &&
                         isTerminalStatus &&
                         (!terminalReason ||

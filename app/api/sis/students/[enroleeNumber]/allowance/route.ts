@@ -4,6 +4,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
+import {
+  APPLICANT_IDENTITY_COLUMNS,
+  applicantAuditIdentity,
+  type ApplicantIdentityRow,
+} from '@/lib/admissions/audit-identity';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { AllowanceSchema } from '@/lib/schemas/sis';
@@ -54,7 +59,7 @@ export async function PATCH(
   // enroleeNumber → studentNumber via admissions applications.
   const { data: app, error: appErr } = await admissions
     .from(`${prefix}_enrolment_applications`)
-    .select('studentNumber')
+    .select(APPLICANT_IDENTITY_COLUMNS)
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (appErr)
@@ -123,8 +128,8 @@ export async function PATCH(
     entityType: 'enrolment_application',
     entityId: enroleeNumber,
     context: {
-      enroleeNumber,
-      studentNumber,
+      ay_code: ayCode,
+      ...applicantAuditIdentity(enroleeNumber, app as ApplicantIdentityRow),
       student_id: studentId,
       before,
       after: allowance,

@@ -132,6 +132,34 @@ export async function POST(request: NextRequest) {
       skipped_not_enrolled: skippedNotEnrolled,
       skipped_no_recipients: skippedNoRecipients,
       skipped_not_actionable: skippedNotActionable,
+      // WHICH children and documents, not only how many. Every item appears
+      // exactly once — emailed ones with their addresses, the rest with the
+      // reason they were skipped — so "was this family chased on the 12th?"
+      // has an answer. Bounded by the schema's 50-item cap on a bulk request.
+      emailed: rowResults.flatMap(({ item, outcome }) =>
+        outcome.ok
+          ? [
+              {
+                ...outcome.student,
+                slot_key: item.slotKey,
+                label: outcome.slotLabel,
+                to: outcome.to,
+                cc: outcome.cc,
+              },
+            ]
+          : []
+      ),
+      not_emailed: rowResults.flatMap(({ item, outcome }) =>
+        outcome.ok
+          ? []
+          : [
+              {
+                enroleeNumber: item.enroleeNumber,
+                slot_key: item.slotKey,
+                reason: outcome.reason,
+              },
+            ]
+      ),
     },
   });
 

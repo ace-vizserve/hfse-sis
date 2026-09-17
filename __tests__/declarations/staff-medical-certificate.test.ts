@@ -553,7 +553,7 @@ describe('the audit row', () => {
     expect(logAction).toHaveBeenCalledTimes(1);
     const call = auditRow();
 
-    expect(call.action).toBe('declaration.approve');
+    expect(call.action).toBe('declaration.file.staff');
     expect(call.entityType).toBe('student_declaration');
     expect(call.entityId).toBe('decl-1');
     expect(call.actor).toMatchObject({ id: ME, email: 'teacher@hfse.test' });
@@ -561,6 +561,7 @@ describe('the audit row', () => {
     expect(call.context).toMatchObject({
       // What tells this apart from a filing the ladder approved.
       recorded_by_school: true,
+      status: 'approved',
       declaration_type: 'absence',
       with_medical: true,
       // Whether a file or a link was attached — presence, never the thing.
@@ -724,6 +725,18 @@ describe('days that are already spoken for', () => {
       null
     );
     expect(updated).toMatchObject({ with_medical: true });
+
+    // The replaced file is not deleted from storage, so the audit row is the
+    // only thing left that says where it is. The NEW file stays out.
+    const row = auditRow();
+    expect(row.action).toBe('declaration.evidence.attach');
+    expect(row.context).toMatchObject({
+      replaced_existing: true,
+      replaced_evidence_path: 'declarations/p1/mc.pdf',
+      replaced_evidence_kind: 'file',
+      status: 'approved',
+    });
+    expect(JSON.stringify(row.context)).not.toContain(OWN_PATH);
   });
 
   it('tells the user to look again when the certificate changed under them', async () => {
@@ -790,12 +803,11 @@ describe('days that are already spoken for', () => {
     expect(updated).toMatchObject({ evidence_path: OWN_PATH });
   });
 
-  it('audits the attach under the create path’s action, told apart in words', async () => {
-    // ⚠ Same action name deliberately — a new one needs a line in
-    // `ATTENDANCE_AUDIT_ACTIONS` or `allowlist-coverage` fails, and an action
-    // nobody can see is worse than a shared one that reads correctly. With no
-    // approval ladder behind this row, the audit line is the ONLY place either
-    // action is visible.
+  it('audits the attach as an attach, never as an approval', async () => {
+    // ⚠ The filing is still PENDING after this — nobody decided anything, so
+    // `declaration.approve` claimed a decision that was never made. With no
+    // approval ladder behind this row, the audit line is the ONLY place the
+    // attach is visible.
     existingRows = [parentFiling()];
     updateReturns = [
       { status: 'pending', start_date: '2026-09-01', end_date: '2026-09-03' },
@@ -804,10 +816,12 @@ describe('days that are already spoken for', () => {
     await post(validBody());
 
     const row = auditRow();
-    expect(row.action).toBe('declaration.approve');
+    expect(row.action).toBe('declaration.evidence.attach');
     // The filing that CHANGED, not the row we would have created.
     expect(row.entityId).toBe('decl-parent');
     expect(row.context.attached_to_existing).toBe(true);
+    // Where the filing stands — still waiting on its approvers.
+    expect(row.context.status).toBe('pending');
     // ⚠ The filing's OWN dates, which can be wider than the single day the
     // certificate was recorded against.
     expect(row.context.start_date).toBe('2026-09-01');

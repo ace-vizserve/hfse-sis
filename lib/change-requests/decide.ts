@@ -549,6 +549,11 @@ export async function decideChangeRequest(
     };
   }
 
+  // Undo clears the note column on purpose; anything else is the note this
+  // person wrote with this click, or none.
+  const decisionNoteOfThisActor =
+    action === 'undo_rejection' ? null : (decision_note ?? null);
+
   await logAction({
     service,
     // ⚠ THE ROLE CAN BE AN EMPTY STRING HERE, AND ONLY HERE. The signed-link
@@ -567,8 +572,16 @@ export async function decideChangeRequest(
       grading_sheet_id: updated.grading_sheet_id,
       grade_entry_id: updated.grade_entry_id,
       field: updated.field_changed,
+      slot_index: updated.slot_index ?? null,
+      current: updated.current_value ?? null,
       proposed: updated.proposed_value,
-      decision_note: updated.decision_note ?? null,
+      // THIS person's note. It used to read `updated.decision_note`, which is
+      // the FIRST reviewer's column — the co-signer's update never touches it
+      // — so a second approver's row showed the first approver's words and
+      // their own were stored nowhere. The table has one note column and no
+      // co-signer note column, so the audit row is where the second note
+      // lives.
+      decision_note: decisionNoteOfThisActor,
       via,
       ...(isReview ? { reviewer_ordinal: reviewerOrdinal } : {}),
       ...(action === 'undo_rejection'

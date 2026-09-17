@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
+import { proseLength } from '@/lib/rich-text';
 import { ClassroomNoteSchema } from '@/lib/schemas/classroom';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -64,12 +65,24 @@ export async function PATCH(
 
   const { data: section } = await service
     .from('sections')
-    .select('id')
+    .select('id, name, level:levels(code, label)')
     .eq('id', sectionId)
     .maybeSingle();
   if (!section) {
     return NextResponse.json({ error: 'section not found' }, { status: 404 });
   }
+  // Names the class on the audit row — an id alone reads as nothing on the
+  // activity log.
+  const sectionRow = section as {
+    name: string | null;
+    level:
+      | { code: string | null; label: string | null }
+      | { code: string | null; label: string | null }[]
+      | null;
+  };
+  const level = Array.isArray(sectionRow.level)
+    ? sectionRow.level[0]
+    : sectionRow.level;
 
   const { data: existing } = await service
     .from('classroom_notes')
@@ -111,7 +124,15 @@ export async function PATCH(
       action: 'classroom.note.save',
       entityType: 'classroom_note',
       entityId: sectionId,
-      context: { section_id: sectionId, length: content.length },
+      context: {
+        section_id: sectionId,
+        section_name: sectionRow.name ?? null,
+        level_code: level?.code ?? null,
+        level_label: level?.label ?? null,
+        // Measured on the words, not the markup — the same count the editor's
+        // counter and ClassroomNoteSchema use. `content.length` counted tags.
+        length: proseLength(content),
+      },
     });
   }
 

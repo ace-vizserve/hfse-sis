@@ -2,6 +2,11 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  applicantAuditIdentity,
+  type ApplicantAuditIdentity,
+  type ApplicantIdentityRow,
+} from '@/lib/admissions/audit-identity';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
 import {
   type SlotStatusKind,
@@ -34,7 +39,18 @@ const ADMISSIONS_FUNNEL_STATUSES_SET = new Set<string>(
 );
 
 export type NotifyOutcome =
-  | { ok: true; recipients: number; sent: number; failed: number }
+  | {
+      ok: true;
+      recipients: number;
+      sent: number;
+      failed: number;
+      // For the audit row. `recipients` above is a COUNT of envelopes (always
+      // 1); these are the addresses the envelope went to, and who it was about.
+      to: string;
+      cc: string[];
+      slotLabel: string;
+      student: ApplicantAuditIdentity;
+    }
   | {
       ok: false;
       reason:
@@ -99,7 +115,7 @@ export async function runNotify(
     service
       .from(`${prefix}_enrolment_applications`)
       .select(
-        '"enroleeNumber","firstName","middleName","lastName","enroleeFullName","motherEmail","fatherEmail","guardianEmail"'
+        '"enroleeNumber","studentNumber","firstName","middleName","lastName","enroleeFullName","motherEmail","fatherEmail","guardianEmail"'
       )
       .eq('enroleeNumber', ctx.enroleeNumber)
       .maybeSingle(),
@@ -243,5 +259,17 @@ export async function runNotify(
   // The outreach row already exists — it WAS the claim, inserted above by
   // `claim_pfile_reminder`. No insert here.
 
-  return { ok: true, recipients: 1, sent: result.sent, failed: result.failed };
+  return {
+    ok: true,
+    recipients: 1,
+    sent: result.sent,
+    failed: result.failed,
+    to: envelope.to,
+    cc: envelope.cc,
+    slotLabel: slot.label,
+    student: applicantAuditIdentity(
+      ctx.enroleeNumber,
+      app as ApplicantIdentityRow
+    ),
+  };
 }

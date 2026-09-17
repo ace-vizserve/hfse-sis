@@ -5,10 +5,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 import { sgToday } from '@/lib/dates';
+import { logActions } from '@/lib/audit/log-action';
 import {
   fileDeclarationSchema,
   ListDeclarationsQuerySchema,
   type DeclarationStatus,
+  type FileDeclarationInput,
 } from '@/lib/schemas/declarations';
 import {
   listParentDeclarations,
@@ -406,6 +408,7 @@ export async function POST(request: Request) {
   // when a closure runs, so `tsc` passed and every filing 500'd at runtime with
   // "Cannot access 'byStudentId' before initialization".
   const byStudentId = new Map(resolved.map((s) => [s.studentId, s]));
+  let ladderUnconfigured = 0;
 
   try {
     const ladders = await openDeclarationApprovals(
@@ -420,6 +423,7 @@ export async function POST(request: Request) {
       })),
       { id: auth.userId, email: auth.email }
     );
+    ladderUnconfigured = ladders.unconfigured;
     if (ladders.unconfigured > 0) {
       console.warn(
         `[declarations] ${ladders.unconfigured} filing(s) stored with no approval steps configured — nobody can act on them until /sis/admin/approvers is set up.`
@@ -428,24 +432,63 @@ export async function POST(request: Request) {
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[declarations] approval ladder failed:', reason);
-    await service
+    const { error: rollbackErr } = await service
       .from('student_declarations')
       .delete()
       .in(
         'id',
         insertedRows.map((r) => r.id)
       );
+    // ⚠ A ROLLBACK THAT FAILS LEAVES THE FILINGS IN PLACE, with no ladder —
+    // the stranded shape described above — and the parent is still told to try
+    // again. Those rows then exist with nothing saying how they got there, so
+    // they are logged here. A rollback that worked leaves nothing behind and
+    // logs nothing: the parent's retry is the filing that counts.
+    if (rollbackErr) {
+      console.error(
+        '[declarations] rollback after a ladder failure failed:',
+        rollbackErr.message
+      );
+      await logActions(
+        service,
+        { id: auth.userId, email: auth.email, role: null },
+        filingAuditRows(insertedRows, byStudentId, input, filingGroupId, {
+          partial: true,
+          failed_step: 'approval_ladder',
+          rollback_failed: true,
+        })
+      );
+    }
     return NextResponse.json(
       { error: 'Could not save that. Please try again.' },
       { status: 500, headers: cors }
     );
   }
 
-  // ⚠ NOTHING IS AUDIT-LOGGED WITH THE NOTE IN IT. The parent's message is
-  // medical-adjacent and about a child; `audit_log` is readable by every
-  // is_registrar_or_above() user and can never be edited or deleted. Same rule
-  // migration 109 set for attendance `ex_note`. The audit row for a filing is
-  // written by the approval flow, and carries `note_present` only.
+  // ── Audit ────────────────────────────────────────────────────────────────
+  //
+  // One `declaration.file` row per child filed for. This comment used to say
+  // the approval flow logged the filing; it never did — the approval flow logs
+  // DECISIONS, so a filing nobody had yet decided left no trace at all, and a
+  // filing nobody ever decided never would.
+  //
+  // ⚠ THE PARENT IS THE ACTOR, WITH NO ROLE. A parent holds no staff role
+  // (authorisation here is the parent→child link, not RLS), and `actor_role`
+  // is the role that authorised the write — so it is null, and
+  // `filed_by: 'parent'` says in whose capacity the row was written.
+  //
+  // ⚠ NOTHING IS AUDIT-LOGGED WITH THE NOTE IN IT, nor the certificate. The
+  // parent's message is medical-adjacent and about a child; `audit_log` is
+  // readable by every is_registrar_or_above() user and can never be edited or
+  // deleted. Same rule migration 109 set for attendance `ex_note`. Presence
+  // only: `parent_note_present` and `evidence_kind`.
+  await logActions(
+    service,
+    { id: auth.userId, email: auth.email, role: null },
+    filingAuditRows(insertedRows, byStudentId, input, filingGroupId, {
+      approval_steps_configured: ladderUnconfigured === 0,
+    })
+  );
 
   return NextResponse.json(
     {
@@ -462,4 +505,58 @@ export async function POST(request: Request) {
     },
     { status: 201, headers: cors }
   );
+}
+
+/**
+ * One `declaration.file` audit row per filing a parent's submission created.
+ *
+ * ⚠ PRESENCE ONLY for the note and the certificate — see the audit block in
+ * POST. The child, the class and the days are named; the words and the file
+ * are not.
+ */
+function filingAuditRows(
+  rows: Array<{ id: string; student_id: string; section_id: string }>,
+  byStudentId: Map<string, LinkedStudent>,
+  input: FileDeclarationInput,
+  filingGroupId: string,
+  extra: Record<string, unknown>
+) {
+  const isAbsence = input.declarationType === 'absence';
+  const evidencePath = isAbsence ? input.evidencePath : undefined;
+  const evidenceUrl = isAbsence ? input.evidenceUrl : undefined;
+  return rows.map((row) => {
+    const student = byStudentId.get(row.student_id);
+    return {
+      action: 'declaration.file' as const,
+      entityType: 'student_declaration' as const,
+      entityId: row.id,
+      context: {
+        filed_by: 'parent',
+        status: 'pending',
+        filing_group_id: filingGroupId,
+        // Siblings filed in the same submission share the group.
+        children_in_filing: rows.length,
+        declaration_type: input.declarationType,
+        student_id: row.student_id,
+        student_number: student?.studentNumber ?? null,
+        student_name: student?.displayName ?? null,
+        section_student_id: student?.sectionStudentId ?? null,
+        section_id: row.section_id,
+        section_name: student?.sectionName ?? null,
+        start_date: input.startDate,
+        end_date: input.endDate,
+        with_medical: isAbsence ? input.withMedical : null,
+        evidence_kind:
+          evidencePath && evidenceUrl
+            ? 'both'
+            : evidencePath
+              ? 'file'
+              : evidenceUrl
+                ? 'link'
+                : null,
+        parent_note_present: input.parentNote != null,
+        ...extra,
+      },
+    };
+  });
 }

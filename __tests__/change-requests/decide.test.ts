@@ -231,6 +231,41 @@ describe('decideChangeRequest', () => {
     expect(captured).not.toHaveProperty('primary_reviewed_by');
   });
 
+  it('a co-signer’s audit row carries THEIR note, not the first reviewer’s', async () => {
+    // The row still holds the first reviewer's note in `decision_note`; the
+    // co-sign update never touches that column.
+    const existing = baseRow({
+      status: 'approved',
+      primary_reviewed_by: PRIMARY_APPROVER,
+      primary_reviewed_at: '2026-06-02T00:00:00.000Z',
+      decision_note: '<p>First reviewer: agreed.</p>',
+    });
+    const service = makeService({
+      existing: { data: existing, error: null },
+      updated: { data: existing, error: null },
+    });
+
+    const result = await decideChangeRequest({
+      service,
+      requestId: 'req-1',
+      action: 'approve',
+      actingUser: adminUser(SECONDARY_APPROVER),
+      decisionNote: '<p>Second reviewer: checked the paper too.</p>',
+      via: 'in_app',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(logActionMock).toHaveBeenCalledTimes(1);
+    const row = logActionMock.mock.calls[0][0] as {
+      context: Record<string, unknown>;
+    };
+    expect(row.context.reviewer_ordinal).toBe('secondary');
+    expect(row.context.decision_note).toBe(
+      '<p>Second reviewer: checked the paper too.</p>'
+    );
+    expect(row.context.current).toBe('85');
+  });
+
   it('reject requires a non-empty note (empty → ok:false, 400)', async () => {
     const service = makeService({
       existing: { data: baseRow(), error: null },

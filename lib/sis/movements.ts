@@ -127,6 +127,8 @@ type MetadataPartial = {
   ctxTermLabel: string | null;
   reason?: string | null;
   reasonLabel?: string | null;
+  /** Withdrawn only: this is the newest withdrawal of its class row. */
+  latestWithdrawalForRow?: boolean;
 };
 
 // Enriched intermediate — has everything except term enrichment.
@@ -432,9 +434,27 @@ async function fetchMetadataEvents(
   }
 
   const out: MetadataPartial[] = [];
+  // Rows arrive newest first, so the first withdrawal seen for a class row is
+  // its latest one — the only one the row's live `withdrawal_date` describes.
+  const seenWithdrawnRow = new Set<string>();
   for (const row of withdrawnRows) {
     if (!row.entity_id) continue;
     const ctx = (row.context ?? {}) as Record<string, unknown>;
+    const latestForRow = !seenWithdrawnRow.has(row.entity_id);
+    seenWithdrawnRow.add(row.entity_id);
+    // WHEN DID THE CHILD LEAVE — not when somebody clicked. Since migration
+    // 163 the registrar enters the last day of attendance, and the route
+    // writes it into this row's `after`. Order of preference:
+    //   1. the row's live `withdrawal_date` (applied in enrichment, latest
+    //      withdrawal only, so a later correction of the last day shows here);
+    //   2. the last day this audit row recorded;
+    //   3. the audit row's created_at — ONLY when no last day was recorded
+    //      (pre-163 withdrawals, which stamped the click date anyway).
+    const after = (ctx.after ?? {}) as Record<string, unknown>;
+    const recordedLastDay =
+      typeof after.withdrawal_date === 'string' && after.withdrawal_date
+        ? after.withdrawal_date.slice(0, 10)
+        : null;
     // The audit context may have either the new structured key ('withdrawalReason')
     // or the old unstructured key ('reason') for backwards compat with old audit rows.
     const reasonRaw =
@@ -449,12 +469,13 @@ async function fetchMetadataEvents(
       id: row.id,
       kind: 'withdrawn',
       sectionStudentId: row.entity_id,
-      date: sgDate(row.created_at),
+      date: recordedLastDay ?? sgDate(row.created_at),
       actorEmail: row.actor_email,
       ctxTermNumber: null,
       ctxTermLabel: null,
       reason: resolvedReason,
       reasonLabel,
+      latestWithdrawalForRow: latestForRow,
     });
   }
   // Track late-row IDs so that re-enrolled rows that are ALSO late-enrolled
@@ -525,6 +546,8 @@ async function enrichWithStudents(
     id: string;
     student_id: string;
     enrolee_number: string | null;
+    enrollment_status: string | null;
+    withdrawal_date: string | null;
     sections:
       | {
           name: string;
@@ -548,6 +571,8 @@ async function enrichWithStudents(
       enroleeNumber: string | null;
       level: string;
       ayCode: string;
+      /** Last day of attendance, only while the row is still withdrawn. */
+      liveLastDay: string | null;
     }
   >();
   if (metaIds.length > 0) {
@@ -563,7 +588,7 @@ async function enrichWithStudents(
       const { data, error } = await service
         .from('section_students')
         .select(
-          'id, student_id, enrolee_number, sections!inner(name, levels!inner(code, label), academic_year:academic_years!inner(ay_code))'
+          'id, student_id, enrolee_number, enrollment_status, withdrawal_date, sections!inner(name, levels!inner(code, label), academic_year:academic_years!inner(ay_code))'
         )
         .in('id', slice);
       // Enrichment is cosmetic (names/levels on an audit-derived feed), so keep
@@ -595,6 +620,10 @@ async function enrichWithStudents(
         // is missing on a level row (shouldn't happen — both are NOT NULL).
         level: lvl?.label ?? lvl?.code ?? '',
         ayCode: ay?.ay_code ?? '',
+        liveLastDay:
+          row.enrollment_status === 'withdrawn' && row.withdrawal_date
+            ? row.withdrawal_date.slice(0, 10)
+            : null,
       });
     }
   }
@@ -791,7 +820,12 @@ async function enrichWithStudents(
       enroleeNumber,
       level: ss.level,
       ayCode: ss.ayCode,
-      date: m.date,
+      // A withdrawal is dated by the last day of attendance when one is
+      // recorded; see fetchMetadataEvents for the full preference order.
+      date:
+        m.kind === 'withdrawn' && m.latestWithdrawalForRow && ss.liveLastDay
+          ? ss.liveLastDay
+          : m.date,
       actorEmail: m.actorEmail,
       ctxTermNumber: m.ctxTermNumber,
       ctxTermLabel: m.ctxTermLabel,

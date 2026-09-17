@@ -60,7 +60,9 @@ export async function PATCH(
   // Pre-fetch — both for diff and to merge-validate the startDate/endDate
   // ordering across the non-updated half of the pair.
   const selectCols = Array.from(
-    new Set([...cols, 'startDate', 'endDate'])
+    // `discountCode` + `enroleeType` are always read so the audit row can
+    // name the code even when the edit only touched its dates or details.
+    new Set([...cols, 'discountCode', 'enroleeType', 'startDate', 'endDate'])
   ).join(', ');
   const { data: before, error: beforeErr } = await supabase
     .from(table)
@@ -140,7 +142,26 @@ export async function PATCH(
       op === 'expire' ? 'sis.discount_code.expire' : 'sis.discount_code.update',
     entityType: 'discount_code',
     entityId: String(id),
-    context: { ay_code: ayCode, changes },
+    context: {
+      ay_code: ayCode,
+      // The code's name as it stands after this edit; a rename also shows up
+      // in `changes` as discountCode from → to.
+      discount_code: (update.discountCode ?? beforeRow.discountCode ?? null) as
+        | string
+        | null,
+      previous_discount_code:
+        update.discountCode !== undefined &&
+        update.discountCode !== beforeRow.discountCode
+          ? ((beforeRow.discountCode ?? null) as string | null)
+          : null,
+      enrolee_type: (update.enroleeType ?? beforeRow.enroleeType ?? null) as
+        | string
+        | null,
+      end_date: (update.endDate !== undefined
+        ? update.endDate
+        : (beforeRow.endDate ?? null)) as string | null,
+      changes,
+    },
   });
 
   revalidateTag(`sis:${ayCode}`, 'max');
