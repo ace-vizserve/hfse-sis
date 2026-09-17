@@ -36,6 +36,46 @@ export type HouseRow = {
 };
 
 /**
+ * Tailwind classes for the house CHIP's ground — a wash of the house colour,
+ * a matching border, and the deep stop as ink.
+ *
+ * WHY THE CHIP WEARS THE COLOUR NOW. It was a neutral `bg-card` pill with an
+ * 8px dot, so the colour was roughly 1% of the badge and everything carrying
+ * visual weight — border, fill, text — was grey. Mr Ace, 2026-09-17: _"its not
+ * obvious IMO"._ In a thirty-row roster you had to hunt for it.
+ *
+ * ⚠ A WASH, NOT A FLAT TINT, and that was a correction. The first version used
+ * a flat `bg-house-N/10` behind a flat dot; Mr Ace: _"we dont do flat colors if
+ * that makes sense"_ — and §7.4 says the same thing ("Icon tiles are crafted,
+ * not flat"). The swatch beside this is `houseTileClass` + `shadow-brand-tile`,
+ * the SAME gradient the 40px tile on the permanent record uses, so the chip and
+ * the tile are one object at two sizes rather than two devices sharing a hue.
+ *
+ * ⚠ House colour is IDENTITY, never state. It deliberately does not borrow the
+ * mint/destructive/accent recipes §9.3 gives to good/warning/critical — a
+ * house means nothing except which house.
+ *
+ * ⚠ The `-deep` stop is the INK here and is only legible on a light ground.
+ * Safe today because `.dark` in globals.css is dormant — defined, never applied
+ * to any element. If dark mode is switched on, these four need `.dark`
+ * overrides (bright stop becomes the ink) before the chip reads there.
+ */
+export function houseChipClass(colourToken: string): string {
+  switch (colourToken) {
+    case 'house-1':
+      return 'border-house-1/35 bg-gradient-to-br from-house-1/15 to-house-1/5 text-house-1-deep';
+    case 'house-2':
+      return 'border-house-2/35 bg-gradient-to-br from-house-2/15 to-house-2/5 text-house-2-deep';
+    case 'house-3':
+      return 'border-house-3/35 bg-gradient-to-br from-house-3/15 to-house-3/5 text-house-3-deep';
+    case 'house-4':
+      return 'border-house-4/35 bg-gradient-to-br from-house-4/15 to-house-4/5 text-house-4-deep';
+    default:
+      return 'border-border bg-card text-foreground';
+  }
+}
+
+/**
  * Tailwind classes for a house swatch.
  *
  * These are house IDENTITY, not semantic state — a house simply IS its colour,

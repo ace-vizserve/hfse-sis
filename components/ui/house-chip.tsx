@@ -1,4 +1,4 @@
-import { houseSwatchClass } from '@/lib/sis/houses';
+import { houseChipClass, houseTileClass } from '@/lib/sis/houses';
 import { cn } from '@/lib/utils';
 
 // A student's house, as a small swatch + name.
@@ -26,14 +26,21 @@ export function HouseChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-foreground',
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium',
+        houseChipClass(colourToken),
         className
       )}
     >
+      {/* The house TILE at chip scale — same gradient and shadow as the 40px
+          one on the permanent record (§7.4: icon tiles are crafted, not flat),
+          so the two read as one object at two sizes. Round rather than
+          rounded-square: Mr Ace's call, it keeps the dot silhouette in a table
+          row. size-3.5 against the old size-2 — at 8px and flat it read as
+          punctuation rather than as the house. */}
       <span
         className={cn(
-          'size-2 shrink-0 rounded-full',
-          houseSwatchClass(colourToken)
+          'size-3.5 shrink-0 rounded-full shadow-brand-tile',
+          houseTileClass(colourToken)
         )}
         aria-hidden
       />
