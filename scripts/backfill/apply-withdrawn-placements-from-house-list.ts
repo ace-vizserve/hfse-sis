@@ -130,6 +130,36 @@ const PLACEMENTS: Placement[] = [
     index: 8,
     between: ['Carreon', 'De Pedro'],
   },
+  // ⚠ SANTOS WAS HELD IN THE FIRST RUN, AND THE REASON DISSOLVED ON LOOKING.
+  //
+  // He has two AY2026 applications — E260303 (studentNumber H233489, category
+  // "Current") and E260494 (V260494, "VizSchool Current") — and NEITHER number
+  // has a `students` row. That looked like an identity question that had to go
+  // to the school before he could be placed.
+  //
+  // It is not. He is ALREADY IN THE SIS as H240037, sitting on the AY2025
+  // P3 Courageous roster at #3. Both AY2026 rows minted a NEW number for a
+  // child who already had one, which is exactly what reusing a Current
+  // student's number exists to prevent — so H233489 and V260494 are the
+  // artifacts and H240037 is the identity carrying his history (Hard Rule #4).
+  //
+  // P3 Courageous in AY2025 → Primary Four in AY2026 (both admissions rows say
+  // levelApplied = Primary Four), and the house list puts him in P4 Trust.
+  // #5 went to Bruno, leaving #25 — where SANTOS falls between Ramos and
+  // Soriano.
+  //
+  // ⚠ `enroleeNumber` recorded as E260303, the REGULAR record. The VizSchool
+  // row is a separate question for the school (why two applications at all)
+  // and does not change where the child sits.
+  {
+    who: 'Santos, Kairo Alonzo',
+    studentNumber: 'H240037',
+    enroleeNumber: 'E260303',
+    levelCode: 'P4',
+    sectionName: 'Trust',
+    index: 25,
+    between: ['Ramos', 'Soriano'],
+  },
 ];
 
 async function main() {

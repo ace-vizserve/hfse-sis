@@ -4,9 +4,50 @@
 
 Two training sessions on 2026-09-15 (Miss Joann; the Admissions team) produced 27 action items. Working through them shipped four pieces of code and uncovered one data problem too large to finish in that session.
 
-**The open problem:** 21 of AY2026's 23 withdrawn students have **no `section_students` row at all**. Mr Ace, 2026-09-16: _"you cant be an enrolled student and be withdrawn with no class assignment."_ Hard Rule #6 says a withdrawn student keeps their row and their retired index number; these children vanished from their rosters instead. Three were found and fixed one at a time (Jannat Ajmal, Ashley Rae Cama, and Muhammad Ibrahim still pending) before a remarks sweep turned up the rest in one pass.
+**The open problem:** 21 of AY2026's 23 withdrawn students had **no `section_students` row at all**. Mr Ace, 2026-09-16: _"you cant be an enrolled student and be withdrawn with no class assignment."_ Hard Rule #6 says a withdrawn student keeps their row and their retired index number; these children vanished from their rosters instead.
 
-**Why this session stops here:** placing them needs Miss Jo's masterlist, which Mr Ace has requested from Miss Apple Grace and has not yet received. The admissions record gives each child's **level**, not their **class or index number** — and a hole in a roster proves somebody is missing, never _who_. Guessing would put a child in another child's slot.
+> ### ✅ UPDATE 2026-09-17 — 7 of them are placed. **13 remain.**
+>
+> **What unblocked it was not the masterlist.** The school sent a **house-colour allocation CSV**, and it lists these children **under their section** — the mapping admissions never had, because admissions records a child's LEVEL, not their CLASS.
+>
+> ✅ **It reproduces two known-good answers**: the same file puts Ashley Rae Cama and Jannat Ajmal in S3 Consistency, matching the two placements Mr Ace approved by hand on 15–16 Sep. A source that independently agrees with verified work was worth trusting for the rest.
+>
+> Index numbers came from the **alphabet** — each child's section had exactly one hole their surname fits, the same reasoning the approved Cama placement used. `scripts/backfill/apply-withdrawn-placements-from-house-list.ts` re-checks both neighbours against the LIVE roster before writing and refuses if they have moved. Placed: Singson Alexxa (P2 Humility #25), Bruno (P4 Trust #5), Santos Kairo Alonzo (P4 Trust #25), Min Phone Naing (P5 Commitment #9), Boquiren (P5 Tenacity #3), **Muhammad Ibrahim Ajmal (P6 Loyalty #2)** — the one outstanding from this plan — and Chanco (S2 Integrity 2 #8).
+>
+> `withdrawn with no class: 21 → 13` · `index holes: 27 → 13`
+>
+> ⚠ **The audit still reports 15, and 2 of those are phantoms.** It matches on the **AY2026 `studentNumber`**, and Santos Kairo Alonzo holds three numbers: `H240037` (his real one, from AY2025 P3 Courageous #3), `H233489` (minted fresh on his AY2026 record) and `V260494` (a VizSchool application). He is placed under `H240037`; the audit looks for `H233489`, finds nobody, and reports him missing — twice, once per admissions row. **The audit inherited the same broken assumption that caused the problem**: that a Current student's AY2026 record carries their real number. Left loud on purpose — the fix belongs on the admissions row, not in the check. Mr Ace on the VizSchool row: _"maybe the parent mis appleid to vizschool and should be regular that simple."_
+
+### The 13 that remain, and what each one needs
+
+**1. Section known, index number is not — 5 children.** The house list names their section; the remaining holes are in the **non-alphabetical tail** where late arrivals were appended, so position proves nothing. S2 Integrity 2 has 4 holes for 3 children.
+
+| Child                    | Section        |
+| ------------------------ | -------------- |
+| SINGSON, Adrianna Maxine | P5 Tenacity    |
+| SUZARA, Ichigo           | P5 Commitment  |
+| IRAWAN, Joan             | S2 Integrity 2 |
+| ZIAUDEEN, Shahid Mohamed | S2 Integrity 2 |
+| GANELO, Caleigh Clerize  | S2 Integrity 2 |
+
+**→ Ask the school for: their index numbers.**
+
+**2. Not on the house list at all — 6 children.** They left before the allocation was made. Admissions gives a level, and P1/P2/P3 each have several sections, so the class is genuinely unrecorded anywhere.
+
+| Child                        | Level         |
+| ---------------------------- | ------------- |
+| NAVA, Scarlette Leigh        | Primary Three |
+| SALCEDO, Dylan Kristoff      | Primary Two   |
+| MACARAEG, Quine              | Primary Two   |
+| BARRERA, Seian Mhel          | Primary One   |
+| BALATBAT, Patrick William Jr | Primary One   |
+| BALATBAT, Irie Zane          | Primary Three |
+
+**→ Ask the school for: class AND index number.**
+
+**3. Youngstarters — 2 children.** FERRER, Luna Eilish and MANLAPAZ, Shaun Danuel. Blocked on Youngstarters existing in the SIS at all — parked by Mr Ace until it can be adopted together with its grading sheets, attendance and evaluation write-ups.
+
+⚠ **7 of the 13 have no `students` row**, so they need creating as well as placing — the Cama case, not the Ajmal one.
 
 **The previous plan in this file (per-term grading weights) is DONE** — shipped as KD #218, migration 159 applied. Nothing from it is outstanding except a browser check.
 
