@@ -74,8 +74,12 @@ next-env.d.ts
 ay2025_fca_writeups.sql
 ay2025_calendar.sql
 
-# Untracked student-data spreadsheets at repo root (PII — never commit)
+# Untracked student-data spreadsheets at repo root (PII — never commit).
+# ⚠ .csv as well as .xlsx: the house-colour allocation the school sent arrived
+# as a CSV export and sat UNIGNORED at the root, carrying 389 children's names
+# next to their house. The xlsx-only rule did not reach it.
 /*.xlsx
+/*.csv
 
 # House source workbooks from Mr Hanafi (real student PII — every student's
 # name and house, plus the house-points ledger). The rule above is root-only
