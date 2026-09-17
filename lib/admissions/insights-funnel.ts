@@ -254,7 +254,9 @@ type WithdrawnRow = {
  * enrolling. Keyed on `applicationStatus === 'Withdrawn'` (populated 490/490
  * in prod), NOT `applicationTerminalReason` (unstamped in prod → hollow).
  *
- * Scope is deliberately pre-enrolment: on the admissions side, an enrolled
+ * Since KD #220 this ALSO counts children who enrolled and later left (a
+ * Records withdrawal now sets applicationStatus to Withdrawn). Pre-KD #220:
+ * scope was deliberately pre-enrolment: on the admissions side, an enrolled
  * student who later leaves keeps `applicationStatus === 'Enrolled'` and only
  * flips `section_students.enrollment_status` (KD #150) — that's a Records
  * concern, not counted here. This is strictly "families who withdrew their

@@ -943,43 +943,43 @@ export function EditStageDialog({
                       </div>
 
                       {/* The two dates the school keeps (migration 163) —
-                          mirrors the withdrawal on the class roster. Required
+                          mirrors the withdrawal on the class roster. Shown
                           only when the student already sits in a class: an
-                          applicant who never started has no last day. */}
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-foreground">
-                            Last day at school
-                            {lastDayRequired && (
+                          applicant who never started has no last day, and
+                          the dates are stored on the class row, so for an
+                          applicant anything typed here went nowhere. */}
+                      {lastDayRequired && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">
+                              Last day at school
                               <span className="text-destructive"> *</span>
-                            )}
-                          </label>
-                          <DatePicker
-                            value={lastDay}
-                            onChange={setLastDay}
-                            placeholder="Pick the last day"
-                          />
-                          <p className="text-[11px] leading-snug text-muted-foreground">
-                            {lastDayRequired
-                              ? 'The last day they actually attended.'
-                              : 'Only needed if they had already started in a class.'}
-                          </p>
+                            </label>
+                            <DatePicker
+                              value={lastDay}
+                              onChange={setLastDay}
+                              placeholder="Pick the last day"
+                            />
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                              The last day they actually attended.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">
+                              Withdrawal approved
+                            </label>
+                            <DatePicker
+                              value={approvedDate}
+                              onChange={setApprovedDate}
+                              placeholder="Pick a date"
+                            />
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                              Can be after the last day, if the paperwork
+                              followed later.
+                            </p>
+                          </div>
                         </div>
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-foreground">
-                            Withdrawal approved
-                          </label>
-                          <DatePicker
-                            value={approvedDate}
-                            onChange={setApprovedDate}
-                            placeholder="Pick a date"
-                          />
-                          <p className="text-[11px] leading-snug text-muted-foreground">
-                            Can be after the last day, if the paperwork followed
-                            later.
-                          </p>
-                        </div>
-                      </div>
+                      )}
 
                       {lastDayRequired && !lastDay && (
                         <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">

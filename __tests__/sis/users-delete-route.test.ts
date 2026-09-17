@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Dependency mocks for the DELETE route, mirroring the established
-// route-handler test pattern (__tests__/sis/withdrawal-preserves-outcome.test.ts).
+// route-handler test pattern (__tests__/sis/withdrawal-syncs-admissions.test.ts).
 //
 // vi.mock(...) factories are hoisted above every top-level statement in this
 // file, so a factory can only safely reference a mockXxx variable through a

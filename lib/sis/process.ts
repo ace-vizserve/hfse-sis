@@ -320,8 +320,11 @@ export function resolveWithdrawnDisplay(
   );
   if (!isWithdrawn) return null;
 
-  // Pre-enrolment exit — the application-side fields ARE the withdrawal.
-  if ((applicationStatus ?? '').trim() === 'Withdrawn') return appSide;
+  // Pre-enrolment exit — the application-side fields ARE the withdrawal. Keyed
+  // on "no withdrawn class row", not on applicationStatus alone: since KD #220
+  // a post-enrolment withdrawal ALSO reads 'Withdrawn' there, and its real
+  // last day and reason live on the class row.
+  if (!ssRows.some((r) => r.enrollment_status === 'withdrawn')) return appSide;
 
   // Post-enrolment: prefer the most recent withdrawn row (a student who
   // transferred earlier and later withdrew carries an older transfer-created

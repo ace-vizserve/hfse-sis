@@ -78,18 +78,29 @@ import {
 } from '@/app/api/sections/[id]/students/[enrolmentId]/route';
 import { EnrolmentMetadataSchema } from '@/lib/schemas/enrolment';
 
-describe('post-enrolment withdrawal preserves the application outcome', () => {
+describe('post-enrolment withdrawal syncs admissions (KD #220)', () => {
   const BASE = {
     actorEmail: 'registrar@hfse.test',
     todayIso: '2026-06-26T00:00:00.000Z',
     admissionsAlreadyTerminal: false,
+    admissionsStatus: 'Enrolled',
     withdrawalReason: 'Transferred to another school',
     withdrawalNotes: null,
   };
 
-  it('does NOT write applicationStatus (outcome is append-only)', () => {
+  it('sets applicationStatus to Withdrawn', () => {
     const patch = buildWithdrawalAdmissionsPatch(BASE);
-    expect('applicationStatus' in patch).toBe(false);
+    expect(patch.applicationStatus).toBe('Withdrawn');
+  });
+
+  it('leaves an already-Cancelled or -Withdrawn application as it is', () => {
+    for (const s of ['Cancelled', 'Withdrawn']) {
+      const patch = buildWithdrawalAdmissionsPatch({
+        ...BASE,
+        admissionsStatus: s,
+      });
+      expect('applicationStatus' in patch).toBe(false);
+    }
   });
 
   it('still writes applicationUpdatedDate and applicationUpdatedBy', () => {

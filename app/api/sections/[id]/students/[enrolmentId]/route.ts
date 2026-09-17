@@ -40,20 +40,25 @@ function studentNameFromNode(
 // Pure helper — builds the payload written to `ay{YY}_enrolment_status` when a
 // student is withdrawn post-enrolment.
 //
-// applicationStatus is the application OUTCOME (append-only) — current state
-// lives on section_students.enrollment_status. Do NOT cascade a terminal status
-// here; the application succeeded (the student enrolled) and that fact must
-// never be overwritten by a subsequent academic event.
+// KD #220 (reverses the cascade half of KD #150): a withdrawal in Records sets
+// admissions to `Withdrawn`, the same thing a withdrawal in Admissions does to
+// the class list. Mr Ace, 2026-09-17: "if they are withdrawn in records in
+// admissions too. that should sync". Leaving it `Enrolled` meant the two
+// modules disagreed on every child who had left. An application already at
+// Cancelled / Withdrawn keeps what it says.
 export function buildWithdrawalAdmissionsPatch({
   actorEmail,
   todayIso,
   admissionsAlreadyTerminal,
+  admissionsStatus,
   withdrawalReason,
   withdrawalNotes,
 }: {
   actorEmail: string;
   todayIso: string;
   admissionsAlreadyTerminal: boolean;
+  /** The admissions `applicationStatus` as it stands before this write. */
+  admissionsStatus?: string | null;
   withdrawalReason?: string | null;
   withdrawalNotes?: string | null;
 }): Record<string, unknown> {
@@ -61,6 +66,9 @@ export function buildWithdrawalAdmissionsPatch({
     applicationUpdatedDate: todayIso,
     applicationUpdatedBy: actorEmail,
   };
+  if (admissionsStatus !== 'Withdrawn' && admissionsStatus !== 'Cancelled') {
+    patch.applicationStatus = 'Withdrawn';
+  }
   // Only write the reason to admissions when none is already recorded.
   if (!admissionsAlreadyTerminal && withdrawalReason) {
     patch.applicationTerminalReason = withdrawalReason;
@@ -514,16 +522,16 @@ export async function PATCH(
         .from(
           `${prefix}_enrolment_status` as Parameters<typeof admissions.from>[0]
         )
-        .select('"applicationTerminalReason"')
+        .select('"applicationTerminalReason", "applicationStatus"')
         .eq('enroleeNumber', enroleeNumber)
         .maybeSingle();
+      const currentAdm = currentAdmRow as {
+        applicationTerminalReason: string | null;
+        applicationStatus: string | null;
+      } | null;
 
       const admissionsAlreadyTerminal =
-        (
-          currentAdmRow as {
-            applicationTerminalReason: string | null;
-          } | null
-        )?.applicationTerminalReason != null;
+        currentAdm?.applicationTerminalReason != null;
 
       if (admissionsAlreadyTerminal) {
         terminalCascadeSkipped = true;
@@ -533,6 +541,7 @@ export async function PATCH(
         actorEmail,
         todayIso,
         admissionsAlreadyTerminal,
+        admissionsStatus: currentAdm?.applicationStatus ?? null,
         withdrawalReason: parsed.data.withdrawal_reason,
         withdrawalNotes: parsed.data.withdrawal_notes,
       });
@@ -585,14 +594,67 @@ export async function PATCH(
             withdrawal_reason: patch.withdrawal_reason ?? null,
             // Exactly what was written to the admissions status row.
             admissions_patch: statusUpdate,
-            // applicationStatus (outcome) is NOT changed — outcome is
-            // append-only and the application succeeded when the student enrolled.
+            applicationStatus_before: currentAdm?.applicationStatus ?? null,
             ...(terminalCascadeSkipped
               ? { terminalCascadeSkipped: 'admissions-already-terminal' }
               : {}),
           },
         });
       }
+    }
+  }
+
+  // Correcting the reason on a child who is ALREADY withdrawn used to stop at
+  // the class list, so admissions kept whatever it had (usually nothing).
+  // KD #220: the reason follows, and an application still reading Enrolled
+  // is brought to Withdrawn on the way.
+  const reasonCorrected =
+    before.enrollment_status === 'withdrawn' &&
+    parsed.data.enrollment_status === undefined &&
+    'withdrawal_reason' in patch &&
+    (patch.withdrawal_reason !== (before.withdrawal_reason ?? null) ||
+      patch.withdrawal_notes !== (before.withdrawal_notes ?? null));
+  if (reasonCorrected && identity.enroleeNumber && sectionAyCode) {
+    const prefix = `ay${sectionAyCode.replace(/^AY/i, '').toLowerCase()}`;
+    const admissions = createAdmissionsClient();
+    const { data: admRow } = await admissions
+      .from(
+        `${prefix}_enrolment_status` as Parameters<typeof admissions.from>[0]
+      )
+      .select('"applicationStatus"')
+      .eq('enroleeNumber', identity.enroleeNumber)
+      .maybeSingle();
+    const statusUpdate = buildWithdrawalAdmissionsPatch({
+      actorEmail: auth.user.email ?? '(unknown)',
+      todayIso: new Date().toISOString(),
+      admissionsAlreadyTerminal: false,
+      admissionsStatus:
+        (admRow as { applicationStatus: string | null } | null)
+          ?.applicationStatus ?? null,
+      withdrawalReason: (patch.withdrawal_reason as string | null) ?? null,
+      withdrawalNotes: (patch.withdrawal_notes as string | null) ?? null,
+    });
+    const { error: corrErr } = await admissions
+      .from(
+        `${prefix}_enrolment_status` as Parameters<typeof admissions.from>[0]
+      )
+      .update(statusUpdate)
+      .eq('enroleeNumber', identity.enroleeNumber);
+    if (corrErr) {
+      console.warn(
+        '[enrolment PATCH] admissions reason sync failed:',
+        corrErr.message
+      );
+      admissionsCascadeFailed = {
+        enroleeNumber: identity.enroleeNumber,
+        ayCode: sectionAyCode,
+        error: corrErr.message,
+      };
+    } else {
+      admissionsCascade = {
+        enroleeNumber: identity.enroleeNumber,
+        ayCode: sectionAyCode,
+      };
     }
   }
 
