@@ -199,6 +199,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.documents.auto-revive': 'Documents auto-revived',
   'sis.allowance.update': 'Leave allowance updated',
   'sis.vl_allowance.update': 'Vacation allowance updated',
+  'sis.school_student_number.update': "School's student number updated",
   'sis.house.update': 'House updated',
   'sis.level.create': 'Level created',
 
@@ -1518,6 +1519,22 @@ function templateSummary(
       } else if (after !== null) {
         parts.push(String(after));
       }
+      return joinParts(parts);
+    }
+
+    // The school's own student number (migration 169) -------------------------
+    // Both sides can be absent — clearing it is a real edit meaning "the office
+    // uses the same number as this system" — so an empty side reads as a word,
+    // never as a blank that looks like a rendering failure.
+    case 'sis.school_student_number.update': {
+      const parts: string[] = [];
+      const lead = studentLead(ctx);
+      if (lead) parts.push(lead);
+      const before = str(ctx.before);
+      const after = str(ctx.after);
+      if (before && after) parts.push(`${before}${ARROW}${after}`);
+      else if (after) parts.push(`set to ${after}`);
+      else if (before) parts.push(`${before}${ARROW}none`);
       return joinParts(parts);
     }
 

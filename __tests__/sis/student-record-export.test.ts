@@ -18,6 +18,9 @@ import { buildStudentRecordExport } from '@/lib/sis/student-record-export';
 const STUDENT = {
   studentId: 'stu-1',
   studentNumber: 'H250785',
+  // Null is the common case: most children are numbered the same way by the
+  // school and by this system, and only the ~221 that differ carry a value.
+  schoolStudentNumber: null,
   firstName: 'Audrey',
   middleName: 'Elizabeth',
   lastName: 'Calimbas',

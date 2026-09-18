@@ -14,6 +14,12 @@ export type StudentHeader = {
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
+  /**
+   * The number the SCHOOL uses for this child, when it differs from
+   * `studentNumber` (migration 169). Null means the office uses the same one.
+   * Reference data — nothing joins or syncs on it.
+   */
+  schoolStudentNumber: string | null;
 };
 
 export type PlacementRow = {
@@ -81,13 +87,16 @@ export async function findStudentByNumber(
   const service = createServiceClient();
   const { data, error } = await service
     .from('students')
-    .select('id, student_number, first_name, middle_name, last_name')
+    .select(
+      'id, student_number, school_student_number, first_name, middle_name, last_name'
+    )
     .eq('student_number', studentNumber)
     .maybeSingle();
   if (error || !data) return null;
   const row = data as {
     id: string;
     student_number: string;
+    school_student_number: string | null;
     first_name: string | null;
     middle_name: string | null;
     last_name: string | null;
@@ -95,6 +104,7 @@ export async function findStudentByNumber(
   return {
     studentId: row.id,
     studentNumber: row.student_number,
+    schoolStudentNumber: row.school_student_number,
     firstName: row.first_name,
     middleName: row.middle_name,
     lastName: row.last_name,

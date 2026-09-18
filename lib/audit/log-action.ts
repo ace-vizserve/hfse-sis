@@ -96,6 +96,10 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.documents.auto-revive',
   'sis.allowance.update',
   'sis.vl_allowance.update',
+  // The school's own number for a child (migration 169). Never the system's
+  // student_number — that one is not editable anywhere, because the student
+  // sync matches on it and would create a second child if it moved.
+  'sis.school_student_number.update',
   'sis.house.update',
   'sis.level.create',
   // 'level.create'/'level.update'/'level.delete'/'level.offering.toggle'
@@ -264,6 +268,9 @@ export type AuditEntityType =
   | 'evaluation_subject_comment'
   | 'evaluation_ptc_feedback'
   | 'classroom_note'
+  // The child themselves, identified by student_number — not a uuid, and not
+  // an admissions row. Used where the write lands on `students` directly.
+  | 'student'
   | 'student_discipline_record'
   | 'student_declaration'
   | 'approval_request'

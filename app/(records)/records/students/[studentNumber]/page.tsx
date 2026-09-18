@@ -35,6 +35,7 @@ import React from 'react';
 
 import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
 import { HouseTile } from '@/components/sis/house-tile';
+import { StudentNumbersCard } from '@/components/sis/student-numbers-card';
 import { listHouses, type HouseRow } from '@/lib/sis/houses';
 import { summariseSeriesMovement } from '@/lib/dashboard/trend-delta';
 import { EditFamilySheet } from '@/components/sis/edit-family-sheet';
@@ -61,6 +62,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HintedText } from '@/components/ui/hinted-text';
 import { PageShell } from '@/components/ui/page-shell';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { buildStudentRecordExport } from '@/lib/sis/student-record-export';
@@ -555,6 +557,17 @@ export default async function RecordsStudentCrossYearPage({
           >
             #{student.studentNumber}
           </Badge>
+          {/* Shown only when the school uses a different number. Two bare
+              badges would reintroduce the confusion this exists to remove, so
+              this one says whose number it is. */}
+          {student.schoolStudentNumber && (
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-muted px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+            >
+              School #{student.schoolStudentNumber}
+            </Badge>
+          )}
           {/* One child's whole record as a file. The masterfile export covers
               the cohort but is level-scoped, so handing somebody ONE student's
               record meant exporting a year group and deleting the rest — which
@@ -673,6 +686,14 @@ export default async function RecordsStudentCrossYearPage({
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          {/* Outside the currentAyDetail branch on purpose: both numbers live
+              on the `students` row, so they are there whether or not the child
+              has an admissions record for the current year. */}
+          <StudentNumbersCard
+            studentNumber={student.studentNumber}
+            initialSchoolNumber={student.schoolStudentNumber}
+            canEdit={canEditRecord}
+          />
           {currentAyDetail ? (
             <>
               <StudentProfileCard
@@ -1352,7 +1373,7 @@ function AcademicSection({
                                   }
                                   const { direction, label } = movement.delta;
                                   return (
-                                    <span
+                                    <HintedText
                                       className={
                                         'inline-flex items-center gap-1 font-mono text-[11px] tabular-nums ' +
                                         (direction === 'up'
@@ -1361,7 +1382,7 @@ function AcademicSection({
                                             ? 'text-destructive'
                                             : 'text-muted-foreground')
                                       }
-                                      title={`${label} since the first graded term (now ${movement.currentValue ?? '—'} at ${movement.periodLabel ?? '—'})`}
+                                      hint={`${label} since the first graded term (now ${movement.currentValue ?? '—'} at ${movement.periodLabel ?? '—'})`}
                                     >
                                       {direction === 'up'
                                         ? '▲'
@@ -1369,7 +1390,7 @@ function AcademicSection({
                                           ? '▼'
                                           : '–'}
                                       {label}
-                                    </span>
+                                    </HintedText>
                                   );
                                 })()}
                               </td>

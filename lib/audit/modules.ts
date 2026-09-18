@@ -97,6 +97,7 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       'sis.allowance.',
       'sis.vl_allowance.',
       'sis.house.',
+      'sis.school_student_number.',
       'student.',
       'enrolment.',
       'discipline.',

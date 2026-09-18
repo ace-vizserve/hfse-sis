@@ -1544,3 +1544,29 @@ export const ResidenceHistorySchema = z
 
 export type ResidenceEntry = z.infer<typeof ResidenceEntrySchema>;
 export type ResidenceHistory = z.infer<typeof ResidenceHistorySchema>;
+
+// ──────────────────────────────────────────────────────────────────────────
+// The school's own student number (migration 169)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// `students.student_number` is the system's key and is never edited here — it
+// must equal the admissions studentNumber, or the student sync stops
+// recognising the child and creates a second one. This is the OTHER number:
+// what the office writes on its own class lists, which disagrees with the
+// system's for 221 of the 430 AY2026 children.
+//
+// Empty string is accepted and stored as null, so clearing the field is a way
+// to say "the office uses the same number" rather than an error.
+export const SchoolStudentNumberSchema = z.object({
+  schoolStudentNumber: z
+    .string()
+    .trim()
+    .max(20, 'Use 20 characters or fewer')
+    .regex(/^[A-Za-z0-9-]*$/, 'Use letters, numbers and hyphens only')
+    .transform((v) => (v === '' ? null : v.toUpperCase()))
+    .nullable(),
+});
+
+export type SchoolStudentNumberInput = z.infer<
+  typeof SchoolStudentNumberSchema
+>;
