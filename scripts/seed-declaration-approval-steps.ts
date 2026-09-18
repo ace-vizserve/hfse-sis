@@ -25,7 +25,14 @@
 // it. That let the SECONDARY officer approve a Primary child's absence and the
 // primary officer a Secondary child's, across 15 primary and 6 secondary
 // classes. The argument even cited the AEB's "Gary or Nina" as support, which
-// is a different thing entirely: that really is two interchangeable people.
+// was a different thing entirely: at the time that really was two
+// interchangeable people sharing a step.
+//
+// ⚠ AND THAT PROP HAS SINCE GONE. On 2026-09-18 Mr Ace split the AEB's Mr Gary
+// and Ms Nina into separate sequential steps with Ms Nina last, so "Gary or
+// Nina" no longer names an interchangeable pair anywhere. The conclusion below
+// is unaffected — it rests on Mr Ace's own words about year category, quoted
+// next, not on the AEB analogy.
 //
 // "Primary or Secondary" is the YEAR CATEGORY. Mr Ace, 2026-08-27:
 //

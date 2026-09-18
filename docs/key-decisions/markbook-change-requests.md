@@ -41,7 +41,23 @@ No migration.
 **Grade change requests run on approval steps; teachers no longer pick approvers** (2026-09-11, migration 144). Supersedes the approver picker of KD #25/#88.
 
 - **Two routes, picked at filing and fixed from then on:** `markbook.grade_change` (normal) and `markbook.grade_change_aeb` (Academic and Examination Board). It is AEB once parents could have seen a report card showing that grade, meaning a publish window **started** for the same or a later term in any section the student sat in that AY. Windows since ended, revoked, or re-published later still count, via `publication.create`/`publication.delete` audit rows. `lib/change-requests/approval-route.ts`.
-- **Both run on the KD #196 engine.** Steps and people are set at `/sis/admin/approvers`; the old pool UI is gone. AEB is seeded as Ms Chandana → Ms Christina → Ms Norma → Mr Gary or Ms Nina (Mr Ace, 27 Aug, reconfirmed 2026-09-11). Seed: `scripts/seed-grade-change-approval-steps.ts`.
+- **Both run on the KD #196 engine.** Steps and people are set at `/sis/admin/approvers`; the old pool UI is gone. Seed: `scripts/seed-grade-change-approval-steps.ts`.
+- **The live AEB chain is FIVE steps, ending with Ms Nina** (Mr Ace, configured by hand 2026-09-18):
+
+  | Step | Label        | Who                           |
+  | ---- | ------------ | ----------------------------- |
+  | 1    | Ms Chandana  | `chandana.dileep@hfse.edu.sg` |
+  | 2    | Ms Christina | `tin.labrador@hfse.edu.sg`    |
+  | 3    | Ms Norma     | `norma.hfhse@gmail.com`       |
+  | 4    | Mr Gary      | `gary.cacananta@hfse.edu.sg`  |
+  | 5    | Ms Nina      | `nina.cacananta@hfse.edu.sg`  |
+
+  🔴 **Mr Gary and Ms Nina used to share ONE step** — "Mr Gary or Ms Nina", first to act carried it (27 Aug, reconfirmed 2026-09-11). They are now **separate sequential steps, and Ms Nina is the last approver**, so a request needs both rather than either. Ms Norma was a step in the seeded design from 27 Aug but held nobody until Mr Ace assigned her.
+
+  ⚠ **Ms Norma's account is `norma.hfhse@gmail.com`** — a gmail address, not `@hfse.edu.sg`, and the only approver in either flow that is not on the school domain.
+
+  ⚠ **`markbook.grade_change` (the normal route) is ONE step** holding Ms Chandana and Ms Christina together — unchanged, and deliberately not the same shape as AEB.
+
 - **`grade_change_requests` stays the subject.** `status` is a projection written by `lib/change-requests/approval-handler.ts`; the coordinator's apply step is unchanged. A rejection ends the request.
 - **The filer never decides their own request.** They are left out of named pools at filing and refused before `approval_advance` for adviser steps.
 - **Dropped:** the 2-hour rejection undo. It came from an internal audit (commit `d260f1b7`), never from the school.

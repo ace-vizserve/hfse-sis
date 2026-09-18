@@ -17,7 +17,15 @@
 //     1. Ms Chandana
 //     2. Ms Christina
 //     3. Ms Norma
-//     4. Mr Gary or Ms Nina      — both on the one step; first to act carries it
+//     4. Mr Gary
+//     5. Ms Nina                 — the last approver
+//
+// ⚠ STEPS 4 AND 5 WERE ONE STEP UNTIL 2026-09-18. It read "Mr Gary or Ms Nina",
+// both named on a single step, first to act carrying it. Mr Ace separated them
+// by hand at /sis/admin/approvers and made Ms Nina last, so a request now needs
+// BOTH rather than either. This list was updated to match: left as it was, a
+// re-run of this script would have quietly restored the shared step and
+// dropped Ms Nina's final say.
 //
 // ── WHY A SCRIPT AND NOT A MIGRATION ───────────────────────────────────────
 //
@@ -80,7 +88,9 @@ const AEB_STEPS: Array<{ label: string; flags: AebFlag[] }> = [
   { label: 'Ms Chandana', flags: ['aeb-chandana'] },
   { label: 'Ms Christina', flags: ['aeb-christina'] },
   { label: 'Ms Norma', flags: ['aeb-norma'] },
-  { label: 'Mr Gary or Ms Nina', flags: ['aeb-gary', 'aeb-nina'] },
+  // Two steps, not one — see the header. Ms Nina is last.
+  { label: 'Mr Gary', flags: ['aeb-gary'] },
+  { label: 'Ms Nina', flags: ['aeb-nina'] },
 ];
 
 const NORMAL_STEP_LABEL = 'Grade change approvers';
