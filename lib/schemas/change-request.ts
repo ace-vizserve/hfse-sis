@@ -11,8 +11,29 @@ export const CHANGE_REQUEST_FIELDS = [
 ] as const;
 export type ChangeRequestField = (typeof CHANGE_REQUEST_FIELDS)[number];
 
+// Why a mark is moving. The categories are separated by WHERE THE NEW MARK
+// CAME FROM, which is the distinction that actually decides them:
+//
+//   regrading        the SAME work, marked again — the marker's judgement
+//                    changed and the student did nothing further.
+//   reassessment     NEW work. The student sat it again, or sat it for the
+//                    first time: retest, retake, resit, makeup.
+//   data_entry_error the mark was right, the typing was wrong.
+//   late_submission  work that arrived after the deadline is now marked.
+//   academic_appeal  the student or parent contested the mark.
+//
+// `reassessment` mirrors the "Nature of request" box on the school's AEB
+// Approval Form (CO.1.1-F01-V02), whose copy in the repo reads "Retest" —
+// two P6 Grit students re-sitting a composition they had scored 0 on. It is
+// named for the act that produced the mark rather than for that one word, so
+// a resit and a makeup file under it too.
+//
+// ⚠ ORDER IS THE ORDER A TEACHER SEES in the filing dialog, which maps them
+// with `REASON_CATEGORIES.map`. `reassessment` sits beside `regrading` because
+// those are the two that get confused; `other` stays last.
 export const REASON_CATEGORIES = [
   'regrading',
+  'reassessment',
   'data_entry_error',
   'late_submission',
   'academic_appeal',
@@ -22,6 +43,10 @@ export type ReasonCategory = (typeof REASON_CATEGORIES)[number];
 
 export const REASON_CATEGORY_LABELS: Record<ReasonCategory, string> = {
   regrading: 'Regrading',
+  // Named for what the teacher did, not for the category — "Reassessment" is
+  // the accurate word but "retest" and "retake" are what they will be looking
+  // for in the list.
+  reassessment: 'Retest or retake',
   data_entry_error: 'Data entry error',
   late_submission: 'Late submission',
   academic_appeal: 'Academic appeal',
