@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { LevelCompletionRow } from '@/lib/p-files/dashboard';
 import {
   Card,
@@ -96,20 +97,18 @@ export function CompletionByLevelChartImpl({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
-                labelFormatter={(_, payload) => {
-                  const p = payload?.[0]?.payload as
-                    | LevelCompletionRow
-                    | undefined;
-                  return p?.level ?? '';
-                }}
+                // The axis plots the short code ("P1", "YS-L"), so the heading
+                // has to come off the row to name the level in full.
+                // The four segments count documents, one per slot per student,
+                // so the stack sums to the documents asked of that level.
+                content={chartTooltipContent({
+                  heading: (ctx) =>
+                    (ctx.row as LevelCompletionRow | undefined)?.level ?? '',
+                  share: true,
+                  totalLabel: 'All documents',
+                })}
               />
               <Legend
                 content={chartLegendContent({

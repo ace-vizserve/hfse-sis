@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import {
   ChartLegendChip,
@@ -760,9 +761,9 @@ function TruncatedText({
   if (!s) return <span className="text-xs text-muted-foreground">—</span>;
   const truncated = s.length > max ? `${s.slice(0, max)}…` : s;
   return (
-    <span className="text-sm text-foreground" title={s}>
-      {truncated}
-    </span>
+    <HoverHint hint={s}>
+      <span className="text-sm text-foreground">{truncated}</span>
+    </HoverHint>
   );
 }
 

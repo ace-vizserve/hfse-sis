@@ -3,6 +3,7 @@
 import { Pencil } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { EnrolmentEditSheet } from '@/components/sis/enrolment-edit-sheet';
 import type { EnrollmentStatus } from '@/lib/schemas/enrolment';
 
@@ -37,23 +38,23 @@ export function PlacementEditButton(props: {
   };
 }) {
   return (
-    <EnrolmentEditSheet
-      sectionId={props.sectionId}
-      enrolmentId={props.enrolmentId}
-      ayCode={props.ayCode}
-      studentName={props.studentName}
-      indexNumber={props.indexNumber}
-      initial={props.initial}
-    >
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 px-2"
-        title="Edit enrolment details"
+    // The hint wraps the sheet rather than the Button, because the Button is
+    // handed straight to `SheetTrigger asChild` — anything in between would
+    // absorb the trigger's click and the sheet would never open.
+    <HoverHint hint="Edit enrolment details" wrap>
+      <EnrolmentEditSheet
+        sectionId={props.sectionId}
+        enrolmentId={props.enrolmentId}
+        ayCode={props.ayCode}
+        studentName={props.studentName}
+        indexNumber={props.indexNumber}
+        initial={props.initial}
       >
-        <Pencil className="size-3" />
-        <span className="sr-only">Edit enrolment</span>
-      </Button>
-    </EnrolmentEditSheet>
+        <Button variant="ghost" size="sm" className="h-7 px-2">
+          <Pencil className="size-3" />
+          <span className="sr-only">Edit enrolment</span>
+        </Button>
+      </EnrolmentEditSheet>
+    </HoverHint>
   );
 }

@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { RevisionsHeatmapCell } from '@/lib/p-files/dashboard';
@@ -103,24 +104,28 @@ export function RevisionsHeatmapCardImpl({
                     if (!cell) return <div key={dayIdx} className="size-3.5" />;
                     const i = intensity(cell.count);
                     return (
-                      <button
+                      <HoverHint
                         key={cell.date}
-                        type="button"
-                        onClick={() => setOpenDate(cell.date)}
-                        title={`${cell.date} — ${cell.count} ${cell.count === 1 ? 'revision' : 'revisions'}`}
-                        className={cn(
-                          'size-3.5 rounded-sm transition-transform',
-                          cell.count === 0
-                            ? 'bg-muted'
-                            : 'bg-gradient-to-br from-brand-indigo to-brand-navy hover:scale-125'
-                        )}
-                        style={
-                          cell.count === 0
-                            ? undefined
-                            : { opacity: 0.3 + i * 0.7 }
-                        }
-                        aria-label={`${cell.date}: ${cell.count} revisions`}
-                      />
+                        hint={`${cell.date} — ${cell.count} ${cell.count === 1 ? 'revision' : 'revisions'}`}
+                        focusable={false}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setOpenDate(cell.date)}
+                          className={cn(
+                            'size-3.5 rounded-sm transition-transform',
+                            cell.count === 0
+                              ? 'bg-muted'
+                              : 'bg-gradient-to-br from-brand-indigo to-brand-navy hover:scale-125'
+                          )}
+                          style={
+                            cell.count === 0
+                              ? undefined
+                              : { opacity: 0.3 + i * 0.7 }
+                          }
+                          aria-label={`${cell.date}: ${cell.count} revisions`}
+                        />
+                      </HoverHint>
                     );
                   })}
                 </div>

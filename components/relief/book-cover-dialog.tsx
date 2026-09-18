@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -140,24 +141,30 @@ export function BookCoverDialog({
         if (!next) reset();
       }}
     >
-      <DialogTrigger asChild>
-        {editing ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Change the cover for ${editing.coveredTeacherName}`}
-            title="Change the dates or the stand-in"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-        ) : (
+      {editing ? (
+        // The hint sits outside the trigger, not on the button: `DialogTrigger
+        // asChild` needs a real element to clone, and the tooltip trigger does
+        // the same, so they nest rather than compete.
+        <HoverHint hint="Change the dates or the stand-in" focusable={false}>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Change the cover for ${editing.coveredTeacherName}`}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          </DialogTrigger>
+        </HoverHint>
+      ) : (
+        <DialogTrigger asChild>
           <Button>
             <CalendarClock className="size-4" />
             Book cover
           </Button>
-        )}
-      </DialogTrigger>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>

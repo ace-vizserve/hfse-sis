@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -78,21 +79,25 @@ export function EndCoverButton({
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={
-            scheduled
-              ? `Cancel the cover booked for ${coveredTeacherName}`
-              : `End ${reliefTeacherName} covering for ${coveredTeacherName}`
-          }
-          title={scheduled ? 'Cancel this booking' : 'End this cover'}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <X className="size-4" />
-        </Button>
-      </AlertDialogTrigger>
+      <HoverHint
+        hint={scheduled ? 'Cancel this booking' : 'End this cover'}
+        focusable={false}
+      >
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              scheduled
+                ? `Cancel the cover booked for ${coveredTeacherName}`
+                : `End ${reliefTeacherName} covering for ${coveredTeacherName}`
+            }
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </Button>
+        </AlertDialogTrigger>
+      </HoverHint>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="font-serif">

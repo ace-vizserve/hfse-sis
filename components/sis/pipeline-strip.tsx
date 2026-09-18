@@ -7,6 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   BUCKET_FILL,
   BUCKET_LABEL,
@@ -153,22 +154,23 @@ export function PipelineStrip({ row }: PipelineStripProps) {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={summary}
-          title={summary}
-          className="flex h-5 w-[160px] items-stretch gap-px overflow-hidden rounded-full outline-hidden transition-transform focus-visible:ring-2 focus-visible:ring-ring hover:scale-[1.02]"
-        >
-          {entries.map((entry) => (
-            <span
-              key={entry.stageKey}
-              aria-hidden
-              className={cn('flex-1', BUCKET_FILL[entry.bucket])}
-            />
-          ))}
-        </button>
-      </PopoverTrigger>
+      <HoverHint hint={summary} focusable={false}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={summary}
+            className="flex h-5 w-[160px] items-stretch gap-px overflow-hidden rounded-full outline-hidden transition-transform focus-visible:ring-2 focus-visible:ring-ring hover:scale-[1.02]"
+          >
+            {entries.map((entry) => (
+              <span
+                key={entry.stageKey}
+                aria-hidden
+                className={cn('flex-1', BUCKET_FILL[entry.bucket])}
+              />
+            ))}
+          </button>
+        </PopoverTrigger>
+      </HoverHint>
       <PopoverContent className="w-80" align="start">
         <div className="space-y-3">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

@@ -13,7 +13,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -121,25 +120,28 @@ const SidebarProvider = React.forwardRef<
 
     return (
       <SidebarContext.Provider value={contextValue}>
-        <TooltipProvider delayDuration={0}>
-          <div
-            style={
-              {
-                '--sidebar-width': SIDEBAR_WIDTH,
-                '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
-                ...style,
-              } as React.CSSProperties
-            }
-            className={cn(
-              'group/sidebar-wrapper flex min-h-dvh w-full has-data-[variant=inset]:bg-sidebar',
-              className
-            )}
-            ref={ref}
-            {...props}
-          >
-            {children}
-          </div>
-        </TooltipProvider>
+        {/* The TooltipProvider that used to sit here wrapped {children} —
+            i.e. the entire page — so its delayDuration={0} governed every
+            tooltip on every staff page, not just the collapsed rail. The
+            provider now lives once in app/layout.tsx; the rail's own
+            no-delay behaviour moved onto its <Tooltip> below. */}
+        <div
+          style={
+            {
+              '--sidebar-width': SIDEBAR_WIDTH,
+              '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
+              ...style,
+            } as React.CSSProperties
+          }
+          className={cn(
+            'group/sidebar-wrapper flex min-h-dvh w-full has-data-[variant=inset]:bg-sidebar',
+            className
+          )}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </div>
       </SidebarContext.Provider>
     );
   }
@@ -284,7 +286,10 @@ const SidebarRail = React.forwardRef<
       aria-label="Toggle Sidebar"
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      // No tooltip here, and the native `title` it used to carry is gone: this
+      // is the 4px drag rail, it is deliberately not tab-reachable, and the
+      // title duplicated the aria-label word for word. A box appearing every
+      // time the pointer crossed the edge of the sidebar would be noise.
       className={cn(
         'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
@@ -548,7 +553,11 @@ const SidebarMenuButton = React.forwardRef<
       typeof tooltip === 'string' ? { children: tooltip } : tooltip;
 
     return (
-      <Tooltip>
+      // The collapsed rail is icons only, so its label must appear the moment
+      // the pointer lands — this is the one place that wants no delay. It used
+      // to come from a TooltipProvider wrapping the whole shell, which handed
+      // the same 0ms to every tooltip on every page inside it.
+      <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
         <TooltipContent
           side="right"

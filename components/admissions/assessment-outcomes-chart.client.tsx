@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { AssessmentOutcomes } from '@/lib/admissions/dashboard';
 import {
   Card,
@@ -112,14 +113,15 @@ export function AssessmentOutcomesChart({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
+                // Pass / Fail / Unknown partition the same applicant cohort —
+                // every applicant lands in exactly one of the three — so the
+                // stack's sum is a real base and a share of it is meaningful.
+                content={chartTooltipContent({
+                  share: true,
+                  totalLabel: 'All applicants',
+                })}
               />
               <Legend
                 content={chartLegendContent({

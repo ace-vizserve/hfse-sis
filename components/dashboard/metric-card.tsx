@@ -18,8 +18,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { MetricCardDrillButton } from './metric-card-drill-button';
+import { HintedText } from '@/components/ui/hinted-text';
 import { cn } from '@/lib/utils';
 import { formatDeltaLabel, type Delta } from '@/lib/dashboard/range';
+import {
+  formatMetricValue,
+  type MetricFormat,
+} from '@/lib/dashboard/format-metric';
 import { SparklineChart, type SparkPoint } from './charts/sparkline-chart';
 
 /**
@@ -36,7 +41,7 @@ export type MetricIntent = 'default' | 'good' | 'bad' | 'warning';
 export type MetricCardProps = {
   label: string;
   value: string | number;
-  format?: 'number' | 'percent' | 'days' | 'hours' | 'currency' | 'raw';
+  format?: MetricFormat;
   currencySuffix?: string;
   delta?: Delta;
   deltaGoodWhen?: 'up' | 'down';
@@ -58,35 +63,27 @@ export type MetricCardProps = {
   subtext?: string;
   tileClassName?: string;
   className?: string;
+  /**
+   * What this number counts, in one plain sentence — revealed by the small
+   * "?" beside the label.
+   *
+   * A KPI is the most-looked-at thing on a dashboard and the least
+   * self-explaining: "501" does not say whether withdrawn students are in it.
+   * Keep it to what a school administrator needs (what is counted, what is
+   * excluded) and out of database vocabulary.
+   */
+  hint?: React.ReactNode;
+  /**
+   * What the delta is measured against, e.g. "the same point last academic
+   * year". Shown on the chip itself, which otherwise names no baseline at all.
+   */
+  deltaHint?: React.ReactNode;
 };
 
-function formatValue(
-  value: string | number,
-  format: MetricCardProps['format'],
-  currencySuffix?: string
-): string {
-  if (typeof value === 'string') return value;
-  if (!Number.isFinite(value)) return '—';
-  switch (format) {
-    case 'percent':
-      return `${value.toFixed(1)}%`;
-    case 'days':
-      return `${value.toFixed(1)}d`;
-    case 'hours':
-      return value < 1
-        ? `${Math.round(value * 60)}m`
-        : value >= 48
-          ? `${(value / 24).toFixed(1)}d`
-          : `${value.toFixed(1)}h`;
-    case 'currency':
-      return `${value.toLocaleString('en-SG')}${currencySuffix ? ` ${currencySuffix}` : ''}`;
-    case 'raw':
-      return String(value);
-    case 'number':
-    default:
-      return value.toLocaleString('en-SG');
-  }
-}
+// Moved to lib/dashboard/format-metric.ts so the sparkline — a client
+// component — can print its hover readout in the same units without the card
+// handing it a function across the RSC boundary.
+const formatValue = formatMetricValue;
 
 function deltaChipClass(
   delta: Delta | undefined,
@@ -107,11 +104,13 @@ function DeltaChip({
   goodWhen,
   format,
   unit,
+  hint,
 }: {
   delta: Delta;
   goodWhen: 'up' | 'down';
   format?: 'percent' | 'absolute';
   unit?: string;
+  hint?: React.ReactNode;
 }) {
   const Icon =
     delta.direction === 'up'
@@ -119,8 +118,12 @@ function DeltaChip({
       : delta.direction === 'down'
         ? ArrowDownIcon
         : MinusIcon;
+  // HintedText, not HoverHint: this file is a server component, and HoverHint
+  // clones its child to attach the trigger. The span has to be created inside
+  // the client boundary. With no `hint` it renders the bare span as before.
   return (
-    <span
+    <HintedText
+      hint={hint}
       className={cn(
         'inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider',
         deltaChipClass(delta, goodWhen)
@@ -128,7 +131,7 @@ function DeltaChip({
     >
       <Icon className="size-3" strokeWidth={2.5} />
       {formatDeltaLabel(delta, { format, unit })}
-    </span>
+    </HintedText>
   );
 }
 
@@ -150,6 +153,8 @@ function MetricCardImpl({
   subtext,
   tileClassName,
   className,
+  hint,
+  deltaHint,
 }: MetricCardProps) {
   // Mutual exclusivity: drillSheet wins, href is ignored with a runtime warning.
   if (drillSheet && href) {
@@ -171,8 +176,19 @@ function MetricCardImpl({
   const inner = (
     <Card className={cardClass}>
       <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+        <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {label}
+          {/* Deliberately not the whole tile: an interactive card is already a
+              link or a sheet trigger, and hanging a tooltip on it would fire
+              every time the pointer crossed the card on its way elsewhere. */}
+          {hint && (
+            <HintedText
+              hint={hint}
+              className="inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full border border-hairline-strong font-sans text-[9px] font-semibold normal-case tracking-normal text-ink-5"
+            >
+              ?
+            </HintedText>
+          )}
         </CardDescription>
         <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
           {formatValue(value, format, currencySuffix)}
@@ -198,6 +214,7 @@ function MetricCardImpl({
               goodWhen={deltaGoodWhen}
               format={deltaFormat}
               unit={deltaUnit}
+              hint={deltaHint}
             />
           )}
           {comparisonLabel && (
@@ -211,7 +228,16 @@ function MetricCardImpl({
         )}
         {sparkline && sparkline.length > 1 && (
           <div className="-mx-1 h-10 w-full">
-            <SparklineChart points={sparkline} />
+            <SparklineChart
+              points={sparkline}
+              seriesName={label}
+              // The format NAME, not a formatter. A function cannot cross into
+              // a client component; the sparkline rebuilds it on its side so
+              // the trend still reads in the card's units rather than printing
+              // a raw float under a percentage.
+              format={format}
+              currencySuffix={currencySuffix}
+            />
           </div>
         )}
         {effectiveHref && (

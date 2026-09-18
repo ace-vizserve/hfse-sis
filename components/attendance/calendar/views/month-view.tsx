@@ -23,6 +23,7 @@ import {
 } from '@/components/attendance/calendar/calendar-cell';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { sgToday } from '@/lib/dates';
 
 // ─── Helpers (local-date safe, no tz shift) ───────────────────────────────────
@@ -252,19 +253,23 @@ export function MonthView({
           >
             <ChevronRight />
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={goToday}
-            title={
+          <HoverHint
+            hint={
               todayInTerm
                 ? 'Jump to today'
                 : "Today falls outside the school year — jump there anyway; days that aren't in a term show faded"
             }
-            className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
+            focusable={false}
           >
-            Today
-          </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={goToday}
+              className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
+            >
+              Today
+            </Button>
+          </HoverHint>
         </div>
       </div>
 

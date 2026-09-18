@@ -15,6 +15,8 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
+import { chartTooltipContent } from './chart-tooltip';
+
 /**
  * One vertical stacked bar per level: returned (mint, base) + did-not-return
  * (grey, cap), which together sum to that level's prior-year cohort. Unlike a
@@ -81,43 +83,26 @@ function RetentionStackedBarChartImpl({
           width={36}
         />
         <Tooltip
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
-          content={({ active, payload }) => {
-            if (!active || !payload || payload.length === 0) return null;
-            const row = payload[0].payload as RetentionStackRow;
-            return (
-              <div
-                style={{
-                  background: 'var(--color-popover)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: 'var(--shadow-md)',
-                  fontSize: 11,
-                  padding: '8px 10px',
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                  {row.level}
-                </div>
-                <div>{row.pct ?? 0}% retained</div>
-                <div>
-                  {row.returned.toLocaleString('en-SG')} of{' '}
-                  {row.priorTotal.toLocaleString('en-SG')} returned
-                </div>
-                <div>
-                  {row.didNotReturn.toLocaleString('en-SG')} did not return
-                </div>
-              </div>
-            );
-          }}
+          // Everything the old hand-written box said survives: the level is the
+          // heading, the retention rate is the note, the two counts are the
+          // rows (each keyed to its own bar colour), and the prior-year cohort
+          // they are out of is the footer. The base is the stored priorTotal
+          // rather than the sum of the two bars, so a level whose parts don't
+          // reconcile shows that rather than hiding it behind a forced 100%.
+          content={chartTooltipContent({
+            share: true,
+            totalLabel: 'Prior-year cohort',
+            base: (ctx) =>
+              (ctx.row as RetentionStackRow | undefined)?.priorTotal ?? 0,
+            note: (ctx) => {
+              const pct = (ctx.row as RetentionStackRow | undefined)?.pct;
+              return pct === null || pct === undefined
+                ? null
+                : `${pct}% retained`;
+            },
+          })}
         />
         <Legend
           content={chartLegendContent({

@@ -16,6 +16,7 @@ import {
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
 import { formatterFor, type YFormat } from './chart-primitives';
+import { chartTooltipContent } from './chart-tooltip';
 
 export type { YFormat };
 
@@ -80,24 +81,11 @@ function ComposedBarLineChartImpl({
           width={36}
         />
         <Tooltip
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
-          labelStyle={{
-            color: 'var(--color-foreground)',
-            fontWeight: 600,
-            marginBottom: 2,
-          }}
-          formatter={(value) => {
-            const v = typeof value === 'number' ? value : Number(value);
-            return yFormatter ? yFormatter(v) : v;
-          }}
+          // The line is a comparison period traced over the bars, not a part
+          // of them — adding the two would be adding two years together.
+          content={chartTooltipContent({ format: yFormatter })}
         />
         <Legend
           content={chartLegendContent({

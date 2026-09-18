@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HintedText } from '@/components/ui/hinted-text';
 import type { ParentSlot } from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow } from '@/lib/sis/queries';
@@ -520,12 +521,12 @@ function ParentCard({
               {email && (
                 <div className="inline-flex min-w-0 items-center gap-1.5">
                   <Mail className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span
+                  <HintedText
                     className="truncate text-[12px] text-foreground"
-                    title={email}
+                    hint={email}
                   >
                     {email}
-                  </span>
+                  </HintedText>
                 </div>
               )}
             </div>

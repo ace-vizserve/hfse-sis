@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Separator } from '@/components/ui/separator';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import type { Role } from '@/lib/auth/roles';
@@ -70,28 +71,31 @@ export function SidebarProfile({ email, roles, role }: SidebarProfileProps) {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        >
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-[11px] font-semibold text-white shadow-brand-tile">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
-            <div
-              className="truncate text-xs font-medium text-sidebar-foreground"
-              title={email}
-            >
-              {email}
+      {/* The hint is on the BUTTON, not on the truncated address inside it —
+          the address sits inside the trigger, so making it its own tab stop
+          would put a second stop inside a control that already has one. The
+          whole tile reads out the full address instead. */}
+      <HoverHint hint={email} side="right" focusable={false}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          >
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-navy text-[11px] font-semibold text-white shadow-brand-tile">
+              {initials}
             </div>
-            <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
-              {roleLabel}
+            <div className="min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
+              <div className="truncate text-xs font-medium text-sidebar-foreground">
+                {email}
+              </div>
+              <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
+                {roleLabel}
+              </div>
             </div>
-          </div>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden" />
-        </button>
-      </PopoverTrigger>
+            <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden" />
+          </button>
+        </PopoverTrigger>
+      </HoverHint>
       <PopoverContent
         side="top"
         align="start"
@@ -103,12 +107,11 @@ export function SidebarProfile({ email, roles, role }: SidebarProfileProps) {
             {initials}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <div
-              className="truncate text-[13px] font-medium text-foreground"
-              title={email}
-            >
-              {email}
-            </div>
+            <HoverHint hint={email}>
+              <div className="truncate text-[13px] font-medium text-foreground">
+                {email}
+              </div>
+            </HoverHint>
             <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {roleLabel}
             </div>

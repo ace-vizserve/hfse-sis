@@ -9,6 +9,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 
 import { EnrolmentEditSheet } from '@/components/sis/enrolment-edit-sheet';
 import {
@@ -265,58 +266,58 @@ export function SectionRosterTable({
           const r = row.original;
           return (
             <div className="flex items-center justify-end gap-1">
-              <EnrolmentEditSheet
-                sectionId={sectionId}
-                enrolmentId={r.enrolmentId}
-                ayCode={ayCode}
-                studentName={r.studentName}
-                indexNumber={r.indexNumber}
-                initial={{
-                  bus_no: r.busNo ?? null,
-                  classroom_officer_role: r.classroomOfficerRole ?? null,
-                  enrollment_status: r.enrollmentStatus,
-                  withdrawal_reason: r.withdrawalReason ?? null,
-                  withdrawal_notes: r.withdrawalNotes ?? null,
-                  withdrawal_date: r.withdrawal_date ?? null,
-                  withdrawal_approved_date: r.withdrawal_approved_date ?? null,
-                  late_enrollee_term_number: r.lateEnrolleTermNumber ?? null,
-                  academics_notes: r.academicsNotes ?? null,
-                  admin_notes: r.adminNotes ?? null,
-                }}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
-                  title="Edit enrolment details"
-                >
-                  <Pencil className="size-3" />
-                  <span className="sr-only">Edit enrolment</span>
-                </Button>
-              </EnrolmentEditSheet>
-              {r.enrollmentStatus !== 'withdrawn' && r.indexNumber != null && (
-                <SwapIndexDialog
+              {/* Wrapped around the sheet, not the Button: the Button is
+                  handed straight to `SheetTrigger asChild`, so a component
+                  between the two would eat the trigger's click. */}
+              <HoverHint hint="Edit enrolment details" wrap>
+                <EnrolmentEditSheet
                   sectionId={sectionId}
-                  subject={{
-                    enrolmentId: r.enrolmentId,
-                    indexNumber: r.indexNumber,
-                    studentName: r.studentName,
+                  enrolmentId={r.enrolmentId}
+                  ayCode={ayCode}
+                  studentName={r.studentName}
+                  indexNumber={r.indexNumber}
+                  initial={{
+                    bus_no: r.busNo ?? null,
+                    classroom_officer_role: r.classroomOfficerRole ?? null,
+                    enrollment_status: r.enrollmentStatus,
+                    withdrawal_reason: r.withdrawalReason ?? null,
+                    withdrawal_notes: r.withdrawalNotes ?? null,
+                    withdrawal_date: r.withdrawal_date ?? null,
+                    withdrawal_approved_date:
+                      r.withdrawal_approved_date ?? null,
+                    late_enrollee_term_number: r.lateEnrolleTermNumber ?? null,
+                    academics_notes: r.academicsNotes ?? null,
+                    admin_notes: r.adminNotes ?? null,
                   }}
-                  candidates={swappable.filter(
-                    (c) => c.enrolmentId !== r.enrolmentId
-                  )}
-                  trigger={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2"
-                      title="Swap class number"
-                    >
-                      <ArrowDownUp className="size-3" />
-                      <span className="sr-only">Swap class number</span>
-                    </Button>
-                  }
-                />
+                >
+                  <Button variant="ghost" size="sm" className="h-7 px-2">
+                    <Pencil className="size-3" />
+                    <span className="sr-only">Edit enrolment</span>
+                  </Button>
+                </EnrolmentEditSheet>
+              </HoverHint>
+              {r.enrollmentStatus !== 'withdrawn' && r.indexNumber != null && (
+                // Same reason as above — the Button goes to the dialog's
+                // `DialogTrigger asChild` as its `trigger` prop.
+                <HoverHint hint="Swap class number" wrap>
+                  <SwapIndexDialog
+                    sectionId={sectionId}
+                    subject={{
+                      enrolmentId: r.enrolmentId,
+                      indexNumber: r.indexNumber,
+                      studentName: r.studentName,
+                    }}
+                    candidates={swappable.filter(
+                      (c) => c.enrolmentId !== r.enrolmentId
+                    )}
+                    trigger={
+                      <Button variant="ghost" size="sm" className="h-7 px-2">
+                        <ArrowDownUp className="size-3" />
+                        <span className="sr-only">Swap class number</span>
+                      </Button>
+                    }
+                  />
+                </HoverHint>
               )}
               {r.enrollmentStatus !== 'withdrawn' && r.enroleeNumber && (
                 <SectionTransferDialog

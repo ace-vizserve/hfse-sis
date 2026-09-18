@@ -21,6 +21,7 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   Form,
@@ -494,19 +495,25 @@ export function RequestEditButton({
                     Cancel
                   </Button>
                 </SheetClose>
-                <Button
-                  type="submit"
-                  size="sm"
-                  loading={busy}
-                  loadingText="Submitting…"
-                  disabled={
-                    routeProblem !== null || (proposedTouched && isSameValue)
-                  }
-                  title={routeProblem ?? undefined}
-                >
-                  {!busy && <Send className="h-4 w-4" />}
-                  Submit request
-                </Button>
+                {/* `wrap` — the hint exists only while the button is
+                    disabled, and `disabled:pointer-events-none` means the
+                    button itself never fires a hover. The trigger has to sit
+                    on a focusable span AROUND it or the explanation for the
+                    greyed-out control stays unreadable (as it was). */}
+                <HoverHint hint={routeProblem ?? undefined} wrap>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    loading={busy}
+                    loadingText="Submitting…"
+                    disabled={
+                      routeProblem !== null || (proposedTouched && isSameValue)
+                    }
+                  >
+                    {!busy && <Send className="h-4 w-4" />}
+                    Submit request
+                  </Button>
+                </HoverHint>
               </SheetFooter>
             </form>
           </Form>

@@ -3,6 +3,10 @@
 import * as React from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
+import { HoverHint } from '@/components/ui/hover-hint';
+
+import { chartTooltipContent } from './chart-tooltip';
+
 export type DonutSlice = { name: string; value: number };
 
 export type DonutChartProps = {
@@ -11,6 +15,13 @@ export type DonutChartProps = {
   colors?: string[];
   centerLabel?: string;
   centerValue?: string | number;
+  /**
+   * What the centre number counts, in one plain sentence. The centre is the
+   * first thing anyone reads on a donut and explained itself least — the whole
+   * overlay is `pointer-events-none` so it does not eat the ring's hover, and
+   * that made the headline figure the one inert thing on the chart.
+   */
+  centerHint?: React.ReactNode;
   onSegmentClick?: (sliceName: string) => void;
 };
 
@@ -30,6 +41,7 @@ function DonutChartImpl({
   colors = DEFAULT_COLORS,
   centerLabel,
   centerValue,
+  centerHint,
   onSegmentClick,
 }: DonutChartProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
@@ -66,34 +78,42 @@ function DonutChartImpl({
               ))}
             </Pie>
             <Tooltip
-              contentStyle={{
-                background: 'var(--color-popover)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-md)',
-                fontSize: 11,
-                padding: '8px 10px',
-              }}
-              formatter={(value) => {
-                const v = typeof value === 'number' ? value : Number(value);
-                return [
-                  `${v.toLocaleString('en-SG')} (${total ? ((v / total) * 100).toFixed(1) : '0.0'}%)`,
-                  '',
-                ];
-              }}
+              wrapperStyle={{ zIndex: 20 }}
+              content={chartTooltipContent({
+                share: true,
+                // A pie tooltip reports one slice, so the default base (the sum
+                // of the rows shown) would make every slice 100%. The whole
+                // ring is the denominator — the same `total` the side legend
+                // and the old formatter divide by.
+                base: () => total,
+                totalLabel: centerLabel ?? 'Total',
+              })}
             />
           </PieChart>
         </ResponsiveContainer>
         {centerValue !== undefined && (
+          // The overlay stays `pointer-events-none` — it spans the whole chart
+          // box, so making it hoverable would steal every slice's hover. Only
+          // the text in the hole opts back in.
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">
-              {centerValue}
-            </span>
-            {centerLabel && (
-              <span className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4">
-                {centerLabel}
-              </span>
-            )}
+            <HoverHint hint={centerHint}>
+              <div
+                className={
+                  centerHint
+                    ? 'pointer-events-auto flex cursor-help flex-col items-center'
+                    : 'flex flex-col items-center'
+                }
+              >
+                <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">
+                  {centerValue}
+                </span>
+                {centerLabel && (
+                  <span className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4">
+                    {centerLabel}
+                  </span>
+                )}
+              </div>
+            </HoverHint>
           </div>
         )}
       </div>

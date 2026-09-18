@@ -13,6 +13,7 @@ import {
 } from '@/components/sis/command-palette';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
@@ -112,12 +113,19 @@ export default function RootLayout({
           shadow="0 0 8px var(--av-indigo), 0 0 3px var(--av-indigo)"
         />
         <QueryProvider>
-          <CommandPaletteProvider>
-            {children}
-            <Suspense fallback={null}>
-              <CommandPaletteMount />
-            </Suspense>
-          </CommandPaletteProvider>
+          {/* Radix needs a Provider above every Tooltip. Until now the only
+              one lived inside SidebarProvider, so a Tooltip anywhere else —
+              a chart, a table cell, a dialog rendered through a portal —
+              silently did nothing. Hoisting it here is what lets the rest of
+              the app use one instead of the browser's native `title`. */}
+          <TooltipProvider delayDuration={200} skipDelayDuration={300}>
+            <CommandPaletteProvider>
+              {children}
+              <Suspense fallback={null}>
+                <CommandPaletteMount />
+              </Suspense>
+            </CommandPaletteProvider>
+          </TooltipProvider>
           <ScreenGuard />
           <Toaster
             theme="light"

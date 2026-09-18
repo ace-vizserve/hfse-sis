@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { TermLockProgress } from '@/lib/markbook/dashboard';
 import {
   Card,
@@ -85,14 +86,14 @@ export function SheetProgressChart({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
+                // Locked + open is every grading sheet the term has, so the
+                // share reads directly as "how far through the term we are".
+                content={chartTooltipContent({
+                  share: true,
+                  totalLabel: 'All grading sheets',
+                })}
               />
               <Legend
                 content={chartLegendContent({

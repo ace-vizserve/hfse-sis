@@ -1,4 +1,8 @@
+'use client';
+
 import type { NationalityByLevel } from '@/lib/admissions/insights-funnel';
+
+import { HoverHint } from '@/components/ui/hover-hint';
 
 // Nationality composition per year group — one full-width bar per level.
 //
@@ -12,7 +16,10 @@ import type { NationalityByLevel } from '@/lib/admissions/insights-funnel';
 // comparable with a large one. The headcount sits at the end of the row so
 // the reader can still weight what they are looking at.
 //
-// Server-rendered; no chart library.
+// No chart library. `'use client'` only so the per-segment hints can be
+// tooltips rather than native `title=` — this leaf takes two plain
+// serialisable props (`data`, `unitLabel`) and imports nothing server-only,
+// so the boundary costs the two insights pages nothing but this markup.
 
 // Fixed palette positions, so a nationality keeps its colour down the whole
 // column. Tokens only — never a raw hex (hard rule #7).
@@ -66,25 +73,27 @@ export function NationalityByLevelBars({
           <div key={row.level} className="flex items-center gap-3">
             {/* Truncates at half-width on the longer programme names, so the
                 full label stays reachable on hover. */}
-            <span
-              className="w-24 shrink-0 truncate text-[12.5px] font-medium text-foreground"
-              title={row.level}
-            >
-              {row.level}
-            </span>
+            <HoverHint hint={row.level}>
+              <span className="w-24 shrink-0 truncate text-[12.5px] font-medium text-foreground">
+                {row.level}
+              </span>
+            </HoverHint>
             <span className="flex h-5 flex-1 overflow-hidden rounded-md bg-muted">
               {row.segments.map((seg) => {
                 const share = row.total > 0 ? (seg.count / row.total) * 100 : 0;
                 return (
-                  <span
+                  <HoverHint
                     key={seg.nationality}
-                    className="h-full"
-                    style={{
-                      width: `${share}%`,
-                      background: colorFor(seg.nationality, legend),
-                    }}
-                    title={`${row.level} · ${seg.nationality}: ${seg.count} (${share.toFixed(1)}%)`}
-                  />
+                    hint={`${row.level} · ${seg.nationality}: ${seg.count} (${share.toFixed(1)}%)`}
+                  >
+                    <span
+                      className="h-full"
+                      style={{
+                        width: `${share}%`,
+                        background: colorFor(seg.nationality, legend),
+                      }}
+                    />
+                  </HoverHint>
                 );
               })}
             </span>

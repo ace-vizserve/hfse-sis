@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
@@ -526,17 +527,24 @@ export function CellMarkDialog({
                               // says a rationed leave day is about to be spent
                               // — and it used to be the smallest grey text on
                               // the panel.
-                              <span
-                                className={cn(
-                                  'text-[10.5px] tabular-nums',
-                                  spent
-                                    ? 'font-semibold text-brand-amber'
-                                    : 'text-muted-foreground'
-                                )}
-                                title={`${quota!.used} used of ${quota!.allowance} per ${quota!.unit}`}
+                              // `focusable={false}`: this span sits INSIDE the
+                              // ToggleGroupItem button, and a second tab stop
+                              // within a control is worse than none.
+                              <HoverHint
+                                hint={`${quota!.used} used of ${quota!.allowance} per ${quota!.unit}`}
+                                focusable={false}
                               >
-                                {spent ? 'none left' : `${left} left`}
-                              </span>
+                                <span
+                                  className={cn(
+                                    'text-[10.5px] tabular-nums',
+                                    spent
+                                      ? 'font-semibold text-brand-amber'
+                                      : 'text-muted-foreground'
+                                  )}
+                                >
+                                  {spent ? 'none left' : `${left} left`}
+                                </span>
+                              </HoverHint>
                             )}
                             {exReason === reason && (
                               <Check className="size-3 shrink-0" aria-hidden />

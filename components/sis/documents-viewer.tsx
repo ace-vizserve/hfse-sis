@@ -29,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   OPTIONAL_DOCUMENT_SLOT_KEYS,
@@ -784,12 +785,11 @@ function PreviewPane({
             )}
           </CardTitle>
           {filename && (
-            <p
-              className="truncate font-mono text-[11px] text-muted-foreground"
-              title={filename}
-            >
-              {filename}
-            </p>
+            <HoverHint hint={filename}>
+              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                {filename}
+              </p>
+            </HoverHint>
           )}
           <CardAction>
             <Button

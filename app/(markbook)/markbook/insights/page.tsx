@@ -575,6 +575,7 @@ export default async function MarkbookInsightsPage({
           >
             <CategoryLineChart
               data={levelLineData}
+              seriesLabel="Average grade"
               yFormat="number"
               referenceValue={schoolAvgAcrossLevels}
               referenceLabel={`School avg ${schoolAvgAcrossLevels}`}

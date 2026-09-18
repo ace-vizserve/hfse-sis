@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { TABLE_COPY } from '@/lib/copy/data-table';
@@ -212,24 +213,29 @@ function AyRowActions({ row }: { row: AyTableRow }) {
 
   return (
     <div className="flex items-center justify-end gap-2">
-      {/* Inline: Dates editor with at-a-glance status */}
-      <TermDatesEditor ayCode={row.ay_code} ayLabel={row.label} terms={terms}>
-        <Button
-          size="sm"
-          variant={datesIncomplete ? 'warning' : 'outline'}
-          title={
-            datesIncomplete
-              ? `Term dates: ${datesStatus}`
-              : `Term dates (${datesStatus})`
-          }
-        >
-          <CalendarRange />
-          Dates
-          <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
-            {datesStatus}
-          </span>
-        </Button>
-      </TermDatesEditor>
+      {/* Inline: Dates editor with at-a-glance status.
+          The hint hangs off a span AROUND the editor, not the Button: the
+          Button is handed straight to `DialogTrigger asChild`, so a component
+          in between would swallow the trigger's click and the dialog would
+          never open. */}
+      <HoverHint
+        hint={
+          datesIncomplete
+            ? `Term dates: ${datesStatus}`
+            : `Term dates (${datesStatus})`
+        }
+        wrap
+      >
+        <TermDatesEditor ayCode={row.ay_code} ayLabel={row.label} terms={terms}>
+          <Button size="sm" variant={datesIncomplete ? 'warning' : 'outline'}>
+            <CalendarRange />
+            Dates
+            <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
+              {datesStatus}
+            </span>
+          </Button>
+        </TermDatesEditor>
+      </HoverHint>
 
       {/* Inline: accepting-applications Switch on every row. Current AY = its
           live window; non-current AY = early-bird (single-select, enforced
@@ -268,18 +274,26 @@ function AyRowActions({ row }: { row: AyTableRow }) {
           {canDelete && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => setOpenDialog('delete')}
-                className="text-destructive focus:text-destructive"
-                title={
+              {/* The item is NOT disabled — the blockers are enforced in the
+                  dialog — so it is hoverable as it stands and needs no `wrap`.
+                  `focusable={false}` because Radix already owns the item's
+                  tabIndex through the menu's roving focus. */}
+              <HoverHint
+                hint={
                   row.blockers.length > 0
                     ? `Cannot delete: ${row.blockers.join(', ')}`
                     : undefined
                 }
+                focusable={false}
               >
-                <Trash2 className="size-4" />
-                Delete AY
-              </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setOpenDialog('delete')}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                  Delete AY
+                </DropdownMenuItem>
+              </HoverHint>
             </>
           )}
         </RowActionsMenu>

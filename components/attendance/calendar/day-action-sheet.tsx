@@ -20,6 +20,7 @@ import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 // one visual grammar for "a specific date" across the calendar module.
 import { DateBox } from '@/components/sis/hub-upcoming-events-card';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Sheet,
   SheetContent,
@@ -210,18 +211,22 @@ export function DayActionSheet({
                         color={DAY_TYPE_LEGEND_COLOR[row.dayType]}
                         label={`${dayStatusLabel(status)}${levelSuffix(row.audience)}`}
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        aria-label="Revert to a regular school day"
-                        title="Revert to a regular school day"
-                        disabled={busyKey === `day:${row.audience}`}
-                        onClick={() => void removeOverride(row.audience)}
+                      <HoverHint
+                        hint="Revert to a regular school day"
+                        focusable={false}
                       >
-                        <Trash2 className="size-3.5" />
-                      </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          aria-label="Revert to a regular school day"
+                          disabled={busyKey === `day:${row.audience}`}
+                          onClick={() => void removeOverride(row.audience)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </HoverHint>
                     </li>
                   ))}
 

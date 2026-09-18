@@ -28,6 +28,7 @@ import { RICH_TEXT_PROSE_CLASS } from '@/lib/rich-text/prose';
 import { cn } from '@/lib/utils';
 
 import { Button } from './button';
+import { HoverHint } from './hover-hint';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { Separator } from './separator';
@@ -93,20 +94,21 @@ function ToolbarButton({
   onClick: () => void;
 }) {
   return (
-    <Toggle
-      size="sm"
-      pressed={active ?? false}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      // The editor loses its selection the moment the button takes focus, so
-      // formatting would apply to nothing.
-      onMouseDown={(e) => e.preventDefault()}
-      onPressedChange={onClick}
-      className="size-7 min-w-7 p-0 text-ink-3 hover:text-foreground"
-    >
-      <Icon className="size-3.5" />
-    </Toggle>
+    <HoverHint hint={label} focusable={false}>
+      <Toggle
+        size="sm"
+        pressed={active ?? false}
+        disabled={disabled}
+        aria-label={label}
+        // The editor loses its selection the moment the button takes focus, so
+        // formatting would apply to nothing.
+        onMouseDown={(e) => e.preventDefault()}
+        onPressedChange={onClick}
+        className="size-7 min-w-7 p-0 text-ink-3 hover:text-foreground"
+      >
+        <Icon className="size-3.5" />
+      </Toggle>
+    </HoverHint>
   );
 }
 
@@ -358,19 +360,20 @@ export function RichTextEditor({
           <ToolbarDivider />
 
           <Popover open={linkOpen} onOpenChange={setLinkOpen}>
-            <PopoverTrigger asChild>
-              <Toggle
-                size="sm"
-                pressed={state?.link ?? false}
-                disabled={disabled}
-                aria-label="Add link"
-                title="Add link"
-                onMouseDown={(e) => e.preventDefault()}
-                className="size-7 min-w-7 p-0 text-ink-3 hover:text-foreground"
-              >
-                <Link2 className="size-3.5" />
-              </Toggle>
-            </PopoverTrigger>
+            <HoverHint hint="Add link" focusable={false}>
+              <PopoverTrigger asChild>
+                <Toggle
+                  size="sm"
+                  pressed={state?.link ?? false}
+                  disabled={disabled}
+                  aria-label="Add link"
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="size-7 min-w-7 p-0 text-ink-3 hover:text-foreground"
+                >
+                  <Link2 className="size-3.5" />
+                </Toggle>
+              </PopoverTrigger>
+            </HoverHint>
             <PopoverContent align="start" className="w-72 p-2">
               <div className="flex items-center gap-1.5">
                 <Input

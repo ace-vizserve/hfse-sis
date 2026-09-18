@@ -16,6 +16,7 @@ import {
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
 import { formatterFor, type YFormat } from './chart-primitives';
+import { chartTooltipContent } from './chart-tooltip';
 
 export type TrendPoint = { x: string; y: number };
 
@@ -171,27 +172,14 @@ function TrendChartImpl({
           />
         )}
         <Tooltip
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{
             stroke: 'var(--color-muted-foreground)',
             strokeDasharray: '3 3',
           }}
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
-          labelStyle={{
-            color: 'var(--color-foreground)',
-            fontWeight: 600,
-            marginBottom: 2,
-          }}
-          formatter={(value) => {
-            const v = typeof value === 'number' ? value : Number(value);
-            return yFormatter ? yFormatter(v) : v;
-          }}
+          // A period and the same period last year: two readings of one
+          // measure, so there is no whole for them to be shares of.
+          content={chartTooltipContent({ format: yFormatter })}
         />
         {comparison && (
           <Legend

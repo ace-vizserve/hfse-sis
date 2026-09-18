@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -224,16 +225,19 @@ export function CopyFromPriorAyDialog({
 
   if (sourceHolidays.length === 0 && sourceEvents.length === 0) {
     return (
-      <Button
-        type="button"
-        size="sm"
-        disabled
-        className="gap-1.5"
-        title={`${sourceAyCode} has no calendar overrides or events on this term — nothing to carry forward.`}
+      // `wrap`: the button in this branch is ALWAYS disabled, and
+      // `buttonVariants` carries `disabled:pointer-events-none` — so it is
+      // never hit-tested and the old `title` could never be read by anyone.
+      // The trigger has to sit on a focusable span AROUND the dead control.
+      <HoverHint
+        hint={`${sourceAyCode} has no calendar overrides or events on this term — nothing to carry forward.`}
+        wrap
       >
-        <CalendarRange className="size-3.5" />
-        Copy from {sourceAyCode}
-      </Button>
+        <Button type="button" size="sm" disabled className="gap-1.5">
+          <CalendarRange className="size-3.5" />
+          Copy from {sourceAyCode}
+        </Button>
+      </HoverHint>
     );
   }
 

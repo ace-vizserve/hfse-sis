@@ -9,6 +9,7 @@ import { SectionRowActions } from '@/components/sections/section-row-actions';
 import { GenerateIndexButton } from '@/components/sis/generate-index-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Role } from '@/lib/auth/roles';
@@ -86,17 +87,21 @@ export function SectionLevelCard({
           </p>
         </div>
         {sections.length > 0 && isRegistrarPlus && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-            onClick={() => setAddOpen(true)}
-            aria-label={`Add another section to ${level.label}`}
-            title={`Add another section to ${level.label}`}
+          <HoverHint
+            hint={`Add another section to ${level.label}`}
+            focusable={false}
           >
-            <Plus className="size-3.5" />
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setAddOpen(true)}
+              aria-label={`Add another section to ${level.label}`}
+            >
+              <Plus className="size-3.5" />
+            </Button>
+          </HoverHint>
         )}
       </div>
 
@@ -131,13 +136,14 @@ export function SectionLevelCard({
                   {s.name}
                 </IdentifierLink>
                 {s.classType && (
-                  <Badge
-                    variant="outline"
-                    className="h-5 shrink-0 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-foreground"
-                    title={s.classType}
-                  >
-                    {s.classType[0]}
-                  </Badge>
+                  <HoverHint hint={s.classType}>
+                    <Badge
+                      variant="outline"
+                      className="h-5 shrink-0 border-border bg-card px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-foreground"
+                    >
+                      {s.classType[0]}
+                    </Badge>
+                  </HoverHint>
                 )}
                 {s.schedule && (
                   <Badge

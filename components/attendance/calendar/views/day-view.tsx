@@ -20,6 +20,7 @@ import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Separator } from '@/components/ui/separator';
 import { sgToday } from '@/lib/dates';
 
@@ -187,15 +188,19 @@ export function DayView({
           >
             <ChevronRight />
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={goToday}
-            title="Jump to today (clamped to the academic year)"
-            className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
+          <HoverHint
+            hint="Jump to today (clamped to the academic year)"
+            focusable={false}
           >
-            Today
-          </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={goToday}
+              className="h-8 font-mono text-[10px] uppercase tracking-[0.14em]"
+            >
+              Today
+            </Button>
+          </HoverHint>
         </div>
       </div>
 

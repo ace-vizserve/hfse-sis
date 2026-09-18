@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import { AdmissionsDrillSheet } from '@/components/admissions/drills/admissions-drill-sheet';
 
 export type DocumentCompletionCardProps = {
@@ -119,15 +120,16 @@ export function DocumentCompletionCard({
                     tickLine={false}
                   />
                   <Tooltip
+                    wrapperStyle={{ zIndex: 20 }}
                     cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
-                    contentStyle={{
-                      background: 'var(--color-popover)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
-                      boxShadow: 'var(--shadow-md)',
-                      color: 'var(--color-popover-foreground)',
-                      fontSize: 12,
-                    }}
+                    // The three segments count applicants, not documents: each
+                    // applicant at this level is complete, partial or missing
+                    // and never two of them, so the stack sums to the level's
+                    // applicant count.
+                    content={chartTooltipContent({
+                      share: true,
+                      totalLabel: 'All applicants',
+                    })}
                   />
                   <Bar
                     dataKey="complete"

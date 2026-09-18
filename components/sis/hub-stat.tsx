@@ -1,6 +1,9 @@
+import type * as React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from 'lucide-react';
 import Link from 'next/link';
+
+import { HintedText } from '@/components/ui/hinted-text';
 
 import {
   Card,
@@ -71,6 +74,7 @@ export function HubStat({
   delta,
   deltaGoodWhen = 'up',
   comparisonLabel,
+  hint,
 }: {
   label: string;
   value: string | number;
@@ -92,6 +96,9 @@ export function HubStat({
   /** Short label under the delta chip (e.g. "vs AY2025"). Only rendered
    * alongside a `delta`. */
   comparisonLabel?: string;
+  /** What this number counts, in one plain sentence — revealed by the small
+   * "?" beside the label. Same contract as `MetricCard.hint`. */
+  hint?: React.ReactNode;
 }) {
   const inner = (
     <Card
@@ -103,8 +110,20 @@ export function HubStat({
       )}
     >
       <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+        <CardDescription className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {label}
+          {/* On the label, never the tile — a tile with `href` is a real
+              navigation target, and a tooltip over the whole card would fire
+              on the way past it. HintedText because this is a server
+              component; see components/ui/hinted-text.tsx. */}
+          {hint && (
+            <HintedText
+              hint={hint}
+              className="inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full border border-hairline-strong font-sans text-[9px] font-semibold normal-case tracking-normal text-ink-5"
+            >
+              ?
+            </HintedText>
+          )}
         </CardDescription>
         <CardTitle
           className={cn(

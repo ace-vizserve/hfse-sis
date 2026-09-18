@@ -26,6 +26,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HintedText } from '@/components/ui/hinted-text';
 import { PageShell } from '@/components/ui/page-shell';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
@@ -551,10 +552,10 @@ export default async function GradingListPage({
                   ? 'bg-amber-500/20 text-amber-900 dark:text-amber-100'
                   : 'bg-muted text-foreground';
             return (
-              <span
+              <HintedText
                 key={t.id}
                 className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono font-semibold ${tone}`}
-                title={`${t.label} lock target: ${lockIso}`}
+                hint={`${t.label} lock target: ${lockIso}`}
               >
                 <span className="opacity-80">{t.label}</span>
                 <span className="tabular-nums">
@@ -569,7 +570,7 @@ export default async function GradingListPage({
                     current
                   </span>
                 )}
-              </span>
+              </HintedText>
             );
           })}
         </div>

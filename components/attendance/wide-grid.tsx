@@ -55,6 +55,7 @@ function todayLocalIso(): string {
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Card,
   CardContent,
@@ -919,44 +920,49 @@ export function AttendanceWideGrid({
                     }${eventLabel ? ` · ${eventLabel}` : ''}`;
                     const isToday = c.iso === todayIso;
                     return (
-                      <TableHead
+                      // One tooltip per DATE COLUMN (~20 per term sheet), not
+                      // per grid cell — O(columns) is cheap enough for Radix.
+                      <HoverHint
                         key={c.iso}
-                        ref={isToday ? todayHeaderRef : undefined}
-                        title={
+                        hint={
                           isToday ? `Today · ${dayTypeTitle}` : dayTypeTitle
                         }
-                        style={cellHeight(ROW_HEIGHT.dateRow)}
-                        className={
-                          'overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
-                          (c.drawMonthBoundary
-                            ? ' border-l-2 border-l-border'
-                            : '') +
-                          (isToday
-                            ? ' relative ring-2 ring-inset ring-brand-indigo'
-                            : '')
-                        }
                       >
-                        <div className="leading-tight">{c.iso.slice(-2)}</div>
-                        <div className="text-[9px] font-normal opacity-70">
-                          {c.weekday.slice(0, 3)}
-                        </div>
-                        {/* Column tag — resolveColumnTag picks the single
+                        <TableHead
+                          ref={isToday ? todayHeaderRef : undefined}
+                          style={cellHeight(ROW_HEIGHT.dateRow)}
+                          className={
+                            'overflow-hidden border-b border-border bg-muted/40 px-1 py-1 text-center font-mono text-[10px] font-semibold text-foreground ' +
+                            (c.drawMonthBoundary
+                              ? ' border-l-2 border-l-border'
+                              : '') +
+                            (isToday
+                              ? ' relative ring-2 ring-inset ring-brand-indigo'
+                              : '')
+                          }
+                        >
+                          <div className="leading-tight">{c.iso.slice(-2)}</div>
+                          <div className="text-[9px] font-normal opacity-70">
+                            {c.weekday.slice(0, 3)}
+                          </div>
+                          {/* Column tag — resolveColumnTag picks the single
                             most-informative tag: PH/SH/NC from day_type,
                             EX for exam events, SE for other events, HBL
                             for HBL days; plain school days are untagged.
                             Same ChartLegendChip rendered in the register
                             card's legend above so the column header and legend
                             chip read as the same affordance per §10. */}
-                        {c.tag && (
-                          <div className="mt-0.5 flex justify-center">
-                            <ChartLegendChip
-                              color={COLUMN_TAG_COLOR[c.tag]}
-                              label={c.tag}
-                              className="px-1 py-px text-[9px] tracking-[0.1em]"
-                            />
-                          </div>
-                        )}
-                      </TableHead>
+                          {c.tag && (
+                            <div className="mt-0.5 flex justify-center">
+                              <ChartLegendChip
+                                color={COLUMN_TAG_COLOR[c.tag]}
+                                label={c.tag}
+                                className="px-1 py-px text-[9px] tracking-[0.1em]"
+                              />
+                            </div>
+                          )}
+                        </TableHead>
+                      </HoverHint>
                     );
                   })}
                   <TableHead
@@ -1029,6 +1035,8 @@ export function AttendanceWideGrid({
                             'truncate text-[12px] font-medium text-foreground ' +
                             (e.withdrawn ? 'opacity-60 italic' : '')
                           }
+                          // Stays a native `title`: one per ROSTER ROW, and a
+                          // Radix tooltip mounts real DOM + state per instance.
                           title={e.studentName}
                         >
                           {e.studentName}
@@ -1046,6 +1054,7 @@ export function AttendanceWideGrid({
                             <Badge
                               variant="secondary"
                               className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                              // Stays native — one per roster row, not O(1).
                               title="Bus number"
                             >
                               <Bus aria-hidden /> {e.busNo}
@@ -1055,6 +1064,7 @@ export function AttendanceWideGrid({
                             <Badge
                               variant="secondary"
                               className="gap-0.5 border-0 px-1.5 py-0 text-[10px] font-normal shadow-none"
+                              // Stays native — one per roster row, not O(1).
                               title="Classroom officer"
                             >
                               <Star aria-hidden /> {e.classroomOfficerRole}
@@ -1157,6 +1167,9 @@ export function AttendanceWideGrid({
                         return (
                           <TableCell
                             key={c.iso}
+                            // Stays a native `title`: this renders once per
+                            // GRID CELL (students × days = thousands), and a
+                            // Radix tooltip mounts real DOM + state per one.
                             title={
                               beforeEnrolment
                                 ? 'Before enrolment date'
@@ -1184,6 +1197,7 @@ export function AttendanceWideGrid({
                                     ? statusCellWash(status)
                                     : 'text-muted-foreground')
                                 }
+                                // Stays native — renders per grid cell.
                                 title={
                                   status
                                     ? `Before enrolment date · ${ATTENDANCE_STATUS_LABELS[status]}${status === 'EX' && exReason ? ` · ${EX_REASON_LABELS[exReason]}` : ''}`
@@ -1195,6 +1209,7 @@ export function AttendanceWideGrid({
                             ) : !c.encodable ? (
                               <span
                                 className="block px-1 py-1 text-[10px] text-muted-foreground"
+                                // Stays native — renders per grid cell.
                                 title={`${DAY_TYPE_LABELS[c.dayType]}${c.label ? ` · ${c.label}` : ''}`}
                               >
                                 —
@@ -1393,6 +1408,9 @@ const CellButton = memo(function CellButton({
           onClick={() => onOpen(enrolmentId, iso)}
           aria-haspopup="dialog"
           aria-expanded={active}
+          // Stays a native `title`: CellButton is the grid cell itself
+          // (~1,410 per sheet, per the note above), and a Radix tooltip would
+          // mount real DOM + state for every one of them.
           title={tip}
           className={
             'block w-full px-1 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ' +

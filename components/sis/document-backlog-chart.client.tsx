@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { DocumentBacklogRow } from '@/lib/sis/dashboard';
 import {
   Card,
@@ -92,14 +93,15 @@ export function DocumentBacklogChart({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
+                // One bar is one document type, counted once per student it is
+                // asked of, so the four segments sum to the students this
+                // document applies to (KD #219 gates the rest out).
+                content={chartTooltipContent({
+                  share: true,
+                  totalLabel: 'All students',
+                })}
               />
               <Legend
                 content={chartLegendContent({

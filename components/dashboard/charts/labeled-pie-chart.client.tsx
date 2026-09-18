@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
+import { chartTooltipContent } from './chart-tooltip';
+
 /**
  * A full pie with the percentage rendered ON each slice (recharts' "Pie Chart
  * With Customized Label" pattern). Use for a genuine partition where the share
@@ -100,21 +102,14 @@ function LabeledPieChartImpl({
               ))}
             </Pie>
             <Tooltip
-              contentStyle={{
-                background: 'var(--color-popover)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-md)',
-                fontSize: 11,
-                padding: '8px 10px',
-              }}
-              formatter={(value) => {
-                const v = typeof value === 'number' ? value : Number(value);
-                return [
-                  `${v.toLocaleString('en-SG')} (${total ? ((v / total) * 100).toFixed(1) : '0.0'}%)`,
-                  '',
-                ];
-              }}
+              wrapperStyle={{ zIndex: 20 }}
+              content={chartTooltipContent({
+                share: true,
+                // One slice per hover, so the base has to be the whole pie —
+                // the same total the on-slice label and the side legend use.
+                base: () => total,
+                totalLabel: 'Total',
+              })}
             />
           </PieChart>
         </ResponsiveContainer>

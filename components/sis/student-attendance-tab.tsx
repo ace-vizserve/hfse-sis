@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { HintedText } from '@/components/ui/hinted-text';
 import { toPlainText } from '@/lib/rich-text';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -204,7 +205,7 @@ export async function StudentAttendanceTab({
               <span className="rounded-full border border-transparent bg-gradient-to-b from-brand-indigo to-brand-indigo-deep px-2.5 py-1 font-mono tabular-nums text-white shadow-sm">
                 {s.summary.pct != null ? `${s.summary.pct.toFixed(1)}%` : '—'}
               </span>
-              <span
+              <HintedText
                 className={
                   'rounded-full border border-transparent px-2.5 py-1 font-mono tabular-nums text-white shadow-sm ' +
                   (quota.remaining <= 0
@@ -213,10 +214,10 @@ export async function StudentAttendanceTab({
                       ? 'bg-gradient-to-br from-brand-amber to-brand-amber/80'
                       : 'bg-gradient-to-br from-brand-mint to-brand-sky')
                 }
-                title={`Urgent / compassionate leave used ${quota.used} of ${quota.allowance}; ${quota.remaining} remaining this AY`}
+                hint={`Urgent / compassionate leave used ${quota.used} of ${quota.allowance}; ${quota.remaining} remaining this AY`}
               >
                 Comp. leave {quota.used}/{quota.allowance}
-              </span>
+              </HintedText>
             </div>
 
             {s.monthly.length > 0 && <MonthlyBreakdownTable rows={s.monthly} />}
@@ -242,8 +243,8 @@ export async function StudentAttendanceTab({
                           e.status === 'EX' &&
                           e.exNote != null &&
                           e.exNote !== '';
-                        // ⚠ STRIPPED — this goes into a `title` attribute,
-                        // which shows text and nothing else, so the HTML the
+                        // ⚠ STRIPPED — this goes into a hover hint, which
+                        // shows text and nothing else, so the HTML the
                         // formatting editor writes would surface as literal
                         // `<p>` tags in the tooltip. Guarded by `hasNote` so
                         // only excused days that carry one are parsed.
@@ -253,9 +254,9 @@ export async function StudentAttendanceTab({
                             ? ` · ${EX_REASON_LABELS[e.exReason]}`
                             : '';
                         return (
-                          <span
+                          <HintedText
                             key={e.id}
-                            title={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}${reason}${notePlain ? ` — ${notePlain}` : ''}`}
+                            hint={`${ATTENDANCE_STATUS_LABELS[e.status]} · ${e.date}${reason}${notePlain ? ` — ${notePlain}` : ''}`}
                             className={
                               'inline-flex min-w-13 items-center justify-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] font-semibold ' +
                               STATUS_TONE[e.status]
@@ -272,7 +273,7 @@ export async function StudentAttendanceTab({
                                 aria-label="has a note"
                               />
                             )}
-                          </span>
+                          </HintedText>
                         );
                       })}
                     </div>

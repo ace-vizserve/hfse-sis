@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   BulkNotifyDialog,
   type BulkNotifyItem,
@@ -73,7 +74,7 @@ export type PFilesStatusFilter = 'all' | 'expired' | 'uploaded';
 // they get the widest column and plain names rather than a colour to decode.
 //
 // Three fit comfortably on one line; the rest collapse into a count, with the
-// full list one click away in the strip's popover (and in the row title).
+// full list one click away in the strip's popover (and on the +N chip's hint).
 
 const MAX_VISIBLE_CHIPS = 3;
 
@@ -100,33 +101,44 @@ function OutstandingChips({ slots }: { slots: CommonRow['slots'] }) {
       {shown.map((slot) => {
         const { label, icon: Icon } = STATUS_CHIP[slot.status];
         return (
-          <Badge
-            key={slot.key}
-            variant="outline"
-            // Icon + tint, never tint alone — `expired` and `rejected` share
-            // a colour on purpose (identical next action) and are told apart
-            // by the icon and the tooltip.
-            title={`${slot.label} — ${label}`}
-            className={`h-5.5 gap-1 px-2 text-[11px] font-medium ${chipClassForStatus(
-              slot.status
-            )}`}
-          >
-            <Icon className="size-3 shrink-0" />
-            {slot.label}
-          </Badge>
+          // Icon + tint, never tint alone — `expired` and `rejected` share
+          // a colour on purpose (identical next action) and are told apart
+          // by the icon and the hint.
+          <HoverHint key={slot.key} hint={`${slot.label} — ${label}`}>
+            <Badge
+              variant="outline"
+              className={`h-5.5 gap-1 px-2 text-[11px] font-medium ${chipClassForStatus(
+                slot.status
+              )}`}
+            >
+              <Icon className="size-3 shrink-0" />
+              {slot.label}
+            </Badge>
+          </HoverHint>
         );
       })}
       {rest > 0 && (
-        <Badge
-          variant="outline"
-          className="h-5.5 border-hairline-strong px-2 font-mono text-[10px] text-muted-foreground"
-          title={open
-            .slice(MAX_VISIBLE_CHIPS)
-            .map((s) => `${s.label} — ${STATUS_CHIP[s.status].label}`)
-            .join('\n')}
+        // The remainder reads as a list, one document per line — a `\n`-joined
+        // string would render the same (the hint box is `whitespace-pre-line`)
+        // but real elements say so rather than relying on it.
+        <HoverHint
+          hint={
+            <span className="flex flex-col gap-0.5">
+              {open.slice(MAX_VISIBLE_CHIPS).map((s) => (
+                <span key={s.key}>
+                  {s.label} — {STATUS_CHIP[s.status].label}
+                </span>
+              ))}
+            </span>
+          }
         >
-          +{rest}
-        </Badge>
+          <Badge
+            variant="outline"
+            className="h-5.5 border-hairline-strong px-2 font-mono text-[10px] text-muted-foreground"
+          >
+            +{rest}
+          </Badge>
+        </HoverHint>
       )}
     </div>
   );

@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { TermPubCoverage } from '@/lib/markbook/dashboard';
 import {
   Card,
@@ -89,14 +90,14 @@ export function PublicationCoverageChart({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
+                // Published + not yet published is every section in the term,
+                // which is the number the reader is judging coverage against.
+                content={chartTooltipContent({
+                  share: true,
+                  totalLabel: 'All sections',
+                })}
               />
               <Legend
                 content={chartLegendContent({

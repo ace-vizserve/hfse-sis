@@ -12,9 +12,8 @@ import {
 import {
   AssignmentChips,
   assignmentSummaryText,
-  RoleChip,
-  StaffAvatar,
-} from '@/components/sis/staff-visuals';
+} from '@/components/sis/assignment-chips';
+import { RoleChip, StaffAvatar } from '@/components/sis/staff-visuals';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';

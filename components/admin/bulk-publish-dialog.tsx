@@ -29,6 +29,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -657,28 +658,32 @@ function ReadinessPill({
   if (readiness.state === 'warn') {
     const label = readiness.reasons.join(' · ');
     return (
-      <span title={label}>
-        <StatusBadge
-          tone="warning"
-          icon={AlertTriangle}
-          className="max-w-[160px] truncate text-[10px]"
-        >
-          {label}
-        </StatusBadge>
-      </span>
+      <HoverHint hint={label}>
+        <span>
+          <StatusBadge
+            tone="warning"
+            icon={AlertTriangle}
+            className="max-w-[160px] truncate text-[10px]"
+          >
+            {label}
+          </StatusBadge>
+        </span>
+      </HoverHint>
     );
   }
   // blocked
   const label = readiness.reasons.join(' · ');
   return (
-    <span title={label}>
-      <StatusBadge
-        tone="locked"
-        icon={XCircle}
-        className="max-w-[160px] truncate text-[10px]"
-      >
-        {label}
-      </StatusBadge>
-    </span>
+    <HoverHint hint={label}>
+      <span>
+        <StatusBadge
+          tone="locked"
+          icon={XCircle}
+          className="max-w-[160px] truncate text-[10px]"
+        >
+          {label}
+        </StatusBadge>
+      </span>
+    </HoverHint>
   );
 }

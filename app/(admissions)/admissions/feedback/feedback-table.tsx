@@ -7,6 +7,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
@@ -63,9 +64,9 @@ function TruncatedText({
   if (!s) return <span className="text-xs text-muted-foreground">—</span>;
   const truncated = s.length > max ? `${s.slice(0, max)}…` : s;
   return (
-    <span className="text-sm text-foreground" title={s}>
-      {truncated}
-    </span>
+    <HoverHint hint={s}>
+      <span className="text-sm text-foreground">{truncated}</span>
+    </HoverHint>
   );
 }
 

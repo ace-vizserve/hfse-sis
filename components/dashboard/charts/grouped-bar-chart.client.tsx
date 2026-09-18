@@ -18,6 +18,7 @@ import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 
 import { formatterFor, type YFormat } from './chart-primitives';
+import { chartTooltipContent } from './chart-tooltip';
 
 export type { YFormat };
 
@@ -152,24 +153,11 @@ function GroupedBarChartImpl({
           width={36}
         />
         <Tooltip
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
-          labelStyle={{
-            color: 'var(--color-foreground)',
-            fontWeight: 600,
-            marginBottom: 2,
-          }}
-          formatter={(value) => {
-            const v = typeof value === 'number' ? value : Number(value);
-            return yFormatter ? yFormatter(v) : v;
-          }}
+          // Grouped, never stacked: the series sit beside each other and often
+          // carry rates, so no share and no total — summing them is meaningless.
+          content={chartTooltipContent({ format: yFormatter })}
         />
         <Legend content={chartLegendContent(legendPalette)} />
         {series.map((s, i) => (

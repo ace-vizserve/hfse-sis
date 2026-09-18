@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { GradeBucket } from '@/lib/markbook/dashboard';
 import {
   Card,
@@ -96,14 +97,16 @@ export function GradeDistributionChart({
                 tickLine={false}
               />
               <Tooltip
+                wrapperStyle={{ zIndex: 20 }}
                 cursor={{ fill: 'var(--accent)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--popover-foreground)',
-                  fontSize: 12,
-                }}
+                // One band per bar, so a share of the hovered bar alone would
+                // always read 100%. The base is every grade in the term — the
+                // same denominator the card footer quotes.
+                content={chartTooltipContent({
+                  share: true,
+                  base: () => total,
+                  totalLabel: 'All grades this term',
+                })}
               />
               <Bar
                 dataKey="count"

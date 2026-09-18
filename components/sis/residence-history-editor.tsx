@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -248,22 +249,45 @@ export function ResidenceHistoryEditor({
                       <MapPin className="size-3.5" aria-hidden />
                       Residence {i + 1}
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeEntry(i)}
-                      disabled={!canRemove || busy}
-                      title={
-                        canRemove
-                          ? 'Remove this entry'
-                          : 'At least one entry is required for ICA'
-                      }
-                      className="gap-1.5 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="size-3.5" />
-                      Remove
-                    </Button>
+                    {/* Two mechanisms on purpose. The "at least one entry"
+                        line only ever shows on a Button that is disabled, and
+                        `buttonVariants` gives a disabled button
+                        `pointer-events-none` — so it needs the trigger on a
+                        span around the button. The live case keeps the trigger
+                        on the button itself, which avoids a second tab stop on
+                        every residence row. */}
+                    {canRemove ? (
+                      <HoverHint hint="Remove this entry" focusable={false}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeEntry(i)}
+                          disabled={busy}
+                          className="gap-1.5 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Remove
+                        </Button>
+                      </HoverHint>
+                    ) : (
+                      <HoverHint
+                        hint="At least one entry is required for ICA"
+                        wrap
+                      >
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeEntry(i)}
+                          disabled
+                          className="gap-1.5 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Remove
+                        </Button>
+                      </HoverHint>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

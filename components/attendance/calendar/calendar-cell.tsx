@@ -12,6 +12,7 @@ import {
   type ChartLegendChipColor,
 } from '@/components/dashboard/chart-legend-chip';
 import { Badge } from '@/components/ui/badge';
+import { HoverHint } from '@/components/ui/hover-hint';
 import type { DayType, EventCategory } from '@/lib/schemas/attendance';
 
 // ─── Color maps (single source of truth; Legend + List read the same maps) ────
@@ -132,81 +133,82 @@ export function CalendarCell({
   const isInteractive = clickable && !isBreak;
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!isInteractive) return;
-        onClick();
-      }}
-      title={formatHumanDate(iso)}
-      className={[
-        'relative flex min-h-[120px] flex-col gap-1.5 p-2 text-left align-top transition-colors',
-        outOfMonth ? 'bg-muted/20' : 'bg-background',
-        selected && 'bg-accent',
-        isInteractive && 'cursor-pointer hover:bg-muted/40',
-        !isInteractive && 'cursor-not-allowed',
-        missingRow && 'ring-1 ring-inset ring-destructive/40',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-    >
-      {/* Date number — top-left. Today = filled indigo gradient circle. */}
-      <span
+    <HoverHint hint={formatHumanDate(iso)} focusable={false}>
+      <button
+        type="button"
+        onClick={() => {
+          if (!isInteractive) return;
+          onClick();
+        }}
         className={[
-          'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums leading-none',
-          isToday
-            ? 'bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_1px_2px_rgba(15,23,42,0.1)]'
-            : outOfMonth
-              ? 'text-ink-5'
-              : 'text-foreground',
+          'relative flex min-h-[120px] flex-col gap-1.5 p-2 text-left align-top transition-colors',
+          outOfMonth ? 'bg-muted/20' : 'bg-background',
+          selected && 'bg-accent',
+          isInteractive && 'cursor-pointer hover:bg-muted/40',
+          !isInteractive && 'cursor-not-allowed',
+          missingRow && 'ring-1 ring-inset ring-destructive/40',
         ]
           .filter(Boolean)
           .join(' ')}
       >
-        {dayNumber}
-      </span>
+        {/* Date number — top-left. Today = filled indigo gradient circle. */}
+        <span
+          className={[
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums leading-none',
+            isToday
+              ? 'bg-gradient-to-b from-brand-indigo to-brand-indigo-deep text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_1px_2px_rgba(15,23,42,0.1)]'
+              : outOfMonth
+                ? 'text-ink-5'
+                : 'text-foreground',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {dayNumber}
+        </span>
 
-      {/* Chip column — non-interactive so a click anywhere selects the CELL
+        {/* Chip column — non-interactive so a click anywhere selects the CELL
           (the badges aren't separate click targets). */}
-      <div className="pointer-events-none flex w-full flex-col gap-0.5">
-        {isBreak ? (
-          <ChartLegendChip
-            color="neutral"
-            label="Term break"
-            className="flex w-full justify-center"
-          />
-        ) : (
-          <>
-            {missingRow && (
-              // Deliberately NOT a ChartLegendChip — 'Unmarked' is a data-quality
-              // flag (absence of a school_calendar row), not a day-type or event
-              // category, and 'very-stale' is already claimed by public_holiday
-              // in DAY_TYPE_LEGEND_COLOR above. An outlined destructive badge is
-              // structurally distinct from every filled gradient chip a real
-              // day-type/event renders, so the two states can never be confused.
-              <Badge
-                variant="outline"
-                className="h-5 w-fit border-destructive/50 bg-destructive/5 px-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-destructive"
-              >
-                Unmarked
-              </Badge>
-            )}
-            {visible.map((c) => (
-              <ChartLegendChip
-                key={c.key}
-                color={c.color}
-                label={c.label}
-                className="flex w-full justify-center"
-              />
-            ))}
-            {overflowCount > 0 && (
-              <span className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
-                +{overflowCount} more
-              </span>
-            )}
-          </>
-        )}
-      </div>
-    </button>
+        <div className="pointer-events-none flex w-full flex-col gap-0.5">
+          {isBreak ? (
+            <ChartLegendChip
+              color="neutral"
+              label="Term break"
+              className="flex w-full justify-center"
+            />
+          ) : (
+            <>
+              {missingRow && (
+                // Deliberately NOT a ChartLegendChip — 'Unmarked' is a data-quality
+                // flag (absence of a school_calendar row), not a day-type or event
+                // category, and 'very-stale' is already claimed by public_holiday
+                // in DAY_TYPE_LEGEND_COLOR above. An outlined destructive badge is
+                // structurally distinct from every filled gradient chip a real
+                // day-type/event renders, so the two states can never be confused.
+                <Badge
+                  variant="outline"
+                  className="h-5 w-fit border-destructive/50 bg-destructive/5 px-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-destructive"
+                >
+                  Unmarked
+                </Badge>
+              )}
+              {visible.map((c) => (
+                <ChartLegendChip
+                  key={c.key}
+                  color={c.color}
+                  label={c.label}
+                  className="flex w-full justify-center"
+                />
+              ))}
+              {overflowCount > 0 && (
+                <span className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
+                  +{overflowCount} more
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </button>
+    </HoverHint>
   );
 }

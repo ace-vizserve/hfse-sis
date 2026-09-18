@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Switch } from '@/components/ui/switch';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -71,17 +72,19 @@ export function AyAcceptingApplicationsToggle({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2" title={stateHint}>
-        <Switch
-          checked={current}
-          disabled={busy}
-          onCheckedChange={(v) => void flip(Boolean(v))}
-          aria-label={`Accepting applications for ${ayCode}`}
-        />
-        <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
-          Accepting applications
-        </span>
-      </div>
+      <HoverHint hint={stateHint}>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={current}
+            disabled={busy}
+            onCheckedChange={(v) => void flip(Boolean(v))}
+            aria-label={`Accepting applications for ${ayCode}`}
+          />
+          <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
+            Accepting applications
+          </span>
+        </div>
+      </HoverHint>
       {showCaption && (
         <p className="max-w-[180px] text-[11px] leading-snug text-muted-foreground">
           {caption}

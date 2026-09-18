@@ -273,3 +273,41 @@ Attendance also matched actors with `ilike '%value%'` where every sibling used a
 **Guarded by** `__tests__/audit/filters.test.ts`, which caught a third bug on its first run: `2026-13-99` matches `^\d{4}-\d{2}-\d{2}$` and is not a date — it would have reached Postgres and errored the page. Validation round-trips through `Date`, which also rejects `2026-02-30` (parses fine, normalises to 2 March).
 
 **Not changed:** `/sis/audit-log`'s `HubStat`-instead-of-`StatCard` shell, which carries a comment calling it "a deliberate, documented split, not a silent inconsistency".
+
+---
+
+### KD #221
+
+**A hover says what the thing is; the native `title` attribute is banned** (2026-09-18).
+
+Mr Ace: _"when hovering a stat it doesnt give the actual details of the stat"_ and, of the P-Files Outstanding column, _"it uses title, change that to tooltip. hunt for others"_.
+
+**Two separate defects wearing one complaint.**
+
+**1. Native `title` was doing a tooltip's job in 75 places.** Of 293 `title=` matches under `app/` + `components/`, 75 were the HTML attribute and 218 were React props named `title` (content, not tooltips). The attribute is the browser's grey box: ~1s delay, no tokens, no theme, and — the part that mattered — **invisible on keyboard focus when it sits on a non-focusable element**, which 30 of the 75 did.
+
+🔴 **Seven of them had never been visible to ANY user.** They were set _precisely when_ a control was disabled, and `buttonVariants` carries `disabled:pointer-events-none` (Radix menu items carry `data-[disabled]:pointer-events-none`), so the element is not hit-tested and no hover fires. Among them: "Only superadmins can change staff roles", "Not attachable yet — set its weights first", "At least one entry is required for ICA", and the greyed-out **Request edit** button on a grading sheet. `HoverHint`'s `wrap` prop exists for exactly this — it puts the trigger on a focusable span AROUND the dead control. A plain swap would have kept all seven invisible.
+
+**Now:** `components/ui/hover-hint.tsx` (`HoverHint`) and `components/ui/hinted-text.tsx` (`HintedText`). ⚠ **`HoverHint` clones its child**, so it must not receive an element built in a server component — `HintedText` creates the `<span>` inside the client boundary and is the server-side answer. `MetricCard` and `HubStat` are server components; this is not hypothetical.
+
+⚠ **9 native titles survive deliberately:** 7 per-cell hints in `wide-grid.tsx` (its own header warns ~1,410 portals would be catastrophic) and 2 `<iframe title>`, which are the frame's required accessible NAME, not a tooltip.
+
+🔴 **`TooltipContent` shipped without `TooltipPrimitive.Portal`** — the only Radix primitive in the app missing one, while `popover`, `dropdown-menu`, `dialog` and `sheet` all had theirs. Without it a tooltip renders inline beside its trigger, inheriting that stacking context and **clipped by any ancestor `overflow-hidden`**. `badge-tooltip.tsx` carried a comment claiming Radix gave it "correct z-index/portal escape from a card's overflow-hidden"; it never did. Layering is now deliberate: hints **z-60** (above dialogs/sheets at z-50), recharts boxes **zIndex 20** (below them, so a modal over a chart is not undercut).
+
+⚠ **`TooltipProvider` used to live inside `SidebarProvider`, wrapping `{children}` — the whole page** — so its `delayDuration={0}` governed every tooltip on every staff page. It now sits once in `app/layout.tsx` at 200ms; the collapsed rail keeps its own no-delay on its `<Tooltip>`.
+
+⚠ **Radix `Tooltip` THROWS outside a provider rather than degrading**, and RTL renders with no layout. The conversion killed 45 tests across 8 files before `vitest.setup.ts` was taught to wrap `render()` in the same provider the real tree uses.
+
+**2. Eighteen recharts charts each hand-rolled their own tooltip, in four incompatible styles.** Eight passed `formatter={(v) => [formatted, '']}` — that empty second element **blanks the series name on purpose**, which is why a bar read as a bare integer; seven passed no formatter at all and showed raw unrounded values; one (retention) wrote a real sentence; one formatted only its label.
+
+**Now:** `components/dashboard/charts/chart-tooltip.tsx` — `chartTooltipContent(options)`, mirroring the sibling `chartLegendContent(palette)` factory. Value leads (15px bold), series name follows, every series at the position is listed, each row keyed by a **filled swatch in the colour recharts gave the mark** (§10.2 — a 2px rule was tried first and was both too faint and the wrong shape to label a solid bar), and `share`/`totalLabel` name the base.
+
+🔴 **NOT `@shadcn/chart`.** It ships `ChartLegendContent`, which draws flat squares, while design-system §10 mandates gradient `ChartLegendChip` pills and calls a mismatched key a broken key — installing it stands a competing legend system beside the mandated one. `ChartTooltipContent` also cannot be taken alone: it reads `useChart()` and throws outside `ChartContainer`, so adopting it means migrating all 18 `ResponsiveContainer`s.
+
+⚠ **Blank is not zero here either (hard rule #3):** `null` renders as an em dash and is excluded from the base; `0` counts fully. Summing `value ?? 0` would turn "no exam this term" into "scored nothing".
+
+⚠ **Three similar charts have three different bases, and the label has to say which:** document completion is **"All applicants"** (it counts applicants bucketed by documents held), SIS backlog **"All students"**, P-Files completion **"All documents"**.
+
+⚠ **A formatter cannot be passed from `MetricCard` to its sparkline** — a function does not serialise into a client component, and this shipped broken for an hour ("Functions cannot be passed directly to Client Components"). The card passes the format NAME; `lib/dashboard/format-metric.ts` rebuilds the closure on the client side. 🔴 **`tsc` AND `next build` both passed while it was broken**, because nearly every SIS route is dynamic and the build never renders one.
+
+**Stat tiles:** the sparkline was the only recharts chart with **no `<Tooltip>` at all**; it now shows period + value. `MetricCard`/`HubStat` gained optional `hint` and `deltaHint` (on the label, never the tile — an interactive tile is a link, and a tooltip on it fires when the pointer merely crosses the card). The donut's centre number was `pointer-events-none` and is now hoverable via `centerHint`, with the overlay still click-through so it does not eat the ring's hover. ⏳ **The per-KPI hint copy is not written** — plumbing only.

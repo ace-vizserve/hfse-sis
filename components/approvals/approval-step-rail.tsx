@@ -2,6 +2,7 @@
 
 import { Ban, Check, X } from 'lucide-react';
 
+import { HoverHint } from '@/components/ui/hover-hint';
 import { joinNames } from '@/lib/approvals/readiness';
 import {
   approvalTally,
@@ -344,18 +345,19 @@ export function ApprovalStepStrip({
               : APPROVAL_STAGE_STATUS_LABELS[stage.status];
           return (
             <li key={stage.stageOrder} className="flex items-center gap-1">
-              <span
-                title={`${stage.label} — ${outcome}`}
-                className={cn(
-                  'flex size-5 shrink-0 items-center justify-center rounded-md font-mono text-[10px] font-semibold tabular-nums',
-                  stageTileTone(stage.status, neverReached)
-                )}
-              >
-                <StageGlyph stage={stage} iconClassName="size-3" />
-                <span className="sr-only">
-                  Step {stage.stageOrder}, {stage.label}: {outcome}
+              <HoverHint hint={`${stage.label} — ${outcome}`}>
+                <span
+                  className={cn(
+                    'flex size-5 shrink-0 items-center justify-center rounded-md font-mono text-[10px] font-semibold tabular-nums',
+                    stageTileTone(stage.status, neverReached)
+                  )}
+                >
+                  <StageGlyph stage={stage} iconClassName="size-3" />
+                  <span className="sr-only">
+                    Step {stage.stageOrder}, {stage.label}: {outcome}
+                  </span>
                 </span>
-              </span>
+              </HoverHint>
               {index < all.length - 1 && (
                 <span className="h-px w-2 bg-border" aria-hidden />
               )}

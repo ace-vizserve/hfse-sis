@@ -15,6 +15,8 @@ import {
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 
+import { chartTooltipContent } from './chart-tooltip';
+
 export type AttritionStackedBarPoint = {
   level: string;
   [reasonKey: string]: string | number;
@@ -122,19 +124,14 @@ function AttritionStackedBarChartImpl({
           </>
         )}
         <Tooltip
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
-          formatter={(value) => {
-            const v = typeof value === 'number' ? value : Number(value ?? 0);
-            return [v.toLocaleString('en-SG'), ''];
-          }}
+          content={chartTooltipContent({
+            // The segments of one bar partition that level's withdrawals, so
+            // each reason's share of the level is the thing being read.
+            share: true,
+            totalLabel: 'All reasons at this level',
+          })}
         />
         <Legend content={chartLegendContent(legendPalette)} />
         {reasonKeys.map((key, i) => (

@@ -3,6 +3,7 @@
 import { Activity, CalendarClock, Mail } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { HoverHint } from '@/components/ui/hover-hint';
 
 const SLOT_SHORT_LABEL: Record<string, string> = {
   idPicture: 'ID Picture',
@@ -85,29 +86,32 @@ export function RecentActivityStrip({ events }: { events: ActivityEvent[] }) {
                 ? 'text-brand-amber'
                 : 'text-brand-indigo-deep';
             return (
-              <li
+              <HoverHint
                 key={`${event.kind}-${event.createdAt}-${i}`}
-                className={`flex shrink-0 flex-col gap-1 rounded-lg border ${tone} px-3 py-2 min-w-[160px]`}
-                title={event.note ?? undefined}
+                hint={event.note ?? undefined}
               >
-                <div className="flex items-center gap-1.5">
-                  <Icon className={`size-3 ${iconTone}`} />
-                  <span className="truncate font-mono text-[11px] font-semibold uppercase tracking-[0.10em] text-foreground">
-                    {event.kind === 'reminder'
-                      ? 'Reminder sent'
-                      : 'Promised by parent'}
-                  </span>
-                </div>
-                <p className="truncate text-[12px] text-foreground">
-                  {slotLabel}
-                </p>
-                <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {relativeTime(event.createdAt)}
-                  {event.promisedUntil
-                    ? ` → ${formatDate(event.promisedUntil)}`
-                    : ''}
-                </p>
-              </li>
+                <li
+                  className={`flex shrink-0 flex-col gap-1 rounded-lg border ${tone} px-3 py-2 min-w-[160px]`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Icon className={`size-3 ${iconTone}`} />
+                    <span className="truncate font-mono text-[11px] font-semibold uppercase tracking-[0.10em] text-foreground">
+                      {event.kind === 'reminder'
+                        ? 'Reminder sent'
+                        : 'Promised by parent'}
+                    </span>
+                  </div>
+                  <p className="truncate text-[12px] text-foreground">
+                    {slotLabel}
+                  </p>
+                  <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {relativeTime(event.createdAt)}
+                    {event.promisedUntil
+                      ? ` → ${formatDate(event.promisedUntil)}`
+                      : ''}
+                  </p>
+                </li>
+              </HoverHint>
             );
           })}
         </ul>

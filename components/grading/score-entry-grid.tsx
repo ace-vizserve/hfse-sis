@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Select,
   SelectContent,
@@ -1160,12 +1161,11 @@ export function ScoreEntryGrid({
                       {r.student_number}
                     </div>
                     {r.late_enrollee && !r.withdrawn && (
-                      <span
-                        className="mt-0.5 inline-flex items-center rounded bg-brand-amber/10 px-1 py-px font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-amber"
-                        title="Earlier assessments stay blank and are excluded from the average — proration is automatic."
-                      >
-                        Late
-                      </span>
+                      <HoverHint hint="Earlier assessments stay blank and are excluded from the average — proration is automatic.">
+                        <span className="mt-0.5 inline-flex items-center rounded bg-brand-amber/10 px-1 py-px font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-amber">
+                          Late
+                        </span>
+                      </HoverHint>
                     )}
                   </TableCell>
 

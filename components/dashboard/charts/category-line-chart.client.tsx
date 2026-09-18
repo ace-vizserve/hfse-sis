@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 
 import { formatterFor, type YFormat } from './chart-primitives';
+import { chartTooltipContent } from './chart-tooltip';
 
 /**
  * A single line tracing one value across an ORDERED sequence of categories
@@ -36,6 +37,12 @@ export type CategoryLineChartProps = {
   referenceValue?: number;
   referenceLabel?: string;
   color?: string;
+  /**
+   * What the single plotted series is called, e.g. "Average grade". The shared
+   * tooltip always names its series, and without this the name falls back to
+   * the raw `y` data key.
+   */
+  seriesLabel?: string;
 };
 
 function CategoryLineChartImpl({
@@ -46,6 +53,7 @@ function CategoryLineChartImpl({
   referenceValue,
   referenceLabel,
   color = 'var(--color-chart-1)',
+  seriesLabel = 'Value',
 }: CategoryLineChartProps) {
   const yFormatter = formatterFor(yFormat);
   const domain: [number, number] =
@@ -105,23 +113,13 @@ function CategoryLineChartImpl({
           />
         ) : null}
         <Tooltip
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
-          labelStyle={{ color: 'var(--color-foreground)', fontWeight: 600 }}
-          formatter={(value) => {
-            const n = typeof value === 'number' ? value : Number(value);
-            return [yFormatter ? yFormatter(n) : n, ''];
-          }}
+          wrapperStyle={{ zIndex: 20 }}
+          content={chartTooltipContent({ format: yFormatter })}
         />
         <Line
           type="monotone"
           dataKey="y"
+          name={seriesLabel}
           stroke={color}
           strokeWidth={2.5}
           dot={{ r: 3.5, fill: color }}

@@ -23,11 +23,11 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AssignmentChips,
-  StaffAvatar,
   assignmentSummaryText,
   type AssignmentChipAdviser,
   type AssignmentChipSubject,
-} from '@/components/sis/staff-visuals';
+} from '@/components/sis/assignment-chips';
+import { StaffAvatar } from '@/components/sis/staff-visuals';
 import {
   StaffAssignmentSheet,
   type StaffSheetTeacher,
@@ -66,6 +66,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { ROLES, type Role } from '@/lib/auth/roles';
 import { TABLE_COPY } from '@/lib/copy/data-table';
 import type { AdminUserRow } from '@/lib/sis/users/queries';
@@ -349,50 +350,78 @@ function RolePicker({
       ? 'You cannot change your own roles here'
       : undefined;
 
+  const trigger = (
+    <DropdownMenuTrigger asChild>
+      <button
+        type="button"
+        disabled={busy || isSelf || !canManage}
+        // Mirrors SelectTrigger's treatment — same border, shadow, hover,
+        // focus ring and open state — so replacing the Select does not change
+        // how the column looks or behaves under the keyboard.
+        className="flex h-8 w-[172px] items-center justify-between gap-1 rounded-md border border-hairline bg-background px-3 text-[13px] shadow-input transition-all hover:border-hairline-strong hover:bg-muted/40 focus-visible:border-brand-indigo/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-60 data-[state=open]:border-brand-indigo/60 data-[state=open]:ring-2 data-[state=open]:ring-brand-indigo/20"
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-foreground">
+            {held.length > 0 ? ROLE_LABEL[held[0]] : 'No role'}
+          </span>
+          {held.length > 1 && (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              +{held.length - 1}
+            </span>
+          )}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+      </button>
+    </DropdownMenuTrigger>
+  );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={busy || isSelf || !canManage}
-          title={disabledReason ?? held.map((r) => ROLE_LABEL[r]).join(', ')}
-          // Mirrors SelectTrigger's treatment — same border, shadow, hover,
-          // focus ring and open state — so replacing the Select does not change
-          // how the column looks or behaves under the keyboard.
-          className="flex h-8 w-[172px] items-center justify-between gap-1 rounded-md border border-hairline bg-background px-3 text-[13px] shadow-input transition-all hover:border-hairline-strong hover:bg-muted/40 focus-visible:border-brand-indigo/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/20 disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-60 data-[state=open]:border-brand-indigo/60 data-[state=open]:ring-2 data-[state=open]:ring-brand-indigo/20"
+      {/* Two hints, two mechanisms. When there is a `disabledReason` the button
+          is `disabled`, and a disabled button fires no pointer events — the
+          explanation for WHY it cannot be clicked has to hang off a focusable
+          span around it (`wrap`) or nobody ever sees it. When it is live, the
+          hint is just the full role list, so the trigger can sit on the button
+          itself. */}
+      {disabledReason ? (
+        <HoverHint hint={disabledReason} wrap>
+          {trigger}
+        </HoverHint>
+      ) : (
+        <HoverHint
+          hint={held.map((r) => ROLE_LABEL[r]).join(', ')}
+          focusable={false}
         >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-foreground">
-              {held.length > 0 ? ROLE_LABEL[held[0]] : 'No role'}
-            </span>
-            {held.length > 1 && (
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                +{held.length - 1}
-              </span>
-            )}
-          </span>
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        </button>
-      </DropdownMenuTrigger>
+          {trigger}
+        </HoverHint>
+      )}
       <DropdownMenuContent align="start" className="w-[220px]">
         {ROLES.map((r) => {
           const checked = held.includes(r);
           const isLast = checked && held.length === 1;
           return (
-            <DropdownMenuCheckboxItem
+            <HoverHint
               key={r}
-              checked={checked}
-              disabled={isLast || busy}
-              title={
+              hint={
                 isLast
                   ? 'Give this account another role before removing this one'
                   : undefined
               }
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => void toggleRole(r, v === true)}
+              // Radix disables the item with `pointer-events-none`, so the
+              // trigger has to be the span around it. Nothing is wrapped when
+              // the item is live — a falsy hint renders the child untouched.
+              wrap
+              wrapClassName="w-full"
             >
-              {ROLE_LABEL[r]}
-            </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={checked}
+                disabled={isLast || busy}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(v) => void toggleRole(r, v === true)}
+              >
+                {ROLE_LABEL[r]}
+              </DropdownMenuCheckboxItem>
+            </HoverHint>
           );
         })}
       </DropdownMenuContent>
@@ -445,17 +474,23 @@ function UserStatusToggle({
       : undefined;
 
   return (
-    <div className="flex items-center gap-2" title={disabledReason}>
-      <Switch
-        checked={!user.disabled}
-        disabled={busy || isSelf || !canManage}
-        onCheckedChange={(v) => void toggleDisabled(!v)}
-        aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}
-      />
-      <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
-        {user.disabled ? 'Disabled' : 'Active'}
-      </span>
-    </div>
+    // The hint exists only when the Switch is disabled, and a disabled Switch
+    // is not focusable — so the row itself becomes the tab stop that carries
+    // the explanation. With no reason to give, the child renders untouched and
+    // no extra tab stop appears.
+    <HoverHint hint={disabledReason}>
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={!user.disabled}
+          disabled={busy || isSelf || !canManage}
+          onCheckedChange={(v) => void toggleDisabled(!v)}
+          aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}
+        />
+        <span className="whitespace-nowrap text-[13px] font-medium text-foreground">
+          {user.disabled ? 'Disabled' : 'Active'}
+        </span>
+      </div>
+    </HoverHint>
   );
 }
 
@@ -473,23 +508,30 @@ function EditUserMenuItem({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <DropdownMenuItem
-        disabled={isSelf || !canManage}
-        onSelect={(e) => {
-          e.preventDefault();
-          setOpen(true);
-        }}
-        title={
+      {/* `wrap` because two of the three hints only ever show on a DISABLED
+          item, and Radix gives a disabled item `pointer-events-none`. */}
+      <HoverHint
+        hint={
           !canManage
             ? 'Only superadmins can edit staff accounts'
             : isSelf
               ? 'Edit your own account at /account'
               : `Edit ${user.display_name}`
         }
+        wrap
+        wrapClassName="w-full"
       >
-        <Pencil className="size-3.5" />
-        Edit User
-      </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={isSelf || !canManage}
+          onSelect={(e) => {
+            e.preventDefault();
+            setOpen(true);
+          }}
+        >
+          <Pencil className="size-3.5" />
+          Edit User
+        </DropdownMenuItem>
+      </HoverHint>
       <EditUserDialog open={open} onOpenChange={setOpen} user={user} />
     </>
   );
@@ -639,25 +681,30 @@ function EditUserDialog({
                 className="font-mono tabular-nums"
                 maxLength={72}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={fillPassword}
-                title="Generate strong password + copy"
+              <HoverHint
+                hint="Generate strong password + copy"
+                focusable={false}
               >
-                <RefreshCw className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={copyPassword}
-                disabled={!password}
-                title="Copy password"
-              >
-                <Copy className="size-3.5" />
-              </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={fillPassword}
+                >
+                  <RefreshCw className="size-3.5" />
+                </Button>
+              </HoverHint>
+              <HoverHint hint="Copy password" focusable={false}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={copyPassword}
+                  disabled={!password}
+                >
+                  <Copy className="size-3.5" />
+                </Button>
+              </HoverHint>
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Leave blank to keep the current password. Generated passwords
@@ -703,24 +750,31 @@ function DeleteUserMenuItem({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <DropdownMenuItem
-        disabled={isSelf || !canManage}
-        className="text-destructive focus:text-destructive"
-        onSelect={(e) => {
-          e.preventDefault();
-          setOpen(true);
-        }}
-        title={
+      {/* `wrap` — same reason as Edit User: the hints that matter are the two
+          that only appear once the item is disabled and unhoverable. */}
+      <HoverHint
+        hint={
           !canManage
             ? 'Only superadmins can delete staff accounts'
             : isSelf
               ? 'You cannot delete your own account'
               : `Delete ${user.display_name}`
         }
+        wrap
+        wrapClassName="w-full"
       >
-        <Trash2 className="size-3.5" />
-        Delete
-      </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={isSelf || !canManage}
+          className="text-destructive focus:text-destructive"
+          onSelect={(e) => {
+            e.preventDefault();
+            setOpen(true);
+          }}
+        >
+          <Trash2 className="size-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </HoverHint>
       <DeleteUserDialog open={open} onOpenChange={setOpen} user={user} />
     </>
   );
@@ -1150,25 +1204,30 @@ function InviteUserDialog({
                 minLength={8}
                 maxLength={72}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={fillPassword}
-                title="Generate strong password + copy"
+              <HoverHint
+                hint="Generate strong password + copy"
+                focusable={false}
               >
-                <RefreshCw className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={copyPassword}
-                disabled={!password}
-                title="Copy current password"
-              >
-                <Copy className="size-3.5" />
-              </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={fillPassword}
+                >
+                  <RefreshCw className="size-3.5" />
+                </Button>
+              </HoverHint>
+              <HoverHint hint="Copy current password" focusable={false}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={copyPassword}
+                  disabled={!password}
+                >
+                  <Copy className="size-3.5" />
+                </Button>
+              </HoverHint>
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Minimum 8 characters. Generated passwords avoid 0/O/1/l/I to

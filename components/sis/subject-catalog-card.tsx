@@ -28,6 +28,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Sheet,
   SheetContent,
@@ -160,26 +161,30 @@ function UsedByCell({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={isOpen}
-      className="-ml-2 inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left transition-colors hover:border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      title={`${subjectName} — show the classes taking it`}
+    <HoverHint
+      hint={`${subjectName} — show the classes taking it`}
+      focusable={false}
     >
-      <span className="flex flex-col gap-0.5 leading-tight">
-        <span className="font-mono text-[11.5px] font-semibold tabular-nums text-foreground">
-          {span}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="-ml-2 inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left transition-colors hover:border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        <span className="flex flex-col gap-0.5 leading-tight">
+          <span className="font-mono text-[11.5px] font-semibold tabular-nums text-foreground">
+            {span}
+          </span>
+          <span className="text-[12px] text-muted-foreground">{count}</span>
         </span>
-        <span className="text-[12px] text-muted-foreground">{count}</span>
-      </span>
-      <ChevronDown
-        className={cn(
-          'size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
-          isOpen && 'rotate-180'
-        )}
-      />
-    </button>
+        <ChevronDown
+          className={cn(
+            'size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
+            isOpen && 'rotate-180'
+          )}
+        />
+      </button>
+    </HoverHint>
   );
 }
 
@@ -330,19 +335,27 @@ export function SubjectCatalogCard({
                     <Fragment key={subject.id}>
                       <TableRow className={cn('group', checked && 'bg-accent')}>
                         <TableCell>
-                          <Checkbox
-                            checked={checked}
-                            disabled={!attachable}
-                            onCheckedChange={(v) =>
-                              toggleSelected(subject, v === true)
-                            }
-                            aria-label={`${subject.name} — ${checked ? 'selected' : 'not selected'}`}
-                            title={
+                          {/* The hint exists only when the Checkbox is
+                              disabled, and a disabled checkbox is a disabled
+                              <button> — it fires no hover and takes no focus.
+                              `wrap` puts the trigger on a span around it. */}
+                          <HoverHint
+                            hint={
                               attachable
                                 ? undefined
                                 : 'Not attachable yet — set its weights first'
                             }
-                          />
+                            wrap
+                          >
+                            <Checkbox
+                              checked={checked}
+                              disabled={!attachable}
+                              onCheckedChange={(v) =>
+                                toggleSelected(subject, v === true)
+                              }
+                              aria-label={`${subject.name} — ${checked ? 'selected' : 'not selected'}`}
+                            />
+                          </HoverHint>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1 leading-tight">
@@ -370,17 +383,21 @@ export function SubjectCatalogCard({
                           />
                         </TableCell>
                         <TableCell>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                            onClick={() => setEditSubject(subject)}
-                            aria-label={`Edit ${subject.name}`}
-                            title={`Edit ${subject.name}`}
+                          <HoverHint
+                            hint={`Edit ${subject.name}`}
+                            focusable={false}
                           >
-                            <Pencil className="size-3" />
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                              onClick={() => setEditSubject(subject)}
+                              aria-label={`Edit ${subject.name}`}
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
+                          </HoverHint>
                         </TableCell>
                       </TableRow>
                       {expandable && isOpen && impact ? (
@@ -411,31 +428,35 @@ export function SubjectCatalogCard({
                                     </span>
                                     <span className="flex flex-wrap gap-1">
                                       {group.sections.map((section) => (
-                                        <Link
+                                        <HoverHint
                                           key={section.sheetId}
-                                          href={`/markbook/grading/${section.sheetId}`}
-                                          className="inline-flex items-center gap-1.5 rounded-md bg-card px-2 py-1 text-[11px] leading-none text-foreground ring-1 ring-border transition-colors hover:bg-accent hover:ring-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                                          title={
+                                          hint={
                                             section.isLocked
                                               ? `${section.name} · Term ${section.termNumber} sheet — locked. Open it to request a change.`
                                               : `${section.name} · Term ${section.termNumber} sheet — open for entry. Set its max scores here.`
                                           }
+                                          focusable={false}
                                         >
-                                          {section.name}
-                                          {section.isLocked ? (
-                                            <Lock className="size-2.5 shrink-0 text-muted-foreground" />
-                                          ) : (
-                                            <span
-                                              className="size-1.5 shrink-0 rounded-full bg-brand-mint"
-                                              aria-hidden="true"
-                                            />
-                                          )}
-                                          <span className="sr-only">
-                                            {section.isLocked
-                                              ? ' (locked)'
-                                              : ' (open for entry)'}
-                                          </span>
-                                        </Link>
+                                          <Link
+                                            href={`/markbook/grading/${section.sheetId}`}
+                                            className="inline-flex items-center gap-1.5 rounded-md bg-card px-2 py-1 text-[11px] leading-none text-foreground ring-1 ring-border transition-colors hover:bg-accent hover:ring-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                          >
+                                            {section.name}
+                                            {section.isLocked ? (
+                                              <Lock className="size-2.5 shrink-0 text-muted-foreground" />
+                                            ) : (
+                                              <span
+                                                className="size-1.5 shrink-0 rounded-full bg-brand-mint"
+                                                aria-hidden="true"
+                                              />
+                                            )}
+                                            <span className="sr-only">
+                                              {section.isLocked
+                                                ? ' (locked)'
+                                                : ' (open for entry)'}
+                                            </span>
+                                          </Link>
+                                        </HoverHint>
                                       ))}
                                     </span>
                                   </div>

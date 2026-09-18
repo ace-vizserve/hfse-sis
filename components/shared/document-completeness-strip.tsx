@@ -14,6 +14,7 @@ import {
   fillForStatus,
   isOutstanding,
 } from '@/components/shared/document-status-visuals';
+import { HoverHint } from '@/components/ui/hover-hint';
 import type { DocumentStatus } from '@/lib/p-files/document-config';
 import { cn } from '@/lib/utils';
 
@@ -112,22 +113,26 @@ export function DocumentCompletenessStrip({
         >
           {done}/{total}
         </span>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={summary}
-            title={summary}
-            className="flex h-2 w-28 items-stretch gap-px overflow-hidden rounded-full outline-hidden transition-transform hover:scale-y-[1.4] focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {slots.map((slot) => (
-              <span
-                key={slot.key}
-                aria-hidden
-                className={cn('flex-1', fillForStatus(slot.status))}
-              />
-            ))}
-          </button>
-        </PopoverTrigger>
+        {/* Hover names what is outstanding; CLICK still opens the popover with
+            the full slot list — the hint sits outside the popover trigger so
+            both compose onto the one button. */}
+        <HoverHint hint={summary} focusable={false}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={summary}
+              className="flex h-2 w-28 items-stretch gap-px overflow-hidden rounded-full outline-hidden transition-transform hover:scale-y-[1.4] focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {slots.map((slot) => (
+                <span
+                  key={slot.key}
+                  aria-hidden
+                  className={cn('flex-1', fillForStatus(slot.status))}
+                />
+              ))}
+            </button>
+          </PopoverTrigger>
+        </HoverHint>
       </div>
 
       <PopoverContent className="w-[22rem]" align="start">

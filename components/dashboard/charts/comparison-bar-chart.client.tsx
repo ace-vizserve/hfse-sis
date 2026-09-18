@@ -14,6 +14,8 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
+import { chartTooltipContent } from './chart-tooltip';
+
 export type ComparisonBarPoint = {
   category: string;
   current: number;
@@ -126,15 +128,13 @@ function ComparisonBarChartImpl({
           </>
         )}
         <Tooltip
-          contentStyle={{
-            background: 'var(--color-popover)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md)',
-            fontSize: 11,
-            padding: '8px 10px',
-          }}
+          wrapperStyle={{ zIndex: 20 }}
           cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+          // This chart never applied its own yFormatter to the tooltip, so a
+          // percent chart showed a raw unrounded number. Same formatter as the
+          // axis now. No share: current and prior are two periods side by
+          // side, not parts of one whole.
+          content={chartTooltipContent({ format: yFormatter })}
         />
         {showCmp && (
           <Legend

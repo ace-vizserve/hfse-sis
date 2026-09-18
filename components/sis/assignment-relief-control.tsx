@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -350,11 +351,9 @@ export function AssignmentReliefControl({
   if (reliefTeacherName) {
     return (
       <div className="flex shrink-0 items-center gap-1">
-        <Badge
-          variant="outline"
-          className={`h-6 ${coverBadgeClass(status)}`}
-          // The window in full on hover, so the badge itself can stay short.
-          title={
+        {/* The window in full on hover, so the badge itself can stay short. */}
+        <HoverHint
+          hint={
             [
               scheduled
                 ? `${reliefTeacherName} has no access to this class yet.`
@@ -365,44 +364,51 @@ export function AssignmentReliefControl({
               .join(' — ') || undefined
           }
         >
-          {scheduled ? (
-            <CalendarClock className="h-3 w-3" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
-          {coverBadgeLabel(reliefTeacherName, reliefStartedOn, reliefEndedOn)}
-        </Badge>
+          <Badge variant="outline" className={`h-6 ${coverBadgeClass(status)}`}>
+            {scheduled ? (
+              <CalendarClock className="h-3 w-3" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            {coverBadgeLabel(reliefTeacherName, reliefStartedOn, reliefEndedOn)}
+          </Badge>
+        </HoverHint>
         {canManage && (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={openDialog}
-              aria-label={`Change the dates ${reliefTeacherName} is covering for ${coveredTeacherName}`}
-              title="Change the dates or the teacher"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => void setRelief(null, null, null, null)}
-              loading={busy}
-              aria-label={
-                scheduled
-                  ? `Cancel ${reliefTeacherName} covering for ${coveredTeacherName}`
-                  : `Stop ${reliefTeacherName} covering for ${coveredTeacherName}`
-              }
-              title={
+            <HoverHint hint="Change the dates or the teacher" focusable={false}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={openDialog}
+                aria-label={`Change the dates ${reliefTeacherName} is covering for ${coveredTeacherName}`}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </HoverHint>
+            <HoverHint
+              hint={
                 scheduled
                   ? 'Cancel this cover'
                   : `${coveredTeacherName} is back`
               }
-              className="text-muted-foreground hover:text-foreground"
+              focusable={false}
             >
-              {!busy && <X className="h-4 w-4" />}
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void setRelief(null, null, null, null)}
+                loading={busy}
+                aria-label={
+                  scheduled
+                    ? `Cancel ${reliefTeacherName} covering for ${coveredTeacherName}`
+                    : `Stop ${reliefTeacherName} covering for ${coveredTeacherName}`
+                }
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {!busy && <X className="h-4 w-4" />}
+              </Button>
+            </HoverHint>
             {dialog}
           </>
         )}

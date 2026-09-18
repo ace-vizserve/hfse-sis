@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { Input } from '@/components/ui/input';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -125,18 +126,22 @@ export function VacationAllowanceInline({
           Save
         </Button>
         {hasOverride && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={disabled || saving}
-            onClick={resetToSchoolDefault}
-            title={`Reset to school default (${schoolDefault})`}
-            className="gap-1.5"
+          <HoverHint
+            hint={`Reset to school default (${schoolDefault})`}
+            focusable={false}
           >
-            <RotateCcw className="size-3.5" />
-            Reset
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled || saving}
+              onClick={resetToSchoolDefault}
+              className="gap-1.5"
+            >
+              <RotateCcw className="size-3.5" />
+              Reset
+            </Button>
+          </HoverHint>
         )}
       </div>
     </div>

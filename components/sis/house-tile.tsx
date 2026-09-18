@@ -14,6 +14,7 @@ import {
   SelectLabel,
   SelectTrigger,
 } from '@/components/ui/select';
+import { HoverHint } from '@/components/ui/hover-hint';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   houseSwatchClass,
@@ -144,20 +145,24 @@ export function HouseTile({
             void save(next);
           }}
         >
-          <SelectTrigger
-            aria-label="House"
-            title={disabled ? disabledReason : undefined}
-            className={cn(
-              'h-8 w-fit gap-1.5 rounded-lg px-2.5 text-xs font-medium shadow-none [&>svg]:size-3',
-              current
-                ? 'border-border bg-card text-muted-foreground hover:text-foreground'
-                : // The only outlined-primary control on this page, because
-                  // for now "not assigned" is nearly always the state.
-                  'border-primary/50 bg-transparent font-semibold text-primary hover:bg-primary/5'
-            )}
-          >
-            {current ? 'Change house' : 'Choose a house'}
-          </SelectTrigger>
+          {/* The reason only exists when the trigger is disabled, and a
+              disabled trigger is a disabled <button> — no hover, no focus.
+              `wrap` hangs the hint on a focusable span around it. */}
+          <HoverHint hint={disabled ? disabledReason : undefined} wrap>
+            <SelectTrigger
+              aria-label="House"
+              className={cn(
+                'h-8 w-fit gap-1.5 rounded-lg px-2.5 text-xs font-medium shadow-none [&>svg]:size-3',
+                current
+                  ? 'border-border bg-card text-muted-foreground hover:text-foreground'
+                  : // The only outlined-primary control on this page, because
+                    // for now "not assigned" is nearly always the state.
+                    'border-primary/50 bg-transparent font-semibold text-primary hover:bg-primary/5'
+              )}
+            >
+              {current ? 'Change house' : 'Choose a house'}
+            </SelectTrigger>
+          </HoverHint>
           <SelectContent>
             <SelectGroup>
               {/* The rule that makes a house unlike every other field on this
