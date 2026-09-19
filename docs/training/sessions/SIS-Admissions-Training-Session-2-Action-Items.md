@@ -28,10 +28,10 @@ sprint status. Quotes are verbatim.
 | 16  | Show the team the reminder email design          | Ace (37:00)                 | ✅ **Done 2026-09-19**                                                                                            | ⚠ Her concern may already be solved |
 | 17  | Check discount codes against HitPay invoicing    | Luz, from Apple (49:10)     | **Unresolved** — Ace's answer was a guess                                                                         | No HitPay integration exists        |
 | 18  | Get the updated school calendar / events setup   | Jill + Apple (50:17)        | ✅ **Calendar rebuilt the same day**                                                                              | KD #214/#215, migration 158         |
-| 19  | Request the student master list from Apple Grace | Ace (40:55)                 | **Requested, unacknowledged**                                                                                     | ⚠ Scope warning below               |
+| 19  | Request the student master list from Apple Grace | Ace (40:55)                 | ✅ **Received** — it is `List of Students.xlsx`                                                                   | ⚠ Scope warning below               |
 | 20  | Do not apply Miss Ko's index-number change       | Jill (46:50)                | **Decided** — matches the Registrar session                                                                       | See registrar file, item 7          |
 | 21  | Confirm the P-files "not applicable" status      | Wynne (32:49)               | ⚠ **The answer is NO** — and it is a dead value                                                                   | `lib/p-files/document-config.ts`    |
-| 22  | Send Ace the student master list                 | Apple Grace                 | Requested, unacknowledged                                                                                         | Same as #19                         |
+| 22  | Send Ace the student master list                 | Apple Grace                 | ✅ **Sent** — confirmed by Mr Ace 2026-09-20                                                                      | Same as #19                         |
 | 23  | Send Ace the per-course book lists               | Wynne, from Ms. Tim (38:56) | **Do not build** — requirement unclear, Wynne said so                                                             | Supplies is a status, not a list    |
 | 24  | Send Ace historical grade records for TOR        | Wynne (51:33)               | **Scope it first** — this is a migration project                                                                  | —                                   |
 | 25  | Supply reminder email content                    | Apple Grace                 | 🟡 **Live now** — #15 and #16 are done, so the ball is hers                                                       | ⚠ Only for emails that don't exist  |
@@ -262,6 +262,24 @@ Ace wants to **import** Apple's master list as the authoritative source for
 index numbering. Apple never explicitly agreed — the conversation turned into
 debugging the ordering and never came back.
 
+✅ **RECEIVED, and it was already here.** Mr Ace, 2026-09-20: the master list is
+**`List of Students.xlsx`** at the repo root, dated 2026-09-17. It has been the
+source for three pieces of work already — the roster/index alignment on 17 Sep,
+the YoungStarters roster on 18 Sep, and the 206 school student numbers on
+19 Sep — so the import Ace wanted has in effect been happening by script.
+
+⚠ **This corrects a note in `scripts/audit-roster-vs-masterlist.ts`**, which
+called the file "a graduation/photoshoot logistics workbook, not Miss Jo's
+masterlist". Two separate things were conflated: the workbook does carry
+photoshoot tabs (TOGA, Medals, Class Photos), and it is not the registrar's own
+file — but its **"Class Lists" tab is the school's authoritative roster**.
+Header fixed.
+
+⚠ **Being the master list does not make it a record of children who have left.**
+14 of the 16 withdrawn-without-a-class students appear nowhere in its 29 sheets,
+and its index holes are blank rows with nobody named in them. It still cannot
+place those children.
+
 ⚠ **Scope warning, recorded because it was not said in the room.** He wants to
 import, not eyeball. That makes Admin's list the **permanent upstream** for SIS
 index numbers. Define the handoff — which file, which version, what refresh
@@ -390,7 +408,11 @@ records exist, before accepting the offer.
 
 ## Waiting on the school
 
-- **The student master list** from Apple Grace, with the handoff defined —
+- ✅ ~~The student master list from Apple Grace~~ — **received** (2026-09-20,
+  `List of Students.xlsx`). ⚠ **The handoff is still undefined**, which was
+  always the harder half: which version, what refresh cadence, and what happens
+  when the two lists disagree. Three scripts already read this file, so a newer
+  copy landing silently is a live risk —
   which file, which version, refresh cadence (#19 / #22).
 - **The student number format and who owns minting** (#14). Nothing gets built on
   "probably possible".

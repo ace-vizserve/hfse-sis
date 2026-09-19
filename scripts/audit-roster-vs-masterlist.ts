@@ -6,13 +6,27 @@
 // number that disagrees with the paper list is a daily problem rather than a
 // cosmetic one.
 //
-// ⚠ WHAT THIS FILE IS NOT. `List of Students.xlsx` is a graduation/photoshoot
-// logistics workbook, not Miss Jo's masterlist. Verified 2026-09-17: 14 of the
-// 16 withdrawn-without-a-class students are absent from all 29 sheets by given
-// name, and its index holes are literally blank rows (`["5"]` with no name) —
-// the same holes the SIS has, with nobody named in them. It CANNOT place those
-// students. It can only tell us where the two lists disagree about the
-// children both of them DO know about.
+// ✅ WHAT THIS FILE IS. `List of Students.xlsx` IS the student master list —
+// the one Apple Grace was asked for at the 2026-09-15 Admissions training
+// (items 19/22). Confirmed by Mr Ace, 2026-09-20. An earlier version of this
+// header called it "a graduation/photoshoot logistics workbook, not Miss Jo's
+// masterlist", which conflated two things: the workbook DOES carry photoshoot
+// tabs (TOGA, Medals, Class Photos), and it is not the registrar's own file —
+// but its "Class Lists" tab is the school's authoritative roster, with every
+// section, index number and student number.
+//
+// ⚠ WHAT IT STILL CANNOT DO, and this part of the old note holds. Verified
+// 2026-09-17: 14 of the 16 withdrawn-without-a-class students are absent from
+// all 29 sheets by given name, and its index holes are literally blank rows
+// (`["5"]` with no name) — the same holes the SIS has, with nobody named in
+// them. Being the master list does not make it a record of children who have
+// left. It CANNOT place those students; it can only say where the two lists
+// disagree about the children both of them DO know about.
+//
+// ⚠ Consequence worth knowing: the 206 school student numbers loaded on
+// 2026-09-19 (`backfill/apply-school-student-numbers.ts`) came from this
+// file's Class Lists tab — so they came from the authoritative source, not
+// from a logistics spreadsheet.
 //
 // Reads only — no writes, safe to re-run.
 //
