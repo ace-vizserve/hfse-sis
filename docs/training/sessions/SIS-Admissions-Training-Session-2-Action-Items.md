@@ -107,7 +107,7 @@ through the system, in a format that changed mid-year, with no validation on
 either side. _"Possible naman"_ is not a plan.
 
 ⚠ **Now connected to the Registrar session:** index numbers are also manually
-driven, and "Generate all indexes" does not follow the school's own rule (see
+driven, and the renumber action does not follow the school's own rule (see
 the registrar file, item 7). **Both of the SIS's student-ordering identifiers
 are manual, and neither currently matches the school's conventions.**
 
@@ -271,8 +271,10 @@ next term.
 ⚠ Note the tension with Joann's ruling (registrar file, item 7): if the master
 list is the upstream and the master list is permanent, then an import must be
 able to _place_ students without renumbering the ones already there. The current
-"Generate all indexes" cannot do that — it re-sorts the whole non-withdrawn
-block. The tool that can is the swap.
+renumber action cannot do that — it re-sorts the whole non-withdrawn block. The
+tool that can is the swap. (It was called "Generate all indexes" when this was
+written; renamed to "Renumber A–Z" on 2026-09-15, `284e1f9a`, so the name no
+longer implies gap-filling. The behaviour is unchanged.)
 
 ---
 

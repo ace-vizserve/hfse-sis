@@ -411,7 +411,9 @@ The Admissions team reached the same conclusion independently three hours later
   un-linked, and are excluded from the index-swap picker with the comment _"A
   student who has left keeps their number permanently."_
 
-🔴 **But "Generate all indexes" contradicts the ruling.** It re-sorts the entire
+🔴 **But the renumber action contradicts the ruling** (it was called "Generate
+all indexes" when this was written; renamed the same day — see below). It
+re-sorts the entire
 on-time block alphabetically from scratch (migration 147, phase 1 flips every
 non-withdrawn row negative, phase 2 reassigns from scratch). Only _withdrawn_
 numbers are preserved. So adding one early-surname student and pressing it
@@ -419,9 +421,23 @@ shifts everyone after them — exactly the "moving students up" Joann forbade. I
 own dialog warns _"Regenerating will renumber everyone"_, but the button is
 named as though it fills gaps.
 
-**Worth doing:** rename the button and sharpen the warning before someone presses
-it mid-term. The sanctioned tool for a single correction is the **swap**, which
-is a permutation and can open no gap.
+✅ **DONE THE SAME DAY — commit `284e1f9a`, 2026-09-15** (verified against the
+code 2026-09-20). The button no longer reads as though it fills gaps: it says
+**"Renumber A–Z"** on the section row action, **"Renumber every class A–Z"** on
+the bulk trigger, and the same on both dialog titles and both confirm buttons.
+The flow had been disagreeing with itself — the button said "Generate" while
+the toast said "Renumbered 28 students".
+
+Both mid-year warnings now state Joann's rule rather than only the consequence:
+_"This renumbers **everyone** — it does not fill in gaps. The master list is
+permanent: a student who has left keeps their number, and nobody moves up into
+it."_ No behaviour changed; the RPC, the preview and the gates are untouched.
+
+⚠ **The behaviour itself is unchanged and still contradicts the ruling** —
+pressing it still re-sorts the whole non-withdrawn block. What changed is that
+nobody can now press it expecting it to fill gaps. The sanctioned tool for a
+single correction remains the **swap**, which is a permutation and can open no
+gap.
 
 ---
 
@@ -502,6 +518,11 @@ session; not proposed as work.
 
 ✅ **Relay the index-number ruling to Miss Ko (item 7).** Done, 2026-09-15.
 Settled twice on the same day by two separate meetings; nothing further is owed.
-⚠ The code-side caveat in item 7 is **not** closed by this — the "Generate all
-indexes" button still re-sorts every non-withdrawn student, which is the one
-thing Joann's ruling forbids.
+⚠ The code-side caveat in item 7 is **not** closed by this — the renumber
+button still re-sorts every non-withdrawn student, which is the one thing
+Joann's ruling forbids. ✅ **The naming half IS closed** (`284e1f9a`,
+2026-09-15): it now says "Renumber A–Z" and both warnings state her rule, so
+nobody can press it expecting it to fill gaps. **What remains is a behaviour
+question, not a copy one** — whether a whole-class renumber should exist at all
+now that the swap is the sanctioned correction. That needs a decision, not a
+fix.
