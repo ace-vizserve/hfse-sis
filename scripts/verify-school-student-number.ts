@@ -262,21 +262,41 @@ async function main() {
     pass(`all ${UNTOUCHED.length} still hold their Y number in student_number`);
 
   // ── 5. Nothing else in the table picked up a school number by accident ──
+  // ⚠ THIS CHECK USED TO ASSERT "exactly 15 students carry a school number",
+  // and that was a BAD TEST. It was true for one afternoon: the very next task
+  // recorded the school's number for 206 more children, which is the column
+  // working as intended, and the check failed on correct work. An assertion
+  // about a global count nobody promised to hold is noise the moment anything
+  // else touches the table.
+  //
+  // What actually matters is that each of the 15 Y numbers belongs to the child
+  // it was meant for and to nobody else — which stays true however many other
+  // children get one.
   console.log('\n5. Blast radius');
   const { data: filled } = await sb
     .from('students')
-    .select('student_number,school_student_number')
-    .not('school_student_number', 'is', null);
-  const unexpected = (filled ?? []).filter(
-    (r: any) => !EXPECT.some((e) => e.school === r.school_student_number)
-  );
-  if (unexpected.length) {
-    fail(
-      `${unexpected.length} unexpected row(s) carry a school number: ${unexpected.map((u: any) => `${u.student_number}→${u.school_student_number}`).join(', ')}`
+    .select('student_number,school_student_number,last_name,first_name')
+    .in(
+      'school_student_number',
+      EXPECT.map((e) => e.school)
     );
+  const byYNumber = new Map(
+    (filled ?? []).map((r: any) => [r.school_student_number, r])
+  );
+  const misowned = EXPECT.filter((e) => {
+    const holder = byYNumber.get(e.school) as any;
+    return !holder || holder.student_number !== e.system;
+  });
+  if (misowned.length) {
+    for (const m of misowned) {
+      const holder = byYNumber.get(m.school) as any;
+      fail(
+        `${m.school} should belong to ${m.who} (${m.system}) but is ${holder ? `held by ${holder.last_name}, ${holder.first_name} (${holder.student_number})` : 'held by nobody'}`
+      );
+    }
   } else
     pass(
-      `exactly ${(filled ?? []).length} students carry a school number, all 15 expected`
+      `all ${EXPECT.length} YoungStarters school numbers belong to the right child, and to nobody else`
     );
 
   // ── 6. No stray Y rows left behind by the update ────────────────────────
