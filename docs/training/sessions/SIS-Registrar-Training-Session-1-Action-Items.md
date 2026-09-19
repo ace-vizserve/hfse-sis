@@ -433,11 +433,13 @@ _"This renumbers **everyone** — it does not fill in gaps. The master list is
 permanent: a student who has left keeps their number, and nobody moves up into
 it."_ No behaviour changed; the RPC, the preview and the gates are untouched.
 
-⚠ **The behaviour itself is unchanged and still contradicts the ruling** —
-pressing it still re-sorts the whole non-withdrawn block. What changed is that
-nobody can now press it expecting it to fill gaps. The sanctioned tool for a
-single correction remains the **swap**, which is a permutation and can open no
-gap.
+**The behaviour is deliberately unchanged, and that is correct** — pressing it
+still re-sorts the whole non-withdrawn block, because that is what setting up a
+year needs. Mr Ace, 2026-09-20, asked whether there was any problem left given
+the swap already exists: there is not. The two tools divide the job cleanly —
+**swap** corrects one student and can open no gap, **renumber** sets up a class
+from scratch — and since the rename the button and its warning say which is
+which. **Nothing here is open.**
 
 ---
 
@@ -518,11 +520,8 @@ session; not proposed as work.
 
 ✅ **Relay the index-number ruling to Miss Ko (item 7).** Done, 2026-09-15.
 Settled twice on the same day by two separate meetings; nothing further is owed.
-⚠ The code-side caveat in item 7 is **not** closed by this — the renumber
-button still re-sorts every non-withdrawn student, which is the one thing
-Joann's ruling forbids. ✅ **The naming half IS closed** (`284e1f9a`,
-2026-09-15): it now says "Renumber A–Z" and both warnings state her rule, so
-nobody can press it expecting it to fill gaps. **What remains is a behaviour
-question, not a copy one** — whether a whole-class renumber should exist at all
-now that the swap is the sanctioned correction. That needs a decision, not a
-fix.
+✅ **The code side is closed too** (`284e1f9a`, 2026-09-15): the button says
+"Renumber A–Z" and both warnings state Joann's rule outright. Together with the
+swap — which corrects one student and can open no gap — the two tools cover the
+job, and the naming makes clear which is for what. Mr Ace confirmed on
+2026-09-20 that nothing further is needed here.
