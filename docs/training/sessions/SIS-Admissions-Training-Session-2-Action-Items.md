@@ -22,10 +22,10 @@ sprint status. Quotes are verbatim.
 
 | #   | Ask                                              | Who                         | Status                                                                                                            | Where                               |
 | --- | ------------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| 13  | Email user guide + credentials to Admissions     | Ace (51:17)                 | Committed                                                                                                         | —                                   |
+| 13  | Email user guide + credentials to Admissions     | Ace (51:17)                 | ✅ **Done 2026-09-19**                                                                                            | —                                   |
 | 14  | Investigate student number automation            | Apple Grace (34:09)         | 🟡 **Half answered 2026-09-19** — the school's numbers are now recorded (206 loaded); minting + format still hers | See _Item 14_                       |
-| 15  | Send Admissions the list of reminder emails      | Apple Grace (37:53)         | Committed                                                                                                         | Templates already exist             |
-| 16  | Show the team the reminder email design          | Ace (37:00)                 | Loose                                                                                                             | ⚠ Her concern may already be solved |
+| 15  | Send Admissions the list of reminder emails      | Apple Grace (37:53)         | ✅ **Done 2026-09-19**                                                                                            | Templates already exist             |
+| 16  | Show the team the reminder email design          | Ace (37:00)                 | ✅ **Done 2026-09-19**                                                                                            | ⚠ Her concern may already be solved |
 | 17  | Check discount codes against HitPay invoicing    | Luz, from Apple (49:10)     | **Unresolved** — Ace's answer was a guess                                                                         | No HitPay integration exists        |
 | 18  | Get the updated school calendar / events setup   | Jill + Apple (50:17)        | ✅ **Calendar rebuilt the same day**                                                                              | KD #214/#215, migration 158         |
 | 19  | Request the student master list from Apple Grace | Ace (40:55)                 | **Requested, unacknowledged**                                                                                     | ⚠ Scope warning below               |
@@ -34,7 +34,7 @@ sprint status. Quotes are verbatim.
 | 22  | Send Ace the student master list                 | Apple Grace                 | Requested, unacknowledged                                                                                         | Same as #19                         |
 | 23  | Send Ace the per-course book lists               | Wynne, from Ms. Tim (38:56) | **Do not build** — requirement unclear, Wynne said so                                                             | Supplies is a status, not a list    |
 | 24  | Send Ace historical grade records for TOR        | Wynne (51:33)               | **Scope it first** — this is a migration project                                                                  | —                                   |
-| 25  | Supply reminder email content                    | Apple Grace                 | Conditional on #15                                                                                                | —                                   |
+| 25  | Supply reminder email content                    | Apple Grace                 | 🟡 **Live now** — #15 and #16 are done, so the ball is hers                                                       | ⚠ Only for emails that don't exist  |
 | 26  | Clarify the class list source with Miss Ko       | Jill / Wynne (45:40)        | Agreed in principle                                                                                               | Loop in Ms. Chandana                |
 | 27  | Raise discount codes with Sir Meng               | Luz (49:55)                 | Self-assigned                                                                                                     | —                                   |
 
@@ -180,6 +180,17 @@ portal sends? If the former, the answer is that subject lines are already fixed
 and she should say what they should read instead. **Do not design anything until
 that is settled** — and note that item 25 (her supplying content) only makes
 sense for emails that do not exist yet.
+
+✅ **#15 and #16 done 2026-09-19** (Mr Ace) — the list was sent and the design
+shown. **The ball is now hers on #25.**
+
+⚠ **The narrow question above is NOT closed by that.** Sending the list is not
+the same as establishing whether she means this system's emails or the parent
+portal's, and the answer decides whether there is anything to build at all: if
+she means this system's, the subject lines are already standardised and
+generated, so the work is re-wording three shapes rather than designing
+reminders. **Still worth asking her outright before any of #25's content turns
+into a build.**
 
 ---
 
@@ -381,7 +392,11 @@ records exist, before accepting the offer.
   which file, which version, refresh cadence (#19 / #22).
 - **The student number format and who owns minting** (#14). Nothing gets built on
   "probably possible".
-- **Which emails Apple Grace means** — this system's or the parent portal's (#15/#16).
+- **Which emails Apple Grace means** — this system's or the parent portal's
+  (#15/#16). ⚠ **Still open even though #15 and #16 are done**: the list was
+  sent and the design shown, which is not the same as her saying which system's
+  emails she meant. That answer decides whether #25 is a build or a re-wording.
+- **Her reminder-email content** (#25) — now hers to supply, unblocked by #15/#16.
 - **What "per teacher in events" means** — scoping, or a per-teacher view (#18).
 - **The book list requirement**, from Ms. Tim via Wynne (#23).
 - **Which academic years TOR needs** (#24).
@@ -392,5 +407,8 @@ records exist, before accepting the offer.
 
 ## Ace's own items
 
-- **#13 — email the user guide and credentials to Admissions.**
-- **#17 — test one discount code end to end** before anyone issues a real one.
+- ✅ **#13 — email the user guide and credentials to Admissions.** Done 2026-09-19.
+- ✅ **#15 / #16 — the reminder-email list and design.** Done 2026-09-19.
+- 🔴 **#17 — test one discount code end to end** before anyone issues a real
+  one. **The only item on this session still owned by Ace**, and the only one
+  where an untested guess costs money rather than time.
