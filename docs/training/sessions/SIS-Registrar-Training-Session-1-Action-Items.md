@@ -367,8 +367,15 @@ Applied by `scripts/backfill/apply-ajmal-s3-consistency-placement.ts`.
 
 ⚠ **Three things this did not close:**
 
-- Her brother **Muhammad Ibrahim (H250921, Primary Six)** is in the identical
-  Withdrawn-with-no-class state. Still open.
+- Her brother **Muhammad Ibrahim (H250921, Primary Six)** was in the identical
+  Withdrawn-with-no-class state. ✅ **PLACED 2026-09-17 — P6 Loyalty #2,
+  withdrawn** (verified against production 2026-09-19). The school never had to
+  answer: the house-colour CSV listed these children UNDER THEIR SECTION, which
+  admissions never does, and P6 Loyalty had exactly one hole his surname fits
+  alphabetically — between Abineta and Batino.
+  `scripts/backfill/apply-withdrawn-placements-from-house-list.ts`.
+  ⚠ His `withdrawal_date` is null, so he does not appear in the Records
+  Withdrawals count, which keys on the date rather than the status.
 - Her `withdrawal_date` is **null** — the school holds no date — so she will not
   appear in the Records Withdrawals count.
 - S3 Consistency still has holes at **#5 and #25**.
@@ -449,8 +456,9 @@ a sweep, and deleting it hands one teacher's report card comment to another."_
 
 ## Waiting on the school
 
-- **Muhammad Ibrahim's class placement** (item 6). The only thing still owed by
-  the school.
+✅ **Muhammad Ibrahim's class placement** (item 6) — **CLOSED 2026-09-17**, and
+not by the school: the house-colour list named his section and the alphabet
+named his number. Nothing on this session is owed by the school any more.
 
 ✅ **Closed 2026-09-15, all by Mr Ace.** The exam-weight rule (Joann already
 stated it), getting the consolidated file, telling Joann how awards now work, and

@@ -20,23 +20,23 @@ sprint status. Quotes are verbatim.
 
 ## Status
 
-| #   | Ask                                              | Who                         | Status                                                | Where                               |
-| --- | ------------------------------------------------ | --------------------------- | ----------------------------------------------------- | ----------------------------------- |
-| 13  | Email user guide + credentials to Admissions     | Ace (51:17)                 | Committed                                             | —                                   |
-| 14  | Investigate student number automation            | Apple Grace (34:09)         | 🔴 **Structural — nothing in the SIS mints a number** | See _Item 14_                       |
-| 15  | Send Admissions the list of reminder emails      | Apple Grace (37:53)         | Committed                                             | Templates already exist             |
-| 16  | Show the team the reminder email design          | Ace (37:00)                 | Loose                                                 | ⚠ Her concern may already be solved |
-| 17  | Check discount codes against HitPay invoicing    | Luz, from Apple (49:10)     | **Unresolved** — Ace's answer was a guess             | No HitPay integration exists        |
-| 18  | Get the updated school calendar / events setup   | Jill + Apple (50:17)        | ✅ **Calendar rebuilt the same day**                  | KD #214/#215, migration 158         |
-| 19  | Request the student master list from Apple Grace | Ace (40:55)                 | **Requested, unacknowledged**                         | ⚠ Scope warning below               |
-| 20  | Do not apply Miss Ko's index-number change       | Jill (46:50)                | **Decided** — matches the Registrar session           | See registrar file, item 7          |
-| 21  | Confirm the P-files "not applicable" status      | Wynne (32:49)               | ⚠ **The answer is NO** — and it is a dead value       | `lib/p-files/document-config.ts`    |
-| 22  | Send Ace the student master list                 | Apple Grace                 | Requested, unacknowledged                             | Same as #19                         |
-| 23  | Send Ace the per-course book lists               | Wynne, from Ms. Tim (38:56) | **Do not build** — requirement unclear, Wynne said so | Supplies is a status, not a list    |
-| 24  | Send Ace historical grade records for TOR        | Wynne (51:33)               | **Scope it first** — this is a migration project      | —                                   |
-| 25  | Supply reminder email content                    | Apple Grace                 | Conditional on #15                                    | —                                   |
-| 26  | Clarify the class list source with Miss Ko       | Jill / Wynne (45:40)        | Agreed in principle                                   | Loop in Ms. Chandana                |
-| 27  | Raise discount codes with Sir Meng               | Luz (49:55)                 | Self-assigned                                         | —                                   |
+| #   | Ask                                              | Who                         | Status                                                                                                            | Where                               |
+| --- | ------------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| 13  | Email user guide + credentials to Admissions     | Ace (51:17)                 | Committed                                                                                                         | —                                   |
+| 14  | Investigate student number automation            | Apple Grace (34:09)         | 🟡 **Half answered 2026-09-19** — the school's numbers are now recorded (206 loaded); minting + format still hers | See _Item 14_                       |
+| 15  | Send Admissions the list of reminder emails      | Apple Grace (37:53)         | Committed                                                                                                         | Templates already exist             |
+| 16  | Show the team the reminder email design          | Ace (37:00)                 | Loose                                                                                                             | ⚠ Her concern may already be solved |
+| 17  | Check discount codes against HitPay invoicing    | Luz, from Apple (49:10)     | **Unresolved** — Ace's answer was a guess                                                                         | No HitPay integration exists        |
+| 18  | Get the updated school calendar / events setup   | Jill + Apple (50:17)        | ✅ **Calendar rebuilt the same day**                                                                              | KD #214/#215, migration 158         |
+| 19  | Request the student master list from Apple Grace | Ace (40:55)                 | **Requested, unacknowledged**                                                                                     | ⚠ Scope warning below               |
+| 20  | Do not apply Miss Ko's index-number change       | Jill (46:50)                | **Decided** — matches the Registrar session                                                                       | See registrar file, item 7          |
+| 21  | Confirm the P-files "not applicable" status      | Wynne (32:49)               | ⚠ **The answer is NO** — and it is a dead value                                                                   | `lib/p-files/document-config.ts`    |
+| 22  | Send Ace the student master list                 | Apple Grace                 | Requested, unacknowledged                                                                                         | Same as #19                         |
+| 23  | Send Ace the per-course book lists               | Wynne, from Ms. Tim (38:56) | **Do not build** — requirement unclear, Wynne said so                                                             | Supplies is a status, not a list    |
+| 24  | Send Ace historical grade records for TOR        | Wynne (51:33)               | **Scope it first** — this is a migration project                                                                  | —                                   |
+| 25  | Supply reminder email content                    | Apple Grace                 | Conditional on #15                                                                                                | —                                   |
+| 26  | Clarify the class list source with Miss Ko       | Jill / Wynne (45:40)        | Agreed in principle                                                                                               | Loop in Ms. Chandana                |
+| 27  | Raise discount codes with Sir Meng               | Luz (49:55)                 | Self-assigned                                                                                                     | —                                   |
 
 ---
 
@@ -114,6 +114,44 @@ are manual, and neither currently matches the school's conventions.**
 **Before any code:** agree the format with Apple Grace, agree who owns minting,
 and decide whether the SIS validates on read or takes over generation. Nothing
 should be built on _"probably possible"_.
+
+### Update 2026-09-18/19 — measured, and half of it is now answered
+
+Her ask was really two: _can the SIS produce numbers in our format_, and _why do
+the two of us disagree about a child's number_. The second one is now measured
+and partly solved; the first is still open and still needs her.
+
+**The disagreement is structural, not sloppiness.** The school numbers children
+**sequentially within a class** (P1 Patience runs H260001–H260008, then P1
+Obedience picks up at H260009); the SIS number comes from the order the
+application arrived. Measured against the school's own class list, **221 of 430
+AY2026 children are numbered differently** and 187 agree. The two lists can
+never be reconciled by adopting one — **7 of the school's numbers are already a
+DIFFERENT child's system number**, so adopting them would fuse those pairs.
+That is exactly the fusing risk that stopped the 2026-09-17 masterlist pass.
+
+✅ **The school's number now has a home** — `students.school_student_number`
+(migration 169, applied). It is reference data: nothing joins or syncs on it,
+an admin can correct it on the student record, and **206 were loaded on
+2026-09-19** (`scripts/backfill/apply-school-student-numbers.ts`). So the SIS
+now RECORDS the school's format even though it still does not MINT it.
+
+🔴 **Why the SIS's own number must stay as it is.** `lib/sync/students.ts` looks
+a child up by the admissions `studentNumber` and **inserts a new student when it
+finds none** — so a number that drifts from admissions does not break a join, it
+**splits one child into two**. That is the mechanism behind the duplicates in the
+paragraph above, and it is still live: **36 children currently hold two
+`students` rows** (one on a roster, one orphaned). Mr Ace has confirmed
+duplicate parent submissions are **normal**, so this will keep happening — the
+durable fix is to key the sync on `enroleeNumber`, not to keep merging by hand.
+
+⚠ **YoungStarters use a `Y` prefix** (`Y250006`), carried unchanged into
+Primary — ten such children were already in the SIS. So the format question has
+more than one answer depending on where a child started.
+
+**What still needs Apple Grace:** the format itself, and who owns minting.
+Recording her numbers does not answer either — it just means the SIS no longer
+loses them.
 
 ---
 
