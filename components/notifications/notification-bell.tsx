@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Activity } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -106,8 +107,10 @@ export function NotificationBell({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           aria-label={
             // ⚠ F4 — "pending", not "waiting for you". For a teacher this
             // count includes requests THEY filed, waiting on somebody else;
@@ -117,7 +120,10 @@ export function NotificationBell({
             // that aren't there.
             count && count > 0 ? `Activity (${count} pending)` : 'Activity'
           }
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // `size-9` overrides size="icon"'s h-10 w-10 so the bell matches the
+          // Feedback button's `size="sm"` height beside it. `relative` is what
+          // the count badge is positioned against.
+          className="relative size-9 shrink-0"
         >
           <Activity className="size-4" aria-hidden />
           {count != null && count > 0 && (
@@ -125,7 +131,7 @@ export function NotificationBell({
               {count}
             </span>
           )}
-        </button>
+        </Button>
       </SheetTrigger>
       {/* ⚠ `flex flex-col` is required — SheetContent's variants are a plain
           block with h-full, so a flex-1 body would not scroll without it. */}

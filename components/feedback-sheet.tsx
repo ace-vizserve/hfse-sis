@@ -26,11 +26,15 @@ const FORM_PAGE_URL = 'https://forms.cloud.microsoft/r/0ZZZYb45w8';
 /**
  * "Feedback" in the header of every module.
  *
- * Deliberately a labelled outline button and not an icon: every other control
- * in that bar is a bare grey glyph, and a feedback form nobody notices collects
- * nothing. Outline rather than the default variant because the default carries
- * the Aurora Vault gradient, and one primary CTA per page (09-design-system.md
- * §2.3) belongs to the page underneath, not to the chrome.
+ * Deliberately a labelled button and not an icon: a feedback form nobody
+ * notices collects nothing, so it keeps its word.
+ *
+ * Ghost rather than outline or the default variant. The default carries the
+ * Aurora Vault gradient, and one primary CTA per page (09-design-system.md
+ * §2.3) belongs to the page underneath, not to the chrome. Outline is now the
+ * Activity bell's treatment beside it — Activity is where work is waiting, so
+ * it takes the emphasis and feedback steps down to tertiary (§2.3: ghost for
+ * tertiary).
  */
 export function FeedbackSheet() {
   const [open, setOpen] = useState(false);
@@ -38,7 +42,7 @@ export function FeedbackSheet() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="ghost" size="sm">
           <MessageSquarePlus aria-hidden />
           {/* Icon-only below sm — the header is tight on a phone, and this is
               a desktop tool. The accessible name survives either way. */}
