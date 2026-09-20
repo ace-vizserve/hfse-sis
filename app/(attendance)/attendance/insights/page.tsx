@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
@@ -23,6 +23,7 @@ import {
   type LabeledPieSlice,
 } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { Skeleton } from '@/components/ui/skeleton';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import {
   TermPicker,
@@ -221,6 +222,76 @@ function RosterRow({
   );
 }
 
+// ─── The three consumers of the deferred ~180k-row scan ─────────────────────
+//
+// Each awaits the SAME promise the page created, so the scan runs once per
+// render however many of them are on screen. They exist as separate components
+// only so each can sit behind its own <Suspense> — the alternative was one
+// boundary around the whole lower half, which would have held the leave-quota
+// number in the KPI row hostage to the section below it.
+
+/** The quota rows, derived once and shared by all three. */
+async function resolveQuotaRows(
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>
+) {
+  const rowSets = await rowSetsPromise;
+  const compassionateOver = rowSets.compassionate.filter((r) => r.isOverQuota);
+  const vacationOver = rowSets.vacationLeave.filter((r) => r.isOverTermQuota);
+  const vacationApproaching = rowSets.vacationLeave.filter((r) =>
+    isApproachingVlQuota(r.remainingThisTerm, r.isOverTermQuota)
+  );
+  return {
+    compassionateOver,
+    vacationOver,
+    vacationApproaching,
+    haveQuotaRisk:
+      compassionateOver.length > 0 ||
+      vacationOver.length > 0 ||
+      vacationApproaching.length > 0,
+  };
+}
+
+/** "Over their leave quota" — one KPI card in the hero row. */
+async function LeaveQuotaMetric({
+  rowSetsPromise,
+}: {
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+}) {
+  const { compassionateOver, vacationOver } =
+    await resolveQuotaRows(rowSetsPromise);
+  return (
+    <MetricCard
+      label="Over their leave quota"
+      value={compassionateOver.length + vacationOver.length}
+      format="number"
+      icon={ShieldAlert}
+      subtext="Leave quotas"
+    />
+  );
+}
+
+/** The export button — its CSV carries the quota rows, so it waits too. */
+async function InsightsExportButton({
+  rowSetsPromise,
+  base,
+}: {
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  base: Omit<
+    Parameters<typeof buildAttendanceInsightsExport>[0],
+    | 'haveQuotaRisk'
+    | 'compassionateOver'
+    | 'vacationOver'
+    | 'vacationApproaching'
+  >;
+}) {
+  const quota = await resolveQuotaRows(rowSetsPromise);
+  return (
+    <ExportCsvButton
+      data={buildAttendanceInsightsExport({ ...base, ...quota })}
+    />
+  );
+}
+
 // Attendance · Insights — the "Attendance Health" companion to the operational
 // dashboard. Are we attending steadily, who is chronically absent, why are
 // students away, and is anyone running over their leave quota. Read-first; all
@@ -378,52 +449,48 @@ export default async function AttendanceInsightsPage({
         t !== null
     );
 
-  const [
-    kpis,
-    allRowSets,
-    priorKpis,
-    rateTrendPoints,
-    mixByTerm,
-    topAbsentByTerm,
-  ] = await Promise.all([
-    getAttendanceKpisRange(rangeInput),
-    buildAllRowSets({
-      ayCode: selectedAy,
-      from: rangeInput.from,
-      to: rangeInput.to,
-      vacationTermId: currentTermId,
-      defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
-    }),
-    priorRangeInput
-      ? getAttendanceKpisRange(priorRangeInput)
-      : Promise.resolve(null),
-    getAttendanceRateTrendByAy(trendAys),
-    getAttendanceMixByTerm(selectedAy),
-    // Top 5 most-absent students per term (whole-year view, not range-scoped).
-    getTopAbsentByTerm(selectedAy, absenceTermWindows, 5),
-  ]);
+  // 🔴 CREATED ONCE, UN-AWAITED — this is the ~180k-row scan, and it used to sit
+  // inside the Promise.all below, which made the whole page wait for it: 3.3s
+  // and 91 queries before anything rendered (measured 2026-09-20,
+  // scripts/measure-page-load.perf.ts). The sibling dashboard at /attendance
+  // already deferred the same call; this page did not, so it was the one screen
+  // in the app where the user watched a blank page for three seconds.
+  //
+  // The three consumers below each await THIS promise, so the scan still runs
+  // exactly once per render — they just do it behind their own <Suspense>
+  // instead of in front of the whole page. Do not add a `.catch` here: an
+  // un-awaited promise that later rejects is still awaited by all three, and a
+  // catch would swallow the error they need to see.
+  const rowSetsPromise = buildAllRowSets({
+    ayCode: selectedAy,
+    from: rangeInput.from,
+    to: rangeInput.to,
+    vacationTermId: currentTermId,
+    defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
+  });
+
+  const [kpis, priorKpis, rateTrendPoints, mixByTerm, topAbsentByTerm] =
+    await Promise.all([
+      getAttendanceKpisRange(rangeInput),
+      priorRangeInput
+        ? getAttendanceKpisRange(priorRangeInput)
+        : Promise.resolve(null),
+      getAttendanceRateTrendByAy(trendAys),
+      getAttendanceMixByTerm(selectedAy),
+      // Top 5 most-absent students per term (whole-year view, not range-scoped).
+      getTopAbsentByTerm(selectedAy, absenceTermWindows, 5),
+    ]);
 
   // ── Derived row sets (already computed — no extra DB work) ─────────────────
 
   // Per-term absence watchlist — only terms that actually have ≥1 absence.
   // Reasons for a plain Absent mark aren't tracked, so this ranks WHO is
   // absent most per term, nothing about WHY.
+  //
+  // ⚠ This stays in the fold on purpose: it comes from `getTopAbsentByTerm`,
+  // its own narrow query, NOT from the big scan. Deferring it would have cost
+  // the reader a skeleton for no gain.
   const termsWithAbsences = topAbsentByTerm.filter((t) => t.rows.length > 0);
-
-  // Quota rows — over quota and approaching (used allowance but not breached).
-  const compassionateOver = allRowSets.compassionate.filter(
-    (r) => r.isOverQuota
-  );
-  const vacationOver = allRowSets.vacationLeave.filter(
-    (r) => r.isOverTermQuota
-  );
-  const vacationApproaching = allRowSets.vacationLeave.filter((r) =>
-    isApproachingVlQuota(r.remainingThisTerm, r.isOverTermQuota)
-  );
-  const haveQuotaRisk =
-    compassionateOver.length > 0 ||
-    vacationOver.length > 0 ||
-    vacationApproaching.length > 0;
 
   const rate = Math.round(kpis.current.attendancePct * 10) / 10;
   const priorRate =
@@ -548,7 +615,9 @@ export default async function AttendanceInsightsPage({
     };
   });
 
-  const exportData = buildAttendanceInsightsExport({
+  // Everything the export needs EXCEPT the quota rows, which come from the
+  // deferred scan. <InsightsExportButton> awaits the promise and completes it.
+  const exportBase = {
     ayCode: selectedAy,
     compareAy,
     hasCurrentPeriodData,
@@ -563,11 +632,7 @@ export default async function AttendanceInsightsPage({
     hasMixByTerm: mixByTerm.length > 0,
     compositionData,
     termsWithAbsences,
-    haveQuotaRisk,
-    compassionateOver,
-    vacationOver,
-    vacationApproaching,
-  });
+  };
 
   return (
     <PageShell>
@@ -591,7 +656,14 @@ export default async function AttendanceInsightsPage({
           },
           growthBadge,
         ]}
-        actions={<ExportCsvButton data={exportData} />}
+        actions={
+          <Suspense fallback={<Skeleton className="h-9 w-28 rounded-md" />}>
+            <InsightsExportButton
+              rowSetsPromise={rowSetsPromise}
+              base={exportBase}
+            />
+          </Suspense>
+        }
       />
 
       {/* The two questions this page answers, in order: which term am I
@@ -645,13 +717,15 @@ export default async function AttendanceInsightsPage({
             icon={Clock}
             subtext={hasCurrentPeriodData ? 'This period' : 'Not yet encoded'}
           />
-          <MetricCard
-            label="Over their leave quota"
-            value={compassionateOver.length + vacationOver.length}
-            format="number"
-            icon={ShieldAlert}
-            subtext="Leave quotas"
-          />
+          {/* Its own boundary, not the section's — a number in the KPI row
+              should not wait on the cards further down the page. */}
+          <Suspense
+            fallback={
+              <Skeleton className="h-full min-h-32 w-full rounded-xl" />
+            }
+          >
+            <LeaveQuotaMetric rowSetsPromise={rowSetsPromise} />
+          </Suspense>
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -790,37 +864,120 @@ export default async function AttendanceInsightsPage({
       </div>
       {/* ═══ end Absence watchlist ═══ */}
 
-      {/* ═══ Leave quotas — the reason-tracked leaves (vacation/compassionate) ═══ */}
+      {/* ═══ Leave quotas — the reason-tracked leaves (vacation/compassionate) ═══
+          The heading paints immediately; only the rows underneath wait on the
+          scan, so the page never ends in a void. */}
       <div className="space-y-5 border-t border-hairline pt-7">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-mint">
           Leave quotas
         </p>
 
-        {!haveQuotaRisk ? (
-          <InsightChartCard
-            cap="Leave quotas"
-            title="Everyone is within allowance"
-            icon={HeartHandshake}
-          >
-            <EmptyChartState message="No student is over or approaching a leave quota this period." />
-          </InsightChartCard>
-        ) : (
-          <>
+        <Suspense
+          fallback={
             <div className="grid gap-4 lg:grid-cols-2">
-              {/* Compassionate — over quota only (per-year) */}
-              <InsightChartCard
-                cap="Compassionate leave · per year"
-                title="Over quota"
-                icon={HeartHandshake}
-              >
-                {compassionateOver.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No one over the compassionate-leave allowance.
-                  </p>
-                ) : (
-                  compassionateOver.map((r) => (
+              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-64 w-full rounded-xl" />
+            </div>
+          }
+        >
+          <LeaveQuotaSection rowSetsPromise={rowSetsPromise} />
+        </Suspense>
+      </div>
+      {/* ═══ end Causes & limits ═══ */}
+
+      {/* Footer trust strip */}
+      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <TrendingUp className="size-3" strokeWidth={2.25} />
+        <span>{selectedAy}</span>
+        <span className="text-border">·</span>
+        <span>Attendance health</span>
+        <span className="text-border">·</span>
+        <span>Refreshes every few minutes</span>
+      </div>
+    </PageShell>
+  );
+}
+
+/** The leave-quota cards — the bulk of what the deferred scan feeds. */
+async function LeaveQuotaSection({
+  rowSetsPromise,
+}: {
+  rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+}) {
+  const {
+    compassionateOver,
+    vacationOver,
+    vacationApproaching,
+    haveQuotaRisk,
+  } = await resolveQuotaRows(rowSetsPromise);
+
+  return (
+    <>
+      {!haveQuotaRisk ? (
+        <InsightChartCard
+          cap="Leave quotas"
+          title="Everyone is within allowance"
+          icon={HeartHandshake}
+        >
+          <EmptyChartState message="No student is over or approaching a leave quota this period." />
+        </InsightChartCard>
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Compassionate — over quota only (per-year) */}
+            <InsightChartCard
+              cap="Compassionate leave · per year"
+              title="Over quota"
+              icon={HeartHandshake}
+            >
+              {compassionateOver.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No one over the compassionate-leave allowance.
+                </p>
+              ) : (
+                compassionateOver.map((r) => (
+                  <RosterRow
+                    key={r.studentSectionId}
+                    icon={AlertTriangle}
+                    iconGradient="destructive"
+                    name={
+                      r.studentNumber ? (
+                        <IdentifierLink
+                          href={`/attendance/students/${r.studentNumber}`}
+                        >
+                          {r.studentName}
+                        </IdentifierLink>
+                      ) : (
+                        r.studentName
+                      )
+                    }
+                    subtitle={r.sectionName}
+                    value={`${r.used} / ${r.allowance} used`}
+                    badge={{ text: 'Over', tone: 'destructive' }}
+                  />
+                ))
+              )}
+            </InsightChartCard>
+
+            {/* Vacation — over quota + approaching (per term) */}
+            <InsightChartCard
+              cap="Vacation leave · per term"
+              title={
+                vacationApproaching.length > 0
+                  ? `Over quota · +${vacationApproaching.length} approaching`
+                  : 'Over quota'
+              }
+              icon={Umbrella}
+            >
+              {vacationOver.length === 0 && vacationApproaching.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No one over the vacation-leave allowance this term.
+                </p>
+              ) : (
+                <>
+                  {vacationOver.map((r) => (
                     <RosterRow
-                      key={r.studentSectionId}
+                      key={`over-${r.studentSectionId}`}
                       icon={AlertTriangle}
                       iconGradient="destructive"
                       name={
@@ -835,131 +992,78 @@ export default async function AttendanceInsightsPage({
                         )
                       }
                       subtitle={r.sectionName}
-                      value={`${r.used} / ${r.allowance} used`}
+                      value={`${r.usedThisTerm} / ${r.allowance} trips`}
                       badge={{ text: 'Over', tone: 'destructive' }}
                     />
-                  ))
-                )}
-              </InsightChartCard>
+                  ))}
+                  {vacationApproaching.length > 0 && (
+                    <>
+                      {vacationOver.length > 0 && (
+                        <div className="flex items-center gap-2 py-2.5">
+                          <div className="h-px flex-1 bg-hairline" />
+                          <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brand-amber">
+                            <AlertTriangle
+                              className="size-2.5"
+                              strokeWidth={2.25}
+                            />
+                            Approaching limit
+                          </span>
+                          <div className="h-px flex-1 bg-hairline" />
+                        </div>
+                      )}
+                      {vacationApproaching.map((r) => (
+                        <RosterRow
+                          key={`approaching-${r.studentSectionId}`}
+                          icon={Clock}
+                          iconGradient="amber"
+                          name={
+                            r.studentNumber ? (
+                              <IdentifierLink
+                                href={`/attendance/students/${r.studentNumber}`}
+                              >
+                                {r.studentName}
+                              </IdentifierLink>
+                            ) : (
+                              r.studentName
+                            )
+                          }
+                          subtitle={r.sectionName}
+                          value={`${r.usedThisTerm} / ${r.allowance} trips`}
+                          badge={{ text: 'Approaching', tone: 'amber' }}
+                        />
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </InsightChartCard>
+          </div>
 
-              {/* Vacation — over quota + approaching (per term) */}
-              <InsightChartCard
-                cap="Vacation leave · per term"
-                title={
-                  vacationApproaching.length > 0
-                    ? `Over quota · +${vacationApproaching.length} approaching`
-                    : 'Over quota'
-                }
-                icon={Umbrella}
-              >
-                {vacationOver.length === 0 &&
-                vacationApproaching.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No one over the vacation-leave allowance this term.
-                  </p>
-                ) : (
-                  <>
-                    {vacationOver.map((r) => (
-                      <RosterRow
-                        key={`over-${r.studentSectionId}`}
-                        icon={AlertTriangle}
-                        iconGradient="destructive"
-                        name={
-                          r.studentNumber ? (
-                            <IdentifierLink
-                              href={`/attendance/students/${r.studentNumber}`}
-                            >
-                              {r.studentName}
-                            </IdentifierLink>
-                          ) : (
-                            r.studentName
-                          )
-                        }
-                        subtitle={r.sectionName}
-                        value={`${r.usedThisTerm} / ${r.allowance} trips`}
-                        badge={{ text: 'Over', tone: 'destructive' }}
-                      />
-                    ))}
-                    {vacationApproaching.length > 0 && (
-                      <>
-                        {vacationOver.length > 0 && (
-                          <div className="flex items-center gap-2 py-2.5">
-                            <div className="h-px flex-1 bg-hairline" />
-                            <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brand-amber">
-                              <AlertTriangle
-                                className="size-2.5"
-                                strokeWidth={2.25}
-                              />
-                              Approaching limit
-                            </span>
-                            <div className="h-px flex-1 bg-hairline" />
-                          </div>
-                        )}
-                        {vacationApproaching.map((r) => (
-                          <RosterRow
-                            key={`approaching-${r.studentSectionId}`}
-                            icon={Clock}
-                            iconGradient="amber"
-                            name={
-                              r.studentNumber ? (
-                                <IdentifierLink
-                                  href={`/attendance/students/${r.studentNumber}`}
-                                >
-                                  {r.studentName}
-                                </IdentifierLink>
-                              ) : (
-                                r.studentName
-                              )
-                            }
-                            subtitle={r.sectionName}
-                            value={`${r.usedThisTerm} / ${r.allowance} trips`}
-                            badge={{ text: 'Approaching', tone: 'amber' }}
-                          />
-                        ))}
-                      </>
-                    )}
-                  </>
-                )}
-              </InsightChartCard>
-            </div>
-
-            {compassionateOver.length > 0 || vacationOver.length > 0 ? (
-              <RecommendationCallout tone="act">
-                {[
-                  compassionateOver.length > 0
-                    ? `${compassionateOver.length} student${compassionateOver.length === 1 ? '' : 's'} over the compassionate-leave allowance`
-                    : null,
-                  vacationOver.length > 0
-                    ? `${vacationOver.length} student${vacationOver.length === 1 ? '' : 's'} over the vacation-leave quota this term`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}{' '}
-                — these cases need a review.
-              </RecommendationCallout>
-            ) : vacationApproaching.length > 0 ? (
-              <RecommendationCallout tone="watch">
-                {vacationApproaching.length} student
-                {vacationApproaching.length === 1 ? '' : 's'}{' '}
-                {vacationApproaching.length === 1 ? 'has' : 'have'} used up
-                their vacation-leave allowance this term — worth a heads-up
-                before any further requests.
-              </RecommendationCallout>
-            ) : null}
-          </>
-        )}
-      </div>
-      {/* ═══ end Causes & limits ═══ */}
-
-      {/* Footer trust strip */}
-      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        <TrendingUp className="size-3" strokeWidth={2.25} />
-        <span>{selectedAy}</span>
-        <span className="text-border">·</span>
-        <span>Attendance health</span>
-        <span className="text-border">·</span>
-        <span>Refreshes every few minutes</span>
-      </div>
-    </PageShell>
+          {compassionateOver.length > 0 || vacationOver.length > 0 ? (
+            <RecommendationCallout tone="act">
+              {[
+                compassionateOver.length > 0
+                  ? `${compassionateOver.length} student${compassionateOver.length === 1 ? '' : 's'} over the compassionate-leave allowance`
+                  : null,
+                vacationOver.length > 0
+                  ? `${vacationOver.length} student${vacationOver.length === 1 ? '' : 's'} over the vacation-leave quota this term`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}{' '}
+              — these cases need a review.
+            </RecommendationCallout>
+          ) : vacationApproaching.length > 0 ? (
+            <RecommendationCallout tone="watch">
+              {vacationApproaching.length} student
+              {vacationApproaching.length === 1 ? '' : 's'}{' '}
+              {vacationApproaching.length === 1 ? 'has' : 'have'} used up their
+              vacation-leave allowance this term — worth a heads-up before any
+              further requests.
+            </RecommendationCallout>
+          ) : null}
+        </>
+      )}
+    </>
   );
 }

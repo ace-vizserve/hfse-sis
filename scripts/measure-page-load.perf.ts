@@ -267,22 +267,31 @@ describe('first-render server cost', () => {
     const recIns = await import('@/lib/sis/records-insights');
     const mbCompare = await import('@/lib/dashboard/compare');
 
+    // Split into two rows on 2026-09-20, when the page was changed to defer the
+    // scan. Before that it was ONE row — 3271ms, 91 queries — because
+    // buildAllRowSets sat inside the page's Promise.all and the whole screen
+    // waited for it. The fold below is what the reader now sees first.
     await measure(
-      '/attendance/insights',
+      '/attendance/insights (fold)',
       () =>
         Promise.all([
           att.getAttendanceKpisRange(RANGE),
-          attDrill.buildAllRowSets({
-            ayCode: AY,
-            from: RANGE.from,
-            to: RANGE.to,
-            vacationTermId: null,
-            defaultVlAllowance: 1,
-          }),
           attCompare.getAttendanceRateTrendByAy([AY]),
           attCompare.getAttendanceMixByTerm(AY),
         ]),
-      'the full-year scan is NOT deferred here'
+      'hero + KPIs + trend + mix'
+    );
+    await measure(
+      '/attendance/insights (deferred)',
+      () =>
+        attDrill.buildAllRowSets({
+          ayCode: AY,
+          from: RANGE.from,
+          to: RANGE.to,
+          vacationTermId: null,
+          defaultVlAllowance: 1,
+        }),
+      'leave quotas — streams in behind Suspense'
     );
 
     await measure(
