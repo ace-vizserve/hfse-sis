@@ -97,6 +97,34 @@ If it is present, the publication has drifted from the migrations and the
 cleanup in §7 must be written against what is actually there rather than
 against the three statements in the repo.
 
+### 3.2 🔴 ANSWERED 2026-09-21 — it was absent. The badge has been dead since May.
+
+Mr Ace ran the query against production. The publication holds **exactly three
+tables** — `approval_request_stage_decisions`, `approval_request_stages`,
+`grade_change_requests`. **`audit_log` is not among them**, so this is no longer
+a question:
+
+**The P-Files awaiting-verification badge has never updated live.** Its
+subscription shipped on **2026-05-19** (`183d93ca`) and has been inert for the
+four months since. A `postgres_changes` subscription on a table outside the
+publication is accepted by the client and silently never delivers — no error, no
+warning, nothing to notice.
+
+⚠ **State the defect precisely.** The badge was never blank and never wrong on
+arrival: it is SSR-rendered, so every page load fetched a correct count. What
+never happened is the `router.refresh()` its handler exists to trigger. A
+document uploaded while a P-Files officer sat on the page did not move the
+number until they navigated or reloaded. That is why nobody reported it — the
+badge looked right nearly all the time.
+
+✅ **Already fixed, and fixed before it was diagnosed.** Migration 171 is applied,
+and a trigger does not need the publication at all, so the broadcast path works
+the moment this branch's client code deploys. Nothing extra to build.
+
+✅ **And the publication has NOT drifted.** The three live entries are exactly
+the three the repo's migrations added (010, 129, 145), so §7's cleanup migration
+drops those three and nothing else — `audit_log` was never there to drop.
+
 ---
 
 ## 4. Target design
@@ -137,9 +165,19 @@ channel, and RLS on `realtime.messages` deciding who may join which topic.
 | Topic                          | Who may join                                                           |
 | ------------------------------ | ---------------------------------------------------------------------- |
 | `sis:grade-change-requests`    | `GATE_ROLES` — teacher, academic_coordinator, school_admin, superadmin |
-| `sis:approval-stages`          | `GATE_ROLES`, as above                                                 |
+| `sis:approval-stages`          | `GATE_ROLES` **plus `admissions`** (deliberate — see note below)       |
 | `sis:approval-decisions:<uid>` | that user only                                                         |
 | `sis:pfile-verification`       | `PFILE_BADGE_ROLES` — admissions, school_admin, superadmin             |
+
+⚠ **The `sis:approval-stages` row is not a typo — it shipped wider than
+`GATE_ROLES`.** `useStagedApprovalCount` is not role-scoped anywhere else in
+the app — being an approver is decided by sitting ON an approval step, not by
+holding a role — and both `app/(admissions)/layout.tsx` and
+`app/(p-files)/layout.tsx` seed that count for `admissions` accounts
+unconditionally. So the shipped policy admits `admissions` on this topic in
+addition to the four `GATE_ROLES`, while `sis:grade-change-requests` stays at
+exactly `GATE_ROLES`. Same reasoning as §4.2 and the migration's own comment
+above the policy (migration 171, around line 136).
 
 Both constants exist today (`notification-bell.tsx:21` and
 `use-realtime-badges.ts:50`) and the policy restates them in SQL rather than
@@ -232,7 +270,14 @@ there is a sign something has gone wrong.
 
 - A test that the `audit_log` trigger's `WHEN` clause admits the six P-Files
   actions and rejects a grade-entry action.
-- A test that an insert still commits when the broadcast call fails (§4.4).
+  ⚠ **Corrected 2026-09-21 during execution:** this list previously promised "a
+  test that an insert still commits when the broadcast call fails (§4.4)" as
+  automated coverage. **There can be no such automated test** — proving it needs a
+  live Postgres with the triggers installed, which CI does not have. The proof is
+  the explicit-transaction insert-and-rollback in the SQL editor, run by a human
+  right after the migration is applied. The exception handler's behaviour is
+  therefore verified at apply time, not in CI, and a later migration that broke it
+  would not be caught by the suite.
 - A script probing that each of the four topics is joinable by a role that
   should hold it and refused to one that should not, including a parent
   account and a role-list account (§4.3).
@@ -250,17 +295,18 @@ it runs, both transports are doing work.
 
 ## 8. Files
 
-| File                                                        | Change                                                                                |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `supabase/migrations/171_realtime_broadcast_badges.sql`     | new — triggers, function, `realtime.messages` policy                                  |
-| `lib/sidebar/use-change-request-count.ts`                   | channel + `.on()` swap; the per-role **channel filter string** is deleted (see below) |
-| `lib/sidebar/use-staged-approval-count.ts`                  | channel + 3 `.on()` swaps                                                             |
-| `lib/sidebar/use-realtime-badges.ts`                        | channel + `.on()` swap; `action=in.()` filter moves to the trigger                    |
-| `lib/sidebar/use-declaration-count.ts`                      | none — wrapper only                                                                   |
-| `__tests__/sidebar/staged-count-skips-own-filings.test.tsx` | mock + assertion move to topics                                                       |
-| `__tests__/sidebar/change-request-count-broadcast.test.tsx` | new — no channel coverage today                                                       |
-| `__tests__/data/broadcast-trigger-guards.test.ts`           | new — source-reading guard over 171                                                   |
-| `__tests__/ui/notification-bell.test.tsx`                   | **none** — mocks the hooks, not the client                                            |
+| File                                                        | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/migrations/171_realtime_broadcast_badges.sql`     | new — triggers, function, `realtime.messages` policy                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `lib/sidebar/badge-bus.ts`                                  | new — refcounted, one-Realtime-channel-per-topic bus shared by every badge hook. Needed because `realtime-js`'s `RealtimeClient.channel(topic, …)` dedupes by topic while `removeChannel()` is unrefcounted, and `@supabase/ssr`'s browser client is a singleton — so two hooks wanting the same topic (a Broadcast topic IS the channel name) share one channel object, and without this module the first hook to unmount would call `removeChannel()` and silently kill every other still-mounted subscriber on that topic |
+| `lib/sidebar/use-change-request-count.ts`                   | channel + `.on()` swap; the per-role **channel filter string** is deleted (see below)                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `lib/sidebar/use-staged-approval-count.ts`                  | channel + 3 `.on()` swaps                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `lib/sidebar/use-realtime-badges.ts`                        | channel + `.on()` swap; `action=in.()` filter moves to the trigger                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `lib/sidebar/use-declaration-count.ts`                      | none — wrapper only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `__tests__/sidebar/staged-count-skips-own-filings.test.tsx` | mock + assertion move to topics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `__tests__/sidebar/change-request-count-broadcast.test.tsx` | new — no channel coverage today                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `__tests__/data/broadcast-trigger-guards.test.ts`           | new — source-reading guard over 171                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `__tests__/ui/notification-bell.test.tsx`                   | **none** — mocks the hooks, not the client                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 🔴 **Two per-role things live in `use-change-request-count.ts` and only one of
 them goes.** The `filter` string built at lines ~87–95 is the channel
