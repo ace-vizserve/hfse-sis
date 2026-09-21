@@ -40,4 +40,17 @@ describe('migration 171 — broadcast badge triggers', () => {
       /drop\s+table|publication\s+supabase_realtime\s+drop/i
     );
   });
+
+  it('the trigger WHEN clause matches the constant in use-realtime-badges.ts', () => {
+    const hook = readFileSync(
+      join(process.cwd(), 'lib/sidebar/use-realtime-badges.ts'),
+      'utf8'
+    );
+    const block = hook.match(/PFILE_VERIFICATION_ACTIONS\s*=\s*\[([\s\S]*?)\]/);
+    expect(block).not.toBeNull();
+    const actions = [...block![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    expect(actions).toHaveLength(6);
+    const when = SQL.match(/when\s*\(\s*new\.action\s+in\s*\(([^)]*)\)/i);
+    for (const action of actions) expect(when![1]).toContain(action);
+  });
 });

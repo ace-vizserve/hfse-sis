@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import type { Role, SidebarBadgeKey, SidebarBadges } from '@/lib/auth/roles';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
-import { createClient } from '@/lib/supabase/client';
+import { subscribeToBadgeTopic } from '@/lib/sidebar/badge-bus';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
 import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
@@ -33,9 +33,14 @@ import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count'
 //     by the changeRequests extraction.
 // A future badge key would follow whichever of these two shapes fits.
 
-// Audit-log actions that indicate P-Files awaiting-verification count may
-// have changed. INSERT on audit_log with one of these actions triggers a
-// router.refresh() so the SSR-rendered badge re-fetches from the server.
+// The audit-log actions that mean the P-Files awaiting-verification count may
+// have moved. ⚠ NOT USED TO BUILD A SUBSCRIPTION FILTER ANY MORE — the same six
+// strings are the `when` clause of the broadcast_badge_pfile_verification
+// trigger in migration 171, which is where they now take effect. Kept here
+// because the list is the definition of what this badge watches, and
+// __tests__/data/broadcast-trigger-guards.test.ts asserts the two copies agree.
+// Read as source text by that test, not imported anywhere — hence the disable.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const PFILE_VERIFICATION_ACTIONS = [
   'pfile.upload',
   'pfile.reminder.sent',
@@ -130,30 +135,19 @@ export function useRealtimeBadges(
     );
   }, [liveDeclarationCount]);
 
-  // pfileAwaitingVerification — SSR-rendered badge; realtime channel fires
-  // router.refresh() on document-related audit_log INSERTs so the layout
+  // pfileAwaitingVerification — SSR-rendered badge; a ping on the
+  // `sis:pfile-verification` broadcast topic (migration 171's
+  // broadcast_badge_pfile_verification trigger, gated on
+  // PFILE_VERIFICATION_ACTIONS above) fires router.refresh() so the layout
   // RSC re-fetches countAwaitingVerification from the server.
   // Gated on roles that see the P-Files sidebar (p-file, school_admin, superadmin).
   useEffect(() => {
     if (!role || !PFILE_BADGE_ROLES.includes(role)) return;
     if (initial.pfileAwaitingVerification == null) return;
 
-    const supabase = createClient();
-    const filter = `action=in.(${PFILE_VERIFICATION_ACTIONS.join(',')})`;
-    const channel = supabase
-      .channel('sidebar-badge-pfile-awaiting-verification')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'audit_log', filter },
-        () => {
-          router.refresh();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return subscribeToBadgeTopic('sis:pfile-verification', () => {
+      router.refresh();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
