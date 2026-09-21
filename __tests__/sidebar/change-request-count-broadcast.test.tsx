@@ -150,8 +150,11 @@ describe('useChangeRequestCount over Broadcast', () => {
     renderHook(() => useChangeRequestCount('school_admin', 'u-1', 0));
     renderHook(() => useChangeRequestCount('school_admin', 'u-1', 0));
     await waitFor(() => expect(channels.length).toBeGreaterThan(0));
-    const topics = new Set(channels.map((c) => c.topic));
-    expect(topics.size).toBe(1);
+    // `channels` records one push per `supabase.channel()` call (see the
+    // mock above), so this is a count of channels actually opened — not just
+    // of distinct topic strings, which would stay 1 even if the bus opened a
+    // channel per hook instance (both hooks pass the same fixed topic).
+    expect(channels.length).toBe(1);
   });
 
   it('keeps the shared channel alive for a surviving subscriber, and tears it down only once the last one leaves', async () => {
