@@ -38,6 +38,7 @@ begin
   perform realtime.send('{}'::jsonb, 'badge', tg_argv[0], true);
   return null;
 exception when others then
+  raise warning 'broadcast_badge_ping failed on topic %: %', tg_argv[0], sqlerrm;
   return null;
 end;
 $$;
@@ -61,6 +62,8 @@ begin
   );
   return null;
 exception when others then
+  raise warning 'broadcast_badge_ping_for_user failed on topic %: %',
+    'sis:approval-decisions:' || new.user_id::text, sqlerrm;
   return null;
 end;
 $$;
@@ -130,6 +133,18 @@ execute function public.broadcast_badge_ping('sis:pfile-verification');
 -- the same array trap 142 documents, and it lands as a silently dead badge
 -- rather than a visible error.
 --
+-- ⚠ `sis:grade-change-requests` AND `sis:approval-stages` ARE DELIBERATELY TWO
+-- SEPARATE BRANCHES WITH DIFFERENT ROLE LISTS, even though they used to share
+-- one `in (...)` check. `useStagedApprovalCount`
+-- (lib/sidebar/use-staged-approval-count.ts) is NOT role-scoped by design —
+-- being an approver is decided by sitting ON an approval step, not by holding
+-- a role — and both app/(admissions)/layout.tsx and app/(p-files)/layout.tsx
+-- seed that count for `admissions` accounts unconditionally. So
+-- `sis:approval-stages` admits `admissions` in addition to the four
+-- GATE_ROLES; `sis:grade-change-requests` stays at exactly GATE_ROLES. The
+-- re-count itself is still scoped by migration 129's policy either way — this
+-- only controls who may open the channel.
+--
 -- ⚠ `else false` makes this default-deny for every other topic. There are no
 -- other private channels in the app today. Policies are OR'd, so a future
 -- feature adds its own policy rather than widening this one.
@@ -140,9 +155,13 @@ for select
 to authenticated
 using (
   case
-    when realtime.topic() in ('sis:grade-change-requests', 'sis:approval-stages')
+    when realtime.topic() = 'sis:grade-change-requests'
       then public.current_user_role() in (
         'teacher', 'academic_coordinator', 'school_admin', 'superadmin'
+      )
+    when realtime.topic() = 'sis:approval-stages'
+      then public.current_user_role() in (
+        'teacher', 'academic_coordinator', 'admissions', 'school_admin', 'superadmin'
       )
     when realtime.topic() = 'sis:pfile-verification'
       then public.current_user_role() in (
