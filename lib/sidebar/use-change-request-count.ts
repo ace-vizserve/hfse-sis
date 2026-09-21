@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { subscribeToBadgeTopic } from '@/lib/sidebar/badge-bus';
 import type { Role } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/client';
 
@@ -14,7 +15,13 @@ import { createClient } from '@/lib/supabase/client';
 // opening a uniquely-named channel — a Broadcast topic IS the channel
 // name, so there is no per-instance name to mint the way there was under
 // Postgres Changes (via useId). The topic only carries a ping; the actual
-// count is re-fetched per-role via `recount` below.
+// count is re-fetched per-role via `recount` below. The channel itself is
+// NOT opened here — `badge-bus.ts` owns `setAuth` + the private-channel
+// construction and refcounts subscribers per topic, because the sidebar
+// badge and header bell both mount this hook against one shared
+// `RealtimeClient` (singleton browser client) and an unrefcounted
+// `removeChannel()` would let either one silently kill the other's
+// subscription on unmount. See that file's header comment for the details.
 //
 // Scope MUST mirror
 // lib/change-requests/sidebar-counts.ts::getSidebarChangeRequestCount —
@@ -139,30 +146,12 @@ export function useChangeRequestCount(
       return fresh ?? null;
     };
 
-    // ⚠ `setAuth` IS NOT OPTIONAL AND ITS FAILURE IS SILENT. A private channel
-    // is refused without it, and a refused join surfaces as a badge that simply
-    // never moves — not as an error. It is async, hence the cancelled flag: the
-    // effect can be torn down before the socket is authenticated, and
-    // subscribing after that would leak a channel with no cleanup.
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      await supabase.realtime.setAuth();
-      if (cancelled) return;
-      channel = supabase
-        .channel('sis:grade-change-requests', { config: { private: true } })
-        .on('broadcast', { event: 'badge' }, async () => {
-          const fresh = await recount();
-          if (fresh != null) setCount(fresh);
-        })
-        .subscribe();
-    })();
-
-    return () => {
-      cancelled = true;
-      if (channel) supabase.removeChannel(channel);
-    };
+    return subscribeToBadgeTopic('sis:grade-change-requests', () => {
+      void (async () => {
+        const fresh = await recount();
+        if (fresh != null) setCount(fresh);
+      })();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, userId]);
 
