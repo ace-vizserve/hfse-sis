@@ -543,14 +543,26 @@ export function resolveStatus(
   return 'missing';
 }
 
-export type BacklogBucket = 'valid' | 'pending' | 'rejected' | 'missing' | 'na';
+export type BacklogBucket =
+  | 'valid'
+  | 'pending'
+  | 'rejected'
+  | 'expired'
+  | 'missing'
+  | 'na';
 
 /**
  * Maps a resolved `DocumentStatus` (from `resolveStatus` above) into the
- * backlog chart's 4-bucket vocabulary — `na` is excluded from every count
- * (never a real backlog item); `expired` rolls into `missing` (Records needs
- * to re-collect it either way); `uploaded`/`to-follow` both read as
+ * backlog chart's bucket vocabulary — `na` is excluded from every count
+ * (never a real backlog item); `uploaded`/`to-follow` both read as
  * "in progress" (`pending`).
+ *
+ * ⚠ `expired` USED TO ROLL INTO `missing`, on the reasoning that Records has
+ * to re-collect it either way. That is true of the REMEDY and wrong for a
+ * dashboard: a document never provided and one that lapsed are different jobs
+ * — a first ask versus a renewal chase — and folding them hid the ratio
+ * between them. The chart's own bar was labelled "Missing / expired", which is
+ * the conflation admitting itself. Split since 2026-09-22.
  *
  * Shared by `lib/sis/dashboard.ts`'s backlog chart aggregator AND the
  * `backlog-by-document` drill enrichment (`lib/sis/drill.ts::enrichWithDocSlotBuckets`)
@@ -571,6 +583,7 @@ export function resolveBacklogBucket(status: DocumentStatus): BacklogBucket {
     case 'rejected':
       return 'rejected';
     case 'expired':
+      return 'expired';
     case 'missing':
       return 'missing';
     case 'na':

@@ -73,18 +73,22 @@ const docBacklog: DocumentBacklogRow[] = [
     slotKey: 'passport',
     label: 'Passport',
     group: 'student',
+    expires: true,
     valid: 40,
     pending: 3,
     rejected: 1,
+    expired: 4,
     missing: 2,
   },
   {
     slotKey: 'studentPass',
     label: 'Student Pass',
     group: 'student',
+    expires: true,
     valid: 35,
     pending: 5,
     rejected: 0,
+    expired: 2,
     missing: 6,
   },
 ];
@@ -317,16 +321,21 @@ describe('buildRecordsDashboardExport', () => {
     const backlog = result.sections.find(
       (s) => s.title === 'Validation backlog by document type'
     )!;
+    // `Expired` is its own column, and `Expires` says which side of the
+    // chart's two groups a document sits on. Before 2026-09-22 there was one
+    // `Missing / expired` column whose header named two different things.
     expect(backlog.headers).toEqual([
       'Document type',
+      'Expires',
       'Valid',
       'Pending review',
       'Rejected',
-      'Missing / expired',
+      'Expired',
+      'Missing',
     ]);
     expect(backlog.rows).toEqual([
-      ['Passport', 40, 3, 1, 2],
-      ['Student Pass', 35, 5, 0, 6],
+      ['Passport', 'Yes', 40, 3, 1, 4, 2],
+      ['Student Pass', 'Yes', 35, 5, 0, 2, 6],
     ]);
   });
 

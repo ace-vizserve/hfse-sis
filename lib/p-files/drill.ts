@@ -533,17 +533,22 @@ export function applyTargetFilter(
       //   'Awaiting validation' → r.status === 'Awaiting validation'
       //   'Promised'          → r.status === 'Promised'
       //   'Rejected'          → r.status === 'Rejected'
-      //   'Expired'           → r.status ∈ {'Expired', 'Missing'}
-      //                         (slotMix.missing lumps both; clicking the
-      //                          Expired slice must surface both — KD #82)
+      //   'Expired'           → r.status === 'Expired'
+      //   'Never provided'    → r.status === 'Missing'
+      //
+      // ⚠ 'Expired' USED TO SURFACE BOTH Expired AND Missing rows, because the
+      // donut's slice was `slotMix.missing`, which counted them together. The
+      // slices are separate since 2026-09-22 and so are these filters — a
+      // renewal and a first ask are different jobs. Keeping the old union here
+      // would have made the sheet disagree with the number that opened it
+      // (KD #82 count==drill).
       if (!segment) return rows;
       if (segment === 'On file')
         return rows.filter((r) => r.status === 'On file');
-      if (segment === 'Expired') {
-        return rows.filter(
-          (r) => r.status === 'Expired' || r.status === 'Missing'
-        );
-      }
+      if (segment === 'Expired')
+        return rows.filter((r) => r.status === 'Expired');
+      if (segment === 'Never provided')
+        return rows.filter((r) => r.status === 'Missing');
       if (segment === 'Awaiting validation')
         return rows.filter((r) => r.status === 'Awaiting validation');
       if (segment === 'Promised')

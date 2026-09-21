@@ -29,15 +29,123 @@ export type DocumentBacklogChartProps = {
   onSegmentClick?: (segment: string) => void;
 };
 
+// Severity ramp, left to right in the stack: settled → in progress → refused →
+// lapsed → never provided. `expired` takes brand-amber, which is this palette's
+// warning tone (09a-design-patterns.md §9.3) and the right one for a document
+// that WAS valid and needs renewing — distinct from `rejected`'s destructive
+// red, where the SIS actively said no.
+const SEGMENTS = [
+  { key: 'valid', name: 'Valid', fill: 'var(--chart-5)' },
+  { key: 'pending', name: 'Pending review', fill: 'var(--chart-3)' },
+  { key: 'rejected', name: 'Rejected', fill: 'var(--destructive)' },
+  { key: 'expired', name: 'Expired', fill: 'var(--color-brand-amber)' },
+  { key: 'missing', name: 'Missing', fill: 'var(--muted-foreground)' },
+] as const;
+
+const LEGEND_PALETTE = {
+  valid: 'chart-5',
+  pending: 'chart-3',
+  rejected: 'very-stale',
+  expired: 'stale',
+  missing: 'chart-2',
+} as const;
+
+function BacklogBars({
+  rows,
+  height,
+  showLegend,
+  onSegmentClick,
+}: {
+  rows: DocumentBacklogRow[];
+  height: number;
+  showLegend: boolean;
+  onSegmentClick?: (segment: string) => void;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={rows} margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
+        <CartesianGrid
+          vertical={false}
+          stroke="var(--border)"
+          strokeDasharray="3 3"
+        />
+        <XAxis
+          dataKey="label"
+          stroke="var(--muted-foreground)"
+          fontSize={11}
+          tickLine={false}
+          interval={0}
+          angle={-30}
+          height={80}
+          textAnchor="end"
+        />
+        <YAxis
+          stroke="var(--muted-foreground)"
+          fontSize={12}
+          allowDecimals={false}
+          tickLine={false}
+        />
+        <Tooltip
+          wrapperStyle={{ zIndex: 20 }}
+          cursor={{ fill: 'var(--accent)' }}
+          // One bar is one document type, counted once per student it is
+          // asked of, so the segments sum to the students this document
+          // applies to (KD #219 gates the rest out).
+          content={chartTooltipContent({
+            share: true,
+            totalLabel: 'All students',
+          })}
+        />
+        {/* Rendered once for the card, under the lower chart — the two charts
+            share a vocabulary, and repeating the key would imply they do not. */}
+        {showLegend ? (
+          <Legend content={chartLegendContent(LEGEND_PALETTE)} />
+        ) : null}
+        {SEGMENTS.map((segment) => (
+          <Bar
+            key={segment.key}
+            dataKey={segment.key}
+            name={segment.name}
+            stackId="status"
+            fill={segment.fill}
+            onClick={
+              onSegmentClick
+                ? (((d: unknown) => {
+                    const p = d as { payload?: { label?: string } };
+                    const lbl = p?.payload?.label;
+                    if (lbl) onSegmentClick(`${lbl}|${segment.key}`);
+                  }) as never)
+                : undefined
+            }
+            style={onSegmentClick ? { cursor: 'pointer' } : undefined}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function DocumentBacklogChart({
   data,
   onSegmentClick,
 }: DocumentBacklogChartProps) {
   const total = data.reduce(
-    (sum, r) => sum + r.valid + r.pending + r.rejected + r.missing,
+    (sum, r) => sum + r.valid + r.pending + r.rejected + r.expired + r.missing,
     0
   );
   const empty = total === 0;
+
+  // ⚠ SPLIT ON `expires`, NOT on `group`. The `student-expiring` group holds
+  // two slots — the student's own passport and pass — while EIGHT documents
+  // actually carry an expiry date; the other six are the mother's, father's
+  // and guardian's, which live in the `parent` group. Grouping by `group`
+  // would put three quarters of the expiring documents under "Other".
+  const expiring = data.filter((r) => r.expires);
+  const other = data.filter((r) => !r.expires);
+
+  // A bar needs room for its rotated label whichever chart it lands in, so
+  // height follows the row count rather than splitting a fixed 340 in two.
+  const heightFor = (rows: number) => Math.max(200, 80 + rows * 26);
 
   return (
     <Card>
@@ -66,117 +174,42 @@ export function DocumentBacklogChart({
             </p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart
-              data={data}
-              margin={{ top: 16, right: 16, bottom: 8, left: 0 }}
-            >
-              <CartesianGrid
-                vertical={false}
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-              />
-              <XAxis
-                dataKey="label"
-                stroke="var(--muted-foreground)"
-                fontSize={11}
-                tickLine={false}
-                interval={0}
-                angle={-30}
-                height={80}
-                textAnchor="end"
-              />
-              <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                allowDecimals={false}
-                tickLine={false}
-              />
-              <Tooltip
-                wrapperStyle={{ zIndex: 20 }}
-                cursor={{ fill: 'var(--accent)' }}
-                // One bar is one document type, counted once per student it is
-                // asked of, so the four segments sum to the students this
-                // document applies to (KD #219 gates the rest out).
-                content={chartTooltipContent({
-                  share: true,
-                  totalLabel: 'All students',
-                })}
-              />
-              <Legend
-                content={chartLegendContent({
-                  valid: 'chart-5',
-                  pending: 'chart-3',
-                  rejected: 'very-stale',
-                  missing: 'chart-2',
-                })}
-              />
-              <Bar
-                dataKey="valid"
-                name="Valid"
-                stackId="status"
-                fill="var(--chart-5)"
-                onClick={
-                  onSegmentClick
-                    ? (((d: unknown) => {
-                        const p = d as { payload?: { label?: string } };
-                        const lbl = p?.payload?.label;
-                        if (lbl) onSegmentClick(`${lbl}|valid`);
-                      }) as never)
-                    : undefined
-                }
-                style={onSegmentClick ? { cursor: 'pointer' } : undefined}
-              />
-              <Bar
-                dataKey="pending"
-                name="Pending review"
-                stackId="status"
-                fill="var(--chart-3)"
-                onClick={
-                  onSegmentClick
-                    ? (((d: unknown) => {
-                        const p = d as { payload?: { label?: string } };
-                        const lbl = p?.payload?.label;
-                        if (lbl) onSegmentClick(`${lbl}|pending`);
-                      }) as never)
-                    : undefined
-                }
-                style={onSegmentClick ? { cursor: 'pointer' } : undefined}
-              />
-              <Bar
-                dataKey="rejected"
-                name="Rejected"
-                stackId="status"
-                fill="var(--destructive)"
-                onClick={
-                  onSegmentClick
-                    ? (((d: unknown) => {
-                        const p = d as { payload?: { label?: string } };
-                        const lbl = p?.payload?.label;
-                        if (lbl) onSegmentClick(`${lbl}|rejected`);
-                      }) as never)
-                    : undefined
-                }
-                style={onSegmentClick ? { cursor: 'pointer' } : undefined}
-              />
-              <Bar
-                dataKey="missing"
-                name="Missing / expired"
-                stackId="status"
-                fill="var(--muted-foreground)"
-                onClick={
-                  onSegmentClick
-                    ? (((d: unknown) => {
-                        const p = d as { payload?: { label?: string } };
-                        const lbl = p?.payload?.label;
-                        if (lbl) onSegmentClick(`${lbl}|missing`);
-                      }) as never)
-                    : undefined
-                }
-                style={onSegmentClick ? { cursor: 'pointer' } : undefined}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex flex-col gap-6">
+            {expiring.length > 0 ? (
+              <div>
+                <p className="mb-1 text-sm font-medium text-foreground">
+                  Documents that expire
+                </p>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Passports and passes, for the student and each parent or
+                  guardian. These need renewing, not collecting again.
+                </p>
+                <BacklogBars
+                  rows={expiring}
+                  height={heightFor(expiring.length)}
+                  showLegend={other.length === 0}
+                  onSegmentClick={onSegmentClick}
+                />
+              </div>
+            ) : null}
+            {other.length > 0 ? (
+              <div>
+                <p className="mb-1 text-sm font-medium text-foreground">
+                  Documents collected once
+                </p>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Certificates, forms and records. Once they are valid they stay
+                  valid.
+                </p>
+                <BacklogBars
+                  rows={other}
+                  height={heightFor(other.length)}
+                  showLegend
+                  onSegmentClick={onSegmentClick}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
       </CardContent>
     </Card>

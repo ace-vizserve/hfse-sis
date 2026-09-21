@@ -101,7 +101,7 @@ export type RecordsDrillRow = {
    * Drives the backlog-by-document segment-click filter (KD #82/#124
    * count==drill) — see `applyTargetFilter`.
    */
-  docSlotBuckets?: Record<string, 'valid' | 'pending' | 'rejected' | 'missing'>;
+  docSlotBuckets?: Record<string, BacklogBucketValue>;
 };
 
 const CORE_DOC_STATUS_COLUMNS = [
@@ -187,10 +187,16 @@ const isSoftClosed = (r: RecordsDrillRow): boolean =>
 const BACKLOG_SLOT_KEY_BY_LABEL = new Map(
   PFILES_DOCUMENT_SLOTS.map((s) => [s.label, s.key])
 );
+// ⚠ MUST MATCH `BacklogBucket` in lib/p-files/document-config.ts, minus 'na'
+// (never a backlog item, so never a clickable segment). A value the chart can
+// render but this list does not accept is a segment click that silently
+// resolves to nothing — the count==drill invariant (KD #82/#124) breaking in
+// the one direction no test of the chart alone would catch.
 const BACKLOG_BUCKET_VALUES = [
   'valid',
   'pending',
   'rejected',
+  'expired',
   'missing',
 ] as const;
 type BacklogBucketValue = (typeof BACKLOG_BUCKET_VALUES)[number];
@@ -664,10 +670,7 @@ async function enrichWithDocSlotBuckets(
       applicationStatus: statusGate?.applicationStatus ?? null,
       enroleeType: statusGate?.enroleeType ?? null,
     };
-    const docSlotBuckets: Record<
-      string,
-      'valid' | 'pending' | 'rejected' | 'missing'
-    > = {};
+    const docSlotBuckets: Record<string, BacklogBucketValue> = {};
 
     for (const slot of PFILES_DOCUMENT_SLOTS) {
       // Same rule as the dashboard this drill backs, through the same

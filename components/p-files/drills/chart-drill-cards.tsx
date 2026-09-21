@@ -35,15 +35,25 @@ export function SlotStatusDrillCard({
   ayCode,
 }: CommonProps & { slotMix: SlotStatusMix }) {
   const [status, setStatus] = React.useState<string | null>(null);
-  // Renewal-only donut (KD #71): On file (Valid) vs Expired. The centre
-  // shows total tracked slots so it reconciles with per-student completeness.
+  // Renewal-only donut (KD #71). ⚠ THE "Expired" SLICE USED TO BE
+  // `slotMix.missing`, which counted expired AND never-provided together — so
+  // a document nobody had ever sent was reported to the officer as expired.
+  // The two are now separate slices: a renewal is a chase, a missing document
+  // is a first ask. The centre shows total tracked slots so it reconciles with
+  // per-student completeness.
   const slices = [
     { name: 'On file', value: slotMix.valid },
-    { name: 'Expired', value: slotMix.missing },
+    { name: 'Expired', value: slotMix.expired },
+    { name: 'Never provided', value: slotMix.missing },
   ];
-  // All statuses count toward "tracked" — aligns denominator with 13-slot universe.
+  // All statuses count toward "tracked" — aligns denominator with the slot
+  // universe.
   const total =
-    slotMix.valid + slotMix.missing + slotMix.pending + slotMix.rejected;
+    slotMix.valid +
+    slotMix.expired +
+    slotMix.missing +
+    slotMix.pending +
+    slotMix.rejected;
   return (
     <Sheet open={!!status} onOpenChange={(o) => !o && setStatus(null)}>
       <Card>
@@ -66,7 +76,9 @@ export function SlotStatusDrillCard({
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground">
               <dt>On file</dt>
               <dd className="text-right">{slotMix.valid}</dd>
-              <dt>Expired / missing</dt>
+              <dt>Expired</dt>
+              <dd className="text-right">{slotMix.expired}</dd>
+              <dt>Never provided</dt>
               <dd className="text-right">{slotMix.missing}</dd>
               <dt>Awaiting validation</dt>
               <dd className="text-right">{slotMix.pending}</dd>

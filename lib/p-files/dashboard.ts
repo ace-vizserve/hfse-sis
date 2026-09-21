@@ -638,6 +638,9 @@ export type SlotStatusMix = {
   valid: number;
   pending: number;
   rejected: number;
+  /** Was valid, has lapsed — a renewal. Split from `missing` 2026-09-22. */
+  expired: number;
+  /** Never provided — a first ask, not a renewal. */
   missing: number;
 };
 
@@ -659,7 +662,7 @@ async function loadSlotStatusMixUncached(
       '[p-files] getSlotStatusMix status fetch failed:',
       statusErr.message
     );
-    return { valid: 0, pending: 0, rejected: 0, missing: 0 };
+    return { valid: 0, pending: 0, rejected: 0, expired: 0, missing: 0 };
   }
   const statusByEnrolee = new Map<
     string,
@@ -678,7 +681,7 @@ async function loadSlotStatusMixUncached(
   }
   const enrolledNumbers = [...statusByEnrolee.keys()];
   if (enrolledNumbers.length === 0)
-    return { valid: 0, pending: 0, rejected: 0, missing: 0 };
+    return { valid: 0, pending: 0, rejected: 0, expired: 0, missing: 0 };
 
   // ⚠ THE GATE COLUMNS ARE NEEDED HERE TOO. This donut sits beside the
   // completeness table and is read as the same population — but it used to
@@ -717,7 +720,13 @@ async function loadSlotStatusMixUncached(
     if (typeof en === 'string') gateByEnrolee.set(en, g);
   }
   type Row = Record<string, string | null>;
-  const mix: SlotStatusMix = { valid: 0, pending: 0, rejected: 0, missing: 0 };
+  const mix: SlotStatusMix = {
+    valid: 0,
+    pending: 0,
+    rejected: 0,
+    expired: 0,
+    missing: 0,
+  };
   for (const row of (docsRes.data ?? []) as unknown as Row[]) {
     const en = String(row.enroleeNumber ?? '');
     const st = statusByEnrolee.get(en);
@@ -748,6 +757,8 @@ async function loadSlotStatusMixUncached(
           mix.rejected += 1;
           break;
         case 'expired':
+          mix.expired += 1;
+          break;
         case 'missing':
           mix.missing += 1;
           break;

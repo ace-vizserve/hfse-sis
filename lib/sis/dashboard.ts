@@ -158,9 +158,21 @@ export type DocumentBacklogRow = {
   slotKey: string;
   label: string;
   group: DocumentGroup;
+  /**
+   * Does this document carry an expiry date?
+   *
+   * ⚠ NOT THE SAME AS `group === 'student-expiring'`, and that is why this
+   * field exists rather than the chart deriving it. That group holds TWO slots
+   * (the student's own passport and pass); EIGHT slots actually expire — the
+   * other six are the mother's, father's and guardian's passports and passes,
+   * which live in the `parent` group. Grouping the chart by `group` would have
+   * put three quarters of the expiring documents on the wrong side of the line.
+   */
+  expires: boolean;
   valid: number;
   pending: number;
   rejected: number;
+  expired: number;
   missing: number;
 };
 
@@ -309,9 +321,11 @@ async function loadDocumentValidationBacklogUncached(
     slotKey: s.key,
     label: s.label,
     group: s.group,
+    expires: s.expires,
     valid: 0,
     pending: 0,
     rejected: 0,
+    expired: 0,
     missing: 0,
   }));
   const byKey = new Map(buckets.map((b) => [b.slotKey, b]));
@@ -345,6 +359,9 @@ async function loadDocumentValidationBacklogUncached(
         case 'rejected':
           bucket.rejected += 1;
           break;
+        case 'expired':
+          bucket.expired += 1;
+          break;
         case 'missing':
           bucket.missing += 1;
           break;
@@ -372,9 +389,11 @@ function emptyBacklogRows(): DocumentBacklogRow[] {
     slotKey: s.key,
     label: s.label,
     group: s.group,
+    expires: s.expires,
     valid: 0,
     pending: 0,
     rejected: 0,
+    expired: 0,
     missing: 0,
   }));
 }

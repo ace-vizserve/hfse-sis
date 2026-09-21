@@ -192,9 +192,13 @@ export function buildPFilesDashboardExport(
   sections.push({
     title: 'Where documents stand',
     headers: ['Status', 'Documents'],
+    // Mirrors the donut's slices exactly. 'Expired / missing' was one row
+    // until 2026-09-22 because the donut counted them together; they are two
+    // rows now, because a renewal and a first ask are different jobs.
     rows: [
       ['On file', slotMix.valid],
-      ['Expired / missing', slotMix.missing],
+      ['Expired', slotMix.expired],
+      ['Never provided', slotMix.missing],
       ['Awaiting validation', slotMix.pending],
       ['Rejected', slotMix.rejected],
     ],

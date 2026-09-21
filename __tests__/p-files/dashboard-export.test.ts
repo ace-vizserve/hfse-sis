@@ -69,6 +69,7 @@ const slotMix: SlotStatusMix = {
   valid: 200.5,
   pending: 10,
   rejected: 3,
+  expired: 7,
   missing: 12,
 };
 
@@ -293,9 +294,14 @@ describe('buildPFilesDashboardExport', () => {
     const result = buildPFilesDashboardExport(baseInput);
     const s = result.sections.find((s) => s.title === 'Where documents stand')!;
     expect(s.headers).toEqual(['Status', 'Documents']);
+    // Two rows where there was one: the donut used to show a single "Expired"
+    // slice built from `slotMix.missing`, which counted expired AND
+    // never-provided together — so a document nobody had ever sent was
+    // reported to the officer as expired.
     expect(s.rows).toEqual([
       ['On file', 200.5],
-      ['Expired / missing', 12],
+      ['Expired', 7],
+      ['Never provided', 12],
       ['Awaiting validation', 10],
       ['Rejected', 3],
     ]);

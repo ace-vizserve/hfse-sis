@@ -205,18 +205,26 @@ export function buildRecordsDashboardExport(
   // rows when docBacklog is empty.
   sections.push({
     title: 'Validation backlog by document type',
+    // Mirrors the chart exactly (20-dashboards.md). `Expires` is the column
+    // the chart expresses as its two groups, and `Expired` is its own column
+    // since 2026-09-22 — it used to be folded into `Missing / expired`, which
+    // is why that header named two different things.
     headers: [
       'Document type',
+      'Expires',
       'Valid',
       'Pending review',
       'Rejected',
-      'Missing / expired',
+      'Expired',
+      'Missing',
     ],
     rows: docBacklog.map((r) => [
       r.label,
+      r.expires ? 'Yes' : 'No',
       r.valid,
       r.pending,
       r.rejected,
+      r.expired,
       r.missing,
     ]),
   });
