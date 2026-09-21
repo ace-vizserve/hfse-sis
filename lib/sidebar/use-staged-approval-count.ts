@@ -1,16 +1,21 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { subscribeToBadgeTopic } from '@/lib/sidebar/badge-bus';
 import { createClient } from '@/lib/supabase/client';
 
 // Live count of "approval steps waiting for THIS person to decide right now",
 // across whichever ordered-approval flows (KD #196) the caller names.
 //
 // Deliberately shaped like `use-change-request-count.ts`: the same
-// SSR-value-then-subscribe pattern, the same per-instance channel via `useId`
-// so the sidebar badge and the header bell can each subscribe without a shared
-// provider, and the same "log it and freeze" on a failed recount.
+// SSR-value-then-subscribe pattern, the same fixed Broadcast topics (no
+// per-instance name to mint via `useId` the way Postgres Changes needed —
+// a topic IS the channel name, and the sidebar badge and the header bell
+// both join the same ones through `badge-bus.ts`, which refcounts
+// subscribers per topic so one hook's unmount cannot silently kill the
+// other's subscription), and the same "log it and freeze" on a failed
+// recount.
 //
 // ⚠ ONE REAL DIFFERENCE: THERE IS NO PER-ROLE SCOPE SQL HERE, AND THERE MUST
 // NOT BE. The change-request hook re-implements its scope predicate in the
@@ -21,23 +26,27 @@ import { createClient } from '@/lib/supabase/client';
 // advises its class, which is precisely "can act on it". The scope lives in
 // one place, in SQL, and cannot drift from the queue it is counting.
 //
-// ⚠ THE SUBSCRIPTION CARRIES NO FILTER, also on purpose. `postgres_changes`
-// filters are single-column comparisons, and the predicate that matters here
-// is "am I in this row's pool" — an array membership test it cannot express.
-// RLS already restricts what is delivered, so an unfiltered subscription on a
-// small table is both correct and cheaper than a wrong filter. It also means
-// the channel does not care WHICH flows are counted: every flow's steps live
-// in the same table, and the flow scope is applied by the recount.
+// ⚠ THE TOPIC IS SHARED AND CARRIES NOTHING, on purpose. Under Postgres
+// Changes this subscription was unfiltered because the predicate that matters
+// — "am I in this row's pool" — is an array membership test a single-column
+// filter cannot express. Under Broadcast there is nothing to express: the
+// ping is an empty payload on a topic, and WHO MAY JOIN IT is migration 171's
+// policy on realtime.messages. What the reader may COUNT is still migration
+// 129's policy, applied by the recount below. Delivery and scope are now two
+// separate rules; do not conflate them again.
 //
-// The one filtered listener is on `approval_request_stage_decisions` (migration
-// 145), where "mine" IS a single column: `user_id`.
+// Two topics rather than three subscriptions: `sis:approval-stages` covers
+// both INSERT and UPDATE on `approval_request_stages` (a topic does not
+// distinguish the two, and both ran the same recount anyway), and
+// `sis:approval-decisions:<userId>` stands in for the filtered listener on
+// `approval_request_stage_decisions` (migration 145), where "mine" IS a
+// single column: `user_id`. That predicate becomes the topic name itself.
 
 export function useStagedApprovalCount(
   userId: string,
   flows: readonly string[],
   initial: number | null
 ): number | null {
-  const instanceId = useId();
   const [count, setCount] = useState<number | null>(initial);
 
   // A caller passing an inline array literal hands this a new reference every
@@ -134,54 +143,27 @@ export function useStagedApprovalCount(
       return fresh ?? 0;
     };
 
-    const channel = supabase
-      .channel(`staged-approval-count-${instanceId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'approval_request_stages',
-        },
-        async () => {
-          const fresh = await recount();
-          if (fresh != null) setCount(fresh);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'approval_request_stages',
-        },
-        async () => {
-          const fresh = await recount();
-          if (fresh != null) setCount(fresh);
-        }
-      )
-      // A yes on a step that needs everyone changes no step row, so the two
-      // listeners above hear nothing. My own decision rows do change.
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'approval_request_stage_decisions',
-          filter: `user_id=eq.${userId}`,
-        },
-        async () => {
-          const fresh = await recount();
-          if (fresh != null) setCount(fresh);
-        }
-      )
-      .subscribe();
+    const onPing = () => {
+      void (async () => {
+        const fresh = await recount();
+        if (fresh != null) setCount(fresh);
+      })();
+    };
+
+    const unsubStages = subscribeToBadgeTopic('sis:approval-stages', onPing);
+    // A yes on a step that needs everyone changes no step row, so the stages
+    // topic hears nothing — this one is how the reader's own decision lands.
+    const unsubDecisions = subscribeToBadgeTopic(
+      `sis:approval-decisions:${userId}`,
+      onPing
+    );
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubStages();
+      unsubDecisions();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, instanceId, flowsKey]);
+  }, [userId, flowsKey]);
 
   return count;
 }

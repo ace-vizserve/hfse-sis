@@ -16,11 +16,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { calls, handlers, counts, subscriptions } = vi.hoisted(() => ({
+const { calls, handlers, counts, topics } = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   handlers: [] as Array<() => Promise<void>>,
   counts: { stages: 3, decisions: 0 },
-  subscriptions: [] as Array<Record<string, unknown>>,
+  topics: [] as string[],
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -28,16 +28,16 @@ vi.mock('@/lib/supabase/client', () => ({
     const channel: Record<string, unknown> = {};
     channel.on = (
       _e: string,
-      filter: Record<string, unknown>,
+      _config: Record<string, unknown>,
       cb: () => Promise<void>
     ) => {
-      subscriptions.push(filter);
       handlers.push(cb);
       return channel;
     };
     channel.subscribe = () => channel;
 
     return {
+      realtime: { setAuth: async () => {} },
       from: (table: string) => {
         const query: Record<string, unknown> = {};
         for (const method of ['select', 'eq', 'in', 'or']) {
@@ -56,20 +56,25 @@ vi.mock('@/lib/supabase/client', () => ({
           }).then(resolve);
         return query;
       },
-      channel: () => channel,
+      channel: (topic: string) => {
+        topics.push(topic);
+        return channel;
+      },
       removeChannel: () => {},
     };
   },
 }));
 
+import { __resetBadgeBus } from '@/lib/sidebar/badge-bus';
 import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
 
 beforeEach(() => {
   calls.length = 0;
   handlers.length = 0;
-  subscriptions.length = 0;
+  topics.length = 0;
   counts.stages = 3;
   counts.decisions = 0;
+  __resetBadgeBus();
 });
 
 describe('useStagedApprovalCount', () => {
@@ -77,7 +82,7 @@ describe('useStagedApprovalCount', () => {
     const { result } = renderHook(() =>
       useStagedApprovalCount('u-teacher', ['markbook.grade_change'], 0)
     );
-    expect(handlers.length).toBeGreaterThan(0);
+    await waitFor(() => expect(handlers.length).toBeGreaterThan(0));
 
     await act(async () => {
       await handlers[0]();
@@ -101,6 +106,7 @@ describe('useStagedApprovalCount', () => {
       useStagedApprovalCount('u-board', ['markbook.grade_change_aeb'], 3)
     );
 
+    await waitFor(() => expect(handlers.length).toBeGreaterThan(0));
     await act(async () => {
       await handlers[0]();
     });
@@ -137,23 +143,22 @@ describe('useStagedApprovalCount', () => {
     const { result } = renderHook(() =>
       useStagedApprovalCount('u-board', ['markbook.grade_change'], 1)
     );
+    await waitFor(() => expect(handlers.length).toBeGreaterThan(0));
     await act(async () => {
       await handlers[0]();
     });
     await waitFor(() => expect(result.current).toBe(0));
   });
 
-  it('recounts when the reader records a decision of their own', () => {
+  it('joins the per-user decisions topic', async () => {
     renderHook(() =>
       useStagedApprovalCount('u-board', ['markbook.grade_change'], 0)
     );
     // A yes on a step that needs everyone changes no step row, so the stage
-    // listeners hear nothing — this one does.
-    expect(subscriptions).toContainEqual({
-      event: 'INSERT',
-      schema: 'public',
-      table: 'approval_request_stage_decisions',
-      filter: 'user_id=eq.u-board',
-    });
+    // topic hears nothing — this one is how the reader's own decision lands.
+    await waitFor(() =>
+      expect(topics).toContain('sis:approval-decisions:u-board')
+    );
+    expect(topics).toContain('sis:approval-stages');
   });
 });
