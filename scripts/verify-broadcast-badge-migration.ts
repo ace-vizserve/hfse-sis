@@ -4,6 +4,10 @@
 //
 // Usage: npx tsx --env-file=.env.local scripts/verify-broadcast-badge-migration.ts
 
+export {}; // force module scope: no import/export otherwise, and this file's
+// top-level `SQL`/`main` collide with the same names in
+// probe-realtime-publication.ts under tsc's global-script parsing.
+
 const SQL = `-- expect 4 rows
 select tgname, tgrelid::regclass as table_name
 from pg_trigger

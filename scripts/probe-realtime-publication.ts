@@ -4,6 +4,10 @@
 //
 // Usage: npx tsx --env-file=.env.local scripts/probe-realtime-publication.ts
 
+export {}; // force module scope: no import/export otherwise, and this file's
+// top-level `SQL`/`main` collide with the same names in
+// verify-broadcast-badge-migration.ts under tsc's global-script parsing.
+
 const SQL = `select schemaname, tablename
 from pg_publication_tables
 where pubname = 'supabase_realtime'
