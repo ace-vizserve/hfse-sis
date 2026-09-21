@@ -545,8 +545,11 @@ export async function POST(
     });
     return NextResponse.json(
       {
+        // Two sentences on purpose: the first becomes the toast title, the
+        // second its description (lib/hooks/use-write-action.ts). Keep the
+        // first one short enough to read as a heading.
         error:
-          "This student has no document record for this academic year yet, so there's nowhere to file the upload. Ask an administrator to add them to this year's records, then try again.",
+          "This student has no document record for this year. Ask an administrator to add them to this year's records, then try again.",
         code: 'no_document_row',
       },
       { status: 409 }

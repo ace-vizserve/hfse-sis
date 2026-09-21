@@ -71,7 +71,7 @@ export type WriteActionOptions<T> = {
    * (`components/p-files/upload-dialog.tsx`). Without this the choice was a
    * green toast carrying warning text, or two toasts for one action.
    */
-  success: string | ((data: T) => string | null);
+  success: ToastMessage | ((data: T) => ToastMessage | null);
 
   /**
    * What to say when it failed. Receives the thrown error — usually an
@@ -86,7 +86,7 @@ export type WriteActionOptions<T> = {
    *
    * Omit it to use the message `apiFetch` already resolved from the body.
    */
-  error?: string | ((err: unknown) => string | null);
+  error?: ToastMessage | ((err: unknown) => ToastMessage | null);
 
   /**
    * Runs after the write resolves and BEFORE the refresh is awaited. Close the
@@ -119,6 +119,63 @@ function defaultErrorMessage(err: unknown): string {
   return err instanceof Error && err.message
     ? err.message
     : 'Something went wrong.';
+}
+
+/**
+ * Split a message into a toast TITLE and a DESCRIPTION.
+ *
+ * ⚠ WHY THIS EXISTS. Every outcome used to arrive as one string and land whole
+ * in the title, so a toast read as a paragraph in bold. That is not a call-site
+ * problem to fix 99 times: the messages are mostly SERVER text, written — as
+ * this codebase's rules require — in plain English for school admins, which
+ * means "what went wrong. what to do about it." Two sentences, and the second
+ * one is a description by construction.
+ *
+ * So the first sentence becomes the title and the rest becomes the description.
+ * A caller that wants control passes `{ title, description }` explicitly and
+ * this never runs.
+ *
+ * ⚠ IT ONLY SPLITS WHEN SPLITTING HELPS. A short message stays whole — a
+ * one-line "Saved" must not become a title with an empty description. A single
+ * long sentence also stays whole: it is never cut mid-thought, because a
+ * truncated title loses the half that said what happened.
+ *
+ * ⚠ A LONG FIRST SENTENCE STILL SPLITS, and the first version of this bailed
+ * out when it was over the cap — which left the worst real message in the app
+ * exactly as it was. Moving the remedy into the description is worth doing even
+ * when the problem statement is long; the copy is then too long in ONE place
+ * instead of two, and that is a sentence to rewrite, not a splitter to tune.
+ */
+const TITLE_MAX = 60;
+
+/**
+ * What a write says when it finishes.
+ *
+ * A bare string is the common case and is split for you. Pass the object form
+ * when the split would land in the wrong place — a title that is not a
+ * sentence, or a description that should say something the title does not.
+ */
+export type ToastMessage = string | { title: string; description?: string };
+
+export function splitToastMessage(message: string): {
+  title: string;
+  description?: string;
+} {
+  const text = message.trim();
+  if (text.length <= TITLE_MAX) return { title: text };
+
+  // Sentence end followed by a space — not a decimal, not "e.g.", not an
+  // abbreviation mid-sentence, because those are not followed by a capital.
+  // `[\s\S]` rather than `.` with the `s` flag — this file's tsconfig target
+  // predates es2018 and `s` is a compile error there.
+  const match = text.match(/^(.+?[.!?])\s+(?=[A-Z(])([\s\S]+)$/);
+  if (!match) return { title: text };
+
+  const [, first, rest] = match;
+
+  // Drop a trailing full stop from the title — headings do not take one, and
+  // "!"/"?" carry meaning so they stay.
+  return { title: first.replace(/\.$/, ''), description: rest.trim() };
 }
 
 /**
@@ -196,9 +253,20 @@ export function useWriteAction(): WriteAction {
        * later by this very line.
        */
       const settle = (
-        message: string | null,
-        show: (message: string, opts?: { id: string }) => void
+        raw: string | ToastMessage | null,
+        show: (
+          message: string,
+          opts?: { id?: string; description?: string }
+        ) => void
       ) => {
+        // An explicit { title, description } is taken as written; a bare string
+        // is split on its first sentence (see splitToastMessage).
+        const message =
+          raw === null
+            ? null
+            : typeof raw === 'string'
+              ? splitToastMessage(raw)
+              : { title: raw.title, description: raw.description };
         if (timer) {
           clearTimeout(timer);
           timersRef.current.delete(timer);
@@ -221,8 +289,16 @@ export function useWriteAction(): WriteAction {
         }
         // No pending toast means no slot to take over, and the outcome is the
         // only toast in flight — so it can have the shared one.
-        if (slot) show(message, { id: slot });
-        else show(message);
+        // ⚠ Pass NO second argument when there is nothing to put in it. An
+        // empty `{}` changes the call shape, and the hook's own tests assert
+        // `toast.success('Saved')` with one argument — correctly, because a
+        // stray options object is a behaviour change in the toast library's
+        // hands, not ours.
+        const description = message.description;
+        if (slot && description) show(message.title, { id: slot, description });
+        else if (slot) show(message.title, { id: slot });
+        else if (description) show(message.title, { description });
+        else show(message.title);
       };
 
       try {
