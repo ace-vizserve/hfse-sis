@@ -1,5 +1,5 @@
-import { Suspense } from 'react';
 import { connection } from 'next/server';
+import { Suspense } from 'react';
 
 import { Toaster } from '@/components/ui/sonner';
 import type { Metadata } from 'next';
@@ -7,16 +7,16 @@ import { Inter, JetBrains_Mono, Source_Serif_4 } from 'next/font/google';
 import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
 
+import { QueryProvider } from '@/components/providers/query-provider';
 import {
   CommandPalette,
   CommandPaletteProvider,
 } from '@/components/sis/command-palette';
-import { QueryProvider } from '@/components/providers/query-provider';
 import { ScreenGuard } from '@/components/ui/screen-guard';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { getSessionUser } from '@/lib/supabase/server';
 import { resolveHiddenModules } from '@/lib/sidebar/resolve-hidden-modules';
+import { getSessionUser } from '@/lib/supabase/server';
 
 const inter = Inter({
   variable: '--font-sans',
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     default: 'HFSE SIS',
     template: '%s · HFSE SIS',
   },
-  description: 'HFSE International School student information system',
+  description: 'HFSE International School Student Information System',
   robots: { index: false, follow: false, nocache: true },
   icons: { icon: '/hfse-logo-favicon.webp' },
 };
