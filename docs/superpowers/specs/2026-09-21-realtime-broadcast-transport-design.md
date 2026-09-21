@@ -218,8 +218,18 @@ a declaration step and a P-Files document upload.
 
 Automated coverage, which is necessary but not sufficient:
 
-- `__tests__/ui/notification-bell.test.tsx` — 17 tests today, mocking the
-  Supabase channel; the mock swaps from `postgres_changes` to `broadcast`.
+- `__tests__/sidebar/staged-count-skips-own-filings.test.tsx` — mocks
+  `@/lib/supabase/client` directly and asserts the subscription shape, so its
+  mock and its assertion both move to broadcast topics.
+- A new test over `use-change-request-count.ts`, which has no channel coverage
+  today.
+
+⚠ **Corrected 2026-09-21 while writing the plan:** an earlier draft of this
+section said `__tests__/ui/notification-bell.test.tsx` needed a mock swap. It
+does not — that file mocks the three count **hooks**, not the Supabase client,
+so it never sees a channel. Its 17 tests should pass untouched, and a change
+there is a sign something has gone wrong.
+
 - A test that the `audit_log` trigger's `WHEN` clause admits the six P-Files
   actions and rejects a grade-entry action.
 - A test that an insert still commits when the broadcast call fails (§4.4).
@@ -240,14 +250,17 @@ it runs, both transports are doing work.
 
 ## 8. Files
 
-| File                                                    | Change                                                                                |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `supabase/migrations/171_realtime_broadcast_badges.sql` | new — triggers, function, `realtime.messages` policy                                  |
-| `lib/sidebar/use-change-request-count.ts`               | channel + `.on()` swap; the per-role **channel filter string** is deleted (see below) |
-| `lib/sidebar/use-staged-approval-count.ts`              | channel + 3 `.on()` swaps                                                             |
-| `lib/sidebar/use-realtime-badges.ts`                    | channel + `.on()` swap; `action=in.()` filter moves to the trigger                    |
-| `lib/sidebar/use-declaration-count.ts`                  | none — wrapper only                                                                   |
-| `__tests__/ui/notification-bell.test.tsx`               | mock swap                                                                             |
+| File                                                        | Change                                                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `supabase/migrations/171_realtime_broadcast_badges.sql`     | new — triggers, function, `realtime.messages` policy                                  |
+| `lib/sidebar/use-change-request-count.ts`                   | channel + `.on()` swap; the per-role **channel filter string** is deleted (see below) |
+| `lib/sidebar/use-staged-approval-count.ts`                  | channel + 3 `.on()` swaps                                                             |
+| `lib/sidebar/use-realtime-badges.ts`                        | channel + `.on()` swap; `action=in.()` filter moves to the trigger                    |
+| `lib/sidebar/use-declaration-count.ts`                      | none — wrapper only                                                                   |
+| `__tests__/sidebar/staged-count-skips-own-filings.test.tsx` | mock + assertion move to topics                                                       |
+| `__tests__/sidebar/change-request-count-broadcast.test.tsx` | new — no channel coverage today                                                       |
+| `__tests__/data/broadcast-trigger-guards.test.ts`           | new — source-reading guard over 171                                                   |
+| `__tests__/ui/notification-bell.test.tsx`                   | **none** — mocks the hooks, not the client                                            |
 
 🔴 **Two per-role things live in `use-change-request-count.ts` and only one of
 them goes.** The `filter` string built at lines ~87–95 is the channel
