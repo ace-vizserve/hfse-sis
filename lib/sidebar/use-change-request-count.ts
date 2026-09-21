@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Role } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/client';
@@ -9,10 +9,12 @@ import { createClient } from '@/lib/supabase/client';
 // Extracted out of use-realtime-badges.ts so both the sidebar's
 // `changeRequests` nav badge AND the header notification bell can each
 // subscribe independently without duplicating this per-role scope SQL in
-// two places. Each hook instance opens its own realtime channel (a unique
-// name per mounted instance, via useId) — two lightweight subscriptions
-// instead of a shared client-state provider; simpler than threading one
-// value through two components that aren't parent/child.
+// two places. Both hook instances join the SAME fixed Broadcast topic
+// (`sis:grade-change-requests`, from migration 171) rather than each
+// opening a uniquely-named channel — a Broadcast topic IS the channel
+// name, so there is no per-instance name to mint the way there was under
+// Postgres Changes (via useId). The topic only carries a ping; the actual
+// count is re-fetched per-role via `recount` below.
 //
 // Scope MUST mirror
 // lib/change-requests/sidebar-counts.ts::getSidebarChangeRequestCount —
@@ -74,7 +76,6 @@ export function useChangeRequestCount(
   userId: string,
   initial: number | null
 ): number | null {
-  const instanceId = useId();
   const [count, setCount] = useState<number | null>(initial);
 
   useEffect(() => {
@@ -84,17 +85,20 @@ export function useChangeRequestCount(
   useEffect(() => {
     if (!role || initial == null) return;
 
-    let filter: string | null = null;
-    if (role === 'teacher') {
-      filter = `requested_by=eq.${userId}`;
-    } else if (role === 'academic_coordinator') {
-      filter = `status=eq.approved`;
-    } else if (role === 'school_admin' || role === 'superadmin') {
-      filter = `status=eq.pending`;
-    }
-    if (!filter) return;
-
     const supabase = createClient();
+
+    // A role outside the change-request flow has no count to keep live.
+    if (
+      applyChangeRequestCountScope(
+        supabase.from(
+          'grade_change_requests'
+        ) as unknown as ChangeRequestScopeQuery,
+        role,
+        userId
+      ) === null
+    ) {
+      return;
+    }
 
     const recount = async (): Promise<number | null> => {
       const { data: ayData } = await supabase
@@ -135,42 +139,32 @@ export function useChangeRequestCount(
       return fresh ?? null;
     };
 
-    const channelName = `change-request-count-${instanceId}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'grade_change_requests',
-          filter,
-        },
-        async () => {
+    // ⚠ `setAuth` IS NOT OPTIONAL AND ITS FAILURE IS SILENT. A private channel
+    // is refused without it, and a refused join surfaces as a badge that simply
+    // never moves — not as an error. It is async, hence the cancelled flag: the
+    // effect can be torn down before the socket is authenticated, and
+    // subscribing after that would leak a channel with no cleanup.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+
+    void (async () => {
+      await supabase.realtime.setAuth();
+      if (cancelled) return;
+      channel = supabase
+        .channel('sis:grade-change-requests', { config: { private: true } })
+        .on('broadcast', { event: 'badge' }, async () => {
           const fresh = await recount();
           if (fresh != null) setCount(fresh);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'grade_change_requests',
-          filter,
-        },
-        async () => {
-          const fresh = await recount();
-          if (fresh != null) setCount(fresh);
-        }
-      )
-      .subscribe();
+        })
+        .subscribe();
+    })();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, userId, instanceId]);
+  }, [role, userId]);
 
   return count;
 }
