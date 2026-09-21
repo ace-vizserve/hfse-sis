@@ -1,14 +1,27 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { channels, handlers, setAuthCalls, removeChannelCalls, count } =
-  vi.hoisted(() => ({
-    channels: [] as Array<{ topic: string; opts: unknown }>,
-    handlers: [] as Array<() => Promise<void>>,
-    setAuthCalls: { n: 0 },
-    removeChannelCalls: { n: 0 },
-    count: { value: 7 },
-  }));
+const {
+  channels,
+  handlers,
+  setAuthCalls,
+  removeChannelCalls,
+  count,
+  authControl,
+} = vi.hoisted(() => ({
+  channels: [] as Array<{ topic: string; opts: unknown }>,
+  handlers: [] as Array<() => Promise<void>>,
+  setAuthCalls: { n: 0 },
+  removeChannelCalls: { n: 0 },
+  count: { value: 7 },
+  // Lets individual tests control setAuth's timing/outcome (resolve late,
+  // or reject) without touching the shape of the mock client itself.
+  authControl: {
+    impl: async () => {
+      setAuthCalls.n += 1;
+    },
+  } as { impl: () => Promise<void> },
+}));
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => {
@@ -17,32 +30,44 @@ vi.mock('@/lib/supabase/client', () => ({
       handlers.push(cb);
       return channel;
     };
-    channel.subscribe = () => channel;
+    channel.subscribe = (cb?: (status: string) => void) => {
+      cb?.('SUBSCRIBED');
+      return channel;
+    };
+
+    // The real client splits table access across TWO builder classes:
+    // PostgrestQueryBuilder (all `.from()` returns — only `.select()` lives
+    // here) and PostgrestFilterBuilder (`.eq()`/`.or()`/`.is()`/
+    // `.maybeSingle()`, returned BY `.select()`). Collapsing both into one
+    // object hid a real production bug: a role guard that called `.eq()`
+    // straight off `.from()` without `.select()` first threw
+    // `TypeError: qb.eq is not a function` inside a useEffect (uncaught by
+    // React, unmounting the tree) while this suite stayed green. Keep the
+    // split faithful so that regression cannot hide again.
+    const filterBuilder: Record<string, unknown> = {};
+    for (const m of ['eq', 'or', 'is', 'maybeSingle']) {
+      filterBuilder[m] = (..._a: unknown[]) => filterBuilder;
+    }
+    // academic_years lookup resolves first, then the count query — both
+    // chains bottom out on the same filter builder shape in this mock.
+    filterBuilder.then = (resolve: (v: unknown) => unknown) =>
+      Promise.resolve({
+        data: { id: 'ay-1' },
+        count: count.value,
+        error: null,
+      }).then(resolve);
 
     return {
       realtime: {
-        setAuth: async () => {
-          setAuthCalls.n += 1;
-        },
+        setAuth: async () => authControl.impl(),
       },
       channel: (topic: string, opts: unknown) => {
         channels.push({ topic, opts });
         return channel;
       },
-      from: () => {
-        const query: Record<string, unknown> = {};
-        for (const m of ['select', 'eq', 'or', 'is', 'maybeSingle']) {
-          query[m] = (..._a: unknown[]) => query;
-        }
-        // academic_years lookup resolves first, then the count query.
-        query.then = (resolve: (v: unknown) => unknown) =>
-          Promise.resolve({
-            data: { id: 'ay-1' },
-            count: count.value,
-            error: null,
-          }).then(resolve);
-        return query;
-      },
+      from: () => ({
+        select: (..._a: unknown[]) => filterBuilder,
+      }),
       // Observable so the refcounting test below can assert it is withheld
       // while a second subscriber is still on the topic, and fired once the
       // last one leaves.
@@ -53,6 +78,10 @@ vi.mock('@/lib/supabase/client', () => ({
   },
 }));
 
+import {
+  __resetBadgeBus,
+  subscribeToBadgeTopic,
+} from '@/lib/sidebar/badge-bus';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 
 beforeEach(() => {
@@ -61,6 +90,15 @@ beforeEach(() => {
   setAuthCalls.n = 0;
   removeChannelCalls.n = 0;
   count.value = 7;
+  authControl.impl = async () => {
+    setAuthCalls.n += 1;
+  };
+  // The bus is a module-global singleton (by design — see its header
+  // comment). Tasks 5 and 6 add more hooks against this same module, so
+  // resetting between tests is a correctness guard for tests not yet
+  // written, not just hygiene: a leftover 'pending'/channel entry from one
+  // test would silently make the next test's first subscriber a no-op.
+  __resetBadgeBus();
 });
 
 describe('useChangeRequestCount over Broadcast', () => {
@@ -133,5 +171,65 @@ describe('useChangeRequestCount over Broadcast', () => {
 
     headerBell.unmount();
     await waitFor(() => expect(removeChannelCalls.n).toBe(1));
+  });
+
+  it('does not open a channel if the only subscriber leaves before setAuth resolves', async () => {
+    // Guards the fix for a real leak: if setAuth() were still awaited after
+    // the last listener left, the bus would open a channel nobody wants and
+    // nothing could ever close it (the refcount never returns to 1). Also
+    // what keeps React StrictMode's dev-mode mount->cleanup->remount (which
+    // happens synchronously, well inside setAuth's async gap) from accruing
+    // two live bindings for one logical subscriber.
+    let releaseAuth: () => void = () => {};
+    authControl.impl = () =>
+      new Promise<void>((resolve) => {
+        releaseAuth = () => {
+          setAuthCalls.n += 1;
+          resolve();
+        };
+      });
+
+    const unsubscribe = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    unsubscribe(); // leaves before setAuth ever resolves
+
+    releaseAuth();
+    await waitFor(() => expect(setAuthCalls.n).toBe(1));
+    // Give the microtask/macrotask queue a turn so open() resumes past the
+    // now-resolved setAuth() and reaches its post-auth guard.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channels.length).toBe(0);
+  });
+
+  it('clears the pending entry when setAuth rejects, so a later subscriber can retry', async () => {
+    authControl.impl = async () => {
+      throw new Error('boom');
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const firstUnsubscribe = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(channels.length).toBe(0);
+    firstUnsubscribe();
+
+    // A fresh subscriber, after the failure, must not inherit a wedged
+    // 'pending' entry — the topic has to be genuinely retryable.
+    authControl.impl = async () => {
+      setAuthCalls.n += 1;
+    };
+    const secondUnsubscribe = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    await waitFor(() => expect(channels.length).toBe(1));
+    secondUnsubscribe();
+
+    errorSpy.mockRestore();
   });
 });

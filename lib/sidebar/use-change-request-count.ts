@@ -95,11 +95,23 @@ export function useChangeRequestCount(
     const supabase = createClient();
 
     // A role outside the change-request flow has no count to keep live.
+    //
+    // ⚠ This MUST be a real PostgrestFilterBuilder, not the bare
+    // PostgrestQueryBuilder `.from()` returns. `.eq()`/`.or()`/`.is()` only
+    // exist on the builder `.select()` returns — calling them straight off
+    // `.from()` throws `TypeError: qb.eq is not a function` synchronously
+    // inside this effect for every role the scope function doesn't
+    // short-circuit (teacher, academic_coordinator, school_admin,
+    // superadmin), which React does not catch, unmounting the whole tree to
+    // the nearest error boundary. `.select('id', { head, count })` is still
+    // lazy — it issues no request until awaited — so this is free to build
+    // and never actually fetch.
     if (
       applyChangeRequestCountScope(
-        supabase.from(
-          'grade_change_requests'
-        ) as unknown as ChangeRequestScopeQuery,
+        supabase.from('grade_change_requests').select('id', {
+          head: true,
+          count: 'exact',
+        }) as unknown as ChangeRequestScopeQuery,
         role,
         userId
       ) === null
