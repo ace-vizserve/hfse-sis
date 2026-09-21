@@ -128,11 +128,45 @@ async function open(topic: string, token: symbol): Promise<void> {
   if (attempts.get(topic) !== token) return;
 
   const supabase = createClient();
+
+  // ⚠ THE WHOLE ATTEMPT IS ONE TRY/CATCH, not just `setAuth()`. A throw from
+  // `.channel()`/`.on()`/`.subscribe()` rejects this un-awaited `open()` call
+  // just as surely as a rejected `setAuth()` does, and would otherwise leave
+  // `channels` wedged at 'pending' for the rest of the session with the same
+  // "every later subscriber silently does nothing" symptom.
   try {
     await supabase.realtime.setAuth();
+
+    // The only subscriber may have left DURING setAuth() — do not open a
+    // channel nobody is listening for; nothing would ever close it.
+    if (attempts.get(topic) !== token) return;
+
+    const channel = supabase
+      .channel(topic, { config: { private: true } })
+      .on('broadcast', { event: 'badge' }, () => {
+        for (const listener of listeners.get(topic) ?? []) listener();
+      })
+      .subscribe((status) => {
+        // CLOSED fires on every ORDINARY teardown (phoenix `leave()` ->
+        // `_onClose` -> this callback with CLOSED) — including the bus's own
+        // last-unsubscribe path, i.e. every routine module-to-module
+        // navigation. Logging it as an error would bury the two statuses
+        // that actually mean something is wrong: the join was refused
+        // (CHANNEL_ERROR, e.g. an RLS policy on realtime.messages) or never
+        // completed (TIMED_OUT).
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error(
+            `[badge-bus] topic "${topic}" subscribe status:`,
+            status
+          );
+        }
+      });
+
+    attempts.delete(topic);
+    channels.set(topic, channel);
   } catch (err) {
     console.error(
-      `[badge-bus] setAuth failed for topic "${topic}"; badge will not update until a new subscriber retries:`,
+      `[badge-bus] failed to open topic "${topic}"; badge will not update until a new subscriber retries:`,
       err
     );
     // Only clear state that is still ours — a fresher attempt (or nobody at
@@ -141,26 +175,7 @@ async function open(topic: string, token: symbol): Promise<void> {
       attempts.delete(topic);
       channels.delete(topic);
     }
-    return;
   }
-
-  // The only subscriber may have left DURING setAuth() — do not open a
-  // channel nobody is listening for; nothing would ever close it.
-  if (attempts.get(topic) !== token) return;
-
-  const channel = supabase
-    .channel(topic, { config: { private: true } })
-    .on('broadcast', { event: 'badge' }, () => {
-      for (const listener of listeners.get(topic) ?? []) listener();
-    })
-    .subscribe((status) => {
-      if (status !== 'SUBSCRIBED') {
-        console.error(`[badge-bus] topic "${topic}" subscribe status:`, status);
-      }
-    });
-
-  attempts.delete(topic);
-  channels.set(topic, channel);
 }
 
 // Test-only: wipe all module state between test cases. This module is a

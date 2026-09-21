@@ -8,6 +8,8 @@ const {
   removeChannelCalls,
   count,
   authControl,
+  subscribeStatus,
+  subscribeThrows,
 } = vi.hoisted(() => ({
   channels: [] as Array<{ topic: string; opts: unknown }>,
   handlers: [] as Array<() => Promise<void>>,
@@ -21,6 +23,13 @@ const {
       setAuthCalls.n += 1;
     },
   } as { impl: () => Promise<void> },
+  // Lets a test drive the status .subscribe()'s callback fires with —
+  // real-world values include SUBSCRIBED, CLOSED, CHANNEL_ERROR, TIMED_OUT.
+  subscribeStatus: { value: 'SUBSCRIBED' as string },
+  // Lets a test force .subscribe() itself to throw synchronously, once, to
+  // prove the open() try/catch covers channel construction and not just
+  // setAuth().
+  subscribeThrows: { once: false },
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -31,7 +40,11 @@ vi.mock('@/lib/supabase/client', () => ({
       return channel;
     };
     channel.subscribe = (cb?: (status: string) => void) => {
-      cb?.('SUBSCRIBED');
+      if (subscribeThrows.once) {
+        subscribeThrows.once = false;
+        throw new Error('boom-subscribe');
+      }
+      cb?.(subscribeStatus.value);
       return channel;
     };
 
@@ -93,6 +106,8 @@ beforeEach(() => {
   authControl.impl = async () => {
     setAuthCalls.n += 1;
   };
+  subscribeStatus.value = 'SUBSCRIBED';
+  subscribeThrows.once = false;
   // The bus is a module-global singleton (by design — see its header
   // comment). Tasks 5 and 6 add more hooks against this same module, so
   // resetting between tests is a correctness guard for tests not yet
@@ -228,6 +243,76 @@ describe('useChangeRequestCount over Broadcast', () => {
       () => {}
     );
     await waitFor(() => expect(channels.length).toBe(1));
+    secondUnsubscribe();
+
+    errorSpy.mockRestore();
+  });
+
+  it('logs CHANNEL_ERROR but not CLOSED from the subscribe status callback', async () => {
+    // CLOSED fires on every ORDINARY teardown (including the bus's own
+    // last-unsubscribe path) — logging it as an error would bury the two
+    // statuses that mean the join genuinely failed: CHANNEL_ERROR (e.g. an
+    // RLS refusal on realtime.messages) and TIMED_OUT.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    subscribeStatus.value = 'CLOSED';
+    const unsubscribeClosed = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    await waitFor(() => expect(channels.length).toBe(1));
+    expect(errorSpy).not.toHaveBeenCalled();
+    unsubscribeClosed();
+    await waitFor(() => expect(removeChannelCalls.n).toBe(1));
+
+    errorSpy.mockClear();
+    subscribeStatus.value = 'CHANNEL_ERROR';
+    const unsubscribeError = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[badge-bus] topic "sis:grade-change-requests" subscribe status:',
+      'CHANNEL_ERROR'
+    );
+    unsubscribeError();
+
+    errorSpy.mockRestore();
+  });
+
+  it('clears the pending entry when .subscribe() throws synchronously (not just when setAuth rejects)', async () => {
+    // Item 2 of fix round 2: the try/catch used to cover setAuth() only. A
+    // throw from .channel()/.on()/.subscribe() would reject the un-awaited
+    // open() call just as surely as a rejected setAuth() does, and would
+    // otherwise leave `channels` wedged at 'pending' for the rest of the
+    // session — every later subscriber silently doing nothing.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    subscribeThrows.once = true;
+
+    const firstUnsubscribe = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      () => {}
+    );
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[badge-bus] failed to open topic "sis:grade-change-requests"; badge will not update until a new subscriber retries:',
+      expect.any(Error)
+    );
+    firstUnsubscribe();
+
+    // A fresh subscriber must not inherit a wedged 'pending' entry — retry
+    // has to actually reach a live, broadcast-receiving channel.
+    const secondListener = vi.fn();
+    const secondUnsubscribe = subscribeToBadgeTopic(
+      'sis:grade-change-requests',
+      secondListener
+    );
+    await waitFor(() => expect(channels.length).toBe(2));
+    await act(async () => {
+      await handlers[handlers.length - 1]();
+    });
+    expect(secondListener).toHaveBeenCalled();
     secondUnsubscribe();
 
     errorSpy.mockRestore();
