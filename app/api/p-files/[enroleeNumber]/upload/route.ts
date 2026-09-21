@@ -2,7 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import PDFMerger from 'pdf-merger-js';
 import { requireAnyCapability } from '@/lib/auth/require-capability';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { resolveRequestAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
@@ -194,7 +194,16 @@ export async function POST(
   }
 
   const service = createServiceClient();
-  const ayCode = await requireCurrentAyCode(service);
+  // ⚠ `?ay`, NOT the current year. The page this is called from is multi-year
+  // and redirects to whichever AY the student is actually in; resolving the
+  // CURRENT year here wrote to the wrong year's tables, matched no row, and
+  // told the user their student "has no document record for this academic
+  // year" about a record visible on the screen behind the dialog.
+  const ayResolved = await resolveRequestAyCode(service, request);
+  if ('error' in ayResolved) {
+    return NextResponse.json({ error: ayResolved.error }, { status: 400 });
+  }
+  const { ayCode } = ayResolved;
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
 
   // ── Which side of enrolment is this upload on? ──

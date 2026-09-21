@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useAyParam } from '@/components/p-files/use-ay-param';
 import { FileText, Merge, Upload, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -88,6 +89,8 @@ export function UploadDialog({
   isReplacement,
   trigger,
 }: UploadDialogProps) {
+  // The API must target the year the PAGE is showing, not the current one.
+  const withAy = useAyParam();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -161,10 +164,13 @@ export function UploadDialog({
   // `body.error` surfaces via ApiError.message ('Upload failed').
   const uploadMutation = useMutation({
     mutationFn: (formData: FormData) =>
-      apiFetch<{ warning?: string }>(`/api/p-files/${enroleeNumber}/upload`, {
-        method: 'POST',
-        body: formData,
-      }),
+      apiFetch<{ warning?: string }>(
+        withAy(`/api/p-files/${enroleeNumber}/upload`),
+        {
+          method: 'POST',
+          body: formData,
+        }
+      ),
   });
 
   const run = useWriteAction();

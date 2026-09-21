@@ -2,7 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireCapability } from '@/lib/auth/require-capability';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { resolveRequestAyCode } from '@/lib/academic-year';
 import { logAction, type AuditAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadApplicantIdentity } from '@/lib/p-files/audit';
@@ -95,7 +95,12 @@ export async function PATCH(
   if ('error' in auth) return auth.error;
 
   const service = createServiceClient();
-  const ayCode = await requireCurrentAyCode(service);
+  // ⚠ `?ay`, NOT the current year — the P-Files student page is multi-year.
+  const ayResolved = await resolveRequestAyCode(service, request);
+  if ('error' in ayResolved) {
+    return NextResponse.json({ error: ayResolved.error }, { status: 400 });
+  }
+  const { ayCode } = ayResolved;
   const prefix = prefixFor(ayCode);
 
   const [statusRes, docsRes] = await Promise.all([

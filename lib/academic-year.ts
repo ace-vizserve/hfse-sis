@@ -86,6 +86,40 @@ export async function requireCurrentAyCode(
   return ay.ay_code;
 }
 
+/**
+ * The academic year a REQUEST is about, which is not always the current one.
+ *
+ * ⚠ THIS EXISTS BECAUSE `requireCurrentAyCode` WAS THE WRONG DEFAULT IN FIVE
+ * ROUTES. The P-Files student page is multi-year: it reads `?ay`, and when the
+ * param is stale it redirects to whichever AY the student actually exists in.
+ * Its write routes did not — every one of them resolved the CURRENT year and
+ * built its table prefix from that. Opening an AY2027 student and uploading
+ * wrote to `ay2026_enrolment_documents`, matched no row, and reported "this
+ * student has no document record for this academic year" about a record that
+ * plainly existed on screen.
+ *
+ * ⚠ **The read routes were the worse half.** `revisions` returned the wrong
+ * year's history with a 200, which looks like data rather than an error.
+ *
+ * Validation is against `listAyCodes`, NOT a regex: `AY9999` matches
+ * /^AY\d{4}$/ and names a year that does not exist, and the table prefix is
+ * interpolated into a query. An unknown code must be refused, not queried.
+ *
+ * Returns the current AY when `?ay` is absent, so every existing caller and
+ * every link without the param behaves exactly as before.
+ */
+export async function resolveRequestAyCode(
+  client: SupabaseClient,
+  request: { url: string }
+): Promise<{ ayCode: string } | { error: string }> {
+  const requested = new URL(request.url).searchParams.get('ay');
+  if (!requested) return { ayCode: await requireCurrentAyCode(client) };
+
+  const known = await listAyCodes(client);
+  if (!known.includes(requested)) return { error: 'invalid_ay' };
+  return { ayCode: requested };
+}
+
 // Upcoming-AY lookup (KD #77). Returns the AY where
 // `accepting_applications=true AND is_current=false`. There should be at
 // most one such row in normal operation; if multiple exist the

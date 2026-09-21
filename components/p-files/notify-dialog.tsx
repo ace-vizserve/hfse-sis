@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useAyParam } from '@/components/p-files/use-ay-param';
 import { Mail, Send } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -86,6 +87,8 @@ export function NotifyDialog({
   trigger,
   module = 'p-files',
 }: NotifyDialogProps) {
+  // The API must target the year the PAGE is showing, not the current one.
+  const withAy = useAyParam();
   const [open, setOpen] = useState(false);
 
   const resolved = useMemo(
@@ -104,7 +107,7 @@ export function NotifyDialog({
   const notifyMutation = useMutation({
     mutationFn: () =>
       apiFetch<NotifyResult>(
-        `/api/p-files/${encodeURIComponent(enroleeNumber)}/notify`,
+        withAy(`/api/p-files/${encodeURIComponent(enroleeNumber)}/notify`),
         jsonInit('POST', { slotKey, module })
       ),
   });

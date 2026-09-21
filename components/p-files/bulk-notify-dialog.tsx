@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useAyParam } from '@/components/p-files/use-ay-param';
 import { Send, Users } from 'lucide-react';
 import { useState } from 'react';
 
@@ -44,6 +45,8 @@ export function BulkNotifyDialog({
   onSuccess,
   module = 'p-files',
 }: BulkNotifyDialogProps) {
+  // The API must target the year the PAGE is showing, not the current one.
+  const withAy = useAyParam();
   type BulkNotifyResult = {
     sent: number;
     requested: number;
@@ -58,7 +61,7 @@ export function BulkNotifyDialog({
   const notifyMutation = useMutation({
     mutationFn: () =>
       apiFetch<BulkNotifyResult>(
-        '/api/p-files/notify/bulk',
+        withAy('/api/p-files/notify/bulk'),
         jsonInit('POST', {
           items: items.map((i) => ({
             enroleeNumber: i.enroleeNumber,

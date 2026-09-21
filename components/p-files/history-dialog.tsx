@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useAyParam } from '@/components/p-files/use-ay-param';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -60,6 +61,8 @@ export function HistoryDialog({
   label,
   trigger,
 }: HistoryDialogProps) {
+  // The API must target the year the PAGE is showing, not the current one.
+  const withAy = useAyParam();
   const [open, setOpen] = React.useState(false);
 
   // Lazy READ — only fetches once the dialog opens (`enabled: open`). The
@@ -70,7 +73,9 @@ export function HistoryDialog({
     queryKey: [...queryKeys.pfileRevisions(enroleeNumber), slotKey] as const,
     queryFn: async ({ signal }) => {
       const json = await apiFetch<{ revisions: DocumentRevision[] }>(
-        `/api/p-files/${enroleeNumber}/revisions?slotKey=${encodeURIComponent(slotKey)}`,
+        withAy(
+          `/api/p-files/${enroleeNumber}/revisions?slotKey=${encodeURIComponent(slotKey)}`
+        ),
         { signal }
       );
       return json.revisions;

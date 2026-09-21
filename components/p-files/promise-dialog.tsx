@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useAyParam } from '@/components/p-files/use-ay-param';
 import { CalendarClock } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -58,6 +59,8 @@ export function PromiseDialog({
   trigger,
   module = 'p-files',
 }: PromiseDialogProps) {
+  // The API must target the year the PAGE is showing, not the current one.
+  const withAy = useAyParam();
   const [open, setOpen] = useState(false);
   const [promisedUntil, setPromisedUntil] = useState<string>(
     isoDateOffset(DEFAULT_HORIZON_DAYS)
@@ -77,7 +80,7 @@ export function PromiseDialog({
   const promiseMutation = useMutation({
     mutationFn: () =>
       apiFetch(
-        `/api/p-files/${encodeURIComponent(enroleeNumber)}/promise`,
+        withAy(`/api/p-files/${encodeURIComponent(enroleeNumber)}/promise`),
         jsonInit('PATCH', {
           slotKey,
           promisedUntil,
