@@ -69,7 +69,66 @@ export async function GET(
     app?.studentNumber ?? null
   );
 
-  return NextResponse.json({ ...result, currentSection });
+  const hasAttendance = await hasAttendanceThisAy(
+    service,
+    ayCode,
+    app?.studentNumber ?? null
+  );
+
+  return NextResponse.json({ ...result, currentSection, hasAttendance });
+}
+
+/**
+ * Has this student been marked present or absent in this academic year?
+ *
+ * ⚠ ANSWERED HERE so the withdrawal form can stop demanding "the last day
+ * they actually attended" from a student who has never attended. A class row
+ * is not attendance: YS Youngstarters hold 15 class rows and zero marks, and
+ * they were the only students tripping that requirement. The server gate
+ * (lib/sis/withdrawal-cascade.ts) makes the same distinction; this is the read
+ * that lets the FORM agree with it instead of asking first and being refused.
+ *
+ * Returns null when it cannot tell, which the dialog treats as "assume they
+ * attended" — the same fail-closed direction as the server.
+ */
+async function hasAttendanceThisAy(
+  service: ReturnType<typeof createServiceClient>,
+  ayCode: string,
+  studentNumber: string | null
+): Promise<boolean | null> {
+  if (!studentNumber) return false;
+
+  const [studentRes, ayRes] = await Promise.all([
+    service
+      .from('students')
+      .select('id')
+      .eq('student_number', studentNumber)
+      .maybeSingle(),
+    service
+      .from('academic_years')
+      .select('id')
+      .eq('ay_code', ayCode)
+      .maybeSingle(),
+  ]);
+  const studentId = (studentRes.data as { id: string } | null)?.id ?? null;
+  const ayId = (ayRes.data as { id: string } | null)?.id ?? null;
+  if (!studentId || !ayId) return false;
+
+  const { data: rows, error: rowsErr } = await service
+    .from('section_students')
+    .select('id, section:sections!inner(academic_year_id)')
+    .eq('student_id', studentId)
+    .eq('sections.academic_year_id', ayId);
+  if (rowsErr) return null;
+  const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  if (ids.length === 0) return false;
+
+  const { count, error } = await service
+    .from('attendance_daily')
+    .select('id', { count: 'exact', head: true })
+    .in('section_student_id', ids);
+  if (error) return null;
+  return (count ?? 0) > 0;
 }
 
 /**

@@ -610,8 +610,14 @@ export async function PATCH(
       return NextResponse.json({ error: resolved.error }, { status: 500 });
     }
     cascadeTarget = resolved;
+    // Has this child ever been marked present or absent? A class row alone
+    // does not mean they attended — YS Youngstarters hold class rows and zero
+    // attendance — and "the last day they actually attended" is unanswerable
+    // for a cohort with no register. See withdrawalDateRequiredError.
+    const hasAttendance = await hasAnyAttendance(supabase, resolved.rows);
     const dateGate = withdrawalDateRequiredError({
       activeClassRows: resolved.rows.length,
+      hasAttendance,
       dates: withdrawalDates,
     });
     if (dateGate) {
@@ -1139,4 +1145,38 @@ async function resolveCascadeTarget(
   }));
 
   return { studentNumber, studentName, rows };
+}
+
+/**
+ * Does any of these class rows carry a single attendance mark?
+ *
+ * `attendance_daily` keys on `section_student_id` (migration 014), so the
+ * question is answerable straight off the rows the cascade already resolved —
+ * no extra roster lookup, and `head: true` means no payload either.
+ *
+ * ⚠ FAILS CLOSED. A failed count returns `true`, which keeps the last-day
+ * requirement in force. Reading "the query broke" as "they never attended"
+ * would quietly let a real withdrawal through with no attendance cutoff
+ * recorded, and that date cannot be reconstructed afterwards.
+ */
+async function hasAnyAttendance(
+  supabase: ReturnType<typeof createServiceClient>,
+  rows: Array<{ id: string }>
+): Promise<boolean> {
+  if (rows.length === 0) return false;
+  const { count, error } = await supabase
+    .from('attendance_daily')
+    .select('id', { count: 'exact', head: true })
+    .in(
+      'section_student_id',
+      rows.map((r) => r.id)
+    );
+  if (error) {
+    console.warn(
+      '[sis/stage] attendance check failed; keeping the last-day requirement:',
+      error.message
+    );
+    return true;
+  }
+  return (count ?? 0) > 0;
 }

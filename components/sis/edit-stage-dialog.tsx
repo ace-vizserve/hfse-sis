@@ -237,6 +237,12 @@ export function EditStageDialog({
           levelCode: string | null;
           status: string;
         } | null;
+        /**
+         * Has this student ever been marked present or absent this year?
+         * `null` means the read could not tell, and is treated as "yes" —
+         * the same fail-closed direction as the server's own gate.
+         */
+        hasAttendance: boolean | null;
       }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
       ),
@@ -264,8 +270,23 @@ export function EditStageDialog({
   const placedInClassNow =
     alreadyPlaced?.status === 'active' ||
     alreadyPlaced?.status === 'late_enrollee';
-  const lastDayRequired =
+
+  // ⚠ A CLASS ROW IS NOT ATTENDANCE. Mr Ace, 2026-09-22: this form demanded
+  // "the last day they actually attended" from a student whose application
+  // still read Submitted — "this doesnt make sense bruh". All 15 AY2026
+  // students who hit it are in YS Youngstarters, a section with a full roster
+  // and ZERO attendance marks, so the one date the form insisted on was the
+  // one nobody could answer. `null` (the read could not tell) counts as
+  // attended, matching the server's fail-closed gate.
+  const hasAttendance = sectionsQuery.data?.hasAttendance ?? null;
+  const neverAttended = hasAttendance === false;
+
+  // Offered whenever they sit in a class; REQUIRED only when there is a
+  // register behind it. The server enforces the same split, so an empty date
+  // for a never-attended student is now accepted rather than refused.
+  const lastDayOffered =
     endingApplication && (placedInClassNow || serverNeedsLastDay);
+  const lastDayRequired = lastDayOffered && !neverAttended;
 
   const [terminalReason, setTerminalReason] = useState<
     ApplicationTerminalReason | ''
@@ -948,12 +969,19 @@ export function EditStageDialog({
                           applicant who never started has no last day, and
                           the dates are stored on the class row, so for an
                           applicant anything typed here went nowhere. */}
-                      {lastDayRequired && (
+                      {lastDayOffered && (
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1.5">
                             <label className="text-sm font-medium text-foreground">
                               Last day at school
-                              <span className="text-destructive"> *</span>
+                              {lastDayRequired ? (
+                                <span className="text-destructive"> *</span>
+                              ) : (
+                                <span className="font-normal text-muted-foreground">
+                                  {' '}
+                                  (optional)
+                                </span>
+                              )}
                             </label>
                             <DatePicker
                               value={lastDay}
@@ -961,7 +989,9 @@ export function EditStageDialog({
                               placeholder="Pick the last day"
                             />
                             <p className="text-[11px] leading-snug text-muted-foreground">
-                              The last day they actually attended.
+                              {neverAttended
+                                ? 'No attendance has been recorded for them this year, so leave this empty unless the school holds a date.'
+                                : 'The last day they actually attended.'}
                             </p>
                           </div>
                           <div className="space-y-1.5">
@@ -987,6 +1017,37 @@ export function EditStageDialog({
                           {alreadyPlaced && placedInClassNow
                             ? `They are in ${[alreadyPlaced.levelCode, alreadyPlaced.sectionName].filter(Boolean).join(' ')} — enter their last day at school.`
                             : 'They are in a class — enter their last day at school.'}
+                        </p>
+                      )}
+
+                      {/* Says the quiet part: the status on this record and the
+                          class they sit in disagree, which is why a form about
+                          an application is asking about a classroom. Without
+                          it the registrar is left to infer that the system is
+                          confused, when it is the record that is behind. */}
+                      {lastDayOffered && alreadyPlaced && placedInClassNow && (
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                          This application still reads{' '}
+                          <span className="font-medium text-foreground">
+                            {initialStatus ?? 'unset'}
+                          </span>
+                          , but they are already in{' '}
+                          <span className="font-medium text-foreground">
+                            {[
+                              alreadyPlaced.levelCode,
+                              alreadyPlaced.sectionName,
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                          </span>
+                          .{' '}
+                          {effectiveStatus === 'Cancelled'
+                            ? 'Cancelling'
+                            : 'Withdrawing'}{' '}
+                          takes them out of that class too.
+                          {neverAttended
+                            ? ' They have no attendance recorded this year.'
+                            : ''}
                         </p>
                       )}
 

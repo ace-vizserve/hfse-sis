@@ -43,6 +43,7 @@ describe('stage withdrawal cascade — dates are the registrar’s, never today'
     expect(
       withdrawalDateRequiredError({
         activeClassRows: 1,
+        hasAttendance: true,
         dates: { withdrawal_date: null, withdrawal_approved_date: null },
       })
     ).toMatchObject({ code: 'withdrawal_date_required' });
@@ -52,15 +53,43 @@ describe('stage withdrawal cascade — dates are the registrar’s, never today'
     expect(
       withdrawalDateRequiredError({
         activeClassRows: 0,
+        hasAttendance: false,
         dates: { withdrawal_date: null, withdrawal_approved_date: null },
       })
     ).toBeNull();
+  });
+
+  it('does not ask for a last day when the class has no attendance behind it', () => {
+    // The YS Youngstarters case, measured 2026-09-22: a full roster of 15 with
+    // ZERO attendance marks, while every other section holds 1,000–4,400. The
+    // form was demanding "the last day they actually attended" from the one
+    // cohort that has never been marked present or absent.
+    expect(
+      withdrawalDateRequiredError({
+        activeClassRows: 1,
+        hasAttendance: false,
+        dates: { withdrawal_date: null, withdrawal_approved_date: null },
+      })
+    ).toBeNull();
+  });
+
+  it('still refuses when attendance exists, however many class rows', () => {
+    // The relaxation must not leak into the case it was never meant to touch:
+    // a transferred student holds two rows (KD #67) and has a real register.
+    expect(
+      withdrawalDateRequiredError({
+        activeClassRows: 2,
+        hasAttendance: true,
+        dates: { withdrawal_date: null, withdrawal_approved_date: null },
+      })
+    ).toMatchObject({ code: 'withdrawal_date_required' });
   });
 
   it('accepts a last day when the student is in a class', () => {
     expect(
       withdrawalDateRequiredError({
         activeClassRows: 2,
+        hasAttendance: true,
         dates: {
           withdrawal_date: '2026-04-26',
           withdrawal_approved_date: null,

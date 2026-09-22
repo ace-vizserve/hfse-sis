@@ -139,20 +139,42 @@ export function buildCascadeSectionPatch(args: {
 }
 
 /**
- * Null when the save may go ahead; otherwise the refusal. A last day is needed
- * only when the cascade will actually take a child out of a class — an
+ * Null when the save may go ahead; otherwise the refusal.
+ *
+ * A last day is needed only when the cascade will take a child out of a class
+ * AND that child has actually been marked present or absent at some point — an
  * applicant who never got a seat has no last day, and asking for one would
  * push the registrar to type a made-up date.
+ *
+ * ⚠ HAVING A CLASS ROW IS NOT THE SAME AS HAVING ATTENDED, and that was this
+ * gate's original mistake. Mr Ace, 2026-09-22: withdrawing a student whose
+ * application still read "Submitted" demanded "the last day they actually
+ * attended" — "this doesnt make sense bruh". Measured: all 15 AY2026 students
+ * who trip this gate are in YS Youngstarters, and that section holds **zero**
+ * attendance marks while every other section holds 1,000–4,400. So the date
+ * was being demanded from precisely the cohort that cannot answer it. See
+ * `scripts/probe-youngstarters-attendance.ts`.
+ *
+ * `hasAttendance` therefore gates the gate. It only ever RELAXES the rule —
+ * a student with marks is refused exactly as before — so no withdrawal that
+ * used to record a real last day can now skip it.
+ *
+ * ⚠ A NULL `withdrawal_date` IS A PERMITTED END STATE, not a hole to fill
+ * later: Mr Ace, 2026-09-15, on Jannat Ajmal — "no record." The consequence
+ * is already known and accepted: the Records Withdrawals count keys on the
+ * date, so a student withdrawn without one never appears in it.
  */
 export function withdrawalDateRequiredError(args: {
   activeClassRows: number;
+  hasAttendance: boolean;
   dates: StageWithdrawalDates;
 }): { error: string; code: 'withdrawal_date_required' } | null {
   if (args.activeClassRows === 0) return null;
+  if (!args.hasAttendance) return null;
   if (args.dates.withdrawal_date) return null;
   return {
     code: 'withdrawal_date_required',
     error:
-      'This student is in a class. Enter their last day at school before withdrawing them.',
+      'This student is in a class and has attendance on record. Enter their last day at school before withdrawing them.',
   };
 }
