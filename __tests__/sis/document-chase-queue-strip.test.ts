@@ -56,6 +56,7 @@ const NOTHING_VISIBLE: DocumentChaseQueueCounts = {
   validation: 0,
   revalidation: 0,
   expiringSoon: 0,
+  inScope: 0,
 };
 
 const SOME_VISIBLE: DocumentChaseQueueCounts = {
@@ -63,6 +64,7 @@ const SOME_VISIBLE: DocumentChaseQueueCounts = {
   validation: 0,
   revalidation: 1,
   expiringSoon: 0,
+  inScope: 20,
 };
 
 beforeEach(() => {
@@ -128,6 +130,7 @@ describe('DocumentChaseQueueStrip', () => {
         validation: 1,
         revalidation: 1,
         expiringSoon: 0,
+        inScope: 10,
       },
     });
     const admissionsText = collectStrings(admissionsElement);
@@ -147,6 +150,7 @@ describe('DocumentChaseQueueStrip', () => {
         validation: 0,
         revalidation: 1,
         expiringSoon: 1,
+        inScope: 10,
       },
     });
     const pFilesText = collectStrings(pFilesElement);

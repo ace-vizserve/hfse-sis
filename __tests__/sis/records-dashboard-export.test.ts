@@ -147,6 +147,7 @@ const chaseQueueCounts: DocumentChaseQueueCounts = {
   validation: 0, // admissions-only bucket — must not surface for p-files
   revalidation: 2,
   expiringSoon: 5,
+  inScope: 30,
 };
 
 const baseInput: BuildRecordsDashboardExportInput = {
@@ -466,6 +467,7 @@ describe('buildRecordsDashboardExport', () => {
         validation: 0,
         revalidation: 0,
         expiringSoon: 0,
+        inScope: 0,
       },
     });
     expect(result.sections.map((s) => s.title)).not.toContain(

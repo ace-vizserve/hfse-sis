@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronRight,
   FileWarning,
   MailQuestion,
 } from 'lucide-react';
@@ -122,6 +123,35 @@ const CHIP_COLOR_BY_SEVERITY: Record<
   warn: 'stale',
 };
 
+// Meter fill, matching the icon tile's severity so the card reads as one
+// object. Same track idiom as the attendance section summary card
+// (`h-[5px] overflow-hidden rounded-full bg-muted`) rather than a new one.
+const METER_FILL_BY_SEVERITY: Record<ChaseTile['severity'], string> = {
+  bad: 'bg-destructive',
+  warn: 'bg-brand-amber',
+};
+
+/**
+ * What share of the students in scope this tile is asking about.
+ *
+ * ⚠ THE UNIT IS STUDENTS, NOT DOCUMENTS. A tile counts students holding at
+ * least one document in that state, so "207" is 207 students, and dividing it
+ * by a document total would produce a much smaller and meaningless number.
+ *
+ * Returns null when there is no scope to divide by — a percentage of nothing
+ * is not 0%, it is unanswerable, and the card omits the row rather than
+ * showing a confident zero.
+ */
+function sharePct(value: number, inScope: number): number | null {
+  if (inScope <= 0) return null;
+  return Math.round((value / inScope) * 100);
+}
+
+/** Names the denominator in the reader's own words, per lens. */
+function scopeNoun(lens: ChaseQueueLens): string {
+  return lens === 'admissions' ? 'applicants' : 'enrolled students';
+}
+
 export async function DocumentChaseQueueStrip({
   ayCode,
   lens: moduleKey = 'admissions',
@@ -157,17 +187,18 @@ export async function DocumentChaseQueueStrip({
     <section className={gridClass} aria-label="Documents needing action">
       {visibleTiles.map((tile) => {
         const value = valueByTarget.get(tile.target) ?? 0;
+        const pct = sharePct(value, counts.inScope);
         const Icon = tile.icon;
         return (
           <Sheet key={tile.target}>
             <SheetTrigger asChild>
               <button
                 type="button"
-                className="block w-full text-left"
-                aria-label={`${tile.label}: ${value}`}
+                className="group block w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-indigo/25"
+                aria-label={`${tile.label}: ${value} of ${counts.inScope} students. Opens the list.`}
               >
                 <Card
-                  className={`${TILE_CRAFT} transition-shadow hover:shadow-md`}
+                  className={`${TILE_CRAFT} cursor-pointer transition-shadow hover:shadow-md`}
                 >
                   <CardHeader>
                     <CardAction>
@@ -186,13 +217,40 @@ export async function DocumentChaseQueueStrip({
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-ink-2">{tile.description}</p>
-                    <div className="mt-2">
+                    {pct !== null && (
+                      <div className="mt-3">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="font-serif text-lg tabular-nums text-foreground">
+                            {pct}%
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            of {counts.inScope.toLocaleString()}{' '}
+                            {scopeNoun(moduleKey)}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-muted">
+                          <span
+                            className={`block h-full rounded-full ${METER_FILL_BY_SEVERITY[tile.severity]}`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-3 flex items-center justify-between gap-2">
                       <ChartLegendChip
                         color={CHIP_COLOR_BY_SEVERITY[tile.severity]}
                         label={
                           tile.severity === 'bad' ? 'Needs action' : 'Awaiting'
                         }
                       />
+                      {/* The card has always opened a drill sheet and never
+                          said so — a hover shadow is not an affordance. This
+                          names the action in the same words as the sheet's
+                          own heading. */}
+                      <span className="flex items-center gap-0.5 text-xs font-medium text-brand-indigo transition-transform group-hover:translate-x-0.5">
+                        View students
+                        <ChevronRight className="size-3.5" aria-hidden />
+                      </span>
                     </div>
                   </CardContent>
                 </Card>

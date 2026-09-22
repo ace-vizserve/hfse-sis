@@ -57,6 +57,20 @@ export type DocumentChaseQueueCounts = {
   validation: number; // any slot at 'Uploaded' (admissions only — zero for p-files)
   revalidation: number; // Rejected + Expired for both modules per KD #70
   expiringSoon: number; // any Valid slot expiring within 30 days (p-files only — zero for admissions)
+  /**
+   * Students in this lens's scope — enrolled for p-files, in the active
+   * funnel for admissions.
+   *
+   * ⚠ IT IS THE DENOMINATOR FOR EVERY TILE, and it matters that the tiles
+   * count STUDENTS rather than documents: "207 awaiting revalidation" is 207
+   * students holding at least one rejected or expired document, not 207
+   * documents. A share of the document total would therefore be a different,
+   * much smaller, and wrong number.
+   *
+   * Free to compute — it is `enroleeSet.size`, which the loader already builds
+   * to filter the documents query.
+   */
+  inScope: number;
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -160,7 +174,13 @@ async function loadChaseQueueUncached(
       '[sis/document-chase-queue] status fetch failed:',
       statusRes.error.message
     );
-    return { promised: 0, validation: 0, revalidation: 0, expiringSoon: 0 };
+    return {
+      promised: 0,
+      validation: 0,
+      revalidation: 0,
+      expiringSoon: 0,
+      inScope: 0,
+    };
   }
   type StatusRow = {
     enroleeNumber: string | null;
@@ -180,7 +200,13 @@ async function loadChaseQueueUncached(
       .map((r) => r.enroleeNumber!)
   );
   if (enroleeSet.size === 0) {
-    return { promised: 0, validation: 0, revalidation: 0, expiringSoon: 0 };
+    return {
+      promised: 0,
+      validation: 0,
+      revalidation: 0,
+      expiringSoon: 0,
+      inScope: 0,
+    };
   }
 
   // Include both status columns and expiry columns so scanDocStatusForActionFlags
@@ -201,7 +227,17 @@ async function loadChaseQueueUncached(
       '[sis/document-chase-queue] docs fetch failed:',
       docsRes.error.message
     );
-    return { promised: 0, validation: 0, revalidation: 0, expiringSoon: 0 };
+    // ⚠ `inScope` stays 0 on a failed docs fetch, not `enroleeSet.size`. The
+    // tiles all read zero here, and a denominator without numerators would
+    // render "0 of 412 students (0%)" — a confident, wrong all-clear. Zero
+    // over zero is what the strip already treats as "nothing to show".
+    return {
+      promised: 0,
+      validation: 0,
+      revalidation: 0,
+      expiringSoon: 0,
+      inScope: 0,
+    };
   }
 
   let promised = 0;
@@ -233,7 +269,13 @@ async function loadChaseQueueUncached(
     validation = 0;
   }
 
-  return { promised, validation, revalidation, expiringSoon };
+  return {
+    promised,
+    validation,
+    revalidation,
+    expiringSoon,
+    inScope: enroleeSet.size,
+  };
 }
 
 export async function getDocumentChaseQueueCounts(

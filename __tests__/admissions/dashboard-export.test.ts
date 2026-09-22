@@ -140,6 +140,7 @@ const chaseQueueCounts: DocumentChaseQueueCounts = {
   validation: 2,
   revalidation: 1,
   expiringSoon: 9, // must not surface for admissions — hidden per the module split
+  inScope: 40,
 };
 
 const baseInput: BuildAdmissionsDashboardExportInput = {
@@ -484,6 +485,7 @@ describe('buildAdmissionsDashboardExport', () => {
         validation: 0,
         revalidation: 0,
         expiringSoon: 0,
+        inScope: 0,
       },
     });
     expect(result.sections.map((s) => s.title)).not.toContain(
