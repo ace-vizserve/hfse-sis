@@ -46,6 +46,26 @@ export type UnmatchedLevelLabel = {
   statusCount: number;
   /** Up to 5 enrolee numbers observed with this raw label, for context copy. */
   sampleEnrolees: string[];
+  /**
+   * How many students this name is ACTUALLY blocking — enrolled, and with no
+   * class yet. Distinct enrolees, so a child counted once even though their
+   * label appears on both admissions tables.
+   *
+   * ⚠ THE WHOLE QUEUE USED TO IGNORE THIS, and it made mapping a name feel
+   * broken. Every row with the label counted, Cancelled and Withdrawn
+   * included, so the list advertised blockers while blocking nobody: on
+   * 2026-09-22 all six Youngstarters variants were mapped, correctly vanished
+   * — and not one child moved, because all 23 behind them were still
+   * `Submitted`. Both surfaces that act on a resolved level are enrolled-only
+   * (`lib/sis/levels-awaiting-sections.ts`, `lib/sis/unsynced-students.ts`),
+   * so a name in front of no enrolled student has nowhere to send anyone.
+   *
+   * This is the same demand-driven rule the sibling card on that page already
+   * follows — "a level appears only when real students are stuck behind it,
+   * which makes an empty list genuinely mean 'nothing to do'". The two halves
+   * of one page disagreeing about what counts as a blocker was the defect.
+   */
+  blockedCount: number;
 };
 
 // Per-(AY, rawLabel) aggregate — apps + status counts for that raw label
@@ -58,10 +78,26 @@ export type ObservedLevelLabel = {
   appsCount: number;
   statusCount: number;
   sampleEnrolees: string[];
+  /**
+   * The enrolees behind this label, in this AY, who are enrolled and have no
+   * class. A SET, not a count, because the same child is observed once per
+   * admissions table and must not be counted twice — the merge below unions
+   * across AYs for the same reason.
+   */
+  blockedEnrolees?: string[];
 };
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_SAMPLE_ENROLEES = 5;
+
+/**
+ * Mirrors `lib/sis/levels-awaiting-sections.ts` — the statuses that mean a
+ * child is on the roll and therefore has somewhere to go once their level
+ * name resolves. Kept identical on purpose: if these two ever disagree, a
+ * name would be reported as blocking a student that the list it hands them to
+ * does not show.
+ */
+const ENROLLED_STATUSES = ['Enrolled', 'Enrolled (Conditional)'] as const;
 
 function prefixFor(ayCode: string): string {
   return `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
@@ -89,6 +125,11 @@ function prefixFor(ayCode: string): string {
  * Observations for the same `rawLabel` across different AYs are merged into
  * one result row (`ayCodes` accumulates, counts sum, sample enrolees dedupe
  * up to `MAX_SAMPLE_ENROLEES`). No DB access — safe to unit test directly.
+ *
+ * `blockedEnrolees` is UNIONED rather than summed — see `blockedCount` on
+ * `UnmatchedLevelLabel`. The same child is observed once per admissions table
+ * and may carry the label in two AYs, and both would double-count a queue
+ * whose entire purpose is to say how many people are actually waiting.
  */
 export function diffUnmatchedLevelLabels(
   observed: ObservedLevelLabel[],
@@ -103,12 +144,22 @@ export function diffUnmatchedLevelLabels(
   const aliasedSet = new Set(aliases.map((a) => a.raw_label));
 
   const merged = new Map<string, UnmatchedLevelLabel>();
+  // Kept beside `merged` rather than on the row, so the union stays a Set
+  // while it is being built and only becomes a number at the end.
+  const blockedByLabel = new Map<string, Set<string>>();
 
   for (const obs of observed) {
     const canonical = canonicalizeLevelLabel(obs.rawLabel);
     if (canonical == null) continue; // blank/null observed label — nothing to reconcile
     if (knownSet.has(canonical)) continue; // matches an existing level — not unmatched
     if (aliasedSet.has(obs.rawLabel)) continue; // registrar already mapped it — resolved
+
+    let blocked = blockedByLabel.get(obs.rawLabel);
+    if (!blocked) {
+      blocked = new Set<string>();
+      blockedByLabel.set(obs.rawLabel, blocked);
+    }
+    for (const enrolee of obs.blockedEnrolees ?? []) blocked.add(enrolee);
 
     const existing = merged.get(obs.rawLabel);
     if (!existing) {
@@ -119,6 +170,7 @@ export function diffUnmatchedLevelLabels(
         appsCount: obs.appsCount,
         statusCount: obs.statusCount,
         sampleEnrolees: obs.sampleEnrolees.slice(0, MAX_SAMPLE_ENROLEES),
+        blockedCount: 0,
       });
       continue;
     }
@@ -136,8 +188,17 @@ export function diffUnmatchedLevelLabels(
     }
   }
 
-  return Array.from(merged.values()).sort((a, b) =>
-    a.rawLabel.localeCompare(b.rawLabel)
+  for (const [rawLabel, row] of merged) {
+    row.blockedCount = blockedByLabel.get(rawLabel)?.size ?? 0;
+  }
+
+  // Blocking names first, most people waiting first within that — the queue
+  // now leads with the rows a registrar can actually unblock someone by
+  // clearing. Alphabetical remains the tiebreak, so the housekeeping tail
+  // reads exactly as it did before.
+  return Array.from(merged.values()).sort(
+    (a, b) =>
+      b.blockedCount - a.blockedCount || a.rawLabel.localeCompare(b.rawLabel)
   );
 }
 
@@ -178,6 +239,10 @@ async function loadUnmatchedLevelLabelsUncached(
   const aliases = (aliasesRes.data ?? []) as LevelAliasRow[];
 
   type Row = { enroleeNumber: string | null; levelApplied: string | null };
+  type StatusRow = Row & {
+    applicationStatus: string | null;
+    classSection: string | null;
+  };
 
   // Accumulate per (ayCode, rawLabel) — mirrors the ObservedLevelLabel shape
   // the pure diff function expects, one bucket per AY per raw label, with
@@ -188,10 +253,28 @@ async function loadUnmatchedLevelLabelsUncached(
     return `${ayCode}::${rawLabel}`;
   }
 
+  /**
+   * Is this child actually waiting on the name? Enrolled, and with no class.
+   *
+   * ⚠ BLANK `classSection` IS THE TEST, not a missing column — `lib/sis/
+   * levels-awaiting-sections.ts` treats a non-empty string as "already
+   * seated" and this must agree with it, since that is the list a resolved
+   * label hands the student to.
+   */
+  function isBlocked(row: StatusRow): boolean {
+    const status = row.applicationStatus ?? '';
+    if (!(ENROLLED_STATUSES as readonly string[]).includes(status))
+      return false;
+    return !(
+      typeof row.classSection === 'string' && row.classSection.trim().length > 0
+    );
+  }
+
   function addObservations(
     ayCode: string,
     rows: Row[],
-    field: 'appsCount' | 'statusCount'
+    field: 'appsCount' | 'statusCount',
+    blockedEnrolees: ReadonlySet<string>
   ) {
     for (const row of rows) {
       const rawLabel = row.levelApplied?.trim();
@@ -205,6 +288,7 @@ async function loadUnmatchedLevelLabelsUncached(
           appsCount: 0,
           statusCount: 0,
           sampleEnrolees: [],
+          blockedEnrolees: [],
         };
         buckets.set(key, bucket);
       }
@@ -215,6 +299,13 @@ async function loadUnmatchedLevelLabelsUncached(
         !bucket.sampleEnrolees.includes(row.enroleeNumber)
       ) {
         bucket.sampleEnrolees.push(row.enroleeNumber);
+      }
+      // A child counts as blocked by this name if they carry it on EITHER
+      // admissions table — the two can disagree, and the registrar's fix is
+      // the same either way. `diffUnmatchedLevelLabels` unions, so listing a
+      // number twice here is harmless.
+      if (row.enroleeNumber && blockedEnrolees.has(row.enroleeNumber)) {
+        bucket.blockedEnrolees?.push(row.enroleeNumber);
       }
     }
   }
@@ -235,9 +326,14 @@ async function loadUnmatchedLevelLabelsUncached(
         admissions
           .from(`${prefix}_enrolment_applications`)
           .select('enroleeNumber, levelApplied'),
+        // `applicationStatus` + `classSection` ride along on the query that
+        // was already being made — they are what turn "this name appears on
+        // N rows" into "this name is holding up N children".
         admissions
           .from(`${prefix}_enrolment_status`)
-          .select('enroleeNumber, levelApplied'),
+          .select(
+            'enroleeNumber, levelApplied, applicationStatus, classSection'
+          ),
       ]);
       return { ayCode, appsRes, statusRes };
     })
@@ -259,8 +355,24 @@ async function loadUnmatchedLevelLabelsUncached(
       return [];
     }
 
-    addObservations(ayCode, (appsRes.data ?? []) as Row[], 'appsCount');
-    addObservations(ayCode, (statusRes.data ?? []) as Row[], 'statusCount');
+    // Who is waiting, decided once per AY from the status table — the only
+    // side that carries `applicationStatus` and `classSection`. Built before
+    // either fold so the apps-side rows can be judged by it too.
+    const statusRows = (statusRes.data ?? []) as StatusRow[];
+    const blockedEnrolees = new Set<string>();
+    for (const row of statusRows) {
+      if (row.enroleeNumber && isBlocked(row)) {
+        blockedEnrolees.add(row.enroleeNumber);
+      }
+    }
+
+    addObservations(
+      ayCode,
+      (appsRes.data ?? []) as Row[],
+      'appsCount',
+      blockedEnrolees
+    );
+    addObservations(ayCode, statusRows, 'statusCount', blockedEnrolees);
   }
 
   return diffUnmatchedLevelLabels(
@@ -309,4 +421,23 @@ export async function loadUnmatchedLevelLabels(): Promise<
 export async function countUnmatchedLevelLabels(): Promise<number> {
   const rows = await loadUnmatchedLevelLabels();
   return rows.length;
+}
+
+/**
+ * Unrecognized level names that are holding up at least one child.
+ *
+ * ⚠ THIS, NOT `countUnmatchedLevelLabels`, IS WHAT THE SIDEBAR BADGE COUNTS.
+ * A badge is a claim that there is work waiting, and the full count makes
+ * that claim on behalf of names nobody is standing behind — today every one
+ * of the 11 unmapped names belongs to applicants who are still `Submitted`
+ * or to a child who already has a class, so the old badge read 11 with
+ * nothing to do. Its sibling half (`countLevelsAwaitingSections`) has always
+ * been demand-driven; this makes the two halves of one number agree.
+ *
+ * The names with nobody waiting have not gone anywhere — the page still
+ * lists them under their own tab, which is where housekeeping belongs.
+ */
+export async function countBlockingLevelLabels(): Promise<number> {
+  const rows = await loadUnmatchedLevelLabels();
+  return rows.filter((r) => r.blockedCount > 0).length;
 }

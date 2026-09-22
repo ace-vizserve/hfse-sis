@@ -30,6 +30,14 @@ import type { UnmatchedLevelLabel } from '@/lib/sis/level-review';
 //
 // On the shared <DataTable> shell (data-table redesign roadmap step 5) —
 // was a hand-rolled card list with zero search/sort/pagination.
+//
+// ⚠ THE LIST IS DEMAND-DRIVEN NOW. Every row used to look equally urgent, so
+// mapping a name and watching nothing happen read as a broken save — which is
+// exactly what it looked like on 2026-09-22, when six Youngstarters variants
+// were mapped correctly and not one of the 23 children behind them moved,
+// because all 23 were still `Submitted`. `blockedCount` says how many are
+// genuinely stuck (enrolled, no class), the first tab holds only those, and
+// the sidebar badge counts the same thing.
 
 type LevelOption = { id: string; code: string; label: string };
 
@@ -52,6 +60,34 @@ function buildColumns(levels: LevelOption[]): ColumnDef<UnmatchedLevelLabel>[] {
           </div>
         </div>
       ),
+    },
+    {
+      id: 'waiting',
+      accessorFn: (row) => row.blockedCount,
+      header: ({ column }) => (
+        <SortableHeader column={column}>Waiting</SortableHeader>
+      ),
+      meta: { label: 'Students waiting' },
+      cell: ({ row }) => {
+        const waiting = row.original.blockedCount;
+        // ⚠ PIXEL-IDENTICAL TO `LevelsAwaitingSectionsCard`'s "N waiting"
+        // badge, deliberately (design system §10.2 — the key and the thing it
+        // documents share one source). Both halves of this page now say
+        // "somebody is stuck behind this", and a registrar should not have to
+        // learn that twice.
+        if (waiting === 0) {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+        return (
+          <Badge
+            variant="outline"
+            className="h-6 border-destructive/40 bg-destructive/10 text-destructive"
+          >
+            <span className="tabular-nums">{waiting}</span>
+            waiting
+          </Badge>
+        );
+      },
     },
     {
       id: 'totalRows',
@@ -114,7 +150,27 @@ export function LevelMismatchesTable({
         (row) => row.sampleEnrolees.join(' '),
       ]}
       searchPlaceholder="Search label or enrolee…"
-      initialSort={[{ id: 'rawLabel', desc: false }]}
+      initialSort={[{ id: 'waiting', desc: true }]}
+      // Two jobs wearing one coat until now. A name in front of an enrolled
+      // child with no class is work; a name in front of an applicant who has
+      // not enrolled is tidying, and clearing it moves nobody. The queue
+      // opens on the first, so an empty first tab is a true "nothing to do"
+      // — the same promise the "No class to put them in" card above already
+      // makes.
+      statusTabs={[
+        {
+          value: 'blocking',
+          label: 'Blocking a student',
+          isDefault: true,
+          predicate: (row) => row.blockedCount > 0,
+        },
+        {
+          value: 'waiting-on-enrolment',
+          label: 'Nobody waiting',
+          predicate: (row) => row.blockedCount === 0,
+        },
+        { value: 'all', label: 'All names', predicate: () => true },
+      ]}
       url={{ enabled: true, namespace: 'mismatches' }}
       emptyState={{
         icon: CheckCircle2,
@@ -122,7 +178,8 @@ export function LevelMismatchesTable({
         body: 'Every observed level name currently resolves to a known level.',
       }}
       emptyFilteredState={{
-        title: 'No level names match the current search.',
+        title: 'No level names here.',
+        body: 'Nothing matches this tab and search. Try All names, or clear the search.',
       }}
     />
   );

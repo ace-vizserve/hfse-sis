@@ -472,7 +472,8 @@ async function loadLevelDistributionUncached(
     counts.set(level, (counts.get(level) ?? 0) + 1);
   }
 
-  // Sort in HFSE canonical order (YS-L..CS2 per LEVEL_LABELS_ORDERED), then Unknown last.
+  // Sort in HFSE canonical order (Youngstarters, then P1..S4, per
+  // LEVEL_LABELS_ORDERED), then Unknown last.
   const entries = Array.from(counts.entries());
   entries.sort(([a], [b]) => compareLevelLabels(a, b));
   return entries.map(([level, count]) => ({ level, count }));

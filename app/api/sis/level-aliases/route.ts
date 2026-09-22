@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
 import { LevelRemapSchema } from '@/lib/schemas/level';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -18,12 +19,16 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 // section assignment is always registrar-manual, so this route only needs
 // to make the label resolvable. Affected applications simply become
 // normal "level known, section not yet assigned" rows in /records/unsynced.
+//
+// ⚠ THE ROLE LIST IS THE SHARED CONSTANT, NOT A LITERAL. This route spelled
+// its own array and so missed the 2026-09-10 widening that put `admissions`
+// into `ENROLMENT_PLACEMENT_WRITERS`; commit 839029ca then opened
+// /records/level-mismatches to admissions without touching any route, so the
+// page rendered a Save button that answered `forbidden`. Every route that
+// derived its list from this constant was carried along automatically —
+// which is the argument for reading it rather than restating it.
 export async function POST(request: Request) {
-  const auth = await requireRole([
-    'academic_coordinator',
-    'school_admin',
-    'superadmin',
-  ]);
+  const auth = await requireRole([...ENROLMENT_PLACEMENT_WRITERS]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

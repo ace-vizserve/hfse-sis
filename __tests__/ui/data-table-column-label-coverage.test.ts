@@ -39,6 +39,11 @@ const INTENTIONAL_LABEL_DIVERGENCE: Record<string, string> = {
   // Header is a per-term short code ("T2") and the id carries a term UUID;
   // the menu has room for the full "Term 2".
   writeups: 'dynamic per-term column — full term label in the menu',
+  // The level-mismatches queue. On screen the column sits beside "Rows" and
+  // holds a "2 waiting" badge, so the header only has to say which number it
+  // is; in the menu and the CSV it stands alone next to a row COUNT, and
+  // "Waiting" there could mean either. The menu says what is waiting.
+  waiting: 'header is read next to its own badge; the menu names the unit',
   // The `slot:` entry that used to live here covered the 13 abbreviated
   // per-document columns on the completeness table. Those columns were
   // replaced by a single strip; the per-slot detail now ships as

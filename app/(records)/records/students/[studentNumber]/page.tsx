@@ -113,6 +113,7 @@ import {
   type SectionTransferEntry,
 } from '@/lib/sis/section-history';
 import { canWriteStudentRecord } from '@/lib/auth/student-record';
+import { canManageDisciplineForRole } from '@/lib/classroom/scope';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -790,10 +791,18 @@ export default async function RecordsStudentCrossYearPage({
             page at all, and the school files by whoever was at the venue. */}
         <TabsContent value="discipline" className="space-y-6">
           {/* New records are filed in Classroom — teachers cannot open this
-              page, and the school files by whoever was at the venue. But every
-              role admitted here is `oversight`, so all of them may CORRECT a
-              filing, which is what canEdit turns on. */}
-          <StudentDisciplineTab records={discipline} canEdit={canEditRecord} />
+              page, and the school files by whoever was at the venue.
+              Correcting a filing is `oversight` only.
+
+              ⚠ NOT `canEditRecord`. That claim ("every role admitted here is
+              oversight") stopped being true when commit 839029ca admitted
+              admissions to Records — discipline had already left for
+              Classroom, which is closed to them, so the Edit button opened a
+              form whose save answered `forbidden`. */}
+          <StudentDisciplineTab
+            records={discipline}
+            canEdit={canManageDisciplineForRole(sessionUser.role)}
+          />
         </TabsContent>
 
         <TabsContent value="lifecycle" className="space-y-6">

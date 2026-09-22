@@ -19,7 +19,7 @@ import {
   getStagedWaitingCount,
 } from '@/lib/sidebar/notification-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
-import { countUnmatchedLevelLabels } from '@/lib/sis/level-review';
+import { countBlockingLevelLabels } from '@/lib/sis/level-review';
 import { countLevelsAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
 import {
   SIDEBAR_GROUPS_COOKIE,
@@ -71,7 +71,7 @@ export default async function RecordsLayout({
   const service = createServiceClient();
   const [
     unsyncedCount,
-    unmatchedNameCount,
+    blockingNameCount,
     awaitingSectionsCount,
     changeRequestCount,
     declarationCount,
@@ -81,7 +81,7 @@ export default async function RecordsLayout({
     // during the early-bird window, and a badge that only counts the live
     // year hides that work until the year rolls over.
     countUnsyncedInScope(),
-    countUnmatchedLevelLabels(),
+    countBlockingLevelLabels(),
     countLevelsAwaitingSections(),
     getSidebarChangeRequestCount(service, role, id),
     getDeclarationWaitingCount(service, role, id),
@@ -89,10 +89,16 @@ export default async function RecordsLayout({
     getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
   ]);
   // Both halves of "Levels needing attention" — an unrecognized level name and
-  // a level with students waiting but no class. The page shows them as two
-  // lists; the badge is the total, so it matches what the registrar finds
-  // there.
-  const levelAttentionCount = unmatchedNameCount + awaitingSectionsCount;
+  // a level with students waiting but no class.
+  //
+  // ⚠ BOTH HALVES COUNT PEOPLE WAITING, NOT ROWS. The name half used to be
+  // every unresolved label, which badged housekeeping as work: today all 11
+  // unmapped names sit in front of applicants who are not enrolled yet, so
+  // the badge claimed 11 jobs that clearing would not move anyone through.
+  // `countBlockingLevelLabels` is the demand-driven count the sections half
+  // has always used; the quieter names are still on the page, under their own
+  // tab.
+  const levelAttentionCount = blockingNameCount + awaitingSectionsCount;
   const badges: SidebarBadges = {
     unsyncedStudents: unsyncedCount > 0 ? unsyncedCount : undefined,
     levelMismatches: levelAttentionCount > 0 ? levelAttentionCount : undefined,

@@ -49,10 +49,20 @@ export default async function LevelMismatchesPage() {
     getLevelRows(service),
   ]);
 
-  const blockedCount = rows.length + awaitingSections.length;
+  // ⚠ COUNT PEOPLE STUCK, NOT ROWS LISTED. A name nobody is waiting behind is
+  // housekeeping — mapping it is correct and changes nothing today, because
+  // both surfaces a resolved level feeds are enrolled-only. Saying "this is
+  // blocking enrolment" about those names is what made a working save look
+  // broken.
+  const blockingNames = rows.filter((r) => r.blockedCount > 0);
+  const studentsBlockedByName = blockingNames.reduce(
+    (sum, r) => sum + r.blockedCount,
+    0
+  );
+  const blockedCount = blockingNames.length + awaitingSections.length;
   const summary =
     blockedCount === 0
-      ? 'Nothing is blocking enrolment. Every level name is recognised, and every level with students waiting has a class.'
+      ? 'Nothing is blocking enrolment. Every level name a waiting student is filed under is recognised, and every level with students waiting has a class.'
       : 'Students can only be assigned to a class once their level is recognised and that level has a class to put them in. Anything still missing is below.';
 
   return (
@@ -69,7 +79,12 @@ export default async function LevelMismatchesPage() {
         </p>
       </header>
 
-      <LevelsAwaitingSectionsCard rows={awaitingSections} />
+      {/* `/sis/sections` is closed to admissions by ROUTE_ACCESS, so offering
+          them "Create a class" would bounce them to `/`. */}
+      <LevelsAwaitingSectionsCard
+        rows={awaitingSections}
+        canCreateSections={role !== 'admissions'}
+      />
 
       <section className="space-y-4">
         <div className="space-y-1">
@@ -79,7 +94,9 @@ export default async function LevelMismatchesPage() {
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
             {rows.length === 0
               ? 'Every level name coming from admissions matches a level you already have.'
-              : `${rows.length.toLocaleString('en-SG')} level name${rows.length === 1 ? '' : 's'} from admissions don't match a level you have. Map each one once and it is recognised from then on.`}
+              : blockingNames.length === 0
+                ? `${rows.length.toLocaleString('en-SG')} level name${rows.length === 1 ? '' : 's'} from admissions don't match a level you have, and nobody is waiting behind ${rows.length === 1 ? 'it' : 'them'} — every student on ${rows.length === 1 ? 'that name' : 'those names'} has either not enrolled yet or already has a class. Mapping them keeps the list clean; no student moves until one of them enrols.`
+                : `${blockingNames.length.toLocaleString('en-SG')} of ${rows.length.toLocaleString('en-SG')} level names are holding up ${studentsBlockedByName.toLocaleString('en-SG')} student${studentsBlockedByName === 1 ? '' : 's'}. Map one and those students move to Students needing setup, ready for a class.`}
           </p>
         </div>
 

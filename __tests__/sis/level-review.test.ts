@@ -337,3 +337,138 @@ describe('diffUnmatchedLevelLabels', () => {
     ]);
   });
 });
+
+// A name only blocks someone if a child behind it is enrolled AND has no
+// class. Everything below pins that, because without it the queue counted
+// Cancelled and Withdrawn applicants as work: on 2026-09-22 six Youngstarters
+// names were mapped and moved nobody, since all 23 children were `Submitted`.
+describe('diffUnmatchedLevelLabels — who is actually waiting', () => {
+  it('reports nobody waiting when no blocked enrolees are supplied', () => {
+    const result = diffUnmatchedLevelLabels(
+      [
+        {
+          rawLabel: 'Youngstarters | Senior Stars',
+          ayCode: 'AY2026',
+          appsCount: 7,
+          statusCount: 7,
+          sampleEnrolees: ['E260420'],
+        },
+      ],
+      KNOWN_LABELS
+    );
+
+    expect(result).toHaveLength(1);
+    // 14 rows carry the name, and not one of them is a child who can move.
+    expect(result[0].appsCount + result[0].statusCount).toBe(14);
+    expect(result[0].blockedCount).toBe(0);
+  });
+
+  it('counts a blocked enrolee once even though both tables carry the label', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'Some Unknown Level',
+        ayCode: 'AY2026',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: ['E-0001'],
+        blockedEnrolees: ['E-0001'],
+      },
+      {
+        rawLabel: 'Some Unknown Level',
+        ayCode: 'AY2026',
+        appsCount: 0,
+        statusCount: 1,
+        sampleEnrolees: ['E-0001'],
+        blockedEnrolees: ['E-0001'],
+      },
+    ];
+
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].blockedCount).toBe(1);
+  });
+
+  it('unions blocked enrolees across academic years', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'Some Unknown Level',
+        ayCode: 'AY2026',
+        appsCount: 1,
+        statusCount: 1,
+        sampleEnrolees: ['E-0001'],
+        blockedEnrolees: ['E-0001'],
+      },
+      {
+        rawLabel: 'Some Unknown Level',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 1,
+        sampleEnrolees: ['E-0002'],
+        blockedEnrolees: ['E-0002'],
+      },
+    ];
+
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].blockedCount).toBe(2);
+  });
+
+  it('leads with the names holding up the most students, alphabetical after', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'Alpha Unknown Level',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: [],
+      },
+      {
+        rawLabel: 'Zeta Unknown Level',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: ['E-0009'],
+        blockedEnrolees: ['E-0009'],
+      },
+      {
+        rawLabel: 'Beta Unknown Level',
+        ayCode: 'AY2027',
+        appsCount: 1,
+        statusCount: 0,
+        sampleEnrolees: [],
+      },
+    ];
+
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS);
+
+    // Zeta blocks somebody, so it leads despite sorting last by name.
+    expect(result.map((r) => r.rawLabel)).toEqual([
+      'Zeta Unknown Level',
+      'Alpha Unknown Level',
+      'Beta Unknown Level',
+    ]);
+  });
+
+  it('never reports a mapped label as blocking, however many are waiting', () => {
+    const observed: ObservedLevelLabel[] = [
+      {
+        rawLabel: 'YoungStarter Junior Star',
+        ayCode: 'AY2026',
+        appsCount: 3,
+        statusCount: 3,
+        sampleEnrolees: ['E-0001'],
+        blockedEnrolees: ['E-0001', 'E-0002'],
+      },
+    ];
+
+    const result = diffUnmatchedLevelLabels(observed, KNOWN_LABELS, [
+      { raw_label: 'YoungStarter Junior Star', level_id: 'level-ys' },
+    ]);
+
+    // Resolved is resolved — the blocker is now the missing class, which is
+    // `lib/sis/levels-awaiting-sections.ts`'s half of the page.
+    expect(result).toEqual([]);
+  });
+});

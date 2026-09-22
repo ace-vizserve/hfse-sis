@@ -24,8 +24,20 @@ import type { LevelAwaitingSections } from '@/lib/sis/levels-awaiting-sections';
 
 export function LevelsAwaitingSectionsCard({
   rows,
+  canCreateSections = true,
 }: {
   rows: LevelAwaitingSections[];
+  /**
+   * Whether the viewer can actually reach `/sis/sections`.
+   *
+   * ⚠ WITHOUT THIS THE CTA IS A DEAD END FOR ADMISSIONS. Commit 839029ca
+   * opened /records/level-mismatches to them, but ROUTE_ACCESS still keeps
+   * every `/sis/*` surface except discount codes closed — so the proxy
+   * bounces them to `/`. RECORDS_NAV already hides its own /sis cross-links
+   * from admissions for exactly this reason; this card was the copy that
+   * didn't get the memo. Defaults true so existing callers are unchanged.
+   */
+  canCreateSections?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -70,7 +82,10 @@ export function LevelsAwaitingSectionsCard({
           {totalWaiting.toLocaleString('en-SG')} student
           {totalWaiting === 1 ? ' is' : 's are'} enrolled at{' '}
           {rows.length === 1 ? 'a level' : `${rows.length} levels`} with no
-          class yet. Create one and you can assign them.
+          class yet.{' '}
+          {canCreateSections
+            ? 'Create one and you can assign them.'
+            : 'Ask a coordinator to create the class, then you can assign them.'}
         </p>
       </div>
 
@@ -106,9 +121,11 @@ export function LevelsAwaitingSectionsCard({
                 <span className="tabular-nums">{row.waitingCount}</span>
                 waiting
               </Badge>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/sis/sections">Create a class</Link>
-              </Button>
+              {canCreateSections && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/sis/sections">Create a class</Link>
+                </Button>
+              )}
             </div>
           </li>
         ))}

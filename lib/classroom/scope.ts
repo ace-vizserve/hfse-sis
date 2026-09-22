@@ -267,3 +267,24 @@ export function canManageAnyDisciplineRecord(
 ): boolean {
   return capability === 'oversight';
 }
+
+/**
+ * The same question asked of a ROLE, for a surface that has no classroom
+ * scope to resolve.
+ *
+ * `/records/students/[studentNumber]` renders the discipline tab without ever
+ * loading classroom assignments, so it cannot use the predicate above. It used
+ * `canWriteStudentRecord` instead, and the two agreed right up until commit
+ * 839029ca admitted `admissions` to Records: every /classroom route is closed
+ * to admissions by ROUTE_ACCESS, and all four discipline routes take
+ * `['teacher', ...OVERSIGHT_ROLES]`, so that page began offering an Edit
+ * button whose save answered `forbidden`.
+ *
+ * ⚠ IT DELIBERATELY DOES NOT LIST `teacher`. Filing moved to Classroom
+ * precisely so it sits beside the classes it is about, and a teacher cannot
+ * open this Records page at all — adding them here would describe an audience
+ * that never arrives.
+ */
+export function canManageDisciplineForRole(role: Role | null): boolean {
+  return role != null && OVERSIGHT_ROLES.has(role);
+}
