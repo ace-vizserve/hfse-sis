@@ -144,6 +144,25 @@ function daysBetween(aIso: string, bIso: string): number {
   return Math.round(ms / 86_400_000);
 }
 
+// What the parent is actually being asked to do. `statusKind` has five
+// members but only three distinct asks, and the wording below branches on
+// the ask rather than the status: a document that is missing and one that
+// was promised are the same sentence to a parent ("we have not received
+// it"), while an expiring one and a rejected one are not.
+type Situation = 'expiry' | 'notReceived' | 'rejected';
+
+function situationOf(statusKind: SlotStatusKind): Situation {
+  if (statusKind === 'expired' || statusKind === 'expiringSoon') {
+    return 'expiry';
+  }
+  if (statusKind === 'rejected') return 'rejected';
+  return 'notReceived'; // 'missing' | 'toFollow'
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function statusDescriptor(ctx: ReminderContext): string {
   const today = new Date().toISOString().slice(0, 10);
   if (ctx.statusKind === 'expired' && ctx.expiryDateIso) {
@@ -195,7 +214,11 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
       ctx.level && ctx.section
         ? `${ctx.level} ${ctx.section}`
         : (ctx.level ?? ctx.section ?? '');
-    const subject = `Action needed: ${ctx.slotLabel} not accepted — ${ctx.studentName}`;
+    // The student's name stays in the subject — a parent with two children
+    // cannot otherwise tell which one this is about. "Requirements" rather
+    // than "admission requirements": this email also fires for a child who
+    // is already enrolled, when a renewed passport or medical is rejected.
+    const subject = `Action Needed: ${ctx.slotLabel} for ${ctx.studentName} does not meet requirements`;
     const headline = `${ctx.slotLabel} — document not accepted`;
     const bodyHtml = `
       <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
@@ -224,20 +247,33 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
       ],
       reviewLinkHtml: `
         <p style="font-size:14px;line-height:24px;color:#1d1c1d;margin:0 0 16px;">
-          Sign in at the parent portal and upload a replacement document under your
+          Sign in to the parent portal and upload a replacement document under your
           enrolment details page. If you believe this rejection is in error, please
-          contact the school registrar.
+          contact the school office.
         </p>
       `,
     });
     return { subject, html };
   }
 
-  // Subject branching matches the existing kind split.
+  const situation = situationOf(ctx.statusKind);
+
+  // ⚠ NEITHER EMAIL IS ONLY ABOUT EXPIRY. Both are sent for all five
+  // statusKinds, so every sentence that names a date has to have a version
+  // that works when there is no date — otherwise a document we have never
+  // received goes out described as "expires in 21 days".
+  //
+  // The renewal subject reports the situation in the bracket; the chase
+  // subject has no bracket at all, because an application document that was
+  // never submitted has no expiry to report.
   const subject =
     kind === 'initial-chase'
-      ? `Document follow-up needed: ${ctx.slotLabel} for ${ctx.studentName}`
-      : `Document renewal needed: ${ctx.slotLabel} for ${ctx.studentName} (${descriptor})`;
+      ? `Action Needed: Submit ${ctx.slotLabel} for ${ctx.studentName}`
+      : situation === 'expiry'
+        ? `Action Needed: Submit Updated ${ctx.slotLabel} for ${ctx.studentName} (${capitalise(descriptor)})`
+        : situation === 'rejected'
+          ? `Action Needed: Submit Updated ${ctx.slotLabel} for ${ctx.studentName} (Needs replacement)`
+          : `Action Needed: Submit ${ctx.slotLabel} for ${ctx.studentName} (Not yet received)`;
 
   const sectionLabel =
     ctx.level && ctx.section
@@ -247,12 +283,13 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
   const headline =
     kind === 'initial-chase'
       ? `${ctx.slotLabel} required to complete application`
-      : `${ctx.slotLabel} ${descriptor}`;
+      : situation === 'expiry'
+        ? `${ctx.slotLabel} on file ${descriptor}`
+        : situation === 'rejected'
+          ? `${ctx.slotLabel} on file needs replacement`
+          : `${ctx.slotLabel} not yet received`;
 
-  const ctaLabel =
-    kind === 'initial-chase'
-      ? `Upload ${ctx.slotLabel} for ${ctx.studentName}`
-      : `Re-upload ${ctx.slotLabel} for ${ctx.studentName}`;
+  const ctaLabel = `Upload ${ctx.studentName}'s ${ctx.slotLabel}`;
 
   const expiryLine = ctx.expiryDateIso
     ? `<p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 12px;">
@@ -267,29 +304,42 @@ function renderReminder(ctx: ReminderContext): RenderedReminder {
        </p>`
     : '';
 
+  const slot = `<strong>${escapeHtml(ctx.slotLabel)}</strong>`;
+  const student = `<strong>${escapeHtml(ctx.studentName)}</strong>`;
+  const studentInClass = `${student}${
+    sectionLabel ? ` (${escapeHtml(sectionLabel)})` : ''
+  }`;
+
+  // The class is kept in every variant — it is what tells a parent with two
+  // children which one this is about — but it sits after "for", never before
+  // a possessive, or it reads "Aiden Tan (Primary Six Diligence)'s passport".
   const bodyParagraph =
     kind === 'initial-chase'
-      ? `Please upload the <strong>${escapeHtml(ctx.slotLabel)}</strong> for
-         <strong>${escapeHtml(ctx.studentName)}</strong>${
-           sectionLabel ? ` (${escapeHtml(sectionLabel)})` : ''
-         }
-         to continue the application. Our records show this document ${escapeHtml(descriptor)}.`
-      : `Please re-upload the <strong>${escapeHtml(ctx.slotLabel)}</strong> for
-         <strong>${escapeHtml(ctx.studentName)}</strong>${
-           sectionLabel ? ` (${escapeHtml(sectionLabel)})` : ''
-         }.
-         Our records show this document ${escapeHtml(descriptor)}.`;
+      ? situation === 'expiry'
+        ? `Our records show that the ${slot} for ${studentInClass} ${escapeHtml(descriptor)}.
+           Upload the latest version to complete the online registration.`
+        : situation === 'rejected'
+          ? `Our records show that the ${slot} for ${studentInClass} needs to be replaced.
+             Upload the latest version to complete the online registration.`
+          : `Our records show that the ${slot} for ${studentInClass} has not been submitted.
+             Upload the document to complete the online registration.`
+      : situation === 'expiry'
+        ? `Our records show that the current ${slot} on file for ${studentInClass}
+           ${escapeHtml(descriptor)}. Please upload the latest version.`
+        : situation === 'rejected'
+          ? `Our records show that the ${slot} on file for ${studentInClass} needs to be
+             replaced. Please upload the latest version.`
+          : `Our records show that we have not yet received the ${slot} for
+             ${studentInClass}. Please upload it.`;
 
-  const footerParagraph =
-    kind === 'initial-chase'
-      ? `Sign in at the parent portal with the same email and password you use
-         for enrolment, then upload the document under your enrolment
-         details page. If you have already submitted this document, please
-         contact the school admissions office to confirm receipt.`
-      : `Sign in at the parent portal with the same email and password you use
-         for enrolment, then re-upload the document under your enrolment
-         details page. If you have already submitted this document, please
-         contact the school registrar to confirm receipt.`;
+  // "Sign in to" and "the school office" per the school's revision. The two
+  // sentences the revision dropped are kept: only this email tells a parent
+  // WHERE to upload, and without the second one a parent who already sent
+  // the document has no way to close the loop and simply sends it again.
+  const footerParagraph = `Sign in to the parent portal with the same email and
+     password you use for enrolment, then upload the document under your
+     enrolment details page. If you have already submitted this document,
+     please contact the school office to confirm receipt.`;
 
   const bodyHtml = `
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">

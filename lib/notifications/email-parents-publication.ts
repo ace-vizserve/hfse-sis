@@ -12,7 +12,7 @@ import { escapeHtml, renderEmailFrame } from '@/lib/notifications/email-frame';
 // truth, email is a courtesy nudge.
 //
 // Template:
-//   Subject: "Report card available — {LEVEL} {SECTION} · {TERM}"
+//   Subject: "{LEVEL} {SECTION} · {TERM} Report Card is ready for viewing"
 //   Body:    deep-link to the parent portal (enrol.hfse.edu.sg), NOT the
 //            SIS directly — parents always enter via the SSO handoff.
 export async function emailParentsPublication(args: {
@@ -69,7 +69,10 @@ export async function emailParentsPublication(args: {
   }
 
   const resend = new Resend(apiKey);
-  const subject = `Report card available — ${sectionLabel} · ${termLabel}`;
+  // Class stays in front of the school's wording: a parent with children in
+  // two classes receives two of these, and the subject is the only thing that
+  // tells them apart in an inbox list.
+  const subject = `${sectionLabel} · ${termLabel} Report Card is ready for viewing`;
   const windowLine = `${new Date(args.publishFrom).toLocaleString('en-SG')} → ${new Date(
     args.publishUntil
   ).toLocaleString('en-SG')}`;
@@ -81,6 +84,10 @@ export async function emailParentsPublication(args: {
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 16px;">
       The ${escapeHtml(termLabel)} report card for <strong>${escapeHtml(sectionLabel)}</strong> is now
       available to view on the HFSE parent portal.
+    </p>
+    <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 8px;">
+      The report card will be available for your viewing during the timeframe
+      indicated below.
     </p>
     <p style="font-size:16px;line-height:26px;color:#1d1c1d;margin:0 0 24px;">
       <strong>Viewing window:</strong><br/>
@@ -99,9 +106,9 @@ export async function emailParentsPublication(args: {
     ],
     reviewLinkHtml: `
       <p style="font-size:14px;line-height:24px;color:#1d1c1d;margin:0 0 16px;">
-        Sign in at the parent portal with the same email and password you use
+        Sign in to the parent portal with the same email and password you use
         for enrolment. If you have trouble signing in, please contact the
-        school registrar.
+        school office.
       </p>
     `,
   });
