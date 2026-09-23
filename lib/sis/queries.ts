@@ -1383,9 +1383,7 @@ export async function getCurrentSection(
 // same level — with their headcounts, for the SectionTransferDialog. Counts
 // include late enrollees: they occupy a seat, same as the capacity check in
 // lib/sis/class-assignment.ts.
-export async function getSiblingSections(
-  sectionId: string
-): Promise<
+export async function getSiblingSections(sectionId: string): Promise<
   Array<{
     id: string;
     name: string;
