@@ -23,9 +23,19 @@ import { Button } from '@/components/ui/button';
 export function LockToggle({
   sheetId,
   isLocked,
+  onDone,
 }: {
   sheetId: string;
   isLocked: boolean;
+  /**
+   * Ran after the lock actually changed — NOT after a refused one.
+   *
+   * The grading sheet page needs nothing here: `useWriteAction` already awaits
+   * a `router.refresh()` and the page is a server component. A caller holding
+   * this sheet's state in TanStack Query does need it, because a route refresh
+   * cannot see that cache (`components/sis/section-term-sheets-dialog.tsx`).
+   */
+  onDone?: () => void;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Surfaced after the server returns 409 because pending CRs exist; the
@@ -58,7 +68,7 @@ export function LockToggle({
   async function runToggle(opts: { force?: boolean } = {}) {
     const force = opts.force ?? false;
     setBusy(true);
-    await run(() => toggleMutation.mutateAsync({ force }), {
+    const result = await run(() => toggleMutation.mutateAsync({ force }), {
       pending: action === 'lock' ? 'Locking sheet…' : 'Unlocking sheet…',
       success:
         action === 'lock'
@@ -97,6 +107,10 @@ export function LockToggle({
       },
     });
     setBusy(false);
+    // `run` resolves `undefined` when the write failed — including the two 409
+    // break-glass branches above, which return `null` from `error` and so take
+    // the failure path. A refused lock must not tell the caller it changed.
+    if (result !== undefined) onDone?.();
   }
 
   return (

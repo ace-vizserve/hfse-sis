@@ -16,6 +16,7 @@ import {
   type AttachSection,
 } from '@/components/sis/attach-to-section-modal';
 import { NewSubjectForm } from '@/components/sis/new-subject-form';
+import { SectionTermSheetsDialog } from '@/components/sis/section-term-sheets-dialog';
 import {
   SubjectConfigForm,
   type SubjectConfigFormDraft,
@@ -241,6 +242,13 @@ export function SubjectCatalogCard({
   const [addOpen, setAddOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // The class chip that was clicked. Carries ONE of that class's sheets for
+  // this subject; the dialog finds its sibling terms, which is the whole point
+  // — a chip has only ever pointed at one of the four.
+  const [sheetsFor, setSheetsFor] = useState<{
+    sheetId: string;
+    sectionName: string;
+  } | null>(null);
 
   function toggleExpanded(subjectId: string) {
     setExpandedIds((prev) => {
@@ -437,8 +445,14 @@ export function SubjectCatalogCard({
                                           }
                                           focusable={false}
                                         >
-                                          <Link
-                                            href={`/markbook/grading/${section.sheetId}`}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setSheetsFor({
+                                                sheetId: section.sheetId,
+                                                sectionName: section.name,
+                                              })
+                                            }
                                             className="inline-flex items-center gap-1.5 rounded-md bg-card px-2 py-1 text-[11px] leading-none text-foreground ring-1 ring-border transition-colors hover:bg-accent hover:ring-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                                           >
                                             {section.name}
@@ -455,7 +469,7 @@ export function SubjectCatalogCard({
                                                 ? ' (locked)'
                                                 : ' (open for entry)'}
                                             </span>
-                                          </Link>
+                                          </button>
                                         </HoverHint>
                                       ))}
                                     </span>
@@ -553,6 +567,20 @@ export function SubjectCatalogCard({
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* A class's four terms, each opening the editor that already exists.
+          Opened from a chip in the expanded row above, not from inside the
+          config drawer, so nothing is nested. */}
+      {sheetsFor && (
+        <SectionTermSheetsDialog
+          sheetId={sheetsFor.sheetId}
+          sectionName={sheetsFor.sectionName}
+          open
+          onOpenChange={(next) => {
+            if (!next) setSheetsFor(null);
+          }}
+        />
+      )}
 
       {/* Add subject drawer. */}
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
