@@ -83,7 +83,6 @@ import { listDisciplineForStudent } from '@/lib/discipline/queries';
 import { hasWriteupContent } from '@/lib/evaluation/roster-rules';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import {
-  ENROLLED_STATUSES,
   isEnrolledStatus,
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
@@ -92,6 +91,7 @@ import type { ProfileUpdateInput } from '@/lib/schemas/sis';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import {
   getEnrollmentHistory,
+  getSiblingSections,
   getStudentDetail,
   type ApplicationRow,
   type DocumentSlot,
@@ -417,61 +417,10 @@ export default async function RecordsStudentCrossYearPage({
     // The four houses, for the setter's options and to resolve this student's
     // id to a name + colour token.
     listHouses(),
-    // Sibling sections: 3-query internal chain, returns SiblingSection[].
-    (async (): Promise<SiblingSection[]> => {
-      if (
-        !activePlacement ||
-        !currentAy ||
-        activePlacement.ayCode !== currentAy.ay_code
-      )
-        return [];
-      const sibService = createServiceClient();
-      const { data: secRow } = await sibService
-        .from('sections')
-        .select('level_id, academic_year_id')
-        .eq('id', activePlacement.sectionId)
-        .maybeSingle();
-      if (!secRow) return [];
-      const { data: sibRows } = await sibService
-        .from('sections')
-        .select('id, name')
-        .eq(
-          'academic_year_id',
-          (secRow as { level_id: string; academic_year_id: string })
-            .academic_year_id
-        )
-        .eq(
-          'level_id',
-          (secRow as { level_id: string; academic_year_id: string }).level_id
-        )
-        .neq('id', activePlacement.sectionId);
-      const sibList = (sibRows ?? []) as Array<{ id: string; name: string }>;
-      if (sibList.length === 0) return [];
-      const sibIds = sibList.map((s) => s.id);
-      // Includes late enrollees — same reasoning as the SIS section page and
-      // the capacity check in lib/sis/class-assignment.ts: a late enrollee
-      // occupies a seat, so a roster headcount must count them.
-      const { data: countRows } = await sibService
-        .from('section_students')
-        .select('section_id')
-        .in('enrollment_status', ENROLLED_STATUSES)
-        .in('section_id', sibIds);
-      const sibCounts = new Map<string, number>();
-      for (const cr of (countRows ?? []) as Array<{ section_id: string }>) {
-        sibCounts.set(cr.section_id, (sibCounts.get(cr.section_id) ?? 0) + 1);
-      }
-      return sibList
-        .map((s) => {
-          const c = sibCounts.get(s.id) ?? 0;
-          return {
-            id: s.id,
-            name: s.name,
-            activeCount: c,
-            isAtCapacity: c >= 50,
-          };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name));
-    })(),
+    // Sibling sections — only for a placement in the current AY.
+    activePlacement && currentAy && activePlacement.ayCode === currentAy.ay_code
+      ? getSiblingSections(activePlacement.sectionId)
+      : Promise.resolve([] as SiblingSection[]),
     // freshenAyDocuments must complete before batch B reads doc statuses.
     lifecycleEntry
       ? freshenAyDocuments(lifecycleEntry.ayCode)

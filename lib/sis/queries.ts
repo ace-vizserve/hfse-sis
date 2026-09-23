@@ -1,5 +1,7 @@
 import { unstable_cache } from 'next/cache';
 
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -1346,47 +1348,93 @@ export async function getEnrollmentHistory(
   return perAy.flat();
 }
 
-// Look up the `sections.id` (UUID) for a given AY + level label + section
-// name. Used by the Enrollment tab's "Move to another section →" CTA, which
-// needs the section ID to deep-link into `/sis/sections/[id]` (the SIS Admin
-// section detail page that hosts the SectionTransferDialog per KD #67).
+// The section a student actually sits in for an AY, read from the roster
+// (`section_students`) by id. Used by the Enrollment tab's class tile and its
+// "Move to another section →" CTA (`/sis/sections/[id]`, KD #67).
 //
-// Returns null when no match — the caller hides the CTA gracefully (e.g.
-// the section was renamed or dropped after AY rollover).
-export async function getSectionIdByLevelAndName(
+// Deliberately NOT a lookup by the `classSection` text on the status row: that
+// text is a copy taken at placement time, so renaming a section left it
+// pointing at a name that no longer existed and the tile read the student as
+// unplaced. Not cached for the same reason — a rename or a transfer must show
+// on the next load.
+export async function getCurrentSection(
   ayCode: string,
-  levelLabel: string,
-  sectionName: string
-): Promise<string | null> {
-  return unstable_cache(
-    async () => {
-      const trimmedLabel = (levelLabel ?? '').trim();
-      const trimmedName = (sectionName ?? '').trim();
-      if (!trimmedLabel || !trimmedName) return null;
+  studentNumber: string
+): Promise<{ id: string; name: string } | null> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('section_students')
+    .select(
+      'sections!inner(id, name, academic_years!inner(ay_code)), students!inner(student_number)'
+    )
+    .eq('students.student_number', studentNumber)
+    .eq('sections.academic_years.ay_code', ayCode)
+    .neq('enrollment_status', 'withdrawn')
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const section = (
+    data as unknown as { sections: { id: string; name: string } }
+  ).sections;
+  return section ? { id: section.id, name: section.name } : null;
+}
 
-      const service = createServiceClient();
-      // Resolve AY id first (sections.academic_year_id is a UUID FK).
-      const { data: ayRow } = await service
-        .from('academic_years')
-        .select('id')
-        .eq('ay_code', ayCode)
-        .maybeSingle();
-      if (!ayRow) return null;
-      const ayId = (ayRow as { id: string }).id;
-
-      const { data, error } = await service
-        .from('sections')
-        .select('id, name, levels!inner(label)')
-        .eq('academic_year_id', ayId)
-        .eq('name', trimmedName)
-        .filter('levels.label', 'eq', trimmedLabel)
-        .maybeSingle();
-      if (error || !data) return null;
-      return (data as { id: string }).id ?? null;
-    },
-    ['sis', 'section-id-by-name', ayCode, levelLabel, sectionName],
-    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
-  )();
+// The other sections a student in `sectionId` could be moved to — same AY,
+// same level — with their headcounts, for the SectionTransferDialog. Counts
+// include late enrollees: they occupy a seat, same as the capacity check in
+// lib/sis/class-assignment.ts.
+export async function getSiblingSections(
+  sectionId: string
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    activeCount: number;
+    isAtCapacity: boolean;
+  }>
+> {
+  const service = createServiceClient();
+  const { data: secRow } = await service
+    .from('sections')
+    .select('level_id, academic_year_id')
+    .eq('id', sectionId)
+    .maybeSingle();
+  if (!secRow) return [];
+  const { level_id, academic_year_id } = secRow as {
+    level_id: string;
+    academic_year_id: string;
+  };
+  const { data: sibRows } = await service
+    .from('sections')
+    .select('id, name')
+    .eq('academic_year_id', academic_year_id)
+    .eq('level_id', level_id)
+    .neq('id', sectionId);
+  const sibList = (sibRows ?? []) as Array<{ id: string; name: string }>;
+  if (sibList.length === 0) return [];
+  const { data: countRows } = await service
+    .from('section_students')
+    .select('section_id')
+    .in('enrollment_status', ENROLLED_STATUSES)
+    .in(
+      'section_id',
+      sibList.map((s) => s.id)
+    );
+  const counts = new Map<string, number>();
+  for (const r of (countRows ?? []) as Array<{ section_id: string }>) {
+    counts.set(r.section_id, (counts.get(r.section_id) ?? 0) + 1);
+  }
+  return sibList
+    .map((s) => {
+      const c = counts.get(s.id) ?? 0;
+      return {
+        id: s.id,
+        name: s.name,
+        activeCount: c,
+        isAtCapacity: c >= MAX_ACTIVE_PER_SECTION,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export type DiscountCode = {

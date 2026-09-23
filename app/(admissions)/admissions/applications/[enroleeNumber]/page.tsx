@@ -40,13 +40,13 @@ import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import {
+  getCurrentSection,
   getEnrollmentHistory,
-  getSectionIdByLevelAndName,
+  getSiblingSections,
   getStudentDetail,
 } from '@/lib/sis/queries';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
-import { isRouteAllowed } from '@/lib/auth/roles';
 import {
   canAssignSection,
   canWriteStudentRecord,
@@ -127,20 +127,6 @@ export default async function SisStudentDetailPage({
   // STUDENT_RECORD_WRITERS in lib/auth/student-record.ts) because other call
   // sites still read one name or the other.
   const canPlaceStudent = canAssignSection(sessionUser.role);
-  // canPlaceStudent is the RIGHT to place a student; this is whether the
-  // viewer can actually open the door EnrollmentTab's "Move to another
-  // section" link points at. The two used to be the same set of roles, so
-  // one check covered both — they no longer are, since 2026-09-10 gave
-  // admissions the right without giving them SIS Admin (Mr Ace named three
-  // modules for admissions — Records, P-Files, Admissions — not SIS Admin).
-  // Computed with isRouteAllowed (the app's one answer to "may this role
-  // open this path") rather than a hand-rolled role list, and passed down
-  // as a prop rather than re-derived inside the component, matching how
-  // canPlaceStudent itself already arrives there.
-  const canReachSectionSetup = isRouteAllowed(
-    '/sis/sections',
-    sessionUser.role
-  );
 
   const { enroleeNumber } = await params;
   const { ay: ayParam, tab: tabParam } = await searchParams;
@@ -194,28 +180,36 @@ export default async function SisStudentDetailPage({
     );
   }
 
-  const { application, status, documents } = detail;
+  const { application, status: storedStatus, documents } = detail;
 
-  // Enrollment history, section UUID lookup, and lifecycle snapshot are all
+  // Enrollment history, current section, and lifecycle snapshot are all
   // independent of each other — fetch in parallel after detail resolves.
-  const [history, currentSectionId, lifecycleSnapshot] = await Promise.all([
+  const [history, currentSection, lifecycleSnapshot] = await Promise.all([
     application.studentNumber
       ? getEnrollmentHistory(application.studentNumber)
       : Promise.resolve([]),
-    status?.classLevel && status?.classSection
-      ? getSectionIdByLevelAndName(
-          selectedAy,
-          status.classLevel,
-          status.classSection
-        )
+    application.studentNumber
+      ? getCurrentSection(selectedAy, application.studentNumber)
       : Promise.resolve(null),
     getStudentLifecycle(selectedAy, enroleeNumber),
   ]);
+  const currentSectionId = currentSection?.id ?? null;
+  // The roster is the truth for the section name; the status row's
+  // `classSection` is a copy that goes stale when a section is renamed.
+  const status =
+    storedStatus && currentSection
+      ? { ...storedStatus, classSection: currentSection.name }
+      : storedStatus;
 
-  // lifecycleHistory depends on lifecycleSnapshot.studentNumber — sequential.
-  const lifecycleHistory = lifecycleSnapshot.studentNumber
-    ? await getEnrollmentHistory(lifecycleSnapshot.studentNumber)
-    : [];
+  // Both depend on the batch above — sequential to it, parallel to each other.
+  const [lifecycleHistory, siblingSections] = await Promise.all([
+    lifecycleSnapshot.studentNumber
+      ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
+      : Promise.resolve([]),
+    currentSection && canPlaceStudent
+      ? getSiblingSections(currentSection.id)
+      : Promise.resolve([]),
+  ]);
 
   const fullName =
     application.enroleeFullName ??
@@ -223,6 +217,14 @@ export default async function SisStudentDetailPage({
       .filter(Boolean)
       .join(' ') ??
     '(no name on file)';
+
+  const sectionTransfer = currentSection
+    ? {
+        studentName: fullName,
+        fromSectionName: currentSection.name,
+        siblings: siblingSections,
+      }
+    : null;
 
   // 'stp' is a historical URL alias — the STP card lives on the documents tab (KD #61 + KD #89).
   const resolvedTab = tabParam === 'stp' ? 'documents' : tabParam;
@@ -455,7 +457,7 @@ export default async function SisStudentDetailPage({
             currentSectionId={currentSectionId}
             canEdit={canEditRecord}
             canAssignSection={canPlaceStudent}
-            canReachSectionSetup={canReachSectionSetup}
+            transfer={sectionTransfer}
           />
         </TabsContent>
 

@@ -22,6 +22,10 @@ import Link from 'next/link';
 
 import { EditStageDialog } from '@/components/sis/edit-stage-dialog';
 import { type Field } from '@/components/sis/field-grid';
+import {
+  SectionTransferDialog,
+  type SiblingSection,
+} from '@/components/sis/section-transfer-dialog';
 import { StageScrollLink } from '@/components/sis/stage-scroll-link';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -94,19 +98,19 @@ type Props = {
    *  changed. Defaults to FALSE for the same reason `canEdit` does: no
    *  picker beats one whose save could be refused. */
   canAssignSection?: boolean;
-  /** May this viewer actually open `/sis/sections`? Computed by the page via
-   *  `isRouteAllowed('/sis/sections', role)` — the app's one answer to "may
-   *  this role open this path" — and passed down rather than re-derived here,
-   *  matching how `canAssignSection` already arrives. Drives (alongside
-   *  `canAssignSection`) the "Move to another section" CTA below: as of
-   *  2026-09-10 `admissions` holds the placement RIGHT (`canAssignSection` is
-   *  true for them) but SIS Admin was never one of the three modules they
-   *  absorbed — Records, P-Files, Admissions — so `/sis/sections` stays out
-   *  of their `ROUTE_ACCESS`. A control gated on the right alone would render
-   *  for a role that can never open where it points; gating on reachability
-   *  too means "no link" beats "a link that always bounces." Defaults to
-   *  FALSE for the same reason every other gate here does. */
-  canReachSectionSetup?: boolean;
+  /** What the class tile's "Move to another section" dialog needs: who is
+   *  moving, from where, and the same-level sections they can go to. Null
+   *  when the student has no current section. The move happens in place via
+   *  the transfer-section API (open to every `canAssignSection` role) rather
+   *  than by linking to `/sis/sections/[id]`, which `admissions` cannot open —
+   *  they hold the placement right but not SIS Admin. */
+  transfer?: SectionTransfer | null;
+};
+
+export type SectionTransfer = {
+  studentName: string;
+  fromSectionName: string;
+  siblings: SiblingSection[];
 };
 
 type StageCard = {
@@ -301,7 +305,7 @@ export function EnrollmentTab({
   currentSectionId,
   canEdit = false,
   canAssignSection = false,
-  canReachSectionSetup = false,
+  transfer = null,
 }: Props) {
   const s = status ?? ({} as StatusRow);
 
@@ -523,7 +527,7 @@ export function EnrollmentTab({
         applicationStatus={applicationStatus}
         canEdit={canEdit}
         canAssignSection={canAssignSection}
-        canReachSectionSetup={canReachSectionSetup}
+        transfer={transfer}
       />
 
       <StatusGroupCard
@@ -536,7 +540,7 @@ export function EnrollmentTab({
         applicationStatus={applicationStatus}
         canEdit={canEdit}
         canAssignSection={canAssignSection}
-        canReachSectionSetup={canReachSectionSetup}
+        transfer={transfer}
       />
 
       <StatusGroupCard
@@ -550,7 +554,7 @@ export function EnrollmentTab({
         applicationStatus={applicationStatus}
         canEdit={canEdit}
         canAssignSection={canAssignSection}
-        canReachSectionSetup={canReachSectionSetup}
+        transfer={transfer}
       />
 
       {/* items-start so each card sizes to its own content. The default
@@ -1039,7 +1043,7 @@ function StatusGroupCard({
   applicationStatus,
   canEdit,
   canAssignSection,
-  canReachSectionSetup,
+  transfer,
 }: {
   eyebrow: string;
   title: string;
@@ -1057,7 +1061,7 @@ function StatusGroupCard({
   /** May this viewer open `/sis/sections`? Only meaningful for the Placement
    *  group's class tile, threaded through unconditionally to match
    *  `canAssignSection`'s pattern. */
-  canReachSectionSetup: boolean;
+  transfer: SectionTransfer | null;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -1110,7 +1114,7 @@ function StatusGroupCard({
             applicationStatus={applicationStatus}
             canEdit={canEdit}
             canAssignSection={canAssignSection}
-            canReachSectionSetup={canReachSectionSetup}
+            transfer={transfer}
           />
         ))}
       </div>
@@ -1126,7 +1130,7 @@ function StageStatusTile({
   applicationStatus,
   canEdit,
   canAssignSection,
-  canReachSectionSetup,
+  transfer,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1137,8 +1141,8 @@ function StageStatusTile({
   applicationStatus: string | null;
   canEdit: boolean;
   canAssignSection: boolean;
-  /** May this viewer open `/sis/sections`? See the Props docstring above. */
-  canReachSectionSetup: boolean;
+  /** Data for the in-place "Move to another section" dialog. See Props. */
+  transfer: SectionTransfer | null;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
@@ -1221,39 +1225,26 @@ function StageStatusTile({
         html={stage.remarks}
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
-      {/* Both links go to placement surfaces, so both gate on the placement
-          role, not merely on canEdit. That was sufficient through 2026-09-10:
-          every role holding canAssignSection could also open both links'
-          destinations. It no longer is, for the FIRST link only —
-          admissions holds canAssignSection (this task absorbed placement
-          along with Records) but was never given SIS Admin (Mr Ace named
-          three modules for admissions: Records, P-Files, Admissions — SIS
-          Admin was not one of them), so /sis/sections/[id] stays out of
-          their ROUTE_ACCESS. Narrowing canAssignSection to fix this would be
-          wrong — admissions genuinely holds the placement right, and the
-          assign-section API + this very tab both stay open to them; they
-          simply cannot use THIS door. So this link additionally requires
-          canReachSectionSetup (computed via isRouteAllowed, not a hand-rolled
-          role list) — gated on whether the destination is actually openable,
-          not on the placement right alone. The SECOND link below, "Assign a
-          class" → /records/unsynced, needs no such extra check: admissions
-          already reaches all of /records. */}
-      {autoManaged &&
-        currentSectionId &&
-        canAssignSection &&
-        canReachSectionSetup && (
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="ml-1 self-start"
-          >
-            <Link href={`/sis/sections/${currentSectionId}`}>
+      {/* Both controls are placement actions, so both gate on the placement
+          role, not merely on canEdit. The move opens in place rather than
+          linking to /sis/sections/[id]: admissions holds the placement right
+          but not SIS Admin, and the transfer-section API is open to every
+          canAssignSection role. */}
+      {autoManaged && currentSectionId && canAssignSection && transfer && (
+        <SectionTransferDialog
+          enroleeNumber={enroleeNumber}
+          studentName={transfer.studentName}
+          fromSectionName={transfer.fromSectionName}
+          ayCode={ayCode}
+          siblings={transfer.siblings}
+          trigger={
+            <Button variant="outline" size="sm" className="ml-1 self-start">
               <ArrowRightLeft className="size-3.5" />
               Move to another section
-            </Link>
-          </Button>
-        )}
+            </Button>
+          }
+        />
+      )}
       {/* Enrolled but unplaced — this tile is otherwise a dead end, because the
           class stage has no edit control of its own (placement is done in
           Records), so the queue is the only door out of here. */}
