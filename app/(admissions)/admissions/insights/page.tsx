@@ -68,7 +68,11 @@ import {
 } from '@/lib/admissions/insights-funnel';
 import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
 import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
-import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
+import {
+  FEEDBACK_RATING_MAX,
+  FEEDBACK_RATING_MIN,
+  getAdmissionsFeedback,
+} from '@/lib/admissions/feedback';
 import {
   getAdmissionsTerminalReasons,
   growthDelta,
@@ -392,12 +396,16 @@ export default async function AdmissionsInsightsPage({
   // "share of whole" framing this data doesn't need. Every tier renders
   // (including zero-count ones) so a gap in the distribution is visible,
   // not silently dropped.
-  const ratingChartData: ComparisonBarPoint[] = [1, 2, 3, 4, 5].map(
-    (stars) => ({
-      category: `${stars}★`,
-      current: feedback.rows.filter((r) => r.feedbackRating === stars).length,
-    })
-  );
+  // Buckets come from the scale itself, not a literal — this histogram and
+  // `lib/admissions/feedback.ts`'s average have to cover the same values, or
+  // the card shows an average its own bars cannot add up to.
+  const ratingChartData: ComparisonBarPoint[] = Array.from(
+    { length: FEEDBACK_RATING_MAX - FEEDBACK_RATING_MIN + 1 },
+    (_, i) => FEEDBACK_RATING_MIN + i
+  ).map((stars) => ({
+    category: `${stars}★`,
+    current: feedback.rows.filter((r) => r.feedbackRating === stars).length,
+  }));
   const priorAvgRating = priorFeedback?.stats.avgRating ?? null;
   const ratingDelta =
     feedback.stats.avgRating !== null && priorAvgRating !== null

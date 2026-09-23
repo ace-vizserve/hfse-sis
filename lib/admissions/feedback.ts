@@ -48,6 +48,82 @@ export type FeedbackResult = {
   stats: FeedbackStats;
 };
 
+/** The scale, stated once. 1 = Very Difficult … 5 = Excellent. */
+export const FEEDBACK_RATING_MIN = 1;
+export const FEEDBACK_RATING_MAX = 5;
+
+/**
+ * Is this a rating the app is willing to average?
+ *
+ * ⚠ THIS IS WHERE THE SCALE IS ENFORCED, AND THE ONLY PLACE IT HAS TEETH FOR
+ * DATA THAT IS ALREADY STORED. The column is a bare `smallint null` in every
+ * copy of the admissions DDL — no CHECK — so the database will accept any
+ * smallint. The two writers happen to behave (the parent portal renders five
+ * options and sends null, never 0, when a parent skips; `ProfileUpdateSchema`
+ * carries `z.number().int().min(1).max(5)` on the one SIS write path), but
+ * neither is durable: the portal's `feedbackRating: number | null` is a
+ * TypeScript type that erases at runtime, and a Directus import or a hand-run
+ * UPDATE answers to neither.
+ *
+ * So the reader does not assume. An off-scale value is excluded from the
+ * numbers rather than averaged into them, which is what the caller below is
+ * protecting.
+ */
+export function isRatingInScale(value: number | null | undefined): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= FEEDBACK_RATING_MIN &&
+    value <= FEEDBACK_RATING_MAX
+  );
+}
+
+/**
+ * The three headline numbers on /admissions/feedback, from the rows it lists.
+ *
+ * Pure — no DB access, unit-tested directly. Split out of the loader for the
+ * same reason `lib/sis/level-review.ts` splits its diff: the arithmetic is
+ * where the bugs were, and it should be testable without a database.
+ */
+export function computeFeedbackStats(rows: FeedbackRow[]): FeedbackStats {
+  // ⚠ IN SCALE, NOT MERELY NON-NULL. This filtered on `!== null` alone, so any
+  // number in the column was averaged as a real score — a 0, a 6, a -1.
+  //
+  // It also disagreed with the insights histogram, which buckets 1..5
+  // explicitly and therefore DROPPED an off-scale value while this line
+  // COUNTED it — one card showing an average its own bars cannot produce, with
+  // nothing to flag it. Both now read the scale from the same constants.
+  //
+  // The row itself stays listed with its raw value — bad data should be
+  // visible to whoever can fix it, not quietly filtered out of the table too.
+  const ratingRows = rows.filter((r) => isRatingInScale(r.feedbackRating));
+  const avgRating =
+    ratingRows.length > 0
+      ? Math.round(
+          (ratingRows.reduce((s, r) => s + (r.feedbackRating ?? 0), 0) /
+            ratingRows.length) *
+            10
+        ) / 10
+      : null;
+  const consentCount = rows.filter((r) => r.feedbackConsent === true).length;
+
+  return {
+    total: rows.length,
+    avgRating,
+    ratingCount: ratingRows.length,
+    consentCount,
+    // ⚠ THE DENOMINATOR IS EVERY FEEDBACK RESPONSE, NOT JUST THE RATED ONES.
+    // `consentCount` is counted over all rows, and dividing it by the rated
+    // subset mixed two populations: AY2027 showed "46% open to follow-up"
+    // beside its own "32 parents consented" and "76 responses", which is 42%.
+    // Skipping the rating sets consent false, so the rated-only denominator
+    // dropped exactly the rows guaranteed to be non-consenters and inflated
+    // the figure every time. It could not exceed 100% by luck, not by design.
+    consentRate:
+      rows.length > 0 ? Math.round((consentCount / rows.length) * 100) : null,
+  };
+}
+
 const FEEDBACK_APP_COLUMNS = [
   'enroleeNumber',
   'studentNumber',
@@ -146,29 +222,7 @@ async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
     return bMs - aMs;
   });
 
-  const ratingRows = rows.filter((r) => r.feedbackRating !== null);
-  const avgRating =
-    ratingRows.length > 0
-      ? Math.round(
-          (ratingRows.reduce((s, r) => s + (r.feedbackRating ?? 0), 0) /
-            ratingRows.length) *
-            10
-        ) / 10
-      : null;
-  const consentCount = rows.filter((r) => r.feedbackConsent === true).length;
-
-  const stats: FeedbackStats = {
-    total: rows.length,
-    avgRating,
-    ratingCount: ratingRows.length,
-    consentCount,
-    consentRate:
-      ratingRows.length > 0
-        ? Math.round((consentCount / ratingRows.length) * 100)
-        : null,
-  };
-
-  return { rows, stats };
+  return { rows, stats: computeFeedbackStats(rows) };
 }
 
 export function getAdmissionsFeedback(ayCode: string): Promise<FeedbackResult> {
