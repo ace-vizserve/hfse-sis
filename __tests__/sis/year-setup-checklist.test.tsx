@@ -146,6 +146,7 @@ function makeAy(overrides: Record<string, unknown> = {}) {
     label: 'Academic Year 2026',
     is_current: true,
     accepting_applications: false,
+    vizschool_accepting_applications: false,
     created_at: '2026-01-01',
     counts: { terms: 4, sections: 0, subject_configs: 0, section_students: 0 },
     has_children: false,

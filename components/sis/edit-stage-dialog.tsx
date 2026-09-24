@@ -10,6 +10,11 @@ import { toast } from 'sonner';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
+import {
+  sectionMatchesApplication,
+  type ApplicationFit,
+} from '@/lib/admissions/options';
+import { ApplicationMatchBadge } from '@/components/sis/application-match-badge';
 import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
 import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { Button } from '@/components/ui/button';
@@ -231,7 +236,15 @@ export function EditStageDialog({
           label: string;
           levelType: 'primary' | 'secondary';
         } | null;
-        sections: { id: string; name: string; activeCount: number }[];
+        sections: {
+          id: string;
+          name: string;
+          activeCount: number;
+          classType: string | null;
+          schedule: string | null;
+        }[];
+        /** What the application asked for — drives the match hint. */
+        applicationFit: ApplicationFit | null;
         /** Set when this student already sits in a class this year. */
         currentSection: {
           sectionName: string;
@@ -760,6 +773,11 @@ export function EditStageDialog({
                             .map((sec) => {
                               const full =
                                 sec.activeCount >= MAX_ACTIVE_PER_SECTION;
+                              // Hint only — nothing is hidden or reordered.
+                              const matches = sectionMatchesApplication(
+                                sec,
+                                sectionsQuery.data?.applicationFit
+                              );
                               return (
                                 <button
                                   key={sec.id}
@@ -776,10 +794,15 @@ export function EditStageDialog({
                                         : 'border-border hover:bg-accent/40')
                                   }
                                 >
-                                  <span className="font-medium text-foreground">
-                                    {sec.name}
+                                  {/* Inside the button, so the hint is part
+                                      of the option's accessible name. */}
+                                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="font-medium text-foreground">
+                                      {sec.name}
+                                    </span>
+                                    {matches && <ApplicationMatchBadge />}
                                   </span>
-                                  <span className="font-mono tabular-nums text-muted-foreground">
+                                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
                                     {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
                                     {full ? ' · Full' : ''}
                                   </span>

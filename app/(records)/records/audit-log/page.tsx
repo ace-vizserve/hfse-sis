@@ -88,6 +88,7 @@ export default async function SisAuditLogPage({
     'ay.create',
     'ay.switch_current',
     'ay.accepting_applications.toggle',
+    'ay.vizschool_applications.toggle',
     'ay.delete',
     'ay.term_dates.update',
     'ay.term_virtue.update',

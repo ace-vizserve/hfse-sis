@@ -1,6 +1,7 @@
 ﻿import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
+import { PARENT_ACADEMIC_YEARS_TAG } from '@/lib/admissions/parent-academic-years';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import {
@@ -215,6 +216,9 @@ export async function PATCH(request: Request) {
   // AY that was already current is a no-op for the two `sis:` tags but this
   // entry can still be holding a stale row from before an unrelated edit.
   revalidateTag('sis-health', 'max');
+  // The portal's year picker carries `isCurrent`, and the switch also flips
+  // `accepting_applications` on both years.
+  revalidateTag(PARENT_ACADEMIC_YEARS_TAG, 'max');
 
   return NextResponse.json({ ok: true, from: prevAy, to: targetAy });
 }
@@ -295,6 +299,9 @@ export async function DELETE(request: Request) {
   // One fewer `academic_years` row on the /sis readiness strip's count, and
   // possibly one fewer current AY. Same loader as the POST above.
   revalidateTag('sis-health', 'max');
+  // A deleted year that was open must leave the portal's year picker now,
+  // not after the 300s cache expires.
+  revalidateTag(PARENT_ACADEMIC_YEARS_TAG, 'max');
 
   return NextResponse.json({ ok: true, summary });
 }

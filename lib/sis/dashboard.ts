@@ -1564,6 +1564,7 @@ export const STRUCTURAL_ACTIONS = [
   'ay.switch_current',
   'ay.delete',
   'ay.accepting_applications.toggle',
+  'ay.vizschool_applications.toggle',
   'approver.assign',
   'approver.revoke',
 ] as const;

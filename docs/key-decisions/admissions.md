@@ -185,6 +185,14 @@ So every capacity decision was a code deploy — **five schedule changes between
 - ⚠ **`sort_order` orders the parent's level dropdown.** It must follow the portal's `classLevels` order, NOT SIS level order. The first seed sorted by SIS level and would have moved the five International Education Programme levels; `scripts/backfill/apply-admission-options-portal-order.ts` renumbered them.
 - ⚠ **Deploy the SIS before the portal** whenever the endpoint's contract changes.
 
+**The year picker** (migration 176, 2026-09-24).
+
+- **The portal's year cards come from the SIS**, for HFSE and VizSchool, instead of being hardcoded. Its picker cards and open-house buttons read `GET /api/parent/v2/academic-years`, with today's hardcoded cards as the fallback (portal side built separately).
+- **VizSchool has its own switch:** `academic_years.vizschool_accepting_applications`. VizSchool applications land in the same `ay{YYYY}_enrolment_*` tables (category 'VizSchool New' / 'VizSchool Current'), so the YEAR is shared but whether it is OPEN is not. It is a plain switch — no single-select rule, unlike HFSE's early-bird (KD #118). Backfilled on for AY2026 only; a new year starts closed.
+- **The endpoint** is public like `/admission-options` (no Bearer, IP rate limit, CORS), lists years open to either programme, oldest first, never `AY9…`: `{ years: [{ ayCode, isCurrent, hfseOpen, vizschoolOpen }] }`. `hfseOpen` is `accepting_applications`, so the current year is always open (KD #118). Cached 300s under `parent-academic-years`, busted by both switches, the current-year switch and AY delete. Shaping rule: `lib/admissions/parent-academic-years.ts`.
+- **Staff flip it** with a second "VizSchool applications" switch beside "Accepting applications" on the AY Setup table and the Year Setup checklist — the same `PATCH /api/sis/ay-setup/accepting-applications` with `program: 'vizschool'`, audited as `ay.vizschool_applications.toggle`.
+- ⚠ **`/admission-options` still gates on HFSE's flag** (`isServableAy`): a year open only to VizSchool is not served there. Irrelevant today because VizSchool forms do not read it.
+
 **Deliberately NOT moved (v1).**
 
 - The portal's re-enrolment progression (`GRADE_PROGRESSIONS`) and fee groups (`PRIMARY_CLASS_LEVELS` / `SECONDARY_SDF_CLASS_LEVELS`) still key on the level TEXT. **Renaming a level name in the SIS silently breaks them** — the drawer warns.

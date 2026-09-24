@@ -33,6 +33,11 @@ export type CreateAyInput = z.infer<typeof CreateAySchema>;
 export const ToggleAcceptingApplicationsSchema = z.object({
   ay_code: AyCode,
   accepting: z.boolean(),
+  // Which programme's window this flips. 'hfse' (the default, and the only
+  // value before migration 176) is `accepting_applications` with the
+  // early-bird single-select rule; 'vizschool' is
+  // `vizschool_accepting_applications`, a plain switch.
+  program: z.enum(['hfse', 'vizschool']).default('hfse'),
 });
 
 export type ToggleAcceptingApplicationsInput = z.infer<

@@ -1278,6 +1278,23 @@ describe('admissions', () => {
       })
     ).toBe('AY2026 closed for applications · because AY2027 was opened');
   });
+
+  it('VizSchool applications, opened and closed', () => {
+    expect(
+      line('ay.vizschool_applications.toggle', {
+        ay_code: 'AY2027',
+        before: false,
+        after: true,
+      })
+    ).toBe('AY2027 opened for VizSchool applications');
+    expect(
+      line('ay.vizschool_applications.toggle', {
+        ay_code: 'AY2026',
+        before: true,
+        after: false,
+      })
+    ).toBe('AY2026 closed to VizSchool applications');
+  });
 });
 
 describe('records', () => {

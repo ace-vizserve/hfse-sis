@@ -222,6 +222,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'ay.create': 'Academic year created',
   'ay.switch_current': 'Current year switched',
   'ay.accepting_applications.toggle': 'Application window toggled',
+  'ay.vizschool_applications.toggle': 'VizSchool applications toggled',
   'ay.delete': 'Academic year deleted',
   'ay.term_dates.update': 'Term dates updated',
   'ay.term_virtue.update': 'Term virtue updated',
@@ -1854,6 +1855,15 @@ function templateSummary(
       const by = str(ctx.auto_closed_by ?? ctx.autoClosedBy);
       if (by) parts.push(`because ${by} was opened`);
       return joinParts(parts);
+    }
+
+    case 'ay.vizschool_applications.toggle': {
+      const ay = str(ctx.ay_code);
+      const after = boolish(ctx.after);
+      const prefix = ay ? `${ay} ` : '';
+      if (after === true) return `${prefix}opened for VizSchool applications`;
+      if (after === false) return `${prefix}closed to VizSchool applications`;
+      return ay;
     }
 
     case 'ay.copy_teacher_assignments': {

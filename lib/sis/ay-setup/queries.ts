@@ -15,6 +15,8 @@ export type AcademicYearRow = {
   is_current: boolean;
   /** KD #77: parent portal can submit applications for this AY when true. */
   accepting_applications: boolean;
+  /** Migration 176: VizSchool parents can apply for this AY when true. */
+  vizschool_accepting_applications: boolean;
   created_at: string;
 };
 
@@ -79,7 +81,7 @@ export async function listAcademicYears(): Promise<AcademicYearListItem[]> {
   const { data, error } = await service
     .from('academic_years')
     .select(
-      'id, ay_code, label, is_current, accepting_applications, created_at'
+      'id, ay_code, label, is_current, accepting_applications, vizschool_accepting_applications, created_at'
     )
     .order('ay_code', { ascending: false });
 

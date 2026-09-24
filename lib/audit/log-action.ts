@@ -123,6 +123,10 @@ export const ALL_AUDIT_ACTIONS = [
   'ay.create',
   'ay.switch_current',
   'ay.accepting_applications.toggle',
+  // VizSchool's own per-year open switch (migration 176). A separate action
+  // rather than a `program` key on the one above, so the audit log and the
+  // structural-changes feed can tell the two programmes apart by action.
+  'ay.vizschool_applications.toggle',
   'ay.delete',
   'ay.term_dates.update',
   'ay.term_virtue.update',

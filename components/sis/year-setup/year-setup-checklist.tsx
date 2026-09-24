@@ -474,6 +474,9 @@ export function YearSetupChecklist({
                   <AyAcceptingApplicationsToggle
                     ayCode={selectedAy.ay_code}
                     current={selectedAy.accepting_applications}
+                    vizschoolCurrent={
+                      selectedAy.vizschool_accepting_applications
+                    }
                     isCurrentAy={selectedAy.is_current}
                   />
                 );
@@ -481,7 +484,7 @@ export function YearSetupChecklist({
                   <div className="px-6 pb-4 pl-[4.5rem] text-[12px] leading-relaxed text-muted-foreground">
                     {selectedAy.is_current
                       ? 'Live application window for the active year.'
-                      : 'Only one upcoming year can be open at a time — opening this one closes any other.'}
+                      : 'Only one upcoming year can be open for applications at a time — opening this one closes any other. VizSchool applications have no such limit.'}
                   </div>
                 );
                 break;

@@ -22,6 +22,7 @@ const STRUCTURAL_ACTION_LABELS: Record<string, string> = {
   'ay.switch_current': 'Active AY switched',
   'ay.delete': 'Academic year deleted',
   'ay.accepting_applications.toggle': 'Early-bird applications toggled',
+  'ay.vizschool_applications.toggle': 'VizSchool applications toggled',
   'approver.assign': 'Approver assigned',
   'approver.revoke': 'Approver revoked',
 };

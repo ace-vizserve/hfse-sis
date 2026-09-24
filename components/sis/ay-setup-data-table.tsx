@@ -243,6 +243,7 @@ function AyRowActions({ row }: { row: AyTableRow }) {
       <AyAcceptingApplicationsToggle
         ayCode={row.ay_code}
         current={row.accepting_applications}
+        vizschoolCurrent={row.vizschool_accepting_applications}
         isCurrentAy={row.is_current}
         showCaption
       />

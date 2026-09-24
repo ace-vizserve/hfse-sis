@@ -61,6 +61,7 @@ describe('AyAcceptingApplicationsToggle (Tier-2)', () => {
       <AyAcceptingApplicationsToggle
         ayCode="AY9999"
         current={false}
+        vizschoolCurrent={false}
         isCurrentAy={false}
       />
     );
@@ -100,6 +101,7 @@ describe('AyAcceptingApplicationsToggle (Tier-2)', () => {
       <AyAcceptingApplicationsToggle
         ayCode="AY9999"
         current={false}
+        vizschoolCurrent={false}
         isCurrentAy={false}
       />
     );
@@ -111,5 +113,36 @@ describe('AyAcceptingApplicationsToggle (Tier-2)', () => {
     );
     expect(refreshMock).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('the VizSchool switch sends program: vizschool and says so in its toast', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+
+    renderWithClient(
+      <AyAcceptingApplicationsToggle
+        ayCode="AY9999"
+        current={true}
+        vizschoolCurrent={false}
+        isCurrentAy={false}
+      />
+    );
+
+    await user.click(
+      screen.getByRole('switch', { name: /vizschool applications for AY9999/i })
+    );
+
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      ay_code: 'AY9999',
+      accepting: true,
+      program: 'vizschool',
+    });
+    expect(toastSuccess).toHaveBeenCalledWith(
+      'AY9999 is now accepting VizSchool applications.'
+    );
   });
 });

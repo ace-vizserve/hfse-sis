@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
 
+import { PARENT_ACADEMIC_YEARS_TAG } from '@/lib/admissions/parent-academic-years';
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { ToggleAcceptingApplicationsSchema } from '@/lib/schemas/ay-setup';
@@ -16,6 +17,13 @@ import { createServiceClient } from '@/lib/supabase/service';
 // is closed first. Closing, or flipping the current AY, is a plain single-row
 // flip (the current AY is never part of the single-select pool).
 //
+// `program: 'vizschool'` flips VizSchool's own switch instead
+// (`vizschool_accepting_applications`, migration 176): a plain single-row
+// flip with no single-select rule. Omitted = 'hfse', the behaviour above.
+//
+// Every real flip also busts `parent-academic-years`, the portal's year
+// picker (`GET /api/parent/v2/academic-years`).
+//
 // Role: school_admin + superadmin.
 export async function PATCH(request: Request) {
   const auth = await requireCapability('academic_year.edit');
@@ -30,8 +38,70 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { ay_code: ayCode, accepting } = parsed.data;
+  const { ay_code: ayCode, accepting, program } = parsed.data;
   const supabase = createServiceClient();
+
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
+  // ── VizSchool: plain single-row flip, no single-select ────────────────────
+  if (program === 'vizschool') {
+    const { data: row, error: readErr } = await supabase
+      .from('academic_years')
+      .select('id, vizschool_accepting_applications')
+      .eq('ay_code', ayCode)
+      .maybeSingle();
+    if (readErr) {
+      console.error(
+        '[ay-setup accepting-applications] vizschool read failed:',
+        readErr.message
+      );
+      return NextResponse.json({ error: readErr.message }, { status: 500 });
+    }
+    if (!row) {
+      return NextResponse.json(
+        { error: `AY ${ayCode} not found` },
+        { status: 404 }
+      );
+    }
+    const target = row as {
+      id: string;
+      vizschool_accepting_applications: boolean;
+    };
+    if (target.vizschool_accepting_applications === accepting) {
+      return NextResponse.json({
+        ok: true,
+        unchanged: true,
+        accepting,
+        program,
+      });
+    }
+    const { error } = await supabase
+      .from('academic_years')
+      .update({ vizschool_accepting_applications: accepting })
+      .eq('ay_code', ayCode);
+    if (error) {
+      console.error(
+        '[ay-setup accepting-applications] vizschool flip failed:',
+        error.message
+      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    await logAction({
+      service: supabase,
+      actor,
+      action: 'ay.vizschool_applications.toggle',
+      entityType: 'academic_year',
+      entityId: target.id,
+      context: { ay_code: ayCode, before: !accepting, after: accepting },
+    });
+    revalidateTag(`sis:${ayCode}`, 'max');
+    revalidateTag(PARENT_ACADEMIC_YEARS_TAG, 'max');
+    return NextResponse.json({ ok: true, accepting, program });
+  }
 
   // Load every AY's flags once — needed for the target lookup and the
   // single-select closure computation.
@@ -60,12 +130,6 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const actor = {
-    id: auth.user.id,
-    email: auth.user.email ?? null,
-    role: auth.role,
-  };
-
   // ── Close: plain single-row flip ──────────────────────────────────────────
   if (!accepting) {
     if (!target.accepting_applications) {
@@ -91,6 +155,7 @@ export async function PATCH(request: Request) {
       context: { ay_code: ayCode, before: true, after: false },
     });
     revalidateTag(`sis:${ayCode}`, 'max');
+    revalidateTag(PARENT_ACADEMIC_YEARS_TAG, 'max');
     return NextResponse.json({ ok: true, accepting: false });
   }
 
@@ -169,6 +234,7 @@ export async function PATCH(request: Request) {
     });
   }
   revalidateTag(`sis:${ayCode}`, 'max');
+  revalidateTag(PARENT_ACADEMIC_YEARS_TAG, 'max');
 
   return NextResponse.json({ ok: true, accepting: true, autoClosed: toClose });
 }
