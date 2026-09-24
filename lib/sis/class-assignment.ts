@@ -19,6 +19,10 @@ export type AssignableSection = {
   id: string;
   name: string;
   activeCount: number;
+  /** `sections.class_type` — 'Global' / 'Standard', or null when never set. */
+  classType: string | null;
+  /** `sections.schedule` — 'morning' / 'afternoon' / 'whole_day', or null. */
+  schedule: string | null;
 };
 
 export type AssignableLevel = {
@@ -70,10 +74,15 @@ export async function listAssignableSections(
 
   const { data: sectionRows } = await service
     .from('sections')
-    .select('id, name')
+    .select('id, name, class_type, schedule')
     .eq('academic_year_id', ayId)
     .eq('level_id', levelId);
-  const sections = (sectionRows ?? []) as Array<{ id: string; name: string }>;
+  const sections = (sectionRows ?? []) as Array<{
+    id: string;
+    name: string;
+    class_type: string | null;
+    schedule: string | null;
+  }>;
   if (sections.length === 0) return { level, sections: [] };
 
   const sectionIds = sections.map((s) => s.id);
@@ -100,6 +109,8 @@ export async function listAssignableSections(
         id: s.id,
         name: s.name,
         activeCount: activeCountById.get(s.id) ?? 0,
+        classType: s.class_type ?? null,
+        schedule: s.schedule ?? null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   };

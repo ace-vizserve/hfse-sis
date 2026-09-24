@@ -141,3 +141,56 @@ Two things showed this was a mistake rather than a deliberate tightening. First,
 - **Also fixed in passing:** the post-Enrolled class-stage guard pointed first-time placements at `/transfer-section`, which cannot work when there is no source section to move out of — it now points at `assign-section` when the current section is null. And `assign-section`'s "no student number" error told the registrar to run a sync, which cannot issue one.
 
 Tests: `__tests__/sis/enrolled-flip-gate.test.ts`, `placement-completion.test.ts`, `chase-lens.test.ts`. Supersedes the section requirement in `docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md` (the no-auto-pick rule from that spec still holds).
+
+### KD #222
+
+**The SIS decides what parents can pick on the enrolment forms, per AY** (migration 174, 2026-09-24). Mr Ace: _"make SIS the central source of info regarding admissions input fields for classLevel, classType and preferredSchedule … cause they always change and they are linked to each other … and this can be per AY too."_
+
+**Why.** The portal hardcoded all three:
+
+- the level list was `classLevels` in `src/data.ts`;
+- a level → class type table was copied by hand into four forms;
+- the Morning/Afternoon rules lived in `src/lib/schedule-rules.ts`.
+
+So every capacity decision was a code deploy — **five schedule changes between 25 Aug and 16 Sep 2026**. The labels also drifted away from the SIS. The portal renamed "Global Education Programme" to "International Education Programme" on 2026-07-20, the same day migration 088 seeded `level_aliases` with the OLD names, so **12 level names nobody could resolve** piled up on `/records/level-mismatches`. They were aliased in `scripts/backfill/apply-international-programme-level-aliases.ts`; afterwards all 35 distinct stored level names across AY2025–27 resolve.
+
+**The shape.**
+
+- **One flat row per pickable combination:** `admission_options` (AY, level name as parents see it, the SIS `level_id` it counts as, class type as parents see it, `track` Global/Standard, `schedule` morning/afternoon/whole_day, `is_open`).
+- **Dropdowns are derived from the open rows only** (`lib/admissions/options.ts::deriveOptions`, which the SIS and the portal mirror).
+- **"Morning is full" is an untick.** A closed row stays, so staff see it as a switch, not a gap.
+- **RLS on, no policies.** The portal reads through `GET /api/parent/v2/admission-options`. It is public (no Bearer, because the public `/complete-enrolment/:token` page needs it), IP rate-limited, and serves only a current or accepting, non-`AY9` year.
+- **Staff edit it at `/sis/admin/admission-options`** (SIS Admin, plus an Admissions cross-link like Discount Codes; `ENROLMENT_PLACEMENT_WRITERS`).
+- **Seeded from the portal's own rules** for AY2026 and AY2027, 122 rows; `scripts/verify-admission-options-parity.ts` finds 0 differences.
+
+**Decisions to keep.**
+
+- **Cambridge is the Global track, not a third one** (Mr Ace, 2026-09-24). `sections.class_type` stays Global/Standard. "Enrichment Class" (Youngstarters) was seeded Standard, a judgement call.
+- **"International Education Programme – Year 1 (equivalent to K2)" counts as Youngstarters** (Mr Ace, 2026-09-24).
+- **A level name's meaning is global.** `level_aliases.raw_label` is unique, so "Counts as" belongs to the NAME. Correcting it re-points every option using that name, in every year and class type, plus the alias — and with it how past applications carrying that name are read. The edit drawer says how far it reaches before saving.
+  - The first rule refused the change while any other option used the name. That deadlocked two class types sharing a wrongly-mapped name; do not bring it back.
+- **Saving an option writes its alias,** so a new name cannot land on Level mismatches. It is refused if the name already counts as a different level, or is a level's own label.
+- **No delete.** Closing withdraws an option; editing fixes a typo.
+- **Class pickers show "Matches their application"** on a section whose `class_type` equals the track of the applicant's class type AND whose `schedule` equals their `preferredSchedule` (`lib/admissions/options.ts::sectionMatchesApplication`).
+  - It is a hint only: nothing is hidden, reordered or blocked.
+  - **Strict by choice:** both facts must be known on both sides. A badge that ignored the session they asked for would be half true.
+  - ⚠ **Measured 2026-09-24: 0 of 22 AY2026 and 0 of 4 AY2027 sections carry both `class_type` and `schedule`** (1 has a schedule at all). So the badge shows nowhere until sections are given a track and schedule on `/sis/sections`. That is a data gap, not a bug.
+
+**The portal side** (`app-online-admission`, 2026-09-24).
+
+- **The four HFSE-IS forms read the SIS list:** new, re-enrolment, open house and `/complete-enrolment/:token`. The code is `src/hooks/use-admission-options.ts` + `src/lib/admission-options.ts`, and it replaced four hand copies of the rules.
+- **Fallback: if the SIS is unreachable, 404s, is malformed or returns nothing, the forms use today's hardcoded rules** through the same derivation. Enrolment never stops because the SIS is down.
+- **A submit made while the list is still loading is held** ("Checking available classes…"). The worst case is about 13s before the fallback applies.
+- **The submit check is now "level, type and schedule are all in the list"**, which is stricter than before: a missing level used to pass.
+- ⚠ **`sort_order` orders the parent's level dropdown.** It must follow the portal's `classLevels` order, NOT SIS level order. The first seed sorted by SIS level and would have moved the five International Education Programme levels; `scripts/backfill/apply-admission-options-portal-order.ts` renumbered them.
+- ⚠ **Deploy the SIS before the portal** whenever the endpoint's contract changes.
+
+**Deliberately NOT moved (v1).**
+
+- The portal's re-enrolment progression (`GRADE_PROGRESSIONS`) and fee groups (`PRIMARY_CLASS_LEVELS` / `SECONDARY_SDF_CLASS_LEVELS`) still key on the level TEXT. **Renaming a level name in the SIS silently breaks them** — the drawer warns.
+- VizSchool forms are untouched.
+- "Full" is manual; nothing counts headcounts.
+- `level_aliases` stays, for past applications.
+- ⚠ **KD #153 tried per-AY level offerings and removed them (migration 086) because nothing used them.** This is not a revival of that: this table is driven by observed churn, and what it holds is the form's options, not the level catalogue.
+
+⚠ **The cache tag `admission-options:<ay>` is not covered by `__tests__/cache/write-route-invalidation.test.ts`**, which reads only quoted tag literals. `__tests__/admissions/options-admin.test.ts` asserts every `app/api/sis/admission-options/**` route calls `revalidateTag(admissionOptionsTag(`. Keep that test when adding a write route.

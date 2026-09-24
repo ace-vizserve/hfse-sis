@@ -15,3 +15,11 @@
 export function sectionMapKey(ayCode: string, levelLabel: string): string {
   return `${ayCode}::${levelLabel}`;
 }
+
+/**
+ * Key for the queue's per-applicant "Matches their application" fit map.
+ * Carries the year because enrolee numbers restart every AY (Hard Rule #4).
+ */
+export function applicantMapKey(ayCode: string, enroleeNumber: string): string {
+  return `${ayCode}::${enroleeNumber}`;
+}

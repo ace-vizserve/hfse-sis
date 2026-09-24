@@ -24,6 +24,22 @@ export const PORTAL_SCHEDULE_LABEL: Record<AdmissionSchedule, PortalSchedule> =
   };
 export type PortalSchedule = 'Morning' | 'Afternoon' | 'Whole Day';
 
+/**
+ * The reverse of `PORTAL_SCHEDULE_LABEL`: a `preferredSchedule` as the portal
+ * wrote it ("Morning", "Afternoon", "Whole Day") → the SIS vocabulary. Case and
+ * spacing are forgiven ("whole  day", " MORNING "); anything else is null.
+ */
+export function scheduleFromPortal(
+  raw: string | null | undefined
+): AdmissionSchedule | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().replace(/\s+/g, ' ').toLowerCase();
+  for (const s of ADMISSION_SCHEDULES) {
+    if (PORTAL_SCHEDULE_LABEL[s].toLowerCase() === v) return s;
+  }
+  return null;
+}
+
 /** The columns `deriveOptions` needs; a full `admission_options` row satisfies it. */
 export type AdmissionOptionRow = {
   level_label: string;
@@ -508,4 +524,67 @@ export function trackForClassType(classTypeLabel: string): AdmissionTrack {
   return classTypeLabel.toLowerCase().includes('global')
     ? 'Global'
     : 'Standard';
+}
+
+// ── the section picker's "Matches their application" hint ────────────────
+// The only SIS-side consumer of an option's track and schedule. A hint only:
+// nothing is filtered, reordered or blocked by it — staff still choose.
+
+/** What an application asked for, in section vocabulary. */
+export type ApplicationFit = {
+  track: AdmissionTrack | null;
+  schedule: AdmissionSchedule | null;
+};
+
+/**
+ * An application's (levelApplied, classType, preferredSchedule) → the track
+ * and schedule a section would need to match it.
+ *
+ * Track: the AY's own `admission_options` row for that exact level name and
+ * class type decides it. When no row matches — an old application carrying a
+ * label since retired — `trackForClassType` guesses from the words. A blank
+ * class type has no track at all.
+ */
+export function deriveApplicationFit(
+  app: {
+    levelApplied: string | null | undefined;
+    classType: string | null | undefined;
+    preferredSchedule: string | null | undefined;
+  },
+  options: readonly {
+    level_label: string;
+    class_type_label: string;
+    track: AdmissionTrack;
+  }[]
+): ApplicationFit {
+  const classType = (app.classType ?? '').trim();
+  const level = (app.levelApplied ?? '').trim();
+  let track: AdmissionTrack | null = null;
+  if (classType) {
+    const row = options.find(
+      (o) =>
+        o.level_label.trim() === level &&
+        o.class_type_label.trim() === classType
+    );
+    track = row ? row.track : trackForClassType(classType);
+  }
+  return { track, schedule: scheduleFromPortal(app.preferredSchedule) };
+}
+
+/**
+ * Does this section match what the application asked for?
+ *
+ * Deliberately strict: BOTH the track and the schedule must be known on the
+ * application AND on the section, and both must be equal. An application that
+ * gave only one of the two gets no mark anywhere — a half-match would mark
+ * every section on that track (or in that session) and stop meaning anything.
+ * A section with no `class_type` or no `schedule` recorded never matches.
+ */
+export function sectionMatchesApplication(
+  section: { classType: string | null; schedule: string | null },
+  fit: ApplicationFit | null | undefined
+): boolean {
+  if (!fit || !fit.track || !fit.schedule) return false;
+  if (!section.classType || !section.schedule) return false;
+  return section.classType === fit.track && section.schedule === fit.schedule;
 }

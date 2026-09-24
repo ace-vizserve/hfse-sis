@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
+import { loadApplicationFit } from '@/lib/admissions/options-loader';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -50,8 +51,32 @@ export async function GET(
   } | null;
   const levelApplied = app?.levelApplied ?? null;
 
+  // What the parent asked for — class type and session — read apart from the
+  // select above and allowed to fail: `classType` is a later portal column
+  // (MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a legacy AY missing it
+  // must cost only the "Matches their application" hint, not the picker.
+  const { data: prefsRow } = await admissions
+    .from(`${prefix}_enrolment_applications`)
+    .select('classType, preferredSchedule')
+    .eq('enroleeNumber', enroleeNumber)
+    .maybeSingle();
+  const prefs = (prefsRow ?? null) as {
+    classType: unknown;
+    preferredSchedule: unknown;
+  } | null;
+
   const service = createServiceClient();
-  const result = await listAssignableSections(service, ayCode, levelApplied);
+  const [result, applicationFit] = await Promise.all([
+    listAssignableSections(service, ayCode, levelApplied),
+    loadApplicationFit(service, ayCode, {
+      levelApplied,
+      classType: typeof prefs?.classType === 'string' ? prefs.classType : null,
+      preferredSchedule:
+        typeof prefs?.preferredSchedule === 'string'
+          ? prefs.preferredSchedule
+          : null,
+    }),
+  ]);
 
   // IS THIS STUDENT ALREADY IN A CLASS?
   //
@@ -75,7 +100,12 @@ export async function GET(
     app?.studentNumber ?? null
   );
 
-  return NextResponse.json({ ...result, currentSection, hasAttendance });
+  return NextResponse.json({
+    ...result,
+    applicationFit,
+    currentSection,
+    hasAttendance,
+  });
 }
 
 /**

@@ -16,6 +16,7 @@ import type {
   AssignableLevel,
   AssignableSection,
 } from '@/lib/sis/class-assignment';
+import type { ApplicationFit } from '@/lib/admissions/options';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top-of-fold action card on the Records lite page (rendered when the
@@ -34,6 +35,7 @@ type Props = {
   level: AssignableLevel | null;
   studentName: string;
   availableSections: AssignableSection[];
+  applicationFit?: ApplicationFit | null;
 };
 
 export function UnsyncedActionCard({
@@ -42,6 +44,7 @@ export function UnsyncedActionCard({
   level,
   studentName,
   availableSections,
+  applicationFit = null,
 }: Props) {
   const [open, setOpen] = React.useState(false);
 
@@ -82,6 +85,7 @@ export function UnsyncedActionCard({
         level={level}
         studentName={studentName}
         availableSections={availableSections}
+        applicationFit={applicationFit}
         open={open}
         onOpenChange={setOpen}
       />

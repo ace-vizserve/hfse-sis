@@ -15,7 +15,8 @@ import type {
   AssignableLevel,
   AssignableSection,
 } from '@/lib/sis/class-assignment';
-import { sectionMapKey } from '@/lib/sis/section-map-key';
+import type { ApplicationFit } from '@/lib/admissions/options';
+import { applicantMapKey, sectionMapKey } from '@/lib/sis/section-map-key';
 import type {
   UnsyncedGapReason,
   UnsyncedStudentRow,
@@ -51,6 +52,9 @@ type Props = {
   /** Keyed by `sectionMapKey(ayCode, levelApplied)` — the queue spans more
    *  than one academic year, and a level's classes differ between them. */
   sectionsByLevel: Record<string, AssignableLevelSections>;
+  /** Keyed by `applicantMapKey(ayCode, enroleeNumber)` — what each applicant
+   *  asked for, so the picker can mark matching sections. */
+  applicationFitByApplicant?: Record<string, ApplicationFit>;
 };
 
 const GAP_COPY: Record<UnsyncedGapReason, string> = {
@@ -93,7 +97,11 @@ function fullNameOf(row: UnsyncedStudentRow): string {
   return parts.length ? parts.join(', ') : row.enroleeNumber;
 }
 
-export function UnsyncedStudentsQueue({ rows, sectionsByLevel }: Props) {
+export function UnsyncedStudentsQueue({
+  rows,
+  sectionsByLevel,
+  applicationFitByApplicant = {},
+}: Props) {
   const [dialogRow, setDialogRow] = React.useState<UnsyncedStudentRow | null>(
     null
   );
@@ -260,6 +268,11 @@ export function UnsyncedStudentsQueue({ rows, sectionsByLevel }: Props) {
             sectionsByLevel[
               sectionMapKey(dialogRow.ayCode, dialogRow.levelApplied ?? '')
             ]?.sections ?? []
+          }
+          applicationFit={
+            applicationFitByApplicant[
+              applicantMapKey(dialogRow.ayCode, dialogRow.enroleeNumber)
+            ] ?? null
           }
           open={true}
           onOpenChange={(open) => {

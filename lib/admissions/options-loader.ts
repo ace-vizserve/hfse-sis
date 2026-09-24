@@ -3,10 +3,12 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type {
-  AdmissionOptionWithLevel,
-  AdmissionSchedule,
-  AdmissionTrack,
+import {
+  deriveApplicationFit,
+  type AdmissionOptionWithLevel,
+  type AdmissionSchedule,
+  type AdmissionTrack,
+  type ApplicationFit,
 } from '@/lib/admissions/options';
 
 // Server-side loader for `admission_options` (migration 174). The table has RLS
@@ -103,4 +105,40 @@ export function loadAdmissionOptions(
       tags: [admissionOptionsTag(ayCode)],
     }
   )();
+}
+
+/**
+ * The AY's options, or an empty list if they cannot be read. For the section
+ * picker's hint only: a failed read costs the "Matches their application"
+ * mark (the fit falls back to `trackForClassType`), never the picker.
+ */
+export async function loadAdmissionOptionsForHint(
+  service: SupabaseClient,
+  ayCode: string
+): Promise<AdmissionOptionRecord[]> {
+  try {
+    return await loadAdmissionOptions(service, ayCode);
+  } catch (err) {
+    console.warn(
+      '[admissions/options] options read for the section hint failed:',
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
+}
+
+/** One application's fit, reading that AY's options (see `deriveApplicationFit`). */
+export async function loadApplicationFit(
+  service: SupabaseClient,
+  ayCode: string,
+  app: {
+    levelApplied: string | null | undefined;
+    classType: string | null | undefined;
+    preferredSchedule: string | null | undefined;
+  }
+): Promise<ApplicationFit> {
+  return deriveApplicationFit(
+    app,
+    await loadAdmissionOptionsForHint(service, ayCode)
+  );
 }

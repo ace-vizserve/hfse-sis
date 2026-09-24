@@ -7,9 +7,17 @@ import {
 } from '@/components/sis/unsynced-students-queue';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
+import {
+  deriveApplicationFit,
+  type ApplicationFit,
+} from '@/lib/admissions/options';
+import { loadAdmissionOptionsForHint } from '@/lib/admissions/options-loader';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
-import { sectionMapKey } from '@/lib/sis/section-map-key';
-import { loadUnsyncedInScope } from '@/lib/sis/unsynced-students';
+import { applicantMapKey, sectionMapKey } from '@/lib/sis/section-map-key';
+import {
+  loadUnsyncedInScope,
+  type UnsyncedStudentRow,
+} from '@/lib/sis/unsynced-students';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -71,7 +79,10 @@ export default async function UnsyncedStudentsPage() {
         ])
     ).values()
   );
-  const sectionsByLevel = await loadSectionsForLevels(uniquePairs);
+  const [sectionsByLevel, applicationFitByApplicant] = await Promise.all([
+    loadSectionsForLevels(uniquePairs),
+    loadApplicationFits(rows),
+  ]);
 
   const ayCount = new Set(rows.map((r) => r.ayCode)).size;
   const countLabel =
@@ -94,7 +105,11 @@ export default async function UnsyncedStudentsPage() {
         </p>
       </header>
 
-      <UnsyncedStudentsQueue rows={rows} sectionsByLevel={sectionsByLevel} />
+      <UnsyncedStudentsQueue
+        rows={rows}
+        sectionsByLevel={sectionsByLevel}
+        applicationFitByApplicant={applicationFitByApplicant}
+      />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <UserX className="size-3" strokeWidth={2.25} />
@@ -133,4 +148,28 @@ async function loadSectionsForLevels(
   );
 
   return Object.fromEntries(entries);
+}
+
+// What each applicant asked for (track + schedule), for the picker's
+// "Matches their application" hint. One options read per AY in the queue.
+async function loadApplicationFits(
+  rows: UnsyncedStudentRow[]
+): Promise<Record<string, ApplicationFit>> {
+  if (rows.length === 0) return {};
+  const service = createServiceClient();
+  const ayCodes = [...new Set(rows.map((r) => r.ayCode))];
+  const optionsByAy = new Map(
+    await Promise.all(
+      ayCodes.map(
+        async (ay) =>
+          [ay, await loadAdmissionOptionsForHint(service, ay)] as const
+      )
+    )
+  );
+  return Object.fromEntries(
+    rows.map((r) => [
+      applicantMapKey(r.ayCode, r.enroleeNumber),
+      deriveApplicationFit(r, optionsByAy.get(r.ayCode) ?? []),
+    ])
+  );
 }

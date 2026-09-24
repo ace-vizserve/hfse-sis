@@ -55,6 +55,10 @@ export type UnsyncedStudentRow = {
   lastName: string | null;
   enroleeFullName: string | null;
   levelApplied: string | null;
+  /** What the parent picked on the form — feeds the section picker's
+   *  "Matches their application" hint. Null when blank or unreadable. */
+  classType: string | null;
+  preferredSchedule: string | null;
   classLevel: string | null;
   classSection: string | null;
   applicationStatus: string;
@@ -75,7 +79,7 @@ async function loadUnsyncedUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  const [appsRes, statusRes] = await Promise.all([
+  const [appsRes, statusRes, prefsRes] = await Promise.all([
     admissions
       .from(`${prefix}_enrolment_applications`)
       .select(
@@ -85,6 +89,13 @@ async function loadUnsyncedUncached(
       .from(`${prefix}_enrolment_status`)
       .select('enroleeNumber, classLevel, classSection, applicationStatus')
       .in('applicationStatus', [...ENROLLED_STATUSES]),
+    // Read apart from the main select, and allowed to fail: `classType` was
+    // added to the portal later than the identity columns (see
+    // MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a missing column must
+    // cost only the section picker's hint, never the queue.
+    admissions
+      .from(`${prefix}_enrolment_applications`)
+      .select('enroleeNumber, classType, preferredSchedule'),
   ]);
 
   if (appsRes.error) {
@@ -128,6 +139,30 @@ async function loadUnsyncedUncached(
   const appsByEnrolee = new Map<string, AppsRow>();
   for (const r of appsRows) {
     if (r.enroleeNumber) appsByEnrolee.set(r.enroleeNumber, r);
+  }
+
+  const prefsByEnrolee = new Map<
+    string,
+    { classType: string | null; preferredSchedule: string | null }
+  >();
+  if (prefsRes.error) {
+    console.warn(
+      '[sis/unsynced-students] class type / schedule fetch failed (section hint off):',
+      prefsRes.error.message
+    );
+  } else {
+    for (const r of (prefsRes.data ?? []) as Array<{
+      enroleeNumber: string | null;
+      classType: unknown;
+      preferredSchedule: unknown;
+    }>) {
+      if (!r.enroleeNumber) continue;
+      prefsByEnrolee.set(r.enroleeNumber, {
+        classType: typeof r.classType === 'string' ? r.classType : null,
+        preferredSchedule:
+          typeof r.preferredSchedule === 'string' ? r.preferredSchedule : null,
+      });
+    }
   }
 
   // Collect all candidate studentNumbers so we can check sync state with
@@ -231,6 +266,9 @@ async function loadUnsyncedUncached(
       lastName: app.lastName ?? null,
       enroleeFullName: app.enroleeFullName ?? null,
       levelApplied: app.levelApplied ?? null,
+      classType: prefsByEnrolee.get(enroleeNumber)?.classType ?? null,
+      preferredSchedule:
+        prefsByEnrolee.get(enroleeNumber)?.preferredSchedule ?? null,
       classLevel: status.classLevel ?? null,
       classSection: status.classSection ?? null,
       applicationStatus: status.applicationStatus ?? '',

@@ -32,9 +32,10 @@
 // live `levels` + `level_aliases`. A label that does not resolve aborts the
 // run — nothing is written with a guessed level.
 //
-// sort_order: SIS level order (`levels.sort_order`), then the portal's own
-// level order, then class type order, then Morning / Afternoon / Whole Day —
-// numbered 10, 20, 30... per AY so an inserted row fits between two.
+// sort_order: the portal's own level order (`classLevels`), then class type
+// order, then Morning / Afternoon / Whole Day — numbered 10, 20, 30... per AY
+// so an inserted row fits between two. It orders the parent's dropdowns, so it
+// must reproduce today's order exactly.
 //
 // Insert-only and idempotent: a row that already exists by
 // (academic_year_id, level_label, class_type_label, schedule) is skipped, and
@@ -220,7 +221,6 @@ export function buildAdmissionOptionRows(
   levels: LevelRow[],
   aliases: LevelAliasRow[]
 ): SeedRow[] {
-  const sortById = new Map(levels.map((l) => [l.id, l.sortOrder]));
   const unresolved: string[] = [];
   const resolved = PORTAL_CLASS_LEVELS.map((label, portalIndex) => {
     const levelId = resolveLevelIdFromCatalog(label, levels, aliases);
@@ -233,11 +233,12 @@ export function buildAdmissionOptionRows(
     );
   }
 
-  resolved.sort(
-    (a, b) =>
-      (sortById.get(a.levelId) ?? 0) - (sortById.get(b.levelId) ?? 0) ||
-      a.portalIndex - b.portalIndex
-  );
+  // The portal's own list order, NOT SIS level order: `sort_order` is what the
+  // parent's level dropdown is ordered by, and switching the source must not
+  // move anything a parent sees. (The first version sorted by SIS level, which
+  // pulled the five International Education Programme levels up beside the
+  // level each counts as.) The admin page groups by SIS level regardless.
+  resolved.sort((a, b) => a.portalIndex - b.portalIndex);
 
   const rows: SeedRow[] = [];
   for (const { label, levelId } of resolved) {

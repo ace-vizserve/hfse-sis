@@ -11,6 +11,9 @@ Every Records module consumes a different slice of these tables:
 - **P-Files module** — writes file URLs + `{slotKey}Expiry` to `ay{YY}_enrolment_documents` on staff upload; also mirrors passport number / pass type to `ay{YY}_enrolment_applications` (Key Decision #34).
 - **Records module** — writes demographics/family/stage fields via narrow PATCH routes (Profile / Family / Stage), manages the discount-code catalogue, and owns `{slotKey}Status` on documents (approve / reject, Key Decision #37).
 
+- **Class placement** — the Enrolled flip (`app/api/sis/students/[enroleeNumber]/stage/[stageKey]/route.ts`) and `assign-section` write `classLevel` / `classSection` back to `ay{YYYY}_enrolment_status` when a student is placed.
+- **The enrolment form options** — the SIS owns which level / class type / schedule combinations the portal's forms offer, per AY (`admission_options`, migration 174, KD #222). The portal reads them from `GET /api/parent/v2/admission-options`; staff edit them at `/sis/admin/admission-options`. The SIS writes nothing into the admissions tables for this — the portal still writes `levelApplied` / `classType` / `preferredSchedule` itself.
+
 The Markbook's student-roster sync is a one-way pull into the SIS's own `students` table, triggered manually by the registrar. It is the only SIS → admissions touchpoint that produces a full DB cross-read.
 
 ## Admissions DB Tables

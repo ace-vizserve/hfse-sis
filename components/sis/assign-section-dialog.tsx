@@ -24,6 +24,11 @@ import {
   type AssignableLevel,
   type AssignableSection,
 } from '@/lib/sis/class-assignment';
+import {
+  sectionMatchesApplication,
+  type ApplicationFit,
+} from '@/lib/admissions/options';
+import { ApplicationMatchBadge } from '@/components/sis/application-match-badge';
 
 // First-time class-section assignment for an enrolled applicant whose
 // admissions row is missing a classSection (Chunk A backend at
@@ -42,6 +47,12 @@ export type AssignSectionDialogProps = {
   ayCode: string;
   level: AssignableLevel | null;
   availableSections: AssignableSection[];
+  /**
+   * What the application asked for (track + schedule). Sections that match it
+   * are marked "Matches their application" — a hint only; nothing is hidden,
+   * reordered or blocked. Omitted or null = no marks.
+   */
+  applicationFit?: ApplicationFit | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -52,6 +63,7 @@ export function AssignSectionDialog({
   ayCode,
   level,
   availableSections,
+  applicationFit = null,
   open,
   onOpenChange,
 }: AssignSectionDialogProps) {
@@ -79,6 +91,7 @@ export function AssignSectionDialog({
         .map((s) => ({
           ...s,
           isAtCapacity: s.activeCount >= MAX_ACTIVE_PER_SECTION,
+          matchesApplication: sectionMatchesApplication(s, applicationFit),
         }))
         .sort(
           (a, b) =>
@@ -86,7 +99,7 @@ export function AssignSectionDialog({
             a.activeCount - b.activeCount ||
             a.name.localeCompare(b.name)
         ),
-    [localSections]
+    [localSections, applicationFit]
   );
 
   const assignMutation = useMutation({
@@ -227,8 +240,13 @@ export function AssignSectionDialog({
                       : 'border-border hover:border-brand-indigo-soft hover:bg-accent/40')
                 }
               >
-                <span className="font-medium text-foreground">{s.name}</span>
-                <span className="flex items-center gap-2">
+                {/* The badge sits inside the button, so "Matches their
+                    application" is part of the option's accessible name. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-medium text-foreground">{s.name}</span>
+                  {s.matchesApplication && <ApplicationMatchBadge />}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                     {s.activeCount}/{MAX_ACTIVE_PER_SECTION} students
                   </span>
@@ -275,7 +293,15 @@ export function AssignSectionDialog({
               onCreated={(section) => {
                 setLocalSections((prev) => [
                   ...prev,
-                  { id: section.id, name: section.name, activeCount: 0 },
+                  // A just-created section's track and schedule aren't known
+                  // here, so it carries no "Matches their application" mark.
+                  {
+                    id: section.id,
+                    name: section.name,
+                    activeCount: 0,
+                    classType: null,
+                    schedule: null,
+                  },
                 ]);
                 setSelectedId(section.id);
               }}

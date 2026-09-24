@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { loadApplicationFit } from '@/lib/admissions/options-loader';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
 import {
   getStudentDetail,
@@ -98,11 +99,16 @@ export async function RecordsLitePage({
   const levelLabel =
     detail?.application?.levelApplied ?? currentEntry.level ?? null;
   const service = createServiceClient();
-  const { level, sections: availableSections } = await listAssignableSections(
-    service,
-    currentEntry.ayCode,
-    levelLabel
-  );
+  const [{ level, sections: availableSections }, applicationFit] =
+    await Promise.all([
+      listAssignableSections(service, currentEntry.ayCode, levelLabel),
+      // What the parent asked for — marks matching sections in the picker.
+      loadApplicationFit(service, currentEntry.ayCode, {
+        levelApplied: levelLabel,
+        classType: detail?.application?.classType ?? null,
+        preferredSchedule: detail?.application?.preferredSchedule ?? null,
+      }),
+    ]);
 
   return (
     <PageShell>
@@ -146,6 +152,7 @@ export async function RecordsLitePage({
         level={level}
         studentName={studentName}
         availableSections={availableSections}
+        applicationFit={applicationFit}
       />
 
       <Tabs defaultValue="overview" className="space-y-6">
