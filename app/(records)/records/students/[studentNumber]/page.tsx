@@ -116,6 +116,7 @@ import { canWriteStudentRecord } from '@/lib/auth/student-record';
 import { canManageDisciplineForRole } from '@/lib/classroom/scope';
 import { preloadTermsForAYs, termForDateInPreloaded } from '@/lib/sis/terms';
 import { getSessionUser } from '@/lib/supabase/server';
+import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Canonical CardAction gradient tile — indigo→navy with brand-tile glow.
@@ -1729,7 +1730,7 @@ function FieldItem({
   );
 }
 
-function StudentProfileCard({
+async function StudentProfileCard({
   app,
   status,
   ayCode,
@@ -1741,6 +1742,7 @@ function StudentProfileCard({
   /** Current `enrollment_status` from the active `section_students` row. */
   enrollmentStatus: PlacementRow['enrollmentStatus'] | null;
 }) {
+  const admissionOptions = await loadProfileAdmissionOptions(ayCode);
   const hasIdDocs = app.nric || app.passportNumber || app.pass;
   const hasLearningNeeds =
     app.additionalLearningNeeds || app.otherLearningNeeds;
@@ -1875,6 +1877,7 @@ function StudentProfileCard({
           ayCode={ayCode}
           enroleeNumber={app.enroleeNumber}
           initial={buildProfileInitial(app)}
+          admissionOptions={admissionOptions}
         />
         <Button asChild variant="ghost" size="sm">
           <Link

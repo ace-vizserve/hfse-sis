@@ -17,6 +17,7 @@ import {
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
+import type { DerivedLevel } from '@/lib/admissions/options';
 import type { ApplicationRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +43,8 @@ type Props = {
    *  forgets it renders a read-only tab rather than an Edit sheet whose PATCH
    *  route would 403 (KD #173). Every call site passes it explicitly. */
   canEdit?: boolean;
+  /** The year's enrolment-form options, for the Edit sheet's dropdowns. */
+  admissionOptions?: DerivedLevel[];
 };
 
 export function ProfileTab({
@@ -49,6 +52,7 @@ export function ProfileTab({
   ayCode,
   enroleeNumber,
   canEdit = false,
+  admissionOptions,
 }: Props) {
   const initial: Partial<ProfileUpdateInput> = {
     firstName: app.firstName,
@@ -311,6 +315,7 @@ export function ProfileTab({
                   ayCode={ayCode}
                   enroleeNumber={enroleeNumber}
                   initial={initial}
+                  admissionOptions={admissionOptions}
                 />
               )}
             </div>

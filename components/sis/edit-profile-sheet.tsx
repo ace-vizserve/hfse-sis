@@ -12,6 +12,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import type { DerivedLevel } from '@/lib/admissions/options';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { composeFullName } from '@/lib/sis/full-name';
@@ -363,10 +364,15 @@ export function EditProfileSheet({
   ayCode,
   enroleeNumber,
   initial,
+  admissionOptions = [],
 }: {
   ayCode: string;
   enroleeNumber: string;
   initial: Partial<ProfileUpdateInput>;
+  /** The year's enrolment-form options (SIS Admin → Admission options), so
+   *  level / class type / schedule are picked from the same list the parent
+   *  form offers. Empty → those fields fall back to what they were. */
+  admissionOptions?: DerivedLevel[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -399,6 +405,10 @@ export function EditProfileSheet({
     resolver: relaxedProfileResolver(defaults),
     defaultValues: defaults,
   });
+  // Level narrows the class types, class type narrows the schedules — the
+  // same chain the parent form walks.
+  const pickedLevel = form.watch('levelApplied');
+  const pickedClassType = form.watch('classType');
 
   // Full name follows the three name fields as they are typed.
   //
@@ -579,7 +589,16 @@ export function EditProfileSheet({
                       {fields.length > 0 && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           {fields.map((cfg) => (
-                            <SchemaField key={cfg.name} cfg={cfg} form={form} />
+                            <SchemaField
+                              key={cfg.name}
+                              cfg={withAdmissionOptions(
+                                cfg,
+                                admissionOptions,
+                                pickedLevel,
+                                pickedClassType
+                              )}
+                              form={form}
+                            />
                           ))}
                         </div>
                       )}
@@ -679,6 +698,48 @@ function buildDefaults(
     }
   }
   return out as ProfileUpdateInput;
+}
+
+// Level applied / class type / preferred schedule → dropdowns from the year's
+// admission options, chained like the parent form: the picked level narrows
+// the class types, the picked class type narrows the schedules. A level or
+// type that is not in the list shows every option rather than none, and a
+// stored value outside the list still shows as "(current)" (the select
+// branch below). No options for the year → the field is left as it was.
+function withAdmissionOptions(
+  cfg: FieldConfig,
+  levels: DerivedLevel[],
+  pickedLevel: string | null | undefined,
+  pickedClassType: string | null | undefined
+): FieldConfig {
+  if (levels.length === 0) return cfg;
+  const asOptions = (values: string[]) =>
+    [...new Set(values)].map((v) => ({ label: v, value: v }));
+  const level = levels.find((l) => l.levelLabel === pickedLevel);
+  const types = level ? level.classTypes : levels.flatMap((l) => l.classTypes);
+
+  if (cfg.name === 'levelApplied') {
+    return {
+      ...cfg,
+      kind: 'select',
+      options: asOptions(levels.map((l) => l.levelLabel)),
+    };
+  }
+  if (cfg.name === 'classType') {
+    return {
+      ...cfg,
+      kind: 'select',
+      options: asOptions(types.map((t) => t.classTypeLabel)),
+    };
+  }
+  if (cfg.name === 'preferredSchedule') {
+    const type = types.find((t) => t.classTypeLabel === pickedClassType);
+    const schedules = type ? type.schedules : types.flatMap((t) => t.schedules);
+    return schedules.length > 0
+      ? { ...cfg, options: asOptions(schedules) }
+      : cfg;
+  }
+  return cfg;
 }
 
 // Radix Select rejects empty-string item values. Sentinel stays client-side

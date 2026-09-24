@@ -52,6 +52,7 @@ import {
   canWriteStudentRecord,
 } from '@/lib/auth/student-record';
 import { getSessionUser } from '@/lib/supabase/server';
+import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
@@ -202,14 +203,16 @@ export default async function SisStudentDetailPage({
       : storedStatus;
 
   // Both depend on the batch above — sequential to it, parallel to each other.
-  const [lifecycleHistory, siblingSections] = await Promise.all([
-    lifecycleSnapshot.studentNumber
-      ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
-      : Promise.resolve([]),
-    currentSection && canPlaceStudent
-      ? getSiblingSections(currentSection.id, { anyLevel: true })
-      : Promise.resolve([]),
-  ]);
+  const [lifecycleHistory, siblingSections, admissionOptions] =
+    await Promise.all([
+      lifecycleSnapshot.studentNumber
+        ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
+        : Promise.resolve([]),
+      currentSection && canPlaceStudent
+        ? getSiblingSections(currentSection.id, { anyLevel: true })
+        : Promise.resolve([]),
+      loadProfileAdmissionOptions(selectedAy),
+    ]);
 
   const fullName =
     application.enroleeFullName ??
@@ -431,6 +434,7 @@ export default async function SisStudentDetailPage({
             ayCode={selectedAy}
             enroleeNumber={application.enroleeNumber}
             canEdit={canEditRecord}
+            admissionOptions={admissionOptions}
           />
         </TabsContent>
 
