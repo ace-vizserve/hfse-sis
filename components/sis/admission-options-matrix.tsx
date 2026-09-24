@@ -74,8 +74,13 @@ export function AdmissionOptionsMatrix({
   levels: readonly SheetLevel[];
   nameReach: Record<string, NameReach>;
 }) {
-  const [filter, setFilter] = useState<AdminOptionFilter>(
-    NO_ADMIN_OPTION_FILTER
+  // Opens on Primary One rather than every level at once, so the page starts
+  // as one screen instead of a long scroll (Mr Ace). Clearing the filter still
+  // shows everything.
+  const [filter, setFilter] = useState<AdminOptionFilter>(() =>
+    groups.some((g) => g.levelCode === 'P1')
+      ? { ...NO_ADMIN_OPTION_FILTER, levelCodes: ['P1'] }
+      : NO_ADMIN_OPTION_FILTER
   );
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
@@ -149,10 +154,9 @@ export function AdmissionOptionsMatrix({
                 size="sm"
                 pressed={on}
                 onPressedChange={(v) => toggleLevel(g.levelCode, v)}
-                aria-label={`${g.levelCode} — ${g.levelLabel}`}
-                className="px-2.5 font-mono text-[11px] font-semibold"
+                className="px-2.5 text-[12px] font-medium"
               >
-                {g.levelCode}
+                {g.levelLabel}
               </Toggle>
             );
           })}
