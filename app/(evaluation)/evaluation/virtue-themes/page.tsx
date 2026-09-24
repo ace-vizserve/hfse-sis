@@ -42,7 +42,7 @@ export default async function VirtueThemesPage() {
       .select('id, term_number, label, start_date, end_date, virtue_theme')
       .eq('academic_year_id', (ayRow as { id: string }).id)
       .gte('term_number', 1)
-      .lte('term_number', 3) // T1–T3 only — T4 has no FCA comment (KD #49)
+      .lte('term_number', 4)
       .order('term_number');
     terms = (data ?? []) as TermRow[];
   }
@@ -59,8 +59,7 @@ export default async function VirtueThemesPage() {
         <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
           The virtue theme for each term prints on the report card as the Form
           Class Adviser&rsquo;s Comments heading (&ldquo;HFSE Virtues:
-          &hellip;&rdquo;) and frames the advisers&rsquo; write-ups. Terms
-          1&ndash;3 only.
+          &hellip;&rdquo;) and frames the advisers&rsquo; write-ups.
         </p>
       </header>
 
