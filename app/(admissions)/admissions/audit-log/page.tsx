@@ -36,6 +36,12 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.discount_code.create',
   'sis.discount_code.update',
   'sis.discount_code.expire',
+  // What the enrolment forms offer (migration 174), set in SIS Admin.
+  'admission_option.create',
+  'admission_option.update',
+  'admission_option.open',
+  'admission_option.close',
+  'admission_option.copy',
   // Reconciling an applicant's typed level to a real one (the admissions
   // level-review queue). A re-point of an existing mapping is its own action.
   'level.alias.create',

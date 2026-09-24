@@ -193,6 +193,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.discount_code.create': 'Discount code created',
   'sis.discount_code.update': 'Discount code updated',
   'sis.discount_code.expire': 'Discount code expired',
+  'admission_option.create': 'Enrolment form option added',
+  'admission_option.update': 'Enrolment form option edited',
+  'admission_option.open': 'Enrolment form session reopened',
+  'admission_option.close': 'Enrolment form session closed',
+  'admission_option.copy': 'Enrolment form options copied',
   'sis.document.approve': 'Document approved',
   'sis.document.reject': 'Document rejected',
   'sis.documents.auto-expire': 'Documents auto-expired',
@@ -1747,6 +1752,73 @@ function templateSummary(
         const end = fmtMaybeDate(ctx.end_date);
         if (end) parts.push(`ends ${end}`);
       }
+      return joinParts(parts);
+    }
+
+    // Context written by app/api/sis/admission-options/**.
+    case 'admission_option.open':
+    case 'admission_option.close': {
+      const parts: string[] = [];
+      const schedule = str(ctx.schedule_label);
+      const level = str(ctx.level_label);
+      const type = str(ctx.class_type_label);
+      const what = [level, type].filter(Boolean).join(' — ');
+      if (schedule && what)
+        parts.push(
+          `${schedule} ${action === 'admission_option.open' ? 'reopened' : 'closed'} for ${what}`
+        );
+      else if (what) parts.push(what);
+      const ay = str(ctx.ay_code);
+      if (ay) parts.push(ay);
+      return joinParts(parts);
+    }
+
+    case 'admission_option.create': {
+      const parts: string[] = [];
+      const level = str(ctx.level_label);
+      const type = str(ctx.class_type_label);
+      const what = [level, type].filter(Boolean).join(' — ');
+      if (what) parts.push(what);
+      const counts = str(ctx.counts_as_label);
+      if (counts && counts !== level) parts.push(`counts as ${counts}`);
+      const sessions = strArray(ctx.schedule_labels);
+      if (sessions.length) parts.push(listText(sessions));
+      const ay = str(ctx.ay_code);
+      if (ay) parts.push(ay);
+      return joinParts(parts);
+    }
+
+    case 'admission_option.update': {
+      const parts: string[] = [];
+      const fromLevel = str(ctx.from_level_label);
+      const fromType = str(ctx.from_class_type_label);
+      const level = str(ctx.level_label);
+      const type = str(ctx.class_type_label);
+      const before = [fromLevel, fromType].filter(Boolean).join(' — ');
+      const after = [level, type].filter(Boolean).join(' — ');
+      if (before && after && before !== after)
+        parts.push(`${before}${ARROW}${after}`);
+      else if (after) parts.push(after);
+      const counts = str(ctx.counts_as_label);
+      const was = str(ctx.previous_counts_as_label);
+      if (counts && was && counts !== was)
+        parts.push(`counts as ${was}${ARROW}${counts}`);
+      const track = str(ctx.track);
+      const wasTrack = str(ctx.previous_track);
+      if (track && wasTrack && track !== wasTrack)
+        parts.push(`track ${wasTrack}${ARROW}${track}`);
+      const ay = str(ctx.ay_code);
+      if (ay) parts.push(ay);
+      return joinParts(parts);
+    }
+
+    case 'admission_option.copy': {
+      const parts: string[] = [];
+      const from = str(ctx.from_ay);
+      const to = str(ctx.to_ay);
+      if (from && to) parts.push(`${from}${ARROW}${to}`);
+      const copied = numish(ctx.copied);
+      if (copied !== null) parts.push(`${copied} copied`);
       return joinParts(parts);
     }
 

@@ -7,6 +7,11 @@ import type { User } from '@supabase/supabase-js';
 // keeping it type-only makes that unarguable and keeps the dependency acyclic
 // at runtime.
 import type { Capability } from '@/lib/auth/capabilities';
+// A RUNTIME import, and still acyclic: lib/auth/student-record.ts has no
+// runtime imports at all (only `type Role` from this file), so it is pure,
+// edge-safe, and evaluates before this module. Read here so the enrolment-form
+// options route row and nav link hold the same set the write routes gate on.
+import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 
 // ⚠ `p_file_officer` WAS HERE AND IS NOT COMING BACK (retired 2026-09-10).
 // Admissions absorbed the whole document lifecycle — the role had exactly one
@@ -449,6 +454,15 @@ const ADMISSIONS_NAV: NavSection[] = [
           'superadmin',
         ],
       },
+      // What parents may pick on the enrolment forms (migration 174). Same
+      // shape as Discount Codes: admissions runs it day to day (closing a
+      // session when it fills), config lives in SIS Admin, and this is the
+      // cross-module link. Same role set as the route row and the writes.
+      {
+        href: '/sis/admin/admission-options',
+        label: 'Enrolment form options',
+        requiresRoles: [...ENROLMENT_PLACEMENT_WRITERS],
+      },
     ],
   },
   // Cohort views — Admissions scope = funnel students (Submitted /
@@ -710,6 +724,11 @@ const SIS_NAV: NavSection[] = [
       {
         href: '/sis/admin/discount-codes',
         label: 'Discount Codes',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/sis/admin/admission-options',
+        label: 'Enrolment form options',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
       {
@@ -1028,6 +1047,15 @@ export const ROUTE_ACCESS: Array<{
       'school_admin',
       'superadmin',
     ],
+  },
+  {
+    // What parents may pick on the enrolment forms (migration 174). Same
+    // reasoning as discount codes above: admissions closes a session when it
+    // fills, so admissions is scoped to this one route, not all of /sis. The
+    // set is READ from ENROLMENT_PLACEMENT_WRITERS — the same constant the
+    // write routes gate on — so the page and its writes cannot disagree.
+    prefix: '/sis/admin/admission-options',
+    allowed: [...ENROLMENT_PLACEMENT_WRITERS],
   },
   // academic_coordinator added 2026-07-31 (Mr Ace) — she sets up the academic
   // year alongside classes and subject weights. The proxy runs before any page

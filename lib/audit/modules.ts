@@ -79,6 +79,9 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       'sis.precourse.',
       'sis.discount_code.',
       'sis.document.',
+      // What the enrolment forms offer (migration 174) — owned by admissions,
+      // configured in SIS Admin, same as discount codes.
+      'admission_option.',
     ],
   },
   {

@@ -90,6 +90,14 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.discount_code.create',
   'sis.discount_code.update',
   'sis.discount_code.expire',
+  // What parents may pick on the enrolment forms (migration 174). Opening and
+  // closing a session are separate actions, so "when was Morning closed for
+  // P2" is answerable without reading a diff.
+  'admission_option.create',
+  'admission_option.update',
+  'admission_option.open',
+  'admission_option.close',
+  'admission_option.copy',
   'sis.document.approve',
   'sis.document.reject',
   'sis.documents.auto-expire',
@@ -247,6 +255,9 @@ export type AuditEntityType =
   | 'enrolment_application'
   | 'enrolment_status'
   | 'discount_code'
+  // One row of `admission_options` (migration 174); a group edit or a copy
+  // that touches several rows names the academic year instead.
+  | 'admission_option'
   | 'academic_year'
   | 'term'
   | 'level'

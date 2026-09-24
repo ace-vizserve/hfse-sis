@@ -159,6 +159,344 @@ export function toPublicOptions(
     }));
 }
 
+// ── what a saved level name means (create / group-edit) ─────────────────
+// A level name parents see must resolve to the SIS level the option says it
+// counts as, or the application lands on /records/level-mismatches. Saving an
+// option therefore also records the name as a `level_aliases` row — unless the
+// SIS already reads it that way. `raw_label` is globally unique (one name can
+// mean one level, across every year), so a name that already means a
+// DIFFERENT level is refused rather than re-pointed: re-pointing would quietly
+// change how every past application carrying that name resolves.
+
+/** A level as `planLevelAlias` needs it — `LevelRow` satisfies this. */
+export type AliasPlanLevel = { id: string; label: string };
+/** An alias row as `planLevelAlias` needs it — `LevelAliasRow` satisfies this. */
+export type AliasPlanAlias = { raw_label: string; level_id: string };
+
+export type LevelAliasPlan =
+  /** The SIS already reads the name as this level — nothing to write. */
+  | { kind: 'none' }
+  /** Record `raw_label = label → levelId`. */
+  | { kind: 'insert' }
+  /** The name already means another level. `levelLabel` names it for the message. */
+  | { kind: 'conflict'; levelId: string; levelLabel: string };
+
+/**
+ * What saving `label` as "counts as `levelId`" needs from `level_aliases`.
+ * Resolution order matches `resolveLevelIdFromCatalog` (lib/sis/levels.ts):
+ * an exact level label first, then the legacy digit spelling, then an alias.
+ * Only the first match counts — it is the one the SIS will actually use.
+ */
+export function planLevelAlias(
+  label: string,
+  levelId: string,
+  levels: readonly AliasPlanLevel[],
+  aliases: readonly AliasPlanAlias[],
+  canonicalize: (raw: string) => string | null = (raw) => raw.trim() || null
+): LevelAliasPlan {
+  const trimmed = label.trim();
+  const labelOf = (id: string) =>
+    levels.find((l) => l.id === id)?.label ?? 'another level';
+  const decide = (existing: string): LevelAliasPlan =>
+    existing === levelId
+      ? { kind: 'none' }
+      : { kind: 'conflict', levelId: existing, levelLabel: labelOf(existing) };
+
+  const direct = levels.find((l) => l.label === trimmed);
+  if (direct) return decide(direct.id);
+
+  const canonical = canonicalize(trimmed);
+  if (canonical && canonical !== trimmed) {
+    const viaLegacy = levels.find((l) => l.label === canonical);
+    if (viaLegacy) return decide(viaLegacy.id);
+  }
+
+  const alias = aliases.find((a) => a.raw_label === trimmed);
+  if (alias) return decide(alias.level_id);
+
+  return { kind: 'insert' };
+}
+
+/** One `admission_options` row carrying the level name being re-counted. */
+export type NameRow = { id: string; level_id: string; ayCode: string };
+
+/** Rows grouped by the level they held before — what a failed alias write puts back. */
+export type RowRevert = { levelId: string; ids: string[] };
+
+export type CountsAsChangePlan =
+  /** Cannot be changed from here; `message` says why, in plain English. */
+  | { kind: 'refuse'; message: string }
+  | {
+      kind: 'recount';
+      /**
+       * What happens to `level_aliases` after the rows move:
+       *   'none'   — the SIS already reads the name as the new level;
+       *   'insert' — the name was never aliased; record it;
+       *   remap    — compare-and-set the alias from `fromLevelId`.
+       */
+      alias:
+        | 'none'
+        | 'insert'
+        | { fromLevelId: string; fromLevelLabel: string };
+      /** Rows whose level_id changes — every row with the name not already on the new level. */
+      updateIds: string[];
+      /** How to put those rows back if the alias write fails. */
+      revert: RowRevert[];
+      /** Every year whose rows change — each one's cache tag must be busted. */
+      touchedAyCodes: string[];
+    };
+
+/**
+ * An edit that keeps the level NAME but changes which SIS level it counts as.
+ *
+ * What a name counts as is a property of the NAME, not of one option: the
+ * resolver reads `level_aliases`, whose `raw_label` is unique, so every
+ * application carrying the name follows the alias. So the change moves EVERY
+ * `admission_options` row with that name — every year, every class type — and
+ * then re-points the alias, keeping the options and the resolver in step.
+ *
+ * The one refusal: a name that IS a level's own label (or its legacy digit
+ * spelling). The resolver matches it before any alias, so nothing written here
+ * could change what it means.
+ *
+ * `rows` is every `admission_options` row whose level_label is the name.
+ */
+export function planCountsAsChange(input: {
+  label: string;
+  newLevelId: string;
+  levels: readonly AliasPlanLevel[];
+  aliases: readonly AliasPlanAlias[];
+  rows: readonly NameRow[];
+  canonicalize?: (raw: string) => string | null;
+}): CountsAsChangePlan {
+  const {
+    newLevelId,
+    levels,
+    aliases,
+    rows,
+    canonicalize = (raw: string) => raw.trim() || null,
+  } = input;
+  const label = input.label.trim();
+  const labelOf = (id: string) =>
+    levels.find((l) => l.id === id)?.label ?? 'another level';
+
+  const canonical = canonicalize(label);
+  const own =
+    levels.find((l) => l.label === label) ??
+    (canonical && canonical !== label
+      ? levels.find((l) => l.label === canonical)
+      : undefined);
+  if (own && own.id !== newLevelId) {
+    return {
+      kind: 'refuse',
+      message: `"${label}" is the SIS's own name for ${own.label}, so it always counts as ${own.label}. To offer it as ${labelOf(newLevelId)}, use a different level name.`,
+    };
+  }
+
+  const moving = rows.filter((r) => r.level_id !== newLevelId);
+  const byLevel = new Map<string, string[]>();
+  for (const r of moving) {
+    const ids = byLevel.get(r.level_id) ?? [];
+    ids.push(r.id);
+    byLevel.set(r.level_id, ids);
+  }
+  const touchedAyCodes = [...new Set(moving.map((r) => r.ayCode))].sort();
+
+  const alias = aliases.find((a) => a.raw_label === label);
+  return {
+    kind: 'recount',
+    alias: own
+      ? 'none'
+      : !alias
+        ? 'insert'
+        : alias.level_id === newLevelId
+          ? 'none'
+          : {
+              fromLevelId: alias.level_id,
+              fromLevelLabel: labelOf(alias.level_id),
+            },
+    updateIds: moving.map((r) => r.id),
+    revert: [...byLevel].map(([levelId, ids]) => ({ levelId, ids })),
+    touchedAyCodes,
+  };
+}
+
+/** How far a level name reaches: the options (year × class type) that use it. */
+export type NameReach = { options: number; ayCodes: string[] };
+
+/**
+ * Every level name → how many options (distinct year × class type) use it and
+ * in which years, oldest first. Keyed by the exact label.
+ */
+export function nameReachByLabel(
+  rows: readonly {
+    ayCode: string;
+    levelLabel: string;
+    classTypeLabel: string;
+  }[]
+): Record<string, NameReach> {
+  const combos = new Map<string, Set<string>>();
+  const years = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!combos.has(r.levelLabel)) {
+      combos.set(r.levelLabel, new Set());
+      years.set(r.levelLabel, new Set());
+    }
+    combos.get(r.levelLabel)!.add(`${r.ayCode}\u0000${r.classTypeLabel}`);
+    years.get(r.levelLabel)!.add(r.ayCode);
+  }
+  const out: Record<string, NameReach> = {};
+  for (const [label, set] of combos) {
+    out[label] = {
+      options: set.size,
+      ayCodes: [...years.get(label)!].sort(),
+    };
+  }
+  return out;
+}
+
+/**
+ * The drawer's warning when "Counts as" changes on an unchanged name, e.g.
+ * "This name is used by 4 options across AY2026 and AY2027. All of them will
+ * count as Primary One."
+ */
+export function describeNameReach(
+  reach: NameReach,
+  newLevelLabel: string
+): string {
+  const tail = 'Applications that used this name will be read that way too.';
+  if (reach.options <= 1) {
+    return `This name is only used by this option. It will count as ${newLevelLabel}. ${tail}`;
+  }
+  const years =
+    reach.ayCodes.length <= 1
+      ? `in ${reach.ayCodes[0] ?? 'this year'}`
+      : `across ${reach.ayCodes.slice(0, -1).join(', ')} and ${reach.ayCodes[reach.ayCodes.length - 1]}`;
+  return `This name is used by ${reach.options} options ${years}. All of them will count as ${newLevelLabel}. ${tail}`;
+}
+
+/**
+ * The refusal a create / edit answers with when the name already means
+ * another level. Plain English for school admins — it names both levels and
+ * says what to do instead.
+ */
+export function levelAliasConflictMessage(
+  label: string,
+  existingLevelLabel: string,
+  targetLevelLabel: string
+): string {
+  return `"${label}" already counts as ${existingLevelLabel} in the SIS, so it can't also count as ${targetLevelLabel}. Use a different level name, or set "Counts as" to ${existingLevelLabel}.`;
+}
+
+/** "Primary Three — Standard Class": how a toast and the audit log name a row. */
+export function optionDisplayName(
+  levelLabel: string,
+  classTypeLabel: string
+): string {
+  return `${levelLabel} — ${classTypeLabel}`;
+}
+
+/** Staff-facing schedule words ("Whole day", sentence case) — the page and its toasts. */
+export const STAFF_SCHEDULE_LABEL: Record<AdmissionSchedule, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  whole_day: 'Whole day',
+};
+
+// ── the admin page's grouping (/sis/admin/admission-options) ─────────────
+
+/** A row as the admin page needs it — `AdmissionOptionRecord` satisfies this. */
+export type AdminOptionInput = {
+  id: string;
+  level_label: string;
+  level_id: string;
+  class_type_label: string;
+  track: AdmissionTrack;
+  schedule: AdmissionSchedule;
+  is_open: boolean;
+  sort_order: number;
+};
+
+export type AdminOptionSession = {
+  id: string;
+  schedule: AdmissionSchedule;
+  isOpen: boolean;
+};
+
+/** One (parent-facing level name, class type) combination and its sessions. */
+export type AdminOptionCombo = {
+  levelLabel: string;
+  classTypeLabel: string;
+  levelId: string;
+  track: AdmissionTrack;
+  /** In Morning, Afternoon, Whole day order — only the sessions it has. */
+  sessions: AdminOptionSession[];
+};
+
+export type AdminOptionGroup = {
+  levelId: string;
+  levelCode: string;
+  levelLabel: string;
+  combos: AdminOptionCombo[];
+};
+
+/**
+ * Rows → one group per SIS level, in the levels' `sort_order`, each holding
+ * its combinations in the order of their lowest row `sort_order`. A level with
+ * no rows is left out. A row whose level is not in `levels` is left out too —
+ * the foreign key makes that impossible, and there is no level card to put it
+ * under.
+ */
+export function groupOptionsForAdmin(
+  rows: readonly AdminOptionInput[],
+  levels: readonly {
+    id: string;
+    code: string;
+    label: string;
+    sortOrder: number;
+  }[]
+): AdminOptionGroup[] {
+  const sorted = rows.slice().sort((a, b) => a.sort_order - b.sort_order);
+  const byLevel = new Map<string, Map<string, AdminOptionCombo>>();
+  for (const r of sorted) {
+    let combos = byLevel.get(r.level_id);
+    if (!combos) {
+      combos = new Map();
+      byLevel.set(r.level_id, combos);
+    }
+    // U+0000 cannot occur in either label, so the key cannot collide.
+    const key = `${r.level_label}\u0000${r.class_type_label}`;
+    let combo = combos.get(key);
+    if (!combo) {
+      combo = {
+        levelLabel: r.level_label,
+        classTypeLabel: r.class_type_label,
+        levelId: r.level_id,
+        track: r.track,
+        sessions: [],
+      };
+      combos.set(key, combo);
+    }
+    combo.sessions.push({ id: r.id, schedule: r.schedule, isOpen: r.is_open });
+  }
+
+  return levels
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .filter((l) => byLevel.has(l.id))
+    .map((l) => ({
+      levelId: l.id,
+      levelCode: l.code,
+      levelLabel: l.label,
+      combos: [...byLevel.get(l.id)!.values()].map((c) => ({
+        ...c,
+        sessions: ADMISSION_SCHEDULES.flatMap((s) =>
+          c.sessions.filter((x) => x.schedule === s)
+        ),
+      })),
+    }));
+}
+
 /**
  * Track for a class type label. "Global" anywhere in the label (any case)
  * means Global — which covers the Cambridge types, all spelled

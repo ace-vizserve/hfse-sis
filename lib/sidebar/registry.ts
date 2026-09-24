@@ -29,6 +29,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
+  ListChecks,
   MessageSquare,
   RefreshCw,
   Scale,
@@ -127,6 +128,8 @@ const ICON_SECTION_SETUP = LayoutGrid;
 const ICON_SUBJECT_WEIGHTS = Scale;
 /** Enrolment-fee discount codes — reached from Records, Admissions and SIS Admin. */
 const ICON_DISCOUNT_CODES = Tag;
+/** What parents may pick on the enrolment forms — reached from Admissions and SIS Admin. */
+const ICON_ADMISSION_OPTIONS = ListChecks;
 /** Term dates and non-school days — reached from Attendance and SIS Admin. */
 const ICON_SCHOOL_CALENDAR = CalendarDays;
 /** Academic-year rollover — reached from Admissions and SIS Admin. */
@@ -352,6 +355,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/admissions/feedback': MessageSquare,
       '/admissions/audit-log': ICON_AUDIT_LOG,
       '/sis/admin/discount-codes': ICON_DISCOUNT_CODES,
+      '/sis/admin/admission-options': ICON_ADMISSION_OPTIONS,
       // Pre-enrolment chase quicklinks (Workstream A) — focused-view
       // filters on the dashboard for the un-enrolled scope. Mirror the
       // P-Files renewal quicklinks pattern from KD #64.
@@ -428,6 +432,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/calendar': ICON_SCHOOL_CALENDAR,
       '/sis/sections': ICON_SECTION_SETUP,
       '/sis/admin/discount-codes': ICON_DISCOUNT_CODES,
+      '/sis/admin/admission-options': ICON_ADMISSION_OPTIONS,
       '/sis/admin/subjects': ICON_SUBJECT_WEIGHTS,
       '/sis/admin/approvers': ShieldCheck,
       // Who may do what. Approvers (above) is a named list of people;
