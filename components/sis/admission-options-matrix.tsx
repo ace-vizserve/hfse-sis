@@ -32,7 +32,6 @@ import {
   adminComboKey,
   countAdminCombosByTrack,
   filterAdminGroups,
-  isAdminOptionFilterActive,
   optionDisplayName,
   summarizeClosedSessions,
   type AdminOptionCombo,
@@ -74,14 +73,18 @@ export function AdmissionOptionsMatrix({
   levels: readonly SheetLevel[];
   nameReach: Record<string, NameReach>;
 }) {
-  // Opens on Primary One rather than every level at once, so the page starts
-  // as one screen instead of a long scroll (Mr Ace). Clearing the filter still
-  // shows everything.
-  const [filter, setFilter] = useState<AdminOptionFilter>(() =>
-    groups.some((g) => g.levelCode === 'P1')
-      ? { ...NO_ADMIN_OPTION_FILTER, levelCodes: ['P1'] }
-      : NO_ADMIN_OPTION_FILTER
-  );
+  // ONE LEVEL AT A TIME — there is no every-level view (Mr Ace: "remove the
+  // every level view"). Opens on Primary One; a level chip switches to that
+  // level; clearing filters keeps the level. `levelCodes` therefore always
+  // holds exactly one code.
+  const initialLevel =
+    groups.find((g) => g.levelCode === 'P1')?.levelCode ?? groups[0]?.levelCode;
+  const [filter, setFilter] = useState<AdminOptionFilter>(() => ({
+    ...NO_ADMIN_OPTION_FILTER,
+    levelCodes: initialLevel ? [initialLevel] : [],
+  }));
+  const clearFilters = () =>
+    setFilter((f) => ({ ...NO_ADMIN_OPTION_FILTER, levelCodes: f.levelCodes }));
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
   const visible = useMemo(
@@ -92,7 +95,14 @@ export function AdmissionOptionsMatrix({
     () => countAdminCombosByTrack(groups, filter),
     [groups, filter]
   );
-  const closed = useMemo(() => summarizeClosedSessions(groups), [groups]);
+  // The chosen level only, like the table.
+  const closed = useMemo(
+    () =>
+      summarizeClosedSessions(
+        groups.filter((g) => filter.levelCodes.includes(g.levelCode))
+      ),
+    [groups, filter.levelCodes]
+  );
 
   const visibleCombos = visible.flatMap((g) => g.combos);
   const selectedCombos = visibleCombos.filter((c) =>
@@ -122,23 +132,23 @@ export function AdmissionOptionsMatrix({
     });
   }
 
-  function toggleLevel(code: string, on: boolean) {
-    setFilter((f) => ({
-      ...f,
-      levelCodes: on
-        ? [...f.levelCodes, code]
-        : f.levelCodes.filter((c) => c !== code),
-    }));
+  function selectLevel(code: string) {
+    setFilter((f) => ({ ...f, levelCodes: [code] }));
   }
 
-  const filtered = isAdminOptionFilterActive(filter);
+  // The level is not a filter to clear — only the track and "Closed only" are.
+  const filtered = filter.track !== 'all' || filter.closedOnly;
 
   return (
     <div className="space-y-4">
       <ClosedNow
         closed={closed}
         onShowClosed={() =>
-          setFilter({ ...NO_ADMIN_OPTION_FILTER, closedOnly: true })
+          setFilter((f) => ({
+            ...NO_ADMIN_OPTION_FILTER,
+            levelCodes: f.levelCodes,
+            closedOnly: true,
+          }))
         }
       />
 
@@ -153,7 +163,9 @@ export function AdmissionOptionsMatrix({
                 variant="outline"
                 size="sm"
                 pressed={on}
-                onPressedChange={(v) => toggleLevel(g.levelCode, v)}
+                // Pressing the chosen level again does nothing: one is always on.
+                onPressedChange={() => selectLevel(g.levelCode)}
+                aria-current={on ? 'true' : undefined}
                 className="px-2.5 text-[12px] font-medium"
               >
                 {g.levelLabel}
@@ -176,11 +188,7 @@ export function AdmissionOptionsMatrix({
             </Label>
           </div>
           {filtered && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFilter(NO_ADMIN_OPTION_FILTER)}
-            >
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
               <FilterX className="size-3.5" />
               Clear filters
             </Button>
@@ -246,7 +254,7 @@ export function AdmissionOptionsMatrix({
                       variant="ghost"
                       size="sm"
                       className="mt-2"
-                      onClick={() => setFilter(NO_ADMIN_OPTION_FILTER)}
+                      onClick={clearFilters}
                     >
                       Clear filters
                     </Button>
