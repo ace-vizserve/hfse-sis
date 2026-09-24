@@ -1,0 +1,26 @@
+AY2027 — Admissions vs Records alignment (read-only)
+
+admissions enrolee rows: 299
+application rows:        298
+section placements:      4
+student records:         777
+
+ALIGNED (admissions and records agree): 1
+
+=== A. Enrolled, but no studentNumber recorded on the application: 0 ===
+
+=== B. Enrolled, but no student record exists: 0 ===
+
+=== C. Enrolled, but Records has them in no section: 0 ===
+
+=== D. Enrolled, but Admissions and Records disagree on the class: 0 ===
+
+=== E. NOT Enrolled in Admissions, yet sitting in a class: 3 ===
+  E270015 "REBOTAR, JOHN GERARD, DIONELA" [Submitted]  studentNumber=H270015  Records has them in Secondary One / Discipline 1 (#1, active)
+  E270056 "OBIAS, EON MACH, NAIG" [Submitted]  studentNumber=Y210003  Records has them in Primary Five / Commitment (#1, active)
+  E270284 "LANUZA, LORENZO VAN AUSTIN, VELASCO" [Submitted]  studentNumber=H250631  Records has them in Primary Three / Responsibility (#1, active)
+
+=== F. In more than one section: 0 ===
+
+=== G. In a class, but no admissions enrolee row links to them: 0 ===
+

@@ -19,13 +19,18 @@
 //   D. Admissions does NOT say Enrolled, yet the child sits in a section
 // plus the reverse sweep: children in a section with no admissions row.
 //
-// Run: npx tsx --env-file=.env.local scripts/audit-admissions-records-alignment.ts
+// Run: npx tsx --env-file=.env.local scripts/audit-admissions-records-alignment.ts [AY2027]
+// (defaults to AY2026)
 import { writeFileSync } from 'node:fs';
 
 import { createServiceClient } from '../lib/supabase/service';
 
-const AY_CODE = 'AY2026';
-const OUT = 'scripts/audit-admissions-records-alignment-report.txt';
+const AY_CODE = (process.argv[2] ?? 'AY2026').toUpperCase();
+const SLUG = AY_CODE.toLowerCase();
+const OUT =
+  AY_CODE === 'AY2026'
+    ? 'scripts/audit-admissions-records-alignment-report.txt'
+    : `scripts/audit-admissions-records-alignment-${SLUG}-report.txt`;
 
 function norm(s: string | null | undefined): string {
   return (s ?? '')
@@ -74,12 +79,12 @@ async function main() {
   // --- admissions ---
   const status = await page<any>(
     svc,
-    'ay2026_enrolment_status',
+    `${SLUG}_enrolment_status`,
     '"enroleeNumber", "enroleeName", "applicationStatus", "classStatus", "classLevel", "classSection", "levelApplied"'
   );
   const apps = await page<any>(
     svc,
-    'ay2026_enrolment_applications',
+    `${SLUG}_enrolment_applications`,
     '"enroleeNumber", "studentNumber"'
   );
   const studentNumberFor = new Map<string, string | null>();
@@ -112,7 +117,7 @@ async function main() {
     console.log(s);
   };
 
-  say('AY2026 — Admissions vs Records alignment (read-only)');
+  say(`${AY_CODE} — Admissions vs Records alignment (read-only)`);
   say('');
   say(`admissions enrolee rows: ${status.length}`);
   say(`application rows:        ${apps.length}`);
