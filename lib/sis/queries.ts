@@ -1380,13 +1380,18 @@ export async function getCurrentSection(
 }
 
 // The other sections a student in `sectionId` could be moved to — same AY,
-// same level — with their headcounts, for the SectionTransferDialog. Counts
-// include late enrollees: they occupy a seat, same as the capacity check in
-// lib/sis/class-assignment.ts.
-export async function getSiblingSections(sectionId: string): Promise<
+// same level unless `anyLevel` — with their headcounts, for the
+// SectionTransferDialog. Counts include late enrollees: they occupy a seat,
+// same as the capacity check in lib/sis/class-assignment.ts.
+export async function getSiblingSections(
+  sectionId: string,
+  { anyLevel = false }: { anyLevel?: boolean } = {}
+): Promise<
   Array<{
     id: string;
     name: string;
+    levelLabel: string;
+    otherLevel: boolean;
     activeCount: number;
     isAtCapacity: boolean;
   }>
@@ -1402,13 +1407,25 @@ export async function getSiblingSections(sectionId: string): Promise<
     level_id: string;
     academic_year_id: string;
   };
-  const { data: sibRows } = await service
+  let query = service
     .from('sections')
-    .select('id, name')
+    .select('id, name, level_id, levels!inner(label, sort_order)')
     .eq('academic_year_id', academic_year_id)
-    .eq('level_id', level_id)
     .neq('id', sectionId);
-  const sibList = (sibRows ?? []) as Array<{ id: string; name: string }>;
+  if (!anyLevel) query = query.eq('level_id', level_id);
+  const { data: sibRows } = await query;
+  const sibList = (
+    (sibRows ?? []) as unknown as Array<{
+      id: string;
+      name: string;
+      level_id: string;
+      levels: { label: string; sort_order: number | null };
+    }>
+  ).sort(
+    (a, b) =>
+      (a.levels.sort_order ?? 0) - (b.levels.sort_order ?? 0) ||
+      a.name.localeCompare(b.name)
+  );
   if (sibList.length === 0) return [];
   const { data: countRows } = await service
     .from('section_students')
@@ -1422,17 +1439,17 @@ export async function getSiblingSections(sectionId: string): Promise<
   for (const r of (countRows ?? []) as Array<{ section_id: string }>) {
     counts.set(r.section_id, (counts.get(r.section_id) ?? 0) + 1);
   }
-  return sibList
-    .map((s) => {
-      const c = counts.get(s.id) ?? 0;
-      return {
-        id: s.id,
-        name: s.name,
-        activeCount: c,
-        isAtCapacity: c >= MAX_ACTIVE_PER_SECTION,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return sibList.map((s) => {
+    const c = counts.get(s.id) ?? 0;
+    return {
+      id: s.id,
+      name: s.name,
+      levelLabel: s.levels.label,
+      otherLevel: s.level_id !== level_id,
+      activeCount: c,
+      isAtCapacity: c >= MAX_ACTIVE_PER_SECTION,
+    };
+  });
 }
 
 export type DiscountCode = {

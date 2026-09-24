@@ -63,6 +63,13 @@ type TransferParams = {
   enroleeNumber: string;
   targetSectionId: string;
   actorEmail: string | null;
+  /**
+   * Allow a move into a section at a different level. Off by default: the
+   * Records roster moves within a level only. The admissions class tile turns
+   * it on to correct a wrongly entered level — a data correction, not a
+   * mid-year promotion.
+   */
+  allowLevelChange?: boolean;
 };
 
 // Atomic move of an enrolled student from one section to another. Per
@@ -88,7 +95,13 @@ export async function transferStudentSection(
   service: SupabaseClient,
   params: TransferParams
 ): Promise<TransferResult> {
-  const { ayCode, enroleeNumber, targetSectionId, actorEmail } = params;
+  const {
+    ayCode,
+    enroleeNumber,
+    targetSectionId,
+    actorEmail,
+    allowLevelChange,
+  } = params;
   const today = sgToday();
 
   // ── 1. Resolve AY ──────────────────────────────────────────────────────
@@ -279,8 +292,8 @@ export async function transferStudentSection(
     };
   }
 
-  // ── 6. Reject cross-level ──────────────────────────────────────────────
-  if (sourceSec.level_id !== targetSec.level_id) {
+  // ── 6. Reject cross-level, unless the caller opted in ──────────────────
+  if (!allowLevelChange && sourceSec.level_id !== targetSec.level_id) {
     return {
       ok: false,
       error: `Cannot transfer ${sourceLevelLabel ?? 'student'} to a ${targetLevelLabel} section — moves are within the same level only`,

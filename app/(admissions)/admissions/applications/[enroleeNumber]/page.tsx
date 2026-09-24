@@ -207,7 +207,7 @@ export default async function SisStudentDetailPage({
       ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
       : Promise.resolve([]),
     currentSection && canPlaceStudent
-      ? getSiblingSections(currentSection.id)
+      ? getSiblingSections(currentSection.id, { anyLevel: true })
       : Promise.resolve([]),
   ]);
 
@@ -223,6 +223,9 @@ export default async function SisStudentDetailPage({
         studentName: fullName,
         fromSectionName: currentSection.name,
         siblings: siblingSections,
+        // Level and section are both editable here: a wrong level is a data
+        // correction the admissions team makes from this tile.
+        allowLevelChange: true,
       }
     : null;
 

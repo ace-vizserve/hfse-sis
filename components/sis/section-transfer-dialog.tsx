@@ -25,6 +25,9 @@ export type SiblingSection = {
   name: string;
   activeCount: number;
   isAtCapacity: boolean;
+  /** Set when the list spans levels (`allowLevelChange`). */
+  levelLabel?: string;
+  otherLevel?: boolean;
 };
 
 export type SectionTransferDialogProps = {
@@ -33,6 +36,9 @@ export type SectionTransferDialogProps = {
   fromSectionName: string;
   ayCode: string;
   siblings: SiblingSection[];
+  /** Siblings span every level and a level change is sent as a correction.
+   *  Keeps the server's level-then-name order instead of capacity order. */
+  allowLevelChange?: boolean;
   trigger?: React.ReactNode;
 };
 
@@ -42,6 +48,7 @@ export function SectionTransferDialog({
   fromSectionName,
   ayCode,
   siblings,
+  allowLevelChange = false,
   trigger,
 }: SectionTransferDialogProps) {
   const [open, setOpen] = React.useState(false);
@@ -55,7 +62,10 @@ export function SectionTransferDialog({
     mutationFn: (targetSectionId: string) =>
       apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/transfer-section?ay=${encodeURIComponent(ayCode)}`,
-        jsonInit('POST', { targetSectionId })
+        jsonInit('POST', {
+          targetSectionId,
+          ...(allowLevelChange ? { allowLevelChange: true } : {}),
+        })
       ),
   });
 
@@ -86,17 +96,21 @@ export function SectionTransferDialog({
     setSubmitting(false);
   }
 
-  // Sort siblings by capacity (most-available first), then alphabetically.
+  // Same-level: sort by capacity (most-available first), then alphabetically.
+  // Across levels the server's level-then-name order reads better.
   const sorted = React.useMemo(
     () =>
-      [...siblings].sort(
-        (a, b) =>
-          Number(a.isAtCapacity) - Number(b.isAtCapacity) ||
-          a.activeCount - b.activeCount ||
-          a.name.localeCompare(b.name)
-      ),
-    [siblings]
+      allowLevelChange
+        ? siblings
+        : [...siblings].sort(
+            (a, b) =>
+              Number(a.isAtCapacity) - Number(b.isAtCapacity) ||
+              a.activeCount - b.activeCount ||
+              a.name.localeCompare(b.name)
+          ),
+    [siblings, allowLevelChange]
   );
+  const selected = siblings.find((s) => s.id === selectedId);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -109,9 +123,9 @@ export function SectionTransferDialog({
           </DialogTitle>
           <DialogDescription>
             Currently in <strong>{fromSectionName}</strong>. Pick a target
-            section at the same level. The transfer is atomic — the old
-            enrolment is marked withdrawn and a new active row is created in one
-            step.
+            section{allowLevelChange ? '' : ' at the same level'}. The transfer
+            is atomic — the old enrolment is marked withdrawn and a new active
+            row is created in one step.
           </DialogDescription>
         </DialogHeader>
 
@@ -137,7 +151,14 @@ export function SectionTransferDialog({
                       : 'border-border hover:border-brand-indigo-soft hover:bg-accent/40')
                 }
               >
-                <span className="font-medium text-foreground">{s.name}</span>
+                <span className="font-medium text-foreground">
+                  {allowLevelChange && s.levelLabel && (
+                    <span className="mr-1.5 text-muted-foreground">
+                      {s.levelLabel} ·
+                    </span>
+                  )}
+                  {s.name}
+                </span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                     {s.activeCount}/{MAX_ACTIVE_PER_SECTION}
@@ -155,6 +176,14 @@ export function SectionTransferDialog({
             ))
           )}
         </div>
+
+        {selected?.otherLevel && (
+          <p className="rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-foreground">
+            This changes {studentName}&apos;s level to{' '}
+            <strong>{selected.levelLabel}</strong>. Use it to correct a wrongly
+            entered level — grades already entered stay with the old section.
+          </p>
+        )}
 
         <DialogFooter>
           <Button
