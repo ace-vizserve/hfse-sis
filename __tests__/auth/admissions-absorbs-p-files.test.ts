@@ -35,9 +35,19 @@ describe('admissions absorbs the P-Files officer', () => {
 
   it('does not gain anything outside the document lifecycle', () => {
     // The merge moves documents, not the whole officer's keyring. Anything
-    // else appearing here is a widened grant nobody asked for.
+    // else appearing here is a widened grant nobody asked for — except the
+    // Classes row, granted separately on 2026-09-24 (migration 175) so
+    // admissions can add a class while placing a child.
+    const CLASSES = [
+      'sections.read',
+      'sections.create',
+      'sections.edit',
+      'sections.delete',
+    ];
     const extra = DEFAULT_ROLE_CAPABILITIES.admissions.filter(
-      (c) => !(DOCUMENT_CAPABILITIES as readonly string[]).includes(c)
+      (c) =>
+        !(DOCUMENT_CAPABILITIES as readonly string[]).includes(c) &&
+        !CLASSES.includes(c)
     );
     expect(extra).toEqual([]);
   });

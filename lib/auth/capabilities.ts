@@ -367,6 +367,17 @@ export const DEFAULT_ROLE_CAPABILITIES: Record<Role, Capability[]> = {
     'documents_post_enrolment.chase',
     'documents_post_enrolment.upload',
     'documents_post_enrolment.validate',
+    // CLASSES (2026-09-24, migration 175). Admissions places next year's
+    // intake while that year's classes are still being set up; a class picked
+    // in Directus that the SIS lacked made the sync skip the child silently.
+    // `create` is for "Add a class" in the stage dialog's class picker and
+    // "Create a new section" in Records → Unsynced. Mr Ace ticked the whole
+    // Classes row for admissions on the Roles screen the same day — view,
+    // edit and delete are his, deliberately ("thats mine").
+    'sections.read',
+    'sections.create',
+    'sections.edit',
+    'sections.delete',
   ],
 };
 

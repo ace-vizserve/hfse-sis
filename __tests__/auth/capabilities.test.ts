@@ -127,6 +127,36 @@ const DELIBERATE_WIDENINGS: Partial<Record<Capability, Role[]>> = {
   // P-Files after"). That lock is what ended; the STRUCTURAL rule beside it —
   // the route reads enrolment state, not the caller's role, to pick the
   // capability — is untouched and still asserted below.
+
+  // 2026-09-24, Mr Ace: admissions manages classes — it creates one while
+  // placing a child, so next year's intake is not skipped by the sync for
+  // want of a class, and he ticked view/edit/delete for it on the Roles
+  // screen the same day ("thats mine"). Migration 175.
+  'sections.read': [
+    'academic_coordinator',
+    'admissions',
+    'school_admin',
+    'superadmin',
+    'teacher',
+  ],
+  'sections.create': [
+    'academic_coordinator',
+    'admissions',
+    'school_admin',
+    'superadmin',
+  ],
+  'sections.edit': [
+    'academic_coordinator',
+    'admissions',
+    'school_admin',
+    'superadmin',
+  ],
+  'sections.delete': [
+    'academic_coordinator',
+    'admissions',
+    'school_admin',
+    'superadmin',
+  ],
 };
 
 // ⚠ `string[]`, NOT `Role[]`, AND THAT IS THE POINT. This is a frozen record of
@@ -731,6 +761,8 @@ const SEED_MIGRATIONS = [
   // and the role being retired had exactly one holder. `admissions` absorbs
   // the whole document lifecycle — the five grants it did not already hold.
   'supabase/migrations/143_admissions_absorbs_p_file_officer.sql',
+  // Admissions creates a class while placing a child (2026-09-24).
+  'supabase/migrations/175_role_permissions_admissions_sections_create.sql',
 ];
 
 /** `('role', 'capability')` tuples inside one SQL statement block. */

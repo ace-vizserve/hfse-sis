@@ -31,6 +31,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { InlineAddSection } from '@/components/sis/inline-add-section';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import {
@@ -749,9 +750,8 @@ export function EditStageDialog({
                       ) : sectionsQuery.data.sections.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
                           There are no classes at{' '}
-                          {sectionsQuery.data.level.label} yet. You can still
-                          enrol this student — create a class under SIS Admin →
-                          Section setup, then assign it from Records.
+                          {sectionsQuery.data.level.label} in {ayCode} yet. Add
+                          one below, or enrol now and assign a class later.
                         </p>
                       ) : (
                         <div className="space-y-1.5">
@@ -787,6 +787,19 @@ export function EditStageDialog({
                               );
                             })}
                         </div>
+                      )}
+                      {/* The class the office wants may not exist yet —
+                          especially for next year. Create it here and it is
+                          picked straight away. */}
+                      {!alreadyPlaced && sectionsQuery.data?.level && (
+                        <InlineAddSection
+                          ayCode={ayCode}
+                          level={sectionsQuery.data.level}
+                          onCreated={async (sec) => {
+                            await sectionsQuery.refetch();
+                            setSectionId(sec.id);
+                          }}
+                        />
                       )}
                     </div>
                   )}
