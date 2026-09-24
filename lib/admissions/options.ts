@@ -513,6 +513,190 @@ export function groupOptionsForAdmin(
     }));
 }
 
+// ── the admin page's matrix: filters, closed summary, bulk plan ───────────
+
+/** One row of the matrix — a combination's identity across renders. */
+export function adminComboKey(
+  combo: Pick<AdminOptionCombo, 'levelLabel' | 'classTypeLabel'>
+): string {
+  // U+0000 cannot occur in either label, so the key cannot collide.
+  return `${combo.levelLabel}\u0000${combo.classTypeLabel}`;
+}
+
+export type AdminOptionTrackFilter = 'all' | AdmissionTrack;
+
+export type AdminOptionFilter = {
+  track: AdminOptionTrackFilter;
+  /** SIS level codes. Empty means every level. */
+  levelCodes: readonly string[];
+  /** Only combinations with at least one closed session. */
+  closedOnly: boolean;
+};
+
+export const NO_ADMIN_OPTION_FILTER: AdminOptionFilter = {
+  track: 'all',
+  levelCodes: [],
+  closedOnly: false,
+};
+
+export function isAdminOptionFilterActive(f: AdminOptionFilter): boolean {
+  return f.track !== 'all' || f.levelCodes.length > 0 || f.closedOnly;
+}
+
+function comboPasses(
+  combo: AdminOptionCombo,
+  f: Pick<AdminOptionFilter, 'track' | 'closedOnly'>
+): boolean {
+  if (f.track !== 'all' && combo.track !== f.track) return false;
+  if (f.closedOnly && combo.sessions.every((s) => s.isOpen)) return false;
+  return true;
+}
+
+/**
+ * The groups the matrix shows under a filter. Order is kept; a group left with
+ * no combinations is dropped, so an empty level never shows a bare header.
+ */
+export function filterAdminGroups(
+  groups: readonly AdminOptionGroup[],
+  f: AdminOptionFilter
+): AdminOptionGroup[] {
+  const levels = new Set(f.levelCodes);
+  return groups
+    .filter((g) => levels.size === 0 || levels.has(g.levelCode))
+    .map((g) => ({ ...g, combos: g.combos.filter((c) => comboPasses(c, f)) }))
+    .filter((g) => g.combos.length > 0);
+}
+
+/**
+ * Per-tab counts for the track tabs: every other filter applies, the track
+ * one does not — so a tab says how many rows picking it would show.
+ */
+export function countAdminCombosByTrack(
+  groups: readonly AdminOptionGroup[],
+  f: AdminOptionFilter
+): Record<AdminOptionTrackFilter, number> {
+  const out: Record<AdminOptionTrackFilter, number> = {
+    all: 0,
+    Global: 0,
+    Standard: 0,
+  };
+  for (const g of filterAdminGroups(groups, { ...f, track: 'all' })) {
+    for (const c of g.combos) {
+      out.all += 1;
+      out[c.track] += 1;
+    }
+  }
+  return out;
+}
+
+export type ClosedSessionEntry = {
+  /** The SIS level's own label ("Primary Three"). */
+  levelLabel: string;
+  classTypeLabel: string;
+  track: AdmissionTrack;
+};
+
+export type ClosedSessionSummary = {
+  schedule: AdmissionSchedule;
+  entries: ClosedSessionEntry[];
+  /** Set when every entry is on one track — "19 classes (all Global)". */
+  onlyTrack: AdmissionTrack | null;
+};
+
+/**
+ * What is closed right now, one line per session in Morning, Afternoon, Whole
+ * day order. A session with nothing closed is left out.
+ */
+export function summarizeClosedSessions(
+  groups: readonly AdminOptionGroup[]
+): ClosedSessionSummary[] {
+  return ADMISSION_SCHEDULES.flatMap((schedule) => {
+    const entries: ClosedSessionEntry[] = [];
+    for (const g of groups) {
+      for (const c of g.combos) {
+        if (c.sessions.some((s) => s.schedule === schedule && !s.isOpen)) {
+          entries.push({
+            levelLabel: g.levelLabel,
+            classTypeLabel: c.classTypeLabel,
+            track: c.track,
+          });
+        }
+      }
+    }
+    if (entries.length === 0) return [];
+    const tracks = new Set(entries.map((e) => e.track));
+    return [
+      {
+        schedule,
+        entries,
+        onlyTrack: tracks.size === 1 ? entries[0].track : null,
+      },
+    ];
+  });
+}
+
+/** Sessions at least one of these combinations has, in schedule order. */
+export function sessionsAmong(
+  combos: readonly AdminOptionCombo[]
+): AdmissionSchedule[] {
+  return ADMISSION_SCHEDULES.filter((s) =>
+    combos.some((c) => c.sessions.some((x) => x.schedule === s))
+  );
+}
+
+export type BulkSessionPlan = {
+  /** The rows to write — only sessions that exist and are not already there. */
+  optionIds: string[];
+  /** Combinations already in the state asked for. */
+  alreadyCount: number;
+  /** Combinations that have no row for this session. */
+  missingCount: number;
+};
+
+/** Open or close one session across many combinations: what actually changes. */
+export function planBulkSessionChange(
+  combos: readonly AdminOptionCombo[],
+  schedule: AdmissionSchedule,
+  isOpen: boolean
+): BulkSessionPlan {
+  const plan: BulkSessionPlan = {
+    optionIds: [],
+    alreadyCount: 0,
+    missingCount: 0,
+  };
+  for (const c of combos) {
+    const s = c.sessions.find((x) => x.schedule === schedule);
+    if (!s) plan.missingCount += 1;
+    else if (s.isOpen === isOpen) plan.alreadyCount += 1;
+    else plan.optionIds.push(s.id);
+  }
+  return plan;
+}
+
+/** "Morning closed for 7 classes" — the bulk bar's toast. */
+export function bulkSessionMessage(
+  schedule: AdmissionSchedule,
+  isOpen: boolean,
+  changed: number
+): string {
+  const session = STAFF_SCHEDULE_LABEL[schedule];
+  if (changed === 0) {
+    return `Nothing to change — ${session} is already ${isOpen ? 'open' : 'closed'} for every selected class`;
+  }
+  return `${session} ${isOpen ? 'reopened' : 'closed'} for ${changed} ${changed === 1 ? 'class' : 'classes'}`;
+}
+
+/** Where a year sits against the current one — the page's year badge. */
+export type AyRelation = 'current' | 'upcoming' | 'past';
+
+export function ayRelation(ayCode: string, currentAyCode: string): AyRelation {
+  const a = ayCode.toUpperCase();
+  const c = currentAyCode.toUpperCase();
+  if (a === c) return 'current';
+  // `AY` + four digits, so string order is year order.
+  return a > c ? 'upcoming' : 'past';
+}
+
 /**
  * Track for a class type label. "Global" anywhere in the label (any case)
  * means Global — which covers the Cambridge types, all spelled

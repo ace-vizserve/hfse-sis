@@ -40,6 +40,23 @@ export type AdmissionOptionToggleInput = z.infer<
   typeof AdmissionOptionToggleSchema
 >;
 
+/**
+ * PATCH /api/sis/admission-options/bulk — open or close many sessions of one
+ * year at once (the matrix's bulk bar). Ids are de-duplicated.
+ */
+export const AdmissionOptionBulkToggleSchema = z.object({
+  ayCode,
+  optionIds: z
+    .array(z.string().uuid('Unknown option'))
+    .min(1, 'Choose at least one session')
+    .max(200, 'Change at most 200 sessions at a time')
+    .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))]),
+  isOpen: z.boolean(),
+});
+export type AdmissionOptionBulkToggleInput = z.infer<
+  typeof AdmissionOptionBulkToggleSchema
+>;
+
 /** POST /api/sis/admission-options — one row per chosen session. */
 export const AdmissionOptionCreateSchema = z.object({
   ayCode,

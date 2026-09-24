@@ -1,19 +1,20 @@
-import { CircleCheck, CircleOff, ListChecks, School } from 'lucide-react';
+import { ListChecks } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { AddAdmissionOptionButton } from '@/components/sis/admission-option-sheet';
-import { AdmissionOptionsLevelCard } from '@/components/sis/admission-options-level-card';
+import { AdmissionOptionsMatrix } from '@/components/sis/admission-options-matrix';
 import { CopyAdmissionOptionsButton } from '@/components/sis/copy-admission-options-button';
 import { SisEmptyState } from '@/components/sis/empty-state';
-import { HubStat } from '@/components/sis/hub-stat';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
+  ayRelation,
   groupOptionsForAdmin,
   nameReachByLabel,
+  type AyRelation,
 } from '@/lib/admissions/options';
 import { loadAdmissionOptionsUncached } from '@/lib/admissions/options-loader';
 import { requirePageRoles } from '@/lib/auth/require-page-roles';
@@ -33,6 +34,23 @@ import { createServiceClient } from '@/lib/supabase/service';
 // Reads UNCACHED on purpose. A switch shows the server's state and only moves
 // once the awaited refresh re-reads it; a cached read would hand back the row
 // the write just changed. The endpoint parents hit is the cached one.
+
+// The year badge: an upcoming year is the one taking applications, so it must
+// not read as history (09a §9.3 — mint for current, accent for informational).
+const YEAR_BADGE: Record<AyRelation, { label: string; className: string }> = {
+  current: {
+    label: 'Current',
+    className: 'border-brand-mint bg-brand-mint/30 text-ink',
+  },
+  upcoming: {
+    label: 'Upcoming',
+    className: 'border-brand-indigo-soft bg-accent text-brand-indigo-deep',
+  },
+  past: {
+    label: 'Past',
+    className: 'border-border bg-card text-muted-foreground',
+  },
+};
 
 export default async function AdmissionOptionsPage({
   searchParams,
@@ -59,7 +77,7 @@ export default async function AdmissionOptionsPage({
 
   const selectedAy =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
-  const isCurrentAy = selectedAy === currentAy.ay_code;
+  const relation = ayRelation(selectedAy, currentAy.ay_code);
 
   // `everyYear` is a thin read of every year's rows (a few hundred at most):
   // it tells the drawer how far a level name reaches when its "Counts as"
@@ -101,12 +119,6 @@ export default async function AdmissionOptionsPage({
     label: l.label,
   }));
 
-  const openCount = rows.filter((r) => r.is_open).length;
-  const closedCount = rows.length - openCount;
-  const levelsOffered = new Set(
-    rows.filter((r) => r.is_open).map((r) => r.level_label)
-  ).size;
-
   // An empty year offers a copy of the newest other year that has options.
   const withRows = new Set(allYearRows.map((r) => r.ayCode));
   const copySource =
@@ -136,48 +148,17 @@ export default async function AdmissionOptionsPage({
               >
                 {selectedAy}
               </Badge>
-              {isCurrentAy ? (
-                <Badge className="h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
-                  Current
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                >
-                  Historical
-                </Badge>
-              )}
+              <Badge
+                variant="outline"
+                className={`h-7 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] ${YEAR_BADGE[relation].className}`}
+              >
+                {YEAR_BADGE[relation].label}
+              </Badge>
             </div>
             <AySwitcher current={selectedAy} options={ayCodes} />
           </div>
         }
       />
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <HubStat
-          label="Open"
-          value={openCount}
-          icon={CircleCheck}
-          tone="mint"
-          subtext="Sessions parents can pick"
-          emphasize
-        />
-        <HubStat
-          label="Closed"
-          value={closedCount}
-          icon={CircleOff}
-          tone="muted"
-          subtext="Switched off — not on the forms"
-        />
-        <HubStat
-          label="Levels offered"
-          value={levelsOffered}
-          icon={School}
-          tone="brand"
-          subtext="Level names with an open session"
-        />
-      </div>
 
       {rows.length === 0 ? (
         <Card className="py-0">
@@ -208,17 +189,12 @@ export default async function AdmissionOptionsPage({
           />
         </Card>
       ) : (
-        <section className="space-y-4">
-          {groups.map((group) => (
-            <AdmissionOptionsLevelCard
-              key={group.levelId}
-              group={group}
-              ayCode={selectedAy}
-              levels={levels}
-              nameReach={nameReach}
-            />
-          ))}
-        </section>
+        <AdmissionOptionsMatrix
+          groups={groups}
+          ayCode={selectedAy}
+          levels={levels}
+          nameReach={nameReach}
+        />
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

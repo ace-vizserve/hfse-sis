@@ -44,9 +44,10 @@ describe('every write route busts the endpoint cache', () => {
     .map((f) => f.trim())
     .filter((f) => f.endsWith('/route.ts'));
 
-  it('finds the four write routes', () => {
+  it('finds the five write routes', () => {
     expect(routes.sort()).toEqual([
       'app/api/sis/admission-options/[id]/route.ts',
+      'app/api/sis/admission-options/bulk/route.ts',
       'app/api/sis/admission-options/copy/route.ts',
       'app/api/sis/admission-options/group/route.ts',
       'app/api/sis/admission-options/route.ts',

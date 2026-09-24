@@ -26,12 +26,15 @@ export function AdmissionOptionSessionSwitch({
   isOpen,
   levelLabel,
   classTypeLabel,
+  hideLabel = false,
 }: {
   optionId: string;
   schedule: AdmissionSchedule;
   isOpen: boolean;
   levelLabel: string;
   classTypeLabel: string;
+  /** In the matrix the column header names the session; keep it for screen readers only. */
+  hideLabel?: boolean;
 }) {
   const id = useId();
   const session = STAFF_SCHEDULE_LABEL[schedule];
@@ -73,9 +76,11 @@ export function AdmissionOptionSessionSwitch({
       <Label
         htmlFor={id}
         className={
-          isOpen
-            ? 'whitespace-nowrap text-[13px] font-medium text-foreground'
-            : 'whitespace-nowrap text-[13px] font-medium text-muted-foreground'
+          hideLabel
+            ? 'sr-only'
+            : isOpen
+              ? 'whitespace-nowrap text-[13px] font-medium text-foreground'
+              : 'whitespace-nowrap text-[13px] font-medium text-muted-foreground'
         }
       >
         {session}
