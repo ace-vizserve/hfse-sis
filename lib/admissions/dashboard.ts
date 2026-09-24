@@ -19,6 +19,7 @@ import {
 } from '@/lib/admissions/staleness';
 import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 import { isSlotApplicable } from '@/lib/p-files/document-config';
+import { completionBand } from '@/lib/p-files/completion-band';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -1200,7 +1201,10 @@ export type AdmissionsChaseStatusFilter =
   | 'to-follow'
   | 'rejected'
   | 'uploaded'
-  | 'expired';
+  | 'expired'
+  // Whole-file lenses — lib/p-files/completion-band.ts.
+  | 'complete'
+  | 'nearly-complete';
 
 const ADMISSIONS_CHASE_STATUSES: ReadonlySet<string> = new Set([
   'Submitted',
@@ -1413,6 +1417,10 @@ async function loadAdmissionsCompletenessForChaseUncached(
     visible = students.filter((s) => s.uploaded > 0);
   else if (statusFilter === 'expired')
     visible = students.filter((s) => s.expired > 0);
+  else if (statusFilter === 'complete' || statusFilter === 'nearly-complete')
+    visible = students.filter(
+      (s) => completionBand(s.total, s.complete) === statusFilter
+    );
 
   // Sort: highest chase pressure first. Chase = parent-action-required
   // signals (toFollow + rejected + expired). Uploaded is awaiting-validation

@@ -108,6 +108,8 @@ const FOCUSED_VIEW_STATUSES: ReadonlyArray<AdmissionsChaseStatusFilter> = [
   'rejected',
   'uploaded',
   'expired',
+  'complete',
+  'nearly-complete',
 ];
 
 function parseChaseStatusFilter(
@@ -146,6 +148,18 @@ const STATUS_VIEW_META: Record<
     title: 'Applicants with expired documents',
     description:
       'Un-enrolled applicants whose passport, pass, or guardian docs lapsed mid-pipeline. Chase parents to re-upload before enrollment can complete.',
+  },
+  complete: {
+    eyebrow: 'Admissions · Complete',
+    title: 'Applicants with a complete file',
+    description:
+      'Every document this applicant needs is approved and in date. Documents that do not apply to an applicant are not counted.',
+  },
+  'nearly-complete': {
+    eyebrow: 'Admissions · Nearly complete',
+    title: 'Applicants with a nearly complete file',
+    description:
+      'At least 80% of the documents this applicant needs are approved and in date. The Outstanding column shows what is left to chase.',
   },
 };
 

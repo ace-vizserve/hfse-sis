@@ -20,6 +20,8 @@ import {
   FileQuestion,
   FileStack,
   FileText,
+  FolderCheck,
+  FolderClock,
   FolderOpen,
   Gavel,
   Handshake,
@@ -258,6 +260,9 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // three horizons, and the number in the label is what tells them apart.
       // The icon-coverage test carries them as a named exemption.
       '/p-files?status=expired': AlertTriangle,
+      // Whole-file lenses — same glyph pair as their Admissions twins.
+      '/p-files?status=complete': FolderCheck,
+      '/p-files?status=nearly-complete': FolderClock,
       '/p-files?expiring=30': CalendarClock,
       '/p-files?expiring=60': CalendarClock,
       '/p-files?expiring=90': CalendarClock,
@@ -362,6 +367,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/admissions?status=to-follow': CalendarClock,
       '/admissions?status=rejected': XCircle,
       '/admissions?status=expired': AlertTriangle,
+      '/admissions?status=complete': FolderCheck,
+      '/admissions?status=nearly-complete': FolderClock,
       '/records/students': ICON_STUDENT_DIRECTORY,
       // No '/p-files' entry: Admissions has not linked it since the Quicklinks
       // group was rewritten, and the stale mapping said FolderOpen (the P-Files

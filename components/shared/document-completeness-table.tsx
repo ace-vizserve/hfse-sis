@@ -35,6 +35,7 @@ import {
 } from '@/components/p-files/bulk-notify-dialog';
 import type { AdmissionsCompleteness } from '@/lib/admissions/dashboard';
 import { isEnrolledStatus } from '@/lib/p-files/_shared';
+import { completionBand } from '@/lib/p-files/completion-band';
 import type { StudentCompleteness } from '@/lib/p-files/queries';
 import {
   DOCUMENT_SLOTS,
@@ -48,13 +49,21 @@ type Module = 'p-files' | 'admissions';
 
 // ─── Status filter types ──────────────────────────────────────────────────────
 
-/** Admissions chase: 4 actionable statuses + 'all'. */
+/**
+ * The two completion lenses, shared by both modules. Unlike the status lenses
+ * they ask about the whole file rather than any one document — see
+ * `lib/p-files/completion-band.ts` for what counts.
+ */
+export type CompletionFilter = 'complete' | 'nearly-complete';
+
+/** Admissions chase: 4 actionable statuses + the completion lenses + 'all'. */
 export type AdmissionsStatusFilter =
   | 'all'
   | 'to-follow'
   | 'rejected'
   | 'uploaded'
-  | 'expired';
+  | 'expired'
+  | CompletionFilter;
 /**
  * P-Files: the renewal lens ('expired') plus the review lens ('uploaded').
  *
@@ -66,7 +75,11 @@ export type AdmissionsStatusFilter =
  * dedicated queue could not do: that loader emitted rows per uploaded
  * document, so a student with none had no row and no search could match them.
  */
-export type PFilesStatusFilter = 'all' | 'expired' | 'uploaded';
+export type PFilesStatusFilter =
+  | 'all'
+  | 'expired'
+  | 'uploaded'
+  | CompletionFilter;
 
 // ─── Outstanding-document chips ───────────────────────────────────────────────
 // The exceptions, named in words. This is the column the officer actually
@@ -742,6 +755,13 @@ export function DocumentCompletenessTable(props: Props) {
     [slotHeaders]
   );
 
+  // The completion lenses sit after the status ones in both modules: the
+  // status tabs are the daily queues, these are the monitoring view.
+  const completionOptions = [
+    { value: 'complete', label: TABLE_COPY.documentsComplete },
+    { value: 'nearly-complete', label: TABLE_COPY.documentsNearlyComplete },
+  ];
+
   const statusOptions: { value: string; label: string }[] =
     module === 'admissions'
       ? [
@@ -749,6 +769,7 @@ export function DocumentCompletenessTable(props: Props) {
           { value: 'rejected', label: TABLE_COPY.sentBackToParent },
           { value: 'uploaded', label: TABLE_COPY.awaitingValidation },
           { value: 'expired', label: TABLE_COPY.lapsedReupload },
+          ...completionOptions,
         ]
       : [
           // Same two lenses the officer actually works in: what is waiting for
@@ -756,6 +777,7 @@ export function DocumentCompletenessTable(props: Props) {
           // daily job; expiry is the periodic one.
           { value: 'uploaded', label: TABLE_COPY.awaitingValidation },
           { value: 'expired', label: TABLE_COPY.lapsedReupload },
+          ...completionOptions,
         ];
 
   return (
@@ -828,6 +850,8 @@ export function DocumentCompletenessTable(props: Props) {
                 // never "match everything".
                 if (opt.value === 'expired') return row.expired > 0;
                 if (opt.value === 'uploaded') return (row.uploaded ?? 0) > 0;
+                if (opt.value === 'complete' || opt.value === 'nearly-complete')
+                  return completionBand(row.total, row.complete) === opt.value;
                 if (module === 'admissions') {
                   const a = row as AdmissionsCompleteness;
                   if (opt.value === 'to-follow') return a.toFollow > 0;

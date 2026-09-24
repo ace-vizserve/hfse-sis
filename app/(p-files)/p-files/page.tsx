@@ -80,10 +80,15 @@ import { createServiceClient } from '@/lib/supabase/service';
 // per uploaded DOCUMENT, so a student with none had no row at all and could
 // not be found by search — which is how a student with an expired passport
 // became unsearchable on the very page meant to surface them.
+//
+// 'complete' and 'nearly-complete' ask about the whole file rather than one
+// document — the monitoring lens (lib/p-files/completion-band.ts).
 const STATUS_FILTER_VALUES: readonly StatusFilter[] = [
   'all',
   'expired',
   'uploaded',
+  'complete',
+  'nearly-complete',
 ];
 
 function parseStatusFilter(raw: string | undefined): StatusFilter | undefined {
@@ -125,6 +130,18 @@ const STATUS_VIEW_META: Record<
     title: 'Students with documents waiting for review',
     description:
       'Documents a parent has sent that nobody has approved or rejected yet. Open a student to approve or reject each one.',
+  },
+  complete: {
+    eyebrow: 'P-Files · Complete',
+    title: 'Students with a complete file',
+    description:
+      'Every document this student needs is approved and in date. Documents that do not apply to a student are not counted.',
+  },
+  'nearly-complete': {
+    eyebrow: 'P-Files · Nearly complete',
+    title: 'Students with a nearly complete file',
+    description:
+      'At least 80% of the documents this student needs are approved and in date. The Outstanding column shows what is left.',
   },
 };
 
@@ -271,8 +288,16 @@ export default async function PFilesDashboard({
       : (initialStatusFilter ?? 'all');
     // Bulk notify is an officer write action — oversight roles see the same
     // focused list but without the bulk-remind footer.
+    //
+    // 'nearly-complete' is a chase list as much as a monitoring one — the last
+    // one or two documents are exactly what gets chased. The row builder still
+    // only offers what P-Files can remind about (expired slots), so a row whose
+    // gap is something else simply shows no Remind button.
     const enableBulk =
-      isOfficer && (!!expiringWindow || initialStatusFilter === 'expired');
+      isOfficer &&
+      (!!expiringWindow ||
+        initialStatusFilter === 'expired' ||
+        initialStatusFilter === 'nearly-complete');
 
     return (
       <PageShell>

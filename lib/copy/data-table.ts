@@ -9,6 +9,8 @@ export const TABLE_COPY = {
   sentBackToParent: 'Sent back to parent',
   lapsedReupload: 'Lapsed (re-upload needed)',
   awaitingValidation: 'Awaiting validation',
+  documentsComplete: 'Complete',
+  documentsNearlyComplete: 'Nearly complete (80%+)',
 
   // Markbook
   changeRequestNotApplied: 'Waiting to be applied',

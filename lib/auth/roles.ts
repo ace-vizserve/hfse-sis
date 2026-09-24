@@ -144,6 +144,10 @@ const PFILES_NAV: NavSection[] = [
         badgeKey: 'pfileAwaitingVerification',
       },
       { href: '/p-files?status=expired', label: 'Expired documents' },
+      // The monitoring lens: whose file is finished, and whose is one or two
+      // documents away (lib/p-files/completion-band.ts).
+      { href: '/p-files?status=complete', label: 'Complete files' },
+      { href: '/p-files?status=nearly-complete', label: 'Nearly complete' },
     ],
   },
   {
@@ -510,6 +514,28 @@ const ADMISSIONS_NAV: NavSection[] = [
       {
         href: '/admissions?status=expired',
         label: 'Expired documents',
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+      },
+      // Same audience as Expired documents — the same focused list, asked
+      // about the whole file (lib/p-files/completion-band.ts).
+      {
+        href: '/admissions?status=complete',
+        label: 'Complete files',
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+      },
+      {
+        href: '/admissions?status=nearly-complete',
+        label: 'Nearly complete',
         requiresRoles: [
           'admissions',
           'academic_coordinator',
