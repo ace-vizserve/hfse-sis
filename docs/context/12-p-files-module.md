@@ -207,7 +207,7 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 ### 1. Dashboard (read-only overview)
 
 - Per-student completeness matrix: which documents on file, which missing, which pending review (parent self-serve, awaiting SIS validation), which expired
-- Section/level filter + status filter (Complete / Has missing / Has expired / Pending review)
+- Section/level filter + status tabs: Awaiting validation, Lapsed, **Complete**, **Nearly complete (80%+)** (KD #223). Each tab is also a sidebar link (`?status=uploaded|expired|complete|nearly-complete`)
 - Summary stats: total students, fully complete, students with expired docs, students with missing docs
 - AY switcher (same pattern as admissions dashboard)
 - **Export CSV** button — see `docs/context/20-dashboards.md` § CSV export.

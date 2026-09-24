@@ -130,3 +130,21 @@ Verified on production across all three years: every New student sees 5 of 5, ev
 **Update (2026-09-16) — Form 12 is a school form.** Mr Ace, confirming the zero-upload measurement: _"yes form 12 is not being collected on the parent portal thats correct"_. AY2025 holds **515**; AY2026 and AY2027 hold **zero**. It was `group: 'student'`, i.e. chaseable, so every one of ~1,300 students carried a permanent "Remind parent about Form 12" row in the Action Queue that no parent could ever clear — the identical failure the `school` group was introduced to stop when the other eight were briefly misfiled. Moved to `group: 'school'`. It stays **unconditional**: it is on both of the school's lists, so only who supplies it changed, not who needs it. School forms are now **nine**, and the "student's own" non-expiring group is **four**.
 
 **Update (2026-09-16) — where the two category columns disagree, the rule decides.** Asked whether the office should arbitrate the four AY2026 children, Mr Ace: _"i mean just follow the rules"_. `category` wins, full stop; there is no escalation path and none should be built. `scripts/verify-category-document-gate.ts` still prints them each run so the number stays visible.
+
+### KD #223
+
+**A document file is Complete at 100% and Nearly complete at 80%, on both P-Files and Admissions** (2026-09-25, `3cf7b970`, no migration). Mr Ace asked for a way to pull up students and applicants whose files are complete or almost complete — _"a tracker/monitoring for them to see which students/applicants has complete documents"_, and _"it can be also a chase list"_.
+
+**The rule lives once, in `lib/p-files/completion-band.ts`**, and reads the `total` / `complete` pair every completeness row already carries, so the band means exactly what the percentage beside it means:
+
+- `total` counts only the slots that **apply** to the child (KD #219) — a Current student is not held to the New-student school forms.
+- `complete` counts only `valid` slots — approved and in date. **Uploaded but not yet reviewed does not count.**
+- **The threshold is a fraction, not a count.** A New student with more slots can be two or three documents short and still read as nearly complete. Accepted: this is a monitoring lens.
+- **The fraction is compared raw, not rounded.** 31 of 39 is 79.5%, which the table's rounded percentage shows as 80 — it is still Incomplete.
+- **`total === 0` has no band**, so an empty row cannot pass as a finished file.
+
+**Where it shows.** Two status tabs on the shared completeness table, and two sidebar links per module (`?status=complete`, `?status=nearly-complete`).
+
+- **P-Files already loaded every student into its focused views** and only preselected a tab, so a sort on the Documents column in the All tab could answer this before. The change there is a convenience: an actual filter, a count, a direct link.
+- **Admissions could not show a complete applicant at all.** `getAdmissionsCompletenessForChase` pre-filters to the requested status, and every earlier status meant "something outstanding". This is the part that was missing.
+- **The P-Files Nearly complete view carries the Remind action**, but P-Files can only remind about **expired** slots (`pfilesBulkTargets`), so a student short only a missing document gets no Remind button there. Admissions reminds about every outstanding state. Widening the P-Files reminder is its own decision, not a side effect of this one.
