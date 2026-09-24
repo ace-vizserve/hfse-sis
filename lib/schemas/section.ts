@@ -68,6 +68,15 @@ export const SectionCreateSchema = z.object({
 
 export type SectionCreateInput = z.infer<typeof SectionCreateSchema>;
 
+// POST /api/sections/copy?ay=<target> — copy chosen sections from another
+// year. The target comes from ?ay= like the single create; the body names
+// the source year and which of its sections to copy.
+export const SectionCopySchema = z.object({
+  from_ay: z.string().trim().min(1),
+  section_ids: z.array(uuidString).min(1, 'Pick at least one section'),
+});
+export type SectionCopyInput = z.infer<typeof SectionCopySchema>;
+
 // POST /api/sections/[id]/track — bulk-apply the subject bundle for a
 // section's `class_type` (Global/Standard) to an existing section (or
 // change its `class_type`, then bulk-apply). Same field/value set as

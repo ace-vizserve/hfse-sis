@@ -5,7 +5,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import { SectionCreateSchema } from '@/lib/schemas/section';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
-import { applyTrackBundle } from '@/lib/sis/section-track';
+import {
+  finishNewSection,
+  resolveSectionTargetAy,
+} from '@/lib/sis/section-create';
 
 // List sections for the current academic year, annotated with enrolment counts.
 export async function GET() {
@@ -65,7 +68,7 @@ export async function GET() {
   });
 }
 
-// POST /api/sections â€” mid-year section create under the current AY.
+// POST /api/sections â€” section create under the current AY, or the upcoming one via ?ay=.
 export async function POST(request: NextRequest) {
   const auth = await requireCapability('sections.create');
   if ('error' in auth) return auth.error;
@@ -82,17 +85,17 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  const { data: ay, error: ayErr } = await service
-    .from('academic_years')
-    .select('id, ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
-  if (ayErr || !ay) {
+  // ?ay= picks the year (current or upcoming); absent means the current one.
+  const target = await resolveSectionTargetAy(
+    new URL(request.url).searchParams.get('ay')
+  );
+  if ('error' in target) {
     return NextResponse.json(
-      { error: 'no current academic year' },
-      { status: 500 }
+      { error: target.error },
+      { status: target.status }
     );
   }
+  const { ay } = target;
 
   // `class_type` doubles as the Secondary "track" picker (see
   // lib/schemas/section.ts) — Secondary-only, always-explicit at the
@@ -144,53 +147,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  // The section starts with zero subjects attached — no level-wide default
-  // seeding happens here. The registrar attaches what applies, explicitly,
-  // via the Section Subjects panel (or, for Secondary, by flagging the
-  // section's track below). Track bundle-apply is the only automatic
-  // attachment: when the registrar flagged this Secondary section
-  // Global/Standard (via `class_type`) at creation, attach that track's
-  // static subject bundle now. Otherwise the section stays empty until the
-  // registrar attaches subjects via the Section Subjects panel.
-  let trackBundleInserted = 0;
-  let trackBundleError: string | null = null;
-  if (class_type) {
-    try {
-      const bundleResult = await applyTrackBundle(service, {
-        sectionId: inserted.id,
-        academicYearId: ay.id,
-        classType: class_type,
-      });
-      trackBundleInserted = bundleResult.inserted;
-    } catch (e) {
-      trackBundleError = e instanceof Error ? e.message : String(e);
-      console.error(
-        '[sections POST] track bundle-apply failed:',
-        trackBundleError
-      );
-    }
-  }
-
-  // Bulk-create the grading sheets that should exist for this new section
-  // (one per subject in the level Ã— every term in the AY). Best-effort â€” if
-  // the RPC fails we still keep the section and log the hiccup; registrar
-  // can run "Create all sheets" on /markbook/grading as a fallback.
-  let sheetsInserted = 0;
-  const { data: bulkResult, error: bulkErr } = await service.rpc(
-    'create_grading_sheets_for_section',
-    { p_section_id: inserted.id }
-  );
-  if (bulkErr) {
-    console.error('[sections POST] bulk-sheet RPC failed:', bulkErr.message);
-  } else if (
-    bulkResult &&
-    typeof bulkResult === 'object' &&
-    'inserted' in bulkResult
-  ) {
-    sheetsInserted = Number(
-      (bulkResult as { inserted: unknown }).inserted ?? 0
-    );
-  }
+  // Track subjects + grading sheets — shared with the copy route.
+  const followUp = await finishNewSection(service, {
+    sectionId: inserted.id,
+    academicYearId: ay.id,
+    classType: class_type ?? null,
+  });
 
   await logAction({
     service,
@@ -212,10 +174,14 @@ export async function POST(request: NextRequest) {
       level_code: level?.code ?? null,
       level_label: level?.label ?? null,
       class_type: class_type ?? null,
-      track_bundle_inserted: trackBundleInserted,
-      ...(trackBundleError ? { track_bundle_error: trackBundleError } : {}),
-      grading_sheets_created: sheetsInserted,
-      ...(bulkErr ? { grading_sheets_error: bulkErr.message } : {}),
+      track_bundle_inserted: followUp.trackBundleInserted,
+      ...(followUp.trackBundleError
+        ? { track_bundle_error: followUp.trackBundleError }
+        : {}),
+      grading_sheets_created: followUp.sheetsInserted,
+      ...(followUp.sheetsError
+        ? { grading_sheets_error: followUp.sheetsError }
+        : {}),
     },
   });
 
@@ -226,6 +192,6 @@ export async function POST(request: NextRequest) {
     ok: true,
     id: inserted.id,
     name: inserted.name,
-    grading_sheets_created: sheetsInserted,
+    grading_sheets_created: followUp.sheetsInserted,
   });
 }

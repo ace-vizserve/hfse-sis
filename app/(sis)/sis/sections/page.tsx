@@ -3,13 +3,22 @@ import { LayoutGrid, Users, UserX } from 'lucide-react';
 
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { NewSectionButton } from '@/components/markbook/new-section-button';
+import {
+  CopySectionsButton,
+  type CopySource,
+} from '@/components/sis/copy-sections-button';
 import { HubStat } from '@/components/sis/hub-stat';
 import {
   SectionsOverview,
   type LevelGroup,
 } from '@/components/sis/sections-overview';
 import type { LevelCardSection } from '@/components/sis/section-level-card';
+import { SectionsAySwitcher } from '@/components/sis/sections-ay-switcher';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
+import {
+  getCurrentAcademicYear,
+  getUpcomingAcademicYear,
+} from '@/lib/academic-year';
 import { Badge } from '@/components/ui/badge';
 import { PageShell } from '@/components/ui/page-shell';
 import { sgToday } from '@/lib/dates';
@@ -28,7 +37,11 @@ import type { Schedule, SectionClassType } from '@/lib/schemas/section';
 // template-driven "create all N official section names in one click" (KD
 // #144) was removed with the Structure Defaults template (migration 089)
 // — there's no more master list of official section names independent of
-// an AY to offer it from; "Add section" is a plain manual add now.
+// an AY to offer it from; "Add section" is a plain manual add now. The
+// other year is the template instead: "Copy sections" sets this year up from
+// any other, and ?ay= lets the upcoming year be set up before it is current —
+// a section admissions places a child into but the SIS lacks makes the sync
+// skip that child silently (2026-09-24, three AY2027 children).
 // Rebuilt from a live-reviewed mockup — see docs/superpowers/plans history
 // if this page changes shape again.
 //
@@ -70,7 +83,7 @@ export default async function SisSectionsListPage({
   // page's New Section dialog pre-filled for a specific level (e.g. from a
   // level-scoped "no section yet" callout elsewhere), instead of landing
   // the registrar on a blank page to re-find the level.
-  searchParams: Promise<{ addSectionLevel?: string }>;
+  searchParams: Promise<{ addSectionLevel?: string; ay?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -85,11 +98,20 @@ export default async function SisSectionsListPage({
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  // The current year by default; ?ay= may pick the upcoming one (taking
+  // applications) so next year's sections can be set up before it is current.
+  // Anything else falls back to the current year — same set the create route
+  // accepts.
+  const [currentAy, upcomingAy] = await Promise.all([
+    getCurrentAcademicYear(),
+    getUpcomingAcademicYear(),
+  ]);
+  const ay =
+    (sp.ay && upcomingAy?.ay_code === sp.ay ? upcomingAy : null) ?? currentAy;
+  const ayOptions = [
+    ...(currentAy ? [{ ayCode: currentAy.ay_code, isCurrent: true }] : []),
+    ...(upcomingAy ? [{ ayCode: upcomingAy.ay_code, isCurrent: false }] : []),
+  ];
 
   // termStarted = the school year's first term has begun. Used to escalate the
   // "Generate index" dialog mid-year (KD #136). Null-start_date handling and the
@@ -141,6 +163,59 @@ export default async function SisSectionsListPage({
   )
     ? sp.addSectionLevel
     : undefined;
+
+  // "Copy sections" sources: every other year, newest first, with the
+  // sections this year does not have yet. A year with nothing to add is left
+  // out, and the button hides when no year has anything to add.
+  const levelById = new Map(levelCatalog.map((l) => [l.id, l]));
+  const have = new Set(
+    (sections ?? []).map((s) => {
+      const lvl = Array.isArray(s.level) ? s.level[0] : s.level;
+      return `${lvl?.id}::${s.name}`;
+    })
+  );
+  const { data: otherSections } = ay
+    ? await supabase
+        .from('sections')
+        .select(
+          'id, name, level_id, class_type, academic_year:academic_years!inner(ay_code)'
+        )
+        .neq('academic_year_id', ay.id)
+    : { data: [] };
+  const copyByAy = new Map<string, CopySource['missing']>();
+  for (const s of (otherSections ?? []) as Array<{
+    id: string;
+    name: string;
+    level_id: string;
+    class_type: string | null;
+    academic_year: { ay_code: string } | { ay_code: string }[] | null;
+  }>) {
+    if (have.has(`${s.level_id}::${s.name}`)) continue;
+    const ayRow = Array.isArray(s.academic_year)
+      ? s.academic_year[0]
+      : s.academic_year;
+    if (!ayRow) continue;
+    const list = copyByAy.get(ayRow.ay_code) ?? [];
+    list.push({
+      id: s.id,
+      name: s.name,
+      levelLabel: levelById.get(s.level_id)?.label ?? 'Other',
+      classType: s.class_type,
+    });
+    copyByAy.set(ayRow.ay_code, list);
+  }
+  const sortOrder = (label: string) =>
+    levelCatalog.find((l) => l.label === label)?.sort_order ?? 999;
+  const copySources: CopySource[] = [...copyByAy.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([ayCode, missing]) => ({
+      ayCode,
+      missing: missing.sort(
+        (a, b) =>
+          sortOrder(a.levelLabel) - sortOrder(b.levelLabel) ||
+          a.name.localeCompare(b.name)
+      ),
+    }));
 
   const ids = (sections ?? []).map((s) => s.id);
   const counts: Record<
@@ -249,21 +324,32 @@ export default async function SisSectionsListPage({
         title="Sections & advisers."
         description="One card per level — every level, its section(s), and whether it's staffed. Day-to-day roster / grading / attendance is in Markbook."
         chips={
-          ay && (
+          ay &&
+          (ayOptions.length > 1 ? (
+            <SectionsAySwitcher current={ay.ay_code} options={ayOptions} />
+          ) : (
             <Badge
               variant="outline"
               className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
             >
               {ay.ay_code}
             </Badge>
-          )
+          ))
         }
         actions={
-          <NewSectionButton
-            levels={levelOptions}
-            ayCode={ay?.ay_code ?? null}
-            initialLevelId={initialAddSectionLevelId}
-          />
+          <div className="flex items-center gap-2">
+            {ay && copySources.length > 0 && (
+              <CopySectionsButton
+                targetAyCode={ay.ay_code}
+                sources={copySources}
+              />
+            )}
+            <NewSectionButton
+              levels={levelOptions}
+              ayCode={ay?.ay_code ?? null}
+              initialLevelId={initialAddSectionLevelId}
+            />
+          </div>
         }
       />
 

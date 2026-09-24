@@ -117,7 +117,12 @@ export function NewSectionButton({
   const createMutation = useMutation({
     mutationFn: (values: SectionCreateInput) =>
       apiFetch<{ id: string }>(
-        '/api/sections',
+        // The year the caller is showing — the route defaults to the current
+        // year, which is wrong on an upcoming-year page or for a child being
+        // placed into next year.
+        ayCode
+          ? `/api/sections?ay=${encodeURIComponent(ayCode)}`
+          : '/api/sections',
         jsonInit('POST', {
           name: values.name.trim(),
           level_id: values.level_id,
@@ -187,8 +192,8 @@ export function NewSectionButton({
             )}
           </DialogTitle>
           <DialogDescription>
-            Mid-year addition for the current AY. Rollover still happens through
-            AY Setup; this is for the surprise-late-transfer case.
+            Adds one section to {ayCode ?? 'the current year'}. To set up a
+            whole year, copy its sections from another year instead.
           </DialogDescription>
         </DialogHeader>
 
