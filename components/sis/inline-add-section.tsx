@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { toast } from 'sonner';
-
+import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   SECTION_CLASS_TYPES,
@@ -38,6 +37,7 @@ export function InlineAddSection({
   const [classType, setClassType] = useState<SectionClassType | ''>('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const run = useWriteAction();
 
   const isSecondary = level.levelType === 'secondary';
 
@@ -55,23 +55,37 @@ export function InlineAddSection({
       return setError('Pick Global or Standard for a Secondary class');
     setSaving(true);
     setError(null);
-    try {
-      const body = await apiFetch<{ id: string; name: string }>(
-        `/api/sections?ay=${encodeURIComponent(ayCode)}`,
-        jsonInit('POST', {
-          name: trimmed,
-          level_id: level.id,
-          class_type: isSecondary ? classType : null,
-        })
-      );
-      toast.success(`Created ${level.label} ${body.name} for ${ayCode}`);
-      onCreated({ id: body.id, name: body.name });
-      reset();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't create the class");
-    } finally {
-      setSaving(false);
-    }
+    await run(
+      () =>
+        apiFetch<{ id: string; name: string }>(
+          `/api/sections?ay=${encodeURIComponent(ayCode)}`,
+          jsonInit('POST', {
+            name: trimmed,
+            level_id: level.id,
+            class_type: isSecondary ? classType : null,
+          })
+        ),
+      {
+        pending: `Creating ${level.label} ${trimmed}…`,
+        success: (body) => `Created ${level.label} ${body.name} for ${ayCode}`,
+        // The reason shows inline under the fields, where it is being fixed —
+        // one signal, not a toast as well.
+        error: (e) => {
+          setError(
+            e instanceof Error ? e.message : "Couldn't create the class"
+          );
+          return null;
+        },
+        onResolved: (body) => {
+          onCreated({ id: body.id, name: body.name });
+          reset();
+        },
+        // The picker adds the new class itself; the page behind the dialog
+        // has nothing to re-render.
+        refresh: false,
+      }
+    );
+    setSaving(false);
   }
 
   if (!open) {
@@ -146,9 +160,10 @@ export function InlineAddSection({
           size="sm"
           className="h-7 text-xs"
           onClick={() => void save()}
-          disabled={saving}
+          loading={saving}
+          loadingText="Creating…"
         >
-          {saving ? 'Creating…' : 'Create class'}
+          Create class
         </Button>
       </div>
     </div>
