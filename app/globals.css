@@ -78,6 +78,23 @@
   --av-amber-light: #fde8d5;
   --av-bronze: #cd7f32;
 
+  /* Chart series palette (2026-09-25) — for chart MARKS only.
+     Separate from --chart-1..5 on purpose: those also paint ~20 non-chart
+     surfaces (calendar cells, staleness badges, the WW/PT/Exam chips), and
+     their first three are near-identical blues that fail normal-vision
+     separation (ΔE 6.6). These five are the brand hues, tuned into one
+     lightness band and checked for colour-blind separation (all pass).
+     Fixed order: a series keeps its colour when filters change.
+     `series-1-mid` / `series-1-soft` are the one-hue ramp for a single
+     quantity split into grades (e.g. complete / nearly / incomplete). */
+  --av-series-1: #3445c4;
+  --av-series-2: #0ea5e9;
+  --av-series-3: #e8701f;
+  --av-series-4: #12a37a;
+  --av-series-5: #b0742f;
+  --av-series-1-mid: #8f9ae0;
+  --av-series-1-soft: #d3d8f3;
+
   /* Medal colours for the award ladder. Gold and silver are real metallics
      rather than the amber/slate stand-ins the first awards view borrowed —
      "Bronze" rendered in sky blue is the kind of thing that makes a reader
@@ -280,6 +297,13 @@
   --color-brand-amber: var(--av-amber);
   --color-brand-amber-light: var(--av-amber-light);
   --color-brand-bronze: var(--av-bronze);
+  --color-series-1: var(--av-series-1);
+  --color-series-2: var(--av-series-2);
+  --color-series-3: var(--av-series-3);
+  --color-series-4: var(--av-series-4);
+  --color-series-5: var(--av-series-5);
+  --color-series-1-mid: var(--av-series-1-mid);
+  --color-series-1-soft: var(--av-series-1-soft);
   --color-medal-gold: var(--av-medal-gold);
   --color-medal-gold-deep: var(--av-medal-gold-deep);
   --color-medal-silver: var(--av-medal-silver);

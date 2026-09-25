@@ -24,6 +24,15 @@ import {
 } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  SEGMENT_EDGE,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import { AdmissionsDrillSheet } from '@/components/admissions/drills/admissions-drill-sheet';
 
@@ -98,30 +107,25 @@ export function DocumentCompletionCard({
                   data={chartData}
                   margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
                 >
-                  <CartesianGrid
-                    vertical={false}
-                    stroke="var(--color-border)"
-                    strokeDasharray="3 3"
-                  />
+                  <CartesianGrid {...CHART_GRID} />
                   <XAxis
                     dataKey="level"
-                    stroke="var(--color-muted-foreground)"
-                    fontSize={12}
-                    tickLine={false}
+                    tick={CATEGORY_TICK}
+                    {...CHART_AXIS}
                     interval={0}
                     angle={-30}
                     textAnchor="end"
                     height={56}
                   />
                   <YAxis
-                    stroke="var(--color-muted-foreground)"
-                    fontSize={12}
+                    tick={AXIS_TICK}
+                    {...CHART_AXIS}
                     allowDecimals={false}
-                    tickLine={false}
+                    width={36}
                   />
                   <Tooltip
                     wrapperStyle={{ zIndex: 20 }}
-                    cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+                    cursor={BAR_CURSOR}
                     // The three segments count applicants, not documents: each
                     // applicant at this level is complete, partial or missing
                     // and never two of them, so the stack sums to the level's
@@ -131,11 +135,16 @@ export function DocumentCompletionCard({
                       totalLabel: 'All applicants',
                     })}
                   />
+                  {/* How complete a file is, is ONE quantity in three grades,
+                      so it is three shades of one blue — darkest for done —
+                      rather than green / amber / red, which read as three
+                      unrelated states and borrow the status colours. */}
                   <Bar
                     dataKey="complete"
                     name="Complete"
                     stackId="a"
-                    fill="var(--color-brand-mint)"
+                    fill="var(--color-series-1)"
+                    {...SEGMENT_EDGE}
                     isAnimationActive={false}
                     onClick={handleBarClick as never}
                     style={{ cursor: 'pointer' }}
@@ -144,7 +153,8 @@ export function DocumentCompletionCard({
                     dataKey="partial"
                     name="Partial"
                     stackId="a"
-                    fill="var(--color-brand-amber)"
+                    fill="var(--color-series-1-mid)"
+                    {...SEGMENT_EDGE}
                     isAnimationActive={false}
                     onClick={handleBarClick as never}
                     style={{ cursor: 'pointer' }}
@@ -153,8 +163,9 @@ export function DocumentCompletionCard({
                     dataKey="missing"
                     name="Missing"
                     stackId="a"
-                    fill="var(--color-destructive)"
-                    radius={[4, 4, 0, 0]}
+                    fill="var(--color-series-1-soft)"
+                    {...SEGMENT_EDGE}
+                    radius={BAR_RADIUS_TOP}
                     isAnimationActive={false}
                     onClick={handleBarClick as never}
                     style={{ cursor: 'pointer' }}
@@ -162,9 +173,9 @@ export function DocumentCompletionCard({
                 </BarChart>
               </ResponsiveContainer>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <ChartLegendChip color="fresh" label="Complete" />
-                <ChartLegendChip color="chart-4" label="Partial" />
-                <ChartLegendChip color="very-stale" label="Missing" />
+                <ChartLegendChip color="series-1" label="Complete" />
+                <ChartLegendChip color="series-1-mid" label="Partial" />
+                <ChartLegendChip color="series-1-soft" label="Missing" />
               </div>
             </>
           )}

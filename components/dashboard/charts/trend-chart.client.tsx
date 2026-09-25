@@ -15,7 +15,18 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
-import { formatterFor, type YFormat } from './chart-primitives';
+import {
+  ACTIVE_DOT,
+  AXIS_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  LINE_CURSOR,
+  LINE_WIDTH,
+  MUTED_SERIES,
+  VALUE_LABEL,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type TrendPoint = { x: string; y: number };
@@ -85,7 +96,11 @@ function TrendChartImpl({
   const compact = variant === 'compact';
   const yFormatter = formatterFor(yFormat);
   const mark =
-    tone === 'fall' ? 'var(--color-destructive)' : 'var(--color-chart-1)';
+    tone === 'fall' ? 'var(--color-destructive)' : 'var(--color-series-1)';
+  const lastIndex = current.length - 1;
+  // The latest point is the one a reader looks for, so a full-size chart that
+  // is not already printing every value marks it and prints its figure.
+  const markLatest = !compact && !showValues && lastIndex >= 0;
 
   const merged = current.map((pt, i) => ({
     x: pt.x,
@@ -109,7 +124,13 @@ function TrendChartImpl({
             ? { top: 4, right: 2, left: 2, bottom: 0 }
             : // Printed values need headroom, or a point near the top of a
               // fixed domain has its own figure clipped off the chart.
-              { top: showValues ? 22 : 8, right: 4, left: 0, bottom: 0 }
+              {
+                top: showValues ? 22 : 8,
+                // Room for the latest point's printed figure.
+                right: markLatest ? 36 : 4,
+                left: 0,
+                bottom: 0,
+              }
         }
       >
         <defs>
@@ -120,31 +141,20 @@ function TrendChartImpl({
             <stop
               offset="0%"
               stopColor={mark}
-              stopOpacity={showValues ? 0.14 : 0.28}
+              stopOpacity={showValues ? 0.12 : 0.16}
             />
             <stop offset="100%" stopColor={mark} stopOpacity={0} />
           </linearGradient>
         </defs>
-        {!compact && (
-          <CartesianGrid
-            strokeDasharray="2 4"
-            stroke="var(--color-border)"
-            vertical={false}
-            opacity={0.6}
-          />
-        )}
+        {!compact && <CartesianGrid {...CHART_GRID} />}
         {/* Compact still labels the ends. A sparkline with no axis at all does
             not say which end is Term 1, and the reader cannot tell a recovery
             from a collapse without that. Only the ends, never abbreviated —
             the school's terms are named "Term 1", not "T1". */}
         <XAxis
           dataKey="x"
-          tick={{
-            fontSize: compact ? 9 : 10,
-            fill: 'var(--color-muted-foreground)',
-          }}
-          tickLine={false}
-          axisLine={false}
+          tick={{ ...AXIS_TICK, fontSize: compact ? 9 : AXIS_TICK.fontSize }}
+          {...CHART_AXIS}
           interval="preserveStartEnd"
           minTickGap={compact ? 8 : 32}
           height={compact ? 14 : undefined}
@@ -162,9 +172,8 @@ function TrendChartImpl({
           <YAxis hide domain={domain ?? [0, 'auto']} />
         ) : (
           <YAxis
-            tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-            tickLine={false}
-            axisLine={false}
+            tick={AXIS_TICK}
+            {...CHART_AXIS}
             tickFormatter={yFormatter}
             width={36}
             domain={domain ?? [0, 'auto']}
@@ -173,10 +182,7 @@ function TrendChartImpl({
         )}
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{
-            stroke: 'var(--color-muted-foreground)',
-            strokeDasharray: '3 3',
-          }}
+          cursor={LINE_CURSOR}
           // A period and the same period last year: two readings of one
           // measure, so there is no whole for them to be shares of.
           content={chartTooltipContent({ format: yFormatter })}
@@ -184,8 +190,9 @@ function TrendChartImpl({
         {comparison && (
           <Legend
             content={chartLegendContent({
-              current: 'chart-1',
-              comparison: 'chart-3',
+              current: 'series-1',
+              // Grey, matching the dashed grey line it keys.
+              comparison: 'neutral',
             })}
           />
         )}
@@ -194,22 +201,53 @@ function TrendChartImpl({
           dataKey="current"
           name={label}
           stroke={mark}
-          strokeWidth={2}
+          strokeWidth={LINE_WIDTH}
           fill={`url(#${gradientId})`}
           // Points are worth marking when their figures are printed — the label
-          // needs something to belong to.
+          // needs something to belong to. Otherwise only the latest is marked.
           dot={
             showValues
               ? { r: 3, strokeWidth: 2, fill: 'var(--color-background)' }
-              : false
+              : markLatest
+                ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (p: any) =>
+                    p.index === lastIndex ? (
+                      <circle
+                        key="latest"
+                        cx={p.cx}
+                        cy={p.cy}
+                        r={4}
+                        fill={mark}
+                        stroke="var(--color-card)"
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <g key={p.index} />
+                    )
+                : false
           }
-          activeDot={{
-            r: 4,
-            strokeWidth: 2,
-            stroke: 'var(--color-background)',
-          }}
+          activeDot={{ ...ACTIVE_DOT, fill: mark }}
           isAnimationActive={false}
         >
+          {markLatest && (
+            <LabelList
+              dataKey="current"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              content={(p: any) =>
+                p.index === lastIndex && typeof p.value === 'number' ? (
+                  <text
+                    x={Number(p.x) + 8}
+                    y={Number(p.y) + 4}
+                    style={VALUE_LABEL}
+                  >
+                    {yFormatter
+                      ? yFormatter(p.value)
+                      : p.value.toLocaleString('en-SG')}
+                  </text>
+                ) : null
+              }
+            />
+          )}
           {showValues && (
             <LabelList
               dataKey="current"
@@ -229,9 +267,9 @@ function TrendChartImpl({
             type="monotone"
             dataKey="comparison"
             name="Prior period"
-            stroke="var(--color-muted-foreground)"
+            stroke={MUTED_SERIES}
             strokeDasharray="4 4"
-            strokeWidth={1.5}
+            strokeWidth={LINE_WIDTH}
             fill="transparent"
             dot={false}
             isAnimationActive={false}

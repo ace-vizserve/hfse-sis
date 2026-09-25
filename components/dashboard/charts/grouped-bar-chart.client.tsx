@@ -17,7 +17,20 @@ import {
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 
-import { formatterFor, type YFormat } from './chart-primitives';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  MUTED_SERIES,
+  SERIES_COLORS,
+  SERIES_LEGEND,
+  VALUE_LABEL,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type { YFormat };
@@ -56,21 +69,9 @@ export type GroupedBarChartProps = {
 // comparison-year overlay) always renders grey regardless of position, so it
 // never competes with the palette used for "real" series (e.g. Markbook's
 // per-subject bars).
-const SERIES_COLOR_VARS = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-chart-5)',
-];
-const SERIES_LEGEND_COLORS: ChartLegendChipColor[] = [
-  'chart-1',
-  'chart-2',
-  'chart-3',
-  'chart-4',
-  'chart-5',
-];
-const MUTED_COLOR_VAR = 'var(--color-muted-foreground)';
+const SERIES_COLOR_VARS: readonly string[] = SERIES_COLORS;
+const SERIES_LEGEND_COLORS = SERIES_LEGEND;
+const MUTED_COLOR_VAR = MUTED_SERIES;
 const MUTED_LEGEND_COLOR: ChartLegendChipColor = 'neutral';
 
 /** Resolve one render colour + one legend-chip colour per series, in order. */
@@ -127,34 +128,29 @@ function GroupedBarChartImpl({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart
         data={data}
-        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        margin={{ top: showValueLabels ? 20 : 8, right: 8, left: 0, bottom: 0 }}
         barCategoryGap="24%"
+        // Bars in one group sit 2px apart rather than touching.
+        barGap={2}
       >
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
+        <CartesianGrid {...CHART_GRID} />
         <XAxis
           dataKey="x"
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={CATEGORY_TICK}
+          {...CHART_AXIS}
           interval="preserveStartEnd"
           minTickGap={32}
         />
         <YAxis
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={AXIS_TICK}
+          {...CHART_AXIS}
           tickFormatter={yFormatter}
           domain={yDomain}
           width={36}
         />
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+          cursor={BAR_CURSOR}
           // Grouped, never stacked: the series sit beside each other and often
           // carry rates, so no share and no total — summing them is meaningless.
           content={chartTooltipContent({ format: yFormatter })}
@@ -167,7 +163,7 @@ function GroupedBarChartImpl({
             name={s.label}
             fill={fill[i]}
             maxBarSize={40}
-            radius={[4, 4, 0, 0]}
+            radius={BAR_RADIUS_TOP}
             isAnimationActive={false}
           >
             {highlightX &&
@@ -184,12 +180,7 @@ function GroupedBarChartImpl({
                 position="top"
                 offset={8}
                 formatter={labelFormatter}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-mono)',
-                  fill: 'var(--color-foreground)',
-                }}
+                style={VALUE_LABEL}
               />
             )}
           </Bar>

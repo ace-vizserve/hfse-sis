@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -14,6 +15,19 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_END,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  MUTED_SERIES,
+  VALUE_LABEL,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type ComparisonBarPoint = {
@@ -22,22 +36,7 @@ export type ComparisonBarPoint = {
   comparison?: number;
 };
 
-export type YFormat = 'number' | 'percent' | 'days';
-
-function formatterFor(
-  format: YFormat | undefined
-): ((n: number) => string) | undefined {
-  switch (format) {
-    case 'percent':
-      return (n) => `${Math.round(n)}%`;
-    case 'days':
-      return (n) => `${Math.round(n)}d`;
-    case 'number':
-      return (n) => n.toLocaleString('en-SG');
-    default:
-      return undefined;
-  }
-}
+export type { YFormat };
 
 export type ComparisonBarChartProps = {
   data: ComparisonBarPoint[];
@@ -66,37 +65,43 @@ function ComparisonBarChartImpl({
   const yFormatter = formatterFor(yFormat);
   const showCmp = data.some((d) => typeof d.comparison === 'number');
   const isHorizontal = orientation === 'horizontal';
+  // Which figures go on the chart itself. A ranked horizontal list reads down
+  // its values, so every bar carries one; a vertical chart labels only its
+  // tallest bar, and the rest are one hover away.
+  const peak = Math.max(0, ...data.map((d) => d.current));
+  const valueText = (v: unknown) => {
+    const n = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(n)) return '';
+    if (!isHorizontal && (n !== peak || n === 0)) return '';
+    return yFormatter ? yFormatter(n) : n.toLocaleString('en-SG');
+  };
 
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart
         data={data}
         layout={isHorizontal ? 'vertical' : 'horizontal'}
-        margin={{ top: 8, right: 8, left: isHorizontal ? 4 : 0, bottom: 0 }}
+        margin={{
+          top: isHorizontal ? 8 : 20,
+          // Room for the value printed past the end of the longest bar.
+          right: isHorizontal ? 40 : 8,
+          left: isHorizontal ? 4 : 0,
+          bottom: 0,
+        }}
         barCategoryGap={isHorizontal ? 10 : '20%'}
+        barGap={2}
       >
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          horizontal={!isHorizontal}
-          vertical={isHorizontal}
-          opacity={0.6}
-        />
+        {/* A ranked horizontal list has its figures on the bars; a grid behind
+            it would only compete with them. */}
+        {!isHorizontal && <CartesianGrid {...CHART_GRID} />}
         {isHorizontal ? (
           <>
-            <XAxis
-              type="number"
-              tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={yFormatter}
-            />
+            <XAxis type="number" hide />
             <YAxis
               type="category"
               dataKey="category"
-              tick={{ fontSize: 11, fill: 'var(--color-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              tick={CATEGORY_TICK}
+              {...CHART_AXIS}
               width={150}
             />
           </>
@@ -104,9 +109,8 @@ function ComparisonBarChartImpl({
           <>
             <XAxis
               dataKey="category"
-              tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              tick={CATEGORY_TICK}
+              {...CHART_AXIS}
               interval={0}
               // Tilt category labels so longer level / status names don't
               // collide on charts with 6+ buckets (e.g. "Applications by
@@ -119,9 +123,8 @@ function ComparisonBarChartImpl({
               height={rotateLabels ? 56 : 28}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              tick={AXIS_TICK}
+              {...CHART_AXIS}
               tickFormatter={yFormatter}
               width={36}
             />
@@ -129,7 +132,7 @@ function ComparisonBarChartImpl({
         )}
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+          cursor={BAR_CURSOR}
           // This chart never applied its own yFormatter to the tooltip, so a
           // percent chart showed a raw unrounded number. Same formatter as the
           // axis now. No share: current and prior are two periods side by
@@ -139,17 +142,24 @@ function ComparisonBarChartImpl({
         {showCmp && (
           <Legend
             content={chartLegendContent({
-              current: 'chart-1',
-              comparison: 'chart-3',
+              current: 'series-1',
+              comparison: 'neutral',
             })}
           />
         )}
         <Bar
           dataKey="current"
           name="Current"
-          fill="var(--color-chart-1)"
-          radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+          fill="var(--color-series-1)"
+          radius={isHorizontal ? BAR_RADIUS_END : BAR_RADIUS_TOP}
           maxBarSize={isHorizontal ? 14 : 32}
+          // A faint track behind each horizontal bar, so a short bar still
+          // reads as a share of the longest.
+          background={
+            isHorizontal
+              ? { fill: 'var(--color-border)', fillOpacity: 0.5, radius: 4 }
+              : undefined
+          }
           isAnimationActive={false}
           onClick={
             onSegmentClick
@@ -165,14 +175,22 @@ function ComparisonBarChartImpl({
               : undefined
           }
           style={onSegmentClick ? { cursor: 'pointer' } : undefined}
-        />
+        >
+          <LabelList
+            dataKey="current"
+            position={isHorizontal ? 'right' : 'top'}
+            offset={8}
+            formatter={valueText}
+            style={VALUE_LABEL}
+          />
+        </Bar>
         {showCmp && (
           <Bar
             dataKey="comparison"
             name="Prior"
-            fill="var(--color-chart-3)"
-            fillOpacity={0.5}
-            radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+            fill={MUTED_SERIES}
+            fillOpacity={0.55}
+            radius={isHorizontal ? BAR_RADIUS_END : BAR_RADIUS_TOP}
             maxBarSize={isHorizontal ? 14 : 32}
             isAnimationActive={false}
           />

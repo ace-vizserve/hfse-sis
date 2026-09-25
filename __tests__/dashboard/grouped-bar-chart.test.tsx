@@ -73,10 +73,10 @@ describe('GroupedBarChart', () => {
       container.querySelectorAll('.recharts-bar-rectangle path')
     ).map((el) => el.getAttribute('fill'));
 
-    expect(fills).toContain('var(--color-chart-1)');
-    expect(fills).toContain('var(--color-muted-foreground)');
+    expect(fills).toContain('var(--color-series-1)');
+    expect(fills).toContain('var(--color-ink-5)');
     // The muted series must never fall back to a second chart-palette colour.
-    expect(fills).not.toContain('var(--color-chart-2)');
+    expect(fills).not.toContain('var(--color-series-2)');
   });
 
   it('cycles the chart palette across non-muted series (e.g. Markbook subjects)', () => {
@@ -97,9 +97,9 @@ describe('GroupedBarChart', () => {
     ).map((el) => el.getAttribute('fill'));
 
     expect(fills).toEqual([
-      'var(--color-chart-1)',
-      'var(--color-chart-2)',
-      'var(--color-chart-3)',
+      'var(--color-series-1)',
+      'var(--color-series-2)',
+      'var(--color-series-3)',
     ]);
   });
 
@@ -149,9 +149,9 @@ describe('GroupedBarChart', () => {
       container.querySelectorAll('.recharts-bar-rectangle path')
     ).map((el) => el.getAttribute('fill'));
 
-    expect(fills).toContain('var(--color-chart-1)');
-    expect(fills).toContain('var(--color-muted-foreground)');
-    expect(fills).not.toContain('var(--color-chart-2)');
+    expect(fills).toContain('var(--color-series-1)');
+    expect(fills).toContain('var(--color-ink-5)');
+    expect(fills).not.toContain('var(--color-series-2)');
   });
 
   it('no highlightX leaves every bar at full opacity (no behaviour change for existing callers)', () => {

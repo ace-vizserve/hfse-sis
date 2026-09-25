@@ -13,6 +13,16 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  MUTED_SERIES,
+  SEGMENT_EDGE,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { AssessmentOutcomes } from '@/lib/admissions/dashboard';
 import {
@@ -95,26 +105,17 @@ export function AssessmentOutcomesChart({
               data={rows}
               margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
             >
-              <CartesianGrid
-                vertical={false}
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-              />
-              <XAxis
-                dataKey="subject"
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                tickLine={false}
-              />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="subject" tick={CATEGORY_TICK} {...CHART_AXIS} />
               <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={12}
+                tick={AXIS_TICK}
+                {...CHART_AXIS}
                 allowDecimals={false}
-                tickLine={false}
+                width={36}
               />
               <Tooltip
                 wrapperStyle={{ zIndex: 20 }}
-                cursor={{ fill: 'var(--accent)' }}
+                cursor={BAR_CURSOR}
                 // Pass / Fail / Unknown partition the same applicant cohort —
                 // every applicant lands in exactly one of the three — so the
                 // stack's sum is a real base and a share of it is meaningful.
@@ -124,16 +125,21 @@ export function AssessmentOutcomesChart({
                 })}
               />
               <Legend
+                // Pass and Fail take the first and third series colours, which
+                // stay apart for colour-blind readers; "no grade recorded" is
+                // grey because it is an absence, not a result.
                 content={chartLegendContent({
-                  Pass: 'chart-5',
-                  Fail: 'very-stale',
-                  Unknown: 'chart-2',
+                  Pass: 'series-1',
+                  Fail: 'series-3',
+                  Unknown: 'neutral',
                 })}
               />
               <Bar
                 dataKey="Pass"
                 stackId="a"
-                fill="var(--chart-5)"
+                fill="var(--color-series-1)"
+                {...SEGMENT_EDGE}
+                maxBarSize={72}
                 onClick={
                   onSegmentClick
                     ? (barData) => {
@@ -151,7 +157,9 @@ export function AssessmentOutcomesChart({
               <Bar
                 dataKey="Fail"
                 stackId="a"
-                fill="var(--destructive)"
+                fill="var(--color-series-3)"
+                {...SEGMENT_EDGE}
+                maxBarSize={72}
                 onClick={
                   onSegmentClick
                     ? (barData) => {
@@ -169,8 +177,10 @@ export function AssessmentOutcomesChart({
               <Bar
                 dataKey="Unknown"
                 stackId="a"
-                fill="var(--muted-foreground)"
-                radius={[4, 4, 0, 0]}
+                fill={MUTED_SERIES}
+                {...SEGMENT_EDGE}
+                maxBarSize={72}
+                radius={BAR_RADIUS_TOP}
                 onClick={
                   onSegmentClick
                     ? (barData) => {

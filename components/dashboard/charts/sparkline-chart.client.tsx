@@ -3,6 +3,11 @@
 import * as React from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
+import {
+  ACTIVE_DOT,
+  LINE_CURSOR,
+  LINE_WIDTH,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import {
   formatMetricValue,
@@ -44,22 +49,24 @@ function SparklineChartImpl({
     [format, currencySuffix]
   );
   const gradientId = `spark-${points.length}-${points[0]?.x ?? 'n'}`;
+  const lastIndex = points.length - 1;
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart
         data={points}
-        margin={{ top: 1, right: 1, left: 1, bottom: 1 }}
+        // Room for the latest point's dot, which sits on the right edge.
+        margin={{ top: 5, right: 5, left: 1, bottom: 1 }}
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop
               offset="0%"
-              stopColor="var(--color-chart-1)"
-              stopOpacity={0.35}
+              stopColor="var(--color-series-1)"
+              stopOpacity={0.16}
             />
             <stop
               offset="100%"
-              stopColor="var(--color-chart-1)"
+              stopColor="var(--color-series-1)"
               stopOpacity={0}
             />
           </linearGradient>
@@ -68,12 +75,8 @@ function SparklineChartImpl({
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
           // The crosshair finds the period — on a 40px-tall line nobody can
-          // aim at a 1.5px stroke.
-          cursor={{
-            stroke: 'var(--color-brand-indigo)',
-            strokeWidth: 1,
-            strokeDasharray: '3 3',
-          }}
+          // aim at a 2px stroke.
+          cursor={LINE_CURSOR}
           content={chartTooltipContent({ format: formatValue })}
           // The card itself is short; keep the box clear of the value above it.
           allowEscapeViewBox={{ x: false, y: true }}
@@ -82,16 +85,28 @@ function SparklineChartImpl({
           type="monotone"
           dataKey="y"
           name={seriesName}
-          stroke="var(--color-chart-1)"
-          strokeWidth={1.5}
+          stroke="var(--color-series-1)"
+          strokeWidth={LINE_WIDTH}
           fill={`url(#${gradientId})`}
-          dot={false}
-          activeDot={{
-            r: 3,
-            fill: 'var(--color-chart-1)',
-            stroke: 'var(--color-card)',
-            strokeWidth: 1.5,
-          }}
+          // Only the latest point is marked: it is the one the headline
+          // figure above the line reports.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          dot={(p: any) =>
+            p.index === lastIndex ? (
+              <circle
+                key="latest"
+                cx={p.cx}
+                cy={p.cy}
+                r={3.5}
+                fill="var(--color-series-1)"
+                stroke="var(--color-card)"
+                strokeWidth={2}
+              />
+            ) : (
+              <g key={p.index} />
+            )
+          }
+          activeDot={{ ...ACTIVE_DOT, fill: 'var(--color-series-1)' }}
           isAnimationActive={false}
         />
       </AreaChart>

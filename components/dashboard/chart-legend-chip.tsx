@@ -11,7 +11,14 @@ export type ChartLegendChipColor =
   | 'fresh'
   | 'stale'
   | 'very-stale'
-  | 'neutral';
+  | 'neutral'
+  | 'series-1'
+  | 'series-2'
+  | 'series-3'
+  | 'series-4'
+  | 'series-5'
+  | 'series-1-mid'
+  | 'series-1-soft';
 
 // Each chip renders as a fully-filled gradient pill (same craft as the default
 // Badge: mono uppercase tracked label, white text, inset-highlight shadow).
@@ -28,6 +35,15 @@ const chipGradientByColor: Record<ChartLegendChipColor, string> = {
   stale: 'from-brand-amber to-brand-amber/80',
   'very-stale': 'from-destructive to-destructive/80',
   neutral: 'from-ink-4 to-ink-3',
+  // The chart series palette (chart-primitives.ts). The two lightest ramp
+  // steps would put white text on a pale fill, so they carry dark ink.
+  'series-1': 'from-series-1 to-brand-indigo',
+  'series-2': 'from-series-2 to-series-2/80',
+  'series-3': 'from-series-3 to-series-3/80',
+  'series-4': 'from-series-4 to-series-4/80',
+  'series-5': 'from-series-5 to-series-5/80',
+  'series-1-mid': 'from-series-1-mid to-series-1-mid/80 text-ink',
+  'series-1-soft': 'from-series-1-soft to-series-1-soft/80 text-ink',
 };
 
 export type ChartLegendChipProps = {

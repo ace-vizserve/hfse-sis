@@ -5,6 +5,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 import { HoverHint } from '@/components/ui/hover-hint';
 
+import { SEGMENT_EDGE, SERIES_COLORS } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type DonutSlice = { name: string; value: number };
@@ -25,14 +26,13 @@ export type DonutChartProps = {
   onSegmentClick?: (sliceName: string) => void;
 };
 
+// The five series colours, then greys. A sixth or seventh slice is small by
+// the time it is reached, and a grey reads as "the rest" rather than as a new
+// colour competing with the first five.
 const DEFAULT_COLORS = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-chart-5)',
-  'var(--color-brand-mint)',
-  'var(--color-brand-amber)',
+  ...SERIES_COLORS,
+  'var(--color-ink-4)',
+  'var(--color-ink-5)',
 ];
 
 function DonutChartImpl({
@@ -58,11 +58,12 @@ function DonutChartImpl({
               nameKey="name"
               cx="50%"
               cy="50%"
-              innerRadius="62%"
+              // A thinner ring than before: the hole carries the total, and a
+              // slab of colour around it competed with that figure.
+              innerRadius="70%"
               outerRadius="92%"
               paddingAngle={1.5}
-              stroke="var(--color-background)"
-              strokeWidth={2}
+              {...SEGMENT_EDGE}
               isAnimationActive={false}
               onClick={
                 onSegmentClick
@@ -104,7 +105,7 @@ function DonutChartImpl({
                     : 'flex flex-col items-center'
                 }
               >
-                <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">
+                <span className="font-serif text-[28px] font-semibold leading-none tabular-nums text-foreground">
                   {centerValue}
                 </span>
                 {centerLabel && (
@@ -143,7 +144,7 @@ function DonutChartImpl({
               }
             >
               <span
-                className="size-2.5 shrink-0 rounded-full"
+                className="size-2.5 shrink-0 rounded-[3px]"
                 style={{ backgroundColor: colors[idx % colors.length] }}
               />
               <div className="min-w-0 flex-1">

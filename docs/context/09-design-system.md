@@ -31,28 +31,30 @@ All semantic shadcn tokens resolve to Aurora Vault values — legacy utilities (
 
 ### 3.1 Color
 
-| Semantic                                   | Explicit                  | Resolved              | Use for                                               |
-| ------------------------------------------ | ------------------------- | --------------------- | ----------------------------------------------------- |
-| `bg-background` / `bg-card` / `bg-popover` | `bg-white`                | `#FFFFFF`             | Page canvas, cards, popovers                          |
-| `bg-muted`                                 | — (no explicit)           | `#F8FAFC`             | Subtle canvas tint, table header rows (`bg-muted/40`) |
-| `text-foreground`                          | `text-ink`                | `#0F172A`             | Primary text, serif headlines                         |
-| `text-muted-foreground`                    | `text-ink-4`              | `#64748B`             | Secondary / helper text                               |
-| —                                          | `text-ink-2`              | `#334155`             | Form labels, body-prominent                           |
-| —                                          | `text-ink-3`              | `#475569`             | Body copy                                             |
-| —                                          | `text-ink-5`              | `#94A3B8`             | Placeholder / muted micro-copy                        |
-| `border-border` / `border-input`           | `border-hairline`         | `#E2E8F0`             | Dividers, card/input borders                          |
-| —                                          | `text-hairline-strong`    | `#CBD5E1`             | Separator dots, stronger dividers                     |
-| `bg-primary` / `ring-ring`                 | `bg-brand-indigo`         | `#4F46E5`             | Primary CTA, focus rings, active nav                  |
-| `text-primary-foreground`                  | `text-white`              | `#FFFFFF`             | Text on primary surfaces                              |
-| —                                          | `bg-brand-navy`           | `#0B1120`             | Auth brand panel only                                 |
-| —                                          | `from-brand-indigo-deep`  | `#4338CA`             | CTA gradient bottom stop                              |
-| —                                          | `from-brand-indigo-light` | `#5B52ED`             | CTA hover gradient top                                |
-| —                                          | `from-brand-indigo-soft`  | `#818CF8`             | Progress bars, glass accents                          |
-| —                                          | `to-brand-sky`            | `#38BDF8`             | Progress bar terminal, secondary accent               |
-| —                                          | `text-brand-mint`         | `#A5F3B7`             | Positive status on dark surfaces                      |
-| `bg-destructive`                           | —                         | —                     | Errors, destructive actions                           |
-| `bg-accent` / `text-accent-foreground`     | —                         | `#EEF2FF` / `#4338CA` | Indigo wash for hovers, info banners                  |
-| `bg-chart-1…5`                             | —                         | indigo/sky/mint ramp  | Data viz                                              |
+| Semantic                                   | Explicit                         | Resolved                                          | Use for                                                                                                                               |
+| ------------------------------------------ | -------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `bg-background` / `bg-card` / `bg-popover` | `bg-white`                       | `#FFFFFF`                                         | Page canvas, cards, popovers                                                                                                          |
+| `bg-muted`                                 | — (no explicit)                  | `#F8FAFC`                                         | Subtle canvas tint, table header rows (`bg-muted/40`)                                                                                 |
+| `text-foreground`                          | `text-ink`                       | `#0F172A`                                         | Primary text, serif headlines                                                                                                         |
+| `text-muted-foreground`                    | `text-ink-4`                     | `#64748B`                                         | Secondary / helper text                                                                                                               |
+| —                                          | `text-ink-2`                     | `#334155`                                         | Form labels, body-prominent                                                                                                           |
+| —                                          | `text-ink-3`                     | `#475569`                                         | Body copy                                                                                                                             |
+| —                                          | `text-ink-5`                     | `#94A3B8`                                         | Placeholder / muted micro-copy                                                                                                        |
+| `border-border` / `border-input`           | `border-hairline`                | `#E2E8F0`                                         | Dividers, card/input borders                                                                                                          |
+| —                                          | `text-hairline-strong`           | `#CBD5E1`                                         | Separator dots, stronger dividers                                                                                                     |
+| `bg-primary` / `ring-ring`                 | `bg-brand-indigo`                | `#4F46E5`                                         | Primary CTA, focus rings, active nav                                                                                                  |
+| `text-primary-foreground`                  | `text-white`                     | `#FFFFFF`                                         | Text on primary surfaces                                                                                                              |
+| —                                          | `bg-brand-navy`                  | `#0B1120`                                         | Auth brand panel only                                                                                                                 |
+| —                                          | `from-brand-indigo-deep`         | `#4338CA`                                         | CTA gradient bottom stop                                                                                                              |
+| —                                          | `from-brand-indigo-light`        | `#5B52ED`                                         | CTA hover gradient top                                                                                                                |
+| —                                          | `from-brand-indigo-soft`         | `#818CF8`                                         | Progress bars, glass accents                                                                                                          |
+| —                                          | `to-brand-sky`                   | `#38BDF8`                                         | Progress bar terminal, secondary accent                                                                                               |
+| —                                          | `text-brand-mint`                | `#A5F3B7`                                         | Positive status on dark surfaces                                                                                                      |
+| `bg-destructive`                           | —                                | —                                                 | Errors, destructive actions                                                                                                           |
+| `bg-accent` / `text-accent-foreground`     | —                                | `#EEF2FF` / `#4338CA`                             | Indigo wash for hovers, info banners                                                                                                  |
+| `bg-chart-1…5`                             | —                                | indigo/sky/mint ramp                              | Data viz (legacy; also paints non-chart surfaces)                                                                                     |
+| —                                          | `series-1…5`                     | `#3445C4` `#0EA5E9` `#E8701F` `#12A37A` `#B0742F` | **Chart marks.** Fixed order; colour-blind checked. Read through `components/dashboard/charts/chart-primitives.ts`, never hand-picked |
+| —                                          | `series-1-mid` / `series-1-soft` | `#8F9AE0` / `#D3D8F3`                             | One quantity in grades (complete → incomplete): one hue, light → dark                                                                 |
 
 **Surface levels** (depth via tonal layers, not shadows):
 
