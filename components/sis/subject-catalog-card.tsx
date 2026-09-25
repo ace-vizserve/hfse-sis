@@ -2,13 +2,13 @@
 
 import {
   ArrowRight,
+  ArrowUpRight,
   ChevronDown,
   ListChecks,
   Lock,
   Pencil,
   Plus,
 } from 'lucide-react';
-import Link from 'next/link';
 import { Fragment, useState } from 'react';
 
 import {
@@ -24,7 +24,9 @@ import {
 } from '@/components/sis/subject-config-form';
 import {
   classifyProfile,
-  ProfileLegendChip,
+  ProfileKeySwatch,
+  ProfileWeightBar,
+  type WeightProfile,
 } from '@/components/sis/weight-profile';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -120,17 +122,16 @@ type UsedByImpact = {
  * — listing those names inline made every such row four lines deep, and the
  * table is scanned far more often than it is interrogated. The two facts worth
  * scanning (how far it reaches, how many classes) stay on the collapsed row;
- * the names cost a click.
+ * the names cost a click — for a one-level subject too, because the expanded
+ * chips are what open a grading sheet.
  */
 function UsedByCell({
   impact,
-  expandable,
   isOpen,
   subjectName,
   onToggle,
 }: {
   impact: UsedByImpact | undefined;
-  expandable: boolean;
   isOpen: boolean;
   subjectName: string;
   onToggle: () => void;
@@ -143,38 +144,33 @@ function UsedByCell({
     );
   }
 
-  const span = formatLevelSpan(impact.levelCodes);
   const count = `${impact.totalSections} ${impact.totalSections === 1 ? 'class' : 'classes'}`;
-
-  if (!expandable) {
-    // One level: the class names ARE the detail, so show them rather than
-    // hiding a single line behind a control.
-    return (
-      <div className="flex flex-col gap-0.5 leading-tight">
-        <span className="font-mono text-[11.5px] font-semibold tabular-nums text-foreground">
-          {span}
-        </span>
-        <span className="text-[12px] text-muted-foreground">
-          {impact.sectionsByLevel[0]?.sections.map((s) => s.name).join(', ')}
-        </span>
-      </div>
-    );
-  }
+  // Only the levels that actually take it, in level order. An earlier
+  // mockup drew every level of the tab with the taken ones filled, and the
+  // filled/empty meaning had to be explained — naming the levels needs no key.
+  const levels = impact.sectionsByLevel.map((g) => g.levelCode);
 
   return (
     <HoverHint
-      hint={`${subjectName} — show the classes taking it`}
+      hint={`${subjectName} — ${formatLevelSpan(impact.levelCodes)}, ${count}. Show the classes.`}
       focusable={false}
     >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
-        className="-ml-2 inline-flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left transition-colors hover:border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="-ml-2 inline-flex items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left transition-colors hover:border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
-        <span className="flex flex-col gap-0.5 leading-tight">
-          <span className="font-mono text-[11.5px] font-semibold tabular-nums text-foreground">
-            {span}
+        <span className="flex flex-col gap-1 leading-tight">
+          <span className="flex flex-wrap gap-1">
+            {levels.map((code) => (
+              <span
+                key={code}
+                className="inline-flex min-w-7 justify-center rounded bg-accent px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-accent-foreground"
+              >
+                {code}
+              </span>
+            ))}
           </span>
           <span className="text-[12px] text-muted-foreground">{count}</span>
         </span>
@@ -275,6 +271,30 @@ export function SubjectCatalogCard({
     });
   }
 
+  // The summary strip's counts. Every one is a state the table's own rows
+  // show, so the strip is a tally of the column below it, not a new metric.
+  const profileOf = (c: CatalogSubjectRow): WeightProfile | null =>
+    c.grading_method === 'no_sheet' || !c.config
+      ? null
+      : classifyProfile(
+          c.code,
+          Math.round(c.config.ww_weight * 100),
+          Math.round(c.config.pt_weight * 100),
+          Math.round(c.config.qa_weight * 100)
+        );
+  const summary = {
+    attached: catalog.filter((c) =>
+      c.config
+        ? (sheetImpactByConfigId?.[c.config.id]?.totalSections ?? 0) > 0
+        : false
+    ).length,
+    notSet: catalog.filter((c) => !c.config && c.grading_method !== 'no_sheet')
+      .length,
+    custom: catalog.filter((c) => profileOf(c) === 'custom').length,
+    invalid: catalog.filter((c) => profileOf(c) === 'invalid').length,
+    noSheet: catalog.filter((c) => c.grading_method === 'no_sheet').length,
+  };
+
   const selectedSubjects = catalog
     .filter((c) => selectedIds.has(c.id) && c.hasConfig && c.config)
     .map((c) => ({
@@ -310,6 +330,42 @@ export function SubjectCatalogCard({
           </Button>
         </div>
 
+        {catalog.length > 0 && (
+          // §8 group-container meta strip: the tallies on the left, and on
+          // the right the key to the weight bars' colours — without it the
+          // mint / amber / red had nothing on the page saying what they mean.
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border bg-muted/30 px-5 py-2.5">
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[12.5px] text-muted-foreground">
+              <SummaryCount value={summary.attached} label="attached" />
+              {summary.notSet > 0 && (
+                <SummaryCount value={summary.notSet} label="not set" warn />
+              )}
+              {summary.custom > 0 && (
+                <SummaryCount
+                  value={summary.custom}
+                  label="custom weights"
+                  warn
+                />
+              )}
+              {summary.invalid > 0 && (
+                <SummaryCount
+                  value={summary.invalid}
+                  label="don't add to 100"
+                  danger
+                />
+              )}
+              {summary.noSheet > 0 && (
+                <SummaryCount value={summary.noSheet} label="no sheet" />
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[12px] text-muted-foreground">
+              <ProfileKeySwatch profile="correct" />
+              <ProfileKeySwatch profile="custom" />
+              <ProfileKeySwatch profile="invalid" />
+            </div>
+          </div>
+        )}
+
         {catalog.length === 0 ? (
           <div className="border-t border-border px-5 py-10 text-center text-sm text-muted-foreground">
             Nothing in the catalog for this level yet. Click{' '}
@@ -334,10 +390,12 @@ export function SubjectCatalogCard({
                   const impact = subject.config
                     ? sheetImpactByConfigId?.[subject.config.id]
                     : undefined;
-                  // Only offer an expander when a row genuinely hides more
-                  // than it shows — a chevron opening onto the same one line
-                  // is a lie. Single-level subjects list their classes inline.
-                  const expandable = (impact?.sectionsByLevel.length ?? 0) > 1;
+                  // Every attached subject expands, one level or ten. The
+                  // panel is not a repeat of the collapsed line: its class
+                  // chips are the only way from this page into a grading
+                  // sheet, and single-level subjects used to list their
+                  // classes as plain text with no way to open one.
+                  const expandable = (impact?.totalSections ?? 0) > 0;
                   const isOpen = expandedIds.has(subject.id);
                   return (
                     <Fragment key={subject.id}>
@@ -378,7 +436,6 @@ export function SubjectCatalogCard({
                         <TableCell>
                           <UsedByCell
                             impact={impact}
-                            expandable={expandable}
                             isOpen={isOpen}
                             subjectName={subject.name}
                             onToggle={() => toggleExpanded(subject.id)}
@@ -399,7 +456,10 @@ export function SubjectCatalogCard({
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                              // Always visible, faint at rest: at opacity-0 it
+                              // could not be found by looking, and a tablet
+                              // never hovers so it never appeared at all.
+                              className="size-6 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                               onClick={() => setEditSubject(subject)}
                               aria-label={`Edit ${subject.name}`}
                             >
@@ -445,6 +505,13 @@ export function SubjectCatalogCard({
                                           }
                                           focusable={false}
                                         >
+                                          {/* Open is the normal state, so it
+                                              carries no mark — the green dot
+                                              that used to mark it read as an
+                                              "online" badge. Only a locked
+                                              sheet is marked; the arrow on
+                                              hover says the chip opens
+                                              something. */}
                                           <button
                                             type="button"
                                             onClick={() =>
@@ -453,14 +520,20 @@ export function SubjectCatalogCard({
                                                 sectionName: section.name,
                                               })
                                             }
-                                            className="inline-flex items-center gap-1.5 rounded-md bg-card px-2 py-1 text-[11px] leading-none text-foreground ring-1 ring-border transition-colors hover:bg-accent hover:ring-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                            className={cn(
+                                              'group/chip inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+                                              section.isLocked
+                                                ? 'border-dashed border-hairline-strong bg-muted text-muted-foreground hover:text-foreground'
+                                                : 'border-border bg-card text-ink-2 hover:border-primary/35 hover:bg-accent hover:text-primary'
+                                            )}
                                           >
+                                            {section.isLocked && (
+                                              <Lock className="size-3 shrink-0 text-ink-5" />
+                                            )}
                                             {section.name}
-                                            {section.isLocked ? (
-                                              <Lock className="size-2.5 shrink-0 text-muted-foreground" />
-                                            ) : (
-                                              <span
-                                                className="size-1.5 shrink-0 rounded-full bg-brand-mint"
+                                            {!section.isLocked && (
+                                              <ArrowUpRight
+                                                className="-mr-1 size-3 shrink-0 opacity-0 transition-opacity group-hover/chip:opacity-100 motion-reduce:transition-none"
                                                 aria-hidden="true"
                                               />
                                             )}
@@ -628,11 +701,38 @@ export function SubjectCatalogCard({
   );
 }
 
+function SummaryCount({
+  value,
+  label,
+  warn = false,
+  danger = false,
+}: {
+  value: number;
+  label: string;
+  warn?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span
+        className={cn(
+          'font-serif text-[18px] font-semibold tabular-nums leading-none text-foreground',
+          warn && 'text-brand-amber',
+          danger && 'text-destructive'
+        )}
+      >
+        {value}
+      </span>
+      {label}
+    </span>
+  );
+}
+
 // Weights cell — three states: a deliberate "No sheet" chip
 // (grading_method='no_sheet' — there ARE no weights by design, not a
 // gap); "Not set" + an inline "Set weights" link (no subject_configs row
 // yet — opens the same edit drawer the row's pencil does); or the
-// WW·PT·QA profile chip.
+// WW / PT / QA bar, tinted by how the split compares to the standard.
 function WeightsCell({
   subject,
   onFix,
@@ -668,5 +768,5 @@ function WeightsCell({
   const qa = Math.round(subject.config.qa_weight * 100);
   const profile = classifyProfile(subject.code, ww, pt, qa);
 
-  return <ProfileLegendChip profile={profile} label={`${ww}·${pt}·${qa}`} />;
+  return <ProfileWeightBar profile={profile} ww={ww} pt={pt} qa={qa} />;
 }

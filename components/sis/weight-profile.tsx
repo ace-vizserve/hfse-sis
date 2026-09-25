@@ -3,15 +3,14 @@
 import { weightBucketForSubjectCode } from '@/lib/sis/subjects/weight-defaults';
 import { cn } from '@/lib/utils';
 
-// Shared weight-profile classification + chip styling for the
-// /sis/admin/subjects catalog table — change the recipe here and it
-// updates everywhere it's used.
+// Shared weight-profile classification + paint for the /sis/admin/subjects
+// catalog table. The bar's segments and the colour key both read from
+// PROFILE_SEGMENTS below, so the key can never drift from what it explains
+// (design system §10.2).
 //
-// Why light tints over saturated gradients: the cells sit dense on the
-// page (a full subject × level matrix), and dense small numerics on
-// saturated backgrounds become hard to read. Light bg + dark text +
-// colored 2px left bar carries the profile identity without sacrificing
-// legibility.
+// The weights render as a bar split WW / PT / QA in proportion, not as a
+// number string: two subjects weighted differently LOOK different, which is
+// what someone scanning the table is checking for.
 
 export type WeightProfile = 'correct' | 'custom' | 'invalid';
 
@@ -40,62 +39,97 @@ export function classifyProfile(
 }
 
 export const PROFILE_LABEL: Record<WeightProfile, string> = {
-  correct: 'Correct',
+  correct: 'Standard weights',
   custom: 'Custom',
-  invalid: 'Invalid',
+  invalid: "Doesn't add to 100",
 };
 
-const CHIP_BASE = 'border-l-2 shadow-xs';
-export const PROFILE_CLASS: Record<WeightProfile, string> = {
-  // Healthy state — matches the verified default for this subject.
-  // §9.3/§9.1 mint recipe (brand-mint), not one of the two old arbitrary
-  // colors: "correct" is now a genuinely positive state, not one of two
-  // equally-arbitrary level buckets.
-  correct: cn(
-    CHIP_BASE,
-    'bg-brand-mint/20 border-l-brand-mint hover:bg-brand-mint/30'
-  ),
-  custom: cn(
-    CHIP_BASE,
-    'bg-brand-amber/15 border-l-brand-amber hover:bg-brand-amber/25'
-  ),
-  invalid: cn(
-    CHIP_BASE,
-    'bg-destructive/10 border-l-destructive hover:bg-destructive/20'
-  ),
+// One hue per profile, three strengths so WW / PT / QA stay distinguishable
+// inside a single bar. Written out in full because Tailwind only compiles
+// class names it can find literally.
+//   correct → mint (§9.1 healthy), custom → amber (look twice),
+//   invalid → destructive (broken).
+const PROFILE_SEGMENTS: Record<WeightProfile, [string, string, string]> = {
+  correct: ['bg-brand-mint', 'bg-brand-mint/60', 'bg-brand-mint/30'],
+  custom: ['bg-brand-amber', 'bg-brand-amber/60', 'bg-brand-amber/30'],
+  invalid: ['bg-destructive', 'bg-destructive/60', 'bg-destructive/30'],
 };
 
-// Inner text colours. Correct/Custom use foreground + muted-foreground.
-// Invalid uses destructive ink so the broken state reads as more than
-// just "another color tint".
-export const PROFILE_TEXT: Record<
-  WeightProfile,
-  { code: string; ratio: string }
-> = {
-  correct: { code: 'text-foreground', ratio: 'text-muted-foreground' },
-  custom: { code: 'text-foreground', ratio: 'text-muted-foreground' },
-  invalid: { code: 'text-destructive', ratio: 'text-destructive/80' },
-};
+const COMPONENTS = ['WW', 'PT', 'QA'] as const;
 
-// Legend pill mirroring the cell style — same light tint + colored left
-// bar + dark text. Use this instead of `<ChartLegendChip>` when labelling
-// these specific cells, so legend ↔ cell visual mapping is 1:1.
-export function ProfileLegendChip({
+export function ProfileWeightBar({
   profile,
-  label,
+  ww,
+  pt,
+  qa,
 }: {
   profile: WeightProfile;
-  label: string;
+  ww: number;
+  pt: number;
+  qa: number;
 }) {
+  const values = [ww, pt, qa];
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em]',
-        PROFILE_CLASS[profile],
-        PROFILE_TEXT[profile].code
+    <div className="flex items-center gap-2.5">
+      <div
+        className="flex w-52 max-w-full flex-col gap-1"
+        aria-label={`Written work ${ww}%, performance tasks ${pt}%, quarterly assessment ${qa}%`}
+      >
+        <div className="flex h-2.5 gap-0.5" aria-hidden="true">
+          {values.map((v, i) =>
+            v > 0 ? (
+              <span
+                key={COMPONENTS[i]}
+                className={cn(
+                  'h-full rounded-[2px]',
+                  PROFILE_SEGMENTS[profile][i]
+                )}
+                style={{ flexGrow: v, flexBasis: 0 }}
+              />
+            ) : null
+          )}
+        </div>
+        <div
+          className="flex gap-0.5 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground"
+          aria-hidden="true"
+        >
+          {values.map((v, i) =>
+            v > 0 ? (
+              <span
+                key={COMPONENTS[i]}
+                className="overflow-hidden whitespace-nowrap"
+                style={{ flexGrow: v, flexBasis: 0 }}
+              >
+                {COMPONENTS[i]} <span className="text-foreground">{v}</span>
+              </span>
+            ) : null
+          )}
+        </div>
+      </div>
+      {profile === 'custom' && (
+        <span className="rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-amber bg-brand-amber/15">
+          Custom
+        </span>
       )}
-    >
-      {label}
+      {profile === 'invalid' && (
+        <span className="rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-destructive bg-destructive/10">
+          ≠ 100
+        </span>
+      )}
+    </div>
+  );
+}
+
+// The colour key's swatch — the first (strongest) segment of the same map the
+// bars use, so the key is pixel-identical to what it documents.
+export function ProfileKeySwatch({ profile }: { profile: WeightProfile }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={cn('h-2 w-4 rounded-[2px]', PROFILE_SEGMENTS[profile][0])}
+        aria-hidden="true"
+      />
+      {PROFILE_LABEL[profile]}
     </span>
   );
 }
