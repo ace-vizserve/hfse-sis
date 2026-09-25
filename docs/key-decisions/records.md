@@ -204,3 +204,15 @@ SIS Admin IA & navigation redesign (sub-project 2 of the umbrella, 2026-07-11; n
 **Profile and family sheets — the PATCH schema is partial, and that is load-bearing in both directions** (browser-verified 2026-08-14). It began as a required-keys schema, which meant the sheet could **never** save — 24 medical fields were in the schema but not on the form, so validation failed invisibly and the button did nothing. The obvious fix (add the fields) was not taken; the schema became **partial**, because a required-keys schema that _did_ pass would have written `null` over every unsupplied field on the first save. `handleSubmit` now takes an invalid handler, so a rejected submit is visible instead of a dead button.
 
 **Full name is derived and disabled** on the student panel and all three parent panels — `lib/sis/full-name.ts`. **Compose, never split:** DELA CRUZ and SANTHOSH KUMAR are single surnames with spaces in them, and any splitter gets them wrong. Cross-ref KD #157 (student-profile validation parity), KD #186 (the write lifecycle that surfaced all of this).
+
+### KD #224
+
+**A student's level is fixed once they are enrolled or placed in a class** (2026-09-25, `4f56bffc`, no migration). Recorded here from the commit and `lib/sis/level-lock.ts`; the session that built it wrote no doc.
+
+**Why.** "Level applied" on the profile could be edited at any time, and editing it moved nothing: a P1 child relabelled Primary Two stayed in their P1 class, and the record disagreed with itself on Records → Level mismatches. After enrolment a level has a class, subjects, grades and attendance hanging off it, so the text edit is refused rather than left to be cleaned up.
+
+- **Two tests, either one locks:** the application reads Enrolled, **or** the child has an active class that year. Both are needed because a child can be placed before their application reads Enrolled — the AY2027 intake was placed while Submitted.
+- **A failed read locks.** Refusing a level edit is recoverable; letting one through onto an enrolled child is not.
+- **Enforced twice:** the Edit Profile sheet shows the field greyed out with the reason, and the profile save returns **409** when the level changes on a locked child. A save of other fields on an enrolled child still goes through.
+- **Before the lock, the level must be one the year offers** — the same `admission_options` list the sheet's dropdown and the parent form use (KD #222). A year with no options configured is let through as before.
+- **The class move stays within the level, always.** Its `allowLevelChange` opt-in (`c99eb9a0`, 2026-09-24) is removed: it changed an enrolled child's level with none of these checks. Correcting an enrolled child's level is now a question with no screen, deliberately.
