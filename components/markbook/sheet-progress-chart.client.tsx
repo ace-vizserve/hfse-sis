@@ -13,6 +13,15 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  SEGMENT_EDGE,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { TermLockProgress } from '@/lib/markbook/dashboard';
 import {
@@ -68,26 +77,12 @@ export function SheetProgressChart({
               data={data}
               margin={{ top: 16, right: 16, bottom: 8, left: 0 }}
             >
-              <CartesianGrid
-                vertical={false}
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-              />
-              <XAxis
-                dataKey="termLabel"
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                tickLine={false}
-              />
-              <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                allowDecimals={false}
-                tickLine={false}
-              />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="termLabel" tick={CATEGORY_TICK} {...CHART_AXIS} />
+              <YAxis tick={AXIS_TICK} {...CHART_AXIS} allowDecimals={false} />
               <Tooltip
                 wrapperStyle={{ zIndex: 20 }}
-                cursor={{ fill: 'var(--accent)' }}
+                cursor={BAR_CURSOR}
                 // Locked + open is every grading sheet the term has, so the
                 // share reads directly as "how far through the term we are".
                 content={chartTooltipContent({
@@ -97,15 +92,18 @@ export function SheetProgressChart({
               />
               <Legend
                 content={chartLegendContent({
-                  locked: 'chart-5',
-                  open: 'chart-3',
+                  locked: 'series-1',
+                  open: 'series-1-soft',
                 })}
               />
+              {/* Locked vs open is ONE quantity (a term's sheets) in two
+                  grades, so it is two shades of one blue — darkest for done. */}
               <Bar
                 dataKey="locked"
                 name="Locked"
                 stackId="status"
-                fill="var(--chart-5)"
+                fill="var(--color-series-1)"
+                {...SEGMENT_EDGE}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
@@ -121,7 +119,9 @@ export function SheetProgressChart({
                 dataKey="open"
                 name="Open"
                 stackId="status"
-                fill="var(--chart-3)"
+                fill="var(--color-series-1-soft)"
+                {...SEGMENT_EDGE}
+                radius={BAR_RADIUS_TOP}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {

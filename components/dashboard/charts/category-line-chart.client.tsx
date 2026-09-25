@@ -13,7 +13,19 @@ import {
   YAxis,
 } from 'recharts';
 
-import { formatterFor, type YFormat } from './chart-primitives';
+import {
+  ACTIVE_DOT,
+  AXIS_TICK,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  LINE_CURSOR,
+  LINE_WIDTH,
+  SERIES_COLORS,
+  VALUE_LABEL,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 /**
@@ -52,7 +64,7 @@ function CategoryLineChartImpl({
   yDomain,
   referenceValue,
   referenceLabel,
-  color = 'var(--color-chart-1)',
+  color = SERIES_COLORS[0],
   seriesLabel = 'Value',
 }: CategoryLineChartProps) {
   const yFormatter = formatterFor(yFormat);
@@ -78,24 +90,12 @@ function CategoryLineChartImpl({
         data={data}
         margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
       >
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
-        <XAxis
-          dataKey="x"
-          tick={{ fontSize: 11, fill: 'var(--color-foreground)' }}
-          tickLine={false}
-          axisLine={false}
-          interval={0}
-        />
+        <CartesianGrid {...CHART_GRID} />
+        <XAxis dataKey="x" tick={CATEGORY_TICK} {...CHART_AXIS} interval={0} />
         <YAxis
           domain={domain}
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={AXIS_TICK}
+          {...CHART_AXIS}
           tickFormatter={yFormatter}
           width={40}
         />
@@ -114,6 +114,7 @@ function CategoryLineChartImpl({
         ) : null}
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
+          cursor={LINE_CURSOR}
           content={chartTooltipContent({ format: yFormatter })}
         />
         <Line
@@ -121,9 +122,9 @@ function CategoryLineChartImpl({
           dataKey="y"
           name={seriesLabel}
           stroke={color}
-          strokeWidth={2.5}
+          strokeWidth={LINE_WIDTH}
           dot={{ r: 3.5, fill: color }}
-          activeDot={{ r: 5 }}
+          activeDot={{ ...ACTIVE_DOT, fill: color }}
           isAnimationActive={false}
         >
           <LabelList
@@ -131,12 +132,7 @@ function CategoryLineChartImpl({
             position="top"
             offset={10}
             formatter={labelFmt as never}
-            style={{
-              fontSize: 10.5,
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
-              fill: 'var(--color-foreground)',
-            }}
+            style={VALUE_LABEL}
           />
         </Line>
       </LineChart>

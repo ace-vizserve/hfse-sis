@@ -1,5 +1,6 @@
 import { Globe2 } from 'lucide-react';
 
+import { SERIES_COLORS } from '@/components/dashboard/charts/chart-primitives';
 import { LabeledPieChart } from '@/components/dashboard/charts/labeled-pie-chart';
 import type { NationalityMixRow } from '@/lib/admissions/insights-funnel';
 
@@ -17,19 +18,19 @@ import type { NationalityMixRow } from '@/lib/admissions/insights-funnel';
 // answer to "how diverse are we" and a reader should not have to add the top
 // two slices themselves.
 //
-// COLOUR. A blue ramp ordered by slice size (the --chart-1..4 tokens are one),
-// with the two synthetic buckets held in neutral so they never read as a
-// nationality. Tokens only — no raw hex (hard rule #7).
+// COLOUR. The shared series palette in slice-size order (a nationality is a
+// category, not a grade), with the two synthetic buckets held in neutral so
+// they never read as a nationality. Tokens only — no raw hex (hard rule #7).
+//
+// The series palette has five hues and up to eight nationalities are named,
+// so the small tail continues with the two lighter ramp steps and brand navy
+// rather than wrapping back onto the first colour. Not grey: grey is Other.
 
 const RAMP = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-brand-indigo)',
-  'var(--color-chart-5)',
-  'var(--color-brand-amber)',
-  'var(--color-brand-mint)',
+  ...SERIES_COLORS,
+  'var(--color-series-1-mid)',
+  'var(--color-series-1-soft)',
+  'var(--color-brand-navy)',
 ];
 const OTHER_COLOR = 'var(--color-muted-foreground)';
 const UNSPECIFIED_COLOR = 'var(--color-border)';

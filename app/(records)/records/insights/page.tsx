@@ -492,9 +492,13 @@ export default async function RecordsInsightsPage({
     {
       key: 'enrollments',
       label: 'Enrollments',
-      color: 'var(--color-chart-1)',
+      color: 'var(--color-series-1)',
     },
-    { key: 'withdrawals', label: 'Withdrawals', color: 'var(--color-chart-4)' },
+    {
+      key: 'withdrawals',
+      label: 'Withdrawals',
+      color: 'var(--color-series-2)',
+    },
   ];
 
   // §Retention by level — returned + did-not-return per level, worst-first

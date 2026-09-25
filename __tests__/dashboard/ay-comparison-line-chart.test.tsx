@@ -55,7 +55,7 @@ describe('AyComparisonLineChart', () => {
 
     const curves = container.querySelectorAll('.recharts-area-curve');
     const currentCurve = Array.from(curves).find(
-      (el) => el.getAttribute('stroke') === 'var(--color-chart-1)'
+      (el) => el.getAttribute('stroke') === 'var(--color-series-1)'
     );
     expect(currentCurve).toBeTruthy();
     expect(currentCurve?.getAttribute('stroke-dasharray')).toBeFalsy();
@@ -83,15 +83,16 @@ describe('AyComparisonLineChart', () => {
       container.querySelectorAll('.recharts-area-curve')
     );
     const comparisonCurve = curves.find(
-      (el) => el.getAttribute('stroke') === 'var(--color-muted-foreground)'
+      (el) => el.getAttribute('stroke') === 'var(--color-ink-5)'
     );
     expect(comparisonCurve).toBeTruthy();
-    expect(comparisonCurve?.getAttribute('stroke-dasharray')).toBe('6 5');
+    expect(comparisonCurve?.getAttribute('stroke-dasharray')).toBe('4 4');
 
     // Never a second blue for the comparison year.
     const strokes = curves.map((el) => el.getAttribute('stroke'));
-    expect(strokes).not.toContain('var(--color-chart-2)');
-    expect(strokes).not.toContain('var(--color-chart-3)');
+    expect(strokes).not.toContain('var(--color-series-2)');
+    expect(strokes).not.toContain('var(--color-series-1-mid)');
+    expect(strokes).not.toContain('var(--color-series-1-soft)');
   });
 
   it('draws a zero reference line only when the data straddles zero', () => {

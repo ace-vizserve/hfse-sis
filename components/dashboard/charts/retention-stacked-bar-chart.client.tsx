@@ -15,6 +15,17 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  MUTED_SERIES,
+  SEGMENT_EDGE,
+  VALUE_LABEL,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 /**
@@ -60,31 +71,24 @@ function RetentionStackedBarChartImpl({
         margin={{ top: 20, right: 8, left: 0, bottom: 0 }}
         barCategoryGap="24%"
       >
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
+        <CartesianGrid {...CHART_GRID} />
         <XAxis
           type="category"
           dataKey="level"
-          tick={{ fontSize: 11, fill: 'var(--color-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={CATEGORY_TICK}
+          {...CHART_AXIS}
           interval={0}
         />
         <YAxis
           type="number"
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={AXIS_TICK}
+          {...CHART_AXIS}
           allowDecimals={false}
           width={36}
         />
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+          cursor={BAR_CURSOR}
           // Everything the old hand-written box said survives: the level is the
           // heading, the retention rate is the note, the two counts are the
           // rows (each keyed to its own bar colour), and the prior-year cohort
@@ -104,6 +108,9 @@ function RetentionStackedBarChartImpl({
             },
           })}
         />
+        {/* Returned keeps the status mint (healthy = stayed) rather than a
+            series colour: retained vs lost is a status the reader relies on.
+            Did-not-return stays grey — now the shared muted grey. */}
         <Legend
           content={chartLegendContent({
             Returned: 'fresh',
@@ -115,6 +122,7 @@ function RetentionStackedBarChartImpl({
           name="Returned"
           stackId="cohort"
           fill="var(--color-brand-mint)"
+          {...SEGMENT_EDGE}
           maxBarSize={48}
           isAnimationActive={false}
         />
@@ -122,8 +130,9 @@ function RetentionStackedBarChartImpl({
           dataKey="didNotReturn"
           name="Did not return"
           stackId="cohort"
-          fill="var(--color-muted-foreground)"
-          radius={[4, 4, 0, 0]}
+          fill={MUTED_SERIES}
+          {...SEGMENT_EDGE}
+          radius={BAR_RADIUS_TOP}
           maxBarSize={48}
           isAnimationActive={false}
         >
@@ -131,12 +140,7 @@ function RetentionStackedBarChartImpl({
             dataKey="pctLabel"
             position="top"
             offset={8}
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
-              fill: 'var(--color-foreground)',
-            }}
+            style={VALUE_LABEL}
           />
         </Bar>
       </BarChart>

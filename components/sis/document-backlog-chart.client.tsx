@@ -13,6 +13,15 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  SEGMENT_EDGE,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { DocumentBacklogRow } from '@/lib/sis/dashboard';
 import {
@@ -34,20 +43,25 @@ export type DocumentBacklogChartProps = {
 // warning tone (09a-design-patterns.md §9.3) and the right one for a document
 // that WAS valid and needs renewing — distinct from `rejected`'s destructive
 // red, where the SIS actively said no.
+//
+// Valid and pending are two grades of the same progress, so they take the
+// shared one-blue ramp (darkest for done); rejected, expired and missing are
+// statuses the reader acts on and keep their red, amber and grey. The missing
+// chip was a blue `chart-2` against a grey bar; `neutral` matches the bar.
 const SEGMENTS = [
-  { key: 'valid', name: 'Valid', fill: 'var(--chart-5)' },
-  { key: 'pending', name: 'Pending review', fill: 'var(--chart-3)' },
+  { key: 'valid', name: 'Valid', fill: 'var(--color-series-1)' },
+  { key: 'pending', name: 'Pending review', fill: 'var(--color-series-1-mid)' },
   { key: 'rejected', name: 'Rejected', fill: 'var(--destructive)' },
   { key: 'expired', name: 'Expired', fill: 'var(--color-brand-amber)' },
   { key: 'missing', name: 'Missing', fill: 'var(--muted-foreground)' },
 ] as const;
 
 const LEGEND_PALETTE = {
-  valid: 'chart-5',
-  pending: 'chart-3',
+  valid: 'series-1',
+  pending: 'series-1-mid',
   rejected: 'very-stale',
   expired: 'stale',
-  missing: 'chart-2',
+  missing: 'neutral',
 } as const;
 
 function BacklogBars({
@@ -64,30 +78,20 @@ function BacklogBars({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={rows} margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
-        <CartesianGrid
-          vertical={false}
-          stroke="var(--border)"
-          strokeDasharray="3 3"
-        />
+        <CartesianGrid {...CHART_GRID} />
         <XAxis
           dataKey="label"
-          stroke="var(--muted-foreground)"
-          fontSize={11}
-          tickLine={false}
+          tick={CATEGORY_TICK}
+          {...CHART_AXIS}
           interval={0}
           angle={-30}
           height={80}
           textAnchor="end"
         />
-        <YAxis
-          stroke="var(--muted-foreground)"
-          fontSize={12}
-          allowDecimals={false}
-          tickLine={false}
-        />
+        <YAxis tick={AXIS_TICK} {...CHART_AXIS} allowDecimals={false} />
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{ fill: 'var(--accent)' }}
+          cursor={BAR_CURSOR}
           // One bar is one document type, counted once per student it is
           // asked of, so the segments sum to the students this document
           // applies to (KD #219 gates the rest out).
@@ -101,13 +105,15 @@ function BacklogBars({
         {showLegend ? (
           <Legend content={chartLegendContent(LEGEND_PALETTE)} />
         ) : null}
-        {SEGMENTS.map((segment) => (
+        {SEGMENTS.map((segment, i) => (
           <Bar
             key={segment.key}
             dataKey={segment.key}
             name={segment.name}
             stackId="status"
             fill={segment.fill}
+            {...SEGMENT_EDGE}
+            radius={i === SEGMENTS.length - 1 ? BAR_RADIUS_TOP : undefined}
             onClick={
               onSegmentClick
                 ? (((d: unknown) => {

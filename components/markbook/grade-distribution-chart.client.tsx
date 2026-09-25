@@ -12,6 +12,14 @@ import {
   YAxis,
 } from 'recharts';
 
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { GradeBucket } from '@/lib/markbook/dashboard';
 import {
@@ -78,27 +86,17 @@ export function GradeDistributionChart({
               data={data}
               margin={{ top: 16, right: 12, bottom: 8, left: 0 }}
             >
-              <CartesianGrid
-                vertical={false}
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-              />
+              <CartesianGrid {...CHART_GRID} />
               <XAxis
                 dataKey="label"
-                stroke="var(--muted-foreground)"
-                fontSize={11}
-                tickLine={false}
+                tick={CATEGORY_TICK}
+                {...CHART_AXIS}
                 interval={0}
               />
-              <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                allowDecimals={false}
-                tickLine={false}
-              />
+              <YAxis tick={AXIS_TICK} {...CHART_AXIS} allowDecimals={false} />
               <Tooltip
                 wrapperStyle={{ zIndex: 20 }}
-                cursor={{ fill: 'var(--accent)' }}
+                cursor={BAR_CURSOR}
                 // One band per bar, so a share of the hovered bar alone would
                 // always read 100%. The base is every grade in the term — the
                 // same denominator the card footer quotes.
@@ -111,7 +109,7 @@ export function GradeDistributionChart({
               <Bar
                 dataKey="count"
                 name="Students"
-                radius={[4, 4, 0, 0]}
+                radius={BAR_RADIUS_TOP}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
@@ -126,6 +124,9 @@ export function GradeDistributionChart({
                 }
                 style={onSegmentClick ? { cursor: 'pointer' } : undefined}
               >
+                {/* Band colours kept on purpose: they are the shared mastery
+                    ramp (grade-band-colors.ts) whose meaning — DNM in red,
+                    Outstanding in mint — must match the Academic Overview. */}
                 {data.map((d) => (
                   <Cell
                     key={d.key}

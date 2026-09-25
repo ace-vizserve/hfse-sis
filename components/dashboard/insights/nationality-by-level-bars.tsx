@@ -2,6 +2,7 @@
 
 import type { NationalityByLevel } from '@/lib/admissions/insights-funnel';
 
+import { SERIES_COLORS } from '@/components/dashboard/charts/chart-primitives';
 import { HoverHint } from '@/components/ui/hover-hint';
 
 // Nationality composition per year group — one full-width bar per level.
@@ -22,15 +23,11 @@ import { HoverHint } from '@/components/ui/hover-hint';
 // so the boundary costs the two insights pages nothing but this markup.
 
 // Fixed palette positions, so a nationality keeps its colour down the whole
-// column. Tokens only — never a raw hex (hard rule #7).
-const SEGMENT_COLORS = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-chart-5)',
-  'var(--color-brand-navy)',
-];
+// column. Tokens only — never a raw hex (hard rule #7). The shared series
+// palette has five hues and the legend names up to six nationalities, so the
+// sixth takes the lighter ramp step (as in the nationality pie) — not grey,
+// which is Other.
+const SEGMENT_COLORS = [...SERIES_COLORS, 'var(--color-series-1-mid)'];
 const OTHER_COLOR = 'var(--color-muted-foreground)';
 const UNSPECIFIED_COLOR = 'var(--color-border)';
 

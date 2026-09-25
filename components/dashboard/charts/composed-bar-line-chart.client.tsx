@@ -15,7 +15,20 @@ import {
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 
-import { formatterFor, type YFormat } from './chart-primitives';
+import {
+  ACTIVE_DOT,
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  LINE_WIDTH,
+  MUTED_SERIES,
+  SERIES_COLORS,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type { YFormat };
@@ -60,54 +73,49 @@ function ComposedBarLineChartImpl({
         margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
         barCategoryGap="24%"
       >
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
+        <CartesianGrid {...CHART_GRID} />
         <XAxis
           dataKey="category"
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={CATEGORY_TICK}
+          {...CHART_AXIS}
           interval={0}
         />
         <YAxis
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={AXIS_TICK}
+          {...CHART_AXIS}
           tickFormatter={yFormatter}
           width={36}
         />
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{ fill: 'var(--color-accent)', opacity: 0.5 }}
+          cursor={BAR_CURSOR}
           // The line is a comparison period traced over the bars, not a part
           // of them — adding the two would be adding two years together.
           content={chartTooltipContent({ format: yFormatter })}
         />
         <Legend
           content={chartLegendContent({
-            [barLabel]: 'chart-1',
+            [barLabel]: 'series-1',
             [lineLabel]: 'neutral',
           })}
         />
         <Bar
           dataKey="bar"
           name={barLabel}
-          fill="var(--color-chart-1)"
+          fill={SERIES_COLORS[0]}
           maxBarSize={40}
-          radius={[4, 4, 0, 0]}
+          radius={BAR_RADIUS_TOP}
           isAnimationActive={false}
         />
         <Line
           dataKey="line"
           name={lineLabel}
           type="monotone"
-          stroke="var(--color-muted-foreground)"
-          strokeWidth={2}
-          dot={{ r: 2.5, fill: 'var(--color-muted-foreground)' }}
+          stroke={MUTED_SERIES}
+          strokeWidth={LINE_WIDTH}
+          strokeDasharray="4 4"
+          dot={{ r: 2.5, fill: MUTED_SERIES }}
+          activeDot={{ ...ACTIVE_DOT, fill: MUTED_SERIES }}
           connectNulls={false}
           isAnimationActive={false}
         />

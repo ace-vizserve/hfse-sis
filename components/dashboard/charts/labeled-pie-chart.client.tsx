@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
+import { SEGMENT_EDGE, SERIES_COLORS } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 /**
@@ -22,14 +23,12 @@ export type LabeledPieChartProps = {
   height?: number;
 };
 
+// Same cycle as DonutChart: the five series colours, then greys for the small
+// trailing slices, which read as "the rest" rather than as new colours.
 const DEFAULT_COLORS = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-chart-5)',
-  'var(--color-brand-mint)',
-  'var(--color-brand-amber)',
+  ...SERIES_COLORS,
+  'var(--color-ink-4)',
+  'var(--color-ink-5)',
 ];
 
 const RADIAN = Math.PI / 180;
@@ -93,8 +92,7 @@ function LabeledPieChartImpl({
               outerRadius="94%"
               labelLine={false}
               label={renderSliceLabel}
-              stroke="var(--color-background)"
-              strokeWidth={2}
+              {...SEGMENT_EDGE}
               isAnimationActive={false}
             >
               {data.map((_, i) => (
@@ -122,7 +120,7 @@ function LabeledPieChartImpl({
           return (
             <li key={slice.name} className="flex items-center gap-3">
               <span
-                className="size-2.5 shrink-0 rounded-full"
+                className="size-2.5 shrink-0 rounded-[3px]"
                 style={{ backgroundColor: colors[idx % colors.length] }}
               />
               <div className="flex min-w-0 flex-1 items-baseline justify-between gap-2">

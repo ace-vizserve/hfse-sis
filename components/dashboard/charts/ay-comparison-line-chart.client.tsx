@@ -17,7 +17,19 @@ import {
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 
-import { formatterFor, type YFormat } from './chart-primitives';
+import {
+  ACTIVE_DOT,
+  AXIS_TICK,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  formatterFor,
+  LINE_CURSOR,
+  LINE_WIDTH,
+  MUTED_SERIES,
+  SERIES_COLORS,
+  type YFormat,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type { YFormat };
@@ -44,8 +56,8 @@ export type AyComparisonLineChartProps = {
   yDomain?: [number, number];
 };
 
-const CURRENT_COLOR = 'var(--color-chart-1)';
-const COMPARISON_COLOR = 'var(--color-muted-foreground)';
+const CURRENT_COLOR = SERIES_COLORS[0];
+const COMPARISON_COLOR = MUTED_SERIES;
 
 /** Last non-null point for a series — where its endpoint label anchors. */
 function lastPoint(
@@ -92,7 +104,7 @@ function AyComparisonLineChartImpl({
   const showZeroLine = crossesZero(data, series);
   const legendPalette: Record<string, ChartLegendChipColor> = {};
   series.forEach((s) => {
-    legendPalette[s.key] = s.muted ? 'neutral' : 'chart-1';
+    legendPalette[s.key] = s.muted ? 'neutral' : 'series-1';
   });
 
   return (
@@ -104,24 +116,17 @@ function AyComparisonLineChartImpl({
             <stop offset="100%" stopColor={CURRENT_COLOR} stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid
-          strokeDasharray="2 4"
-          stroke="var(--color-border)"
-          vertical={false}
-          opacity={0.6}
-        />
+        <CartesianGrid {...CHART_GRID} />
         <XAxis
           dataKey="x"
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={CATEGORY_TICK}
+          {...CHART_AXIS}
           interval="preserveStartEnd"
           minTickGap={28}
         />
         <YAxis
-          tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
-          tickLine={false}
-          axisLine={false}
+          tick={AXIS_TICK}
+          {...CHART_AXIS}
           tickFormatter={yFormatter}
           domain={yDomain}
           width={36}
@@ -131,10 +136,7 @@ function AyComparisonLineChartImpl({
         )}
         <Tooltip
           wrapperStyle={{ zIndex: 20 }}
-          cursor={{
-            stroke: 'var(--color-muted-foreground)',
-            strokeDasharray: '3 3',
-          }}
+          cursor={LINE_CURSOR}
           // No share/total: this year and last year are separate series, and
           // adding two years' figures together means nothing.
           content={chartTooltipContent({ format: yFormatter })}
@@ -149,19 +151,18 @@ function AyComparisonLineChartImpl({
               dataKey={s.key}
               name={s.label}
               stroke={isCurrent ? CURRENT_COLOR : COMPARISON_COLOR}
-              strokeWidth={isCurrent ? 2.6 : 2}
-              strokeDasharray={isCurrent ? undefined : '6 5'}
+              strokeWidth={LINE_WIDTH}
+              strokeDasharray={isCurrent ? undefined : '4 4'}
               fill={isCurrent ? `url(#${gradientId})` : 'transparent'}
               dot={{
                 r: isCurrent ? 3 : 2.4,
-                fill: 'var(--color-background)',
+                fill: 'var(--color-card)',
                 stroke: isCurrent ? CURRENT_COLOR : COMPARISON_COLOR,
                 strokeWidth: isCurrent ? 2 : 1.6,
               }}
               activeDot={{
-                r: 4,
-                strokeWidth: 2,
-                stroke: 'var(--color-background)',
+                ...ACTIVE_DOT,
+                fill: isCurrent ? CURRENT_COLOR : COMPARISON_COLOR,
               }}
               isAnimationActive={false}
               connectNulls={false}

@@ -13,6 +13,15 @@ import {
 } from 'recharts';
 
 import { chartLegendContent } from '@/components/dashboard/chart-legend-chip';
+import {
+  AXIS_TICK,
+  BAR_CURSOR,
+  BAR_RADIUS_TOP,
+  CATEGORY_TICK,
+  CHART_AXIS,
+  CHART_GRID,
+  SEGMENT_EDGE,
+} from '@/components/dashboard/charts/chart-primitives';
 import { chartTooltipContent } from '@/components/dashboard/charts/chart-tooltip';
 import type { LevelCompletionRow } from '@/lib/p-files/dashboard';
 import {
@@ -73,16 +82,11 @@ export function CompletionByLevelChartImpl({
               data={chartData}
               margin={{ top: 16, right: 16, bottom: 8, left: 0 }}
             >
-              <CartesianGrid
-                vertical={false}
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-              />
+              <CartesianGrid {...CHART_GRID} />
               <XAxis
                 dataKey="short"
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                tickLine={false}
+                tick={CATEGORY_TICK}
+                {...CHART_AXIS}
                 interval={0}
                 // Tilt category labels so longer level codes (e.g. "YS-L",
                 // "YS-J") don't overlap when the chart has 10+ bars.
@@ -90,15 +94,10 @@ export function CompletionByLevelChartImpl({
                 textAnchor="end"
                 height={56}
               />
-              <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={12}
-                allowDecimals={false}
-                tickLine={false}
-              />
+              <YAxis tick={AXIS_TICK} {...CHART_AXIS} allowDecimals={false} />
               <Tooltip
                 wrapperStyle={{ zIndex: 20 }}
-                cursor={{ fill: 'var(--accent)' }}
+                cursor={BAR_CURSOR}
                 // The axis plots the short code ("P1", "YS-L"), so the heading
                 // has to come off the row to name the level in full.
                 // The four segments count documents, one per slot per student,
@@ -110,19 +109,25 @@ export function CompletionByLevelChartImpl({
                   totalLabel: 'All documents',
                 })}
               />
+              {/* Valid and pending are two grades of the same progress, so they
+                  take the one-blue ramp (darkest for done). Rejected and
+                  missing are statuses an officer acts on, so they keep their
+                  red and grey. The missing chip was a blue `chart-2` against a
+                  grey bar; it is `neutral` now so the key matches the bar. */}
               <Legend
                 content={chartLegendContent({
-                  valid: 'chart-5',
-                  pending: 'chart-3',
+                  valid: 'series-1',
+                  pending: 'series-1-mid',
                   rejected: 'very-stale',
-                  missing: 'chart-2',
+                  missing: 'neutral',
                 })}
               />
               <Bar
                 dataKey="valid"
                 name="Valid"
                 stackId="status"
-                fill="var(--chart-5)"
+                fill="var(--color-series-1)"
+                {...SEGMENT_EDGE}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
@@ -138,7 +143,8 @@ export function CompletionByLevelChartImpl({
                 dataKey="pending"
                 name="Pending review"
                 stackId="status"
-                fill="var(--chart-3)"
+                fill="var(--color-series-1-mid)"
+                {...SEGMENT_EDGE}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
@@ -155,6 +161,7 @@ export function CompletionByLevelChartImpl({
                 name="Rejected"
                 stackId="status"
                 fill="var(--destructive)"
+                {...SEGMENT_EDGE}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
@@ -171,6 +178,8 @@ export function CompletionByLevelChartImpl({
                 name="Missing / expired"
                 stackId="status"
                 fill="var(--muted-foreground)"
+                {...SEGMENT_EDGE}
+                radius={BAR_RADIUS_TOP}
                 onClick={
                   onSegmentClick
                     ? (((d: unknown) => {
