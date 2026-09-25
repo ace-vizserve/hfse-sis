@@ -209,7 +209,7 @@ export default async function SisStudentDetailPage({
         ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
         : Promise.resolve([]),
       currentSection && canPlaceStudent
-        ? getSiblingSections(currentSection.id, { anyLevel: true })
+        ? getSiblingSections(currentSection.id)
         : Promise.resolve([]),
       loadProfileAdmissionOptions(selectedAy),
     ]);
@@ -225,10 +225,12 @@ export default async function SisStudentDetailPage({
     ? {
         studentName: fullName,
         fromSectionName: currentSection.name,
+        // Same level only. Class assignment is for enrolled children; their
+        // level is set before that, as "Level applied" on the profile tab.
         siblings: siblingSections,
-        // Level and section are both editable here: a wrong level is a data
-        // correction the admissions team makes from this tile.
-        allowLevelChange: true,
+        // The class they want may not exist yet — admissions cannot open SIS
+        // Admin → Sections, so the dialog creates it at the child's level.
+        addClassAt: currentSection.level,
       }
     : null;
 

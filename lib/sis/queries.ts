@@ -1360,12 +1360,17 @@ export async function getEnrollmentHistory(
 export async function getCurrentSection(
   ayCode: string,
   studentNumber: string
-): Promise<{ id: string; name: string } | null> {
+): Promise<{
+  id: string;
+  name: string;
+  /** Where "Add a class" in the move dialog creates the new class. */
+  level: { id: string; label: string; levelType: string };
+} | null> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('section_students')
     .select(
-      'sections!inner(id, name, academic_years!inner(ay_code)), students!inner(student_number)'
+      'sections!inner(id, name, levels!inner(id, label, level_type), academic_years!inner(ay_code)), students!inner(student_number)'
     )
     .eq('students.student_number', studentNumber)
     .eq('sections.academic_years.ay_code', ayCode)
@@ -1374,9 +1379,25 @@ export async function getCurrentSection(
     .maybeSingle();
   if (error || !data) return null;
   const section = (
-    data as unknown as { sections: { id: string; name: string } }
+    data as unknown as {
+      sections: {
+        id: string;
+        name: string;
+        levels: { id: string; label: string; level_type: string };
+      };
+    }
   ).sections;
-  return section ? { id: section.id, name: section.name } : null;
+  return section
+    ? {
+        id: section.id,
+        name: section.name,
+        level: {
+          id: section.levels.id,
+          label: section.levels.label,
+          levelType: section.levels.level_type,
+        },
+      }
+    : null;
 }
 
 // The other sections a student in `sectionId` could be moved to — same AY,

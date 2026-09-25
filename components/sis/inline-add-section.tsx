@@ -22,14 +22,15 @@ import {
 // the office wants to place a child in does not exist yet. Inline rather than
 // a dialog on top of a dialog: it is a name, plus Global/Standard for a
 // Secondary level. Creates in the student's year via POST /api/sections?ay=,
-// the same route and rules as SIS Admin → Sections.
+// the same route and rules as SIS Admin → Sections. Also offered in the
+// move dialog (SectionTransferDialog), at the student's own level.
 export function InlineAddSection({
   ayCode,
   level,
   onCreated,
 }: {
   ayCode: string;
-  level: { id: string; label: string; levelType: 'primary' | 'secondary' };
+  level: { id: string; label: string; levelType: string };
   onCreated: (section: { id: string; name: string }) => void;
 }) {
   const [open, setOpen] = useState(false);

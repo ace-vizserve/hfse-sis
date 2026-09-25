@@ -78,7 +78,7 @@ type Props = {
   enroleeNumber: string;
   statusFetchError: boolean;
   /** Current assigned section's UUID — read by the page from the
-   *  section_students roster by id. Drives the "Change level or section →"
+   *  section_students roster by id. Drives the "Change section"
    *  CTA on the class stage tile. Null when pre-Enrolled or section was
    *  renamed/dropped after AY rollover. */
   currentSectionId?: string | null;
@@ -98,7 +98,7 @@ type Props = {
    *  changed. Defaults to FALSE for the same reason `canEdit` does: no
    *  picker beats one whose save could be refused. */
   canAssignSection?: boolean;
-  /** What the class tile's "Change level or section" dialog needs: who is
+  /** What the class tile's "Change section" dialog needs: who is
    *  moving, from where, and the sections they can go to. Null
    *  when the student has no current section. The move happens in place via
    *  the transfer-section API (open to every `canAssignSection` role) rather
@@ -111,8 +111,8 @@ export type SectionTransfer = {
   studentName: string;
   fromSectionName: string;
   siblings: SiblingSection[];
-  /** Siblings span every level, so the move can correct a wrong level. */
-  allowLevelChange?: boolean;
+  /** Offers "Add a class" in the dialog — see `SectionTransferDialog`. */
+  addClassAt?: { id: string; label: string; levelType: string };
 };
 
 type StageCard = {
@@ -1138,12 +1138,12 @@ function StageStatusTile({
   ayCode: string;
   enroleeNumber: string;
   /** Set only for the `class` stage when the section ID is known.
-   *  Drives the "Change level or section →" CTA. */
+   *  Drives the "Change section" CTA. */
   currentSectionId?: string | null;
   applicationStatus: string | null;
   canEdit: boolean;
   canAssignSection: boolean;
-  /** Data for the in-place "Change level or section" dialog. See Props. */
+  /** Data for the in-place "Change section" dialog. See Props. */
   transfer: SectionTransfer | null;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
@@ -1239,11 +1239,11 @@ function StageStatusTile({
           fromSectionName={transfer.fromSectionName}
           ayCode={ayCode}
           siblings={transfer.siblings}
-          allowLevelChange={transfer.allowLevelChange}
+          addClassAt={transfer.addClassAt}
           trigger={
             <Button variant="outline" size="sm" className="ml-1 self-start">
               <ArrowRightLeft className="size-3.5" />
-              Change level or section
+              Change section
             </Button>
           }
         />
