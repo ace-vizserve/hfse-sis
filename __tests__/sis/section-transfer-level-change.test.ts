@@ -1,7 +1,7 @@
 /**
- * `transferStudentSection` refuses a move into a different level unless the
- * caller passes `allowLevelChange` — the admissions class tile's level
- * correction. The Records roster never passes it, so it stays same-level.
+ * `transferStudentSection` refuses a move into a different level, always.
+ * The `allowLevelChange` opt-in it once had (2026-09-24) is gone — a level
+ * is fixed once the student is in a class (lib/sis/level-lock.ts).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -114,7 +114,7 @@ describe('transferStudentSection across levels', () => {
     });
   });
 
-  it('refuses a level change by default', async () => {
+  it('refuses a level change', async () => {
     const service = serviceFor();
     const result = await transferStudentSection(
       service.client as unknown as SupabaseClient,
@@ -125,28 +125,16 @@ describe('transferStudentSection across levels', () => {
     expect(service.rpc).not.toHaveBeenCalled();
   });
 
-  it('moves the student and mirrors the new level when allowed', async () => {
+  it('refuses it even when a caller still sends the old opt-in', async () => {
     const service = serviceFor();
     const result = await transferStudentSection(
       service.client as unknown as SupabaseClient,
-      { ...params, allowLevelChange: true }
+      { ...params, allowLevelChange: true } as typeof params
     );
-    expect(result).toMatchObject({
-      ok: true,
-      fromLevel: 'Primary One',
-      toLevel: 'Primary Two',
-      toSection: 'Kindness',
-    });
-    expect(service.rpc).toHaveBeenCalledWith(
-      'transfer_student_section',
-      expect.objectContaining({ p_target_section_id: 'p2-sec' })
-    );
-    const mirror = admissions.calls.find(
-      (c) => c.table === 'ay2026_enrolment_status'
-    );
-    expect(mirror?.update).toMatchObject({
-      classLevel: 'Primary Two',
-      classSection: 'Kindness',
-    });
+    expect(result).toMatchObject({ ok: false, status: 422 });
+    expect(service.rpc).not.toHaveBeenCalled();
+    expect(
+      admissions.calls.some((c) => c.table === 'ay2026_enrolment_status')
+    ).toBe(false);
   });
 });

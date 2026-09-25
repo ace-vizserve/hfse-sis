@@ -22,8 +22,6 @@ import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tag
 // the section history timeline (KD #9).
 const TransferBodySchema = z.object({
   targetSectionId: z.string().uuid(),
-  // Opt-in level correction — see `allowLevelChange` in section-transfer.ts.
-  allowLevelChange: z.boolean().optional(),
 });
 
 export async function POST(
@@ -73,7 +71,6 @@ export async function POST(
     enroleeNumber,
     targetSectionId: parsed.data.targetSectionId,
     actorEmail: auth.user.email ?? null,
-    allowLevelChange: parsed.data.allowLevelChange === true,
   });
 
   if (!result.ok) {

@@ -45,6 +45,8 @@ type Props = {
   canEdit?: boolean;
   /** The year's enrolment-form options, for the Edit sheet's dropdowns. */
   admissionOptions?: DerivedLevel[];
+  /** Enrolled or in a class — the Edit sheet won't change the level. */
+  levelLocked?: boolean;
 };
 
 export function ProfileTab({
@@ -53,6 +55,7 @@ export function ProfileTab({
   enroleeNumber,
   canEdit = false,
   admissionOptions,
+  levelLocked = false,
 }: Props) {
   const initial: Partial<ProfileUpdateInput> = {
     firstName: app.firstName,
@@ -316,6 +319,7 @@ export function ProfileTab({
                   enroleeNumber={enroleeNumber}
                   initial={initial}
                   admissionOptions={admissionOptions}
+                  levelLocked={levelLocked}
                 />
               )}
             </div>

@@ -89,6 +89,7 @@ import {
 } from '@/lib/schemas/enrolment';
 import type { ProfileUpdateInput } from '@/lib/schemas/sis';
 import { getStudentLifecycle } from '@/lib/sis/process';
+import { isLevelLocked } from '@/lib/sis/level-lock';
 import {
   getEnrollmentHistory,
   getSiblingSections,
@@ -1878,6 +1879,10 @@ async function StudentProfileCard({
           enroleeNumber={app.enroleeNumber}
           initial={buildProfileInitial(app)}
           admissionOptions={admissionOptions}
+          levelLocked={isLevelLocked({
+            applicationStatus: status?.applicationStatus,
+            inClass: isEnrolledStatus(enrollmentStatus),
+          })}
         />
         <Button asChild variant="ghost" size="sm">
           <Link

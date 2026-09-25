@@ -11,6 +11,8 @@ import {
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
+import { LEVEL_LOCKED_MESSAGE, loadLevelLock } from '@/lib/sis/level-lock';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/students/[enroleeNumber]/profile?ay=AY2026
@@ -131,6 +133,35 @@ export async function PATCH(
   }
   const studentNumber =
     (beforeRow.studentNumber as string | null | undefined) ?? null;
+
+  // Level applied — see lib/sis/level-lock.ts. Checked only when it actually
+  // changes, so a save of other fields on an enrolled child still goes through.
+  const levelChange = changes.find((c) => c.field === 'levelApplied');
+  if (levelChange) {
+    if (await loadLevelLock(supabase, ayCode, enroleeNumber, studentNumber)) {
+      return NextResponse.json(
+        { error: LEVEL_LOCKED_MESSAGE },
+        { status: 409 }
+      );
+    }
+    // Must be a level the year offers — the same list the sheet's dropdown
+    // and the parent form show. A year with no options configured has
+    // nothing to check against, so it is let through as before.
+    const offered = await loadProfileAdmissionOptions(ayCode);
+    const next = levelChange.to as string | null;
+    if (
+      next !== null &&
+      offered.length > 0 &&
+      !offered.some((l) => l.levelLabel === next)
+    ) {
+      return NextResponse.json(
+        {
+          error: `"${next}" is not a level offered for ${ayCode}. Pick one from the list.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   const { error: upErr } = await supabase
     .from(appsTable)

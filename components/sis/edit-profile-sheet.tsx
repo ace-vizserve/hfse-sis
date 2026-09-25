@@ -13,6 +13,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import type { DerivedLevel } from '@/lib/admissions/options';
+import { LEVEL_LOCKED_MESSAGE } from '@/lib/sis/level-lock';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { composeFullName } from '@/lib/sis/full-name';
@@ -117,6 +118,8 @@ type FieldConfig = {
    * it rather than the input.
    */
   derived?: boolean;
+  /** Select only — shown disabled with this line saying why it can't change. */
+  lockedReason?: string;
 };
 
 type SectionConfig = {
@@ -365,6 +368,7 @@ export function EditProfileSheet({
   enroleeNumber,
   initial,
   admissionOptions = [],
+  levelLocked = false,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -373,6 +377,9 @@ export function EditProfileSheet({
    *  level / class type / schedule are picked from the same list the parent
    *  form offers. Empty → those fields fall back to what they were. */
   admissionOptions?: DerivedLevel[];
+  /** Enrolled or in a class — "Level applied" is shown but can't change
+   *  (lib/sis/level-lock.ts). The server refuses it either way. */
+  levelLocked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -591,11 +598,14 @@ export function EditProfileSheet({
                           {fields.map((cfg) => (
                             <SchemaField
                               key={cfg.name}
-                              cfg={withAdmissionOptions(
-                                cfg,
-                                admissionOptions,
-                                pickedLevel,
-                                pickedClassType
+                              cfg={withLevelLock(
+                                withAdmissionOptions(
+                                  cfg,
+                                  admissionOptions,
+                                  pickedLevel,
+                                  pickedClassType
+                                ),
+                                levelLocked
                               )}
                               form={form}
                             />
@@ -742,6 +752,17 @@ function withAdmissionOptions(
   return cfg;
 }
 
+function withLevelLock(cfg: FieldConfig, locked: boolean): FieldConfig {
+  if (!locked || cfg.name !== 'levelApplied') return cfg;
+  // Forced to a select so the disabled state and its reason always render,
+  // including for a year with no admission options configured.
+  return {
+    ...cfg,
+    kind: 'select',
+    lockedReason: LEVEL_LOCKED_MESSAGE,
+  };
+}
+
 // Radix Select rejects empty-string item values. Sentinel stays client-side
 // only; onValueChange maps it back to null before RHF sees it. Shared by
 // both the tribool (Yes/No/Not set) and generic options-driven selects.
@@ -806,8 +827,14 @@ function SchemaField({
                 onValueChange={(next) =>
                   field.onChange(next === UNSET_SENTINEL ? null : next)
                 }
+                disabled={cfg.lockedReason !== undefined}
               >
-                <SelectTrigger className="h-9">
+                <SelectTrigger
+                  className="h-9"
+                  aria-describedby={
+                    cfg.lockedReason ? `${cfg.name}-locked` : undefined
+                  }
+                >
                   <SelectValue placeholder="Not set" />
                 </SelectTrigger>
                 <SelectContent>
@@ -822,6 +849,14 @@ function SchemaField({
                   ))}
                 </SelectContent>
               </Select>
+              {cfg.lockedReason ? (
+                <p
+                  id={`${cfg.name}-locked`}
+                  className="text-xs text-muted-foreground"
+                >
+                  {cfg.lockedReason}
+                </p>
+              ) : null}
               <FormMessage />
             </FormItem>
           );

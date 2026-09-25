@@ -45,6 +45,7 @@ import {
   getSiblingSections,
   getStudentDetail,
 } from '@/lib/sis/queries';
+import { isLevelLocked } from '@/lib/sis/level-lock';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import {
@@ -437,6 +438,10 @@ export default async function SisStudentDetailPage({
             enroleeNumber={application.enroleeNumber}
             canEdit={canEditRecord}
             admissionOptions={admissionOptions}
+            levelLocked={isLevelLocked({
+              applicationStatus: storedStatus?.applicationStatus,
+              inClass: currentSection !== null,
+            })}
           />
         </TabsContent>
 
