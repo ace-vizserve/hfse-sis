@@ -24,7 +24,6 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getUpcomingAcademicYear } from '@/lib/academic-year';
-import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 import { listStudents } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -33,8 +32,8 @@ import { getSessionUser } from '@/lib/supabase/server';
 // SIS Admin owns which AY is open for applications (KD #48); this page only
 // reflects that state. When an upcoming AY is open it shows that year's
 // pipeline; otherwise an empty state points to SIS Admin. No open/switch/close
-// control lives here. Funnel membership = the shared isActiveFunnelStatus
-// (lib/schemas/sis.ts), same as the main applications list.
+// control lives here. Lists every application for the year, like the main
+// applications list.
 
 const STAGES: Array<{
   key: string;
@@ -131,9 +130,12 @@ export default async function UpcomingAdmissionsApplicationsPage() {
     );
   }
 
-  const allStudents = await listStudents(upcomingAy.ay_code, 'created_at_desc');
-  const applications = allStudents.filter((s) =>
-    isActiveFunnelStatus(s.applicationStatus)
+  // Every application for the year, Enrolled included — the same rows as
+  // the current-year list at /admissions/applications. Filtering to the
+  // active funnel hid the children already placed and enrolled for next year.
+  const applications = await listStudents(
+    upcomingAy.ay_code,
+    'created_at_desc'
   );
 
   const stageCounts: Record<string, number> = {
@@ -198,9 +200,13 @@ export default async function UpcomingAdmissionsApplicationsPage() {
         <CardContent className="p-0">
           <StudentDataTable
             data={applications}
+            ayCode={upcomingAy.ay_code}
             linkBase="/admissions/applications"
             linkQuery={{ ay: upcomingAy.ay_code }}
             showSubmittedColumn
+            showStaleness
+            showPipeline
+            admissionsTab="documents"
             defaultSorting={[{ id: 'submitted', desc: true }]}
             statusBuckets={APPLICATIONS_STATUS_BUCKETS}
           />
