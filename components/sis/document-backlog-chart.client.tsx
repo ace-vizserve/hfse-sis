@@ -36,6 +36,13 @@ import {
 export type DocumentBacklogChartProps = {
   data: DocumentBacklogRow[];
   onSegmentClick?: (segment: string) => void;
+  /**
+   * Which kind of document this card shows. The Records dashboard gives each
+   * its own card (Mr Ace, 2026-09-25): the expiring ones share a row with
+   * Students by level, and the collected-once ones take a row to themselves,
+   * because a list of ~20 certificates and forms needs the full width.
+   */
+  part: 'expiring' | 'once';
 };
 
 // Severity ramp, left to right in the stack: settled → in progress → refused →
@@ -132,36 +139,50 @@ function BacklogBars({
 }
 
 export function DocumentBacklogChart({
-  data,
+  data: allRows,
   onSegmentClick,
+  part,
 }: DocumentBacklogChartProps) {
+  // ⚠ SPLIT ON `expires`, NOT on `group`. The `student-expiring` group holds
+  // two slots — the student's own passport and pass — while EIGHT documents
+  // actually carry an expiry date; the other six are the mother's, father's
+  // and guardian's, which live in the `parent` group. Grouping by `group`
+  // would put three quarters of the expiring documents under "Other".
+  const data = allRows.filter((r) =>
+    part === 'expiring' ? r.expires : !r.expires
+  );
   const total = data.reduce(
     (sum, r) => sum + r.valid + r.pending + r.rejected + r.expired + r.missing,
     0
   );
   const empty = total === 0;
 
-  // ⚠ SPLIT ON `expires`, NOT on `group`. The `student-expiring` group holds
-  // two slots — the student's own passport and pass — while EIGHT documents
-  // actually carry an expiry date; the other six are the mother's, father's
-  // and guardian's, which live in the `parent` group. Grouping by `group`
-  // would put three quarters of the expiring documents under "Other".
-  const expiring = data.filter((r) => r.expires);
-  const other = data.filter((r) => !r.expires);
-
-  // A bar needs room for its rotated label whichever chart it lands in, so
-  // height follows the row count rather than splitting a fixed 340 in two.
+  // A bar needs room for its rotated label, so height follows the row count.
   const heightFor = (rows: number) => Math.max(200, 80 + rows * 26);
 
+  const copy =
+    part === 'expiring'
+      ? {
+          title: 'Documents that expire',
+          description:
+            'Passports and passes, for the student and each parent or guardian. These need renewing, not collecting again.',
+        }
+      : {
+          title: 'Documents collected once',
+          description:
+            'Certificates, forms and records. Once they are valid they stay valid.',
+        };
+
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          Documents
+          Validation backlog
         </CardDescription>
         <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-          Validation backlog by document type
+          {copy.title}
         </CardTitle>
+        <p className="text-xs text-muted-foreground">{copy.description}</p>
         <CardAction>
           <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
             <FileWarning className="size-4" />
@@ -180,42 +201,13 @@ export function DocumentBacklogChart({
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-6">
-            {expiring.length > 0 ? (
-              <div>
-                <p className="mb-1 text-sm font-medium text-foreground">
-                  Documents that expire
-                </p>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Passports and passes, for the student and each parent or
-                  guardian. These need renewing, not collecting again.
-                </p>
-                <BacklogBars
-                  rows={expiring}
-                  height={heightFor(expiring.length)}
-                  showLegend={other.length === 0}
-                  onSegmentClick={onSegmentClick}
-                />
-              </div>
-            ) : null}
-            {other.length > 0 ? (
-              <div>
-                <p className="mb-1 text-sm font-medium text-foreground">
-                  Documents collected once
-                </p>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Certificates, forms and records. Once they are valid they stay
-                  valid.
-                </p>
-                <BacklogBars
-                  rows={other}
-                  height={heightFor(other.length)}
-                  showLegend
-                  onSegmentClick={onSegmentClick}
-                />
-              </div>
-            ) : null}
-          </div>
+          // Each card carries its own legend now that the two are apart.
+          <BacklogBars
+            rows={data}
+            height={heightFor(data.length)}
+            showLegend
+            onSegmentClick={onSegmentClick}
+          />
         )}
       </CardContent>
     </Card>

@@ -32,11 +32,19 @@ type CommonProps = {
 export function DocumentBacklogDrillCard({
   data,
   ayCode,
-}: CommonProps & { data: DocumentBacklogRow[] }) {
+  part,
+}: CommonProps & {
+  data: DocumentBacklogRow[];
+  part: 'expiring' | 'once';
+}) {
   const [segment, setSegment] = React.useState<string | null>(null);
   return (
     <Sheet open={!!segment} onOpenChange={(o) => !o && setSegment(null)}>
-      <DocumentBacklogChart data={data} onSegmentClick={setSegment} />
+      <DocumentBacklogChart
+        data={data}
+        part={part}
+        onSegmentClick={setSegment}
+      />
       {segment && (
         <RecordsDrillSheet
           target="backlog-by-document"

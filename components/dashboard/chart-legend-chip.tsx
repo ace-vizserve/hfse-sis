@@ -35,14 +35,15 @@ const chipGradientByColor: Record<ChartLegendChipColor, string> = {
   stale: 'from-brand-amber to-brand-amber/80',
   'very-stale': 'from-destructive to-destructive/80',
   neutral: 'from-ink-4 to-ink-3',
-  // The chart series palette (chart-primitives.ts). The two lightest ramp
-  // steps would put white text on a pale fill, so they carry dark ink.
+  // The chart series palette (chart-primitives.ts). Only the palest ramp step
+  // carries dark ink; the mid step keeps white text like every other chip
+  // (Mr Ace, 2026-09-25), deepening toward series-1 so the white stays legible.
   'series-1': 'from-series-1 to-brand-indigo',
   'series-2': 'from-series-2 to-series-2/80',
   'series-3': 'from-series-3 to-series-3/80',
   'series-4': 'from-series-4 to-series-4/80',
   'series-5': 'from-series-5 to-series-5/80',
-  'series-1-mid': 'from-series-1-mid to-series-1-mid/80 text-ink',
+  'series-1-mid': 'from-series-1-mid to-series-1',
   'series-1-soft': 'from-series-1-soft to-series-1-soft/80 text-ink',
 };
 

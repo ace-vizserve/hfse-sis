@@ -482,13 +482,27 @@ export default async function RecordsDashboard({
         />
       </section>
 
+      {/* The expiring documents share a row with Students by level; the
+          documents collected once take a row of their own, since ~20
+          certificates and forms need the full width (Mr Ace, 2026-09-25). */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <DocumentBacklogDrillCard data={docBacklog} ayCode={selectedAy} />
+          <DocumentBacklogDrillCard
+            data={docBacklog}
+            ayCode={selectedAy}
+            part="expiring"
+          />
         </div>
         <div className="lg:col-span-1">
           <LevelDistributionDrillCard data={levels} ayCode={selectedAy} />
         </div>
+      </section>
+      <section className="grid gap-4">
+        <DocumentBacklogDrillCard
+          data={docBacklog}
+          ayCode={selectedAy}
+          part="once"
+        />
       </section>
 
       {/* Expiring documents panel — full-width on Records (the previous
