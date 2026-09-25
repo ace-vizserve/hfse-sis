@@ -232,7 +232,9 @@ export async function PATCH(
   let next: SheetWeights | null;
   if ('inherit' in input) {
     next = null;
-  } else if ('components' in input) {
+  } else {
+    // Components only — a term switches the exam (or WW / PT) off and the
+    // weights follow; it never takes typed figures (see the schema).
     const inUse: Record<GradeComponent, boolean> = {
       ww: input.components.ww,
       pt: input.components.pt,
@@ -245,12 +247,6 @@ export async function PATCH(
       );
     }
     next = redistributeWeights(configWeights, inUse);
-  } else {
-    next = {
-      ww_weight: input.ww_weight / 100,
-      pt_weight: input.pt_weight / 100,
-      qa_weight: input.qa_weight / 100,
-    };
   }
 
   // ---- Every sheet for this subject in this term ------------------------

@@ -5,7 +5,10 @@ import {
   type SheetTotals,
   type SheetWeights,
 } from '@/lib/grading/recompute-sheet';
-import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
+import {
+  redistributeWeights,
+  resolveSheetWeights,
+} from '@/lib/grading/resolve-sheet-weights';
 
 // The half of `sync_grading_sheets_from_config` that SQL cannot do.
 //
@@ -316,6 +319,48 @@ export async function recomputeSyncedSheets(
           .eq('id', sheet.id);
         if (qaErr) throw new Error(qaErr.message);
       }
+    }
+
+    // Re-derive every sheet's own weights from the subject's CURRENT weights.
+    //
+    // A subject's weights are the same in all four terms (Miss Joann,
+    // 2026-09-25); a sheet may only switch components off. Its stored split is
+    // therefore a function of (subject weights, which components are off) — so
+    // when the subject's weights change, a stored 37/63 from the old 30/50/20
+    // is stale and must follow. Only the on/off pattern is kept. A sheet with
+    // every component on goes back to inheriting (null), which is what it
+    // already meant. Idempotent when the weights did not change.
+    for (const sheet of open) {
+      if (sheet.ww_weight == null) continue;
+      const inUse = {
+        ww: Number(sheet.ww_weight) > 0,
+        pt: Number(sheet.pt_weight) > 0,
+        qa: Number(sheet.qa_weight) > 0,
+      };
+      const next =
+        inUse.ww && inUse.pt && inUse.qa
+          ? null
+          : redistributeWeights(configWeights, inUse);
+      const same =
+        next != null &&
+        Math.round(Number(sheet.ww_weight) * 100) ===
+          Math.round(next.ww_weight * 100) &&
+        Math.round(Number(sheet.pt_weight) * 100) ===
+          Math.round(next.pt_weight * 100) &&
+        Math.round(Number(sheet.qa_weight) * 100) ===
+          Math.round(next.qa_weight * 100);
+      if (same) continue;
+      const patch = next ?? {
+        ww_weight: null,
+        pt_weight: null,
+        qa_weight: null,
+      };
+      const { error: wErr } = await service
+        .from('grading_sheets')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', sheet.id);
+      if (wErr) throw new Error(wErr.message);
+      Object.assign(sheet, patch);
     }
 
     for (let i = 0; i < open.length; i += CONCURRENCY) {

@@ -145,10 +145,13 @@ export const COMPONENT_LABELS: Record<GradeComponent, string> = {
  * deliberately rather than by floating-point noise. See the apportionment note
  * in the body.
  *
- * ⚠ This is a DEFAULT, not a policy. HFSE's own workbooks print each term's
- * weights in the masthead — that is how the Term 2 Filipino / Global
- * Perspectives error was found — so the coordinator can always type the real
- * numbers instead. Proportional is what happens when nobody does.
+ * ⚠ THIS IS THE POLICY, NOT A DEFAULT (since 2026-09-25). It used to be
+ * described as a fallback the coordinator could override by typing a term's
+ * own figures. Miss Joann then set the rule: a subject's weights are the same
+ * in all four terms; what changes per term is the slots, the max scores and
+ * whether there is an exam. So the only weights a term may carry are the
+ * subject's own, with any unused component's share handed on by this function
+ * — `isSubjectTermSplit` below is the gate both write routes use.
  *
  * Throws when nothing is in use: a sheet graded on no components has no
  * meaningful weights, and returning 0/0/0 would compute every student a zero.
@@ -223,4 +226,42 @@ export function redistributeWeights(
     pt_weight: out.pt,
     qa_weight: out.qa,
   };
+}
+
+/**
+ * Is this split one a term is allowed to carry?
+ *
+ * Miss Joann (relayed by Mr Ace, 2026-09-25): a subject's weights are
+ * consistent across Terms 1–4. What varies per term is the slots, the max
+ * scores and whether there is an exam. So a term's weights must be the
+ * subject's own — or the subject's own with some components switched off and
+ * their share handed on by `redistributeWeights`. Any other split (a typed
+ * 25 / 55 / 20, say) is refused.
+ *
+ * `pcts` are integer percentages. Which components are "in use" is read off
+ * the split itself (a component at 0 is off), so the one comparison covers
+ * every combination of switches.
+ */
+export function isSubjectTermSplit(
+  subject: WeightColumns,
+  pcts: Record<GradeComponent, number>
+): boolean {
+  const inUse: Record<GradeComponent, boolean> = {
+    ww: pcts.ww > 0,
+    pt: pcts.pt > 0,
+    qa: pcts.qa > 0,
+  };
+  if (!inUse.ww && !inUse.pt && !inUse.qa) return false;
+  const expected = redistributeWeights(
+    {
+      ww_weight: Number(subject.ww_weight),
+      pt_weight: Number(subject.pt_weight),
+      qa_weight: Number(subject.qa_weight),
+    },
+    inUse
+  );
+  return GRADE_COMPONENTS.every(
+    (c) =>
+      Math.round(Number(expected[`${c}_weight` as const]) * 100) === pcts[c]
+  );
 }

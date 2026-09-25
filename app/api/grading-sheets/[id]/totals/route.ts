@@ -6,7 +6,10 @@ import {
   RecomputeWriteError,
   type ClearedScore,
 } from '@/lib/grading/recompute-sheet';
-import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
+import {
+  isSubjectTermSplit,
+  resolveSheetWeights,
+} from '@/lib/grading/resolve-sheet-weights';
 import {
   loadEntryStudentLabels,
   loadOneSheetAuditLabels,
@@ -208,6 +211,22 @@ export async function PATCH(
           {
             error:
               'Weights must be whole numbers from 0 to 100 adding up to 100.',
+          },
+          { status: 400 }
+        );
+      }
+      // A subject's weights are the same in all four terms (Miss Joann,
+      // 2026-09-25); a sheet may only switch components off, never re-split
+      // them. The editor sends exactly `redistributeWeights` of the subject's
+      // weights, so this refuses nothing the screen can produce.
+      if (
+        !config ||
+        !isSubjectTermSplit(config, { ww: pcts[0], pt: pcts[1], qa: pcts[2] })
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "A subject's weights are the same in every term. A term can only switch written work, performance tasks or the exam off.",
           },
           { status: 400 }
         );
