@@ -249,8 +249,11 @@ export function YearSetupChecklist({
   // wrongly re-accent a finished row, so that fallback is short-circuited here.
   const nextUpId = allDone ? null : nextIncompleteStepId(steps);
 
-  const t13 = selectedTerms
-    .filter((t) => t.term_number <= 3)
+  // All four terms, matching Evaluation → Virtue themes: Term 4 can carry a
+  // theme too (abdfe2fa). The readiness count still asks only for T1–T3
+  // (`fetchVirtueThemes`), so a year without a T4 theme is not held back.
+  const themeTerms = selectedTerms
+    .filter((t) => t.term_number >= 1 && t.term_number <= 4)
     .sort((a, b) => a.term_number - b.term_number)
     .map((t) => ({
       id: t.id,
@@ -447,12 +450,12 @@ export function YearSetupChecklist({
                 below = (
                   <CollapsibleContent>
                     <div className="px-6 pb-4 pl-[4.5rem]">
-                      {t13.length === 0 ? (
+                      {themeTerms.length === 0 ? (
                         <p className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                           Set term dates first.
                         </p>
                       ) : (
-                        <VirtueThemesEditor terms={t13} />
+                        <VirtueThemesEditor terms={themeTerms} />
                       )}
                     </div>
                   </CollapsibleContent>
