@@ -60,9 +60,10 @@ const PS_EPSILON = 1e-4;
 /**
  * Resize a score array to match its totals array.
  *
- * Pads with `null`, NEVER `0` — Hard Rule #3. A null slot is excluded from
- * both the numerator and the denominator, so adding one leaves every grade
- * untouched; a zero would silently tank the class.
+ * Pads with `null`, NEVER `0` — Hard Rule #3. A null still means "not entered
+ * yet" on the sheet; for the grade it scores zero against the full total,
+ * exactly as the workbooks do, so adding a slot lowers every grade until it is
+ * filled.
  */
 export function padScores(
   arr: (number | null)[] | null,

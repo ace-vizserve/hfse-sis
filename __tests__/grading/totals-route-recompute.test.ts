@@ -196,9 +196,9 @@ describe('totals route — recompute on a denominator change', () => {
     await PATCH(patchRequest({ ww_totals: [10, 10, 10] }), { params });
 
     expect(entryPatches[0].patch.ww_scores).toEqual([10, 10, null]);
-    // A null slot is excluded from both sums — Hard Rule #3 — so the grade
-    // must NOT move just because a slot was added.
-    expect(entryPatches[0].patch.quarterly_grade).toBe(93);
+    // The new slot's max joins the full total (Hard Rule #3), so the grade
+    // drops until the slot is scored: WW 20/30 → quarterly 85.
+    expect(entryPatches[0].patch.quarterly_grade).toBe(85);
   });
 
   it('writes nothing to entries when the totals are unchanged', async () => {

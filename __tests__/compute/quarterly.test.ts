@@ -28,11 +28,11 @@ describe('computeQuarterly', () => {
     expect(result.quarterly_grade).toBe(93);
   });
 
-  // ── Hard Rule #3: Blank ≠ Zero ───────────────────────────────────────────
-  it('excludes null score slots from WW numerator and denominator', () => {
-    // Slot 1: null (excluded). Slot 2: 10/10 (included).
-    // WW_PS = 10/10 * 100 = 100, not 10/20 * 100 = 50.
-    const withNull = computeQuarterly({
+  // ── Hard Rule #3: a blank slot scores zero against the FULL total ────────
+  it('divides WW by the full total — a blank slot still counts its max', () => {
+    // Slot 1: blank. Slot 2: 10/10. WW_PS = 10/20 * 100 = 50, as the
+    // workbooks compute it (`(F10/$F$9)*100`), not 10/10 = 100.
+    const withBlank = computeQuarterly({
       ww_scores: [null, 10],
       ww_totals: [10, 10],
       pt_scores: [10, 10],
@@ -41,17 +41,33 @@ describe('computeQuarterly', () => {
       qa_total: 30,
       ...PRIMARY,
     });
-    const withoutSlot = computeQuarterly({
-      ww_scores: [10],
-      ww_totals: [10],
+    const withZero = computeQuarterly({
+      ww_scores: [0, 10],
+      ww_totals: [10, 10],
       pt_scores: [10, 10],
       pt_totals: [10, 10],
       qa_score: 30,
       qa_total: 30,
       ...PRIMARY,
     });
-    expect(withNull.ww_ps).toBe(withoutSlot.ww_ps);
-    expect(withNull.quarterly_grade).toBe(withoutSlot.quarterly_grade);
+    expect(withBlank.ww_ps).toBe(50);
+    expect(withBlank.quarterly_grade).toBe(withZero.quarterly_grade);
+  });
+
+  it('matches the Excel workbook on a first-day sheet (WW 2×15, PT 3×20, QA 60)', () => {
+    // Only WW1 = 14. Excel: 14/30 → PS 46.67 → initial 18.67 → 64.
+    const result = computeQuarterly({
+      ww_scores: [14, null],
+      ww_totals: [15, 15],
+      pt_scores: [null, null, null],
+      pt_totals: [20, 20, 20],
+      qa_score: null,
+      qa_total: 60,
+      ...PRIMARY,
+    });
+    expect(result.ww_ps).toBeCloseTo(46.6667, 4);
+    expect(result.pt_ps).toBeNull();
+    expect(result.quarterly_grade).toBe(64);
   });
 
   it('includes zero score in WW numerator and denominator (zero ≠ blank)', () => {

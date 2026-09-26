@@ -5,9 +5,13 @@
 //
 // Spec (docs/context/02-grading-system.md):
 //   1. Per component (WW, PT):
-//        PS = (Σ scores) / (Σ matching maxes) × 100
-//      Null score slots are EXCLUDED from both sums — a blank assessment
-//      must not punish the student.
+//        PS = (Σ scores) / (Σ ALL slot maxes) × 100
+//      The denominator is the component's full total, exactly as HFSE's
+//      grading workbooks compute it (`G10 = (F10/$F$9)*100`, where row 9 is
+//      the fixed max row — checked across all 38 AY2025 workbooks). A blank
+//      slot adds nothing to the numerator and its max still counts, so it
+//      scores as zero. A component with NO score at all stays null (it
+//      contributes 0 to the weighted sum either way).
 //   2. QA_PS = qa_score / qa_total × 100 (null if either side is null).
 //   3. Initial = WW_PS × ww_weight + PT_PS × pt_weight + QA_PS × qa_weight.
 //      Null PS → 0 in the weighted sum. If ALL components are null, Initial
@@ -42,15 +46,17 @@ function componentPercentage(
 ): number | null {
   let sumScores = 0;
   let sumMax = 0;
-  for (let i = 0; i < scores.length; i++) {
-    const s = scores[i];
-    if (s == null) continue; // blank slot: excluded from numerator AND denominator
+  let anyScored = false;
+  for (let i = 0; i < totals.length; i++) {
     const max = totals[i];
-    if (max == null) continue;
+    if (max == null) continue; // no max configured for this slot
+    sumMax += max; // a blank slot's max still counts — the full total
+    const s = scores[i];
+    if (s == null) continue; // blank slot: nothing added to the numerator
     sumScores += s;
-    sumMax += max;
+    anyScored = true;
   }
-  if (sumMax === 0) return null;
+  if (!anyScored || sumMax === 0) return null;
   return (sumScores / sumMax) * 100;
 }
 

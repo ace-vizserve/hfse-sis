@@ -19,8 +19,8 @@ const WEIGHTS = { ww_weight: 0.4, pt_weight: 0.4, qa_weight: 0.2 };
 
 describe('padScores', () => {
   it('pads with null, never zero — Hard Rule #3', () => {
-    // A zero would enter both numerator and denominator and tank the grade.
-    // A null is excluded from both, which is what "not taken" means.
+    // A null keeps "not entered yet" visible on the sheet and in the audit
+    // trail; a zero would claim the student sat it and scored nothing.
     expect(padScores([10, 8], 4)).toEqual([10, 8, null, null]);
     expect(padScores([10, 8], 4)).not.toContain(0);
   });
@@ -69,10 +69,10 @@ describe('recomputeEntryRow', () => {
     expect(changed).toBe(false);
   });
 
-  it('adding an empty slot moves no grade, so nothing is written beyond the resize', () => {
-    // The common coordinator action — extending ww_max_slots by one. The
-    // array has to grow, but a null slot is excluded from both sums, so the
-    // grade is untouched. `changed` is true ONLY because the shape moved.
+  it('adding an empty slot grows the total, so the grade drops until it is scored', () => {
+    // The workbook behaviour: a new column's max joins the total row the
+    // moment it exists, and the blank scores zero against it until filled.
+    // WW 20/30 = 66.67, PT 86.67, QA 73.33 → initial 76 → quarterly 85.
     const widened = {
       ...totals,
       ww_totals: [10, 10, 10],
@@ -80,8 +80,8 @@ describe('recomputeEntryRow', () => {
     const { patch, changed } = recomputeEntryRow(canonical, widened, WEIGHTS);
     expect(changed).toBe(true);
     expect(patch.ww_scores).toEqual([10, 10, null]);
-    expect(patch.quarterly_grade).toBe(93);
-    expect(patch.ww_ps).toBe(100);
+    expect(patch.ww_ps).toBeCloseTo(66.6667, 3);
+    expect(patch.quarterly_grade).toBe(85);
   });
 
   it('reports a change when a denominator moves', () => {

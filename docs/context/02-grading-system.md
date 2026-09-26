@@ -60,6 +60,8 @@ PT_PS  = (sum of PT1..PTn) / PT_total_max × 100
 QA_PS  = QA_score / QA_max × 100
 ```
 
+`*_total_max` is the sum of EVERY slot's max — the workbook's fixed max row (`G10 = (F10/$F$9)*100`). A blank slot adds nothing to the score and its max still counts. Example: WW 2 × 15, only W1 = 14 → 14/30, not 14/15. Until 2026-09-26 the SIS dropped blank slots from the total; migration 177 fixed it and recomputed stored grades.
+
 ### Step 2 — Weighted Score (WS) per component
 
 ```
@@ -189,9 +191,9 @@ The number ranges are display-only context for the legend. Teachers (or registra
 
 ## Score Entry Rules
 
-- Blank cell = student did not take the assessment (excluded from computation)
+- Blank cell = not entered yet; for the grade it scores zero against the full total (as in the workbooks)
 - Zero (0) = student took the assessment and scored zero
-- These are distinct and must be handled differently in the system
+- The two are stored and shown distinctly; they compute the same
 - WW and PT column counts vary per level and subject — configured per grading sheet
 - The number of active columns is determined by the length of ww_totals and pt_totals arrays
 - Maximum possible: 5 WW, 5 PT — but most sheets use 2–4
