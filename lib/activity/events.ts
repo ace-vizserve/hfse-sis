@@ -309,6 +309,8 @@ export const FIELD_CHANGE_LABELS: Record<string, string> = {
   qa_score: 'Quarterly assessment',
   letter_grade: 'Letter grade',
   is_na: 'N/A flag',
+  ww_excused: 'Excused written work',
+  pt_excused: 'Excused performance tasks',
 };
 
 /**

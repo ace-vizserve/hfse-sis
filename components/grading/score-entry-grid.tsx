@@ -87,6 +87,8 @@ import {
   type SlotKind,
 } from '@/lib/grading/first-score-gate';
 import { FirstScoreLabelDialog } from './first-score-label-dialog';
+import { ExcusedSlotsDialog } from './excused-slots-dialog';
+import { isRowComplete, missingScoreCount } from '@/lib/grading/row-complete';
 
 export type GradeRow = {
   entry_id: string;
@@ -99,6 +101,9 @@ export type GradeRow = {
   is_na: boolean;
   ww_scores: (number | null)[];
   pt_scores: (number | null)[];
+  /** 1-based slots the registrar excused for this student (migration 179). */
+  ww_excused?: number[];
+  pt_excused?: number[];
   qa_score: number | null;
   ww_ps: number | null;
   pt_ps: number | null;
@@ -119,6 +124,9 @@ type Props = {
   rows: GradeRow[];
   readOnly?: boolean;
   requireApproval?: boolean;
+  /** Registrar and above: the student name opens "Counted assessments". */
+  canExcuse?: boolean;
+  sheetLocked?: boolean;
   /** Teacher-authored activity metadata per column. */
   slotLabels?: SlotLabels;
   /** Subject weights as decimals (e.g. 0.40 for 40%). Used to compute WS columns. */
@@ -181,6 +189,8 @@ export function ScoreEntryGrid({
   rows: initialRows,
   readOnly = false,
   requireApproval = false,
+  canExcuse = false,
+  sheetLocked = false,
   slotLabels,
   wwWeight,
   ptWeight,
@@ -237,6 +247,29 @@ export function ScoreEntryGrid({
   // toast lifecycle (useWriteAction), and what the grid owes the teacher is not
   // a second narration but a guarantee that nothing else is editable yet.
   const [isSaving, setIsSaving] = useState(false);
+  // The student whose "Counted assessments" dialog is open, if any.
+  const [excusingId, setExcusingId] = useState<string | null>(null);
+
+  // A student counts as graded only once every counted slot has a score
+  // (lib/grading/row-complete.ts) — the same rule as the page and the list.
+  const sheetShape = useMemo(
+    () => ({ ww_totals: wwTotals, pt_totals: ptTotals, qa_total: qaTotal }),
+    [wwTotals, ptTotals, qaTotal]
+  );
+  const queryClientForProgress = useQueryClient();
+  const publishProgress = useCallback(
+    (nextRows: GradeRow[]) => {
+      const active = nextRows.filter((r) => !r.withdrawn);
+      queryClientForProgress.setQueryData<GradedProgress>(
+        queryKeys.gradingSheetProgress(sheetId),
+        {
+          graded: active.filter((r) => isRowComplete(r, sheetShape)).length,
+          total: active.length,
+        }
+      );
+    },
+    [queryClientForProgress, sheetId, sheetShape]
+  );
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } =
     useChangeReference();
@@ -400,6 +433,10 @@ export function ScoreEntryGrid({
           r.pt_scores,
           ptTotals
         ),
+        // A part-filled row is still listed and compared, but not flagged:
+        // its grade reads low until every counted slot has a score.
+        complete: isRowComplete(r, sheetShape),
+        missingScores: missingScoreCount(r, sheetShape),
         // This term's marks, from the sheet on screen. Same Blank ≠ Zero rule
         // as the percentage they sit under: a slot not taken counts in neither
         // the score nor the total.
@@ -413,7 +450,15 @@ export function ScoreEntryGrid({
         },
       };
     });
-  }, [rows, wwTotals, ptTotals, qaTotal, currentTermNumber, priorGrades]);
+  }, [
+    rows,
+    wwTotals,
+    ptTotals,
+    qaTotal,
+    currentTermNumber,
+    priorGrades,
+    sheetShape,
+  ]);
 
   // Tier-3 autosave. Cells update optimistically via local state (updateLocal)
   // and reconcile from the saved row; this mutation owns no cache and does not
@@ -679,21 +724,7 @@ export function ScoreEntryGrid({
             );
             setRows(next);
 
-            // The same rule the page used: a student counts as graded once
-            // they have a quarterly grade, a letter grade, or are marked N/A.
-            const active = next.filter((r) => !r.withdrawn);
-            queryClient.setQueryData<GradedProgress>(
-              queryKeys.gradingSheetProgress(sheetId),
-              {
-                graded: active.filter(
-                  (r) =>
-                    r.quarterly_grade !== null ||
-                    r.letter_grade !== null ||
-                    r.is_na
-                ).length,
-                total: active.length,
-              }
-            );
+            publishProgress(next);
 
             // Advance the last-saved snapshot to the server-confirmed state so
             // a later failed commit reverts to THIS save, not the page-load
@@ -1148,20 +1179,38 @@ export function ScoreEntryGrid({
 
                   {/* Student */}
                   <TableCell className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/40 bg-card py-2">
-                    <div
-                      className={
-                        r.withdrawn
-                          ? 'whitespace-nowrap text-sm font-medium text-muted-foreground line-through'
-                          : 'whitespace-nowrap text-sm font-medium text-foreground'
-                      }
-                    >
-                      {r.student_name}
-                    </div>
+                    {canExcuse && !r.withdrawn ? (
+                      <HoverHint hint="Choose which assessments count for this student">
+                        <button
+                          type="button"
+                          onClick={() => setExcusingId(r.section_student_id)}
+                          className="whitespace-nowrap rounded-sm text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {r.student_name}
+                        </button>
+                      </HoverHint>
+                    ) : (
+                      <div
+                        className={
+                          r.withdrawn
+                            ? 'whitespace-nowrap text-sm font-medium text-muted-foreground line-through'
+                            : 'whitespace-nowrap text-sm font-medium text-foreground'
+                        }
+                      >
+                        {r.student_name}
+                      </div>
+                    )}
                     <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
                       {r.student_number}
                     </div>
                     {r.late_enrollee && !r.withdrawn && (
-                      <HoverHint hint="Earlier assessments stay blank and are excluded from the average — proration is automatic.">
+                      <HoverHint
+                        hint={
+                          canExcuse
+                            ? 'Joined after the term began. A blank assessment counts as zero until you untick it: click the name.'
+                            : 'Joined after the term began. A blank assessment counts as zero until the registrar excuses it.'
+                        }
+                      >
                         <span className="mt-0.5 inline-flex items-center rounded bg-brand-amber/10 px-1 py-px font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-amber">
                           Late
                         </span>
@@ -1172,39 +1221,43 @@ export function ScoreEntryGrid({
                   {/* WW inputs */}
                   {wwTotals.map((max, i) => (
                     <TableCell key={`ww-${i}`} className="px-1 py-1">
-                      <ScoreInput
-                        value={r.ww_scores[i] ?? null}
-                        max={max}
-                        plaintext={locked}
-                        disabled={inputsDisabled}
-                        onLocalChange={(v) =>
-                          updateLocal(r.section_student_id, (row) => ({
-                            ...row,
-                            ww_scores: replaceAt(
-                              row.ww_scores,
+                      {r.ww_excused?.includes(i + 1) ? (
+                        <ExcusedCell />
+                      ) : (
+                        <ScoreInput
+                          value={r.ww_scores[i] ?? null}
+                          max={max}
+                          plaintext={locked}
+                          disabled={inputsDisabled}
+                          onLocalChange={(v) =>
+                            updateLocal(r.section_student_id, (row) => ({
+                              ...row,
+                              ww_scores: replaceAt(
+                                row.ww_scores,
+                                i,
+                                v,
+                                wwTotals.length
+                              ),
+                            }))
+                          }
+                          onCommit={(v) => {
+                            const next = replaceAt(
+                              r.ww_scores,
                               i,
                               v,
                               wwTotals.length
-                            ),
-                          }))
-                        }
-                        onCommit={(v) => {
-                          const next = replaceAt(
-                            r.ww_scores,
-                            i,
-                            v,
-                            wwTotals.length
-                          );
-                          commitScore(
-                            r.section_student_id,
-                            'ww',
-                            i,
-                            { field: 'ww_scores', slotIndex: i },
-                            { ww_scores: next },
-                            v
-                          );
-                        }}
-                      />
+                            );
+                            commitScore(
+                              r.section_student_id,
+                              'ww',
+                              i,
+                              { field: 'ww_scores', slotIndex: i },
+                              { ww_scores: next },
+                              v
+                            );
+                          }}
+                        />
+                      )}
                     </TableCell>
                   ))}
                   <ComputedCell value={wwTotal} dp={0} />
@@ -1216,39 +1269,43 @@ export function ScoreEntryGrid({
                     <>
                       {ptTotals.map((max, i) => (
                         <TableCell key={`pt-${i}`} className="px-1 py-1">
-                          <ScoreInput
-                            value={r.pt_scores[i] ?? null}
-                            max={max}
-                            plaintext={locked}
-                            disabled={inputsDisabled}
-                            onLocalChange={(v) =>
-                              updateLocal(r.section_student_id, (row) => ({
-                                ...row,
-                                pt_scores: replaceAt(
-                                  row.pt_scores,
+                          {r.pt_excused?.includes(i + 1) ? (
+                            <ExcusedCell />
+                          ) : (
+                            <ScoreInput
+                              value={r.pt_scores[i] ?? null}
+                              max={max}
+                              plaintext={locked}
+                              disabled={inputsDisabled}
+                              onLocalChange={(v) =>
+                                updateLocal(r.section_student_id, (row) => ({
+                                  ...row,
+                                  pt_scores: replaceAt(
+                                    row.pt_scores,
+                                    i,
+                                    v,
+                                    ptTotals.length
+                                  ),
+                                }))
+                              }
+                              onCommit={(v) => {
+                                const next = replaceAt(
+                                  r.pt_scores,
                                   i,
                                   v,
                                   ptTotals.length
-                                ),
-                              }))
-                            }
-                            onCommit={(v) => {
-                              const next = replaceAt(
-                                r.pt_scores,
-                                i,
-                                v,
-                                ptTotals.length
-                              );
-                              commitScore(
-                                r.section_student_id,
-                                'pt',
-                                i,
-                                { field: 'pt_scores', slotIndex: i },
-                                { pt_scores: next },
-                                v
-                              );
-                            }}
-                          />
+                                );
+                                commitScore(
+                                  r.section_student_id,
+                                  'pt',
+                                  i,
+                                  { field: 'pt_scores', slotIndex: i },
+                                  { pt_scores: next },
+                                  v
+                                );
+                              }}
+                            />
+                          )}
                         </TableCell>
                       ))}
                       <ComputedCell value={ptTotal} dp={0} />
@@ -1294,7 +1351,14 @@ export function ScoreEntryGrid({
                   <TableCell className="text-right tabular-nums">
                     <QuarterlyPill
                       value={r.quarterly_grade}
-                      muted={r.withdrawn || r.is_na || readOnly}
+                      // No colour until every counted slot has a score — a
+                      // part-filled row's grade is not a result yet.
+                      muted={
+                        r.withdrawn ||
+                        r.is_na ||
+                        readOnly ||
+                        !isRowComplete(r, sheetShape)
+                      }
                       letter={
                         letterDisplay
                           ? resolveNonExaminableLetter({
@@ -1384,6 +1448,59 @@ export function ScoreEntryGrid({
       </Card>
 
       {approvalDialog}
+
+      {(() => {
+        const r = excusingId
+          ? rows.find((x) => x.section_student_id === excusingId)
+          : undefined;
+        if (!r) return null;
+        return (
+          <ExcusedSlotsDialog
+            open
+            onOpenChange={(o) => !o && setExcusingId(null)}
+            sheetId={sheetId}
+            sheetLocked={sheetLocked}
+            student={{
+              section_student_id: r.section_student_id,
+              student_name: r.student_name,
+              ww_scores: r.ww_scores,
+              pt_scores: r.pt_scores,
+              ww_excused: r.ww_excused ?? [],
+              pt_excused: r.pt_excused ?? [],
+            }}
+            wwTotals={wwTotals}
+            ptTotals={ptTotals}
+            wwLabels={wwTotals.map((_, i) => labels.ww[i]?.label)}
+            ptLabels={ptTotals.map((_, i) => labels.pt[i]?.label)}
+            onSaved={(saved) => {
+              const apply = (row: GradeRow): GradeRow => ({
+                ...row,
+                entry_id: saved.id || row.entry_id,
+                ww_excused: saved.ww_excused,
+                pt_excused: saved.pt_excused,
+                ww_ps: saved.ww_ps,
+                pt_ps: saved.pt_ps,
+                qa_ps: saved.qa_ps,
+                initial_grade: saved.initial_grade,
+                quarterly_grade: saved.quarterly_grade,
+              });
+              updateLocal(r.section_student_id, apply);
+              // An excusal can finish a row, so the Graded count may move.
+              publishProgress(
+                rowsRef.current.map((x) =>
+                  x.section_student_id === r.section_student_id ? apply(x) : x
+                )
+              );
+              const confirmed = savedRowsRef.current.get(r.section_student_id);
+              if (confirmed)
+                savedRowsRef.current.set(
+                  r.section_student_id,
+                  apply(confirmed)
+                );
+            }}
+          />
+        );
+      })()}
 
       {pendingFirstScore && (
         <FirstScoreLabelDialog
@@ -1943,6 +2060,18 @@ function sumScores(scores: (number | null)[], len: number): number | null {
   const slice = scores.slice(0, len);
   if (slice.every((v) => v === null)) return null;
   return slice.reduce<number>((acc, v) => acc + (v ?? 0), 0);
+}
+
+// An assessment the registrar excused for this student: out of their score and
+// their total, and not editable.
+function ExcusedCell() {
+  return (
+    <HoverHint hint="Excused for this student. It doesn't count toward their score or total.">
+      <span className="flex h-8 items-center justify-center rounded-md bg-muted text-[11px] font-medium text-muted-foreground">
+        N/A
+      </span>
+    </HoverHint>
+  );
 }
 
 function ComputedCell({

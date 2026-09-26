@@ -110,7 +110,19 @@ export type StudentAlertRow = {
   outliers: SheetOutlier[];
   /** This term's marks per component, straight off the sheet being marked. */
   currentMarks?: Partial<Record<AlertMetric, Marks>>;
+  /**
+   * False while the row still has blank counted slots. Its changes are shown
+   * but never flagged: blanks score zero, so a part-filled term reads low.
+   */
+  complete?: boolean;
+  /** Counted slots (and the exam) still blank — named on the tag. */
+  missingScores?: number;
 };
+
+/** A term-over-term change only counts as flagged once the row is complete. */
+function isFlagged(row: StudentAlertRow, c: AlertComparison): boolean {
+  return c.flagged && row.complete !== false;
+}
 
 // Formula order, which is also sheet order. Never alphabetical.
 const COMPONENT_ORDER: AlertMetric[] = ['ww', 'pt', 'qa'];
@@ -128,7 +140,7 @@ function flaggedCount(row: StudentAlertRow): number {
   if (row.withdrawn) return 0;
   const latest = latestTermNumber(row.comparisons);
   const changes = row.comparisons.filter(
-    (c) => c.term_number === latest && c.flagged
+    (c) => c.term_number === latest && isFlagged(row, c)
   ).length;
   return changes + row.outliers.length;
 }
@@ -147,7 +159,7 @@ function summarise(row: StudentAlertRow): string {
   const latest = latestTermNumber(row.comparisons);
   const changes = row.comparisons.filter((c) => c.term_number === latest);
   const parts = changes
-    .filter((c) => c.flagged)
+    .filter((c) => isFlagged(row, c))
     .map((c) => `${c.metric_label} ${signed(c.diff)}`);
 
   if (row.outliers.length > 0) {
@@ -462,6 +474,8 @@ function StudentDetail({
           isExaminable={isExaminable}
           terms={terms}
           weights={weights}
+          lastTermIncomplete={row.complete === false}
+          lastTermMissing={row.missingScores ?? 0}
         />
 
         {/* A single assessment, raw, compared only against this student's own

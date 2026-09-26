@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { TrendChart } from '@/components/dashboard/charts/trend-chart';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { numericToLetter } from '@/lib/compute/letter-grade';
 import { GRADE_ALERT_THRESHOLD } from '@/lib/markbook/alert-threshold';
@@ -61,6 +62,10 @@ export type SubjectTermPanelProps = {
   terms: TermFigures[];
   /** Whole-number percents, printed on each component's pill. */
   weights?: { ww: number; pt: number; qa: number };
+  /** The last term still has blank slots: show its change, don't colour it. */
+  lastTermIncomplete?: boolean;
+  /** How many of those slots are blank — shown beside the figure. */
+  lastTermMissing?: number;
 };
 
 type MeasureKey = 'quarterly' | 'ww' | 'pt' | 'qa';
@@ -147,6 +152,8 @@ export function SubjectTermPanel({
   isExaminable,
   terms,
   weights,
+  lastTermIncomplete = false,
+  lastTermMissing = 0,
 }: SubjectTermPanelProps) {
   const measures = useMemo<Measure[]>(() => {
     const build = (
@@ -180,7 +187,10 @@ export function SubjectTermPanel({
         marks,
         latest,
         change,
-        fell: change != null && change <= -GRADE_ALERT_THRESHOLD,
+        fell:
+          change != null &&
+          change <= -GRADE_ALERT_THRESHOLD &&
+          !(lastTermIncomplete && latest === values.length - 1),
       };
     };
 
@@ -209,7 +219,13 @@ export function SubjectTermPanel({
       );
     }
     return out;
-  }, [terms, weights, isExaminable]);
+  }, [terms, weights, isExaminable, lastTermIncomplete]);
+
+  // The term being looked at is still being marked: its change is shown, but
+  // not coloured as a fall or a rise — blanks score zero until every counted
+  // slot has a score, so a part-filled term reads low.
+  const isIncomplete = (i: number) =>
+    lastTermIncomplete && i === terms.length - 1;
 
   const [selected, setSelected] = useState<MeasureKey>('quarterly');
   const shown = measures.find((m) => m.key === selected) ?? measures[0];
@@ -224,6 +240,7 @@ export function SubjectTermPanel({
   }
 
   const isGrade = shown.key === 'quarterly';
+  const shownIncomplete = isIncomplete(shown.latest);
   const latestValue = shown.latest >= 0 ? shown.values[shown.latest] : null;
   const latestMarks = shown.marks?.[shown.latest];
   const priorLabel =
@@ -328,7 +345,7 @@ export function SubjectTermPanel({
           <span
             className={cn(
               'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums',
-              shown.change == null
+              shown.change == null || shownIncomplete
                 ? 'bg-muted text-muted-foreground'
                 : shown.change <= -GRADE_ALERT_THRESHOLD
                   ? 'bg-destructive/10 text-destructive'
@@ -343,6 +360,11 @@ export function SubjectTermPanel({
           </span>
           {shown.sub && (
             <span className="text-xs text-muted-foreground">{shown.sub}</span>
+          )}
+          {shownIncomplete && lastTermMissing > 0 && (
+            <Badge variant="muted" className="ml-auto self-center text-[10px]">
+              Not fully graded
+            </Badge>
           )}
         </div>
 
@@ -361,6 +383,11 @@ export function SubjectTermPanel({
                 yFormat={isGrade ? undefined : 'percent'}
                 tone={shown.fell ? 'fall' : 'default'}
                 current={points}
+                // The term being marked is drawn apart until it is fully
+                // graded — only when it is the last point on the line.
+                lastPointProvisional={
+                  shownIncomplete && shown.values[terms.length - 1] != null
+                }
               />
             </div>
           ) : (
@@ -458,7 +485,9 @@ export function SubjectTermPanel({
                       <td
                         className={cn(
                           'py-2 pl-2 text-right font-serif text-[15px] font-semibold',
-                          d != null && d <= -GRADE_ALERT_THRESHOLD
+                          d != null &&
+                            d <= -GRADE_ALERT_THRESHOLD &&
+                            !isIncomplete(i)
                             ? 'text-destructive'
                             : 'text-foreground'
                         )}
@@ -470,7 +499,11 @@ export function SubjectTermPanel({
                       <td
                         className={cn(
                           'py-2 pl-2 text-right font-mono text-[12px] font-semibold',
-                          toneFor(isGrade && !isExaminable ? null : d)
+                          toneFor(
+                            (isGrade && !isExaminable) || isIncomplete(i)
+                              ? null
+                              : d
+                          )
                         )}
                       >
                         {(isGrade && !isExaminable) || d == null

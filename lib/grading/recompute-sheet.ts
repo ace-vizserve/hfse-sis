@@ -33,6 +33,9 @@ export type RecomputableEntry = {
   ww_scores: (number | null)[] | null;
   pt_scores: (number | null)[] | null;
   qa_score: number | null;
+  /** 1-based slots the registrar excused (migration 179). Absent = none. */
+  ww_excused?: number[] | null;
+  pt_excused?: number[] | null;
   // Stored derived values, used only to decide whether a write is needed.
   // Absent on callers that always write (the totals route pre-extraction).
   ww_ps?: number | null;
@@ -113,6 +116,8 @@ export function recomputeEntryRow(
     pt_scores: pt,
     pt_totals: totals.pt_totals,
     qa_score: entry.qa_score,
+    ww_excused: entry.ww_excused ?? [],
+    pt_excused: entry.pt_excused ?? [],
     qa_total: totals.qa_total,
     ww_weight: Number(weights.ww_weight),
     pt_weight: Number(weights.pt_weight),
@@ -257,7 +262,7 @@ export async function recomputeSheetEntries(
   const { data, error } = await service
     .from('grade_entries')
     .select(
-      'id, ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade'
+      'id, ww_scores, pt_scores, qa_score, ww_excused, pt_excused, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade'
     )
     .eq('grading_sheet_id', sheetId)
     .order('id');

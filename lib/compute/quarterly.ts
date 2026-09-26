@@ -30,6 +30,12 @@ export type ComputeInput = {
   ww_weight: number;
   pt_weight: number;
   qa_weight: number;
+  /**
+   * 1-based slot numbers the registrar excused for this student (proration,
+   * migration 179). An excused slot leaves BOTH the score and the total.
+   */
+  ww_excused?: number[];
+  pt_excused?: number[];
 };
 
 export type ComputeOutput = {
@@ -42,7 +48,8 @@ export type ComputeOutput = {
 
 function componentPercentage(
   scores: (number | null)[],
-  totals: number[]
+  totals: number[],
+  excused: number[] = []
 ): number | null {
   let sumScores = 0;
   let sumMax = 0;
@@ -50,6 +57,7 @@ function componentPercentage(
   for (let i = 0; i < totals.length; i++) {
     const max = totals[i];
     if (max == null) continue; // no max configured for this slot
+    if (excused.includes(i + 1)) continue; // excused: out of both sums
     sumMax += max; // a blank slot's max still counts — the full total
     const s = scores[i];
     if (s == null) continue; // blank slot: nothing added to the numerator
@@ -74,8 +82,16 @@ function transmute(initial: number): number {
 }
 
 export function computeQuarterly(input: ComputeInput): ComputeOutput {
-  const ww_ps = componentPercentage(input.ww_scores, input.ww_totals);
-  const pt_ps = componentPercentage(input.pt_scores, input.pt_totals);
+  const ww_ps = componentPercentage(
+    input.ww_scores,
+    input.ww_totals,
+    input.ww_excused
+  );
+  const pt_ps = componentPercentage(
+    input.pt_scores,
+    input.pt_totals,
+    input.pt_excused
+  );
   const qa_ps = qaPercentage(input.qa_score, input.qa_total);
 
   if (ww_ps == null && pt_ps == null && qa_ps == null) {

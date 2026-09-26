@@ -70,6 +70,36 @@ describe('computeQuarterly', () => {
     expect(result.quarterly_grade).toBe(64);
   });
 
+  it('drops an excused slot from the score AND the total (proration)', () => {
+    // Same sheet, WW2 excused by the registrar: 14/15 again → 69.
+    const result = computeQuarterly({
+      ww_scores: [14, null],
+      ww_totals: [15, 15],
+      pt_scores: [null, null, null],
+      pt_totals: [20, 20, 20],
+      qa_score: null,
+      qa_total: 60,
+      ...PRIMARY,
+      ww_excused: [2],
+    });
+    expect(result.ww_ps).toBeCloseTo(93.3333, 4);
+    expect(result.quarterly_grade).toBe(69);
+  });
+
+  it('a component whose every slot is excused counts as not entered', () => {
+    const result = computeQuarterly({
+      ww_scores: [null, null],
+      ww_totals: [10, 10],
+      pt_scores: [10],
+      pt_totals: [10],
+      qa_score: null,
+      qa_total: 30,
+      ...PRIMARY,
+      ww_excused: [1, 2],
+    });
+    expect(result.ww_ps).toBeNull();
+  });
+
   it('includes zero score in WW numerator and denominator (zero ≠ blank)', () => {
     // Slot 1: 0/10. ww_ps = 0/10 * 100 = 0, not excluded.
     const result = computeQuarterly({

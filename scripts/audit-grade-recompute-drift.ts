@@ -43,6 +43,7 @@
 // QUARTERLY_DRIFT or SHAPE_MISMATCH is found, so it can be wired into CI later
 // without modification.
 import { computeQuarterly } from '../lib/compute/quarterly';
+import { resolveSheetWeights } from '../lib/grading/resolve-sheet-weights';
 import { fetchAllPages, fetchInChunks } from '../lib/supabase/paginate';
 import { createServiceClient } from '../lib/supabase/service';
 
@@ -73,6 +74,9 @@ type SheetRow = {
   pt_totals: number[] | null;
   qa_total: number | null;
   is_locked: boolean;
+  ww_weight: number | null;
+  pt_weight: number | null;
+  qa_weight: number | null;
 };
 type EntryRow = {
   id: string;
@@ -87,6 +91,8 @@ type EntryRow = {
   initial_grade: number | null;
   quarterly_grade: number | null;
   is_na: boolean;
+  ww_excused: number[] | null;
+  pt_excused: number[] | null;
 };
 // PostgREST types an embedded relation as an array even when the FK makes it
 // at most one row, so this is `students[]` rather than `students | null`.
@@ -209,7 +215,7 @@ async function main() {
       service
         .from('grading_sheets')
         .select(
-          'id, term_id, section_id, subject_id, subject_config_id, ww_totals, pt_totals, qa_total, is_locked'
+          'id, term_id, section_id, subject_id, subject_config_id, ww_totals, pt_totals, qa_total, is_locked, ww_weight, pt_weight, qa_weight'
         )
         .in('term_id', slice)
         .order('id')
@@ -234,7 +240,7 @@ async function main() {
       service
         .from('grade_entries')
         .select(
-          'id, grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, is_na'
+          'id, grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, is_na, ww_excused, pt_excused'
         )
         .in('grading_sheet_id', slice)
         .order('id')
@@ -376,9 +382,10 @@ async function main() {
         pt_totals: ptTotals,
         qa_score: numOrNull(entry.qa_score),
         qa_total: qaTotal,
-        ww_weight: Number(config.ww_weight),
-        pt_weight: Number(config.pt_weight),
-        qa_weight: Number(config.qa_weight),
+        // Sheet-first, as the derive trigger does (migrations 159/178).
+        ...resolveSheetWeights(sheet, config),
+        ww_excused: entry.ww_excused ?? [],
+        pt_excused: entry.pt_excused ?? [],
       });
 
       const storedQ = entry.quarterly_grade;

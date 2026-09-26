@@ -53,6 +53,7 @@ import {
   type GradeChangeFilingRoute,
 } from '@/lib/change-requests/filing-route';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import { isRowComplete } from '@/lib/grading/row-complete';
 import { RequestEditButton } from './request-edit-button';
 
 /**
@@ -125,6 +126,8 @@ type EntryRow = {
   quarterly_grade: number | null;
   letter_grade: string | null;
   is_na: boolean;
+  ww_excused: number[] | null;
+  pt_excused: number[] | null;
   /** Joined by hand against the roster — see the rows build in the page. */
   section_student_id: string;
 };
@@ -302,7 +305,7 @@ export default async function GradingSheetPage({
       .select(
         `id, section_student_id, ww_scores, pt_scores, qa_score,
          ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade,
-         letter_grade, is_na`
+         letter_grade, is_na, ww_excused, pt_excused`
       )
       .eq('grading_sheet_id', id),
     assignmentsPromise,
@@ -506,6 +509,8 @@ export default async function GradingSheetPage({
       is_na: e?.is_na ?? false,
       ww_scores: (e?.ww_scores ?? []) as (number | null)[],
       pt_scores: (e?.pt_scores ?? []) as (number | null)[],
+      ww_excused: (e?.ww_excused ?? []) as number[],
+      pt_excused: (e?.pt_excused ?? []) as number[],
       qa_score: e?.qa_score ?? null,
       ww_ps: e?.ww_ps ?? null,
       pt_ps: e?.pt_ps ?? null,
@@ -519,8 +524,15 @@ export default async function GradingSheetPage({
   // Stat card metrics — only count active + late_enrollee students
   const activeRows = rows.filter((r) => !r.withdrawn);
   const totalStudents = activeRows.length;
-  const gradedCount = activeRows.filter(
-    (r) => r.quarterly_grade !== null || r.letter_grade !== null || r.is_na
+  // Graded = every counted slot has a score (lib/grading/row-complete.ts); a
+  // quarterly grade exists from the first score, so it cannot mean finished.
+  const sheetShape = {
+    ww_totals: (sheet.ww_totals ?? []) as number[],
+    pt_totals: (sheet.pt_totals ?? []) as number[],
+    qa_total: sheet.qa_total as number | null,
+  };
+  const gradedCount = activeRows.filter((r) =>
+    isRowComplete(r, sheetShape)
   ).length;
   // The percentage is worked out inside <GradedStatCard> now, from whichever
   // count is current — this one at first paint, the grid's after a save.
@@ -882,6 +894,8 @@ export default async function GradingSheetPage({
         rows={rows}
         readOnly={readOnly}
         requireApproval={requireApproval}
+        canExcuse={canManage && isExaminable}
+        sheetLocked={sheet.is_locked}
         slotLabels={
           (sheet.slot_labels as {
             ww?: ({

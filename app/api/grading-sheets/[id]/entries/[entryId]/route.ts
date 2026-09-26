@@ -119,7 +119,7 @@ export async function PATCH(
     service
       .from('grade_entries')
       .select(
-        'id, grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na'
+        'id, grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na, ww_excused, pt_excused'
       )
       .eq('id', entryId)
       .single(),
@@ -408,6 +408,24 @@ export async function PATCH(
   const ww_scores = normalizeArr(merged.ww_scores, sheet.ww_totals.length);
   const pt_scores = normalizeArr(merged.pt_scores, sheet.pt_totals.length);
   const qa_score = merged.qa_score;
+  // Slots the registrar excused for this student (migration 179). Changed only
+  // through /api/grading-sheets/[id]/excused; here they are read, not written.
+  const ww_excused = (entry.ww_excused as number[] | null) ?? [];
+  const pt_excused = (entry.pt_excused as number[] | null) ?? [];
+  const excusedSlot = ww_scores.findIndex(
+    (v, i) => v != null && ww_excused.includes(i + 1)
+  );
+  const excusedPtSlot = pt_scores.findIndex(
+    (v, i) => v != null && pt_excused.includes(i + 1)
+  );
+  if (excusedSlot >= 0 || excusedPtSlot >= 0) {
+    return NextResponse.json(
+      {
+        error: `${excusedSlot >= 0 ? `W${excusedSlot + 1}` : `PT${excusedPtSlot + 1}`} is excused for this student, so it cannot hold a score.`,
+      },
+      { status: 400 }
+    );
+  }
 
   for (let i = 0; i < ww_scores.length; i++) {
     const v = ww_scores[i];
@@ -483,6 +501,8 @@ export async function PATCH(
     qa_score,
     qa_total: sheet.qa_total,
     ...weights,
+    ww_excused,
+    pt_excused,
   });
 
   // ----- First-score label gate (unlocked/direct path only; Hard Rule #5's

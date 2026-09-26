@@ -31,6 +31,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
 import { BulkCreateSheetsButton } from '@/components/markbook/bulk-create-sheets-button';
+import { isRowComplete } from '@/lib/grading/row-complete';
 
 type LevelLite = {
   id: string;
@@ -61,6 +62,9 @@ type TermLite = { id: string; term_number: number; label: string };
 type SheetRow = {
   id: string;
   is_locked: boolean;
+  ww_totals: number[] | null;
+  pt_totals: number[] | null;
+  qa_total: number | null;
   teacher_name: string | null;
   term: TermLite | TermLite[] | null;
   subject: SubjectLite | SubjectLite[] | null;
@@ -183,7 +187,7 @@ export default async function GradingListPage({
     ? supabase
         .from('grading_sheets')
         .select(
-          `id, is_locked, teacher_name,
+          `id, is_locked, teacher_name, ww_totals, pt_totals, qa_total,
            term:terms(id, term_number, label),
            subject:subjects(id, code, name, is_examinable),
            subject_config:subject_configs(display_name),
@@ -237,7 +241,11 @@ export default async function GradingListPage({
   // pairing lib/markbook/dashboard.ts uses over this identical shape.
   type GradedEntry = {
     grading_sheet_id: string;
-    quarterly_grade: number | null;
+    ww_scores: (number | null)[] | null;
+    pt_scores: (number | null)[] | null;
+    qa_score: number | null;
+    ww_excused: number[] | null;
+    pt_excused: number[] | null;
     letter_grade: string | null;
     is_na: boolean;
     section_student:
@@ -258,7 +266,7 @@ export default async function GradingListPage({
           supabase
             .from('grade_entries')
             .select(
-              `grading_sheet_id, quarterly_grade, letter_grade, is_na,
+              `grading_sheet_id, ww_scores, pt_scores, qa_score, ww_excused, pt_excused, letter_grade, is_na,
                section_student:section_students(enrollment_status)`
             )
             .in('grading_sheet_id', slice)
@@ -304,9 +312,9 @@ export default async function GradingListPage({
       return ss?.enrollment_status !== 'withdrawn';
     });
     const totalStudents = activeRows.length;
-    const gradedCount = activeRows.filter(
-      (e) => e.quarterly_grade !== null || e.letter_grade !== null || e.is_na
-    ).length;
+    // Graded = every counted slot has a score, the same rule as the sheet page
+    // (lib/grading/row-complete.ts).
+    const gradedCount = activeRows.filter((e) => isRowComplete(e, s)).length;
     slotsBySheet.set(s.id, { graded: gradedCount, total: totalStudents });
   }
 

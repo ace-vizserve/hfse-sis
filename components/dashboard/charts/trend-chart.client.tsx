@@ -78,6 +78,12 @@ export type TrendChartProps = {
    * figures on the points are what stop that being a chart nobody can read.
    */
   showValues?: boolean;
+  /**
+   * The last point is not final yet (a term still being marked). It is drawn
+   * apart from the rest — a dashed grey segment into a hollow grey point — so
+   * the line does not read as a real rise or fall.
+   */
+  lastPointProvisional?: boolean;
 };
 
 function TrendChartImpl({
@@ -92,6 +98,7 @@ function TrendChartImpl({
   tone = 'default',
   ticks,
   showValues = false,
+  lastPointProvisional = false,
 }: TrendChartProps) {
   const compact = variant === 'compact';
   const yFormatter = formatterFor(yFormat);
@@ -102,9 +109,15 @@ function TrendChartImpl({
   // is not already printing every value marks it and prints its figure.
   const markLatest = !compact && !showValues && lastIndex >= 0;
 
+  // A provisional last point leaves the solid series: `bridge` carries the
+  // dashed grey segment into it (never in the tooltip, or the point before it
+  // would be listed twice) and `pending` carries the point itself.
+  const provisional = lastPointProvisional && lastIndex >= 1;
   const merged = current.map((pt, i) => ({
     x: pt.x,
-    current: pt.y,
+    current: provisional && i === lastIndex ? undefined : pt.y,
+    bridge: provisional && i >= lastIndex - 1 ? pt.y : undefined,
+    pending: provisional && i === lastIndex ? pt.y : undefined,
     comparison:
       comparison && alignComparison && comparison[i]
         ? comparison[i].y
@@ -262,6 +275,55 @@ function TrendChartImpl({
             />
           )}
         </Area>
+        {provisional && (
+          <Area
+            type="monotone"
+            dataKey="bridge"
+            stroke={MUTED_SERIES}
+            strokeDasharray="4 4"
+            strokeWidth={LINE_WIDTH}
+            fill="transparent"
+            dot={false}
+            activeDot={false}
+            tooltipType="none"
+            legendType="none"
+            isAnimationActive={false}
+          />
+        )}
+        {provisional && (
+          <Area
+            type="monotone"
+            dataKey="pending"
+            name={`${label} (not fully graded)`}
+            stroke="transparent"
+            fill="transparent"
+            dot={{
+              r: 3.5,
+              strokeWidth: 2,
+              stroke: MUTED_SERIES,
+              fill: 'var(--color-background)',
+            }}
+            activeDot={{ ...ACTIVE_DOT, fill: MUTED_SERIES }}
+            legendType="none"
+            isAnimationActive={false}
+          >
+            {(showValues || markLatest) && (
+              <LabelList
+                dataKey="pending"
+                position={showValues ? 'top' : 'right'}
+                offset={9}
+                fill="var(--color-muted-foreground)"
+                fontSize={12}
+                fontWeight={600}
+                formatter={(v: unknown) =>
+                  typeof v === 'number' && yFormatter
+                    ? yFormatter(v)
+                    : String(v)
+                }
+              />
+            )}
+          </Area>
+        )}
         {comparison && (
           <Area
             type="monotone"

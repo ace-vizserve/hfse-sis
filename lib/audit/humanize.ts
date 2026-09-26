@@ -2893,6 +2893,8 @@ const FIELD_LABELS: Record<string, string> = {
   qa_total: 'Quarterly Assessment total',
   letter_grade: 'Letter grade',
   is_na: 'Not applicable',
+  ww_excused: 'Excused written work',
+  pt_excused: 'Excused performance tasks',
   annual_letter_grade: 'Final grade',
   weights: 'Weights',
   stpApplicationStatus: 'Student Pass application status',
