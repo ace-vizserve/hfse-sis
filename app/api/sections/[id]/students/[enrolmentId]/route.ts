@@ -6,11 +6,7 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
 import { EnrolmentMetadataSchema } from '@/lib/schemas/enrolment';
-import {
-  getEnrolmentPosition,
-  getTermForDate,
-  loadTermsForAY,
-} from '@/lib/sis/terms';
+import { getEnrolmentPosition, getTermForDate } from '@/lib/sis/terms';
 import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 
@@ -256,18 +252,22 @@ export async function PATCH(
           parsed.data.late_enrollee_term_number ?? null;
       }
       if (before.enrollment_status !== 'late_enrollee') {
-        // Derive the joining date from the chosen term: today when the chosen
-        // term contains today ("join current"), else that term's start date
-        // ("start next term" — they begin fresh, attendance prorates from there).
-        const today = sgToday();
-        let stampDate = today;
-        const chosenTermN = parsed.data.late_enrollee_term_number ?? null;
-        if (chosenTermN != null && sectionAyCode) {
-          const terms = await loadTermsForAY(sectionAyCode);
-          const chosen = terms.find((t) => t.termNumber === chosenTermN);
-          if (chosen && chosen.startDate > today) stampDate = chosen.startDate;
+        // The registrar supplies the first day. It used to be stamped with
+        // today (or the chosen term's start), so a student tagged a fortnight
+        // after they started read as owing no attendance for that fortnight
+        // and owing it for days before they came — the same admin-date-as-fact
+        // bug migration 163 removed from withdrawals.
+        if (!parsed.data.enrollment_date) {
+          return NextResponse.json(
+            {
+              error:
+                'Enrollment date is required when tagging a late enrollee.',
+              code: 'first_day_required',
+            },
+            { status: 422 }
+          );
         }
-        patch.enrollment_date = stampDate;
+        patch.enrollment_date = parsed.data.enrollment_date;
         lateEnrolleeTransition = true;
       }
     }

@@ -128,7 +128,7 @@ export default async function SisSectionDetailPage({
     supabase
       .from('section_students')
       .select(
-        'id, index_number, enrollment_status, bus_no, classroom_officer_role, academics_notes, admin_notes, withdrawal_reason, withdrawal_notes, withdrawal_date, withdrawal_approved_date, late_enrollee_term_number, student:students(id, student_number, last_name, first_name, middle_name)'
+        'id, index_number, enrollment_status, bus_no, classroom_officer_role, academics_notes, admin_notes, withdrawal_reason, withdrawal_notes, withdrawal_date, withdrawal_approved_date, late_enrollee_term_number, enrollment_date, student:students(id, student_number, last_name, first_name, middle_name)'
       )
       .eq('section_id', id)
       .order('index_number', { ascending: true }),
@@ -213,6 +213,7 @@ export default async function SisSectionDetailPage({
     withdrawal_date: string | null;
     withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
+    enrollment_date: string | null;
     student:
       | {
           id: string;
@@ -366,6 +367,7 @@ export default async function SisSectionDetailPage({
         withdrawal_date: r.withdrawal_date,
         withdrawal_approved_date: r.withdrawal_approved_date,
         late_enrollee_term_number: r.late_enrollee_term_number,
+        enrollment_date: r.enrollment_date,
         student_number: s.student_number,
         last_name: s.last_name,
         first_name: s.first_name,
@@ -419,6 +421,7 @@ export default async function SisSectionDetailPage({
     withdrawal_date: s.withdrawal_date ?? null,
     withdrawal_approved_date: s.withdrawal_approved_date ?? null,
     lateEnrolleTermNumber: s.late_enrollee_term_number ?? null,
+    enrollment_date: s.enrollment_date ?? null,
   }));
 
   return (

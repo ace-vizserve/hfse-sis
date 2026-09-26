@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { sgToday } from '@/lib/dates';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AlertDialog,
@@ -17,6 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
@@ -47,6 +49,28 @@ import {
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
 
+type TermRef = { termNumber: number; startDate: string };
+// What `/api/sis/today-term` returns (lib/sis/enrolment-position.ts).
+type Position = {
+  activeTerm: TermRef | null;
+  nextTerm: TermRef | null;
+  joiningTerm: TermRef | null;
+  yearStarted: boolean;
+  isLateEnrollee: boolean;
+  canDeferToNext: boolean;
+  daysLeftInActiveTerm: number | null;
+};
+
+/** A late enrollee's first day: today for the term already under way,
+ *  otherwise the joining term's first day. */
+function firstDayForTerm(pos: Position | null, term: number | null): string {
+  if (!pos || term === null || pos.activeTerm?.termNumber === term) {
+    return sgToday();
+  }
+  const t = [pos.nextTerm, pos.joiningTerm].find((x) => x?.termNumber === term);
+  return t?.startDate ?? sgToday();
+}
+
 export function EnrolmentEditSheet({
   sectionId,
   enrolmentId,
@@ -66,6 +90,8 @@ export function EnrolmentEditSheet({
     withdrawal_reason: string | null;
     withdrawal_notes: string | null;
     late_enrollee_term_number: number | null;
+    /** Enrollment date for a late enrollee — attendance counts from it. */
+    enrollment_date: string | null;
     academics_notes: string | null;
     admin_notes: string | null;
   };
@@ -97,15 +123,11 @@ export function EnrolmentEditSheet({
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [revertReason, setRevertReason] = useState('');
 
-  type Position = {
-    activeTerm: { termNumber: number } | null;
-    nextTerm: { termNumber: number } | null;
-    joiningTerm: { termNumber: number } | null;
-    yearStarted: boolean;
-    isLateEnrollee: boolean;
-    canDeferToNext: boolean;
-    daysLeftInActiveTerm: number | null;
-  };
+  // "Enrollment date" — the late enrollee's enrollment_date, which is
+  // what attendance counts from. While tagging it is prefilled from the
+  // chosen term until the registrar picks a date by hand.
+  const [firstDay, setFirstDay] = useState(initial.enrollment_date ?? '');
+  const [firstDayEdited, setFirstDayEdited] = useState(false);
   const [position, setPosition] = useState<Position | null>(null);
 
   useEffect(() => {
@@ -153,6 +175,8 @@ export function EnrolmentEditSheet({
       setShowTermOverride(false);
       setConfirmWithdraw(false);
       setPosition(null);
+      setFirstDay(initial.enrollment_date ?? '');
+      setFirstDayEdited(false);
     }
   }
 
@@ -187,6 +211,18 @@ export function EnrolmentEditSheet({
     status === 'active' &&
     initial.enrollment_status === 'late_enrollee' &&
     initial.late_enrollee_term_number === 1;
+  // Tagging a late enrollee now — the server requires a first day.
+  const isTaggingLate =
+    status === 'late_enrollee' && initial.enrollment_status !== 'late_enrollee';
+  const firstDayValue =
+    isTaggingLate && !firstDayEdited
+      ? firstDayForTerm(position, lateTermOverride)
+      : firstDay;
+
+  function handleFirstDayChange(v: string) {
+    setFirstDay(v);
+    setFirstDayEdited(true);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -232,6 +268,11 @@ export function EnrolmentEditSheet({
       lateTermOverride !== null
     ) {
       requestBody.late_enrollee_term_number = lateTermOverride;
+    }
+    // New late-enrollee tag — the first day is required (the server 422s
+    // without it) and is what attendance counts from.
+    if (isTaggingLate) {
+      requestBody.enrollment_date = firstDayValue;
     }
     // Convert late enrollee → normal — send the required reason (audit-only).
     if (isConvertingLate) {
@@ -485,6 +526,22 @@ export function EnrolmentEditSheet({
                   </div>
                 )}
 
+              {isTaggingLate && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Enrollment date <span className="text-destructive">*</span>
+                  </label>
+                  <DatePicker
+                    value={firstDayValue}
+                    onChange={handleFirstDayChange}
+                    placeholder="Pick the enrollment date"
+                  />
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Attendance counts from this day.
+                  </p>
+                </div>
+              )}
+
               {initial.enrollment_status === 'late_enrollee' && (
                 <div className="space-y-1.5">
                   <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -551,6 +608,7 @@ export function EnrolmentEditSheet({
                 size="sm"
                 loading={saving}
                 loadingText="Saving…"
+                disabled={isTaggingLate && !firstDayValue}
                 className="gap-1.5"
               >
                 {!saving && <Save className="size-3.5" />}

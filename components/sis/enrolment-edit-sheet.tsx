@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { sgToday } from '@/lib/dates';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import {
@@ -58,6 +59,28 @@ type MidTermPayload = {
   sectionStudentId: string;
 };
 
+type TermRef = { termNumber: number; startDate: string };
+// What `/api/sis/today-term` returns (lib/sis/enrolment-position.ts).
+type Position = {
+  activeTerm: TermRef | null;
+  nextTerm: TermRef | null;
+  joiningTerm: TermRef | null;
+  yearStarted: boolean;
+  isLateEnrollee: boolean;
+  canDeferToNext: boolean;
+  daysLeftInActiveTerm: number | null;
+};
+
+/** A late enrollee's first day: today for the term already under way,
+ *  otherwise the joining term's first day. */
+function firstDayForTerm(pos: Position | null, term: number | null): string {
+  if (!pos || term === null || pos.activeTerm?.termNumber === term) {
+    return sgToday();
+  }
+  const t = [pos.nextTerm, pos.joiningTerm].find((x) => x?.termNumber === term);
+  return t?.startDate ?? sgToday();
+}
+
 export function EnrolmentEditSheet({
   sectionId,
   enrolmentId,
@@ -80,6 +103,8 @@ export function EnrolmentEditSheet({
     withdrawal_date: string | null;
     withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
+    /** Enrollment date for a late enrollee — attendance counts from it. */
+    enrollment_date: string | null;
     academics_notes: string | null;
     admin_notes: string | null;
   };
@@ -122,16 +147,12 @@ export function EnrolmentEditSheet({
     null
   );
   const [markAsLate, setMarkAsLate] = useState(true);
-
-  type Position = {
-    activeTerm: { termNumber: number } | null;
-    nextTerm: { termNumber: number } | null;
-    joiningTerm: { termNumber: number } | null;
-    yearStarted: boolean;
-    isLateEnrollee: boolean;
-    canDeferToNext: boolean;
-    daysLeftInActiveTerm: number | null;
-  };
+  // "Enrollment date" — the late enrollee's enrollment_date, which is
+  // what attendance counts from. While tagging it is prefilled from the
+  // chosen term until the registrar picks a date by hand.
+  const [firstDay, setFirstDay] = useState(initial.enrollment_date ?? '');
+  const [firstDayEdited, setFirstDayEdited] = useState(false);
+  const [midTermFirstDay, setMidTermFirstDay] = useState('');
   const [position, setPosition] = useState<Position | null>(null);
 
   useEffect(() => {
@@ -183,6 +204,9 @@ export function EnrolmentEditSheet({
       setShowTermOverride(false);
       setPendingMidTerm(null);
       setPosition(null);
+      setFirstDay(initial.enrollment_date ?? '');
+      setFirstDayEdited(false);
+      setMidTermFirstDay('');
     }
   }
 
@@ -196,6 +220,18 @@ export function EnrolmentEditSheet({
     status === 'active' &&
     initial.enrollment_status === 'late_enrollee' &&
     initial.late_enrollee_term_number === 1;
+  // Tagging a late enrollee now — the server requires a first day.
+  const isTaggingLate =
+    status === 'late_enrollee' && initial.enrollment_status !== 'late_enrollee';
+  const firstDayValue =
+    isTaggingLate && !firstDayEdited
+      ? firstDayForTerm(position, lateTermOverride)
+      : firstDay;
+
+  function handleFirstDayChange(v: string) {
+    setFirstDay(v);
+    setFirstDayEdited(true);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -320,6 +356,11 @@ export function EnrolmentEditSheet({
     ) {
       body.late_enrollee_term_number = lateTermOverride;
     }
+    // New late-enrollee tag — the first day is required (the server 422s
+    // without it) and is what attendance counts from.
+    if (isTaggingLate) {
+      body.enrollment_date = firstDayValue;
+    }
     // Convert late enrollee → normal — send the required reason (audit-only).
     if (isConvertingLate) {
       body.lateRevertReason = revertReason.trim();
@@ -346,6 +387,9 @@ export function EnrolmentEditSheet({
         if (resBody.reEnrolment && midTermPayload?.sectionId) {
           setPendingMidTerm(midTermPayload);
           setMarkAsLate(true);
+          setMidTermFirstDay(
+            firstDayForTerm(position, midTermPayload.termNumber)
+          );
           return;
         }
         setOpen(false);
@@ -391,10 +435,17 @@ export function EnrolmentEditSheet({
   // Mid-term late-enrollee confirm after a successful re-enrolment. The
   // original threw a bespoke 'Failed to mark as late enrollee' message.
   const lateMutation = useMutation({
-    mutationFn: (vars: { sectionId: string; sectionStudentId: string }) =>
+    mutationFn: (vars: {
+      sectionId: string;
+      sectionStudentId: string;
+      firstDay: string;
+    }) =>
       apiFetch(
         `/api/sections/${vars.sectionId}/students/${vars.sectionStudentId}`,
-        jsonInit('PATCH', { enrollment_status: 'late_enrollee' })
+        jsonInit('PATCH', {
+          enrollment_status: 'late_enrollee',
+          enrollment_date: vars.firstDay,
+        })
       ),
   });
 
@@ -403,6 +454,7 @@ export function EnrolmentEditSheet({
   async function confirmLate(vars: {
     sectionId: string;
     sectionStudentId: string;
+    firstDay: string;
   }) {
     const termLabel = pendingMidTerm?.termLabel ?? '';
     setApplyingLate(true);
@@ -701,6 +753,22 @@ export function EnrolmentEditSheet({
                   </div>
                 )}
 
+              {isTaggingLate && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Enrollment date <span className="text-destructive">*</span>
+                  </label>
+                  <DatePicker
+                    value={firstDayValue}
+                    onChange={handleFirstDayChange}
+                    placeholder="Pick the enrollment date"
+                  />
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Attendance counts from this day.
+                  </p>
+                </div>
+              )}
+
               {initial.enrollment_status === 'late_enrollee' && (
                 <div className="space-y-1.5">
                   <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -765,7 +833,7 @@ export function EnrolmentEditSheet({
               <Button
                 type="submit"
                 size="sm"
-                disabled={saving}
+                disabled={saving || (isTaggingLate && !firstDayValue)}
                 className="gap-1.5"
               >
                 {saving ? (
@@ -988,7 +1056,7 @@ export function EnrolmentEditSheet({
               happened before they came back.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="px-6 pb-2">
+          <div className="space-y-4 px-6 pb-2">
             <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
               <Checkbox
                 checked={markAsLate}
@@ -998,11 +1066,26 @@ export function EnrolmentEditSheet({
               <span>
                 Mark as <strong>late enrollee</strong>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Assessments dated before today will be marked N/A on the
-                  student&apos;s grading sheets.
+                  Attendance counts from their enrollment date. On grading
+                  sheets, excuse any assessment given before they joined.
                 </span>
               </span>
             </label>
+            {markAsLate && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Enrollment date <span className="text-destructive">*</span>
+                </label>
+                <DatePicker
+                  value={midTermFirstDay}
+                  onChange={setMidTermFirstDay}
+                  placeholder="Pick the enrollment date"
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Attendance counts from this day.
+                </p>
+              </div>
+            )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel
@@ -1015,7 +1098,7 @@ export function EnrolmentEditSheet({
               Skip
             </AlertDialogCancel>
             <AlertDialogAction
-              disabled={applyingLate}
+              disabled={applyingLate || (markAsLate && !midTermFirstDay)}
               onClick={() => {
                 if (!markAsLate || !pendingMidTerm) {
                   setPendingMidTerm(null);
@@ -1025,6 +1108,7 @@ export function EnrolmentEditSheet({
                 void confirmLate({
                   sectionId: pendingMidTerm.sectionId,
                   sectionStudentId: pendingMidTerm.sectionStudentId,
+                  firstDay: midTermFirstDay,
                 });
               }}
             >

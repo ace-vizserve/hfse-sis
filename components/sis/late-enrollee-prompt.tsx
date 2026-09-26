@@ -5,7 +5,9 @@ import { useMutation } from '@tanstack/react-query';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { sgToday } from '@/lib/dates';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   DialogDescription,
   DialogFooter,
@@ -24,6 +26,18 @@ import type { MidTermPayload } from '@/lib/sis/placement-completion';
 // classes as step 11 of admission, separately from enrolment at step 10, so
 // the prompt fires either from the stage dialog (when a coordinator does both
 // at once) or from the assign-section dialog (the normal path).
+
+/** Today for the term already under way; otherwise the chosen term's first day. */
+function firstDayForTerm(payload: MidTermPayload, term: number | null): string {
+  if (term === null || term === payload.activeTermNumber) return sgToday();
+  if (term === payload.nextTermNumber && payload.nextTermStart) {
+    return payload.nextTermStart;
+  }
+  if (term === payload.termNumber && payload.joiningTermStart) {
+    return payload.joiningTermStart;
+  }
+  return sgToday();
+}
 
 export function LateEnrolleePrompt({
   payload,
@@ -44,14 +58,23 @@ export function LateEnrolleePrompt({
   const [chosenTerm, setChosenTerm] = useState<number | null>(
     payload.termNumber
   );
+  // "Enrollment date" — what attendance counts from. Prefilled from the
+  // chosen term (today for the term under way, else that term's first day)
+  // until the registrar types their own date; after that it stays theirs.
+  const [firstDay, setFirstDay] = useState('');
+  const [firstDayEdited, setFirstDayEdited] = useState(false);
+  const firstDayValue = firstDayEdited
+    ? firstDay
+    : firstDayForTerm(payload, chosenTerm);
 
   const lateMutation = useMutation({
-    mutationFn: (vars: { term: number }) =>
+    mutationFn: (vars: { term: number; firstDay: string }) =>
       apiFetch(
         `/api/sections/${payload.sectionId}/students/${payload.sectionStudentId}`,
         jsonInit('PATCH', {
           enrollment_status: 'late_enrollee',
           late_enrollee_term_number: vars.term,
+          enrollment_date: vars.firstDay,
         })
       ),
   });
@@ -61,15 +84,18 @@ export function LateEnrolleePrompt({
 
   async function confirm(term: number) {
     setApplyingLate(true);
-    const result = await run(() => lateMutation.mutateAsync({ term }), {
-      pending: 'Marking as late enrollee…',
-      success: `Marked as late enrollee · T${term}`,
-      error: () => 'Failed to mark as late enrollee',
-      // Closes immediately on success while the toast keeps holding for the
-      // refresh. `useRefreshTransition` flushes its waiters on unmount, so
-      // closing here cannot strand the toast.
-      onResolved: onDone,
-    });
+    const result = await run(
+      () => lateMutation.mutateAsync({ term, firstDay: firstDayValue }),
+      {
+        pending: 'Marking as late enrollee…',
+        success: `Marked as late enrollee · T${term}`,
+        error: () => 'Failed to mark as late enrollee',
+        // Closes immediately on success while the toast keeps holding for the
+        // refresh. `useRefreshTransition` flushes its waiters on unmount, so
+        // closing here cannot strand the toast.
+        onResolved: onDone,
+      }
+    );
     setApplyingLate(false);
     // The old `onSettled: onDone` closed on failure too — the host offers no
     // retry, so leaving it open would strand the user.
@@ -124,6 +150,23 @@ export function LateEnrolleePrompt({
         )}
       </div>
 
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground">
+          Enrollment date <span className="text-destructive">*</span>
+        </label>
+        <DatePicker
+          value={firstDayValue}
+          onChange={(v) => {
+            setFirstDay(v);
+            setFirstDayEdited(true);
+          }}
+          placeholder="Pick the enrollment date"
+        />
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Attendance counts from this day.
+        </p>
+      </div>
+
       <DialogFooter className="gap-2">
         <Button
           type="button"
@@ -139,7 +182,7 @@ export function LateEnrolleePrompt({
           size="sm"
           loading={applyingLate}
           loadingText="Saving…"
-          disabled={chosenTerm === null}
+          disabled={chosenTerm === null || !firstDayValue}
           onClick={() => {
             if (chosenTerm === null) return;
             void confirm(chosenTerm);

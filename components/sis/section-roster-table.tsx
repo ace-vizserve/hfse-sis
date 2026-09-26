@@ -286,6 +286,7 @@ export function SectionRosterTable({
                     withdrawal_approved_date:
                       r.withdrawal_approved_date ?? null,
                     late_enrollee_term_number: r.lateEnrolleTermNumber ?? null,
+                    enrollment_date: r.enrollment_date ?? null,
                     academics_notes: r.academicsNotes ?? null,
                     admin_notes: r.adminNotes ?? null,
                   }}

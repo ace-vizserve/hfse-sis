@@ -153,6 +153,12 @@ export const EnrolmentMetadataSchema = z
     // before the paperwork completes — so the two are not ordered and nothing
     // here enforces a relationship between them.
     withdrawal_approved_date: z.string().date().nullable().optional(),
+    // The student's first day at school in this class — attendance counts from
+    // it (migration 068). The route used to stamp the day a registrar tagged
+    // the student late, which is the withdrawal bug (163) on the other end:
+    // an admin-action date read as a fact about the child. Required when
+    // tagging a late enrollee, and only accepted then — it is not editable.
+    enrollment_date: z.string().date().optional(),
     // Explicit late-enrollee term override (null = derive from enrollment_date).
     late_enrollee_term_number: z
       .number()

@@ -33,6 +33,7 @@ export function PlacementEditButton(props: {
     withdrawal_date: string | null;
     withdrawal_approved_date: string | null;
     late_enrollee_term_number: number | null;
+    enrollment_date: string | null;
     academics_notes: string | null;
     admin_notes: string | null;
   };

@@ -34,6 +34,9 @@ export type MidTermPayload = {
   nextTermNumber: number | null;
   canDeferToNext: boolean;
   daysLeftInActiveTerm: number | null;
+  /** Start dates, to prefill "Enrollment date" for the chosen term. */
+  joiningTermStart: string;
+  nextTermStart: string | null;
 };
 
 /**
@@ -62,6 +65,8 @@ export function buildMidTermPayload(
     nextTermNumber: pos.nextTerm?.termNumber ?? null,
     canDeferToNext: pos.canDeferToNext,
     daysLeftInActiveTerm: pos.daysLeftInActiveTerm,
+    joiningTermStart: pos.joiningTerm.startDate,
+    nextTermStart: pos.nextTerm?.startDate ?? null,
   };
 }
 
