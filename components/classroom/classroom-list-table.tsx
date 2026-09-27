@@ -40,6 +40,8 @@ function facetFilterFn(
     : row.getValue(id) === value;
 }
 
+const NO_ADVISER = 'No adviser';
+
 // ─── Columns ──────────────────────────────────────────────────────────────────
 
 const columns: ColumnDef<ClassroomListRow>[] = [
@@ -54,6 +56,7 @@ const columns: ColumnDef<ClassroomListRow>[] = [
         {row.original.name}
       </IdentifierLink>
     ),
+    filterFn: facetFilterFn,
   },
   {
     accessorKey: 'levelLabel',
@@ -69,12 +72,16 @@ const columns: ColumnDef<ClassroomListRow>[] = [
     filterFn: facetFilterFn,
   },
   {
-    accessorKey: 'adviserName',
+    // A class with no form adviser filters as "No adviser" rather than
+    // disappearing from the Adviser filter.
+    id: 'adviserName',
+    accessorFn: (r) => r.adviserName ?? NO_ADVISER,
     header: ({ column }) => (
       <SortableHeader column={column}>Adviser</SortableHeader>
     ),
     meta: { label: 'Adviser' },
     cell: ({ row }) => <AdviserCell name={row.original.adviserName} />,
+    filterFn: facetFilterFn,
   },
   {
     accessorKey: 'active',
@@ -103,8 +110,28 @@ export function ClassroomListTable({
   emptyTitle: string;
   emptyBody: string;
 }) {
-  const facets: FacetConfig[] =
-    levels.length > 1
+  // Class options follow level order, then name — how a coordinator reads the
+  // school — not the alphabet.
+  const levelRank = new Map(levels.map((l, i) => [l.label, i]));
+  const classOptions = [...rows]
+    .sort(
+      (a, b) =>
+        (levelRank.get(a.levelLabel) ?? 0) -
+          (levelRank.get(b.levelLabel) ?? 0) || a.name.localeCompare(b.name)
+    )
+    .map((r) => r.name);
+  const adviserNames = [
+    ...new Set(rows.map((r) => r.adviserName).filter((n): n is string => !!n)),
+  ].sort((a, b) => a.localeCompare(b));
+  const adviserOptions = rows.some((r) => !r.adviserName)
+    ? [...adviserNames, NO_ADVISER]
+    : adviserNames;
+
+  const facets: FacetConfig[] = [
+    ...(rows.length > 1
+      ? [{ columnId: 'name', label: 'Class', valueOptions: classOptions }]
+      : []),
+    ...(levels.length > 1
       ? [
           {
             columnId: 'levelLabel',
@@ -112,7 +139,17 @@ export function ClassroomListTable({
             valueOptions: levels.map((l) => l.label),
           },
         ]
-      : [];
+      : []),
+    ...(adviserOptions.length > 1
+      ? [
+          {
+            columnId: 'adviserName',
+            label: 'Adviser',
+            valueOptions: adviserOptions,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <DataTable<ClassroomListRow>
@@ -138,7 +175,7 @@ export function ClassroomListTable({
       }}
       emptyFilteredState={{
         title: 'No classes match the current filters.',
-        body: 'Try a different level, or clear the search.',
+        body: 'Try a different class, level or adviser, or clear the search.',
       }}
     />
   );
