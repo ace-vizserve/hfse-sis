@@ -90,7 +90,7 @@ export default async function HousePointsEventPage({
       </Link>
 
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Records · House points · {EVENT_TYPE_SHORT_LABELS[event.eventType]}
           </p>
@@ -102,7 +102,7 @@ export default async function HousePointsEventPage({
           </p>
         </div>
         {canEdit && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {editable && (
               <EditEventSheet
                 event={{
