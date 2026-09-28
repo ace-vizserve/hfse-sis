@@ -1,19 +1,9 @@
 'use client';
 
-import { Plus, X } from 'lucide-react';
+import { Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
 import { useFieldArray, useWatch, type UseFormReturn } from 'react-hook-form';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -45,7 +35,7 @@ import {
   sameRubric,
 } from '@/lib/house-points/defaults';
 import type { Scale } from '@/lib/house-points/queries';
-import type { EventInput } from '@/lib/schemas/house-points';
+import { MAX_PLACES, type EventInput } from '@/lib/schemas/house-points';
 import { cn } from '@/lib/utils';
 
 // The fields that describe an event — shared by "New event" (this task) and
@@ -221,7 +211,10 @@ export function EventSetupFields({
   const isScore = placementMode === 'score';
 
   // The type the user has just switched to, while we ask whether their own
-  // rubric should be replaced by its defaults.
+  // rubric should be replaced by its defaults. Asked INLINE, above the
+  // rubric, never in a dialog: this component lives inside a drawer, and an
+  // action inside a drawer must not open another dialog on top of it. The
+  // rubric is untouched until "Replace rubric" is chosen.
   const [pendingType, setPendingType] = useState<CreatableType | null>(null);
 
   const scaleFor = (type: CreatableType) =>
@@ -243,6 +236,7 @@ export function EventSetupFields({
     );
     if (untouched) {
       replace(placesFromScale(scaleFor(next)));
+      setPendingType(null);
     } else {
       setPendingType(next);
     }
@@ -444,6 +438,51 @@ export function EventSetupFields({
       {/* The rubric — a short list of places, each worth some points. A
           field array rather than a table: it is a handful of rows edited in
           place, and every row is the same three controls. */}
+      {/* §9.4 accent panel, advisory: the reader can carry on around it. */}
+      {pendingType && (
+        <div
+          role="status"
+          className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft bg-accent p-5"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <RotateCcw className="size-4" />
+          </div>
+          <div className="flex-1 space-y-3">
+            <div className="space-y-1.5">
+              <p className="font-serif text-base font-semibold text-foreground">
+                Replace the rubric with the {pendingLabel.toLowerCase()}{' '}
+                defaults?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                You&rsquo;ve changed the places or points below, so they are
+                kept until you choose.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  replace(placesFromScale(scaleFor(pendingType)));
+                  setPendingType(null);
+                }}
+              >
+                Replace rubric
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPendingType(null)}
+              >
+                Keep mine
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="space-y-2" aria-labelledby="hp-rubric-heading">
         <div className="space-y-1">
           <h3
@@ -600,12 +639,13 @@ export function EventSetupFields({
             })}
           </ul>
 
-          <div className="border-t border-border px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="-ml-2"
+              disabled={fields.length >= MAX_PLACES}
               onClick={() =>
                 append({
                   label: '',
@@ -617,6 +657,11 @@ export function EventSetupFields({
               <Plus className="size-4" />
               Add a place
             </Button>
+            {fields.length >= MAX_PLACES && (
+              <span className="text-xs text-muted-foreground">
+                An event can have up to {MAX_PLACES} places.
+              </span>
+            )}
           </div>
         </div>
 
@@ -626,38 +671,6 @@ export function EventSetupFields({
           </p>
         )}
       </section>
-
-      <AlertDialog
-        open={pendingType !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingType(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Replace the rubric with the {pendingLabel.toLowerCase()} defaults?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              You&rsquo;ve changed the places or points. Replacing them brings
-              back the standard points for this type; keeping them leaves your
-              rubric as it is.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep my rubric</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingType)
-                  replace(placesFromScale(scaleFor(pendingType)));
-                setPendingType(null);
-              }}
-            >
-              Replace rubric
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

@@ -109,7 +109,8 @@ const uuid = (message: string) => z.string().uuid(message);
 const PLACE_LABEL_MAX = 60;
 const EVENT_NAME_MAX = 120;
 const TEAM_NAME_MAX = 80;
-const MAX_PLACES = 20;
+/** Exported so the rubric editor can stop adding rows where the server would refuse them. */
+export const MAX_PLACES = 20;
 const MAX_ADD_STUDENTS = 500;
 const MAX_ADD_HOUSES = 4;
 const MAX_TEAM_STUDENTS = 30;
