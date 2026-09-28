@@ -147,8 +147,11 @@ export function AssessmentScoreField({
       ) : (
         previous && (
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Recorded before as {previous}.
-            {!touched && ' Enter the score and total to replace it.'}
+            Recorded before as{' '}
+            <strong className="font-semibold text-foreground">
+              {previous}
+            </strong>
+            .{!touched && ' Enter the score and total to replace it.'}
           </p>
         )
       )}
