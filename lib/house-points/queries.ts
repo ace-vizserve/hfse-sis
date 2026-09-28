@@ -152,11 +152,17 @@ export function toSheetEntries(
 // against a driver that returns them as strings (PostgREST itself emits bare
 // JSON numbers for `numeric`, but nothing here should silently string-concat
 // if that ever changes).
+//
+// Exported: the House Points write routes (e.g.
+// app/api/house-points/events/[eventId]/route.ts) read these same
+// `numeric` columns and need the identical coercion — reused here rather
+// than re-implemented, so there is exactly one place that decides how a
+// `numeric` column becomes a JS number.
 
-function toNum(value: number | string): number {
+export function toNum(value: number | string): number {
   return typeof value === 'string' ? Number(value) : value;
 }
-function toNumOrNull(value: number | string | null): number | null {
+export function toNumOrNull(value: number | string | null): number | null {
   return value === null ? null : toNum(value);
 }
 

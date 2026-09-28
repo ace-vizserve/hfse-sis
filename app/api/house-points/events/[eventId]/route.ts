@@ -15,6 +15,7 @@ import {
   placesUnchanged,
   type ExistingPlaceForDiff,
 } from '@/lib/house-points/event-patch-diff';
+import { toNum, toNumOrNull } from '@/lib/house-points/queries';
 import {
   EventPatchSchema,
   mergedEventIssues,
@@ -47,11 +48,6 @@ type EventDbRowRaw = Omit<EventDbRow, 'max_score' | 'ayCode'> & {
   max_score: number | string | null;
   academic_years: { ay_code: string } | { ay_code: string }[] | null;
 };
-
-function toNumOrNull(value: number | string | null): number | null {
-  if (value === null) return null;
-  return typeof value === 'string' ? Number(value) : value;
-}
 
 function toAyCode(rel: EventDbRowRaw['academic_years']): string | null {
   const one = Array.isArray(rel) ? (rel[0] ?? null) : rel;
@@ -163,7 +159,25 @@ export async function PATCH(
         .eq('event_id', eventId)
         .order('sort_order', { ascending: true });
       if (placeErr) throw new Error(`house_point_places: ${placeErr.message}`);
-      existingPlaces = (placeRows ?? []) as ExistingPlaceForDiff[];
+      // `points` is `numeric(6,2)` (migration 181) — supabase-js can hand
+      // this back as a STRING ("5.00"). Coerced here, at the fetch site, so
+      // every downstream reader (placesUnchanged's comparison, the merged
+      // validation below, and before.places on the audit row) sees a real
+      // number rather than comparing e.g. `5 === "5.00"` and calling an
+      // identical resubmission a change.
+      existingPlaces = (
+        (placeRows ?? []) as {
+          id: string;
+          label: string;
+          rank: number | null;
+          points: number | string;
+        }[]
+      ).map((row) => ({
+        id: row.id,
+        label: row.label,
+        rank: row.rank,
+        points: toNum(row.points),
+      }));
     }
 
     const placesActuallyChanged =

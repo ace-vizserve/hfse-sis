@@ -6,6 +6,7 @@ import {
   type EventFieldsForDiff,
   type ExistingPlaceForDiff,
 } from '@/lib/house-points/event-patch-diff';
+import { toNum } from '@/lib/house-points/queries';
 import type { EventPatch, PlaceInput } from '@/lib/schemas/house-points';
 
 // PATCH /api/house-points/events/[eventId] used to write/audit on key
@@ -154,5 +155,24 @@ describe('placesUnchanged', () => {
 
   it('true for two empty arrays', () => {
     expect(placesUnchanged([], [])).toBe(true);
+  });
+
+  // Fix round 2 — `points` is `numeric(6,2)` (migration 181) and
+  // supabase-js can hand it back as a STRING ("5.00"), not a number. The
+  // route's fetch site normalises through `toNum` (lib/house-points/
+  // queries.ts, exported and reused rather than re-implemented) before
+  // building `ExistingPlaceForDiff` — these two cases are that contract:
+  // normalised input compares correctly, and the shape the bug actually
+  // produced (a raw string left in) does not.
+  it('true when a stored points value arrives as "5.00" and is normalised via the same toNum the route uses', () => {
+    const existing = [existingPlace({ points: toNum('5.00') })];
+    const patch = [placeInput({ points: 5 })];
+    expect(placesUnchanged(existing, patch)).toBe(true);
+  });
+
+  it('regression: an UN-normalised raw string ("5.00") left in existingPlaces breaks the comparison — this is the bug the toNum fetch-site fix closes', () => {
+    const existing = [existingPlace({ points: '5.00' as unknown as number })];
+    const patch = [placeInput({ points: 5 })];
+    expect(placesUnchanged(existing, patch)).toBe(false);
   });
 });
