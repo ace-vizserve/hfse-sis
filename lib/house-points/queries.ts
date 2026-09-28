@@ -240,8 +240,13 @@ const ENROLLED_ROSTER_JOIN =
  * an AY-wide id list is already past the `.in()` URL-length ceiling;
  * `fetchAllPages` inside each chunk because the row count can still exceed
  * PostgREST's 1000-row cap for a busy year.
+ *
+ * Exported: Task 6's entry PATCH/DELETE routes resolve a single student's
+ * name for the audit log's `studentLead` (lib/audit/humanize.ts) the same
+ * way `loadAyEvents`/`loadEvent` do here — one function, not a second
+ * student-name join reimplemented in the route file.
  */
-async function loadRosterByIds(
+export async function loadRosterByIds(
   service: ServiceClient,
   ids: readonly string[]
 ): Promise<Map<string, RosterStudent>> {
@@ -332,6 +337,63 @@ function toPlace(row: PlaceRowDb): Place {
     rank: row.rank,
     points: toNum(row.points),
     sortOrder: row.sort_order,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// loadEventForWrite — the small event shape Task 6's entry/team write routes
+// need (setup + AY, no places/rows/totals). Deliberately NOT `loadEvent`
+// above: that one also fetches every place, entry, team and roster row for
+// the full score sheet, which a write route that only needs to check
+// `entrantKind`/`placementMode`/`maxScore` and stamp `academic_year_id` for
+// cache invalidation has no reason to pay for. One function so the three
+// call sites (POST entries, PATCH/DELETE one entry, POST/PATCH/DELETE a
+// team) read the same shape rather than three slightly different inline
+// selects drifting apart.
+
+export type EventForWrite = {
+  id: string;
+  name: string;
+  entrantKind: EntrantKind;
+  placementMode: PlacementMode;
+  maxScore: number | null;
+  academicYearId: string;
+  ayCode: string | null;
+};
+
+type EventForWriteRowDb = {
+  id: string;
+  name: string;
+  entrant_kind: EntrantKind;
+  placement_mode: PlacementMode;
+  max_score: number | string | null;
+  academic_year_id: string;
+  academic_years: { ay_code: string } | { ay_code: string }[] | null;
+};
+
+export async function loadEventForWrite(
+  service: ServiceClient,
+  eventId: string
+): Promise<EventForWrite | null> {
+  const { data, error } = await service
+    .from('house_point_events')
+    .select(
+      'id, name, entrant_kind, placement_mode, max_score, academic_year_id, academic_years(ay_code)'
+    )
+    .eq('id', eventId)
+    .maybeSingle();
+  if (error) throw new Error(`loadEventForWrite: ${error.message}`);
+  if (!data) return null;
+  const row = data as EventForWriteRowDb;
+  const ay = one(row.academic_years);
+  return {
+    id: row.id,
+    name: row.name,
+    entrantKind: row.entrant_kind,
+    placementMode: row.placement_mode,
+    maxScore: toNumOrNull(row.max_score),
+    academicYearId: row.academic_year_id,
+    ayCode: ay?.ay_code ?? null,
   };
 }
 
