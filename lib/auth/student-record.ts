@@ -63,6 +63,20 @@ export const ENROLMENT_PLACEMENT_WRITERS = [
 //      both sides of enrolment, KD #166). This is just a role set that was
 //      written down wrong.
 
+/**
+ * Who may write an event, entry, team, or scale in House Points
+ * (docs/superpowers/sdd/2026-09-28-house-points). admissions is deliberately
+ * absent — the feature's global constraints give admissions view-only access
+ * here (unlike STUDENT_RECORD_WRITERS above, where it is a full writer),
+ * because house points are a records-owned scoring exercise, not a shared
+ * student-profile field.
+ */
+export const HOUSE_POINTS_WRITERS = [
+  'academic_coordinator',
+  'school_admin',
+  'superadmin',
+] as const satisfies readonly Role[];
+
 /** May this role write to the shared student record? */
 export function canWriteStudentRecord(role: Role | null): boolean {
   return !!role && (STUDENT_RECORD_WRITERS as readonly string[]).includes(role);

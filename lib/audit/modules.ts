@@ -105,6 +105,10 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       'enrolment.',
       'discipline.',
       'classroom.',
+      // House Points (migration 181) — a records-owned scoring exercise, not
+      // a teaching-subject concern, so it sits here rather than under
+      // `classes` or a new module of its own.
+      'house_points.',
     ],
   },
   {

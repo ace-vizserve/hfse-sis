@@ -109,6 +109,22 @@ export const ALL_AUDIT_ACTIONS = [
   // sync matches on it and would create a second child if it moved.
   'sis.school_student_number.update',
   'sis.house.update',
+  // House Points (migration 181): an event's setup, who is entered and how
+  // they scored, ad-hoc teams, and the standing points scale. Filed under
+  // records — see lib/audit/modules.ts's `house_points.` prefix — as a
+  // records-owned scoring exercise, not a shared student-profile field like
+  // `sis.house.update` two lines up (that one is the student's own house
+  // assignment; this family is the events run for all four houses).
+  'house_points.event.create',
+  'house_points.event.update',
+  'house_points.event.delete',
+  'house_points.entry.add',
+  'house_points.entry.update',
+  'house_points.entry.remove',
+  'house_points.team.create',
+  'house_points.team.update',
+  'house_points.team.delete',
+  'house_points.scales.update',
   'sis.level.create',
   // 'level.create'/'level.update'/'level.delete'/'level.offering.toggle'
   // backed the Grade Levels admin CRUD (KD #153) — removed by migration 086
@@ -283,6 +299,12 @@ export type AuditEntityType =
   | 'evaluation_subject_comment'
   | 'evaluation_ptc_feedback'
   | 'classroom_note'
+  // House Points (migration 181) — one of house_point_events /
+  // house_point_entries / house_point_teams / house_point_scales.
+  | 'house_point_event'
+  | 'house_point_entry'
+  | 'house_point_team'
+  | 'house_point_scale'
   // The child themselves, identified by student_number — not a uuid, and not
   // an admissions row. Used where the write lands on `students` directly.
   | 'student'

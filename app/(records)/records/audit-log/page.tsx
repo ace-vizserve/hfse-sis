@@ -73,6 +73,19 @@ export default async function SisAuditLogPage({
     'sis.allowance.update',
     'sis.vl_allowance.update',
     'sis.house.update',
+    // House Points (migration 181) — a records-owned scoring exercise. See
+    // lib/audit/modules.ts's `house_points.` prefix for why it sits here
+    // rather than under classes or a module of its own.
+    'house_points.event.create',
+    'house_points.event.update',
+    'house_points.event.delete',
+    'house_points.entry.add',
+    'house_points.entry.update',
+    'house_points.entry.remove',
+    'house_points.team.create',
+    'house_points.team.update',
+    'house_points.team.delete',
+    'house_points.scales.update',
     'sis.school_student_number.update',
     'sis.student.assign_section',
     'sis.student.auto_sync_batch',

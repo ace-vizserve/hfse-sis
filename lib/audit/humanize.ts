@@ -53,6 +53,10 @@ import {
   WITHDRAWAL_REASON_LABELS,
 } from '@/lib/schemas/enrolment';
 import {
+  ENTRANT_KIND_LABELS as HOUSE_POINTS_ENTRANT_KIND_LABELS,
+  EVENT_TYPE_LABELS as HOUSE_POINTS_EVENT_TYPE_LABELS,
+} from '@/lib/schemas/house-points';
+import {
   REASON_CATEGORY_LABELS,
   CORRECTION_REASON_LABELS,
 } from '@/lib/schemas/change-request';
@@ -206,6 +210,22 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.vl_allowance.update': 'Vacation allowance updated',
   'sis.school_student_number.update': "School's student number updated",
   'sis.house.update': 'House updated',
+
+  // House Points (migration 181). "House event"/"House points…" rather than
+  // bare "Event"/"Entry" — this log is shared with Attendance's "Calendar
+  // event" family (attendance.event.*) on the same Activity feed, and bare
+  // nouns would read as the same thing.
+  'house_points.event.create': 'House event created',
+  'house_points.event.update': 'House event updated',
+  'house_points.event.delete': 'House event removed',
+  'house_points.entry.add': 'House points entries added',
+  'house_points.entry.update': 'House points entry updated',
+  'house_points.entry.remove': 'House points entry removed',
+  'house_points.team.create': 'House points team created',
+  'house_points.team.update': 'House points team updated',
+  'house_points.team.delete': 'House points team removed',
+  'house_points.scales.update': 'House points scale updated',
+
   'sis.level.create': 'Level created',
 
   // Grade levels (Levels & Grade Progression, migration 078) — the admin
@@ -1556,6 +1576,97 @@ function templateSummary(
       if (before && after) parts.push(`${before}${ARROW}${after}`);
       else if (after) parts.push(after);
       else if (before) parts.push(`${before}${ARROW}none`);
+      return joinParts(parts);
+    }
+
+    // House Points (migration 181) --------------------------------------------
+    // Field names below match lib/schemas/house-points.ts's camelCase input
+    // shape verbatim — the write routes are expected to stamp the same keys
+    // they validated, same convention as `sis.document.approve` reading
+    // `rejection_reason` straight off its own route's body.
+    case 'house_points.event.create':
+    case 'house_points.event.update':
+    case 'house_points.event.delete': {
+      const parts: string[] = [];
+      const name = str(ctx.name);
+      if (name) parts.push(name);
+      const type =
+        (HOUSE_POINTS_EVENT_TYPE_LABELS as Record<string, string>)[
+          str(ctx.eventType)
+        ] ?? '';
+      if (type) parts.push(type);
+      const entrant =
+        (HOUSE_POINTS_ENTRANT_KIND_LABELS as Record<string, string>)[
+          str(ctx.entrantKind)
+        ] ?? '';
+      if (entrant) parts.push(entrant);
+      const heldOn = fmtMaybeDate(ctx.heldOn);
+      if (heldOn) parts.push(heldOn);
+      return joinParts(parts);
+    }
+
+    case 'house_points.entry.add': {
+      const parts: string[] = [];
+      const eventName = str(ctx.eventName);
+      if (eventName) parts.push(eventName);
+      const students = Array.isArray(ctx.sectionStudentIds)
+        ? ctx.sectionStudentIds.length
+        : null;
+      const houses = Array.isArray(ctx.houseIds) ? ctx.houseIds.length : null;
+      const n = numish(ctx.count) ?? students ?? houses;
+      if (n !== null) parts.push(`${plural(n, 'entry', 'entries')} added`);
+      if (houses !== null) parts.push('by house');
+      return joinParts(parts);
+    }
+
+    case 'house_points.entry.update': {
+      const parts: string[] = [];
+      const who = studentLead(ctx) || str(ctx.teamName) || str(ctx.houseName);
+      if (who) parts.push(who);
+      if ('score' in ctx) {
+        const score = ctx.score;
+        parts.push(
+          score === null ? 'Score cleared' : `Score: ${str(score) || '—'}`
+        );
+      }
+      const place = str(ctx.placeLabel);
+      if (place) parts.push(`Place: ${place}`);
+      return joinParts(parts);
+    }
+
+    case 'house_points.entry.remove': {
+      const parts: string[] = [];
+      const who = studentLead(ctx) || str(ctx.teamName) || str(ctx.houseName);
+      if (who) parts.push(who);
+      const eventName = str(ctx.eventName);
+      if (eventName) parts.push(eventName);
+      return joinParts(parts);
+    }
+
+    case 'house_points.team.create':
+    case 'house_points.team.update':
+    case 'house_points.team.delete': {
+      const parts: string[] = [];
+      const name = str(ctx.name);
+      if (name) parts.push(name);
+      const eventName = str(ctx.eventName);
+      if (eventName) parts.push(eventName);
+      const count = Array.isArray(ctx.sectionStudentIds)
+        ? ctx.sectionStudentIds.length
+        : numish(ctx.memberCount);
+      if (count !== null) parts.push(`${plural(count, 'student')}`);
+      return joinParts(parts);
+    }
+
+    case 'house_points.scales.update': {
+      const parts: string[] = [];
+      const type =
+        (HOUSE_POINTS_EVENT_TYPE_LABELS as Record<string, string>)[
+          str(ctx.eventType)
+        ] ?? '';
+      if (type) parts.push(type);
+      const rows = Array.isArray(ctx.rows) ? ctx.rows.length : null;
+      if (rows !== null) parts.push(`${plural(rows, 'row')}`);
       return joinParts(parts);
     }
 
