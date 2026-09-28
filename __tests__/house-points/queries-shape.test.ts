@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,6 +13,41 @@ import {
 // toSheetEntries is the pure row -> SheetEntry mapper (Task 4 brief). It is
 // the only thing in lib/house-points/queries.ts that doesn't touch Supabase,
 // so it's the only thing this file tests directly.
+
+// Fix round 1 — regression guard, source-reading rather than a live Supabase
+// call: `house_point_team_members` (migration 181) has NO `id` column, its PK
+// is the composite (team_id, section_student_id). `fetchAllPages` defaults to
+// tie-breaking pagination on `.order('id')`, which PostgREST rejects outright
+// on a table with no such column — crashing every team event's
+// loadAyEvents/loadEvent. The fix is `{ tieBreak: null }` on that call (see
+// lib/attendance/dashboard.ts:188 for the same no-`id` pattern); this test
+// fails loudly if that option is ever dropped or moved out of the same call.
+describe('loadTeamMembers — tieBreak regression guard', () => {
+  it('passes { tieBreak: null } on the house_point_team_members fetchAllPages call', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'lib/house-points/queries.ts'),
+      'utf8'
+    );
+    const tableIdx = source.indexOf("from('house_point_team_members')");
+    expect(tableIdx).toBeGreaterThan(-1);
+
+    // The call's closing `);` for the fetchAllPages(...) invocation — find
+    // the next occurrence of the tieBreak option after the table name and
+    // require it to land within the same (short) call, not somewhere else
+    // in the file.
+    const tieBreakIdx = source.indexOf('{ tieBreak: null }', tableIdx);
+    expect(tieBreakIdx).toBeGreaterThan(-1);
+    expect(tieBreakIdx - tableIdx).toBeLessThan(1000);
+
+    // And it must not have a competing `.order('id')`-tie-break table
+    // elsewhere in the file without its own guard — every other
+    // fetchAllPages call site in this file reads from a table that DOES
+    // have an `id` column (section_students, house_point_places,
+    // house_point_entries, house_point_teams), so this is the only one that
+    // needs it.
+    expect(source.match(/\{ tieBreak: null \}/g)?.length).toBe(1);
+  });
+});
 
 function makeStudent(overrides: Partial<RosterStudent> = {}): RosterStudent {
   return {

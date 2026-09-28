@@ -394,12 +394,25 @@ async function loadTeamMembers(
 ): Promise<TeamMemberRowDb[]> {
   if (teamIds.length === 0) return [];
   return fetchInChunks(teamIds, (slice) =>
-    fetchAllPages<TeamMemberRowDb>((from, to) =>
-      service
-        .from('house_point_team_members')
-        .select('team_id, section_student_id')
-        .in('team_id', slice)
-        .range(from, to)
+    fetchAllPages<TeamMemberRowDb>(
+      (from, to) =>
+        service
+          .from('house_point_team_members')
+          .select('team_id, section_student_id')
+          .in('team_id', slice)
+          .order('team_id', { ascending: true })
+          .order('section_student_id', { ascending: true })
+          .range(from, to),
+      undefined,
+      // house_point_team_members has NO `id` column (migration 181's PK is
+      // the composite (team_id, section_student_id)) — fetchAllPages'
+      // default `tieBreak: 'id'` would append `.order('id')` and PostgREST
+      // would error on every page request, crashing every team event's
+      // loadAyEvents/loadEvent. The composite key ordered above is already
+      // a total order, so tieBreak is turned off rather than pointed at it
+      // (matches lib/attendance/dashboard.ts:188's pattern for the same
+      // no-`id` situation).
+      { tieBreak: null }
     )
   );
 }
