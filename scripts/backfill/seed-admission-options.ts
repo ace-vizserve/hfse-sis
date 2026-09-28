@@ -20,6 +20,11 @@
 // Morning row is closed). Closed options therefore show up as switches staff
 // can flip, instead of being absent.
 //
+// Both closures are CAPACITY, not timetable: the session's slots are full
+// (Mr Ace, 2026-09-28 — the portal's own comment calls the Global one a
+// timetable rule, which is wrong). So they are closed switches, to be opened
+// when slots free up, never missing rows.
+//
 // Track: "Global" in the class type label means Global, so the Cambridge types
 // are Global (Mr Ace, 2026-09-24). ⚠ "Enrichment Class" — the only class type
 // at the two YoungStarter levels — is recorded as STANDARD. It carries no
@@ -175,7 +180,14 @@ const MORNING_ONLY_CLASS_TYPE_MARKER = 'global';
 const AFTERNOON_ONLY_CLASS_LEVEL = ['Primary Three', 'Primary Six'];
 const AFTERNOON_ONLY_CLASS_TYPE = 'Standard Class (ENGLISH + FILIPINO)';
 
-/** Every schedule the level can have at all, before any restriction. */
+/**
+ * Every schedule the level can have at all, before any restriction.
+ *
+ * ⚠ Whole Day is SECONDARY ONLY, and Morning / Afternoon primary only — the
+ * portal's `schedule-rules.ts`, re-checked with Mr Ace 2026-09-28. That day
+ * this briefly wrote all three at every level (and a backfill added the
+ * missing ones, closed); both were reverted.
+ */
 function structuralSchedules(level: string): AdmissionSchedule[] {
   if (WHOLE_DAY_CLASS_LEVEL.includes(level)) return ['whole_day'];
   if (MORNING_AFTERNOON_CLASS_LEVEL.includes(level))
