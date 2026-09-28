@@ -55,7 +55,23 @@
 //                        (cascades to places, teams, members, entries);
 //                        without it the script refuses if any exist
 //   --skip-unresolved    import only MATCHED rows; without it the script
-//                        refuses while any row is AMBIGUOUS or UNMATCHED
+//                        refuses while any row is AMBIGUOUS or UNMATCHED.
+//                        On a team event it drops only the unresolved
+//                        MEMBER — the team still imports with the rest
+//
+// Decision flags (repeatable; both modes). They carry sheet rows and student
+// numbers only — never a name in this file:
+//   --member "<event name>|<sheet row>|<label>=<student_number>"
+//                        force that row (or, on a team, the member whose
+//                        parsed label is <label>) to that AY2026 student;
+//                        reported as MATCHED (override). <label> must equal
+//                        the sheet name / parsed member label as the report
+//                        prints it, so a flag aimed at the wrong row fails.
+//   --exclude "<event name>|<sheet row>[|<member label>]"
+//                        leave that row out entirely — or, with a member
+//                        label, only that member of a team — reported as
+//                        EXCLUDED
+// A flag that matches nothing stops the run: a typo must not pass silently.
 //
 // A failure part-way through a write deletes every event this run created
 // (cascade), so the import lands whole or not at all.
@@ -93,6 +109,69 @@ function argValue(flag: string): string | null {
 }
 const ACTOR_ID = argValue('--actor');
 const REPORT_PATH = argValue('--report');
+function argValues(flag: string): string[] {
+  const out: string[] = [];
+  argv.forEach((a, i) => {
+    if (a === flag && i + 1 < argv.length) out.push(argv[i + 1]);
+  });
+  return out;
+}
+
+type Override = {
+  raw: string;
+  event: string;
+  row: number;
+  label: string;
+  studentNumber: string;
+  used: boolean;
+};
+type Exclusion = {
+  raw: string;
+  event: string;
+  row: number;
+  label: string | null;
+  used: boolean;
+};
+
+const labelKey = (s: string) => s.replace(/\s+/g, ' ').trim().toUpperCase();
+
+function parseOverrides(): Override[] {
+  return argValues('--member').map((raw) => {
+    const m = raw.match(/^(.+)\|(\d+)\|(.+)=\s*(\S+)\s*$/);
+    if (!m)
+      throw new Error(
+        `--member "${raw}": expected "<event>|<row>|<label>=<student_number>"`
+      );
+    return {
+      raw,
+      event: m[1].trim(),
+      row: Number(m[2]),
+      label: m[3].trim(),
+      studentNumber: m[4].toUpperCase(),
+      used: false,
+    };
+  });
+}
+
+function parseExclusions(): Exclusion[] {
+  return argValues('--exclude').map((raw) => {
+    const m = raw.match(/^(.+?)\|(\d+)(?:\|(.+))?$/);
+    if (!m)
+      throw new Error(
+        `--exclude "${raw}": expected "<event>|<row>[|<member label>]"`
+      );
+    return {
+      raw,
+      event: m[1].trim(),
+      row: Number(m[2]),
+      label: m[3]?.trim() ?? null,
+      used: false,
+    };
+  });
+}
+
+const OVERRIDES = parseOverrides();
+const EXCLUSIONS = parseExclusions();
 
 type Service = ReturnType<typeof createServiceClient>;
 
@@ -662,7 +741,8 @@ type TeamRow = {
   categoryLevels: string[];
   place: string;
   sheetPoints: number;
-  sheetHouses: Colour[];
+  sheetHouses: Colour[]; // per member, kept aligned when a member is excluded
+  sheetHousesAll: Colour[]; // as the sheet printed them — the sheet's own total
   text: string;
   members: Member[];
 };
@@ -680,6 +760,8 @@ type EventDef = {
   houses: HouseRow[];
   parseNotes: string[];
   tabTotals: Record<Colour, number> | null; // a totals table printed on the tab itself
+  excluded: string[]; // rows / members left out by --exclude
+  excludedBasis: Record<Colour, number>; // what the sheet gave the excluded rows
 };
 
 /**
@@ -1011,6 +1093,7 @@ function parseGotTalent(grid: Grid, ev: EventDef, roster: Roster) {
       place: ORD_LABEL[ord],
       sheetPoints: numOrNull(r[1]) ?? 0,
       sheetHouses: houses,
+      sheetHousesAll: [...houses],
       text: a,
       members,
     });
@@ -1275,6 +1358,91 @@ function resolveEvent(roster: Roster, ev: EventDef) {
   }
 }
 
+/**
+ * Mr Ace's per-row decisions (--member / --exclude), applied after name
+ * matching so the report still shows what the matcher would have done.
+ */
+function applyDecisionFlags(roster: Roster, ev: EventDef) {
+  const byNumber = (sn: string, raw: string) => {
+    const c = roster.candidates.find(
+      (x) => x.studentNumber.toUpperCase() === sn
+    );
+    if (!c)
+      throw new Error(`--member "${raw}": no AY2026 student has number ${sn}`);
+    return c;
+  };
+  const before = (res: Resolution | undefined) =>
+    res
+      ? `matcher said ${res.status}${res.status === 'MATCHED' ? ` (${res.cand.display})` : ''}`
+      : 'not matched';
+
+  for (const x of EXCLUSIONS.filter((e) => e.event === ev.name)) {
+    const row = ev.students.find((r) => r.tabRow === x.row);
+    if (row && (x.label === null || labelKey(x.label) === labelKey(row.name))) {
+      ev.students = ev.students.filter((r) => r !== row);
+      if (row.sheetHouse && row.sheetPoints)
+        ev.excludedBasis[row.sheetHouse] += row.sheetPoints;
+      ev.excluded.push(
+        `row ${row.tabRow} "${row.name}" (${row.place}) — ${before(row.res)}`
+      );
+      x.used = true;
+      continue;
+    }
+    const team = ev.teams.find((t) => t.tabRow === x.row);
+    if (!team) continue;
+    if (x.label === null) {
+      ev.teams = ev.teams.filter((t) => t !== team);
+      for (const h of new Set(team.sheetHousesAll))
+        ev.excludedBasis[h] += team.sheetPoints;
+      ev.excluded.push(
+        `row ${team.tabRow} (${team.category} — ${team.place}) — the whole placing`
+      );
+      x.used = true;
+      continue;
+    }
+    const k = team.members.findIndex(
+      (m) => labelKey(m.name) === labelKey(x.label!)
+    );
+    if (k < 0) continue;
+    const mem = team.members[k];
+    // Keep the per-member sheet-house columns aligned with the members.
+    if (team.sheetHouses.length === team.members.length) {
+      team.sheetHouses = team.sheetHouses.filter((_, i) => i !== k);
+    }
+    team.members = team.members.filter((_, i) => i !== k);
+    ev.excluded.push(
+      `row ${team.tabRow} (${team.category} — ${team.place}) member "${mem.name}" — ${before(mem.res)}`
+    );
+    x.used = true;
+  }
+
+  for (const o of OVERRIDES.filter((e) => e.event === ev.name)) {
+    const cand = byNumber(o.studentNumber, o.raw);
+    const res = (prev: Resolution | undefined): Resolution => ({
+      status: 'MATCHED',
+      cand,
+      basis: 'override (--member)',
+      notes: [before(prev)],
+    });
+    const row = ev.students.find(
+      (r) => r.tabRow === o.row && labelKey(r.name) === labelKey(o.label)
+    );
+    if (row) {
+      row.res = res(row.res);
+      o.used = true;
+      continue;
+    }
+    const team = ev.teams.find((t) => t.tabRow === o.row);
+    const mem = team?.members.find(
+      (m) => labelKey(m.name) === labelKey(o.label)
+    );
+    if (mem) {
+      mem.res = res(mem.res);
+      o.used = true;
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // What would be inserted, and its totals
 
@@ -1460,7 +1628,7 @@ function candLine(roster: Roster, c: Candidate): string {
 function resCell(roster: Roster, res: Resolution | undefined): string {
   if (!res) return '—';
   if (res.status === 'MATCHED')
-    return `MATCHED → ${candLine(roster, res.cand)}`;
+    return `MATCHED${res.basis.startsWith('override') ? ' (override)' : ''} → ${candLine(roster, res.cand)}`;
   if (res.status === 'AMBIGUOUS')
     return `**AMBIGUOUS** — ${res.cands.map((c) => candLine(roster, c)).join(' ‖ ')}`;
   return `**UNMATCHED**${res.near.length ? ` — nearest: ${res.near.map((c) => candLine(roster, c)).join(' ‖ ')}` : ''}`;
@@ -1705,7 +1873,7 @@ function reportEvent(
         );
 
       sheetHasHouses = true;
-      const sheetSet = [...new Set(t.sheetHouses)];
+      const sheetSet = [...new Set(t.sheetHousesAll)];
       for (const h of sheetSet) sheetBasis[h] += t.sheetPoints;
       const matched = t.members
         .filter((x) => x.res?.status === 'MATCHED')
@@ -1764,6 +1932,23 @@ function reportEvent(
       sheetBasis[h.colour] += h.sheetPoints;
     }
     out.push('');
+  }
+
+  if (ev.excluded.length) {
+    out.push(
+      `**EXCLUDED** by \`--exclude\` (${ev.excluded.length}) — not imported:`
+    );
+    for (const n of ev.excluded) out.push(`- ${n}`);
+    out.push('');
+    for (const c of COLOURS) {
+      if (!ev.excludedBasis[c]) continue;
+      sheetHasHouses = true;
+      sheetBasis[c] += ev.excludedBasis[c];
+      explain.push(
+        `excluded rows: ${cap(c)} loses the ${ev.excludedBasis[c]} the sheet gave them`
+      );
+    }
+    explain.push(...ev.excluded.map((n) => `EXCLUDED ${n}`));
   }
 
   if (ev.parseNotes.length) {
@@ -2053,6 +2238,8 @@ async function main() {
       houses: [],
       parseNotes: [],
       tabTotals: null,
+      excluded: [],
+      excludedBasis: { BLUE: 0, ORANGE: 0, YELLOW: 0, GREEN: 0 },
     };
     if (!trackerParsed.rows.has(spec.tracker))
       throw new Error(`tracker row "${spec.tracker}" not found`);
@@ -2071,7 +2258,17 @@ async function main() {
       }
     }
     resolveEvent(roster, ev);
+    applyDecisionFlags(roster, ev);
     events.push(ev);
+  }
+  const unusedFlags = [
+    ...OVERRIDES.filter((o) => !o.used).map((o) => `--member "${o.raw}"`),
+    ...EXCLUSIONS.filter((x) => !x.used).map((x) => `--exclude "${x.raw}"`),
+  ];
+  if (unusedFlags.length) {
+    throw new Error(
+      `these flags matched no row (check the event name, row and label):\n  ${unusedFlags.join('\n  ')}`
+    );
   }
 
   // Validate every event against the write route's own contract.
@@ -2132,7 +2329,7 @@ async function main() {
     const all = [...st, ...mem];
     const count = (s: string) => all.filter((x) => x === s).length;
     summary.push(
-      `| ${pl.ev.name} | ${all.length || pl.ev.houses.length}${mem.length ? ' members' : pl.ev.houses.length ? ' houses' : ''} | ${pl.ev.houses.length ? pl.ev.houses.length : count('MATCHED')} | ${count('AMBIGUOUS')} | ${count('UNMATCHED')} | ${COLOURS.map((c) => computed[c]).join(' / ')} | ${tr ? COLOURS.map((c) => tr[c]).join(' / ') : '—'} |`
+      `| ${pl.ev.name} | ${all.length || pl.ev.houses.length}${mem.length ? ' members' : pl.ev.houses.length ? ' houses' : ''} | ${pl.ev.houses.length ? pl.ev.houses.length : count('MATCHED')} | ${count('AMBIGUOUS')} | ${count('UNMATCHED')} | ${pl.ev.excluded.length} | ${COLOURS.map((c) => computed[c]).join(' / ')} | ${tr ? COLOURS.map((c) => tr[c]).join(' / ') : '—'} |`
     );
   }
 
@@ -2140,9 +2337,19 @@ async function main() {
   head.push('## Summary');
   head.push('');
   head.push(
-    '| Event | Rows | Matched | Ambiguous | Unmatched | Would import B/O/Y/G | Tracker B/O/Y/G |'
+    '| Event | Rows | Matched | Ambiguous | Unmatched | Excluded | Would import B/O/Y/G | Tracker B/O/Y/G |'
   );
-  head.push('| --- | --- | --- | --- | --- | --- | --- |');
+  head.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  const flagsUsed = [
+    ...OVERRIDES.map((o) => `--member "${o.raw}"`),
+    ...EXCLUSIONS.map((x) => `--exclude "${x.raw}"`),
+  ];
+  if (flagsUsed.length) {
+    prelude.push(
+      `Decision flags applied: ${flagsUsed.map((f) => `\`${f}\``).join(', ')}`
+    );
+    prelude.push('');
+  }
   head.push(...summary);
   head.push('');
   const tt = trackerParsed.total;
