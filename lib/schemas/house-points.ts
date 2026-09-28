@@ -407,9 +407,21 @@ export type AddEntriesInput = z.infer<typeof AddEntriesSchema>;
 // isn't zero here either: `score: null` clears a score back to "not
 // entered", it does not mean "scored zero" (Hard Rule #3's distinction,
 // carried into house points).
+//
+// `house_point_entries.score` is `numeric(8,2)` (migration 181) — rounded to
+// 2 decimals HERE, before the route ever compares it to `maxScore` or writes
+// it, so what gets stored and what the PATCH response echoes back always
+// match what the column can actually hold (a longer float would otherwise
+// round silently on the way into Postgres, and the response would echo the
+// UNROUNDED value the caller sent rather than what was saved).
 export const EntryPatchSchema = z
   .object({
-    score: z.number().min(0, "Score can't be negative.").nullable().optional(),
+    score: z
+      .number()
+      .min(0, "Score can't be negative.")
+      .transform((value) => Math.round(value * 100) / 100)
+      .nullable()
+      .optional(),
     placeId: uuid('Unknown place.').nullable().optional(),
   })
   .refine((data) => data.score !== undefined || data.placeId !== undefined, {

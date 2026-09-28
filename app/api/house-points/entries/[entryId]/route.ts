@@ -9,6 +9,10 @@ import {
   loadRosterByIds,
   toNumOrNull,
 } from '@/lib/house-points/queries';
+import {
+  blocksTeamEntryDelete,
+  REMOVE_TEAM_INSTEAD_ERROR,
+} from '@/lib/house-points/write-guards';
 import { EntryPatchSchema } from '@/lib/schemas/house-points';
 import { listHouses } from '@/lib/sis/houses';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -296,6 +300,20 @@ export async function DELETE(
     const event = await loadEventForWrite(service, entry.event_id);
     if (!event) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+
+    // A team's entry carries the team's placement/score — deleting it here
+    // orphans the team (it stays on the roster with members but no sheet
+    // row) and permanently locks its members as "on another team" (KD
+    // #228's one-team-per-student rule keys off house_point_team_members,
+    // which this route never touches). DELETE
+    // /api/house-points/teams/[teamId] removes the team, its members and
+    // this same entry together — the route that must be used instead.
+    if (blocksTeamEntryDelete(entry)) {
+      return NextResponse.json(
+        { error: REMOVE_TEAM_INSTEAD_ERROR },
+        { status: 400 }
+      );
     }
 
     step = 'resolve identity';

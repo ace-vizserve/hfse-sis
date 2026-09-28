@@ -17,6 +17,10 @@ import {
 } from '@/lib/house-points/event-patch-diff';
 import { toNum, toNumOrNull } from '@/lib/house-points/queries';
 import {
+  maxScoreLoweredBelowStoredScore,
+  SCORES_TOO_HIGH_ERROR,
+} from '@/lib/house-points/write-guards';
+import {
   EventPatchSchema,
   mergedEventIssues,
   type PlaceInput,
@@ -253,6 +257,45 @@ export async function PATCH(
       }
     }
 
+    // Lowering max_score below a score already entered would leave that
+    // entry showing a score higher than the sheet now allows — refused
+    // rather than silently letting a stale-looking score sit there. Only a
+    // LOWER max_score is a problem, so the entries query below only runs
+    // once that much is already true — raising it, or an unrelated field
+    // change, never pays for it.
+    if (
+      'max_score' in updateData &&
+      existing.max_score !== null &&
+      (updateData.max_score as number) < existing.max_score
+    ) {
+      step = 'check entries for lowered max score';
+      const newMax = updateData.max_score as number;
+      const { data: highRows, error } = await service
+        .from('house_point_entries')
+        .select('score')
+        .eq('event_id', eventId)
+        .not('score', 'is', null)
+        .order('score', { ascending: false })
+        .limit(1);
+      if (error) throw new Error(`house_point_entries: ${error.message}`);
+      const highestScore = toNumOrNull(
+        (highRows?.[0] as { score: number | string | null } | undefined)
+          ?.score ?? null
+      );
+      if (
+        maxScoreLoweredBelowStoredScore(
+          newMax,
+          existing.max_score,
+          highestScore
+        )
+      ) {
+        return NextResponse.json(
+          { error: SCORES_TOO_HIGH_ERROR },
+          { status: 409 }
+        );
+      }
+    }
+
     let omittedIds: string[] = [];
     if (placesActuallyChanged) {
       const existingIds = new Set(existingPlaces.map((p) => p.id));
@@ -282,7 +325,7 @@ export async function PATCH(
           return NextResponse.json(
             {
               error:
-                'A student already has that placement. Change their placement first.',
+                'Someone in this event already has that placement. Change their placement first.',
             },
             { status: 409 }
           );

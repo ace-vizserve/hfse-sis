@@ -401,6 +401,38 @@ describe('EntryPatchSchema', () => {
   it('rejects an empty object', () => {
     expect(EntryPatchSchema.safeParse({}).success).toBe(false);
   });
+
+  it('rounds a score to 2 decimals — numeric(8,2) is what actually gets stored', () => {
+    const result = EntryPatchSchema.safeParse({ score: 12.345 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.score).toBe(12.35);
+    }
+  });
+
+  it('rounds down as well as up', () => {
+    const result = EntryPatchSchema.safeParse({ score: 12.344 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.score).toBe(12.34);
+    }
+  });
+
+  it('leaves an already-2-decimal score unchanged', () => {
+    const result = EntryPatchSchema.safeParse({ score: 12.3 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.score).toBe(12.3);
+    }
+  });
+
+  it('does not transform a null score', () => {
+    const result = EntryPatchSchema.safeParse({ score: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.score).toBeNull();
+    }
+  });
 });
 
 describe('mergedEventIssues — the same cross-field rules run against a MERGED (stored + patched) event', () => {

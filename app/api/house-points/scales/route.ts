@@ -10,15 +10,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // Replaces the whole point ladder for one event_type — delete then insert,
 // in two statements with a clear error step (no multi-statement transaction
-// is available through supabase-js). Unlike the events routes, there is
-// nothing to clean up on a failed insert: the delete already committed, so a
-// failed insert leaves that event_type's scale EMPTY until the next
-// successful PUT rather than reverting to the old rows. That is an accepted
-// trade-off, not an oversight — house_point_scales has no academic_year_id
-// (migration 181) and is copied into an event's own house_point_places only
-// at creation time (KD-equivalent header note: "changing scales never
-// touches existing events"), so a transient empty scale can only ever affect
-// the NEXT event created of that type, never anything already run.
+// is available through supabase-js). A failed insert restores the rows the
+// delete just removed, same "compensating cleanup" pattern as the team PATCH
+// member rollback in app/api/house-points/teams/[teamId]/route.ts — without
+// it, this event_type's scale would sit EMPTY until the next successful PUT.
+// The restore itself can still fail (logged, never thrown, so the caller
+// always sees the original insert error) — house_point_scales has no
+// academic_year_id (migration 181) and is copied into an event's own
+// house_point_places only at creation time ("changing scales never touches
+// existing events"), so even that worst case can only ever affect the NEXT
+// event created of that type, never anything already run.
 //
 // No cache invalidation here: house_point_scales isn't read behind
 // `unstable_cache`/`revalidateTag` anywhere (lib/house-points/queries.ts's
@@ -77,8 +78,35 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
           sort_order: index,
         }))
       );
-    if (insertError)
-      throw new Error(`house_point_scales insert: ${insertError.message}`);
+    if (insertError) {
+      // Compensating cleanup: no multi-statement transaction in
+      // supabase-js. The old ladder was already deleted above, so a failed
+      // insert of the new one would otherwise leave this event_type with NO
+      // scale at all — put the old rows back rather than shipping that
+      // half-done state (same pattern as the team PATCH member rollback in
+      // app/api/house-points/teams/[teamId]/route.ts).
+      step = 'restore rows after failed insert';
+      if ((oldRows ?? []).length > 0) {
+        const { error: restoreError } = await service
+          .from('house_point_scales')
+          .insert(
+            (oldRows ?? []).map((row) => ({
+              event_type: eventType,
+              label: row.label,
+              rank: row.rank,
+              points: row.points,
+              sort_order: row.sort_order,
+            }))
+          );
+        if (restoreError) {
+          console.error('[house-points] scales PUT: rollback also failed', {
+            eventType,
+            restoreError: restoreError.message,
+          });
+        }
+      }
+      throw new Error(insertError.message);
+    }
 
     step = 'audit';
     const before = (oldRows ?? []).map((row) => ({

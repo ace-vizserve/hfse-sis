@@ -29,9 +29,12 @@
 -- computation ("a formula change is always a migration too" would otherwise
 -- apply here too, except there is no formula to keep in sync because nothing
 -- is stored). A place can carry its own bespoke points
--- (`house_point_places.points`) for a one-off event; where an event has no
--- bespoke places the scale in `house_point_scales` is what read-time code
--- falls back to.
+-- (`house_point_places.points`) for a one-off event; but that column is
+-- always populated — `house_point_scales` is copied into an event's own
+-- `house_point_places` once, at event creation, never read from again for
+-- that event. Editing the scale afterwards only changes what the NEXT event
+-- of that type is seeded with; read-time code never falls back to
+-- `house_point_scales` for an event that already has places.
 --
 -- ─────────────────────────────────────────────────────────────────────────
 -- WHY A TEAM COUNTS ONCE PER HOUSE

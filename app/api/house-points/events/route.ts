@@ -101,7 +101,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (placesError) {
       // Cleanup: the event was already inserted above. Without this, a
       // failed places insert would leave an event with no place ladder —
-      // silently un-usable and blocking a retry under the same name.
+      // silently un-usable and left behind for a retry to find (there is no
+      // uniqueness constraint on the event name, so a retry would not
+      // collide with it, but it would sit there unusable regardless).
       step = 'cleanup after failed places insert';
       const { error: cleanupError } = await service
         .from('house_point_events')
