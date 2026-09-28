@@ -6,7 +6,11 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
-import { validateSectionChoice } from '@/lib/sis/class-assignment';
+import {
+  resolveChosenSection,
+  validateSectionChoice,
+} from '@/lib/sis/class-assignment';
+import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import {
   completePlacement,
   type MidTermPayload,
@@ -37,10 +41,12 @@ import {
 // the same day, before it was deployed
 // (docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md).
 //
-// Differs from transfer-section: this is the no-classSection-yet path.
-// If the student already HAS a classSection, the registrar should use
-// the transfer-section route instead — this route refuses with a 422
-// pointing there.
+// Differs from transfer-section: this is the not-on-a-class-list-yet path.
+// If the student is already on a class list THIS AY, the registrar should
+// use the transfer-section route instead — this route refuses with a 422
+// pointing there. A class merely NAMED on the admissions row (Directus) is
+// not that: the picked class is written over it, or, when it is the same
+// class, only the sync runs.
 //
 // Atomicity: the admissions UPDATE happens before syncOneStudent runs.
 // If sync fails the UPDATE is reverted (best-effort — the Supabase JS
@@ -195,39 +201,63 @@ export async function POST(
       ? statusRow.classSection.trim()
       : null;
 
-  // The 'already in a section' guard only applies when the student is also
-  // present in public.students (the fully-synced state). The other case —
-  // classSection set on the admissions row but no public.students row yet
-  // ('not_synced' in the loader's vocabulary) — is the chronic Directus
-  // drift this feature exists to recover from. We treat that as a re-sync:
-  // skip the UPDATE in Step A (admissions already has the values), proceed
-  // straight to syncOneStudent.
-  let alreadySynced = false;
-  if (existingSection && appsRow.studentNumber) {
-    const { data: existingStudentRow } = await service
-      .from('students')
-      .select('id')
-      .eq('student_number', appsRow.studentNumber)
-      .maybeSingle();
-    alreadySynced = existingStudentRow != null;
+  // "Already in a class" means ON A CLASS LIST THIS YEAR — an active or
+  // late-enrollee `section_students` row in one of this AY's sections. That
+  // child is moved (Move student), never assigned a second time.
+  //
+  // ⚠ NOT "has a `students` row". This used to refuse whenever the admissions
+  // row named a class and a `students` row existed — but a returning (Current)
+  // child has a `students` row from last year, so a child whose row named a
+  // class (Directus) and who sat in NO class this year was told "use Move
+  // student", and the Class Assignment card offers no Move without a class
+  // row. Stranded, with nowhere to click.
+  const activeClass = await findActiveClassThisAy(
+    service,
+    appsRow.studentNumber,
+    ayCode
+  );
+  if ('error' in activeClass) {
+    return NextResponse.json(
+      { error: `Couldn't check the student's class: ${activeClass.error}` },
+      { status: 500 }
+    );
   }
-  if (existingSection && alreadySynced) {
+  if (activeClass.sectionName !== null) {
     return NextResponse.json(
       {
-        error: `This student is already in ${existingSection}. To move them, use Move student instead.`,
+        error: `This student is already in ${activeClass.sectionName}. To move them, use Move student instead.`,
       },
       { status: 422 }
     );
   }
-  // resyncOnly = student already has the right admissions-side values but
-  // never made it into public.students. Step A becomes a no-op; we still
-  // run Step B + C + D.
-  const resyncOnly = existingSection !== null && !alreadySynced;
+
+  // resyncOnly = the admissions row ALREADY names the class that was picked
+  // (the chronic Directus drift: class set, never synced), so Step A has
+  // nothing to write and only the sync runs. Decided by resolving the row's
+  // class the way the sync does (`resolveChosenSection`) and comparing ids —
+  // NOT merely by the row naming some class. When the person picked a
+  // DIFFERENT class, Step A writes their pick over the row's, so the child
+  // lands where they chose and the response + audit name the class they are
+  // actually in. (Before 2026-09-28 any named class skipped Step A: the sync
+  // then placed the child in the row's class while the response and audit
+  // reported the picked one.) A row class that does not resolve simply
+  // isn't the picked class.
+  let resyncOnly = false;
+  if (existingSection) {
+    const rowClass = await resolveChosenSection(
+      service,
+      ayCode,
+      statusRow.classLevel,
+      statusRow.classSection
+    );
+    resyncOnly = 'sectionId' in rowClass && rowClass.sectionId === sectionId;
+  }
 
   // ── 3. Resolve + validate target section ──────────────────────────────
-  // Existence + AY match + capacity re-check at write time (Hard Rule #5 —
-  // max 50 active per section) — shared with the stage route's Enrolled-flip
-  // via lib/sis/class-assignment.ts::validateSectionChoice.
+  // Existence + AY match + level match + capacity re-check at write time
+  // (max 50 active per section) — shared with the stage route's Enrolled-flip
+  // via lib/sis/class-assignment.ts::validateSectionChoice. Runs on the
+  // PICKED class in every path, resync included.
   // `exclude`: in the resync branch the admissions row already names this
   // class, so without it the child's own waiting seat would count against them.
   const validated = await validateSectionChoice(
@@ -243,9 +273,10 @@ export async function POST(
   const { section } = validated;
 
   // ── 4. Step A — write admissions classSection / classLevel ───────────
-  // Skipped in the resync-only branch: the admissions row already has
-  // the correct values, only public.students is missing. Step B picks
-  // up from there.
+  // Skipped in the resync-only branch: the admissions row already names the
+  // picked class, only the class list is missing it. Step B picks up from
+  // there. Otherwise this writes the picked class, replacing any other class
+  // the row named (kept in `statusRow` for the rollback and the audit).
   const nowIso = new Date().toISOString();
   const actorEmail = auth.user.email ?? '(unknown)';
   if (!resyncOnly) {
@@ -406,6 +437,15 @@ export async function POST(
       enrollment_date_before: placement?.enrollmentDateBefore ?? null,
       enrollment_date_after: placement?.enrollmentDateAfter ?? null,
       lateEnrolleeCandidate: midTermEnrolment?.termLabel ?? null,
+      // The row named a different class and this assignment replaced it.
+      ...(existingSection && !resyncOnly
+        ? {
+            replaced_class: {
+              classLevel: statusRow.classLevel,
+              classSection: statusRow.classSection,
+            },
+          }
+        : {}),
     },
   });
 
@@ -424,4 +464,58 @@ export async function POST(
     // forward to that term's first day.
     midTermEnrolment,
   });
+}
+
+/**
+ * The class this student is on the list of THIS AY — an active or
+ * late-enrollee `section_students` row (`ENROLLED_STATUSES`) in one of the
+ * AY's sections — or `sectionName: null` when there is none. A withdrawn row
+ * does not count: it is not a seat, and the sync reactivates it on placement.
+ *
+ * Only a failed read is an error. Guessing "not in a class" there would let a
+ * child on a class list be assigned a second one.
+ */
+async function findActiveClassThisAy(
+  service: ReturnType<typeof createServiceClient>,
+  studentNumber: string,
+  ayCode: string
+): Promise<{ sectionName: string | null } | { error: string }> {
+  const [studentRes, ayRes] = await Promise.all([
+    service
+      .from('students')
+      .select('id')
+      .eq('student_number', studentNumber)
+      .maybeSingle(),
+    service
+      .from('academic_years')
+      .select('id')
+      .eq('ay_code', ayCode)
+      .maybeSingle(),
+  ]);
+  if (studentRes.error) return { error: studentRes.error.message };
+  if (ayRes.error) return { error: ayRes.error.message };
+  const studentId = (studentRes.data as { id: string } | null)?.id ?? null;
+  const ayId = (ayRes.data as { id: string } | null)?.id ?? null;
+  // No students row = never synced, so on no class list anywhere.
+  if (!studentId || !ayId) return { sectionName: null };
+
+  // 'sections.academic_year_id' (table name, not the alias) — PostgREST
+  // silently ignores an embedded filter written against the alias and
+  // returns every AY's rows, which would bring last year's class back.
+  const { data, error } = await service
+    .from('section_students')
+    .select('id, section:sections!inner(name, academic_year_id)')
+    .eq('student_id', studentId)
+    .in('enrollment_status', ENROLLED_STATUSES)
+    .eq('sections.academic_year_id', ayId)
+    .limit(1);
+  if (error) return { error: error.message };
+  const row = (
+    (data ?? []) as unknown as Array<{
+      section: { name: string } | { name: string }[] | null;
+    }>
+  )[0];
+  if (!row) return { sectionName: null };
+  const section = Array.isArray(row.section) ? row.section[0] : row.section;
+  return { sectionName: section?.name ?? 'a class' };
 }

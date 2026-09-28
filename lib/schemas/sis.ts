@@ -966,8 +966,10 @@ export function isActiveFunnelStatus(
   return ACTIVE_FUNNEL_STAGES.has((status ?? '').trim());
 }
 
-// Stages that must reach a "done" status before `applicationStatus` can be
-// flipped to `Enrolled`. Enforced server-side in the stage PATCH route.
+// Stages that should reach a "done" status before `applicationStatus` is
+// flipped to `Enrolled`. Checked server-side in the stage PATCH route, which
+// refuses the flip unless the person explicitly acknowledges the open steps
+// (`acknowledge_open_steps`, 2026-09-28 — see `evaluateEnrolledFlip`).
 // `Enrolled (Conditional)` bypasses this gate (registrar override).
 // `class` is deliberately excluded — it's auto-assigned as part of the
 // Enrolled flip itself. `supplies` + `orientation` are post-enrollment
@@ -1020,7 +1022,8 @@ export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
 // stage PATCH route writes on each field change is what makes that safe.
 //
 // `ENROLLED_PREREQ_STAGES` + `STAGE_TERMINAL_STATUS` above are a DIFFERENT rule
-// (they gate the flip TO Enrolled) and are still enforced.
+// (they gate the flip TO Enrolled) and are still checked — a warning the
+// person must acknowledge, since 2026-09-28 (`evaluateEnrolledFlip`).
 
 export const APPLICATION_TERMINAL_REASON_VALUES = [
   'chose_another_school',
@@ -1099,8 +1102,21 @@ export function validateTerminalReason(
 // the class, "subject to a deliberation by Academics Team"). So a class is
 // NOT required to enrol. See docs/context/admission-process.md.
 //
-// What IS required is that the five preceding stages are finished. That gate
-// is unchanged and must stay that way: it is the definition of step 10.
+// What IS expected is that the preceding stages are finished — that is the
+// definition of step 10.
+//
+// ⚠ IT WARNS, IT DOES NOT BLOCK (2026-09-28, Mr Ace). Admissions staff set
+// Enrolled before every step is done to secure a class seat quickly — class
+// assignment requires Enrolled (KD #226), and the school confirmed that is how
+// they work. So unfinished steps still refuse the flip (422
+// `prereqs_incomplete`, as before) UNLESS the caller sends
+// `acknowledgeOpenSteps` — the dialog's "Enrol anyway" tick. Then the flip
+// goes ahead and the result carries `openSteps`, which the route writes into
+// the audit row (`open_steps_at_enrolment`) so there is a trace of who
+// enrolled early and what was outstanding. Those children are then chased
+// from Admissions → "Enrolled, steps still open"
+// (lib/admissions/enrolled-open-steps.ts). With no open steps the flag means
+// nothing.
 //
 // If the caller does supply a class — a convenience for a coordinator doing
 // both jobs in one sitting — they must be allowed to assign classes. The
@@ -1125,7 +1141,12 @@ export type EnrolledFlipBlocker = {
 };
 
 export type EnrolledFlipGateResult =
-  | { ok: true; assignsSection: boolean }
+  | {
+      ok: true;
+      assignsSection: boolean;
+      /** Present only when steps were open and the caller acknowledged them. */
+      openSteps?: EnrolledFlipBlocker[];
+    }
   | {
       ok: false;
       status: 403 | 422;
@@ -1133,6 +1154,27 @@ export type EnrolledFlipGateResult =
       error: string;
       blockers?: EnrolledFlipBlocker[];
     };
+
+/**
+ * The prerequisite steps THIS child has not finished, in pipeline order. One
+ * rule for the Enrolled flip (`evaluateEnrolledFlip`) and the Admissions
+ * queue of children enrolled with steps still open, so the two cannot
+ * disagree about what "finished" means.
+ */
+export function findOpenPrereqSteps(
+  category: string | null | undefined,
+  prereqStatuses: Record<string, string | null | undefined>
+): EnrolledFlipBlocker[] {
+  const open: EnrolledFlipBlocker[] = [];
+  for (const stage of enrolledPrereqStagesFor(category)) {
+    const expected = STAGE_TERMINAL_STATUS[stage]!;
+    const current = prereqStatuses[stage] ?? null;
+    if (current !== expected) {
+      open.push({ stage: STAGE_LABELS[stage], current, expected });
+    }
+  }
+  return open;
+}
 
 export function evaluateEnrolledFlip(input: {
   /** True when the actor's role may place students — `canAssignSection`. */
@@ -1152,18 +1194,17 @@ export function evaluateEnrolledFlip(input: {
   studentNumber: string | null | undefined;
   /** New / Current — Current skips Assessment (`enrolledPrereqStagesFor`). */
   category?: string | null;
+  /**
+   * The person saw the open steps and chose to enrol anyway. Lets the flip
+   * through with steps open; the role and student-number checks below still
+   * apply. Meaningless when no step is open.
+   */
+  acknowledgeOpenSteps?: boolean;
 }): EnrolledFlipGateResult {
   const { canAssignSection, sectionId, prereqStatuses, studentNumber } = input;
 
-  const blockers: EnrolledFlipBlocker[] = [];
-  for (const stage of enrolledPrereqStagesFor(input.category)) {
-    const expected = STAGE_TERMINAL_STATUS[stage]!;
-    const current = prereqStatuses[stage] ?? null;
-    if (current !== expected) {
-      blockers.push({ stage: STAGE_LABELS[stage], current, expected });
-    }
-  }
-  if (blockers.length > 0) {
+  const blockers = findOpenPrereqSteps(input.category, prereqStatuses);
+  if (blockers.length > 0 && input.acknowledgeOpenSteps !== true) {
     return {
       ok: false,
       status: 422,
@@ -1172,9 +1213,12 @@ export function evaluateEnrolledFlip(input: {
       blockers,
     };
   }
+  // Only set when there is something to record, so a clean flip's result is
+  // unchanged whether or not the flag was sent.
+  const openSteps = blockers.length > 0 ? { openSteps: blockers } : {};
 
   const wantsSection = !!sectionId;
-  if (!wantsSection) return { ok: true, assignsSection: false };
+  if (!wantsSection) return { ok: true, assignsSection: false, ...openSteps };
 
   if (!canAssignSection) {
     return {
@@ -1196,7 +1240,7 @@ export function evaluateEnrolledFlip(input: {
     };
   }
 
-  return { ok: true, assignsSection: true };
+  return { ok: true, assignsSection: true, ...openSteps };
 }
 
 // Each stage maps to status / remarks / extras column names on enrolment_status.
@@ -1415,6 +1459,10 @@ export const StageUpdateSchema = z.object({
    *  `application` stage to `Enrolled` (validated in the route, not here,
    *  since the requirement is conditional on stageKey + status). */
   section_id: z.string().uuid().optional(),
+  /** "Enrol anyway": the person saw which prerequisite steps are still open
+   *  and chose to enrol. Only read on the application stage's plain
+   *  `Enrolled` flip (`evaluateEnrolledFlip`); ignored everywhere else. */
+  acknowledge_open_steps: z.boolean().optional(),
 });
 
 export type StageUpdateInput = z.infer<typeof StageUpdateSchema>;

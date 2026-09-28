@@ -21,7 +21,7 @@ import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 // ⚠ Class size is NOT checked here. A full class is also a reason placement
 // fails, but seats also count children assigned a class and not yet enrolled,
 // and a second copy of that count here would drift
-// from the one the picker and the cap use.
+// from the one the class dialogs and the cap use.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type PlacementLookup = {

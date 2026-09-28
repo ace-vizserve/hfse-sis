@@ -93,8 +93,8 @@ type Props = {
   /** May this viewer edit stage statuses? Defaults to FALSE so a caller that
    *  forgets it renders the read-only record rather than an EditStageDialog
    *  whose PATCH route would 403 (KD #173). It also matters beyond the save:
-   *  the dialog fetches `assignable-sections`, which 403s for a read-only
-   *  viewer and would leave them staring at an empty section picker. */
+   *  on a withdrawal the dialog fetches `assignable-sections`, which 403s for
+   *  a read-only viewer and would leave the last-day question unanswerable. */
   canEdit?: boolean;
   /** May this viewer put a student in a class? Until 2026-09-10 this was
    *  narrower than `canEdit` — the admissions team finished enrolment (step
@@ -104,7 +104,7 @@ type Props = {
    *  (Admissions as its own module, hosting the pre-enrolment funnel) is
    *  unaffected — only the "who may place" rule once derived from it
    *  changed. Defaults to FALSE for the same reason `canEdit` does: no
-   *  picker beats one whose save could be refused. */
+   *  class button beats one whose save could be refused. */
   canAssignSection?: boolean;
   /** What the class tile's "Change section" dialog needs: who is
    *  moving, from where, and the sections they can go to. Null
@@ -550,7 +550,6 @@ export function EnrollmentTab({
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         canEdit={canEdit}
-        canAssignSection={canAssignSection}
       />
 
       <StatusGroupCard
@@ -707,7 +706,6 @@ function ApplicationStatusCard({
   ayCode,
   enroleeNumber,
   canEdit,
-  canAssignSection,
 }: {
   applicationCard: StageCard;
   applicationTone: ApplicationTone;
@@ -717,7 +715,6 @@ function ApplicationStatusCard({
   ayCode: string;
   enroleeNumber: string;
   canEdit: boolean;
-  canAssignSection: boolean;
 }) {
   const tile = APPLICATION_TILE[applicationTone];
   const TileIcon = tile.icon;
@@ -728,8 +725,7 @@ function ApplicationStatusCard({
   // WITHOUT THIS THE DIALOG'S CHECKLIST WAS DEAD CODE. `prereqStatuses` is an
   // optional prop and neither call site passed it, so `showPrereqChecklist` was
   // permanently false: the "N requirements not met yet · saving will fail"
-  // warning never rendered, and the inline class picker offered itself to a
-  // student who could not be enrolled at all. Same source of truth as the
+  // warning never rendered. Same source of truth as the
   // server's `evaluateEnrolledFlipGate`, so the dialog and the route cannot
   // disagree about what "ready" means.
   const prereqStatuses = Object.fromEntries(
@@ -813,7 +809,6 @@ function ApplicationStatusCard({
               initialStatus={applicationCard.status}
               initialRemarks={applicationCard.remarks}
               initialExtras={applicationCard.extrasInitial}
-              canAssignSection={canAssignSection}
               prereqStatuses={prereqStatuses}
             />
           )}

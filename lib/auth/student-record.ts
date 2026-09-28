@@ -8,8 +8,8 @@ import type { Role } from '@/lib/auth/roles';
 
 /**
  * The shared student record — profile, family, pipeline stage, STP status,
- * residence history, pre-course counselling — plus the GET that feeds the
- * stage dialog's section picker.
+ * residence history, pre-course counselling — plus the assignable-sections
+ * GET the stage dialog reads when an application is withdrawn or cancelled.
  *
  * REVERSES KD #74's "school_admin is read-only oversight" FOR THIS FOLDER, on
  * Mr Ace's instruction (2026-07-31). The routes were the outlier, not the

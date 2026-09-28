@@ -5,6 +5,7 @@ import {
   GraduationCapIcon,
   HomeIcon,
   InboxIcon,
+  ListTodoIcon,
   PlaneIcon,
   Settings2Icon,
   SparklesIcon,
@@ -102,6 +103,14 @@ export const NAV_ENTRIES: NavEntry[] = [
     // document work moved off her onto the P-Files officer + school_admin).
     // Without this the palette advertises a page that bounces her.
     requiresCapability: 'documents_pre_enrolment.read',
+  },
+  {
+    // The page guards with the same role set as the /admissions prefix, so
+    // isRouteAllowed() decides — no explicit gate.
+    href: '/admissions/enrolled-open-steps',
+    label: 'Admissions — Enrolled, steps still open',
+    group: 'Modules',
+    icon: ListTodoIcon,
   },
   {
     href: '/records',

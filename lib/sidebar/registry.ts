@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
+  ListTodo,
   MessageSquare,
   RefreshCw,
   Scale,
@@ -352,6 +353,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/admissions/upcoming/applications': FileClock,
       '/admissions/applications/closed': Archive,
       '/admissions/document-validation': ICON_DOC_VALIDATION,
+      // Enrolled with steps still open — a checklist not yet ticked off.
+      '/admissions/enrolled-open-steps': ListTodo,
       '/admissions/cohorts/stp': ICON_STP,
       '/admissions/cohorts/medical': ICON_MEDICAL,
       // Documents a parent committed to send by a date they named.

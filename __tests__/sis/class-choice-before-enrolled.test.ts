@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // as it stands after choose mode was removed: class assignment is
 // Enrolled-only (assign-section refuses anyone else), a class already named on
 // the admissions row (set in Directus) HOLDS A SEAT, and the Enrolled flip
-// refuses such a class when it can no longer take the child.
+// leaves the child unplaced (and says why) when that class can no longer take
+// them — it used to refuse the flip, until the stage dialog's class picker was
+// removed on 2026-09-28 — and clears that class from the row. assign-section
+// writes the class the person picked unless the row already names it, and
+// refuses only a child already on a class list this AY.
 //
 // The routes run against a small in-memory stand-in for the Supabase query
 // builder: every query is recorded, and a per-test resolver answers it by
@@ -522,6 +526,98 @@ describe('assign-section — Enrolled only', () => {
   });
 });
 
+describe('assign-section — a class already named on the row', () => {
+  // Enrolled, the row names Discipline 1 (Directus spelling), and the child
+  // has a `students` row — a returning child, or one synced before.
+  const named: World = {
+    applicationStatus: 'Enrolled',
+    classLevel: 'Primary One',
+    classSection: 'Discipline-1',
+    studentNumber: 'H-self',
+    roster: rosterOf(10),
+    chosen: [],
+  };
+  function assignAudit() {
+    return h.logAction.mock.calls
+      .map((c) => c[0] as { action: string; context: Record<string, unknown> })
+      .find((a) => a.action === 'sis.student.assign_section');
+  }
+
+  it('writes a DIFFERENT picked class, and the response and audit name it', async () => {
+    setWorld(named);
+    const res = await assignRequest(OTHER_SECTION_ID);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      mode: 'placed',
+      sectionName: 'Grit',
+    });
+    expect(statusWrites()).toHaveLength(1);
+    expect(statusWrites()[0].payload).toMatchObject({
+      classSection: 'Grit',
+      classLevel: 'Primary One',
+      classStatus: 'Finished',
+    });
+    expect(h.syncOneStudent).toHaveBeenCalledTimes(1);
+    expect(assignAudit()?.context).toMatchObject({
+      sectionId: OTHER_SECTION_ID,
+      sectionName: 'Grit',
+      replaced_class: {
+        classLevel: 'Primary One',
+        classSection: 'Discipline-1',
+      },
+    });
+  });
+
+  it('rolls the picked class back when the sync fails', async () => {
+    setWorld(named);
+    h.syncOneStudent.mockResolvedValueOnce({ ok: false, reason: 'boom' });
+    const res = await assignRequest(OTHER_SECTION_ID);
+    expect(res.status).toBe(500);
+    expect(statusWrites()).toHaveLength(2);
+    expect(statusWrites()[1].payload).toMatchObject({
+      classSection: 'Discipline-1',
+      classLevel: 'Primary One',
+    });
+  });
+
+  it('only syncs when the picked class IS the one the row names', async () => {
+    setWorld(named);
+    const res = await assignRequest(SECTION.id);
+    expect(res.status).toBe(200);
+    expect(statusWrites()).toEqual([]);
+    expect(h.syncOneStudent).toHaveBeenCalledTimes(1);
+    expect(assignAudit()?.context).not.toHaveProperty('replaced_class');
+  });
+
+  it('assigns a returning child who has a students row but no class this year', async () => {
+    // Used to 422 "already in Discipline-1 — use Move student", which the
+    // card cannot offer without a class row.
+    setWorld({ ...named, onRosterElsewhere: null });
+    const res = await assignRequest(OTHER_SECTION_ID);
+    expect(res.status).toBe(200);
+    expect(h.syncOneStudent).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a child already on a class list this year — Move student', async () => {
+    setWorld({ ...named, onRosterElsewhere: 'Grit' });
+    const res = await assignRequest(OTHER_SECTION_ID);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe(
+      'This student is already in Grit. To move them, use Move student instead.'
+    );
+    expect(statusWrites()).toEqual([]);
+    expect(h.syncOneStudent).not.toHaveBeenCalled();
+  });
+
+  it('still checks the picked class has room, resync included', async () => {
+    setWorld({ ...named, roster: rosterOf(50) });
+    const res = await assignRequest(SECTION.id);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/is full/);
+    expect(h.syncOneStudent).not.toHaveBeenCalled();
+  });
+});
+
 // ──────────────────────────────────────────────────────────────────────────
 async function flip(status: string, sectionId?: string): Promise<Response> {
   return (await patchStage(
@@ -549,25 +645,83 @@ describe('the Enrolled flip with a class chosen earlier', () => {
     chosen: [],
   };
 
-  it('refuses when the chosen class does not exist in the SIS', async () => {
+  // Until 2026-09-28 an unusable class REFUSED the flip so the stage dialog's
+  // class picker could offer another. The picker is gone (KD #226), so the
+  // enrolment now saves, the child is left unplaced, and the response + audit
+  // row say why — the class is then given on the Class Assignment card.
+  function stageAudit() {
+    return h.logAction.mock.calls
+      .map((c) => c[0] as { action: string; context: Record<string, unknown> })
+      .find((a) => a.action === 'sis.stage.update');
+  }
+
+  it('enrols without placing when the chosen class does not exist in the SIS', async () => {
     setWorld({ ...chose, chosenSectionExists: false });
     const res = await flip('Enrolled');
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.code).toBe('chosen_class_unavailable');
-    expect(body.error).toMatch(/no class called "Discipline 1"/);
-    expect(statusWrites()).toEqual([]);
+    expect(body.chosenClassUnavailable.chosenClass).toBe(
+      'Primary One Discipline-1'
+    );
+    expect(body.chosenClassUnavailable.reason).toMatch(
+      /no class called "Discipline 1"/
+    );
+    expect(body.classAutoAssigned).toBe(false);
+    expect(body.awaitingPlacement).toBe(true);
+    expect(statusWrites()).toHaveLength(1);
+    // The unusable class is cleared in the same write, and the class stage's
+    // who/when are left alone — nobody chose a class here.
+    const payload = statusWrites()[0].payload as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      applicationStatus: 'Enrolled',
+      classSection: null,
+      classLevel: null,
+      classStatus: null,
+    });
+    expect(payload).not.toHaveProperty('classUpdatedDate');
+    expect(payload).not.toHaveProperty('classUpdatedby');
     expect(h.syncOneStudent).not.toHaveBeenCalled();
+    expect(h.completePlacement).not.toHaveBeenCalled();
+    // The audit keeps the class the row held, and why it was dropped.
+    const context = stageAudit()?.context;
+    expect(context).toMatchObject({
+      chosen_class_unavailable: {
+        class: 'Primary One Discipline-1',
+        reason: expect.stringMatching(/no class called "Discipline 1"/),
+      },
+    });
+    expect(context?.changes).toEqual(
+      expect.arrayContaining([
+        { field: 'classSection', from: 'Discipline-1', to: null },
+        { field: 'classLevel', from: 'Primary One', to: null },
+        { field: 'classStatus', from: 'Finished', to: null },
+      ])
+    );
   });
 
-  it('refuses when the chosen class is full', async () => {
+  it('enrols without placing when the chosen class is full', async () => {
     setWorld({ ...chose, roster: rosterOf(48), chosen: others(2) });
     const res = await flip('Enrolled (Conditional)');
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.code).toBe('chosen_class_unavailable');
-    expect(body.error).toMatch(/Primary One Discipline-1.*full/);
-    expect(statusWrites()).toEqual([]);
+    expect(body.chosenClassUnavailable.reason).toMatch(
+      /Primary One Discipline-1.*full/
+    );
+    expect(statusWrites()).toHaveLength(1);
+    expect(statusWrites()[0].payload).toMatchObject({
+      applicationStatus: 'Enrolled (Conditional)',
+      classSection: null,
+      classLevel: null,
+      classStatus: null,
+    });
+    expect(h.syncOneStudent).not.toHaveBeenCalled();
+    expect(stageAudit()?.context).toHaveProperty('chosen_class_unavailable');
+  });
+
+  it('leaves the class on the row when it can take them', async () => {
+    setWorld({ ...chose, roster: rosterOf(10) });
+    await flip('Enrolled');
+    expect(statusWrites()[0].payload).not.toHaveProperty('classSection');
   });
 
   it('places the child in a chosen class that can take them', async () => {
@@ -578,9 +732,12 @@ describe('the Enrolled flip with a class chosen earlier', () => {
     expect(statusWrites()).toHaveLength(1);
     expect(h.syncOneStudent).toHaveBeenCalledTimes(1);
     expect(h.completePlacement).toHaveBeenCalledTimes(1);
+    expect((await res.json()).chosenClassUnavailable).toBeNull();
   });
 
-  it('takes a class picked instead on a Conditional flip', async () => {
+  // No screen sends `section_id` any more; the route still accepts it for API
+  // compatibility.
+  it('takes a class sent with a Conditional flip', async () => {
     setWorld({ ...chose, roster: rosterOf(48), chosen: others(2) });
     const res = await flip('Enrolled (Conditional)', OTHER_SECTION_ID);
     expect(res.status).toBe(200);

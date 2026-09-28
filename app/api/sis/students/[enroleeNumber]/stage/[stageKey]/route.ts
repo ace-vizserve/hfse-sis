@@ -170,7 +170,9 @@ export async function PATCH(
   // "Students needing setup", including one already placed through the class
   // stage beforehand. De-duped so the class stage doesn't select it twice.
   // `classLevel` rides along for 2b′, which resolves a class set before
-  // enrolment to a real SIS class on the Enrolled flip.
+  // enrolment to a real SIS class on the Enrolled flip, and `classStatus` so
+  // that when 2b′ clears an unusable class the audit diff records what the
+  // row held rather than "null → null".
   const beforeSelect = Array.from(
     new Set([
       cols.statusCol,
@@ -178,6 +180,7 @@ export async function PATCH(
       ...cols.extras.map((e) => e.columnName),
       'classSection',
       'classLevel',
+      'classStatus',
     ])
   ).join(', ');
   const { data: before, error: beforeErr } = await supabase
@@ -468,7 +471,15 @@ export async function PATCH(
 
   // 2b) The Enrolled flip — step 10 of HFSE's admission process.
   //
-  // Requires all 5 prereq stages at their terminal values. A CLASS IS NOT
+  // Expects the prereq stages at their terminal values (Current skips
+  // Assessment). Open steps refuse the flip with 422 `prereqs_incomplete`
+  // UNLESS the body carries `acknowledge_open_steps: true` — the dialog's
+  // "Enrol anyway" tick (2026-09-28: staff enrol early to secure a class seat,
+  // and class assignment requires Enrolled, KD #226). An acknowledged flip
+  // records the open steps on its audit row (`open_steps_at_enrolment`), and
+  // the child is chased from Admissions → Enrolled, steps still open. All of
+  // that is on the change INTO Enrolled only — a re-save of an application
+  // already Enrolled is not asked again (`enrollingNow` below). A CLASS IS NOT
   // REQUIRED: Class Assignment is step 11, done separately by Student Affairs
   // "subject to a deliberation by Academics Team"
   // (docs/context/admission-process.md). A student enrolled without one is a
@@ -476,8 +487,10 @@ export async function PATCH(
   // and are placed later via /assign-section, which stays the ordinary door for
   // placing an already-enrolled student.
   //
-  // A section MAY still be supplied, as a convenience for a coordinator doing
-  // both steps at once. There is deliberately no auto-pick anywhere (see
+  // A `section_id` MAY still be supplied, for API compatibility — the stage
+  // dialog stopped sending one on 2026-09-28, when its class picker was
+  // removed (classes are given on the Class Assignment card, KD #226). There
+  // is deliberately no auto-pick anywhere (see
   // docs/superpowers/specs/2026-07-20-manual-section-assignment-design.md,
   // which predates the step-10/11 split and required the section outright).
   // When one is supplied we piggyback the class columns onto the same UPDATE
@@ -495,7 +508,26 @@ export async function PATCH(
   // condition to include 'Enrolled (Conditional)' without him asking first.
   let classAutoAssigned = false;
   let awaitingPlacement = false;
+  // Stage labels still open when this save enrolled the child anyway. Null on
+  // every other save, including a clean Enrolled flip and any re-save of an
+  // application that was already Enrolled.
+  let openStepsAtEnrolment: string[] | null = null;
   if (stageKey === 'application' && status === 'Enrolled') {
+    // ⚠ THE OPEN-STEPS CHECK IS FOR THE CHANGE INTO ENROLLED ONLY. A re-save
+    // of an application that already reads Enrolled (a remarks edit) is not
+    // enrolling anyone: the child was enrolled on an earlier save, which is
+    // where the acknowledgement and `open_steps_at_enrolment` were recorded,
+    // and they are already on the chase queue. Asking again would make every
+    // later edit of an early-enrolled child demand "Enrol anyway". Coming from
+    // Enrolled (Conditional) IS a change into plain Enrolled — Conditional
+    // skipped this gate (KD #180), so its steps were never acknowledged.
+    // The role and student-number checks below still run on either save.
+    const preStatus = (
+      ((before as unknown as Record<string, unknown>)[cols.statusCol] as
+        | string
+        | null) ?? ''
+    ).trim();
+    const enrollingNow = preStatus !== 'Enrolled';
     // Re-fetch the status row with every prereq column for the gate check.
     // `enroleeType` rides along as the category fallback — Current students
     // skip Assessment (`enrolledPrereqStagesFor`).
@@ -559,6 +591,9 @@ export async function PATCH(
         ])
       ),
       studentNumber: appLite.studentNumber,
+      // A re-save needs no acknowledgement — see `enrollingNow` above.
+      acknowledgeOpenSteps:
+        !enrollingNow || parsed.data.acknowledge_open_steps === true,
     });
     if (!gate.ok) {
       return NextResponse.json(
@@ -567,6 +602,9 @@ export async function PATCH(
           : { error: gate.error, code: gate.code },
         { status: gate.status }
       );
+    }
+    if (enrollingNow && gate.openSteps && gate.openSteps.length > 0) {
+      openStepsAtEnrolment = gate.openSteps.map((b) => b.stage);
     }
 
     if (gate.assignsSection) {
@@ -611,25 +649,44 @@ export async function PATCH(
   // status, with no checks at all (the SIS itself assigns only once Enrolled).
   // The child joins that class at THIS moment — the post-save sync in step 5
   // places them. So it is checked here, before anything is written, the way
-  // a class picked in this dialog is checked in 2b: the class must exist in
-  // the SIS for this year, match the child's level, and have room (counting
-  // other children assigned it and waiting to enrol, but not this child's own
-  // seat). If not, the
-  // flip is refused with `chosen_class_unavailable` and the dialog offers the
-  // class picker, so the person picks another class in the same save.
-  // Without this the flip succeeded and the sync then failed after the fact
-  // ("roster sync was skipped"), or quietly put a 51st child in a class.
+  // a `section_id` sent with the save is checked in 2b: the class must exist
+  // in the SIS for this year and have room (counting other children assigned
+  // it and waiting to enrol, but not this child's own seat).
+  //
+  // ⚠ IF IT CAN'T TAKE THEM, THE ENROLMENT STILL SAVES (2026-09-28, Mr Ace).
+  // This used to refuse the flip (`chosen_class_unavailable`) so the stage
+  // dialog's class picker could offer another class. That picker is gone —
+  // classes are given only on the Class Assignment card, once Enrolled
+  // (KD #226) — and a refusal with nowhere to pick would leave the person
+  // stuck. So the flip goes through, the child is NOT placed (step 5 skips
+  // the sync for this save), the reason is recorded on the audit row, and the
+  // response carries `chosenClassUnavailable` for the dialog to say so.
+  // Without the check the sync failed after the fact ("roster sync was
+  // skipped"), or quietly put a 51st child in a class.
+  //
+  // ⚠ THE UNUSABLE CLASS IS CLEARED FROM THE ROW in the same UPDATE
+  // (`classSection`, `classLevel`, `classStatus` → null). Left in place, the
+  // row would keep naming a class the child is not in: the nightly auto-sync
+  // (which does not check a class has room) would place them into it full or
+  // not, and the Class Assignment card would go on naming it ("— not in the
+  // class yet"). Cleared, the child is simply Enrolled with no class —
+  // "Awaiting class assignment" on the card, and the students-needing-setup
+  // queue. What the row held is not lost: the audit row's `changes`
+  // carries each old value and `chosen_class_unavailable` the reason.
+  // The class stage's updated-date/by are NOT stamped: nobody chose a class
+  // here, and this save's audit row already names who cleared it and why.
   //
   // Only on the transition INTO an Enrolled state: re-saving an already
-  // Enrolled application (a remarks edit) must not be refused because their
-  // class has since filled up.
+  // Enrolled application (a remarks edit) is never checked.
   //
   // Covers Enrolled (Conditional) too — the class on the row is placed by the same
   // sync on both. That is NOT the KD #180 prereq gate, which Conditional still
-  // skips; this only concerns the class. Because the dialog now offers the
-  // picker on refusal, a class picked for a Conditional flip is accepted here
-  // (2b handles plain Enrolled), with the same role and student-number rules
-  // `evaluateEnrolledFlip` applies.
+  // skips; this only concerns the class. A `section_id` sent with a
+  // Conditional flip (API callers only — no screen sends one now) is accepted
+  // here (2b handles plain Enrolled), with the same role and student-number
+  // rules `evaluateEnrolledFlip` applies.
+  let chosenClassUnavailable: { chosenClass: string; reason: string } | null =
+    null;
   if (
     stageKey === 'application' &&
     isEnrolledApplicationStatus(status) &&
@@ -739,14 +796,14 @@ export async function PATCH(
           }
         }
         if (problem) {
-          return NextResponse.json(
-            {
-              error: `${problem} Pick another class to enrol them.`,
-              code: 'chosen_class_unavailable',
-              chosenClass: chosenText,
-            },
-            { status: 422 }
-          );
+          chosenClassUnavailable = { chosenClass: chosenText, reason: problem };
+          // Cleared in the status UPDATE below — see the note above 2b′.
+          update['classSection'] = null;
+          update['classLevel'] = null;
+          update[STAGE_COLUMN_MAP.class.statusCol] = null;
+          // 2b read the class that was on the row and said "not awaiting";
+          // with it cleared, they are.
+          awaitingPlacement = true;
         }
       }
     }
@@ -953,6 +1010,18 @@ export async function PATCH(
             (extras as Record<string, unknown> | undefined)?.terminalNotes ??
             null,
         }),
+        // Who enrolled early, and what was still outstanding when they did.
+        ...(openStepsAtEnrolment && {
+          open_steps_at_enrolment: openStepsAtEnrolment,
+        }),
+        // Enrolled, but the class already on the row could not take them, so
+        // they were not placed (2b′).
+        ...(chosenClassUnavailable && {
+          chosen_class_unavailable: {
+            class: chosenClassUnavailable.chosenClass,
+            reason: chosenClassUnavailable.reason,
+          },
+        }),
       },
     });
   }
@@ -982,14 +1051,17 @@ export async function PATCH(
   // clean no-op. When sync fails we surface autoSyncFailed in the response so
   // the dialog can warn — silent failure on (a)/(b) was the gap that left
   // enrolled students missing from Records' placement section.
+  // Skipped outright when 2b′ found the class on the row unusable: the child
+  // is enrolled but deliberately left unplaced, and the response says why.
   let autoSync: { change: string; reason?: string; error?: string } | null =
     null;
   let autoSyncFailed = false;
   const shouldSync =
-    classAutoAssigned ||
-    (stageKey === 'application' &&
-      (status === 'Enrolled' || status === 'Enrolled (Conditional)')) ||
-    (stageKey === 'class' && status === 'Finished');
+    !chosenClassUnavailable &&
+    (classAutoAssigned ||
+      (stageKey === 'application' &&
+        (status === 'Enrolled' || status === 'Enrolled (Conditional)')) ||
+      (stageKey === 'class' && status === 'Finished'));
 
   if (shouldSync) {
     const { data: classCheck } = await supabase
@@ -1217,6 +1289,11 @@ export async function PATCH(
     // Enrolled, but step 11 hasn't happened — the dialog says so rather than
     // reporting a success indistinguishable from a fully-placed enrolment.
     awaitingPlacement,
+    // Enrolled with these steps still open ("Enrol anyway"); empty otherwise.
+    openSteps: openStepsAtEnrolment ?? [],
+    // Enrolled, but the class already on the row can't take them, so they
+    // were not placed (2b′). Null otherwise.
+    chosenClassUnavailable,
     autoSync,
     autoSyncFailed,
     withdrawalCascade,

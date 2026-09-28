@@ -9,15 +9,10 @@ import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
-import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
-import {
-  sectionMatchesApplication,
-  type ApplicationFit,
-} from '@/lib/admissions/options';
-import { ApplicationMatchBadge } from '@/components/sis/application-match-badge';
 import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
 import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -36,7 +31,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { InlineAddSection } from '@/components/sis/inline-add-section';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import {
@@ -78,7 +72,6 @@ export function EditStageDialog({
   initialRemarks,
   initialExtras,
   prereqStatuses,
-  canAssignSection = false,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -88,31 +81,13 @@ export function EditStageDialog({
   initialExtras: ExtraValues;
   /**
    * Current statuses for the 5 ENROLLED_PREREQ_STAGES. Optional — when
-   * provided AND `stageKey === 'application'` AND the user picks `Enrolled`
-   * (or `Enrolled (Conditional)`), the dialog renders an advisory checklist
-   * above the status select so admin sees BEFORE submit which prereqs are
-   * incomplete. The server still re-validates and 422s on miss; this is
-   * purely a heads-up.
+   * provided AND `stageKey === 'application'` AND the user changes the status
+   * to plain `Enrolled` (from anything else), the dialog lists the steps still
+   * open and asks the person to tick
+   * "Enrol anyway" before saving (2026-09-28). The server re-checks and 422s
+   * unless that acknowledgement is sent.
    */
   prereqStatuses?: Partial<Record<StageKey, string | null>>;
-  /**
-   * May this viewer put a student in a class? Until 2026-09-10 this was
-   * narrower than `canEdit` — Class Assignment (step 11) belonged to
-   * Records, and an admissions user finishing step 10 never saw the picker
-   * because the server would 403 the post. admissions absorbed Records
-   * (the retired p_file_officer role went with it), and placement came with
-   * it, so the caller now passes the same value it passes for `canEdit` for
-   * that role. KD #51 itself is unaffected — Admissions is still its own
-   * module hosting the pre-enrolment funnel; only the "who may place" rule
-   * once derived from it changed. Kept as its own prop (rather than folded
-   * into `canEdit`) because the two names are still threaded separately
-   * end-to-end — see `ENROLMENT_PLACEMENT_WRITERS` /
-   * `STUDENT_RECORD_WRITERS` in lib/auth/student-record.ts. Defaults to
-   * false: a caller that forgets to pass it renders no picker, rather than
-   * one whose save could be refused for a role that still lacks placement
-   * rights.
-   */
-  canAssignSection?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
@@ -190,84 +165,54 @@ export function EditStageDialog({
         return { key: k, current, expected, ok: current === expected };
       })
     : [];
-  const incompleteCount = prereqRows.filter((r) => !r.ok).length;
 
-  // Optional inline section picker (not a nested dialog), shown once the
-  // registrar's pending choice is "Enrolled" AND they're allowed to place
-  // students.
+  // ⚠ NO CLASS IS GIVEN HERE (2026-09-28, Mr Ace: "its unnecessary to be in
+  // there"). This dialog used to carry an optional class picker on the
+  // Enrolled flip. Classes are now given only on the Class Assignment card of
+  // the Enrollment tab — "Assign a class" once Enrolled, "Change section"
+  // once in a class (KD #226) — so enrolling here leaves the class to that
+  // card. A class already on the row (set in Directus) is still placed by the
+  // save, when it can take them; when it can't, the save still enrols and
+  // says so (`chosenClassUnavailable`).
+
+  // ⚠ ENROLLED WARNS, IT DOES NOT BLOCK (2026-09-28, Mr Ace). Admissions staff
+  // enrol a child before every step is done to secure a class seat — class
+  // assignment requires Enrolled (KD #226). So plain Enrolled with steps open
+  // shows the open steps and a tick-box; ticking it sends
+  // `acknowledge_open_steps`, which the route accepts and records on the audit
+  // row. The child then sits on Admissions → Enrolled, steps still open until
+  // the steps are done. Enrolled (Conditional) never shows this — it skips the
+  // gate by design (KD #180), so there is nothing to acknowledge.
   //
-  // OPTIONAL is the point: HFSE enrols at step 10 and assigns the class at
-  // step 11, so leaving this empty is the normal path, not an incomplete
-  // form. Submit is never gated on it. The picker exists only as a shortcut
-  // for a coordinator doing both jobs in one sitting; the stage PATCH route
-  // is the real enforcement and 422s (prereqs) or 403s (placement role) on a
-  // miss, which `saveMutation.onError` surfaces as a toast.
-  // ALL FIVE PREREQUISITES MUST ACTUALLY BE MET, and we must know that they
-  // are. `incompleteCount === 0` alone is not enough: `prereqRows` is also
-  // empty when the checklist is not showing at all — including when
-  // `prereqStatuses` was never supplied — so a bare count check reads "we have
-  // no idea" as "all clear". Requiring `showPrereqChecklist` too means the
-  // picker appears only when the prerequisites are known AND met, and stays
-  // hidden when they are unknown. Hiding is the safe direction: the stage
-  // PATCH route 422s on a miss regardless, so the only thing an ungated picker
-  // buys is a registrar filling in a class for a student who cannot be
-  // enrolled, then losing the lot to a failed save.
-  const prereqsAllMet = showPrereqChecklist && incompleteCount === 0;
-
-  // Set when the server refused the Enrolled flip because the class set
-  // before enrolment (in Directus) is gone, full, or at the wrong level
-  // (`chosen_class_unavailable`). Holds the server's sentence, shown above the
-  // picker, and opens the picker for Enrolled (Conditional) too — the server
-  // accepts a picked class on both, so the person can pick another class and
-  // save again without leaving the dialog.
-  const [chosenClassProblem, setChosenClassProblem] = useState<string | null>(
-    null
-  );
-  const enrollingNow =
-    effectiveStatus === 'Enrolled' ||
-    effectiveStatus === 'Enrolled (Conditional)';
+  // Only on the change INTO Enrolled. Re-saving an application that is already
+  // Enrolled (a remarks edit) asks nothing — the route checks the open steps
+  // on the transition only, and the child is already on the chase queue.
+  const enrollingNow = initialStatus !== 'Enrolled';
+  const openStepRows =
+    showPrereqChecklist && effectiveStatus === 'Enrolled' && enrollingNow
+      ? prereqRows.filter((r) => !r.ok)
+      : [];
+  const showOpenStepsWarning =
+    stageKey === 'application' && openStepRows.length > 0;
+  const [enrolAnyway, setEnrolAnyway] = useState(false);
   useEffect(() => {
-    if (!enrollingNow) setChosenClassProblem(null);
-  }, [enrollingNow]);
-
-  const canPickSectionNow =
-    stageKey === 'application' &&
-    canAssignSection &&
-    ((effectiveStatus === 'Enrolled' && prereqsAllMet) ||
-      (enrollingNow && chosenClassProblem !== null));
-
-  const [sectionId, setSectionId] = useState<string | null>(null);
+    if (!showOpenStepsWarning) setEnrolAnyway(false);
+  }, [showOpenStepsWarning]);
+  const enrolAnywayConfirmed = showOpenStepsWarning && enrolAnyway;
 
   const isTerminalStatus = (
     APPLICATION_TERMINAL_STATUSES as readonly string[]
   ).includes(effectiveStatus ?? '');
   // Withdrawing or cancelling the application also takes the child out of
-  // their class, and that needs a last day at school. The same read that
-  // tells the class picker where a student sits answers whether they sit
-  // anywhere at all.
+  // their class, and that needs a last day at school. The assignable-sections
+  // read answers where a student sits, and whether they sit anywhere at all;
+  // only the fields used here are typed.
   const endingApplication = stageKey === 'application' && isTerminalStatus;
 
   const sectionsQuery = useQuery({
     queryKey: ['assignable-sections', enroleeNumber, ayCode],
     queryFn: () =>
       apiFetch<{
-        level: {
-          id: string;
-          code: string;
-          label: string;
-          levelType: 'primary' | 'secondary';
-        } | null;
-        sections: {
-          id: string;
-          name: string;
-          activeCount: number;
-          /** Chose this class but not on its list yet — they hold a seat. */
-          chosenCount: number;
-          classType: string | null;
-          schedule: string | null;
-        }[];
-        /** What the application asked for — drives the match hint. */
-        applicationFit: ApplicationFit | null;
         /** Set when this student already sits in a class this year. */
         currentSection: {
           sectionName: string;
@@ -283,7 +228,7 @@ export function EditStageDialog({
       }>(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/assignable-sections?ay=${encodeURIComponent(ayCode)}`
       ),
-    enabled: canPickSectionNow || endingApplication,
+    enabled: endingApplication,
   });
 
   // Where this student already sits, if anywhere. Resolved server-side by the
@@ -291,17 +236,13 @@ export function EditStageDialog({
   // thing that knows, and a prop would be stale by the time the dialog opens.
   const alreadyPlaced = sectionsQuery.data?.currentSection ?? null;
 
-  useEffect(() => {
-    if (!canPickSectionNow) setSectionId(null);
-  }, [canPickSectionNow]);
-
   // The two dates the school keeps when a child leaves (migration 163) — the
   // same pair, in the same words, as the withdrawal on the class roster
   // (components/sis/enrolment-edit-sheet.tsx). The server used to stamp today
   // here instead, which recorded when someone clicked, not when the child left.
   const [lastDay, setLastDay] = useState('');
   const [approvedDate, setApprovedDate] = useState('');
-  // The server's answer wins over the picker read above: a transferred student
+  // The server's answer wins over the class read above: a transferred student
   // holds two class rows, and that read looks at only one of them.
   const [serverNeedsLastDay, setServerNeedsLastDay] = useState(false);
   const placedInClassNow =
@@ -414,6 +355,13 @@ export function EditStageDialog({
     changed?: number;
     classAutoAssigned?: boolean;
     awaitingPlacement?: boolean;
+    /** Enrolled with these steps still open ("Enrol anyway"). */
+    openSteps?: string[];
+    /**
+     * Enrolled, but the class already on the row (set in Directus) can't take
+     * them — gone or full — so they were not placed. `reason` is a sentence.
+     */
+    chosenClassUnavailable?: { chosenClass: string; reason: string } | null;
     autoSync?: { change?: string; reason?: string; error?: string };
     autoSyncFailed?: boolean;
     withdrawalCascade?: {
@@ -462,6 +410,24 @@ export function EditStageDialog({
       return null;
     }
 
+    // Enrolled, but the class already set for them could not be used, so
+    // they are not in a class and the route cleared it from the row. A
+    // warning, not a refusal: the enrolment is saved and the class is given on
+    // the Class Assignment card.
+    if (body.chosenClassUnavailable) {
+      const stillOpen =
+        body.openSteps && body.openSteps.length > 0
+          ? ` Still to finish: ${body.openSteps.join(', ')}.`
+          : '';
+      toast.warning(
+        `Enrolled, but their class (${body.chosenClassUnavailable.chosenClass}) can’t be used`,
+        {
+          description: `${body.chosenClassUnavailable.reason} It has been taken off their record — give them a class on the Class Assignment card.${stillOpen}`,
+        }
+      );
+      return null;
+    }
+
     // Withdrawn / Cancelled cascade outcome takes priority on the toast.
     // The cascade only fires when the flip actually changed section rows;
     // null means "no active section to withdraw from" (acceptable no-op).
@@ -487,6 +453,24 @@ export function EditStageDialog({
         }
       );
       return null;
+    } else if (body.openSteps && body.openSteps.length > 0) {
+      // Enrolled anyway — say what is still outstanding and where it is
+      // chased from, whatever happened with the class. The route sends
+      // `openSteps` only on the change INTO Enrolled, so a re-save of an
+      // already-Enrolled application never lands here.
+      toast.success(
+        classAutoAssigned
+          ? 'Enrolled · class assigned · steps still open'
+          : 'Enrolled · steps still open',
+        {
+          description: `Still to finish: ${body.openSteps.join(', ')}. They are listed under Admissions → Enrolled, steps still open.${
+            body.awaitingPlacement
+              ? ' They have no class yet — give them one on the Class Assignment card.'
+              : ''
+          }`,
+        }
+      );
+      return null;
     } else if (classAutoAssigned) {
       return 'Enrolled · class assigned · added to the roster';
     } else if (body.awaitingPlacement === true) {
@@ -494,7 +478,7 @@ export function EditStageDialog({
       // identical to a fully-placed enrolment and nobody knows to follow up.
       toast.success('Enrolled · awaiting class assignment', {
         description:
-          'They are now under Records → Students needing setup. Attendance starts on the day they are placed.',
+          'They have no class yet — give them one on the Class Assignment card. Attendance starts on the day they are placed.',
       });
       return null;
     } else if (
@@ -530,21 +514,12 @@ export function EditStageDialog({
         error?: string;
         code?: string;
       };
-      // The student sits in a class the picker read did not show (a
+      // The student sits in a class the class read did not show (a
       // transferred student holds two rows). Mark the field required so the
       // registrar sees where the date goes, and keep the server's words.
       if (body.code === 'withdrawal_date_required') {
         setServerNeedsLastDay(true);
         return body.error ?? 'Enter the last day at school.';
-      }
-      // The class set before enrolment can't take them. Open the picker
-      // with the reason above it; nothing was saved.
-      if (body.code === 'chosen_class_unavailable') {
-        const why =
-          body.error ?? 'The class set for this child can’t take them.';
-        setChosenClassProblem(why);
-        setSectionId(null);
-        return why;
       }
       if (Array.isArray(body.blockers) && body.blockers.length > 0) {
         if (stageKey === 'documents') {
@@ -574,7 +549,11 @@ export function EditStageDialog({
         );
         toast.error(
           `Can't enroll yet — ${enrolBlockers.length} stage${enrolBlockers.length === 1 ? '' : 's'} still open`,
-          { description: lines.join(' · ') }
+          {
+            // Reached only when the page's copy of the steps was out of date
+            // (the dialog otherwise asks for "Enrol anyway" before saving).
+            description: `${lines.join(' · ')}. Refresh the page, then tick “Enrol anyway” to enrol with them open.`,
+          }
         );
         return null;
       }
@@ -605,7 +584,8 @@ export function EditStageDialog({
         saveMutation.mutateAsync({
           ...values,
           extras: extrasPayload,
-          ...(canPickSectionNow && sectionId ? { section_id: sectionId } : {}),
+          // Only when the open steps were shown AND ticked — never by default.
+          ...(enrolAnywayConfirmed ? { acknowledge_open_steps: true } : {}),
           // Sent whenever the application is being ended. Blank means "not
           // known" and is stored as blank — the server never fills it in.
           ...(endingApplication
@@ -671,7 +651,7 @@ export function EditStageDialog({
           setLastDay('');
           setApprovedDate('');
           setServerNeedsLastDay(false);
-          setChosenClassProblem(null);
+          setEnrolAnyway(false);
           form.reset({
             status: initialStatus,
             remarks: initialRemarks,
@@ -694,8 +674,8 @@ export function EditStageDialog({
         </Button>
       </DialogTrigger>
       {/* ⚠ CAPPED AND SCROLLED, because this dialog has no fixed height. On the
-          application stage it can carry a class picker, the status select, a
-          two-column details grid, a rich-text Remarks editor AND the
+          application stage it can carry the open-steps panel, the status
+          select, a two-column details grid, a rich-text Remarks editor AND the
           terminal-reason block at once — taller than a laptop viewport, with
           Save pushed off the bottom and no way to reach it.
           `dvh` not `vh`: on mobile Safari the toolbar makes `vh` lie, which
@@ -738,142 +718,51 @@ export function EditStageDialog({
                 {/* `pr-1` leaves room for the scrollbar so it does not sit on
                     top of the inputs' right edge. */}
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-                  {canPickSectionNow && (
-                    <div className="space-y-2.5 rounded-md border border-hairline bg-muted/30 p-3">
-                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        {alreadyPlaced
-                          ? 'Class'
-                          : chosenClassProblem
-                            ? 'Pick another class'
-                            : 'Assign a class now (optional)'}
-                      </p>
-                      {/* Offering to place a student who is already placed was
-                          the bug Mr Ace reported on 2026-09-16 — the picker was
-                          gated on stage, status, permission and prerequisites,
-                          every question except whether there was anything left
-                          to assign. Saying where they ARE is more useful than
-                          hiding the block, and it points at the screen that can
-                          change it. */}
-                      {alreadyPlaced ? (
-                        <p className="text-xs leading-relaxed text-muted-foreground">
-                          Already in{' '}
-                          <span className="font-medium text-foreground">
-                            {[
-                              alreadyPlaced.levelCode,
-                              alreadyPlaced.sectionName,
-                            ]
-                              .filter(Boolean)
-                              .join(' ')}
-                          </span>
-                          {alreadyPlaced.status === 'withdrawn'
-                            ? ' — withdrawn, and the place is kept.'
-                            : '.'}{' '}
-                          To move them, use Records → Students.
-                        </p>
-                      ) : chosenClassProblem ? (
-                        <p className="text-xs leading-relaxed text-destructive">
-                          {chosenClassProblem}
-                        </p>
-                      ) : (
-                        <p className="text-xs leading-relaxed text-muted-foreground">
-                          Leave this empty to enrol now — the student will
-                          appear under Records → Students needing setup, waiting
-                          for a class. Attendance starts on the day they are
-                          placed.
-                        </p>
-                      )}
-                      {alreadyPlaced ? null : sectionsQuery.isLoading ? (
-                        <p className="text-xs text-muted-foreground">
-                          Loading classes…
-                        </p>
-                      ) : sectionsQuery.isError ? (
-                        <p className="text-xs text-destructive">
-                          {sectionsQuery.error instanceof ApiError
-                            ? sectionsQuery.error.message
-                            : "Couldn't load classes — try again."}
-                        </p>
-                      ) : !sectionsQuery.data?.level ? (
-                        <p className="text-xs text-muted-foreground">
-                          This applicant&apos;s level name isn&apos;t recognised
-                          yet, so no classes can be listed. You can still enrol
-                          them — resolve the name under Records → Levels needing
-                          attention, then assign a class.
-                        </p>
-                      ) : sectionsQuery.data.sections.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          There are no classes at{' '}
-                          {sectionsQuery.data.level.label} in {ayCode} yet. Add
-                          one below, or enrol now and assign a class later.
-                        </p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {[...sectionsQuery.data.sections]
-                            .sort(
-                              (a, b) =>
-                                a.activeCount +
-                                a.chosenCount -
-                                (b.activeCount + b.chosenCount)
-                            )
-                            .map((sec) => {
-                              // Children assigned a class but not yet enrolled
-                              // hold a seat in it — the same count the
-                              // server's cap uses.
-                              const taken = sec.activeCount + sec.chosenCount;
-                              const full = taken >= MAX_ACTIVE_PER_SECTION;
-                              // Hint only — nothing is hidden or reordered.
-                              const matches = sectionMatchesApplication(
-                                sec,
-                                sectionsQuery.data?.applicationFit
-                              );
-                              return (
-                                <button
-                                  key={sec.id}
-                                  type="button"
-                                  disabled={full}
-                                  onClick={() => setSectionId(sec.id)}
-                                  aria-pressed={sectionId === sec.id}
-                                  className={
-                                    'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ' +
-                                    (sectionId === sec.id
-                                      ? 'border-brand-indigo bg-accent'
-                                      : full
-                                        ? 'cursor-not-allowed border-border/60 bg-muted/30 opacity-60'
-                                        : 'border-border hover:bg-accent/40')
-                                  }
-                                >
-                                  {/* Inside the button, so the hint is part
-                                      of the option's accessible name. */}
-                                  <span className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <span className="font-medium text-foreground">
-                                      {sec.name}
-                                    </span>
-                                    {matches && <ApplicationMatchBadge />}
-                                  </span>
-                                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                                    {taken}/{MAX_ACTIVE_PER_SECTION}
-                                    {sec.chosenCount > 0
-                                      ? ` · ${sec.chosenCount} waiting to enrol`
-                                      : ''}
-                                    {full ? ' · Full' : ''}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                  {/* First in the form, so the open steps are read before the
+                      status is saved. Amber: a caution the person can act
+                      around, not a hard stop (§9.4). */}
+                  {showOpenStepsWarning && (
+                    <div className="space-y-3 rounded-lg border border-brand-amber/45 bg-brand-amber/10 p-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-brand-amber" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-foreground">
+                            {openStepRows.length === 1
+                              ? '1 step is still open'
+                              : `${openStepRows.length} steps are still open`}
+                          </p>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            You can enrol now to hold their place. They will be
+                            listed under Admissions → Enrolled, steps still open
+                            until every step is finished.
+                          </p>
                         </div>
-                      )}
-                      {/* The class the office wants may not exist yet —
-                          especially for next year. Create it here and it is
-                          picked straight away. */}
-                      {!alreadyPlaced && sectionsQuery.data?.level && (
-                        <InlineAddSection
-                          ayCode={ayCode}
-                          level={sectionsQuery.data.level}
-                          onCreated={async (sec) => {
-                            await sectionsQuery.refetch();
-                            setSectionId(sec.id);
-                          }}
+                      </div>
+                      <ul className="space-y-1 pl-6.5">
+                        {openStepRows.map((row) => (
+                          <li
+                            key={row.key}
+                            className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                          >
+                            <span className="font-medium text-foreground">
+                              {STAGE_LABELS[row.key]}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {row.current ?? 'Not started'}, needs{' '}
+                              {row.expected}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-brand-amber/45 bg-background px-3 py-2">
+                        <Checkbox
+                          checked={enrolAnyway}
+                          onCheckedChange={(v) => setEnrolAnyway(v === true)}
                         />
-                      )}
+                        <span className="text-sm font-medium text-foreground">
+                          Enrol anyway, with these steps still open
+                        </span>
+                      </label>
                     </div>
                   )}
 
@@ -1177,6 +1066,7 @@ export function EditStageDialog({
                     disabled={
                       statusMissing ||
                       completionBlockers.length > 0 ||
+                      (showOpenStepsWarning && !enrolAnyway) ||
                       (lastDayRequired && !lastDay) ||
                       (stageKey === 'application' &&
                         isTerminalStatus &&

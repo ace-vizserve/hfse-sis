@@ -9,10 +9,12 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 
 // GET /api/sis/students/[enroleeNumber]/assignable-sections?ay=AY2026
 //
-// Feeds the section picker rendered inline in EditStageDialog when a
-// registrar is about to flip the application stage to Enrolled. Resolves
-// the applicant's current levelApplied server-side so the client only
-// needs enroleeNumber + ay, matching the same lookup shape as
+// Read by EditStageDialog when an application is being withdrawn or
+// cancelled: `currentSection` and `hasAttendance` decide whether it asks for
+// the last day at school. (Until 2026-09-28 it also fed a class picker in
+// that dialog; classes are now given on the Class Assignment card, KD #226.)
+// Resolves the applicant's current levelApplied server-side so the client
+// only needs enroleeNumber + ay, matching the same lookup shape as
 // assign-section's existing route.
 export async function GET(
   request: Request,

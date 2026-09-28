@@ -437,6 +437,19 @@ const ADMISSIONS_NAV: NavSection[] = [
         label: 'Document validation',
         badgeKey: 'pendingDocValidation',
       },
+      // Chase queue for children enrolled with steps still open ("Enrol
+      // anyway", 2026-09-28) — the applicant-side twin of Records' Students
+      // needing setup. Same audience as the page's own guard.
+      {
+        href: '/admissions/enrolled-open-steps',
+        label: 'Enrolled, steps still open',
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+      },
       // KD #77: surfaces the parallel pipeline for the AY where
       // accepting_applications=true AND is_current=false. The page itself
       // renders an empty state when no such AY exists, so the entry can

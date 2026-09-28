@@ -18,12 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// "Add a class" inside the stage dialog's class picker, for when the class
-// the office wants to place a child in does not exist yet. Inline rather than
-// a dialog on top of a dialog: it is a name, plus Global/Standard for a
-// Secondary level. Creates in the student's year via POST /api/sections?ay=,
-// the same route and rules as SIS Admin → Sections. Also offered in the
-// move dialog (SectionTransferDialog), at the student's own level.
+// "Add a class" inside the move dialog (SectionTransferDialog), at the
+// student's own level, for when the class the office wants to move a child
+// into does not exist yet. Inline rather than a dialog on top of a dialog: it
+// is a name, plus Global/Standard for a Secondary level. Creates in the
+// student's year via POST /api/sections?ay=, the same route and rules as SIS
+// Admin → Sections. (Until 2026-09-28 it also sat in the stage dialog's class
+// picker, which is gone — KD #226.)
 export function InlineAddSection({
   ayCode,
   level,
