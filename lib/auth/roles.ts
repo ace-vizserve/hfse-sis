@@ -223,6 +223,9 @@ const RECORDS_NAV: NavSection[] = [
     items: [
       { href: '/records/students', label: 'Students' },
       { href: '/records/movements', label: 'Movements' },
+      // House points — the page guard matches the `/records` prefix (admissions
+      // views, HOUSE_POINTS_WRITERS edit), so no `requiresRoles` here.
+      { href: '/records/house-points', label: 'House points' },
       // ⚠ DISCIPLINE LEFT RECORDS ON 2026-09-11 and now lives in Classroom,
       // at `/classroom/discipline` — see CLASSROOM_NAV. It moved because it
       // became the filing surface as well as the register (Christina

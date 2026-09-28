@@ -131,6 +131,12 @@ export const NAV_ENTRIES: NavEntry[] = [
     icon: UsersIcon,
   },
   {
+    href: '/records/house-points',
+    label: 'Records — House points',
+    group: 'Modules',
+    icon: UsersIcon,
+  },
+  {
     href: '/records/unsynced',
     label: 'Records — Unsynced Students',
     group: 'Modules',
