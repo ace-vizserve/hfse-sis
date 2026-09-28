@@ -980,6 +980,28 @@ export const ENROLLED_PREREQ_STAGES = [
   'fees',
 ] as const satisfies readonly StageKey[];
 
+export type EnrolledPrereqStage = (typeof ENROLLED_PREREQ_STAGES)[number];
+
+// ⚠ ASSESSMENT IS FOR NEW STUDENTS ONLY. Miss Apple, 2026-09-28: "sa new lang
+// po ang assessment sir, current none po we skip over this one". A returning
+// child sits no entry assessment, so requiring it made staff mark a stage
+// "Finished" that never happened just to enrol them. Current and VizSchool
+// Current skip it (the VizSchool pair follow their namesakes, as in
+// lib/p-files/document-config.ts). Pass the category resolved the way P-Files
+// resolves it — the applications row's `category`, falling back to the status
+// row's `enroleeType` (`resolveCategory`). A blank category keeps all five:
+// failing closed costs a click, failing open enrols a child untested.
+const ASSESSMENT_EXEMPT_CATEGORIES = ['Current', 'VizSchool Current'];
+
+/** The prerequisite stages THIS child must finish before being Enrolled. */
+export function enrolledPrereqStagesFor(
+  category: string | null | undefined
+): readonly EnrolledPrereqStage[] {
+  return ASSESSMENT_EXEMPT_CATEGORIES.includes((category ?? '').trim())
+    ? ENROLLED_PREREQ_STAGES.filter((s) => s !== 'assessment')
+    : ENROLLED_PREREQ_STAGES;
+}
+
 // Terminal "done" value per prereq stage. Used by the Enrolled-flip gate.
 export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
   registration: 'Finished',
@@ -1128,11 +1150,13 @@ export function evaluateEnrolledFlip(input: {
    * `no_student_number` gap in the students-needing-setup queue.
    */
   studentNumber: string | null | undefined;
+  /** New / Current — Current skips Assessment (`enrolledPrereqStagesFor`). */
+  category?: string | null;
 }): EnrolledFlipGateResult {
   const { canAssignSection, sectionId, prereqStatuses, studentNumber } = input;
 
   const blockers: EnrolledFlipBlocker[] = [];
-  for (const stage of ENROLLED_PREREQ_STAGES) {
+  for (const stage of enrolledPrereqStagesFor(input.category)) {
     const expected = STAGE_TERMINAL_STATUS[stage]!;
     const current = prereqStatuses[stage] ?? null;
     if (current !== expected) {

@@ -5,6 +5,7 @@ import {
   STAGE_COLUMN_MAP,
   STAGE_TERMINAL_STATUS,
   ENROLLED_PREREQ_STAGES,
+  enrolledPrereqStagesFor,
 } from '@/lib/schemas/sis';
 import { auditModuleOrFilter } from '@/lib/audit/modules';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -34,6 +35,7 @@ import {
   isSlotApplicable,
   resolveStatus,
   resolveBacklogBucket,
+  resolveCategory,
 } from '@/lib/p-files/document-config';
 
 const CACHE_TTL_SECONDS = 60;
@@ -1586,6 +1588,8 @@ type LifecycleAppLite = {
   firstName: string | null;
   lastName: string | null;
   levelApplied: string | null;
+  /** New / Current — Current skips Assessment in the ready-to-enrol check. */
+  category: string | null;
 };
 
 // Use Record<string, ...> so we can address dynamic stage status columns by
@@ -1617,6 +1621,7 @@ async function loadLifecycleSnapshotUncached(
     'assessmentSchedule',
     'contractStatus',
     'classSection',
+    'enroleeType',
     ...ENROLLED_PREREQ_STAGES.map((s) => STAGE_COLUMN_MAP[s].statusCol),
   ];
   const uniqStatusColumns = Array.from(new Set(statusColumns));
@@ -1635,7 +1640,7 @@ async function loadLifecycleSnapshotUncached(
       admissions
         .from(`${prefix}_enrolment_applications`)
         .select(
-          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied'
+          'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, category'
         )
         .range(from, to)
     ),
@@ -1909,7 +1914,15 @@ export async function buildLifecycleDrillRows(
         break;
       }
       case 'ungated-to-enroll': {
-        const allPrereqsTerminal = ENROLLED_PREREQ_STAGES.every((s) => {
+        // The same stages the Enrolled save requires — Current skips
+        // Assessment (`enrolledPrereqStagesFor`).
+        const stages = enrolledPrereqStagesFor(
+          resolveCategory({
+            category: app?.category,
+            enroleeType: status.enroleeType,
+          })
+        );
+        const allPrereqsTerminal = stages.every((s) => {
           const col = STAGE_COLUMN_MAP[s].statusCol;
           const terminal = STAGE_TERMINAL_STATUS[s];
           return terminal && (status[col] ?? '').toString().trim() === terminal;

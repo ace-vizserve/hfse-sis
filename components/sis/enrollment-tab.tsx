@@ -41,10 +41,12 @@ import {
 import { RichText } from '@/components/ui/rich-text';
 import { StatusBadge } from '@/components/ui/status-badge';
 import {
-  ENROLLED_PREREQ_STAGES,
+  enrolledPrereqStagesFor,
   STAGE_COLUMN_MAP,
+  type EnrolledPrereqStage,
   type StageKey,
 } from '@/lib/schemas/sis';
+import { resolveCategory } from '@/lib/p-files/document-config';
 import type { ApplicationFit } from '@/lib/admissions/options';
 import type {
   AssignableLevel,
@@ -314,6 +316,18 @@ function stageBucketCounts(stages: StageCard[]): {
   return counts;
 }
 
+// The stages this child must finish before Enrolled — the same rule the stage
+// route's gate applies (`enrolledPrereqStagesFor`): Current skips Assessment.
+// Category resolved as P-Files resolves it (`resolveCategory`).
+function prereqStagesOf(
+  app: ApplicationRow | null | undefined,
+  s: StatusRow
+): readonly EnrolledPrereqStage[] {
+  return enrolledPrereqStagesFor(
+    resolveCategory({ category: app?.category, enroleeType: s.enroleeType })
+  );
+}
+
 // ─── main component ─────────────────────────────────────────────────────────
 
 export function EnrollmentTab({
@@ -523,7 +537,7 @@ export function EnrollmentTab({
           so nothing about the state is now unsaid. */}
       <StageProgressCard
         prereqStages={[...intakeCards, ...commitmentsCards].filter((c) =>
-          (ENROLLED_PREREQ_STAGES as readonly StageKey[]).includes(c.key)
+          (prereqStagesOf(app, s) as readonly StageKey[]).includes(c.key)
         )}
         postEnrolStages={placementCards}
       />
@@ -532,6 +546,7 @@ export function EnrollmentTab({
         applicationCard={applicationCard}
         applicationTone={applicationTone}
         s={s}
+        prereqStages={prereqStagesOf(app, s)}
         ayCode={ayCode}
         enroleeNumber={enroleeNumber}
         canEdit={canEdit}
@@ -688,6 +703,7 @@ function ApplicationStatusCard({
   applicationCard,
   applicationTone,
   s,
+  prereqStages,
   ayCode,
   enroleeNumber,
   canEdit,
@@ -696,6 +712,8 @@ function ApplicationStatusCard({
   applicationCard: StageCard;
   applicationTone: ApplicationTone;
   s: StatusRow;
+  /** The stages this child must finish — Current skips Assessment. */
+  prereqStages: readonly EnrolledPrereqStage[];
   ayCode: string;
   enroleeNumber: string;
   canEdit: boolean;
@@ -715,7 +733,7 @@ function ApplicationStatusCard({
   // server's `evaluateEnrolledFlipGate`, so the dialog and the route cannot
   // disagree about what "ready" means.
   const prereqStatuses = Object.fromEntries(
-    ENROLLED_PREREQ_STAGES.map((stage) => [
+    prereqStages.map((stage) => [
       stage,
       (s[STAGE_COLUMN_MAP[stage].statusCol as keyof StatusRow] as
         | string

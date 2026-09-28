@@ -38,6 +38,7 @@ import {
   type MidTermPayload,
 } from '@/lib/sis/placement-completion';
 import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
+import { resolveCategory } from '@/lib/p-files/document-config';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import {
@@ -496,9 +497,12 @@ export async function PATCH(
   let awaitingPlacement = false;
   if (stageKey === 'application' && status === 'Enrolled') {
     // Re-fetch the status row with every prereq column for the gate check.
-    const prereqSelect = ENROLLED_PREREQ_STAGES.map(
-      (k) => STAGE_COLUMN_MAP[k].statusCol
-    ).join(', ');
+    // `enroleeType` rides along as the category fallback — Current students
+    // skip Assessment (`enrolledPrereqStagesFor`).
+    const prereqSelect = [
+      ...ENROLLED_PREREQ_STAGES.map((k) => STAGE_COLUMN_MAP[k].statusCol),
+      'enroleeType',
+    ].join(', ');
     const { data: prereqRow, error: prereqErr } = await supabase
       .from(statusTable)
       .select(prereqSelect)
@@ -522,7 +526,7 @@ export async function PATCH(
     const appsTable = `${prefix}_enrolment_applications`;
     const { data: appRow, error: appErr } = await admissionsClient
       .from(appsTable)
-      .select('studentNumber, levelApplied')
+      .select('studentNumber, levelApplied, category')
       .eq('enroleeNumber', enroleeNumber)
       .maybeSingle();
     if (appErr || !appRow) {
@@ -538,9 +542,14 @@ export async function PATCH(
     const appLite = appRow as unknown as {
       studentNumber: string | null;
       levelApplied: string | null;
+      category: string | null;
     };
 
     const gate = evaluateEnrolledFlip({
+      category: resolveCategory({
+        category: appLite.category,
+        enroleeType: prereqCurrent.enroleeType,
+      }),
       canAssignSection: canAssignSection(auth.role),
       sectionId: parsed.data.section_id,
       prereqStatuses: Object.fromEntries(

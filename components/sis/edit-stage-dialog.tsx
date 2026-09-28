@@ -179,7 +179,12 @@ export function EditStageDialog({
     (effectiveStatus === 'Enrolled' ||
       effectiveStatus === 'Enrolled (Conditional)');
   const prereqRows = showPrereqChecklist
-    ? ENROLLED_PREREQ_STAGES.map((k) => {
+    ? // Only the stages the caller passed: a Current child's list has no
+      // Assessment (`enrolledPrereqStagesFor`), and listing it here would
+      // warn about a step the save does not require.
+      ENROLLED_PREREQ_STAGES.filter((k) =>
+        Object.hasOwn(prereqStatuses ?? {}, k)
+      ).map((k) => {
         const current = prereqStatuses?.[k] ?? null;
         const expected = STAGE_TERMINAL_STATUS[k] ?? '';
         return { key: k, current, expected, ok: current === expected };
