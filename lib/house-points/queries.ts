@@ -14,7 +14,7 @@ import 'server-only';
 // `loadEnrolledRoster` is the one exception: it is the picker used to ADD
 // new entries, so it only offers students currently on the roster.
 //
-// `toSheetEntries` is the single pure mapper from a resolved EventRow to the
+// `toSheetEntries` (lib/house-points/sheet-entries.ts, re-exported below) is the single pure mapper from a resolved EventRow to the
 // SheetEntry shape lib/house-points/compute.ts ranks and totals — used by
 // both `loadAyEvents` (one totals-only pass per event, for the year list)
 // and `loadEvent` (the full score sheet for one event), so the grouping
@@ -26,7 +26,6 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import type { HouseRow } from '@/lib/sis/houses';
 import {
-  groupKey,
   houseTotals,
   resolveEntries,
   type EntrantKind,
@@ -34,8 +33,8 @@ import {
   type Place,
   type PlacementMode,
   type RankWithin,
-  type SheetEntry,
 } from '@/lib/house-points/compute';
+import { toSheetEntries } from '@/lib/house-points/sheet-entries';
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -95,57 +94,12 @@ export type Scale = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// Pure mapper — no Supabase. This is what __tests__/house-points/
-// queries-shape.test.ts exercises directly.
+// Pure mapper — no Supabase. It lives in lib/house-points/sheet-entries.ts
+// (client-safe: the score sheet runs it in the browser) and is re-exported
+// here so the loaders below and __tests__/house-points/queries-shape.test.ts
+// keep reading it from this module.
 
-/**
- * A student row's group is its ranking scope (`groupKey`); a team's or a
- * house's group is always 'event' — a relay or a banner competition is
- * ranked against every other entrant in the event, never bucketed by section
- * or level. A team's houseIds are its members' DISTINCT non-null houses
- * (compute.ts credits a placement once per distinct house); a student's is
- * `[houseId]` or `[]`; a house row's is `[houseId]`.
- */
-export function toSheetEntries(
-  detail: Pick<EventDetail, 'rankWithin' | 'rows'>
-): SheetEntry[] {
-  return detail.rows.map((row) => {
-    if (row.kind === 'team') {
-      const houseIds = Array.from(
-        new Set(
-          (row.team?.members ?? [])
-            .map((m) => m.houseId)
-            .filter((id): id is string => id !== null)
-        )
-      );
-      return {
-        id: row.entryId,
-        group: 'event',
-        score: row.score,
-        placeId: row.placeId,
-        houseIds,
-      };
-    }
-    if (row.kind === 'house') {
-      return {
-        id: row.entryId,
-        group: 'event',
-        score: row.score,
-        placeId: row.placeId,
-        houseIds: row.houseId ? [row.houseId] : [],
-      };
-    }
-    // 'student'
-    const s = row.student;
-    return {
-      id: row.entryId,
-      group: s ? groupKey(detail.rankWithin, s.sectionId, s.levelId) : 'event',
-      score: row.score,
-      placeId: row.placeId,
-      houseIds: s?.houseId ? [s.houseId] : [],
-    };
-  });
-}
+export { toSheetEntries };
 
 // ─────────────────────────────────────────────────────────────────────────
 // Numeric coercion. `numeric(6,2)` / `numeric(8,2)` columns — defensive

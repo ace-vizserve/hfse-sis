@@ -5,31 +5,25 @@ import { ArrowLeft } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { EventsTable } from '@/components/house-points/events-table';
+import { HouseStatCard } from '@/components/house-points/house-stat-card';
 import { NewEventSheet } from '@/components/house-points/new-event-sheet';
 import { PointScalesSheet } from '@/components/house-points/point-scales-sheet';
-import {
-  Card,
-  CardAction,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import type { Role } from '@/lib/auth/roles';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { sumTotals } from '@/lib/house-points/compute';
+import { ordinal } from '@/lib/house-points/defaults';
 import {
   loadAyEvents,
   loadScales,
   type Scale,
 } from '@/lib/house-points/queries';
-import { houseTileClass, listHouses, type HouseRow } from '@/lib/sis/houses';
+import { rankStandings } from '@/lib/house-points/standings';
+import { listHouses } from '@/lib/sis/houses';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { cn } from '@/lib/utils';
 
 // House points — the year's standings and every event that fed them.
 //
@@ -159,115 +153,5 @@ export default async function HousePointsPage({
         emptyAction={canEdit ? newEventAction : null}
       />
     </PageShell>
-  );
-}
-
-// ─── Standings ──────────────────────────────────────────────────────────────
-
-type Standing = {
-  house: HouseRow;
-  total: number;
-  place: number;
-  gapLabel: string;
-};
-
-/**
- * Houses sorted by total, highest first. Ties share a place, and the ranking
- * is DENSE (46, 46, 44 → 1st, 1st, 2nd) — the same rule every event uses.
- *
- * The leader's gap is measured to the next house down; everyone else's to
- * the leader. A house level with the one it is measured against says so.
- */
-function rankStandings(
-  houses: HouseRow[],
-  totals: Record<string, number>
-): Standing[] {
-  const sorted = houses
-    .map((house) => ({ house, total: totals[house.id] ?? 0 }))
-    .sort((a, b) => b.total - a.total || a.house.sortOrder - b.house.sortOrder);
-  if (sorted.length === 0) return [];
-
-  const leader = sorted[0];
-  let place = 0;
-  let previous: number | null = null;
-  return sorted.map((row, index) => {
-    if (previous === null || row.total !== previous) place += 1;
-    previous = row.total;
-
-    let gapLabel: string;
-    if (index === 0) {
-      const next = sorted[1];
-      if (!next) gapLabel = 'The only house';
-      else if (next.total === row.total)
-        gapLabel = `Level with ${next.house.name}`;
-      else
-        gapLabel = `${formatPoints(row.total - next.total)} ahead of ${next.house.name}`;
-    } else if (row.total === leader.total) {
-      gapLabel = `Level with ${leader.house.name}`;
-    } else {
-      gapLabel = `${formatPoints(leader.total - row.total)} behind ${leader.house.name}`;
-    }
-    return { ...row, place, gapLabel };
-  });
-}
-
-function ordinal(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
-/** Points are numeric(6,2) — show up to two decimals, never trailing zeros. */
-function formatPoints(value: number): string {
-  return value.toLocaleString('en-SG', { maximumFractionDigits: 2 });
-}
-
-function HouseStatCard({
-  name,
-  colourToken,
-  total,
-  footerTitle,
-  footerDetail,
-}: {
-  name: string;
-  colourToken: string;
-  total: number;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        {/* The house name always sits beside its colour (§9.3). */}
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {name}
-        </CardDescription>
-        <CardTitle className="font-serif text-[28px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[34px]">
-          {formatPoints(total)}
-        </CardTitle>
-        <CardAction>
-          <div
-            className={cn(
-              'size-9 rounded-xl shadow-brand-tile',
-              houseTileClass(colourToken)
-            )}
-            aria-hidden
-          />
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
   );
 }

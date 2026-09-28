@@ -10,8 +10,12 @@ import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
-import type { EventType } from '@/lib/house-points/compute';
 import type { EventSummary } from '@/lib/house-points/queries';
+import {
+  EVENT_TYPE_SHORT_LABELS,
+  formatEventDate,
+  formatPoints,
+} from '@/lib/house-points/standings';
 import { houseTileClass, type HouseRow } from '@/lib/sis/houses';
 import { cn } from '@/lib/utils';
 
@@ -22,12 +26,7 @@ import { cn } from '@/lib/utils';
 // Tailwind emits no class it cannot read in the source, so an interpolated
 // name compiles to nothing, silently.
 
-const EVENT_TYPE_LABELS: Record<EventType, string> = {
-  internal: 'Internal',
-  external: 'External',
-  major: 'Major event',
-  attendance: 'Attendance',
-};
+const EVENT_TYPE_LABELS = EVENT_TYPE_SHORT_LABELS;
 
 const HOUSE_LEAD_INK: Record<string, string> = {
   'house-1': 'font-semibold text-house-1-deep',
@@ -40,19 +39,7 @@ function houseLeadInk(colourToken: string): string {
   return HOUSE_LEAD_INK[colourToken] ?? 'font-semibold text-foreground';
 }
 
-function formatPoints(value: number): string {
-  return value.toLocaleString('en-SG', { maximumFractionDigits: 2 });
-}
-
-function formatDate(iso: string): string {
-  // Slash form parses as local time; a bare yyyy-mm-dd is UTC midnight and
-  // can shift a day outside SGT.
-  return new Date(iso.replace(/-/g, '/')).toLocaleDateString('en-SG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
+const formatDate = formatEventDate;
 
 /** A house's colour at chip scale, always followed by its name (§9.3). */
 function HouseSwatch({ colourToken }: { colourToken: string }) {
