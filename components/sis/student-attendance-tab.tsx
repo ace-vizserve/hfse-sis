@@ -239,15 +239,13 @@ export async function StudentAttendanceTab({
                         // and the teacher's note were already loaded here and
                         // simply never rendered — this page showed only the
                         // date and the letter.
-                        const hasNote =
-                          e.status === 'EX' &&
-                          e.exNote != null &&
-                          e.exNote !== '';
+                        // Any mark can carry one since migration 180.
+                        const hasNote = e.exNote != null && e.exNote !== '';
                         // ⚠ STRIPPED — this goes into a hover hint, which
                         // shows text and nothing else, so the HTML the
                         // formatting editor writes would surface as literal
                         // `<p>` tags in the tooltip. Guarded by `hasNote` so
-                        // only excused days that carry one are parsed.
+                        // only days that carry one are parsed.
                         const notePlain = hasNote ? toPlainText(e.exNote) : '';
                         const reason =
                           e.status === 'EX' && e.exReason

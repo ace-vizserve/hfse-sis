@@ -14,10 +14,11 @@ import {
   Clock,
   Eraser,
   FileText,
+  MessageSquarePlus,
   Plane,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -49,6 +50,10 @@ import {
   EX_NOTE_MAX_LENGTH,
   EX_NOTE_PLACEHOLDER,
   isEncodableDayType,
+  notePlaceholderFor,
+  noteMemoryKey,
+  statusTakesNote,
+  type NoteMemory,
   type ExReason,
 } from '@/lib/schemas/attendance';
 import { STATUS_TOGGLE_WASH } from '@/components/attendance/status-wash';
@@ -155,7 +160,10 @@ export function DailyEntry({
   initialDaily,
   today,
   filingsByCell = {},
+  noteMemory = {},
 }: {
+  /** Each mark's own latest note per day — switching back restores it. */
+  noteMemory?: NoteMemory;
   sectionId: string;
   termId: string;
   enrolments: WideGridEnrolment[];
@@ -284,6 +292,7 @@ export function DailyEntry({
             termId={termId}
             roster={roster}
             initialDaily={initialDaily}
+            noteMemory={noteMemory}
             filings={filingsForDate}
           />
         )
@@ -370,12 +379,14 @@ function DailyPanel({
   termId,
   roster,
   initialDaily,
+  noteMemory,
   filings,
 }: {
   date: string;
   termId: string;
   roster: WideGridEnrolment[];
   initialDaily: DailyEntryRow[];
+  noteMemory: NoteMemory;
   /** Student → the approved parent filing covering THIS date. */
   filings: Map<string, CellFiling>;
 }) {
@@ -386,6 +397,26 @@ function DailyPanel({
   const [marks, setMarks] = useState<Map<string, DailyMark>>(
     () => new Map(loaded)
   );
+
+  // Each mark keeps its own note for the day (Mr Ace: "notes are per label").
+  // Seeded from the ledger's history and updated as the teacher switches
+  // marks, so a note typed on Present — even one not yet submitted — comes
+  // back when Present is picked again after Absent.
+  const noteMemoryRef = useRef<NoteMemory>({ ...noteMemory });
+  function rememberNote(enrolmentId: string, m: DailyMark | undefined) {
+    if (m?.status && statusTakesNote(m.status)) {
+      noteMemoryRef.current[noteMemoryKey(enrolmentId, date, m.status)] =
+        m.exNote ?? null;
+    }
+  }
+  function recallNote(
+    enrolmentId: string,
+    status: 'P' | 'L' | 'A' | 'EX'
+  ): string | null {
+    return (
+      noteMemoryRef.current[noteMemoryKey(enrolmentId, date, status)] ?? null
+    );
+  }
 
   // The per-date `marks` stay in local state, so the grid itself is instant.
   // Submit is the one real write, and it is the slowest in the app for a full
@@ -399,6 +430,24 @@ function DailyPanel({
 
   const run = useWriteAction();
   const [saving, setSaving] = useState(false);
+
+  // Rows where the teacher opened a note on a Present / Late / Absent mark
+  // (migration 180). ⚠ OPENED ON REQUEST, never mounted for every row: each
+  // note is a full rich-text editor, and Present is every row by default — 30
+  // editors on one screen is a different page. A row that already carries a
+  // note shows its editor without being asked.
+  const [noteOpen, setNoteOpen] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  function openNote(enrolmentId: string, current: DailyMark | undefined) {
+    // An untouched row is Present by convention; opening a note on it makes
+    // that Present explicit, so the note has a mark to belong to. Submit
+    // writes P for it either way.
+    if (!current || current.status == null) {
+      setMark(enrolmentId, { status: 'P', exReason: null, exNote: null });
+    }
+    setNoteOpen((cur) => new Set(cur).add(enrolmentId));
+  }
 
   // Passing `null` here REMOVES the student from the working map, which is
   // state (a) — "not touched", and therefore Present on Submit. It is NOT how
@@ -552,6 +601,26 @@ function DailyPanel({
                         Mark removed
                       </span>
                     )}
+                    {/* On the name line rather than a line of its own, so a
+                        class of 30 does not grow 30 rows taller for a control
+                        most rows never use. Gone once the note is open. */}
+                    {!beforeJoin &&
+                      !isCleared &&
+                      m?.status !== 'EX' &&
+                      !noteOpen.has(e.enrolmentId) &&
+                      !(m?.exNote != null && m.exNote !== '') && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openNote(e.enrolmentId, m)}
+                          aria-label={`Add a note for ${e.studentName}`}
+                          className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+                        >
+                          <MessageSquarePlus className="size-3.5" aria-hidden />
+                          Note
+                        </Button>
+                      )}
                   </div>
 
                   {beforeJoin ? (
@@ -582,6 +651,9 @@ function DailyPanel({
                         // press on the segment you want, never a side effect
                         // of pressing the one you already have.
                         if (!next) return;
+                        // Park the outgoing mark's note so switching back to
+                        // it restores it — each mark keeps its own note.
+                        rememberNote(e.enrolmentId, m);
                         if (next === CLEARED) {
                           // (c). No reason and no note travel with a removed
                           // mark — the day is blank, so "MC submitted" has
@@ -600,15 +672,22 @@ function DailyPanel({
                             ? {
                                 status: 'EX',
                                 exReason: m?.exReason ?? null,
-                                exNote: m?.exNote ?? null,
+                                // EX's own note — a note on a Late never
+                                // becomes the excuse.
+                                exNote:
+                                  m?.status === 'EX'
+                                    ? (m.exNote ?? null)
+                                    : recallNote(e.enrolmentId, 'EX'),
                               }
-                            : // Leaving EX drops the note with the reason — a
-                              // "why they were excused" note is meaningless on
-                              // a Present.
+                            : // Each mark keeps its own note (migration 180):
+                              // never carried across, restored on the way back.
                               {
                                 status: next as 'P' | 'L' | 'A',
                                 exReason: null,
-                                exNote: null,
+                                exNote: recallNote(
+                                  e.enrolmentId,
+                                  next as 'P' | 'L' | 'A'
+                                ),
                               }
                         );
                       }}
@@ -654,6 +733,37 @@ function DailyPanel({
                     </ToggleGroup>
                   )}
                 </div>
+
+                {/* The note on a Present, Late or Absent mark (migration 180,
+                    Miss Koh). Excused keeps its note inside the excused block
+                    below. Quiet by default — a small "Add note" under the row
+                    — and the editor only mounts once asked for or once there
+                    is a note to show; see `noteOpen`. */}
+                {!beforeJoin &&
+                  !isCleared &&
+                  m?.status !== 'EX' &&
+                  (noteOpen.has(e.enrolmentId) ||
+                  (m?.exNote != null && m.exNote !== '') ? (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Note
+                      </span>
+                      <RichTextEditor
+                        rows={2}
+                        value={m?.exNote ?? ''}
+                        maxLength={EX_NOTE_MAX_LENGTH}
+                        onChange={(next) =>
+                          setMark(e.enrolmentId, {
+                            status: m?.status ?? 'P',
+                            exReason: null,
+                            exNote: next,
+                          })
+                        }
+                        placeholder={notePlaceholderFor(m?.status ?? 'P')}
+                        aria-label={`Note for ${e.studentName}`}
+                      />
+                    </div>
+                  ) : null)}
 
                 {/* What a parent already told the school about this day.
                     Its own full-width line, under the marks and above the

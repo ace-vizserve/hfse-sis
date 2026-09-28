@@ -16,6 +16,7 @@ import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DailyBulkSchema,
   DailyEntrySchema,
+  statusTakesNote,
   type DailyEntryInput,
 } from '@/lib/schemas/attendance';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
@@ -417,9 +418,11 @@ export async function PATCH(request: NextRequest) {
     // cleared. Neither is a transition worth rendering, and only a real prior
     // mark goes in the context — see the comment on `prior_status` below.
     const prior = priorStatusByKey.get(priorKey) ?? null;
-    // What the ledger will actually hold — `toLedgerRow` drops a note on
-    // anything but EX — compared with the note on the mark it supersedes.
-    const nextNote = entry.status === 'EX' ? (entry.exNote ?? null) : null;
+    // What the ledger will actually hold — `toLedgerRow` drops a note on NC
+    // or a clear — compared with the note on the mark it supersedes.
+    const nextNote = statusTakesNote(entry.status)
+      ? (entry.exNote ?? null)
+      : null;
     const noteChanged = nextNote !== (priorNoteByKey.get(priorKey) ?? null);
     const student = studentByEnrolment.get(entry.sectionStudentId);
     return {

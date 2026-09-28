@@ -39,7 +39,7 @@ import {
 } from '@/lib/attendance/calendar';
 import {
   getCompassionateUsageForSection,
-  getDailyForSection,
+  getDailyForSectionWithNotes,
   getRollupForSection,
   getSectionAttendanceSummary,
   getVacationLeaveUsageForSection,
@@ -253,7 +253,7 @@ export default async function SectionAttendancePage({
   const [
     calendar,
     events,
-    daily,
+    { rows: daily, noteMemory },
     quotaByEnrolmentId,
     vlQuotaByEnrolmentId,
     summary,
@@ -266,7 +266,7 @@ export default async function SectionAttendancePage({
       (level?.code as LevelCode | null) ?? null,
       sectionId
     ),
-    getDailyForSection(sectionId, selectedTermId),
+    getDailyForSectionWithNotes(sectionId, selectedTermId),
     getCompassionateUsageForSection(sectionId, section.academic_year_id),
     getVacationLeaveUsageForSection(
       sectionId,
@@ -513,6 +513,7 @@ export default async function SectionAttendancePage({
           calendar={calendar}
           events={events}
           initialDaily={daily}
+          noteMemory={noteMemory}
           today={todayIso}
           // The daily view is the FASTER of the two marking paths and the one
           // a form adviser opens every morning, so it needs the filings at
@@ -532,6 +533,7 @@ export default async function SectionAttendancePage({
           calendar={calendar}
           events={events}
           initialDaily={daily}
+          noteMemory={noteMemory}
           canWriteNc={canWriteNc}
           filingsByCell={filingsByCell}
           canEditBusCare={canEditBusCare}

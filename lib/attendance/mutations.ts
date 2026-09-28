@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { AttendanceStatus, ExReason } from '@/lib/schemas/attendance';
+import {
+  statusTakesNote,
+  type AttendanceStatus,
+  type ExReason,
+} from '@/lib/schemas/attendance';
 
 // Attendance module — server-side write helpers.
 //
@@ -22,13 +26,18 @@ export type DailyWriteInput = {
    * correction and supersedes the prior mark by `recorded_at`, but falls out
    * of every rollup aggregate, so the day reads as never marked.
    *
-   * ⚠ `toLedgerRow` already nulls `ex_reason` and `ex_note` for anything that
-   * is not `EX`, which is what `attendance_daily_cleared_has_no_reason_chk`
-   * requires of a cleared row — so a clear needs no branch of its own here.
+   * ⚠ `toLedgerRow` already nulls `ex_reason` for anything that is not `EX`
+   * and `ex_note` for a clear or NC, which is what
+   * `attendance_daily_cleared_has_no_reason_chk` requires of a cleared row —
+   * so a clear needs no branch of its own here.
    */
   status: AttendanceStatus | null;
   exReason?: ExReason | null;
-  /** Free-text "why" for an EX mark (migration 109). EX-only, ≤300 chars. */
+  /**
+   * Free-text note on a P / L / A / EX mark (migration 109; any of the four
+   * since 180). It belongs to the mark it is sent with — nothing carries a
+   * note over from the mark this one supersedes.
+   */
   exNote?: string | null;
   periodId?: string | null; // Phase 1: always null / omitted
   recordedBy: string | null;
@@ -60,9 +69,9 @@ export async function writeDailyEntry(
     date: input.date,
     status: input.status,
     ex_reason: input.status === 'EX' ? (input.exReason ?? null) : null,
-    // Same guard as ex_reason: a note must never survive a switch away from
-    // EX, or "Medical certificate submitted" ends up attached to a Present.
-    ex_note: input.status === 'EX' ? (input.exNote ?? null) : null,
+    // A note rides only on a mark that takes one (migration 180) — never on
+    // NC or a clear.
+    ex_note: statusTakesNote(input.status) ? (input.exNote ?? null) : null,
     period_id: input.periodId ?? null,
     recorded_by: input.recordedBy,
   });
@@ -74,8 +83,8 @@ export async function writeDailyEntry(
 
 /**
  * One ledger row from one input. Shared so the single, batch and import
- * writers cannot drift on the EX guards — a reason or note must never survive
- * a switch away from EX.
+ * writers cannot drift on the guards — a reason never survives a switch away
+ * from EX, and a note never lands on NC or a clear.
  */
 function toLedgerRow(i: DailyWriteInput) {
   return {
@@ -84,7 +93,7 @@ function toLedgerRow(i: DailyWriteInput) {
     date: i.date,
     status: i.status,
     ex_reason: i.status === 'EX' ? (i.exReason ?? null) : null,
-    ex_note: i.status === 'EX' ? (i.exNote ?? null) : null,
+    ex_note: statusTakesNote(i.status) ? (i.exNote ?? null) : null,
     period_id: i.periodId ?? null,
     recorded_by: i.recordedBy,
   };

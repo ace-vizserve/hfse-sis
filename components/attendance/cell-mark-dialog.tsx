@@ -29,8 +29,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import {
   EX_NOTE_MAX_LENGTH,
-  EX_NOTE_PLACEHOLDER,
   EX_REASON_LABELS,
+  notePlaceholderFor,
+  statusTakesNote,
   type AttendanceStatus,
   type ExReason,
 } from '@/lib/schemas/attendance';
@@ -270,10 +271,18 @@ export function CellMarkDialog({
   const [noteDraft, setNoteDraft] = useState(exNote ?? '');
   useEffect(() => setNoteDraft(exNote ?? ''), [exNote]);
 
+  // The note belongs to the mark on record (migration 180 — any of P / L / A /
+  // EX, not only Excused), so it saves against THAT mark. Changing the mark
+  // starts the new one with an empty note; wide-grid's `onPick` does that.
   function commitNote() {
     const next = noteDraft.trim();
     if (next === (exNote ?? '').trim()) return;
-    onPick('EX', exReason, next === '' ? null : next);
+    if (!statusTakesNote(status)) return;
+    onPick(
+      status,
+      status === 'EX' ? exReason : null,
+      next === '' ? null : next
+    );
   }
 
   // Excused is not a mark you can stamp on its own — an excused absence with
@@ -396,8 +405,54 @@ export function CellMarkDialog({
 
   const overriding = pendingOverride != null && filing != null;
 
+  // One note field, shown under whichever mark is on record. `disabledHelp`
+  // replaces the "saves when you click away" line while it is disabled.
+  //
+  // ⚠ ENTER DOES NOT SAVE. It used to commit the note, which cost the teacher
+  // any way of writing a second line; in a formatted field Enter starts a new
+  // paragraph, and the blur save is what the help line describes.
+  function noteField(disabled: boolean, disabledHelp: string) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className={BAND_EYEBROW}>Note</span>
+          <span className="text-[11px] text-muted-foreground">optional</span>
+        </div>
+        <RichTextEditor
+          rows={3}
+          value={noteDraft}
+          disabled={disabled}
+          maxLength={EX_NOTE_MAX_LENGTH}
+          onChange={setNoteDraft}
+          onBlur={commitNote}
+          placeholder={notePlaceholderFor(excusedOpen ? 'EX' : status)}
+          aria-label={`Note for ${studentName} on ${dateLabel}`}
+        />
+        <span className="text-[11px] text-muted-foreground">
+          {disabled
+            ? disabledHelp
+            : // The one thing about this field that is not obvious: it saves
+              // on blur, not as you type.
+              'Saves when you click away.'}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      // ⚠ SAVE THE NOTE ON THE WAY OUT. The note commits on blur, but Esc or
+      // a click outside closes the dialog on pointerdown — the editor is
+      // unmounted before it ever loses focus, and the browser fires no blur
+      // for a removed element. So a typed note was silently dropped by every
+      // close except the close button. Flushing here covers all of them;
+      // `commitNote` is a no-op when nothing changed.
+      onOpenChange={(next) => {
+        if (!next) commitNote();
+        onOpenChange(next);
+      }}
+    >
       {/* ⚠ `flex flex-col` and `max-h-[85dvh]` are load-bearing, not styling.
           `DialogContent`'s own base is `grid … gap-4 p-6`, which grows the
           whole dialog past the viewport once Excused opens the reasons, the
@@ -481,6 +536,19 @@ export function CellMarkDialog({
                   ))}
                 </ToggleGroup>
               </div>
+
+              {/* The note on a Present, Late or Absent mark (migration 180,
+                  Miss Koh). Only once that mark is on record — a note saves
+                  against the mark, so there has to be one — and not while
+                  Excused is being armed, where the note below belongs to the
+                  excused mark about to be made. */}
+              {!excusedOpen &&
+                (status === 'P' || status === 'L' || status === 'A') && (
+                  <>
+                    <div className="h-px bg-border" aria-hidden />
+                    {noteField(false, '')}
+                  </>
+                )}
 
               {/* The reasons. A rule separates and a label names — where a
                   bordered, cyan-washed container used to nest inside a cyan
@@ -582,42 +650,16 @@ export function CellMarkDialog({
                       It is a dialog now and that constraint is gone. The daily
                       register already showed both, so this ends a real
                       disagreement between the two surfaces about one day. */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className={BAND_EYEBROW}>Note</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        optional
-                      </span>
-                    </div>
-                    {/* Christina's ask (2026-07-31, 31:07) and Melissa's
-                          (32:44): somewhere to record WHY. Disabled until a
-                          reason is chosen, because the note saves as part of
-                          the excused mark — typing here first would write the
-                          very reasonless EX the disclosure above exists to
-                          prevent. */}
-                    {/* ⚠ ENTER NO LONGER SAVES. It used to commit the note,
-                        which cost the teacher any way of writing a second
-                        line; in a formatted field Enter starts a new
-                        paragraph, and the blur save below is unchanged and is
-                        what the help line has always described. */}
-                    <RichTextEditor
-                      rows={3}
-                      value={noteDraft}
-                      disabled={!excusedComplete}
-                      maxLength={EX_NOTE_MAX_LENGTH}
-                      onChange={setNoteDraft}
-                      onBlur={commitNote}
-                      placeholder={EX_NOTE_PLACEHOLDER}
-                      aria-label={`Note for ${studentName} on ${dateLabel}`}
-                    />
-                    <span className="text-[11px] text-muted-foreground">
-                      {excusedComplete
-                        ? // The one thing about this field that is not
-                          // obvious: it saves on blur, not as you type.
-                          'Saves when you click away.'
-                        : 'Choose a reason to mark this student excused.'}
-                    </span>
-                  </div>
+                  {/* Christina's ask (2026-07-31, 31:07) and Melissa's
+                      (32:44): somewhere to record WHY. Disabled until a
+                      reason is chosen, because the note saves as part of
+                      the excused mark — typing here first would write the
+                      very reasonless EX the disclosure above exists to
+                      prevent. */}
+                  {noteField(
+                    !excusedComplete,
+                    'Choose a reason to mark this student excused.'
+                  )}
 
                   {/* The certificate for this day — the slot this band was
                       reserved for when the panel stopped being a popover.

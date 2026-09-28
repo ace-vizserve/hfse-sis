@@ -60,6 +60,64 @@ export const EX_NOTE_MAX_LENGTH = 300;
 export const EX_NOTE_PLACEHOLDER =
   'Add a note (optional) — e.g. medical certificate submitted, returning Monday';
 
+/**
+ * The marks a teacher can attach a note to (migration 180 — before it, Excused
+ * only). NC is not a mark on a child, it is the calendar saying the class did
+ * not meet; a cleared day carries nothing (migration 134).
+ *
+ * A note belongs to the mark it was written for: changing the mark never
+ * carries it over, and switching back to a mark brings that mark's own note
+ * back (see `NoteMemory`). Asked for by Miss Koh, 2026-09-28 — "why would you
+ * use the same note for a different label?" (Mr Ace).
+ *
+ * The column keeps its historical name `ex_note`; renaming it would touch
+ * every reader for no change in meaning.
+ */
+export function statusTakesNote(
+  status: AttendanceStatus | null | undefined
+): status is 'P' | 'L' | 'A' | 'EX' {
+  return status === 'P' || status === 'L' || status === 'A' || status === 'EX';
+}
+
+/**
+ * `${sectionStudentId}|${date}|${status}` → the note on the NEWEST row for that
+ * day carrying that mark (null when that row had none — a removed note stays
+ * removed). Built by `getDailyForSectionWithNotes`.
+ *
+ * Each mark keeps its own note for the day. Mr Ace, 2026-09-28: "notes are per
+ * label" — a note written on Present, then Absent picked, then Present picked
+ * again, brings Present's note back. The ledger is append-only, so the old row
+ * is still there; this is only the lookup that reaches it.
+ */
+export type NoteMemory = Record<string, string | null>;
+
+export function noteMemoryKey(
+  sectionStudentId: string,
+  date: string,
+  status: AttendanceStatus
+): string {
+  return `${sectionStudentId}|${date}|${status}`;
+}
+
+/** Per-mark example, so the box reads as belonging to the mark picked. */
+export const NOTE_PLACEHOLDER_BY_STATUS: Record<
+  'P' | 'L' | 'A' | 'EX',
+  string
+> = {
+  P: 'Add a note (optional) — e.g. left at 11:00 for a dental appointment',
+  L: 'Add a note (optional) — e.g. arrived 08:40, school bus delayed',
+  A: 'Add a note (optional) — e.g. mother called, fever since last night',
+  EX: EX_NOTE_PLACEHOLDER,
+};
+
+export function notePlaceholderFor(
+  status: AttendanceStatus | null | undefined
+): string {
+  return status === 'P' || status === 'L' || status === 'A' || status === 'EX'
+    ? NOTE_PLACEHOLDER_BY_STATUS[status]
+    : 'Add a note (optional)';
+}
+
 export const DailyEntrySchema = z
   .object({
     sectionStudentId: uuidString,
@@ -107,8 +165,8 @@ export const DailyEntrySchema = z
     message: 'exReason may only be set when status = EX',
     path: ['exReason'],
   })
-  .refine((v) => v.status === 'EX' || !v.exNote, {
-    message: 'exNote may only be set when status = EX',
+  .refine((v) => statusTakesNote(v.status) || !v.exNote, {
+    message: 'A note can only be attached to Present, Late, Absent or Excused',
     path: ['exNote'],
   });
 

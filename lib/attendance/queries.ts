@@ -14,8 +14,11 @@ import { countVacationTrips } from '@/lib/attendance/vacation-trips';
 import { sgToday } from '@/lib/dates';
 import {
   isEncodableDayType,
+  noteMemoryKey,
+  statusTakesNote,
   type AttendanceStatus,
   type Audience,
+  type NoteMemory,
   type DayType,
   type ExReason,
 } from '@/lib/schemas/attendance';
@@ -184,6 +187,19 @@ export async function getDailyForSection(
   termId: string,
   opts?: { fromDate?: string; toDate?: string }
 ): Promise<DailyEntryRow[]> {
+  return (await getDailyForSectionWithNotes(sectionId, termId, opts)).rows;
+}
+
+/**
+ * `getDailyForSection` plus the per-mark note memory, from the SAME read — the
+ * superseded rows it already fetches and throws away are exactly what the
+ * memory is made of, so this costs no extra query.
+ */
+export async function getDailyForSectionWithNotes(
+  sectionId: string,
+  termId: string,
+  opts?: { fromDate?: string; toDate?: string }
+): Promise<{ rows: DailyEntryRow[]; noteMemory: NoteMemory }> {
   const service = createServiceClient();
 
   // Step 1: get section_student IDs for this section.
@@ -196,10 +212,10 @@ export async function getDailyForSection(
       '[attendance] getDailyForSection enrolments failed:',
       enrErr.message
     );
-    return [];
+    return { rows: [], noteMemory: {} };
   }
   const enrolmentIds = (enrolments ?? []).map((e) => e.id as string);
-  if (enrolmentIds.length === 0) return [];
+  if (enrolmentIds.length === 0) return { rows: [], noteMemory: {} };
 
   // Step 2: pull daily rows.
   //
@@ -245,15 +261,22 @@ export async function getDailyForSection(
   });
 
   // Dedupe to latest per (student, date, period). `recorded_at desc` came first.
+  // The same walk records the newest note per (student, date, mark) — first
+  // seen wins for that too.
   const seen = new Set<string>();
   const out: DailyEntryRow[] = [];
+  const noteMemory: NoteMemory = {};
   for (const raw of data) {
+    if (raw.status && statusTakesNote(raw.status)) {
+      const mk = noteMemoryKey(raw.section_student_id, raw.date, raw.status);
+      if (!(mk in noteMemory)) noteMemory[mk] = raw.ex_note ?? null;
+    }
     const key = `${raw.section_student_id}|${raw.date}|${raw.period_id ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(normalizeDaily(raw));
   }
-  return out;
+  return { rows: out, noteMemory };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

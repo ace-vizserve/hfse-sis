@@ -483,11 +483,10 @@ describe('computeSubmitEntries — excused-absence note', () => {
     ).toEqual([]);
   });
 
-  it('drops the note when the mark moves away from EX', () => {
-    // "Medical certificate submitted" must not end up attached to a Present.
-    // The database enforces this too, so sending it would be a 400.
+  // Migration 180 (Miss Koh, 2026-09-28): a note can sit on P / L / A too.
+  it.each(['P', 'L', 'A'] as const)('sends a note on a %s mark', (status) => {
     const marks: Map<string, DailyMark> = new Map([
-      ['a', { status: 'P', exReason: null, exNote: 'stale text' }],
+      ['a', { status, exReason: null, exNote: 'arrived 08:40, bus delayed' }],
     ]);
     const entries = computeSubmitEntries({
       roster: [enr('a', 1)],
@@ -497,7 +496,50 @@ describe('computeSubmitEntries — excused-absence note', () => {
       date,
     });
     expect(entries).toEqual([
-      { sectionStudentId: 'a', termId, date, status: 'P' },
+      {
+        sectionStudentId: 'a',
+        termId,
+        date,
+        status,
+        exNote: 'arrived 08:40, bus delayed',
+      },
+    ]);
+  });
+
+  it('never sends a note on NC — no class is not a mark on a child', () => {
+    // The database refuses it (`attendance_daily_note_requires_mark_chk`).
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: 'NC', exReason: null, exNote: 'stale text' }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded: new Map(),
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: 'NC' },
+    ]);
+  });
+
+  it('clears the old note when the mark changes and none was typed', () => {
+    // A note belongs to its mark: an Absent with "fever" corrected to Present
+    // must not keep "fever" — the register sends an explicit null.
+    const marks: Map<string, DailyMark> = new Map([
+      ['a', { status: 'P', exReason: null, exNote: null }],
+    ]);
+    const entries = computeSubmitEntries({
+      roster: [enr('a', 1)],
+      marks,
+      loaded: new Map([
+        ['a', { status: 'A', exReason: null, exNote: 'fever' }],
+      ]),
+      termId,
+      date,
+    });
+    expect(entries).toEqual([
+      { sectionStudentId: 'a', termId, date, status: 'P', exNote: null },
     ]);
   });
 

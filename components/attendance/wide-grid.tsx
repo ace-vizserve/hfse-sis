@@ -102,8 +102,11 @@ import {
   DAY_TYPE_LABELS,
   EX_REASON_LABELS,
   isEncodableDayType,
+  noteMemoryKey,
+  statusTakesNote,
   type AttendanceStatus,
   type DayType,
+  type NoteMemory,
   type ExReason,
 } from '@/lib/schemas/attendance';
 
@@ -209,8 +212,11 @@ export function AttendanceWideGrid({
   canEditAdmin,
   filingsByCell,
   title,
+  noteMemory: initialNoteMemory,
 }: {
   sectionId: string;
+  /** Each mark's own latest note per day — switching back restores it. */
+  noteMemory?: NoteMemory;
   /** Shown in the bar above the grid while it is full screen, e.g. "P3 Courage · Term 1". */
   title?: string;
   termId: string;
@@ -392,7 +398,11 @@ export function AttendanceWideGrid({
           // `attendance_daily_cleared_has_no_reason_chk` requires the rest to
           // be null, so normalise here rather than trust the caller.
           ex_reason: payload.status === 'EX' ? payload.exReason : null,
-          ex_note: payload.status === 'EX' ? (payload.exNote ?? null) : null,
+          // A note rides on P / L / A / EX (migration 180), never NC or a
+          // clear — `attendance_daily_note_requires_mark_chk`.
+          ex_note: statusTakesNote(payload.status)
+            ? (payload.exNote ?? null)
+            : null,
         })
         .select('id, status, ex_reason, ex_note')
         .single();
@@ -452,6 +462,11 @@ export function AttendanceWideGrid({
     setMetaSaving(false);
   }
 
+  // Seeded from the server's read of the ledger and kept current by every
+  // write, so a note typed this session is remembered as well. A ref, not
+  // state: nothing renders from it; it is only consulted when a mark changes.
+  const noteMemoryRef = useRef<NoteMemory>({ ...(initialNoteMemory ?? {}) });
+
   async function writeCell(
     enrolmentId: string,
     date: string,
@@ -460,9 +475,9 @@ export function AttendanceWideGrid({
     // the same `useWriteAction` lifecycle.
     status: AttendanceStatus | null,
     exReason: ExReason | null,
-    // `undefined` means "leave the note as it is" (a status/reason change);
-    // an explicit null clears it. The popover only passes this when the note
-    // field itself was edited.
+    // `undefined` means "no note typed": kept when the mark stays the same (an
+    // EX reason change), dropped when the mark changes. An explicit null
+    // clears it. The dialog only passes this when the note field was edited.
     exNote?: string | null
   ) {
     void sectionId; // reserved: future bulk endpoint may use it
@@ -473,10 +488,24 @@ export function AttendanceWideGrid({
       exNote: null,
     };
 
-    // A note only belongs to an EX mark, so moving away from EX drops it —
-    // and a clear is the furthest away from EX there is.
-    const nextNote =
-      status !== 'EX' ? null : exNote === undefined ? prev.exNote : exNote;
+    // Each mark keeps its own note for the day (migration 180; Mr Ace: "notes
+    // are per label"). Changing the mark never carries the note across;
+    // switching BACK to a mark brings that mark's last note back. A clear or
+    // NC carries none at all.
+    const nextNote = !statusTakesNote(status)
+      ? null
+      : exNote !== undefined
+        ? exNote
+        : status === prev.status
+          ? prev.exNote
+          : (noteMemoryRef.current[noteMemoryKey(enrolmentId, date, status)] ??
+            null);
+    const memKey =
+      status !== null && statusTakesNote(status)
+        ? noteMemoryKey(enrolmentId, date, status)
+        : null;
+    const memBefore = memKey ? noteMemoryRef.current[memKey] : undefined;
+    if (memKey) noteMemoryRef.current[memKey] = nextNote;
 
     // ⚠ A CLEARED CELL CARRIES NOTHING WITH IT. The database says the same
     // thing outright (`attendance_daily_cleared_has_no_reason_chk`): a row
@@ -586,6 +615,11 @@ export function AttendanceWideGrid({
     // `run` NEVER REJECTS — `undefined` is how it reports a failed write, so
     // that, not a catch, is what the optimistic revert hangs off.
     if (saved === undefined) {
+      // The write never landed, so neither did the note it carried.
+      if (memKey) {
+        if (memBefore === undefined) delete noteMemoryRef.current[memKey];
+        else noteMemoryRef.current[memKey] = memBefore;
+      }
       updateCell(k, {
         status: prev.status,
         exReason: prev.exReason,
@@ -1371,7 +1405,17 @@ export function AttendanceWideGrid({
             // finish. So EX keeps the dialog open, and they leave it the way
             // they leave any dialog — Esc, the close button, or clicking
             // outside it.
-            if (status !== 'EX') setActiveCell(null);
+            //
+            // ⚠ A NOTE SAVE NEVER CLOSES IT. Since migration 180 a Present,
+            // Late or Absent mark carries a note too, and the note arrives
+            // here as a defined `exNote` (a string, or null to remove it) —
+            // closing on that threw the teacher out mid-edit (Mr Ace: "it
+            // auto closes on save"). Only a mark pick (`exNote` undefined)
+            // or a clear closes.
+            const isMarkPick = exNote === undefined;
+            if (status === null || (status !== 'EX' && isMarkPick)) {
+              setActiveCell(null);
+            }
           }}
         />
       )}
@@ -1449,13 +1493,13 @@ const CellButton = memo(function CellButton({
   onOpen: (enrolmentId: string, iso: string) => void;
 }) {
   const label = status ?? '—';
-  const hasNote = status === 'EX' && exNote != null && exNote !== '';
+  const hasNote = statusTakesNote(status) && exNote != null && exNote !== '';
   // ⚠ STRIPPED, AND ONLY WHEN THERE IS A NOTE. `ex_note` is written in the
   // formatting editor, so it is HTML — and this is a `title` attribute, which
   // renders nothing but text: the tooltip would otherwise read `<p>Dental
   // appointment</p>`. It is behind `hasNote` deliberately. Parsing HTML for
-  // every one of ~1,410 cells would be real work; only excused cells that
-  // actually carry a note pay for it, and this component is memoized on
+  // every one of ~1,410 cells would be real work; only cells that actually
+  // carry a note pay for it, and this component is memoized on
   // exactly those props, so it is not re-done on an unrelated grid re-render.
   const notePlain = hasNote ? toPlainText(exNote) : '';
   const tip = status

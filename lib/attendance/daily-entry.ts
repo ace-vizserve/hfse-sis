@@ -3,6 +3,7 @@ import type { DailyEntryRow } from '@/lib/attendance/queries';
 import type { WideGridEnrolment } from '@/components/attendance/wide-grid';
 import {
   isEncodableDayType,
+  statusTakesNote,
   type AttendanceStatus,
   type ExReason,
 } from '@/lib/schemas/attendance';
@@ -27,7 +28,7 @@ import {
 export type DailyMark = {
   status: AttendanceStatus | null;
   exReason: ExReason | null;
-  /** Free-text "why" on an EX mark. Null when absent or not applicable. */
+  /** Free-text note on a P / L / A / EX mark. Null when absent or not applicable. */
   exNote: string | null;
 };
 
@@ -216,11 +217,14 @@ export function computeSubmitEntries(input: {
       continue;
     }
 
-    // A note only travels with EX. An emptied input arrives as '' and must be
-    // sent as an explicit null so the route can tell "clear this" from "no
-    // opinion" — omitting the key would silently preserve the old note.
+    // A note travels with P / L / A / EX (migration 180), never NC. An emptied
+    // input arrives as '' and must be sent as an explicit null so the route
+    // can tell "clear this" from "no opinion" — omitting the key would
+    // silently preserve the old note.
     const note =
-      target.status === 'EX' && target.exNote != null && target.exNote !== ''
+      statusTakesNote(target.status) &&
+      target.exNote != null &&
+      target.exNote !== ''
         ? target.exNote
         : null;
     const hadNote = previous?.exNote != null && previous.exNote !== '';
