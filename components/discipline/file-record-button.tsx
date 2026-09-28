@@ -89,9 +89,9 @@ export function FileDisciplineRecordButton({
 
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 sm:max-w-lg"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
       >
-        <SheetHeader className="gap-1.5 border-b border-border pb-5">
+        <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {student ? student.sectionName : 'New record'}
           </p>
@@ -105,19 +105,21 @@ export function FileDisciplineRecordButton({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col pt-5">
+        <div className="flex min-h-0 flex-1 flex-col">
           {student ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStudent(null)}
-                className="-ml-2"
-              >
-                <UserSearch className="size-4" />
-                Choose a different student
-              </Button>
-              <div className="h-px bg-border" />
+            <>
+              <div className="shrink-0 border-b border-border px-6 py-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStudent(null)}
+                  className="-ml-2"
+                >
+                  <UserSearch className="size-4" />
+                  Choose a different student
+                </Button>
+              </div>
+              {/* The form owns the scroll and the pinned Cancel / File row. */}
               <DisciplineRecordForm
                 sectionId={student.sectionId}
                 studentNumber={student.studentNumber}
@@ -125,7 +127,7 @@ export function FileDisciplineRecordButton({
                 onDone={close}
                 onCancel={close}
               />
-            </div>
+            </>
           ) : (
             // cmdk rather than a plain list. On one roster that was a
             // convenience; across the school it is the only workable shape —
@@ -133,7 +135,7 @@ export function FileDisciplineRecordButton({
             // hundred rows. Searchable by class and by index number too,
             // because teachers call students by their number and the office
             // usually knows the class before the name.
-            <Command className="min-h-0 flex-1">
+            <Command className="mx-6 mb-6 mt-5 min-h-0 w-auto flex-1">
               <CommandInput placeholder="Search by name, class or number…" />
               <CommandList className="max-h-none flex-1">
                 <CommandEmpty>

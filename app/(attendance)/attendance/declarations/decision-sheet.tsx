@@ -140,7 +140,7 @@ function DecisionPanel({
       side="right"
       className="flex w-full flex-col gap-0 p-0 sm:max-w-xl"
     >
-      <SheetHeader className="border-b border-border px-6 py-5">
+      <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
         <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
           {isTravel ? 'Travel declaration' : 'Absence declaration'}
         </p>
@@ -318,7 +318,7 @@ function DecisionPanel({
         )}
       </div>
 
-      <SheetFooter className="border-t border-border px-6 py-4">
+      <SheetFooter className="shrink-0 border-t border-border bg-background px-6 py-4">
         {row.canDecide ? (
           <div className="flex w-full items-center justify-end gap-2">
             <Button

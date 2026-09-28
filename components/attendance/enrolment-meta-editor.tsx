@@ -62,11 +62,11 @@ export function EnrolmentMetaEditor({
   }
 
   return (
-    <SheetContent className="flex flex-col gap-4">
-      <SheetHeader>
+    <SheetContent className="flex flex-col gap-0 p-0">
+      <SheetHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
         <SheetTitle>{enrolment.studentName}</SheetTitle>
       </SheetHeader>
-      <div className="flex flex-col gap-4 px-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
         {canEditBusCare && (
           <>
             <div className="space-y-1.5">
@@ -116,7 +116,7 @@ export function EnrolmentMetaEditor({
           </div>
         )}
       </div>
-      <SheetFooter>
+      <SheetFooter className="shrink-0 border-t border-border bg-background px-6 py-4">
         <Button type="button" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
         </Button>

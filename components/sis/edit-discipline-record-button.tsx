@@ -47,9 +47,9 @@ export function EditDisciplineRecordButton({
 
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 sm:max-w-lg"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
       >
-        <SheetHeader className="gap-1.5 border-b border-border pb-5">
+        <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {record.className ?? 'Record'} ·{' '}
             {formatRecordDate(record.occurredOn)}
@@ -64,15 +64,14 @@ export function EditDisciplineRecordButton({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
-          <DisciplineRecordForm
-            sectionId={record.sectionId}
-            studentNumber={record.studentNumber ?? ''}
-            record={record}
-            onDone={() => setOpen(false)}
-            onCancel={() => setOpen(false)}
-          />
-        </div>
+        {/* The form owns the scroll and the pinned Cancel / Save row. */}
+        <DisciplineRecordForm
+          sectionId={record.sectionId}
+          studentNumber={record.studentNumber ?? ''}
+          record={record}
+          onDone={() => setOpen(false)}
+          onCancel={() => setOpen(false)}
+        />
       </SheetContent>
     </Sheet>
   );

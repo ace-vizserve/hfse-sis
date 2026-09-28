@@ -231,118 +231,122 @@ export function DisciplineRecordForm({
 
   return (
     <Form {...form}>
+      {/* Fills the sheet it sits in: the fields scroll, the Cancel / submit
+          row stays pinned at the bottom (both call sites are right-side
+          Sheets that pass `flex flex-col p-0`). */}
       <form
         onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-        className="space-y-5"
+        className="flex min-h-0 flex-1 flex-col"
       >
-        <FormField
-          control={form.control}
-          name="record_type"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>What is this?</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  className="gap-2"
-                >
-                  {DISCIPLINE_RECORD_TYPE_VALUES.map((value) => (
-                    <label
-                      key={value}
-                      htmlFor={`discipline-type-${value}`}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5"
-                    >
-                      <RadioGroupItem
-                        value={value}
-                        id={`discipline-type-${value}`}
-                        className="mt-0.5"
-                      />
-                      <span className="space-y-0.5">
-                        <span className="block text-sm font-medium text-foreground">
-                          {DISCIPLINE_RECORD_TYPE_LABELS[value]}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {DISCIPLINE_RECORD_TYPE_HINTS[value]}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-[1.35fr_1fr] gap-3">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
           <FormField
             control={form.control}
-            name="occurred_on"
+            name="record_type"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{isLetter ? 'Date sent' : 'Date'}</FormLabel>
+                <FormLabel>What is this?</FormLabel>
                 <FormControl>
-                  <DatePicker
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    placeholder="Pick a date"
-                  />
+                  <RadioGroup
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    className="gap-2"
+                  >
+                    {DISCIPLINE_RECORD_TYPE_VALUES.map((value) => (
+                      <label
+                        key={value}
+                        htmlFor={`discipline-type-${value}`}
+                        className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5"
+                      >
+                        <RadioGroupItem
+                          value={value}
+                          id={`discipline-type-${value}`}
+                          className="mt-0.5"
+                        />
+                        <span className="space-y-0.5">
+                          <span className="block text-sm font-medium text-foreground">
+                            {DISCIPLINE_RECORD_TYPE_LABELS[value]}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {DISCIPLINE_RECORD_TYPE_HINTS[value]}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </RadioGroup>
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* A bare time is outside KD #44's ban, which names `date` and
+          <div className="grid grid-cols-[1.35fr_1fr] gap-3">
+            <FormField
+              control={form.control}
+              name="occurred_on"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{isLetter ? 'Date sent' : 'Date'}</FormLabel>
+                  <FormControl>
+                    <DatePicker
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder="Pick a date"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* A bare time is outside KD #44's ban, which names `date` and
               `datetime-local`. `DateTimePicker` is the wrong instrument here —
               it would force a clock time onto a letter, which has none. */}
-          <FormField
-            control={form.control}
-            name="occurred_at_time"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Time</FormLabel>
-                <FormControl>
-                  <Input
-                    type="time"
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(orNull(e.target.value))}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+            <FormField
+              control={form.control}
+              name="occurred_at_time"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Time</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="time"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(orNull(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
-        {/* Letters only. The school's warning letter ends with a tear-off
+          {/* Letters only. The school's warning letter ends with a tear-off
             receipt due back in two days, so a letter is not finished when it is
             sent — but an incident has nothing for a parent to acknowledge. */}
-        {isLetter && (
-          <FormField
-            control={form.control}
-            name="acknowledged_on"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Parent returned the signed slip</FormLabel>
-                <FormControl>
-                  <DatePicker
-                    value={field.value ?? ''}
-                    onChange={(v) => field.onChange(orNull(v))}
-                    placeholder="Not back yet"
-                  />
-                </FormControl>
-                <FormDescription>
-                  Leave blank until it comes back. Letters only.
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
+          {isLetter && (
+            <FormField
+              control={form.control}
+              name="acknowledged_on"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Parent returned the signed slip</FormLabel>
+                  <FormControl>
+                    <DatePicker
+                      value={field.value ?? ''}
+                      onChange={(v) => field.onChange(orNull(v))}
+                      placeholder="Not back yet"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Leave blank until it comes back. Letters only.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
-        {/* Directly under the acknowledgement, because for a letter these are
+          {/* Directly under the acknowledgement, because for a letter these are
             two halves of one fact: the day the signed slip came back, and
             where the scan of it lives. They used to sit five fields apart,
             which is why the link read as unrelated to it.
@@ -352,106 +356,107 @@ export function DisciplineRecordForm({
             document." So this is always the RETURNED copy, never the one that
             went out — on a letter the slip the parent signed, on an incident
             the acknowledged report. Only the wording changes. */}
-        <FormField
-          control={form.control}
-          name="document_url"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                {isLetter
-                  ? 'Link to the signed slip'
-                  : 'Link to the acknowledged incident report'}
-              </FormLabel>
-              <FormControl>
-                <Input
-                  value={field.value ?? ''}
-                  onChange={(e) => field.onChange(orNull(e.target.value))}
-                  onBlur={field.onBlur}
-                  name={field.name}
-                  ref={field.ref}
-                  inputMode="url"
-                  placeholder="https://"
-                />
-              </FormControl>
-              <FormDescription>
-                {isLetter
-                  ? 'Where the signed copy is saved.'
-                  : 'Where the acknowledged copy is saved.'}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="document_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {isLetter
+                    ? 'Link to the signed slip'
+                    : 'Link to the acknowledged incident report'}
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(orNull(e.target.value))}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    ref={field.ref}
+                    inputMode="url"
+                    placeholder="https://"
+                  />
+                </FormControl>
+                <FormDescription>
+                  {isLetter
+                    ? 'Where the signed copy is saved.'
+                    : 'Where the acknowledged copy is saved.'}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <FormField
-          control={form.control}
-          name="nature"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>What kind of thing was it?</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder={
-                    isLetter
-                      ? 'First warning — attendance'
-                      : 'Pushing in the canteen queue'
-                  }
-                />
-              </FormControl>
-              <FormDescription>
-                In your own words for now — the school&rsquo;s list hasn&rsquo;t
-                been shared yet.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="nature"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>What kind of thing was it?</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder={
+                      isLetter
+                        ? 'First warning — attendance'
+                        : 'Pushing in the canteen queue'
+                    }
+                  />
+                </FormControl>
+                <FormDescription>
+                  In your own words for now — the school&rsquo;s list
+                  hasn&rsquo;t been shared yet.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <FormField
-          control={form.control}
-          name="details"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>What happened</FormLabel>
-              <FormControl>
-                <RichTextEditor
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                  rows={4}
-                  maxLength={DISCIPLINE_DETAILS_MAX}
-                  draftKey={detailsDraftKey}
-                  placeholder="Describe it as you would on the form."
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="details"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>What happened</FormLabel>
+                <FormControl>
+                  <RichTextEditor
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    rows={4}
+                    maxLength={DISCIPLINE_DETAILS_MAX}
+                    draftKey={detailsDraftKey}
+                    placeholder="Describe it as you would on the form."
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <FormField
-          control={form.control}
-          name="remarks"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Remarks</FormLabel>
-              <FormControl>
-                <RichTextEditor
-                  value={field.value ?? ''}
-                  onChange={(v) => field.onChange(orNull(v))}
-                  onBlur={field.onBlur}
-                  rows={3}
-                  maxLength={DISCIPLINE_REMARKS_MAX}
-                  placeholder="Anything to add, including what happens next."
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="remarks"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Remarks</FormLabel>
+                <FormControl>
+                  <RichTextEditor
+                    value={field.value ?? ''}
+                    onChange={(v) => field.onChange(orNull(v))}
+                    onBlur={field.onBlur}
+                    rows={3}
+                    maxLength={DISCIPLINE_REMARKS_MAX}
+                    placeholder="Anything to add, including what happens next."
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
-        <div className="flex justify-end gap-2 border-t border-border pt-4">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-background px-6 py-4">
           <Button
             type="button"
             variant="outline"

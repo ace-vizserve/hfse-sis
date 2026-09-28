@@ -1816,7 +1816,7 @@ function ScoringGuide({
       </button>
 
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl">
-        <SheetHeader className="border-b border-border px-4 py-4">
+        <SheetHeader className="shrink-0 border-b border-border px-4 py-4">
           <SheetTitle>Activity labels</SheetTitle>
           <SheetDescription>
             Description
@@ -1826,7 +1826,7 @@ function ScoringGuide({
             {saving ? 'Saving…' : 'Saves automatically.'}
           </SheetDescription>
         </SheetHeader>
-        <div className="flex-1 divide-y divide-border/40 overflow-y-auto">
+        <div className="min-h-0 flex-1 divide-y divide-border/40 overflow-y-auto">
           {wwTotals.length > 0 && (
             <div className="px-4 py-4">
               <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -1888,7 +1888,7 @@ function ScoringGuide({
             />
           </div>
         </div>
-        <SheetFooter className="border-t border-border px-4 py-4">
+        <SheetFooter className="shrink-0 border-t border-border bg-background px-4 py-4">
           <Button
             type="button"
             variant="outline"

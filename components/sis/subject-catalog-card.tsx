@@ -598,8 +598,8 @@ export function SubjectCatalogCard({
           if (!open) setEditSubject(null);
         }}
       >
-        <SheetContent className="overflow-y-auto sm:max-w-2xl">
-          <SheetHeader>
+        <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+          <SheetHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
             <div className="flex items-start gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
                 <Pencil className="size-4" />
@@ -615,7 +615,8 @@ export function SubjectCatalogCard({
               </div>
             </div>
           </SheetHeader>
-          <div className="px-1 py-5">
+          {/* The form owns the scroll and the pinned Cancel / Save row. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             {editSubject &&
               (editSubject.hasConfig ? (
                 <SubjectConfigForm
@@ -657,8 +658,8 @@ export function SubjectCatalogCard({
 
       {/* Add subject drawer. */}
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
-        <SheetContent className="overflow-y-auto sm:max-w-md">
-          <SheetHeader>
+        <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
             <div className="flex items-start gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-white shadow-brand-tile-amber">
                 <Plus className="size-4" />
@@ -676,7 +677,8 @@ export function SubjectCatalogCard({
               </div>
             </div>
           </SheetHeader>
-          <div className="px-1 py-5">
+          {/* The form owns the scroll and the pinned Cancel / Add row. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             {addOpen && (
               <NewSubjectForm
                 // Just closes — the form awaits its own refresh now, so

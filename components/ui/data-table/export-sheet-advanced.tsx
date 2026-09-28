@@ -599,7 +599,7 @@ export function DataTableExportSheetAdvanced<TRow>({
           controls on one line, and at `max-w-lg` the field and value pickers
           truncate to the point of being unreadable. */}
       <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-xl">
-        <SheetHeader className="gap-1 border-b border-hairline px-6 pb-4 pt-6">
+        <SheetHeader className="shrink-0 gap-1 border-b border-hairline px-6 pb-4 pt-6">
           <SheetTitle className="font-serif text-xl font-semibold tracking-tight">
             Export CSV
           </SheetTitle>
@@ -877,7 +877,7 @@ export function DataTableExportSheetAdvanced<TRow>({
         {/* Both actions grouped right. Splitting them to opposite edges gave
             "Reset to screen" the same visual weight as the primary action,
             which it does not have. */}
-        <SheetFooter className="flex-row items-center justify-end gap-2 border-t border-hairline bg-muted px-6 py-4">
+        <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-hairline bg-muted px-6 py-4">
           <Button variant="ghost" size="sm" onClick={resetToScreen}>
             Reset to screen
           </Button>

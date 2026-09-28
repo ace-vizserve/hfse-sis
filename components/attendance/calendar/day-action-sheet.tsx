@@ -166,7 +166,7 @@ export function DayActionSheet({
         className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
       >
         {/* Header */}
-        <SheetHeader className="border-b border-border px-6 pb-5 pt-6">
+        <SheetHeader className="shrink-0 border-b border-border px-6 pb-5 pt-6">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             School calendar
           </p>
@@ -179,7 +179,7 @@ export function DayActionSheet({
         </SheetHeader>
 
         {/* Body — scrollable */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {!editable ? (
             <div className="rounded-xl border border-border bg-muted/40 p-5">
               <p className="text-[14px] leading-relaxed text-muted-foreground">
@@ -272,7 +272,7 @@ export function DayActionSheet({
 
         {/* Footer — Add event */}
         {editable && iso && (
-          <div className="border-t border-border bg-card px-6 py-4">
+          <div className="shrink-0 border-t border-border bg-background px-6 py-4">
             <Button
               type="button"
               className="w-full gap-1.5"

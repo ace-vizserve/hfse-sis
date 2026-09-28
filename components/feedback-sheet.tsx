@@ -63,7 +63,7 @@ export function FeedbackSheet() {
         side="right"
         className="flex w-full flex-col gap-0 p-0 sm:max-w-none"
       >
-        <SheetHeader className="border-b border-border px-6 py-5">
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
           <SheetTitle className="font-serif text-[23px] font-semibold tracking-tight">
             Send feedback
           </SheetTitle>
@@ -90,7 +90,7 @@ export function FeedbackSheet() {
             white box and no explanation. Most staff arrive already signed in
             from Outlook or Teams and never meet this; the ones who do need a
             way out that does not involve asking whether the SIS is broken. */}
-        <div className="border-t border-border px-6 py-3">
+        <div className="shrink-0 border-t border-border bg-background px-6 py-3">
           <a
             href={FORM_PAGE_URL}
             target="_blank"

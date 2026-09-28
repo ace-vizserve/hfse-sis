@@ -121,47 +121,56 @@ export function NewSubjectForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Code</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  autoFocus
-                  placeholder="MATH, ENG, FIL…"
-                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
-                  className="font-mono uppercase"
-                />
-              </FormControl>
-              <FormDescription>
-                Uppercase letters, digits, underscore, or hyphen. Max 32
-                characters. Permanent after creation.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Display name</FormLabel>
-              <FormControl>
-                <Input {...field} placeholder="Mathematics" />
-              </FormControl>
-              <FormDescription>
-                Shown on grading sheets, report cards, and dropdowns.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        {/* Grade type — the SAME control the edit form shows, worded the same
+      {/* Fills the drawer it sits in (subject-catalog-card's Add Sheet, which
+          passes `flex flex-col p-0`): the fields scroll, the Cancel / Add row
+          stays pinned at the bottom. */}
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <FormField
+            control={form.control}
+            name="code"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Code</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    autoFocus
+                    placeholder="MATH, ENG, FIL…"
+                    onChange={(e) =>
+                      field.onChange(e.target.value.toUpperCase())
+                    }
+                    className="font-mono uppercase"
+                  />
+                </FormControl>
+                <FormDescription>
+                  Uppercase letters, digits, underscore, or hyphen. Max 32
+                  characters. Permanent after creation.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Display name</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="Mathematics" />
+                </FormControl>
+                <FormDescription>
+                  Shown on grading sheets, report cards, and dropdowns.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {/* Grade type — the SAME control the edit form shows, worded the same
             way (components/sis/subject-config-form.tsx).
 
             It used to be a checkbox labelled "Examinable", described only as
@@ -177,65 +186,66 @@ export function NewSubjectForm({
             CA, PEH and PMPD are all letter-graded through it (migration 049).
             "Does this term have an exam" is a different question entirely, and
             it lives on the grading sheet now (migration 159). */}
-        <FormField
-          control={form.control}
-          name="is_examinable"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Grade type</FormLabel>
-              <Select
-                value={field.value ? 'numeric' : 'letter'}
-                onValueChange={(v) => field.onChange(v === 'numeric')}
-              >
-                <FormControl>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="numeric">Numeric</SelectItem>
-                  <SelectItem value="letter">Letter</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                Numeric subjects get a mark out of 100 and count towards the
-                general average. Letter subjects show a letter on the report
-                card instead — music, art, PE and the like.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="grading_method"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Grading method</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {GRADING_METHOD_VALUES.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {GRADING_METHOD_LABELS[v]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                Standard sheet generates a WW/PT/QA grading grid when attached
-                to a section. No sheet records this subject some other way and
-                skips grid generation.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="flex justify-end gap-2 pt-2">
+          <FormField
+            control={form.control}
+            name="is_examinable"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Grade type</FormLabel>
+                <Select
+                  value={field.value ? 'numeric' : 'letter'}
+                  onValueChange={(v) => field.onChange(v === 'numeric')}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="numeric">Numeric</SelectItem>
+                    <SelectItem value="letter">Letter</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Numeric subjects get a mark out of 100 and count towards the
+                  general average. Letter subjects show a letter on the report
+                  card instead — music, art, PE and the like.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="grading_method"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Grading method</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {GRADING_METHOD_VALUES.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {GRADING_METHOD_LABELS[v]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Standard sheet generates a WW/PT/QA grading grid when attached
+                  to a section. No sheet records this subject some other way and
+                  skips grid generation.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-background px-6 py-4">
           <Button
             type="button"
             variant="outline"

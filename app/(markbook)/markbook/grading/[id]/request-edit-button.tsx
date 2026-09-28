@@ -38,7 +38,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -261,71 +260,103 @@ export function RequestEditButton({
           Request edit
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
-        <ScrollArea className="h-full">
-          <SheetHeader className="space-y-2 border-b border-border p-6">
-            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Request a locked-sheet edit
-            </SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              Your request goes through the approval steps shown below. Once
-              every step has approved it, the registrar applies the change.
-            </SheetDescription>
-          </SheetHeader>
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 space-y-2 border-b border-border p-6">
+          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Request a locked-sheet edit
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
+            Your request goes through the approval steps shown below. Once every
+            step has approved it, the registrar applies the change.
+          </SheetDescription>
+        </SheetHeader>
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
-              <div className="space-y-5 p-6">
-                <FormField
-                  control={form.control}
-                  name="grade_entry_id"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Student</FormLabel>
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+              <FormField
+                control={form.control}
+                name="grade_entry_id"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Student</FormLabel>
+                    <FormControl>
+                      <StudentCombobox
+                        students={students}
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="field_changed"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Field to change</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={(v) => {
+                        field.onChange(v);
+                        // Reset slot when switching fields so the refine() passes.
+                        const next = v as ChangeRequestField;
+                        form.setValue(
+                          'slot_index',
+                          next === 'ww_scores' || next === 'pt_scores'
+                            ? 0
+                            : null,
+                          {
+                            shouldValidate: true,
+                          }
+                        );
+                      }}
+                    >
                       <FormControl>
-                        <StudentCombobox
-                          students={students}
-                          value={field.value}
-                          onChange={field.onChange}
-                        />
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                      <SelectContent>
+                        {availableFields.map((f) => (
+                          <SelectItem key={f} value={f}>
+                            {FIELD_LABELS[f]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
+              {needsSlot && maxSlot > 0 && (
                 <FormField
                   control={form.control}
-                  name="field_changed"
+                  name="slot_index"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Field to change</FormLabel>
+                      <FormLabel>Slot</FormLabel>
                       <Select
-                        value={field.value}
-                        onValueChange={(v) => {
-                          field.onChange(v);
-                          // Reset slot when switching fields so the refine() passes.
-                          const next = v as ChangeRequestField;
-                          form.setValue(
-                            'slot_index',
-                            next === 'ww_scores' || next === 'pt_scores'
-                              ? 0
-                              : null,
-                            {
-                              shouldValidate: true,
-                            }
-                          );
-                        }}
+                        value={field.value == null ? '' : String(field.value)}
+                        onValueChange={(v) => field.onChange(Number(v))}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Pick a slot…" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {availableFields.map((f) => (
-                            <SelectItem key={f} value={f}>
-                              {FIELD_LABELS[f]}
+                          {Array.from({ length: maxSlot }).map((_, i) => (
+                            <SelectItem key={i} value={String(i)}>
+                              {selectedField === 'ww_scores' ? 'W' : 'PT'}
+                              {i + 1}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -334,190 +365,156 @@ export function RequestEditButton({
                     </FormItem>
                   )}
                 />
+              )}
 
-                {needsSlot && maxSlot > 0 && (
-                  <FormField
-                    control={form.control}
-                    name="slot_index"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Slot</FormLabel>
+              {selectedStudent && (
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                  <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Current value
+                  </div>
+                  <div className="tabular-nums text-foreground">
+                    {currentValueDisplay || '—'}
+                  </div>
+                </div>
+              )}
+
+              <FormField
+                control={form.control}
+                name="proposed_value"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Proposed value</FormLabel>
+                    <FormControl>
+                      {selectedField === 'letter_grade' ? (
                         <Select
-                          value={field.value == null ? '' : String(field.value)}
-                          onValueChange={(v) => field.onChange(Number(v))}
+                          value={field.value || undefined}
+                          onValueChange={field.onChange}
                         >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pick a slot…" />
-                            </SelectTrigger>
-                          </FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose UG or E" />
+                          </SelectTrigger>
                           <SelectContent>
-                            {Array.from({ length: maxSlot }).map((_, i) => (
-                              <SelectItem key={i} value={String(i)}>
-                                {selectedField === 'ww_scores' ? 'W' : 'PT'}
-                                {i + 1}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="UG">UG — Ungraded</SelectItem>
+                            <SelectItem value="E">E — Exempted</SelectItem>
                           </SelectContent>
                         </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                {selectedStudent && (
-                  <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Current value
-                    </div>
-                    <div className="tabular-nums text-foreground">
-                      {currentValueDisplay || '—'}
-                    </div>
-                  </div>
-                )}
-
-                <FormField
-                  control={form.control}
-                  name="proposed_value"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Proposed value</FormLabel>
-                      <FormControl>
-                        {selectedField === 'letter_grade' ? (
-                          <Select
-                            value={field.value || undefined}
-                            onValueChange={field.onChange}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Choose UG or E" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="UG">UG — Ungraded</SelectItem>
-                              <SelectItem value="E">E — Exempted</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            {...field}
-                            placeholder={
-                              selectedField === 'is_na'
-                                ? 'true or false'
-                                : 'e.g. 92'
-                            }
-                          />
-                        )}
-                      </FormControl>
-                      <FormDescription>
-                        The registrar will type this exact value into the locked
-                        sheet when applying the approved request.
-                      </FormDescription>
-                      {proposedTouched && isSameValue && (
-                        <p className="flex items-start gap-1.5 text-[11px] text-brand-amber">
-                          <AlertTriangle
-                            className="mt-0.5 h-3 w-3 shrink-0"
-                            aria-hidden="true"
-                          />
-                          <span>
-                            This is the same as the current value — change it
-                            before filing.
-                          </span>
-                        </p>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="reason_category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Reason category</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {REASON_CATEGORIES.map((r) => (
-                            <SelectItem key={r} value={r}>
-                              {REASON_CATEGORY_LABELS[r]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="justification"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Justification</FormLabel>
-                      <FormControl>
-                        <RichTextEditor
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder="Explain in at least 20 characters why this change is needed."
-                          rows={5}
-                          maxLength={2000}
+                      ) : (
+                        <Input
+                          {...field}
+                          placeholder={
+                            selectedField === 'is_na'
+                              ? 'true or false'
+                              : 'e.g. 92'
+                          }
                         />
-                      </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        Tell the approver why this change matters.
+                      )}
+                    </FormControl>
+                    <FormDescription>
+                      The registrar will type this exact value into the locked
+                      sheet when applying the approved request.
+                    </FormDescription>
+                    {proposedTouched && isSameValue && (
+                      <p className="flex items-start gap-1.5 text-[11px] text-brand-amber">
+                        <AlertTriangle
+                          className="mt-0.5 h-3 w-3 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          This is the same as the current value — change it
+                          before filing.
+                        </span>
                       </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                <ApprovalRoutePanel
-                  loaded={route !== null}
-                  toBoard={toBoard}
-                  steps={steps}
-                  problem={routeProblem}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="reason_category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason category</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {REASON_CATEGORIES.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {REASON_CATEGORY_LABELS[r]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-                <SheetClose asChild>
-                  <Button type="button" variant="outline" size="sm">
-                    Cancel
-                  </Button>
-                </SheetClose>
-                {/* `wrap` — the hint exists only while the button is
+              <FormField
+                control={form.control}
+                name="justification"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Justification</FormLabel>
+                    <FormControl>
+                      <RichTextEditor
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Explain in at least 20 characters why this change is needed."
+                        rows={5}
+                        maxLength={2000}
+                      />
+                    </FormControl>
+                    <p className="text-[11px] text-muted-foreground">
+                      Tell the approver why this change matters.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <ApprovalRoutePanel
+                loaded={route !== null}
+                toBoard={toBoard}
+                steps={steps}
+                problem={routeProblem}
+              />
+            </div>
+
+            <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background p-6 sm:justify-end">
+              <SheetClose asChild>
+                <Button type="button" variant="outline" size="sm">
+                  Cancel
+                </Button>
+              </SheetClose>
+              {/* `wrap` — the hint exists only while the button is
                     disabled, and `disabled:pointer-events-none` means the
                     button itself never fires a hover. The trigger has to sit
                     on a focusable span AROUND it or the explanation for the
                     greyed-out control stays unreadable (as it was). */}
-                <HoverHint hint={routeProblem ?? undefined} wrap>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    loading={busy}
-                    loadingText="Submitting…"
-                    disabled={
-                      routeProblem !== null || (proposedTouched && isSameValue)
-                    }
-                  >
-                    {!busy && <Send className="h-4 w-4" />}
-                    Submit request
-                  </Button>
-                </HoverHint>
-              </SheetFooter>
-            </form>
-          </Form>
-        </ScrollArea>
+              <HoverHint hint={routeProblem ?? undefined} wrap>
+                <Button
+                  type="submit"
+                  size="sm"
+                  loading={busy}
+                  loadingText="Submitting…"
+                  disabled={
+                    routeProblem !== null || (proposedTouched && isSameValue)
+                  }
+                >
+                  {!busy && <Send className="h-4 w-4" />}
+                  Submit request
+                </Button>
+              </HoverHint>
+            </SheetFooter>
+          </form>
+        </Form>
       </SheetContent>
     </Sheet>
   );

@@ -512,9 +512,13 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   const previewValid =
     Number(wwSlots) > 0 && Number(ptSlots) > 0 && Number(qaMax) > 0;
 
+  // Fills the drawer it sits in (subject-catalog-card's edit Sheet, which
+  // passes `flex flex-col p-0`): the fields scroll, the Cancel / Save row stays
+  // pinned at the bottom so it never has to be scrolled to.
   return (
-    <div className="space-y-5">
-      {/* What this subject is called and what it is, IN THIS YEAR — first, and
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        {/* What this subject is called and what it is, IN THIS YEAR — first, and
           in its own group.
 
           None of this could sit inside "Subject identity" below: that group's
@@ -528,206 +532,206 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
           is called, what it prints as if that differs, and what it stands for.
           Edit mode only — each needs this year's row, and a subject being
           created has none yet. */}
-      {mode === 'edit' && (
+        {mode === 'edit' && (
+          <FieldRow
+            eyebrow={`In ${ayCode}`}
+            helper={`Only ${ayCode} is affected. Other years keep what they already have.`}
+          >
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Subject name
+                </Label>
+                <Input
+                  type="text"
+                  placeholder={subjectName}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  onBlur={onDisplayNameBlur}
+                  maxLength={128}
+                  aria-label={`Name for ${subjectCode} in ${ayCode}`}
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  What staff see this subject called in {ayCode}. Leave blank to
+                  keep calling it &ldquo;{subjectName}&rdquo;. The subject code
+                  stays{' '}
+                  <span className="font-mono font-semibold text-foreground">
+                    {subjectCode}
+                  </span>{' '}
+                  either way, so marks, weights and past years are untouched.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Name on the report card
+                </Label>
+                <Input
+                  type="text"
+                  placeholder={displayName.trim() || subjectName}
+                  value={reportLabel}
+                  onChange={(e) => setReportLabel(e.target.value)}
+                  onBlur={onReportLabelBlur}
+                  maxLength={128}
+                  aria-label={`Report card name for ${subjectCode} in ${ayCode}`}
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Only fill this in if the report card should say something
+                  different from the name above. Leave blank and the card uses
+                  the same name every other screen does.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  What it stands for
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="Sports, Talent, Arts and Rhythm"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={onDescriptionBlur}
+                  maxLength={200}
+                  aria-label={`Description for ${subjectCode} in ${ayCode}`}
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Shown under the heading on the grading sheet, so a teacher
+                  opening it knows what the name means. Staff only — this never
+                  appears on a report card.
+                </p>
+              </div>
+            </div>
+          </FieldRow>
+        )}
+
+        {/* Grade type + grading method — global to this subject, not scoped
+          to the AY on screen (subjects has no AY dimension). */}
         <FieldRow
-          eyebrow={`In ${ayCode}`}
-          helper={`Only ${ayCode} is affected. Other years keep what they already have.`}
+          eyebrow="Subject identity"
+          helper="Applies to this subject in every academic year, not just the one shown here."
         >
-          <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Subject name
+                Grade type
               </Label>
-              <Input
-                type="text"
-                placeholder={subjectName}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                onBlur={onDisplayNameBlur}
-                maxLength={128}
-                aria-label={`Name for ${subjectCode} in ${ayCode}`}
-              />
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                What staff see this subject called in {ayCode}. Leave blank to
-                keep calling it &ldquo;{subjectName}&rdquo;. The subject code
-                stays{' '}
-                <span className="font-mono font-semibold text-foreground">
-                  {subjectCode}
-                </span>{' '}
-                either way, so marks, weights and past years are untouched.
-              </p>
+              <Select
+                value={isExaminable ? 'numeric' : 'letter'}
+                onValueChange={(v) =>
+                  onGradeTypeChange(v as 'numeric' | 'letter')
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="numeric">Numeric</SelectItem>
+                  <SelectItem value="letter">Letter</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
             <div className="space-y-1">
               <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Name on the report card
+                Grading method
               </Label>
-              <Input
-                type="text"
-                placeholder={displayName.trim() || subjectName}
-                value={reportLabel}
-                onChange={(e) => setReportLabel(e.target.value)}
-                onBlur={onReportLabelBlur}
-                maxLength={128}
-                aria-label={`Report card name for ${subjectCode} in ${ayCode}`}
-              />
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Only fill this in if the report card should say something
-                different from the name above. Leave blank and the card uses the
-                same name every other screen does.
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                What it stands for
-              </Label>
-              <Input
-                type="text"
-                placeholder="Sports, Talent, Arts and Rhythm"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={onDescriptionBlur}
-                maxLength={200}
-                aria-label={`Description for ${subjectCode} in ${ayCode}`}
-              />
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Shown under the heading on the grading sheet, so a teacher
-                opening it knows what the name means. Staff only — this never
-                appears on a report card.
-              </p>
+              <Select
+                value={gradingMethod}
+                onValueChange={(v) => onGradingMethodChange(v as GradingMethod)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GRADING_METHOD_VALUES.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {GRADING_METHOD_LABELS[v]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </FieldRow>
-      )}
 
-      {/* Grade type + grading method — global to this subject, not scoped
-          to the AY on screen (subjects has no AY dimension). */}
-      <FieldRow
-        eyebrow="Subject identity"
-        helper="Applies to this subject in every academic year, not just the one shown here."
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Grade type
-            </Label>
-            <Select
-              value={isExaminable ? 'numeric' : 'letter'}
-              onValueChange={(v) =>
-                onGradeTypeChange(v as 'numeric' | 'letter')
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="numeric">Numeric</SelectItem>
-                <SelectItem value="letter">Letter</SelectItem>
-              </SelectContent>
-            </Select>
+        {gradingMethod === 'no_sheet' ? (
+          <div className="flex items-start gap-2 rounded-md border border-dashed border-border bg-muted/20 p-3 text-[12px] text-muted-foreground">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              &ldquo;No sheet&rdquo; subjects are recorded some other way — no
+              grading grid is generated, so weights below aren&apos;t used.
+            </span>
           </div>
-          <div className="space-y-1">
-            <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Grading method
-            </Label>
-            <Select
-              value={gradingMethod}
-              onValueChange={(v) => onGradingMethodChange(v as GradingMethod)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GRADING_METHOD_VALUES.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {GRADING_METHOD_LABELS[v]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </FieldRow>
-
-      {gradingMethod === 'no_sheet' ? (
-        <div className="flex items-start gap-2 rounded-md border border-dashed border-border bg-muted/20 p-3 text-[12px] text-muted-foreground">
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            &ldquo;No sheet&rdquo; subjects are recorded some other way — no
-            grading grid is generated, so weights below aren&apos;t used.
-          </span>
-        </div>
-      ) : (
-        <>
-          {/* Live ratio bar — stacked horizontal segments showing the
+        ) : (
+          <>
+            {/* Live ratio bar — stacked horizontal segments showing the
               WW / PT / QA proportions so the user can see their choice
               before saving. Clamped to sum; if total ≠ 100 the bar shows
               partial fill. */}
-          <RatioBar ww={wwN} pt={ptN} qa={qaN} sumOk={sumOk} sum={sum} />
+            <RatioBar ww={wwN} pt={ptN} qa={qaN} sumOk={sumOk} sum={sum} />
 
-          {/* Weights row — three inputs with short, aligned labels. */}
-          <FieldRow
-            eyebrow="Weights"
-            helper={
-              mode === 'create'
-                ? 'Must sum to 100%. Pre-filled with the DepEd standard split for this kind of subject — adjust if this subject differs.'
-                : 'Must sum to 100%.'
-            }
-          >
-            <div className="grid grid-cols-3 gap-3">
-              <PercentField
-                label="WW"
-                sublabel="Written Works"
-                value={ww}
-                setValue={setWw}
-              />
-              <PercentField
-                label="PT"
-                sublabel="Perf. Tasks"
-                value={pt}
-                setValue={setPt}
-              />
-              <PercentField
-                label="QA"
-                sublabel="Quarterly"
-                value={qa}
-                setValue={setQa}
-              />
-            </div>
-          </FieldRow>
+            {/* Weights row — three inputs with short, aligned labels. */}
+            <FieldRow
+              eyebrow="Weights"
+              helper={
+                mode === 'create'
+                  ? 'Must sum to 100%. Pre-filled with the DepEd standard split for this kind of subject — adjust if this subject differs.'
+                  : 'Must sum to 100%.'
+              }
+            >
+              <div className="grid grid-cols-3 gap-3">
+                <PercentField
+                  label="WW"
+                  sublabel="Written Works"
+                  value={ww}
+                  setValue={setWw}
+                />
+                <PercentField
+                  label="PT"
+                  sublabel="Perf. Tasks"
+                  value={pt}
+                  setValue={setPt}
+                />
+                <PercentField
+                  label="QA"
+                  sublabel="Quarterly"
+                  value={qa}
+                  setValue={setQa}
+                />
+              </div>
+            </FieldRow>
 
-          {/* Per-term components — edit mode only. A subject with no config
+            {/* Per-term components — edit mode only. A subject with no config
               row yet has no grading sheets either, so there is no term to set
               apart until the weights above are saved once. */}
-          {mode === 'edit' && (
-            <FieldRow eyebrow="Terms">
-              <SubjectTermWeights
-                configId={props.draft.configId}
-                subjectCode={subjectCode}
-              />
+            {mode === 'edit' && (
+              <FieldRow eyebrow="Terms">
+                <SubjectTermWeights
+                  configId={props.draft.configId}
+                  subjectCode={subjectCode}
+                />
+              </FieldRow>
+            )}
+
+            {/* Max slots row. */}
+            <FieldRow eyebrow="Max slots" helper="Hard cap 5 per KD #5.">
+              <div className="grid grid-cols-2 gap-3">
+                <NumberField
+                  label="WW slots"
+                  value={wwSlots}
+                  setValue={setWwSlots}
+                  maxDigits={1}
+                />
+                <NumberField
+                  label="PT slots"
+                  value={ptSlots}
+                  setValue={setPtSlots}
+                  maxDigits={1}
+                />
+              </div>
             </FieldRow>
-          )}
 
-          {/* Max slots row. */}
-          <FieldRow eyebrow="Max slots" helper="Hard cap 5 per KD #5.">
-            <div className="grid grid-cols-2 gap-3">
-              <NumberField
-                label="WW slots"
-                value={wwSlots}
-                setValue={setWwSlots}
-                maxDigits={1}
-              />
-              <NumberField
-                label="PT slots"
-                value={ptSlots}
-                setValue={setPtSlots}
-                maxDigits={1}
-              />
-            </div>
-          </FieldRow>
-
-          {/* Scope + reduction notice — edit mode only (a new subject has no
+            {/* Scope + reduction notice — edit mode only (a new subject has no
               sheets yet, and nothing to reduce FROM).
 
               One `subject_configs` row covers the whole subject for the year
@@ -743,109 +747,111 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               now REFUSED when a slot being removed holds a mark. Leaving it
               would have warned about an impossible outcome while implying a
               safe reduction was dangerous. */}
-          {mode === 'edit' && (
-            <div className="flex items-start gap-2 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-3 text-[12px] text-foreground">
-              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-brand-amber" />
-              <span>
-                <span className="font-medium">
-                  Saving applies to every class taking this subject.
-                </span>{' '}
-                {props.sheetImpact && props.sheetImpact.unlockedSheets > 0
-                  ? `${props.sheetImpact.unlockedSheets} grading ${props.sheetImpact.unlockedSheets === 1 ? 'sheet' : 'sheets'} across ${props.sheetImpact.unlockedSections} ${props.sheetImpact.unlockedSections === 1 ? 'class' : 'classes'} will be updated. `
-                  : 'No open grading sheets are affected right now. '}
-                Locked sheets are not changed.
-                {(Number(wwSlots) < props.draft.ww_max_slots ||
-                  Number(ptSlots) < props.draft.pt_max_slots) && (
-                  <>
-                    {' '}
-                    Slots you remove are cleared from those sheets. If a student
-                    already has a mark in a slot you&apos;re removing, the save
-                    is refused and nothing changes.
-                  </>
-                )}
-              </span>
-            </div>
-          )}
+            {mode === 'edit' && (
+              <div className="flex items-start gap-2 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-3 text-[12px] text-foreground">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-brand-amber" />
+                <span>
+                  <span className="font-medium">
+                    Saving applies to every class taking this subject.
+                  </span>{' '}
+                  {props.sheetImpact && props.sheetImpact.unlockedSheets > 0
+                    ? `${props.sheetImpact.unlockedSheets} grading ${props.sheetImpact.unlockedSheets === 1 ? 'sheet' : 'sheets'} across ${props.sheetImpact.unlockedSections} ${props.sheetImpact.unlockedSections === 1 ? 'class' : 'classes'} will be updated. `
+                    : 'No open grading sheets are affected right now. '}
+                  Locked sheets are not changed.
+                  {(Number(wwSlots) < props.draft.ww_max_slots ||
+                    Number(ptSlots) < props.draft.pt_max_slots) && (
+                    <>
+                      {' '}
+                      Slots you remove are cleared from those sheets. If a
+                      student already has a mark in a slot you&apos;re removing,
+                      the save is refused and nothing changes.
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
 
-          {/* QA max row — single input, label-left input-right. */}
-          <FieldRow
-            eyebrow="QA max score"
-            helper="Denominator of the QA percentage. Canonical 30 per Hard Rule #1; vary per subject (e.g. 50 Math, 20 Art)."
-          >
-            <div className="max-w-[160px]">
-              <NumberField
-                label="Max score"
-                value={qaMax}
-                setValue={setQaMax}
-                maxDigits={3}
-              />
-            </div>
-          </FieldRow>
-
-          {/* Live grading-sheet preview — the actual columns a teacher
-              would see, reflecting the slot counts above as they're
-              edited. */}
-          {previewValid && (
-            <FieldRow eyebrow="Grading sheet preview">
-              <div className="w-fit rounded-md border border-border bg-muted/20 px-2 py-1">
-                <GradingSheetPreview
-                  config={{
-                    ww_max_slots: Number(wwSlots),
-                    pt_max_slots: Number(ptSlots),
-                    qa_max: Number(qaMax),
-                  }}
+            {/* QA max row — single input, label-left input-right. */}
+            <FieldRow
+              eyebrow="QA max score"
+              helper="Denominator of the QA percentage. Canonical 30 per Hard Rule #1; vary per subject (e.g. 50 Math, 20 Art)."
+            >
+              <div className="max-w-[160px]">
+                <NumberField
+                  label="Max score"
+                  value={qaMax}
+                  setValue={setQaMax}
+                  maxDigits={3}
                 />
               </div>
             </FieldRow>
-          )}
-        </>
-      )}
 
-      {/* Reports-to — edit mode only (see field comment above). Global +
+            {/* Live grading-sheet preview — the actual columns a teacher
+              would see, reflecting the slot counts above as they're
+              edited. */}
+            {previewValid && (
+              <FieldRow eyebrow="Grading sheet preview">
+                <div className="w-fit rounded-md border border-border bg-muted/20 px-2 py-1">
+                  <GradingSheetPreview
+                    config={{
+                      ww_max_slots: Number(wwSlots),
+                      pt_max_slots: Number(ptSlots),
+                      qa_max: Number(qaMax),
+                    }}
+                  />
+                </div>
+              </FieldRow>
+            )}
+          </>
+        )}
+
+        {/* Reports-to — edit mode only (see field comment above). Global +
           independent of weights, so it auto-saves on change with its own
           toast rather than sharing the weights Save button. */}
-      {mode === 'edit' && (
-        <FieldRow
-          eyebrow="Reports to"
-          helper="Which report-card column this subject's grades show under. Most subjects report as themselves."
-        >
-          <Select
-            value={reportSubjectId}
-            onValueChange={(v) => void onReportSubjectChange(v)}
+        {mode === 'edit' && (
+          <FieldRow
+            eyebrow="Reports to"
+            helper="Which report-card column this subject's grades show under. Most subjects report as themselves."
           >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Pick a subject" />
-            </SelectTrigger>
-            <SelectContent>
-              {subjects
-                .slice()
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    <span className="font-mono text-xs">{s.code}</span>
-                    <span className="ml-2 text-muted-foreground">
-                      {s.name}
-                      {s.id === subjectId ? ' (itself)' : ''}
-                    </span>
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </FieldRow>
-      )}
+            <Select
+              value={reportSubjectId}
+              onValueChange={(v) => void onReportSubjectChange(v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Pick a subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {subjects
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      <span className="font-mono text-xs">{s.code}</span>
+                      <span className="ml-2 text-muted-foreground">
+                        {s.name}
+                        {s.id === subjectId ? ' (itself)' : ''}
+                      </span>
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </FieldRow>
+        )}
 
-      {ayCode && gradingMethod !== 'no_sheet' && (
-        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          Weights above apply to {ayCode} only.
-        </p>
-      )}
+        {ayCode && gradingMethod !== 'no_sheet' && (
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            Weights above apply to {ayCode} only.
+          </p>
+        )}
+      </div>
 
       {/* Cancel + Save footer — always rendered (even for a "No sheet"
           subject, which has nothing to save but still needs a way to back
           out) so every chrome context gets a way to close without saving.
-          Save only appears when there are weights to save. */}
+          Save only appears when there are weights to save. Outside the
+          scrolling body, so it stays pinned. */}
       {(onCancel || gradingMethod !== 'no_sheet') && (
-        <FieldRow>
+        <div className="shrink-0 border-t border-border bg-background px-6 py-4">
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             {onCancel && (
               <Button
@@ -871,7 +877,7 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               </Button>
             )}
           </div>
-        </FieldRow>
+        </div>
       )}
     </div>
   );

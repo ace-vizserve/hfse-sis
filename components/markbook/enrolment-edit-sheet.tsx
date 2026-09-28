@@ -22,7 +22,6 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -330,293 +329,287 @@ export function EnrolmentEditSheet({
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>{children}</SheetTrigger>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
-        <ScrollArea className="h-full">
-          <SheetHeader className="space-y-2 border-b border-border p-6">
-            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Edit enrolment
-            </SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              <span className="font-mono tabular-nums">#{indexNumber}</span> ·{' '}
-              {studentName}
-            </SheetDescription>
-          </SheetHeader>
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 space-y-2 border-b border-border p-6">
+          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Edit enrolment
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
+            <span className="font-mono tabular-nums">#{indexNumber}</span> ·{' '}
+            {studentName}
+          </SheetDescription>
+        </SheetHeader>
 
-          <form onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-5 p-6">
-              <div className="space-y-2">
-                <Label htmlFor="busNo">Bus number</Label>
-                <Input
-                  id="busNo"
-                  value={busNo}
-                  onChange={(e) => setBusNo(e.target.value)}
-                  placeholder="e.g. SVC7"
-                  maxLength={40}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Shown on the attendance sheet header. Leave blank if not
-                  applicable.
-                </p>
-              </div>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6">
+            <div className="space-y-2">
+              <Label htmlFor="busNo">Bus number</Label>
+              <Input
+                id="busNo"
+                value={busNo}
+                onChange={(e) => setBusNo(e.target.value)}
+                placeholder="e.g. SVC7"
+                maxLength={40}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Shown on the attendance sheet header. Leave blank if not
+                applicable.
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="officer">Classroom officer role</Label>
-                <Input
-                  id="officer"
-                  value={officer}
-                  onChange={(e) => setOfficer(e.target.value)}
-                  placeholder="e.g. HAPI HAUS"
-                  maxLength={80}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Display-only. No reporting impact.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="officer">Classroom officer role</Label>
+              <Input
+                id="officer"
+                value={officer}
+                onChange={(e) => setOfficer(e.target.value)}
+                placeholder="e.g. HAPI HAUS"
+                maxLength={80}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Display-only. No reporting impact.
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="academicsNotes">Academics notes</Label>
-                <RichTextEditor
-                  id="academicsNotes"
-                  value={academicsNotes}
-                  onChange={setAcademicsNotes}
-                  placeholder="e.g. Needs reading support"
-                  maxLength={200}
-                  rows={2}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Shown in the attendance sheet&apos;s Details view.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="academicsNotes">Academics notes</Label>
+              <RichTextEditor
+                id="academicsNotes"
+                value={academicsNotes}
+                onChange={setAcademicsNotes}
+                placeholder="e.g. Needs reading support"
+                maxLength={200}
+                rows={2}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Shown in the attendance sheet&apos;s Details view.
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="adminNotes">Admin notes</Label>
-                <RichTextEditor
-                  id="adminNotes"
-                  value={adminNotes}
-                  onChange={setAdminNotes}
-                  placeholder="e.g. Fee balance pending"
-                  maxLength={200}
-                  rows={2}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Shown in the attendance sheet&apos;s Details view. Only school
-                  admins can save changes here.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="adminNotes">Admin notes</Label>
+              <RichTextEditor
+                id="adminNotes"
+                value={adminNotes}
+                onChange={setAdminNotes}
+                placeholder="e.g. Fee balance pending"
+                maxLength={200}
+                rows={2}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Shown in the attendance sheet&apos;s Details view. Only school
+                admins can save changes here.
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="status">Enrolment status</Label>
-                <Select
-                  value={status}
-                  onValueChange={(v) => setStatus(v as EnrollmentStatus)}
-                >
-                  <SelectTrigger id="status" className="h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ENROLLMENT_STATUS_VALUES.map((s) => {
-                      // T2–T4 late enrollees are unambiguously late — block
-                      // reverting to Active (spec 2026-06-12). Known limitation:
-                      // a null term_number (rare — the tag flow always sets it)
-                      // is conservatively blocked here too; the server does the
-                      // enrollment_date-derived T1 fallback.
-                      const blockActive =
-                        s === 'active' &&
-                        initial.enrollment_status === 'late_enrollee' &&
-                        initial.late_enrollee_term_number !== 1;
-                      return (
-                        <SelectItem key={s} value={s} disabled={blockActive}>
-                          {ENROLLMENT_STATUS_LABELS[s]}
-                          {blockActive ? ' — joined mid-year' : ''}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  Withdrawing sets the withdrawal date to today. Restoring to
-                  Active reverses the admissions withdrawal. Pre-enrolment /
-                  post-withdrawal scores stay as N/A.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Enrolment status</Label>
+              <Select
+                value={status}
+                onValueChange={(v) => setStatus(v as EnrollmentStatus)}
+              >
+                <SelectTrigger id="status" className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ENROLLMENT_STATUS_VALUES.map((s) => {
+                    // T2–T4 late enrollees are unambiguously late — block
+                    // reverting to Active (spec 2026-06-12). Known limitation:
+                    // a null term_number (rare — the tag flow always sets it)
+                    // is conservatively blocked here too; the server does the
+                    // enrollment_date-derived T1 fallback.
+                    const blockActive =
+                      s === 'active' &&
+                      initial.enrollment_status === 'late_enrollee' &&
+                      initial.late_enrollee_term_number !== 1;
+                    return (
+                      <SelectItem key={s} value={s} disabled={blockActive}>
+                        {ENROLLMENT_STATUS_LABELS[s]}
+                        {blockActive ? ' — joined mid-year' : ''}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Withdrawing sets the withdrawal date to today. Restoring to
+                Active reverses the admissions withdrawal. Pre-enrolment /
+                post-withdrawal scores stay as N/A.
+              </p>
+            </div>
 
-              {position?.isLateEnrollee &&
-                position.joiningTerm &&
-                status !== 'withdrawn' &&
-                initial.enrollment_status !== 'late_enrollee' &&
-                (initial.enrollment_status === 'withdrawn' ||
-                  status === 'late_enrollee') && (
-                  <div className="space-y-2">
-                    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Late enrollee · joining term
-                    </p>
-                    <p className="text-[13px] text-muted-foreground">
-                      {position.activeTerm
-                        ? `The school year has started (T${position.activeTerm.termNumber} in session) — choose which term this student officially joins. They're tagged a late enrollee either way.`
-                        : `The school year has already started — this student joins the next term, T${position.joiningTerm.termNumber}, as a late enrollee.`}
-                    </p>
-                    <div className="space-y-1.5">
-                      {position.activeTerm ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStatus('late_enrollee');
-                              setLateTermOverride(
-                                position.activeTerm!.termNumber
-                              );
-                            }}
-                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
-                              status === 'late_enrollee' &&
-                              lateTermOverride ===
-                                position.activeTerm.termNumber
-                                ? 'border-primary bg-accent text-foreground'
-                                : 'border-hairline text-foreground hover:bg-muted/50'
-                            }`}
-                          >
-                            Join T{position.activeTerm.termNumber} now
-                            {position.daysLeftInActiveTerm !== null &&
-                              position.daysLeftInActiveTerm < 14 && (
-                                <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
-                                  ends in {position.daysLeftInActiveTerm}d
-                                </span>
-                              )}
-                          </button>
-                          {position.canDeferToNext && position.nextTerm && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStatus('late_enrollee');
-                                setLateTermOverride(
-                                  position.nextTerm!.termNumber
-                                );
-                              }}
-                              className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
-                                status === 'late_enrollee' &&
-                                lateTermOverride ===
-                                  position.nextTerm.termNumber
-                                  ? 'border-primary bg-accent text-foreground'
-                                  : 'border-hairline text-foreground hover:bg-muted/50'
-                              }`}
-                            >
-                              Start in T{position.nextTerm.termNumber} instead
-                            </button>
-                          )}
-                        </>
-                      ) : (
+            {position?.isLateEnrollee &&
+              position.joiningTerm &&
+              status !== 'withdrawn' &&
+              initial.enrollment_status !== 'late_enrollee' &&
+              (initial.enrollment_status === 'withdrawn' ||
+                status === 'late_enrollee') && (
+                <div className="space-y-2">
+                  <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Late enrollee · joining term
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">
+                    {position.activeTerm
+                      ? `The school year has started (T${position.activeTerm.termNumber} in session) — choose which term this student officially joins. They're tagged a late enrollee either way.`
+                      : `The school year has already started — this student joins the next term, T${position.joiningTerm.termNumber}, as a late enrollee.`}
+                  </p>
+                  <div className="space-y-1.5">
+                    {position.activeTerm ? (
+                      <>
                         <button
                           type="button"
                           onClick={() => {
                             setStatus('late_enrollee');
                             setLateTermOverride(
-                              position.joiningTerm!.termNumber
+                              position.activeTerm!.termNumber
                             );
                           }}
-                          className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                          className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
                             status === 'late_enrollee' &&
-                            lateTermOverride === position.joiningTerm.termNumber
+                            lateTermOverride === position.activeTerm.termNumber
                               ? 'border-primary bg-accent text-foreground'
                               : 'border-hairline text-foreground hover:bg-muted/50'
                           }`}
                         >
-                          Join T{position.joiningTerm.termNumber}
+                          Join T{position.activeTerm.termNumber} now
+                          {position.daysLeftInActiveTerm !== null &&
+                            position.daysLeftInActiveTerm < 14 && (
+                              <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-brand-amber">
+                                ends in {position.daysLeftInActiveTerm}d
+                              </span>
+                            )}
                         </button>
-                      )}
-                    </div>
+                        {position.canDeferToNext && position.nextTerm && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStatus('late_enrollee');
+                              setLateTermOverride(
+                                position.nextTerm!.termNumber
+                              );
+                            }}
+                            className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                              status === 'late_enrollee' &&
+                              lateTermOverride === position.nextTerm.termNumber
+                                ? 'border-primary bg-accent text-foreground'
+                                : 'border-hairline text-foreground hover:bg-muted/50'
+                            }`}
+                          >
+                            Start in T{position.nextTerm.termNumber} instead
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStatus('late_enrollee');
+                          setLateTermOverride(position.joiningTerm!.termNumber);
+                        }}
+                        className={`flex w-full items-center rounded-lg border px-3 py-2 text-left text-sm ${
+                          status === 'late_enrollee' &&
+                          lateTermOverride === position.joiningTerm.termNumber
+                            ? 'border-primary bg-accent text-foreground'
+                            : 'border-hairline text-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        Join T{position.joiningTerm.termNumber}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            {isTaggingLate && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Enrollment date <span className="text-destructive">*</span>
+                </label>
+                <DatePicker
+                  value={firstDayValue}
+                  onChange={handleFirstDayChange}
+                  placeholder="Pick the enrollment date"
+                />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Attendance counts from this day.
+                </p>
+              </div>
+            )}
+
+            {initial.enrollment_status === 'late_enrollee' && (
+              <div className="space-y-1.5">
+                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Joining term
+                </p>
+                {!showTermOverride ? (
+                  <div className="flex items-center justify-between rounded-lg border border-hairline px-3 py-2">
+                    <span className="text-sm text-foreground">
+                      {lateTermOverride !== null
+                        ? `T${lateTermOverride} (corrected)`
+                        : 'Derived from enrolment date'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowTermOverride(true)}
+                      className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      Wrong term?
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={String(lateTermOverride ?? '')}
+                      onValueChange={(v) => {
+                        const n = Number(v);
+                        setLateTermOverride(n);
+                        setShowTermOverride(false);
+                        void handleTermOverride(n);
+                      }}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select term..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4].map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            T{n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => setShowTermOverride(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 )}
+              </div>
+            )}
+          </div>
 
-              {isTaggingLate && (
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">
-                    Enrollment date <span className="text-destructive">*</span>
-                  </label>
-                  <DatePicker
-                    value={firstDayValue}
-                    onChange={handleFirstDayChange}
-                    placeholder="Pick the enrollment date"
-                  />
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    Attendance counts from this day.
-                  </p>
-                </div>
-              )}
-
-              {initial.enrollment_status === 'late_enrollee' && (
-                <div className="space-y-1.5">
-                  <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Joining term
-                  </p>
-                  {!showTermOverride ? (
-                    <div className="flex items-center justify-between rounded-lg border border-hairline px-3 py-2">
-                      <span className="text-sm text-foreground">
-                        {lateTermOverride !== null
-                          ? `T${lateTermOverride} (corrected)`
-                          : 'Derived from enrolment date'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowTermOverride(true)}
-                        className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-                      >
-                        Wrong term?
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={String(lateTermOverride ?? '')}
-                        onValueChange={(v) => {
-                          const n = Number(v);
-                          setLateTermOverride(n);
-                          setShowTermOverride(false);
-                          void handleTermOverride(n);
-                        }}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Select term..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[1, 2, 3, 4].map((n) => (
-                            <SelectItem key={n} value={String(n)}>
-                              T{n}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <button
-                        type="button"
-                        onClick={() => setShowTermOverride(false)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6">
-              <SheetClose asChild>
-                <Button type="button" variant="outline" size="sm">
-                  Cancel
-                </Button>
-              </SheetClose>
-              <Button
-                type="submit"
-                size="sm"
-                loading={saving}
-                loadingText="Saving…"
-                disabled={isTaggingLate && !firstDayValue}
-                className="gap-1.5"
-              >
-                {!saving && <Save className="size-3.5" />}
-                Save
+          <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background p-6">
+            <SheetClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancel
               </Button>
-            </SheetFooter>
-          </form>
-        </ScrollArea>
+            </SheetClose>
+            <Button
+              type="submit"
+              size="sm"
+              loading={saving}
+              loadingText="Saving…"
+              disabled={isTaggingLate && !firstDayValue}
+              className="gap-1.5"
+            >
+              {!saving && <Save className="size-3.5" />}
+              Save
+            </Button>
+          </SheetFooter>
+        </form>
       </SheetContent>
 
       <AlertDialog open={confirmWithdraw} onOpenChange={setConfirmWithdraw}>

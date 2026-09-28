@@ -33,7 +33,6 @@ import {
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
   SheetClose,
@@ -280,119 +279,115 @@ export function TotalsEditor({
           Edit totals & slots
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
-        <ScrollArea className="h-full">
-          <SheetHeader className="space-y-3 border-b border-border p-6">
-            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Edit totals & slots
-            </SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              {isLocked
-                ? 'Sheet is locked — you will be prompted for an approval reference on save.'
-                : 'All student grades will be recomputed against the new denominators.'}
-            </SheetDescription>
-          </SheetHeader>
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 space-y-3 border-b border-border p-6">
+          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Edit totals & slots
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
+            {isLocked
+              ? 'Sheet is locked — you will be prompted for an approval reference on save.'
+              : 'All student grades will be recomputed against the new denominators.'}
+          </SheetDescription>
+        </SheetHeader>
 
-          <form onSubmit={onSubmit}>
-            <div className="p-6">
-              <FieldGroup>
-                <SlotSection
-                  label="Written Works"
-                  prefix="W"
-                  values={ww}
-                  onChangeAt={(i, v) => updateAt(ww, setWw, i, v)}
-                  onAdd={() => addSlot(ww, setWw, wwMaxSlots)}
-                  onRemove={() => removeSlot(ww, setWw)}
-                  cap={wwMaxSlots}
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <FieldGroup>
+              <SlotSection
+                label="Written Works"
+                prefix="W"
+                values={ww}
+                onChangeAt={(i, v) => updateAt(ww, setWw, i, v)}
+                onAdd={() => addSlot(ww, setWw, wwMaxSlots)}
+                onRemove={() => removeSlot(ww, setWw)}
+                cap={wwMaxSlots}
+              />
+
+              <SlotSection
+                label="Performance Tasks"
+                prefix="PT"
+                values={pt}
+                onChangeAt={(i, v) => updateAt(pt, setPt, i, v)}
+                onAdd={() => addSlot(pt, setPt, ptMaxSlots)}
+                onRemove={() => removeSlot(pt, setPt)}
+                cap={ptMaxSlots}
+              />
+
+              <Field>
+                <FieldLabel htmlFor="te-qa">
+                  Quarterly assessment · max
+                </FieldLabel>
+                <Input
+                  id="te-qa"
+                  type="number"
+                  min={1}
+                  value={qa ?? ''}
+                  onChange={(e) =>
+                    setQa(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  className="h-9 w-28 text-right tabular-nums"
                 />
+                <FieldDescription>
+                  Single quarterly assessment denominator.
+                </FieldDescription>
+              </Field>
 
-                <SlotSection
-                  label="Performance Tasks"
-                  prefix="PT"
-                  values={pt}
-                  onChangeAt={(i, v) => updateAt(pt, setPt, i, v)}
-                  onAdd={() => addSlot(pt, setPt, ptMaxSlots)}
-                  onRemove={() => removeSlot(pt, setPt)}
-                  cap={ptMaxSlots}
-                />
-
-                <Field>
-                  <FieldLabel htmlFor="te-qa">
-                    Quarterly assessment · max
-                  </FieldLabel>
-                  <Input
-                    id="te-qa"
-                    type="number"
-                    min={1}
-                    value={qa ?? ''}
-                    onChange={(e) =>
-                      setQa(
-                        e.target.value === '' ? null : Number(e.target.value)
-                      )
-                    }
-                    className="h-9 w-28 text-right tabular-nums"
-                  />
-                  <FieldDescription>
-                    Single quarterly assessment denominator.
-                  </FieldDescription>
-                </Field>
-
-                {/* Which components this ONE class is graded on. Subject setup
+              {/* Which components this ONE class is graded on. Subject setup
                     sets it for every class in a term; this is the exception for
                     a class that differs. Same chips and same colours as that
                     screen — see components/grading/component-weight-chips.tsx. */}
-                <Field>
-                  <FieldLabel>Counts towards the grade</FieldLabel>
-                  <ComponentWeightChips
-                    values={weights}
-                    onToggle={toggleComponent}
-                    disabled={saving}
-                    scopeLabel="this class"
-                  />
-                  <FieldDescription>
-                    {followsSubject ? (
-                      <>
-                        Following the subject&rsquo;s split for this term.
-                        Untick anything this class doesn&rsquo;t sit and its
-                        share moves to the rest.
-                      </>
-                    ) : (
-                      <>
-                        This class is graded differently from the rest of the
-                        subject.{' '}
-                        <button
-                          type="button"
-                          onClick={followSubjectAgain}
-                          className="underline underline-offset-2 hover:text-foreground"
-                        >
-                          Follow the subject again
-                        </button>
-                        .
-                      </>
-                    )}
-                  </FieldDescription>
-                </Field>
-              </FieldGroup>
-            </div>
+              <Field>
+                <FieldLabel>Counts towards the grade</FieldLabel>
+                <ComponentWeightChips
+                  values={weights}
+                  onToggle={toggleComponent}
+                  disabled={saving}
+                  scopeLabel="this class"
+                />
+                <FieldDescription>
+                  {followsSubject ? (
+                    <>
+                      Following the subject&rsquo;s split for this term. Untick
+                      anything this class doesn&rsquo;t sit and its share moves
+                      to the rest.
+                    </>
+                  ) : (
+                    <>
+                      This class is graded differently from the rest of the
+                      subject.{' '}
+                      <button
+                        type="button"
+                        onClick={followSubjectAgain}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        Follow the subject again
+                      </button>
+                      .
+                    </>
+                  )}
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </div>
 
-            <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-              <SheetClose asChild>
-                <Button type="button" variant="outline" size="sm">
-                  Cancel
-                </Button>
-              </SheetClose>
-              <Button
-                type="submit"
-                size="sm"
-                loading={saving}
-                loadingText="Saving…"
-              >
-                {!saving && <Save className="h-4 w-4" />}
-                Save totals
+          <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background p-6 sm:justify-end">
+            <SheetClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancel
               </Button>
-            </SheetFooter>
-          </form>
-        </ScrollArea>
+            </SheetClose>
+            <Button
+              type="submit"
+              size="sm"
+              loading={saving}
+              loadingText="Saving…"
+            >
+              {!saving && <Save className="h-4 w-4" />}
+              Save totals
+            </Button>
+          </SheetFooter>
+        </form>
       </SheetContent>
 
       <AlertDialog open={shrinkConfirmOpen} onOpenChange={setShrinkConfirmOpen}>

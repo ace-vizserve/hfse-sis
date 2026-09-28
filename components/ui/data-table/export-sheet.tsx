@@ -151,8 +151,8 @@ export function DataTableExportSheet<TRow>({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col gap-0 sm:max-w-md">
-        <SheetHeader>
+      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
           <SheetTitle>Export CSV</SheetTitle>
           <SheetDescription>
             {rows.length} {rows.length === 1 ? 'row' : 'rows'} will be exported,
@@ -164,7 +164,7 @@ export function DataTableExportSheet<TRow>({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           <RadioGroup
             value={choice}
             onValueChange={setChoice}
@@ -219,7 +219,7 @@ export function DataTableExportSheet<TRow>({
           )}
         </div>
 
-        <SheetFooter>
+        <SheetFooter className="shrink-0 border-t border-border bg-background px-6 py-4">
           <Button onClick={handleDownload} disabled={busy}>
             {busy ? (
               <Loader2 className="mr-1 size-3.5 animate-spin" />
