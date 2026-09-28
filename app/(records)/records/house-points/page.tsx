@@ -5,6 +5,8 @@ import { ArrowLeft } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { EventsTable } from '@/components/house-points/events-table';
+import { NewEventSheet } from '@/components/house-points/new-event-sheet';
+import { PointScalesSheet } from '@/components/house-points/point-scales-sheet';
 import {
   Card,
   CardAction,
@@ -19,7 +21,11 @@ import type { Role } from '@/lib/auth/roles';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { sumTotals } from '@/lib/house-points/compute';
-import { loadAyEvents } from '@/lib/house-points/queries';
+import {
+  loadAyEvents,
+  loadScales,
+  type Scale,
+} from '@/lib/house-points/queries';
 import { houseTileClass, listHouses, type HouseRow } from '@/lib/sis/houses';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -69,9 +75,12 @@ export default async function HousePointsPage({
   const selectedAy =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
 
-  const [ayId, houses] = await Promise.all([
+  // The point scales are only loaded for writers: nobody else can open
+  // either sheet that uses them.
+  const [ayId, houses, scales] = await Promise.all([
     getAyIdByCode(selectedAy),
     listHouses(),
+    canEdit ? loadScales() : Promise.resolve<Scale[]>([]),
   ]);
   const events = ayId ? await loadAyEvents(ayId, houses) : [];
   const totals = sumTotals(
@@ -81,12 +90,16 @@ export default async function HousePointsPage({
   const standings = rankStandings(houses, totals);
   const anyPoints = standings.some((s) => s.total !== 0);
 
-  // ── ACTIONS SLOT — filled by Task 8 ("New event" + "Point scales"). ──────
-  // Writers only. The same "New event" control is also the empty-state CTA,
-  // so Task 8 sets `newEventAction` once and both places pick it up.
-  const newEventAction: ReactNode = null;
+  // ── ACTIONS — writers only. ──────────────────────────────────────────────
+  // The same "New event" control is also the empty-state CTA, so it is set
+  // once and both places pick it up. "Point scales" is configuration, so it
+  // is the outline button beside it — "New event" stays the one primary.
+  const newEventAction: ReactNode = canEdit ? (
+    <NewEventSheet ayCode={selectedAy} scales={scales} />
+  ) : null;
   const actions: ReactNode = canEdit ? (
-    <div className="flex flex-wrap items-center gap-2 empty:hidden">
+    <div className="flex flex-wrap items-center gap-2">
+      <PointScalesSheet scales={scales} />
       {newEventAction}
     </div>
   ) : null;
