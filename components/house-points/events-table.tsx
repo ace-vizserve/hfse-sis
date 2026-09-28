@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Trophy } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
-import { Badge } from '@/components/ui/badge';
+import { EventTypePill } from '@/components/house-points/event-type-pill';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
@@ -116,13 +116,12 @@ function buildColumns(houses: HouseRow[]): ColumnDef<EventSummary, unknown>[] {
     {
       id: 'type',
       accessorFn: (r) => EVENT_TYPE_LABELS[r.eventType],
-      header: 'Type',
-      cell: ({ row }) => (
-        <Badge variant="outline">
-          {EVENT_TYPE_LABELS[row.original.eventType]}
-        </Badge>
+      header: ({ column }) => (
+        <SortableHeader column={column}>Type</SortableHeader>
       ),
-      enableSorting: false,
+      meta: { label: 'Type' },
+      cell: ({ row }) => <EventTypePill type={row.original.eventType} />,
+      enableSorting: true,
       filterFn: (row, _id, value) => {
         if (!value || (Array.isArray(value) && value.length === 0)) return true;
         const label = EVENT_TYPE_LABELS[row.original.eventType];
@@ -217,6 +216,7 @@ export function EventsTable({
         searchPlaceholder="Search events"
         facets={facets}
         url={{ enabled: true, namespace: 'house-points' }}
+        initialSort={[{ id: 'event', desc: false }]}
         pageSize={25}
         csv={{ filename: `house-points-${ayCode}.csv` }}
         emptyFilteredState={{

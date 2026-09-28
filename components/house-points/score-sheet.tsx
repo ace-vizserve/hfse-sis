@@ -1,7 +1,16 @@
 'use client';
 
-import { Flag, Pencil, Trash2, Users, UsersRound } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
+  Flag,
+  Pencil,
+  Trash2,
+  Users,
+  UsersRound,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { EventHeaderTotals } from '@/components/house-points/event-header-totals';
@@ -113,6 +122,141 @@ function compareStudentRows(a: EventRow, b: EventRow): number {
     collator.compare(sa.sectionName, sb.sectionName) ||
     collator.compare(sa.name, sb.name)
   );
+}
+
+// ─── Sorting ────────────────────────────────────────────────────────────────
+
+type SortDir = 'asc' | 'desc';
+type SortState<K extends string> = { key: K; dir: SortDir } | null;
+type SortValue = string | number | null;
+
+/** Blanks last in either direction; numbers by value, text by the collator. */
+function compareSortValues(a: SortValue, b: SortValue, dir: SortDir): number {
+  if (a === null || b === null) {
+    if (a === b) return 0;
+    return a === null ? 1 : -1;
+  }
+  const c =
+    typeof a === 'number' && typeof b === 'number'
+      ? a - b
+      : collator.compare(String(a), String(b));
+  return dir === 'asc' ? c : -c;
+}
+
+/**
+ * Click-to-sort for the sheet's plain tables.
+ *
+ * THE ORDER IS A SNAPSHOT. It is taken from the live figures when a header is
+ * clicked (and, on the student sheet, when the class tab changes), then held
+ * while scores are typed — so a row never jumps away from the box being typed
+ * into, and Enter still moves down the rows as they are shown. Click the
+ * header again to sort by the new figures. Ties keep the default order; a row
+ * added since the snapshot goes to the bottom. With no header chosen the
+ * table keeps its default order.
+ */
+function useSnapshotSort<K extends string>(
+  rows: EventRow[],
+  valueOf: (row: EventRow, key: K) => SortValue
+) {
+  const [sort, setSort] = useState<SortState<K>>(null);
+  const [order, setOrder] = useState<Map<string, number> | null>(null);
+
+  function snapshot(next: SortState<K>) {
+    if (!next) {
+      setOrder(null);
+      return;
+    }
+    const ranked = [...rows].sort((a, b) =>
+      compareSortValues(valueOf(a, next.key), valueOf(b, next.key), next.dir)
+    );
+    setOrder(new Map(ranked.map((r, i) => [r.entryId, i])));
+  }
+
+  function toggle(key: K) {
+    const next: SortState<K> = {
+      key,
+      dir: sort?.key === key && sort.dir === 'asc' ? 'desc' : 'asc',
+    };
+    setSort(next);
+    snapshot(next);
+  }
+
+  const ordered = useMemo(() => {
+    if (!order) return rows;
+    const last = Number.MAX_SAFE_INTEGER;
+    return [...rows].sort(
+      (a, b) => (order.get(a.entryId) ?? last) - (order.get(b.entryId) ?? last)
+    );
+  }, [rows, order]);
+
+  return { sort, toggle, resort: () => snapshot(sort), ordered };
+}
+
+/** A clickable column head that looks exactly like the DataTable's SortableHeader. */
+function SortHead<K extends string>({
+  sortKey,
+  sort,
+  onSort,
+  align = 'left',
+  className,
+  children,
+}: {
+  sortKey: K;
+  sort: SortState<K>;
+  onSort: (key: K) => void;
+  align?: 'left' | 'right';
+  className?: string;
+  children: ReactNode;
+}) {
+  const dir = sort?.key === sortKey ? sort.dir : null;
+  const Icon =
+    dir === 'asc' ? ArrowUp : dir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead
+      className={className}
+      aria-sort={
+        dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'
+      }
+    >
+      <div className={cn(align === 'right' && 'flex justify-end')}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => onSort(sortKey)}
+          className={cn(
+            '-ml-3 h-7 gap-1 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]',
+            align === 'right' && 'ml-0 mr-0'
+          )}
+        >
+          {children}
+          <Icon className="h-3 w-3 opacity-60" aria-hidden />
+        </Button>
+      </div>
+    </TableHead>
+  );
+}
+
+/** The live points a row earns, or null while it has no score / place. */
+function livePoints(
+  row: EventRow,
+  resolved: ResolvedEntry | undefined,
+  placementMode: PlacementMode
+): number | null {
+  const blank =
+    placementMode === 'score' ? row.score === null : row.placeId === null;
+  return blank || !resolved ? null : resolved.points;
+}
+
+/** The live placement's position in the place list, or null for none. */
+function livePlaceOrder(
+  row: EventRow,
+  resolved: ResolvedEntry | undefined,
+  placementMode: PlacementMode
+): number | null {
+  const blank =
+    placementMode === 'score' ? row.score === null : row.placeId === null;
+  return blank ? null : (resolved?.place?.sortOrder ?? null);
 }
 
 export function ScoreSheet({
@@ -312,6 +456,8 @@ function groupOf(
   return { key: s.levelId, label: s.levelLabel || 'No level' };
 }
 
+type StudentSortKey = 'name' | 'house' | 'score' | 'placement' | 'points';
+
 function StudentSheet({
   rows,
   houses,
@@ -341,7 +487,29 @@ function StudentSheet({
     () => new Map(houses.map((h) => [h.id, h])),
     [houses]
   );
-  const sorted = useMemo(() => [...rows].sort(compareStudentRows), [rows]);
+  const byClass = useMemo(() => [...rows].sort(compareStudentRows), [rows]);
+  const {
+    sort,
+    toggle: onSort,
+    resort,
+    ordered: sorted,
+  } = useSnapshotSort<StudentSortKey>(byClass, (row, key) => {
+    const resolved = resolvedById.get(row.entryId);
+    switch (key) {
+      case 'name':
+        return row.student?.name ?? null;
+      case 'house': {
+        const id = row.student?.houseId;
+        return (id && housesById.get(id)?.name) || null;
+      }
+      case 'score':
+        return row.score;
+      case 'placement':
+        return livePlaceOrder(row, resolved, placementMode);
+      case 'points':
+        return livePoints(row, resolved, placementMode);
+    }
+  });
 
   // One group at a time, always set, no "All" — the tab IS the ranking scope,
   // so the table on screen is exactly the set of students competing for the
@@ -413,7 +581,10 @@ function StudentSheet({
       {grouped && groups.length > 0 && (
         <Tabs
           value={activeGroup ?? undefined}
-          onValueChange={(v) => setChosenGroup(v)}
+          onValueChange={(v) => {
+            setChosenGroup(v);
+            resort();
+          }}
         >
           <TabsList
             className="h-auto max-w-full flex-wrap"
@@ -436,13 +607,34 @@ function StudentSheet({
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="w-12 text-right">#</TableHead>
-              <TableHead>Student</TableHead>
-              <TableHead>House</TableHead>
-              <TableHead className={isScore ? 'w-40' : 'w-52'}>
+              <SortHead sortKey="name" sort={sort} onSort={onSort}>
+                Student
+              </SortHead>
+              <SortHead sortKey="house" sort={sort} onSort={onSort}>
+                House
+              </SortHead>
+              <SortHead
+                sortKey={isScore ? 'score' : 'placement'}
+                sort={sort}
+                onSort={onSort}
+                className={isScore ? 'w-40' : 'w-52'}
+              >
                 {isScore ? 'Score' : 'Placement'}
-              </TableHead>
-              {isScore && <TableHead>Placement</TableHead>}
-              <TableHead className="w-20 text-right">Points</TableHead>
+              </SortHead>
+              {isScore && (
+                <SortHead sortKey="placement" sort={sort} onSort={onSort}>
+                  Placement
+                </SortHead>
+              )}
+              <SortHead
+                sortKey="points"
+                sort={sort}
+                onSort={onSort}
+                align="right"
+                className="w-20"
+              >
+                Points
+              </SortHead>
               {canEdit && (
                 <TableHead className="w-12">
                   <span className="sr-only">Remove</span>
@@ -648,12 +840,21 @@ function TeamTable({
     () => new Map(houses.map((h) => [h.id, h])),
     [houses]
   );
-  const sorted = useMemo(
+  const byName = useMemo(
     () =>
       [...rows].sort((a, b) =>
         collator.compare(a.team?.name ?? '', b.team?.name ?? '')
       ),
     [rows]
+  );
+  const {
+    sort,
+    toggle: onSort,
+    ordered: sorted,
+  } = useSnapshotSort<'name' | 'points'>(byName, (row, key) =>
+    key === 'name'
+      ? (row.team?.name ?? null)
+      : livePoints(row, resolvedById.get(row.entryId), placementMode)
   );
   const isScore = placementMode === 'score';
   const memberships = useMemo(() => membershipsOf(rows), [rows]);
@@ -706,12 +907,22 @@ function TeamTable({
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="w-12 text-right">#</TableHead>
-              <TableHead>Team</TableHead>
+              <SortHead sortKey="name" sort={sort} onSort={onSort}>
+                Team
+              </SortHead>
               <TableHead className={isScore ? 'w-40' : 'w-52'}>
                 {isScore ? 'Score' : 'Placement'}
               </TableHead>
               {isScore && <TableHead>Placement</TableHead>}
-              <TableHead className="w-20 text-right">Points</TableHead>
+              <SortHead
+                sortKey="points"
+                sort={sort}
+                onSort={onSort}
+                align="right"
+                className="w-20"
+              >
+                Points
+              </SortHead>
               <TableHead>Points to houses</TableHead>
               {canEdit && (
                 <TableHead className="w-24">
@@ -996,6 +1207,20 @@ function HouseSheet({
     rows.filter((r) => r.houseId).map((r) => [r.houseId as string, r])
   );
   const missing = houses.filter((h) => !rowByHouse.has(h.id));
+  const housesById = new Map(houses.map((h) => [h.id, h]));
+  // Default order: the houses' own order, as before.
+  const houseRows = houses
+    .filter((h) => rowByHouse.has(h.id))
+    .map((h) => rowByHouse.get(h.id) as EventRow);
+  const {
+    sort,
+    toggle: onSort,
+    ordered,
+  } = useSnapshotSort<'name' | 'points'>(houseRows, (row, key) =>
+    key === 'name'
+      ? ((row.houseId && housesById.get(row.houseId)?.name) ?? null)
+      : livePoints(row, resolvedById.get(row.entryId), 'pick')
+  );
 
   if (rows.length === 0) {
     return (
@@ -1043,16 +1268,28 @@ function HouseSheet({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead>House</TableHead>
+              <SortHead sortKey="name" sort={sort} onSort={onSort}>
+                House
+              </SortHead>
               <TableHead className="w-60">Placement</TableHead>
-              <TableHead className="w-20 text-right">Points</TableHead>
+              <SortHead
+                sortKey="points"
+                sort={sort}
+                onSort={onSort}
+                align="right"
+                className="w-20"
+              >
+                Points
+              </SortHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {houses
-              .filter((h) => rowByHouse.has(h.id))
-              .map((house) => {
-                const row = rowByHouse.get(house.id) as EventRow;
+            {ordered
+              .map((row) => ({
+                row,
+                house: housesById.get(row.houseId as string) as HouseRow,
+              }))
+              .map(({ row, house }) => {
                 const resolved = resolvedById.get(row.entryId);
                 return (
                   <TableRow key={row.entryId}>
