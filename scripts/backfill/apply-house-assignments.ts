@@ -1,4 +1,21 @@
 // scripts/backfill/apply-house-assignments.ts
+//
+// 🔴 DO NOT RE-RUN THIS SCRIPT. It read the WRONG allocation.
+//
+// The CSV below is the export of the workbook's FIRST tab, which is a
+// superseded master: 292 of its 389 rows disagree with the per-class tabs, and
+// it puts whole classes in one house. The live allocation is the PER-CLASS tabs
+// of `house/Student House Color Assignment.xlsx` (confirmed by Mr Ace on
+// 2026-08-06; see lib/sis/backfill/house/workbook.ts's header). This script was
+// applied on 2026-09-17 and set `students.house_id` from the master, and the
+// house-points workbook — which agrees with the class tabs — is how that
+// surfaced. The correction is:
+//
+//   scripts/backfill/apply-house-assignments-class-tabs.ts
+//
+// Kept (not deleted) as the record of what was written on 2026-09-17.
+//
+// ─────────────────────────────────────────────────────────────────────────
 // Assigns AY2026 students to their house from the school's own allocation.
 //
 // Source: "Student House Color Assignment - Student House Color Assignment.csv"
@@ -30,6 +47,12 @@ import { readFileSync } from 'node:fs';
 
 import * as XLSX from 'xlsx';
 
+import {
+  LEVEL_TO_PREFIX,
+  matchName,
+  nameKey,
+  normaliseSection,
+} from '../../lib/sis/backfill/house/section-name-match';
 import { createServiceClient } from '../../lib/supabase/service';
 
 const CSV =
@@ -37,87 +60,9 @@ const CSV =
 const AY = 'AY2026';
 const APPLY = process.argv.includes('--apply');
 
-// ── Name matching (kept identical to apply-masterlist-alignment.ts) ─────────
-
-function stripDiacritics(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
-
-function tokens(name: string): string[] {
-  return stripDiacritics(name)
-    .toUpperCase()
-    .replace(/[.,]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
-}
-
-const nameKey = (name: string) => tokens(name).join(' ').trim();
-
-function matchName<T>(
-  sisName: string,
-  candidates: Map<string, T>
-): { row: T; via: 'exact' | 'reordered' | 'subset' } | null {
-  const exact = candidates.get(nameKey(sisName));
-  if (exact !== undefined) return { row: exact, via: 'exact' };
-
-  const mine = tokens(sisName);
-  const sortedMine = [...mine].sort().join(' ');
-
-  const reordered = [...candidates.entries()].filter(
-    ([k]) => k.split(' ').sort().join(' ') === sortedMine
-  );
-  if (reordered.length === 1) return { row: reordered[0][1], via: 'reordered' };
-
-  const mineSet = new Set(mine);
-  const subset = [...candidates.entries()].filter(([k]) => {
-    const theirs = k.split(' ');
-    const theirSet = new Set(theirs);
-    return (
-      mine.every((t) => theirSet.has(t)) || theirs.every((t) => mineSet.has(t))
-    );
-  });
-  if (subset.length === 1) return { row: subset[0][1], via: 'subset' };
-
-  return null;
-}
-
-// ── Section names ──────────────────────────────────────────────────────────
-
-/**
- * The CSV writes section names its own way, including two misspellings.
- * Explicit aliases rather than fuzzy matching: a section that fails to match
- * is SILENT — it reports no problems, which reads exactly like being correct.
- * That is how three wrong index numbers hid in S1 Discipline 1 until a teacher
- * noticed, so these are spelled out and any unmapped section is reported.
- */
-const SECTION_ALIASES: Record<string, string> = {
-  'P2 HUMILTY': 'P2 HUMILITY', // sic
-  'P3 RESONSIBILITY': 'P3 RESPONSIBILITY', // sic
-  'SEC 1 D1': 'S1 DISCIPLINE 1',
-  'SEC 1 D2': 'S1 DISCIPLINE 2',
-  'SEC 2 I1': 'S2 INTEGRITY 1',
-  'SEC 2 I2': 'S2 INTEGRITY 2',
-  'SEC 3': 'S3 CONSISTENCY',
-  'SEC 4': 'S4 EXCELLENCE',
-};
-
-function normaliseSection(title: string): string {
-  const key = title.replace(/\s+/g, ' ').trim().toUpperCase();
-  return SECTION_ALIASES[key] ?? key;
-}
-
-const LEVEL_TO_PREFIX: Record<string, string> = {
-  'Primary One': 'P1',
-  'Primary Two': 'P2',
-  'Primary Three': 'P3',
-  'Primary Four': 'P4',
-  'Primary Five': 'P5',
-  'Primary Six': 'P6',
-  'Secondary One': 'S1',
-  'Secondary Two': 'S2',
-  'Secondary Three': 'S3',
-  'Secondary Four': 'S4',
-};
+// Name matching and section aliases now live in
+// lib/sis/backfill/house/section-name-match.ts, shared with the correction
+// script. Unchanged in behaviour.
 
 // ── Parse ──────────────────────────────────────────────────────────────────
 
