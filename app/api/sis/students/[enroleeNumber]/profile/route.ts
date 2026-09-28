@@ -12,6 +12,7 @@ import {
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
+import { applicationChoiceErrors } from '@/lib/admissions/options';
 import { LEVEL_LOCKED_MESSAGE, loadLevelLock } from '@/lib/sis/level-lock';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
@@ -20,6 +21,12 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 // Updates demographic / preference fields on ay{YY}_enrolment_applications.
 // Stable IDs (enroleeNumber, studentNumber) are not in the schema and would
 // be rejected if sent. Audit-logged with a per-field diff.
+
+const CHOICE_FIELDS = [
+  'levelApplied',
+  'classType',
+  'preferredSchedule',
+] as const;
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ enroleeNumber: string }> }
@@ -75,9 +82,15 @@ export async function PATCH(
   }
   // `studentNumber` rides along for the audit row and the name mirror below
   // (Hard Rule #4). It is not in the schema, so it can never be written here.
+  // The three application-choice fields ride along too: they are judged as a
+  // combination, so a save of one needs the stored values of the other two.
   const { data: before, error: beforeErr } = await supabase
     .from(appsTable)
-    .select(Array.from(new Set([...rawKeys, 'studentNumber'])).join(', '))
+    .select(
+      Array.from(new Set([...rawKeys, 'studentNumber', ...CHOICE_FIELDS])).join(
+        ', '
+      )
+    )
     .eq('enroleeNumber', enroleeNumber)
     .maybeSingle();
   if (beforeErr) {
@@ -144,20 +157,40 @@ export async function PATCH(
         { status: 409 }
       );
     }
-    // Must be a level the year offers — the same list the sheet's dropdown
-    // and the parent form show. A year with no options configured has
-    // nothing to check against, so it is let through as before.
+  }
+
+  // Level applied / class type / preferred schedule must be a combination the
+  // year's enrolment form options hold — the same check the sheet runs
+  // (`applicationChoiceErrors`). Judged against the row AFTER this save: a
+  // field the caller did not send keeps its stored value. A year with no
+  // options configured has nothing to check against, so it is let through.
+  if (changes.some((c) => CHOICE_FIELDS.includes(c.field as never))) {
     const offered = await loadProfileAdmissionOptions(ayCode);
-    const next = levelChange.to as string | null;
-    if (
-      next !== null &&
-      offered.length > 0 &&
-      !offered.some((l) => l.levelLabel === next)
-    ) {
+    const stored = {
+      levelApplied: beforeRow.levelApplied as string | null | undefined,
+      classType: beforeRow.classType as string | null | undefined,
+      preferredSchedule: beforeRow.preferredSchedule as
+        | string
+        | null
+        | undefined,
+    };
+    const errors = applicationChoiceErrors(
+      offered,
+      {
+        levelApplied:
+          'levelApplied' in update ? update.levelApplied : stored.levelApplied,
+        classType: 'classType' in update ? update.classType : stored.classType,
+        preferredSchedule:
+          'preferredSchedule' in update
+            ? update.preferredSchedule
+            : stored.preferredSchedule,
+      },
+      stored
+    );
+    const first = Object.values(errors)[0];
+    if (first) {
       return NextResponse.json(
-        {
-          error: `"${next}" is not a level offered for ${ayCode}. Pick one from the list.`,
-        },
+        { error: first, fieldErrors: errors },
         { status: 400 }
       );
     }

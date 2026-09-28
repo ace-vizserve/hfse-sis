@@ -12,7 +12,13 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import type { DerivedLevel } from '@/lib/admissions/options';
+import {
+  applicationChoiceErrors,
+  findOptionClassType,
+  findOptionLevel,
+  sameOptionLabel,
+  type DerivedLevel,
+} from '@/lib/admissions/options';
 import { LEVEL_LOCKED_MESSAGE } from '@/lib/sis/level-lock';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -30,7 +36,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -69,10 +74,41 @@ import {
 // loaded — both edit sheets submit the WHOLE form on every save, so
 // without this, an untouched legacy value would block saves on unrelated
 // fields, contradicting this feature's "only bites on new writes" design.
+//
+// Also checks Level applied / Class type / Preferred schedule against the
+// year's enrolment form options (`applicationChoiceErrors`, the same check
+// the profile route runs), so a combination the options do not hold is shown
+// under its field instead of coming back as a failed save.
 function relaxedProfileResolver(
-  defaults: ProfileUpdateInput
+  defaults: ProfileUpdateInput,
+  admissionOptions: DerivedLevel[]
 ): Resolver<ProfileUpdateInput> {
   return async (values, context, options) => {
+    const result = await baseResolver(values, context, options);
+    const choiceErrors = applicationChoiceErrors(
+      admissionOptions,
+      values,
+      defaults
+    );
+    const entries = Object.entries(choiceErrors);
+    if (entries.length === 0) return result;
+    return {
+      values: {},
+      errors: {
+        ...result.errors,
+        ...Object.fromEntries(
+          entries.map(([field, message]) => [
+            field,
+            { type: 'validate', message },
+          ])
+        ),
+      },
+    } as Awaited<ReturnType<Resolver<ProfileUpdateInput>>>;
+  };
+
+  async function baseResolver(
+    ...[values, context, options]: Parameters<Resolver<ProfileUpdateInput>>
+  ) {
     const changed = new Set(
       PROFILE_GATED_FIELDS.filter(
         (f) =>
@@ -89,7 +125,7 @@ function relaxedProfileResolver(
       schema
     ) as unknown as Resolver<ProfileUpdateInput>;
     return resolver(values, context, options);
-  };
+  }
 }
 
 type FieldKind =
@@ -367,7 +403,9 @@ export function EditProfileSheet({
   ayCode,
   enroleeNumber,
   initial,
-  admissionOptions = [],
+  // A shared constant, not `[]`: a fresh array each render would re-run the
+  // stale-choice subscription's effect on every keystroke.
+  admissionOptions = NO_ADMISSION_OPTIONS,
   levelLocked = false,
 }: {
   ayCode: string;
@@ -409,13 +447,14 @@ export function EditProfileSheet({
 
   const defaults = buildDefaults(initial);
   const form = useForm<ProfileUpdateInput>({
-    resolver: relaxedProfileResolver(defaults),
+    resolver: relaxedProfileResolver(defaults, admissionOptions),
     defaultValues: defaults,
   });
   // Level narrows the class types, class type narrows the schedules — the
   // same chain the parent form walks.
   const pickedLevel = form.watch('levelApplied');
   const pickedClassType = form.watch('classType');
+  useClearStaleChoices(form, admissionOptions);
 
   // Full name follows the three name fields as they are typed.
   //
@@ -539,158 +578,156 @@ export function EditProfileSheet({
           Edit profile
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-2xl">
-        <ScrollArea className="h-full">
-          <SheetHeader className="space-y-2 border-b border-border p-6">
-            <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              Edit profile
-            </SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              Updates demographic and preference fields on{' '}
-              <span className="font-mono text-foreground">
-                {ayCode.toLowerCase()}_enrolment_applications
-              </span>
-              . Stable IDs (enrolee number, student number) are not editable.
-            </SheetDescription>
-          </SheetHeader>
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
+        <SheetHeader className="shrink-0 space-y-2 border-b border-border p-6">
+          <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+            Edit profile
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
+            Updates demographic and preference fields on{' '}
+            <span className="font-mono text-foreground">
+              {ayCode.toLowerCase()}_enrolment_applications
+            </span>
+            . Stable IDs (enrolee number, student number) are not editable.
+          </SheetDescription>
+        </SheetHeader>
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-              <div className="space-y-8 p-6">
-                {SECTIONS.map((section) => {
-                  // Sibling slot: drawn only when it holds data or was added.
-                  if (section.slotGroup === 'sibling') {
-                    if (!shownSiblings.includes(section.slot ?? 0)) return null;
-                  }
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="min-h-0 flex-1 space-y-8 overflow-y-auto p-6">
+              {SECTIONS.map((section) => {
+                // Sibling slot: drawn only when it holds data or was added.
+                if (section.slotGroup === 'sibling') {
+                  if (!shownSiblings.includes(section.slot ?? 0)) return null;
+                }
 
-                  // Discount slots share one section, so filter the FIELDS and
-                  // keep the section (it owns the add control + empty state).
-                  // A field with no `slot` is not a slot at all (the referrer
-                  // pair) and is always drawn — `f.slot ?? 0` would have
-                  // filtered it out, since slot numbering starts at 1.
-                  const fields =
-                    section.slotGroup === 'discount'
-                      ? section.fields.filter(
-                          (f) =>
-                            f.slot == null || shownDiscounts.includes(f.slot)
-                        )
-                      : section.fields;
+                // Discount slots share one section, so filter the FIELDS and
+                // keep the section (it owns the add control + empty state).
+                // A field with no `slot` is not a slot at all (the referrer
+                // pair) and is always drawn — `f.slot ?? 0` would have
+                // filtered it out, since slot numbering starts at 1.
+                const fields =
+                  section.slotGroup === 'discount'
+                    ? section.fields.filter(
+                        (f) => f.slot == null || shownDiscounts.includes(f.slot)
+                      )
+                    : section.fields;
 
-                  const isDiscounts = section.slotGroup === 'discount';
-                  // The empty state is about the CODES, so count slot fields
-                  // only — the referrer pair must not suppress it.
-                  const hasDiscountSlots = fields.some((f) => f.slot != null);
-                  const canAddDiscount =
-                    isDiscounts && shownDiscounts.length < MAX_DISCOUNT_SLOTS;
+                const isDiscounts = section.slotGroup === 'discount';
+                // The empty state is about the CODES, so count slot fields
+                // only — the referrer pair must not suppress it.
+                const hasDiscountSlots = fields.some((f) => f.slot != null);
+                const canAddDiscount =
+                  isDiscounts && shownDiscounts.length < MAX_DISCOUNT_SLOTS;
 
-                  return (
-                    <section key={section.title} className="space-y-3">
-                      <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-                        {section.title}
-                      </h3>
-                      {isDiscounts && !hasDiscountSlots && (
-                        <p className="text-sm text-muted-foreground">
-                          No discount codes on this application.
-                        </p>
-                      )}
-                      {fields.length > 0 && (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          {fields.map((cfg) => (
-                            <SchemaField
-                              key={cfg.name}
-                              cfg={withLevelLock(
-                                withAdmissionOptions(
-                                  cfg,
-                                  admissionOptions,
-                                  pickedLevel,
-                                  pickedClassType
-                                ),
-                                levelLocked
-                              )}
-                              form={form}
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {canAddDiscount && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() =>
-                            setShownDiscounts((s) =>
-                              revealNext(s, MAX_DISCOUNT_SLOTS)
-                            )
-                          }
-                        >
-                          <Plus className="size-3.5" />
-                          Add a discount code
-                        </Button>
-                      )}
-                    </section>
-                  );
-                })}
+                return (
+                  <section key={section.title} className="space-y-3">
+                    <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
+                      {section.title}
+                    </h3>
+                    {isDiscounts && !hasDiscountSlots && (
+                      <p className="text-sm text-muted-foreground">
+                        No discount codes on this application.
+                      </p>
+                    )}
+                    {fields.length > 0 && (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {fields.map((cfg) => (
+                          <SchemaField
+                            key={cfg.name}
+                            cfg={withLevelLock(
+                              withAdmissionOptions(
+                                cfg,
+                                admissionOptions,
+                                pickedLevel,
+                                pickedClassType
+                              ),
+                              levelLocked
+                            )}
+                            form={form}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {canAddDiscount && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() =>
+                          setShownDiscounts((s) =>
+                            revealNext(s, MAX_DISCOUNT_SLOTS)
+                          )
+                        }
+                      >
+                        <Plus className="size-3.5" />
+                        Add a discount code
+                      </Button>
+                    )}
+                  </section>
+                );
+              })}
 
-                {/* Siblings: an empty state + add control, so a student with
+              {/* Siblings: an empty state + add control, so a student with
                     none on file still has a way in. Previously all 5 slots
                     rendered always — ~214 of 497 AY2026 applicants have no
                     siblings at all, and nobody has more than 3. */}
-                <section className="space-y-3">
-                  {shownSiblings.length === 0 && (
-                    <>
-                      <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
-                        Siblings
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        No siblings on file.
-                      </p>
-                    </>
-                  )}
-                  {shownSiblings.length < MAX_SIBLING_SLOTS && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() =>
-                        setShownSiblings((s) =>
-                          revealNext(s, MAX_SIBLING_SLOTS)
-                        )
-                      }
-                    >
-                      <Plus className="size-3.5" />
-                      {shownSiblings.length === 0
-                        ? 'Add a sibling'
-                        : 'Add another sibling'}
-                    </Button>
-                  )}
-                </section>
-              </div>
-
-              <SheetFooter className="flex-row justify-end gap-2 border-t border-border p-6 sm:justify-end">
-                <SheetClose asChild>
+              <section className="space-y-3">
+                {shownSiblings.length === 0 && (
+                  <>
+                    <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
+                      Siblings
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      No siblings on file.
+                    </p>
+                  </>
+                )}
+                {shownSiblings.length < MAX_SIBLING_SLOTS && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={busy}
+                    className="gap-1.5"
+                    onClick={() =>
+                      setShownSiblings((s) => revealNext(s, MAX_SIBLING_SLOTS))
+                    }
                   >
-                    Cancel
+                    <Plus className="size-3.5" />
+                    {shownSiblings.length === 0
+                      ? 'Add a sibling'
+                      : 'Add another sibling'}
                   </Button>
-                </SheetClose>
+                )}
+              </section>
+            </div>
+
+            <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background p-6 sm:justify-end">
+              <SheetClose asChild>
                 <Button
-                  type="submit"
+                  type="button"
+                  variant="outline"
                   size="sm"
-                  loading={busy}
-                  loadingText="Saving…"
+                  disabled={busy}
                 >
-                  Save changes
+                  Cancel
                 </Button>
-              </SheetFooter>
-            </form>
-          </Form>
-        </ScrollArea>
+              </SheetClose>
+              <Button
+                type="submit"
+                size="sm"
+                loading={busy}
+                loadingText="Saving…"
+              >
+                Save changes
+              </Button>
+            </SheetFooter>
+          </form>
+        </Form>
       </SheetContent>
     </Sheet>
   );
@@ -712,10 +749,16 @@ function buildDefaults(
 
 // Level applied / class type / preferred schedule → dropdowns from the year's
 // admission options, chained like the parent form: the picked level narrows
-// the class types, the picked class type narrows the schedules. A level or
-// type that is not in the list shows every option rather than none, and a
-// stored value outside the list still shows as "(current)" (the select
-// branch below). No options for the year → the field is left as it was.
+// the class types, the picked class type narrows the schedules. Labels are
+// matched forgivingly (`findOptionLevel` — case and spacing), the same way
+// the save check matches them.
+//
+// A level that is not on the options offers NO class types or schedules — it
+// used to offer every level's, which put Whole Day and the secondary class
+// types in front of a primary child. Before a class type is picked the
+// schedules are every one the LEVEL offers (as the parent form does). A stored
+// value outside the list still shows as "(current)" (the select branch
+// below). No options for the year → the field is left as it was.
 function withAdmissionOptions(
   cfg: FieldConfig,
   levels: DerivedLevel[],
@@ -725,8 +768,8 @@ function withAdmissionOptions(
   if (levels.length === 0) return cfg;
   const asOptions = (values: string[]) =>
     [...new Set(values)].map((v) => ({ label: v, value: v }));
-  const level = levels.find((l) => l.levelLabel === pickedLevel);
-  const types = level ? level.classTypes : levels.flatMap((l) => l.classTypes);
+  const level = findOptionLevel(levels, pickedLevel);
+  const types = level?.classTypes ?? [];
 
   if (cfg.name === 'levelApplied') {
     return {
@@ -743,13 +786,46 @@ function withAdmissionOptions(
     };
   }
   if (cfg.name === 'preferredSchedule') {
-    const type = types.find((t) => t.classTypeLabel === pickedClassType);
+    const type = findOptionClassType(level, pickedClassType);
     const schedules = type ? type.schedules : types.flatMap((t) => t.schedules);
-    return schedules.length > 0
-      ? { ...cfg, options: asOptions(schedules) }
-      : cfg;
+    return { ...cfg, kind: 'select', options: asOptions(schedules) };
   }
   return cfg;
+}
+
+const NO_ADMISSION_OPTIONS: DerivedLevel[] = [];
+
+// When the level or class type changes, a class type or schedule the new
+// choice does not offer is cleared — otherwise it sat there as "(current)",
+// looking chosen, until the save was refused. Only on a person's change
+// (`type === 'change'`), never on load, so a legacy stored value is shown as
+// it is until someone touches the chain above it.
+function useClearStaleChoices(
+  form: UseFormReturn<ProfileUpdateInput>,
+  levels: DerivedLevel[]
+) {
+  useEffect(() => {
+    if (levels.length === 0) return;
+    const sub = form.watch((values, { name, type }) => {
+      if (type !== 'change') return;
+      if (name !== 'levelApplied' && name !== 'classType') return;
+      const level = findOptionLevel(levels, values.levelApplied);
+      const classType = findOptionClassType(level, values.classType);
+      if (name === 'levelApplied' && values.classType && !classType) {
+        form.setValue('classType', null, { shouldDirty: true });
+      }
+      const schedules = classType
+        ? classType.schedules
+        : (level?.classTypes ?? []).flatMap((t) => t.schedules);
+      if (
+        values.preferredSchedule &&
+        !schedules.some((s) => sameOptionLabel(s, values.preferredSchedule))
+      ) {
+        form.setValue('preferredSchedule', null, { shouldDirty: true });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form, levels]);
 }
 
 function withLevelLock(cfg: FieldConfig, locked: boolean): FieldConfig {

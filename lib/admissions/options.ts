@@ -772,3 +772,115 @@ export function sectionMatchesApplication(
   if (!section.classType || !section.schedule) return false;
   return section.classType === fit.track && section.schedule === fit.schedule;
 }
+
+// ── the Edit profile sheet's Application preferences check ───────────────
+
+export type ApplicationChoice = {
+  levelApplied?: string | null;
+  classType?: string | null;
+  preferredSchedule?: string | null;
+};
+
+export type ApplicationChoiceField = keyof ApplicationChoice;
+
+const blank = (v: string | null | undefined) => (v ?? '').trim();
+
+/**
+ * Do two option labels name the same thing? Case and runs of spaces are
+ * forgiven — a record typed through Directus or an older form ("primary
+ * three", "Whole  Day") still finds its option. Shared by the sheet's
+ * dropdown narrowing and `applicationChoiceErrors`, so what the sheet offers
+ * and what it accepts are matched the same way.
+ */
+export function sameOptionLabel(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  const norm = (v: string | null | undefined) =>
+    (v ?? '')
+      .trim()
+      // "Year 9" labels arrive with a hyphen and with an en dash.
+      .replace(/[–—]/g, '-')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  return norm(a) !== '' && norm(a) === norm(b);
+}
+
+/** The option level a stored `levelApplied` names, or undefined. */
+export function findOptionLevel(
+  options: readonly DerivedLevel[],
+  levelApplied: string | null | undefined
+): DerivedLevel | undefined {
+  return options.find((l) => sameOptionLabel(l.levelLabel, levelApplied));
+}
+
+/** The class type a stored `classType` names within a level, or undefined. */
+export function findOptionClassType(
+  level: DerivedLevel | undefined,
+  classType: string | null | undefined
+): DerivedLevel['classTypes'][number] | undefined {
+  return level?.classTypes.find((t) =>
+    sameOptionLabel(t.classTypeLabel, classType)
+  );
+}
+
+const sameSchedule = sameOptionLabel;
+
+/**
+ * Level applied, class type and preferred schedule must be a combination the
+ * year's enrolment form options hold — the same chain the parent form walks:
+ * the level narrows the class types, the class type narrows the schedules.
+ * Shared by the Edit profile sheet (as a resolver) and the profile route, so
+ * the two cannot disagree. Pure.
+ *
+ * `options` is every CONFIGURED combination, open or closed
+ * (`loadProfileAdmissionOptions`): a closed session is full for new
+ * applicants, but a child already placed in it is still a real record.
+ *
+ * Only judged when one of the three changed from `before`, and a field is only
+ * blamed when it — or one above it in the chain — changed. So an untouched
+ * legacy value never blocks a save of something else, while changing the
+ * level does flag a class type the new level does not offer. A blank field is
+ * "not filled in" and passes; a year with no options configured passes.
+ * A stored level that is not in the list (legacy) is not judged, and neither
+ * is anything below it — there is nothing to judge them against.
+ */
+export function applicationChoiceErrors(
+  options: readonly DerivedLevel[],
+  choice: ApplicationChoice,
+  before: ApplicationChoice
+): Partial<Record<ApplicationChoiceField, string>> {
+  if (options.length === 0) return {};
+  const level = blank(choice.levelApplied);
+  const type = blank(choice.classType);
+  const schedule = blank(choice.preferredSchedule);
+  const levelChanged = level !== blank(before.levelApplied);
+  const typeChanged = levelChanged || type !== blank(before.classType);
+  const scheduleChanged =
+    typeChanged || schedule !== blank(before.preferredSchedule);
+  if (!scheduleChanged) return {};
+
+  const errors: Partial<Record<ApplicationChoiceField, string>> = {};
+  if (!level) return errors;
+  const lvl = findOptionLevel(options, level);
+  if (!lvl) {
+    if (levelChanged) {
+      errors.levelApplied = `"${level}" is not a level on the enrolment form options. Pick one from the list.`;
+    }
+    return errors;
+  }
+
+  if (!type) return errors;
+  const t = findOptionClassType(lvl, type);
+  if (!t) {
+    if (typeChanged) {
+      errors.classType = `"${type}" is not a class type offered for ${level}. Pick one from the list.`;
+    }
+    return errors;
+  }
+
+  if (schedule && !t.schedules.some((s) => sameSchedule(s, schedule))) {
+    errors.preferredSchedule = `${level} — ${type} has no ${schedule} session. Pick ${t.schedules.join(' or ')}.`;
+  }
+  return errors;
+}
