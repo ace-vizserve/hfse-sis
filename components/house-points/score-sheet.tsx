@@ -6,11 +6,21 @@ import {
   ChevronsUpDown,
   Flag,
   Pencil,
+  Search,
+  SearchX,
   Trash2,
   Users,
   UsersRound,
+  X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 
 import { EventHeaderTotals } from '@/components/house-points/event-header-totals';
@@ -30,6 +40,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
+import { FacetDropdown } from '@/components/ui/data-table/facet-dropdown';
 import { HouseChip } from '@/components/ui/house-chip';
 import { Input } from '@/components/ui/input';
 import {
@@ -61,6 +72,15 @@ import {
 import { parseScore } from '@/lib/house-points/parse-score';
 import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
+import {
+  EMPTY_SHEET_FILTER,
+  NO_HOUSE,
+  NO_PLACEMENT,
+  NO_SCORE_YET,
+  isSheetFilterActive,
+  matchesSheetFilter,
+  type SheetFilter,
+} from '@/lib/house-points/sheet-filters';
 import { membershipsOf } from '@/lib/house-points/team-membership';
 import { formatPoints } from '@/lib/house-points/standings';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -257,6 +277,183 @@ function livePlaceOrder(
   const blank =
     placementMode === 'score' ? row.score === null : row.placeId === null;
   return blank ? null : (resolved?.place?.sortOrder ?? null);
+}
+
+// ─── Filtering ──────────────────────────────────────────────────────────────
+
+/**
+ * Search, house and placement filters for a sheet's table.
+ *
+ * FILTERS READ THE SAVED VALUES, AND THE ROW YOU ARE IN STAYS PUT. A score
+ * only counts once it is committed (blur or Enter), and the row holding focus
+ * is never filtered out — so filtering on "No score yet" and typing down the
+ * list works: each row leaves the list only after you have moved on from it,
+ * and a score typed in one row can't make the row you have just moved to
+ * vanish when it re-ranks the others.
+ */
+function useSheetFilter(
+  resolvedById: Map<string, ResolvedEntry>,
+  placementMode: PlacementMode
+) {
+  const [filter, setFilter] = useState<SheetFilter>(EMPTY_SHEET_FILTER);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const active = isSheetFilterActive(filter);
+
+  function apply(rows: EventRow[]): EventRow[] {
+    if (!active) return rows;
+    return rows.filter(
+      (row) =>
+        row.entryId === pinned ||
+        matchesSheetFilter(
+          row,
+          resolvedById.get(row.entryId),
+          placementMode,
+          filter
+        )
+    );
+  }
+
+  /** Spread onto a row: keeps it on screen while focus is inside it. */
+  function rowFocusProps(entryId: string) {
+    return {
+      onFocus: () => setPinned(entryId),
+      onBlur: (e: FocusEvent<HTMLTableRowElement>) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setPinned((current) => (current === entryId ? null : current));
+      },
+    };
+  }
+
+  return {
+    filter,
+    setFilter,
+    active,
+    apply,
+    rowFocusProps,
+    clear: () => setFilter(EMPTY_SHEET_FILTER),
+  };
+}
+
+type FacetOption = { value: string; label: string };
+
+function houseFilterOptions(houses: HouseRow[]): FacetOption[] {
+  return [
+    ...houses.map((h) => ({ value: h.id, label: h.name })),
+    { value: NO_HOUSE, label: 'No house' },
+  ];
+}
+
+/** The event's places in rubric order, then the "nothing yet" answers — worded as the cells word them. */
+function placementFilterOptions(
+  places: Place[],
+  placementMode: PlacementMode
+): FacetOption[] {
+  const own = places.map((p) => ({ value: p.id, label: p.label }));
+  return placementMode === 'score'
+    ? [
+        ...own,
+        { value: NO_PLACEMENT, label: 'Not placed' },
+        { value: NO_SCORE_YET, label: 'No score yet' },
+      ]
+    : [...own, { value: NO_PLACEMENT, label: 'No placement' }];
+}
+
+/** The DataTable toolbar, rebuilt for a plain Table: search, facets, Clear, and the count. */
+function SheetToolbar({
+  filter,
+  onChange,
+  active,
+  onClear,
+  searchPlaceholder,
+  houseOptions,
+  placementOptions,
+  shown,
+  total,
+  noun,
+}: {
+  filter: SheetFilter;
+  onChange: (next: SheetFilter) => void;
+  active: boolean;
+  onClear: () => void;
+  searchPlaceholder: string;
+  houseOptions: FacetOption[];
+  placementOptions: FacetOption[];
+  shown: number;
+  total: number;
+  noun: { one: string; many: string };
+}) {
+  const word = total === 1 ? noun.one : noun.many;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
+        <Input
+          type="search"
+          value={filter.query}
+          onChange={(e) => onChange({ ...filter, query: e.target.value })}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          className="h-8 w-56 pl-7 text-xs"
+        />
+      </div>
+      <FacetDropdown
+        label="House"
+        options={houseOptions}
+        selected={filter.houses}
+        onChange={(houses) => onChange({ ...filter, houses })}
+      />
+      <FacetDropdown
+        label="Placement"
+        options={placementOptions}
+        selected={filter.placements}
+        onChange={(placements) => onChange({ ...filter, placements })}
+      />
+      {active && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-xs"
+          onClick={onClear}
+        >
+          <X className="mr-1 h-3 w-3" />
+          Clear
+        </Button>
+      )}
+      <p
+        className="ml-auto text-xs tabular-nums text-muted-foreground"
+        aria-live="polite"
+      >
+        {active
+          ? `Showing ${shown.toLocaleString('en-SG')} of ${total.toLocaleString('en-SG')} ${word}`
+          : `${total.toLocaleString('en-SG')} ${word}`}
+      </p>
+    </div>
+  );
+}
+
+/** One full-width row saying nothing matches, with a way back. */
+function NoMatchesRow({
+  colSpan,
+  noun,
+  onClear,
+}: {
+  colSpan: number;
+  noun: string;
+  onClear: () => void;
+}) {
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={colSpan} className="p-0">
+        <DataTableEmptyState
+          icon={SearchX}
+          title={`No ${noun} match.`}
+          body="Try a different search, or clear the filters."
+          cta={{ label: 'Clear filters', onClick: onClear }}
+        />
+      </TableCell>
+    </TableRow>
+  );
 }
 
 export function ScoreSheet({
@@ -534,12 +731,16 @@ function StudentSheet({
   // falls back to the first one — never to nothing.
   const activeGroup =
     groups.find((g) => g.key === chosenGroup)?.key ?? groups[0]?.key ?? null;
-  const visible = grouped
+  const inTab = grouped
     ? sorted.filter((r) => groupOf(r, rankWithin).key === activeGroup)
     : sorted;
+  // Filters narrow the active tab; they don't change what the tabs count.
+  const sheetFilter = useSheetFilter(resolvedById, placementMode);
+  const visible = sheetFilter.apply(inTab);
 
   const isScore = placementMode === 'score';
   const showClassUnderName = rankWithin !== 'section';
+  const columnCount = (isScore ? 6 : 5) + (canEdit ? 1 : 0);
 
   async function confirmRemove() {
     if (!removing) return;
@@ -578,6 +779,26 @@ function StudentSheet({
 
   return (
     <div className="space-y-3">
+      <SheetToolbar
+        filter={sheetFilter.filter}
+        onChange={sheetFilter.setFilter}
+        active={sheetFilter.active}
+        onClear={sheetFilter.clear}
+        searchPlaceholder="Search name or student number"
+        houseOptions={houseFilterOptions(houses)}
+        placementOptions={placementFilterOptions(places, placementMode)}
+        shown={visible.length}
+        total={inTab.length}
+        noun={
+          grouped
+            ? {
+                one: `student in this ${rankWithin === 'section' ? 'class' : 'level'}`,
+                many: `students in this ${rankWithin === 'section' ? 'class' : 'level'}`,
+              }
+            : { one: 'student', many: 'students' }
+        }
+      />
+
       {grouped && groups.length > 0 && (
         <Tabs
           value={activeGroup ?? undefined}
@@ -643,13 +864,23 @@ function StudentSheet({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {visible.length === 0 && (
+              <NoMatchesRow
+                colSpan={columnCount}
+                noun="students"
+                onClear={sheetFilter.clear}
+              />
+            )}
             {visible.map((row, index) => {
               const s = row.student;
               const who = s?.name ?? 'this student';
               const house = s?.houseId ? housesById.get(s.houseId) : undefined;
               const resolved = resolvedById.get(row.entryId);
               return (
-                <TableRow key={row.entryId}>
+                <TableRow
+                  key={row.entryId}
+                  {...sheetFilter.rowFocusProps(row.entryId)}
+                >
                   <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
                     {index + 1}
                   </TableCell>
@@ -857,6 +1088,9 @@ function TeamTable({
       : livePoints(row, resolvedById.get(row.entryId), placementMode)
   );
   const isScore = placementMode === 'score';
+  const sheetFilter = useSheetFilter(resolvedById, placementMode);
+  const visible = sheetFilter.apply(sorted);
+  const columnCount = (isScore ? 6 : 5) + (canEdit ? 1 : 0);
   const memberships = useMemo(() => membershipsOf(rows), [rows]);
   // A team row grows with its member list, so its cells sit at the top. Plain
   // text cells drop 6px to share a centre line with the 32px score box or
@@ -901,7 +1135,20 @@ function TeamTable({
   }
 
   return (
-    <>
+    <div className="space-y-3">
+      <SheetToolbar
+        filter={sheetFilter.filter}
+        onChange={sheetFilter.setFilter}
+        active={sheetFilter.active}
+        onClear={sheetFilter.clear}
+        searchPlaceholder="Search team or member"
+        houseOptions={houseFilterOptions(houses)}
+        placementOptions={placementFilterOptions(places, placementMode)}
+        shown={visible.length}
+        total={sorted.length}
+        noun={{ one: 'team', many: 'teams' }}
+      />
+
       <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
@@ -932,7 +1179,14 @@ function TeamTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((row, index) => {
+            {visible.length === 0 && (
+              <NoMatchesRow
+                colSpan={columnCount}
+                noun="teams"
+                onClear={sheetFilter.clear}
+              />
+            )}
+            {visible.map((row, index) => {
               const team = row.team;
               const who = team?.name ?? 'this team';
               const resolved = resolvedById.get(row.entryId);
@@ -941,7 +1195,11 @@ function TeamTable({
               const credited = teamHouses(team?.members ?? []);
               const sharesAHouse = credited.some((h) => h.memberCount > 1);
               return (
-                <TableRow key={row.entryId} className="[&>td]:align-top">
+                <TableRow
+                  key={row.entryId}
+                  className="[&>td]:align-top"
+                  {...sheetFilter.rowFocusProps(row.entryId)}
+                >
                   <TableCell
                     className={cn(
                       lineUp,
@@ -1133,7 +1391,7 @@ function TeamTable({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
 

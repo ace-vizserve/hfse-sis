@@ -12,6 +12,13 @@ import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { EventSummary } from '@/lib/house-points/queries';
 import {
+  ENTRANT_KIND_FILTER_LABELS,
+  NO_POINTS_YET,
+  PLACEMENT_MODE_FILTER_LABELS,
+  eventWinnerIds,
+  matchesAny,
+} from '@/lib/house-points/sheet-filters';
+import {
   EVENT_TYPE_SHORT_LABELS,
   formatEventDate,
   formatPoints,
@@ -122,11 +129,8 @@ function buildColumns(houses: HouseRow[]): ColumnDef<EventSummary, unknown>[] {
       meta: { label: 'Type' },
       cell: ({ row }) => <EventTypePill type={row.original.eventType} />,
       enableSorting: true,
-      filterFn: (row, _id, value) => {
-        if (!value || (Array.isArray(value) && value.length === 0)) return true;
-        const label = EVENT_TYPE_LABELS[row.original.eventType];
-        return Array.isArray(value) ? value.includes(label) : label === value;
-      },
+      filterFn: (row, _id, value) =>
+        matchesAny(value, [EVENT_TYPE_LABELS[row.original.eventType]]),
     },
     {
       id: 'participants',
@@ -147,8 +151,78 @@ function buildColumns(houses: HouseRow[]): ColumnDef<EventSummary, unknown>[] {
       enableSorting: true,
     },
     ...houseColumns,
+    // The three below exist to be filtered on. They start hidden — the row
+    // already shows its type, and the leading house is already in bold — but
+    // each can be switched on from Columns, and exports as plain words when
+    // it is.
+    {
+      id: 'enteredAs',
+      accessorFn: (r) => ENTRANT_KIND_FILTER_LABELS[r.entrantKind],
+      header: 'Entered as',
+      meta: { label: 'Entered as' },
+      cell: ({ row }) => (
+        <span className="text-sm text-foreground">
+          {ENTRANT_KIND_FILTER_LABELS[row.original.entrantKind]}
+        </span>
+      ),
+      enableSorting: false,
+      filterFn: (row, _id, value) =>
+        matchesAny(value, [
+          ENTRANT_KIND_FILTER_LABELS[row.original.entrantKind],
+        ]),
+    },
+    {
+      id: 'placedBy',
+      accessorFn: (r) => PLACEMENT_MODE_FILTER_LABELS[r.placementMode],
+      header: 'Placed by',
+      meta: { label: 'Placed by' },
+      cell: ({ row }) => (
+        <span className="text-sm text-foreground">
+          {PLACEMENT_MODE_FILTER_LABELS[row.original.placementMode]}
+        </span>
+      ),
+      enableSorting: false,
+      filterFn: (row, _id, value) =>
+        matchesAny(value, [
+          PLACEMENT_MODE_FILTER_LABELS[row.original.placementMode],
+        ]),
+    },
+    {
+      id: 'wonBy',
+      accessorFn: (r) => winnerNames(r, houses).join(', '),
+      header: 'Won by',
+      meta: { label: 'Won by' },
+      cell: ({ row }) => (
+        <span className="text-sm text-foreground">
+          {winnerNames(row.original, houses).join(', ')}
+        </span>
+      ),
+      enableSorting: false,
+      // A tie lists every house on it, so the event is found under each.
+      filterFn: (row, _id, value) =>
+        matchesAny(value, winnerNames(row.original, houses)),
+    },
   ];
 }
+
+/** The house(s) that took the most points from an event, or "No points yet". */
+function winnerNames(event: EventSummary, houses: HouseRow[]): string[] {
+  const nameById = new Map(houses.map((h) => [h.id, h.name]));
+  const ids = eventWinnerIds(
+    event.totals,
+    houses.map((h) => h.id)
+  );
+  return ids.length > 0
+    ? ids.map((id) => nameById.get(id) ?? '')
+    : [NO_POINTS_YET];
+}
+
+/** Helper columns hidden until switched on from Columns. */
+const HIDDEN_HELPER_COLUMNS = {
+  enteredAs: false,
+  placedBy: false,
+  wonBy: false,
+};
 
 type Props = {
   events: EventSummary[];
@@ -180,8 +254,27 @@ export function EventsTable({
           new Set(events.map((e) => EVENT_TYPE_LABELS[e.eventType]))
         ),
       },
+      {
+        columnId: 'enteredAs',
+        label: 'Entered as',
+        valueOptions: (['student', 'team', 'house'] as const)
+          .filter((k) => events.some((e) => e.entrantKind === k))
+          .map((k) => ENTRANT_KIND_FILTER_LABELS[k]),
+      },
+      {
+        columnId: 'placedBy',
+        label: 'Placed by',
+        valueOptions: (['score', 'pick'] as const)
+          .filter((m) => events.some((e) => e.placementMode === m))
+          .map((m) => PLACEMENT_MODE_FILTER_LABELS[m]),
+      },
+      {
+        columnId: 'wonBy',
+        label: 'Won by',
+        valueOptions: [...houses.map((h) => h.name), NO_POINTS_YET],
+      },
     ],
-    [events]
+    [events, houses]
   );
 
   // No events at all: the empty state stands on its own (§7.6) rather than
@@ -215,19 +308,20 @@ export function EventsTable({
         searchKeys={[(r) => r.name]}
         searchPlaceholder="Search events"
         facets={facets}
+        initialColumnVisibility={HIDDEN_HELPER_COLUMNS}
         url={{ enabled: true, namespace: 'house-points' }}
         initialSort={[{ id: 'event', desc: false }]}
         pageSize={25}
         csv={{ filename: `house-points-${ayCode}.csv` }}
         emptyFilteredState={{
           title: 'No events match.',
-          body: 'Clear the search or the Type filter.',
+          body: 'Clear the search or a filter to see more events.',
         }}
       />
 
       {/* Year totals. DataTable has no footer row, so the sum sits in its own
-          card directly beneath. It is always the WHOLE year — the Type filter
-          above narrows the rows, not these figures. */}
+          card directly beneath. It is always the WHOLE year — the search and filters
+          above narrow the rows, not these figures. */}
       <Card className="gap-0 py-0">
         <div className="flex flex-col gap-3 px-6 py-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-0.5">
