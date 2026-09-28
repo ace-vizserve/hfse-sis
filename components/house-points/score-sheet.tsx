@@ -52,6 +52,7 @@ import {
 import { parseScore } from '@/lib/house-points/parse-score';
 import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
+import { membershipsOf } from '@/lib/house-points/team-membership';
 import { formatPoints } from '@/lib/house-points/standings';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -655,6 +656,7 @@ function TeamTable({
     [rows]
   );
   const isScore = placementMode === 'score';
+  const memberships = useMemo(() => membershipsOf(rows), [rows]);
   // A team row grows with its member list, so its cells sit at the top. Plain
   // text cells drop 6px to share a centre line with the 32px score box or
   // place picker beside them; read-only, there are no boxes to line up with.
@@ -876,6 +878,7 @@ function TeamTable({
           eventName={eventName}
           roster={roster}
           houses={houses}
+          memberships={memberships}
           team={editing}
           open={editOpen}
           onOpenChange={setEditOpen}
@@ -894,9 +897,8 @@ function TeamTable({
               Remove {removing?.name ?? 'this team'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The team, who is on it, and its score and placement are deleted.
-              Every house it earned points for here loses them. You can add the
-              team again later.
+              This removes the team, its members and its score or placement.
+              Points it earned come off the house totals.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1091,7 +1093,7 @@ function HouseSheet({
  * Puts the houses on a house event's sheet. An explicit click, never a write
  * during render: the page is a read, and opening it must not change anything.
  */
-export function SetupHousesButton({
+function SetupHousesButton({
   eventId,
   houseIds,
   label = 'Set up houses',

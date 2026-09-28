@@ -7,7 +7,13 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import {
   loadEnrolledRoster,
   loadEventForWrite,
+  loadEventTeamMemberships,
 } from '@/lib/house-points/queries';
+import {
+  clashingStudents,
+  ON_ANOTHER_TEAM_ERROR,
+  studentsOnOtherTeams,
+} from '@/lib/house-points/team-membership';
 import { diffTeamPatch } from '@/lib/house-points/team-patch-diff';
 import { TeamPatchSchema } from '@/lib/schemas/house-points';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -103,6 +109,19 @@ export async function PATCH(
       if (!uniqueIds.every((id) => validIds.has(id))) {
         return NextResponse.json(
           { error: "Some of those students aren't enrolled this year" },
+          { status: 400 }
+        );
+      }
+      // One team per student per event — this team's own members excluded
+      // (lib/house-points/team-membership.ts).
+      step = 'check other teams';
+      const taken = studentsOnOtherTeams(
+        await loadEventTeamMemberships(service, team.event_id),
+        teamId
+      );
+      if (clashingStudents(uniqueIds, taken).length > 0) {
+        return NextResponse.json(
+          { error: ON_ANOTHER_TEAM_ERROR },
           { status: 400 }
         );
       }

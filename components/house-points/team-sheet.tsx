@@ -17,6 +17,10 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { teamHouses } from '@/lib/house-points/compute';
+import {
+  studentsOnOtherTeams,
+  type TeamMembership,
+} from '@/lib/house-points/team-membership';
 import type { RosterStudent } from '@/lib/house-points/queries';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -61,6 +65,7 @@ export function TeamSheet({
   eventName,
   roster,
   houses,
+  memberships,
   team = null,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
@@ -70,6 +75,8 @@ export function TeamSheet({
   /** The year's ENROLLED roster — `loadEnrolledRoster`. */
   roster: RosterStudent[];
   houses: HouseRow[];
+  /** Every team membership in this event, for one-team-per-student. */
+  memberships: TeamMembership[];
   /** Set → edit this team. Unset → add a new one. */
   team?: EditableTeam | null;
   /** Controlled open state; without it the drawer renders its own "Add team" trigger. */
@@ -84,6 +91,13 @@ export function TeamSheet({
   const run = useWriteAction();
   const [busy, setBusy] = useState(false);
 
+  // One team per student per event: anyone on ANOTHER team of this event
+  // is shown but cannot be ticked. This team's own members stay selectable.
+  // The team routes refuse the same students (lib/house-points/team-membership.ts).
+  const onOtherTeams = useMemo(
+    () => studentsOnOtherTeams(memberships, team?.id ?? null),
+    [memberships, team]
+  );
   const rosterIds = useMemo(
     () => new Set(roster.map((s) => s.sectionStudentId)),
     [roster]
@@ -281,6 +295,8 @@ export function TeamSheet({
           houses={houses}
           selected={selected}
           locked={EMPTY}
+          unavailable={onOtherTeams}
+          unavailableLabel="On another team"
           onChange={setSelected}
           className="flex-1 px-6 py-5"
         />

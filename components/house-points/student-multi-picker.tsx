@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 // `value` can stay the unique section_student id.
 
 const ALL_CLASSES = 'all';
+const NONE: ReadonlySet<string> = new Set();
 
 const collator = new Intl.Collator('en-SG', {
   numeric: true,
@@ -47,6 +48,8 @@ export function StudentMultiPicker({
   houses,
   selected,
   locked,
+  unavailable = NONE,
+  unavailableLabel = 'Not available',
   onChange,
   className,
 }: {
@@ -56,6 +59,10 @@ export function StudentMultiPicker({
   selected: ReadonlySet<string>;
   /** Already in — shown ticked, not selectable. */
   locked: ReadonlySet<string>;
+  /** Can't be picked here and AREN'T ticked — e.g. already on another team. */
+  unavailable?: ReadonlySet<string>;
+  /** Said beside an unavailable student, e.g. "On another team". */
+  unavailableLabel?: string;
   onChange: (next: Set<string>) => void;
   className?: string;
 }) {
@@ -93,7 +100,11 @@ export function StudentMultiPicker({
   const pickableInClass =
     classFilter === ALL_CLASSES
       ? []
-      : shown.filter((s) => !locked.has(s.sectionStudentId));
+      : shown.filter(
+          (s) =>
+            !locked.has(s.sectionStudentId) &&
+            !unavailable.has(s.sectionStudentId)
+        );
   const allClassPicked =
     pickableInClass.length > 0 &&
     pickableInClass.every((s) => selected.has(s.sectionStudentId));
@@ -145,14 +156,17 @@ export function StudentMultiPicker({
           <CommandEmpty>Nobody on this year&apos;s roll matches.</CommandEmpty>
           {shown.map((s) => {
             const isLocked = locked.has(s.sectionStudentId);
-            const on = isLocked || selected.has(s.sectionStudentId);
+            const isUnavailable =
+              !isLocked && unavailable.has(s.sectionStudentId);
+            const on =
+              isLocked || (!isUnavailable && selected.has(s.sectionStudentId));
             const house = s.houseId ? housesById.get(s.houseId) : undefined;
             return (
               <CommandItem
                 key={s.sectionStudentId}
                 value={s.sectionStudentId}
                 keywords={[s.name, s.sectionName, s.studentNumber]}
-                disabled={isLocked}
+                disabled={isLocked || isUnavailable}
                 onSelect={() => toggle(s.sectionStudentId)}
                 className="gap-3"
               >
@@ -172,6 +186,11 @@ export function StudentMultiPicker({
                   {isLocked && (
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
                       Already entered
+                    </span>
+                  )}
+                  {isUnavailable && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {unavailableLabel}
                     </span>
                   )}
                   {!isLocked && on && (

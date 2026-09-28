@@ -24,6 +24,7 @@ import 'server-only';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
+import type { TeamMembership } from '@/lib/house-points/team-membership';
 import type { HouseRow } from '@/lib/sis/houses';
 import {
   houseTotals,
@@ -437,6 +438,33 @@ async function loadTeamMembers(
       { tieBreak: null }
     )
   );
+}
+
+/**
+ * Every team membership in one event — what the team write routes check a
+ * request against (one team per student per event,
+ * lib/house-points/team-membership.ts). Goes through `loadTeamMembers` so
+ * the members table keeps its single, tieBreak-guarded read.
+ */
+export async function loadEventTeamMemberships(
+  service: ServiceClient,
+  eventId: string
+): Promise<TeamMembership[]> {
+  const teams = await fetchAllPages<{ id: string }>((from, to) =>
+    service
+      .from('house_point_teams')
+      .select('id')
+      .eq('event_id', eventId)
+      .range(from, to)
+  );
+  const members = await loadTeamMembers(
+    service,
+    teams.map((t) => t.id)
+  );
+  return members.map((m) => ({
+    teamId: m.team_id,
+    sectionStudentId: m.section_student_id,
+  }));
 }
 
 function groupByTeamId(members: TeamMemberRowDb[]): Map<string, string[]> {

@@ -6,6 +6,7 @@ import { AddParticipantsSheet } from '@/components/house-points/add-participants
 import { EditEventSheet } from '@/components/house-points/edit-event-sheet';
 import { ScoreSheet } from '@/components/house-points/score-sheet';
 import { TeamSheet } from '@/components/house-points/team-sheet';
+import { membershipsOf } from '@/lib/house-points/team-membership';
 import { PageShell } from '@/components/ui/page-shell';
 import type { Role } from '@/lib/auth/roles';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
@@ -140,6 +141,7 @@ export default async function HousePointsEventPage({
                 eventName={event.name}
                 roster={roster}
                 houses={houses}
+                memberships={membershipsOf(event.rows)}
               />
             )}
             {/* House events: no header button. The sheet itself offers
