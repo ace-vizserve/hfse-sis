@@ -917,6 +917,13 @@ export default async function GradingSheetPage({
         priorGrades={priorGrades}
         currentTermNumber={term?.term_number ?? 1}
         currentTermLabel={term?.label ?? 'Term'}
+        fullScreenTitle={[
+          subjectLabel,
+          [level?.label, section?.name].filter(Boolean).join(' '),
+          term?.label,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
       />
     </PageShell>
   );

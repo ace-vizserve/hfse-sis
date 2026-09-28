@@ -26,7 +26,14 @@ import Link from 'next/link';
 // Chromebooks. At that point look at column virtualization (react-window)
 // or a paginated-by-week view.
 
-import { Bus, CalendarDays, Star, Users } from 'lucide-react';
+import {
+  Bus,
+  CalendarDays,
+  Maximize2,
+  Minimize2,
+  Star,
+  Users,
+} from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   memo,
@@ -201,8 +208,11 @@ export function AttendanceWideGrid({
   canEditAcademics,
   canEditAdmin,
   filingsByCell,
+  title,
 }: {
   sectionId: string;
+  /** Shown in the bar above the grid while it is full screen, e.g. "P3 Courage · Term 1". */
+  title?: string;
   termId: string;
   enrolments: WideGridEnrolment[];
   calendar: SchoolCalendarRow[];
@@ -598,6 +608,26 @@ export function AttendanceWideGrid({
     });
   }, []);
 
+  // Full screen is the same grid pinned over the whole window, not a copy
+  // in a dialog: marking popovers, the details Sheet and in-flight saves all
+  // keep working, and nothing remounts when it is toggled. Esc leaves it,
+  // unless an open popover or Sheet claims the key first (Radix marks the
+  // event handled, which is what `defaultPrevented` checks).
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => {
+    if (!fullScreen) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && !ev.defaultPrevented) setFullScreen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullScreen]);
+
   // Calendar columns in order; each flagged with day_type + event labels.
   // `drawMonthBoundary` is true for month-starts EXCEPT the first column —
   // the first column already has the roster pane's right border as its
@@ -743,8 +773,19 @@ export function AttendanceWideGrid({
   }, [enrolments]);
 
   return (
-    <div className="space-y-3">
+    <div
+      className={
+        fullScreen
+          ? 'fixed inset-0 z-50 flex flex-col gap-3 bg-background p-4'
+          : 'space-y-3'
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
+        {fullScreen && title && (
+          <h2 className="mr-2 font-serif text-lg font-semibold tracking-tight text-foreground">
+            {title}
+          </h2>
+        )}
         <Button
           type="button"
           variant={showDetails ? 'secondary' : 'outline'}
@@ -753,6 +794,28 @@ export function AttendanceWideGrid({
         >
           {showDetails ? 'Hide details' : 'Show details'}
         </Button>
+        {enrolments.length > 0 && (
+          <div className="ml-auto flex items-center gap-2">
+            {fullScreen && (
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                Press Esc to exit
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFullScreen((v) => !v)}
+            >
+              {fullScreen ? (
+                <Minimize2 className="size-3.5" aria-hidden />
+              ) : (
+                <Maximize2 className="size-3.5" aria-hidden />
+              )}
+              {fullScreen ? 'Exit full screen' : 'Full screen'}
+            </Button>
+          </div>
+        )}
       </div>
       {/* While a mark is being written the whole register goes dim, soft
             and non-interactive: one edit at a time, and the teacher can see
@@ -763,6 +826,7 @@ export function AttendanceWideGrid({
         aria-busy={isSaving}
         className={
           'p-0 overflow-hidden transition duration-200 ' +
+          (fullScreen ? 'min-h-0 flex-1 ' : '') +
           (isSaving
             ? 'pointer-events-none select-none blur-[1px] opacity-60'
             : '')
@@ -792,7 +856,19 @@ export function AttendanceWideGrid({
           // older attempt at this used `border-collapse` and hit the
           // known browser bug where scrolling content paints over sticky
           // cells (see git history) — avoided here by construction.
-          <div className="overflow-x-auto">
+          //
+          // The box is no taller than the window (minus the 3.5rem app
+          // header and a little air), like a spreadsheet: the sideways
+          // scrollbar is always on screen and the month + date rows stay
+          // pinned. A cap on HEIGHT, not on students — a short class shows
+          // at its own height. Same shape as the grading sheet's grid.
+          // In full screen the box takes whatever the window has left.
+          <div
+            className={
+              'relative overflow-auto ' +
+              (fullScreen ? 'h-full' : 'max-h-[calc(100dvh-5.5rem)]')
+            }
+          >
             <Table
               noWrapper
               className="border-separate border-spacing-0 table-fixed text-[11px]"
@@ -806,7 +882,7 @@ export function AttendanceWideGrid({
                 ))}
                 <col style={{ width: 40 }} />
               </colgroup>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-20 bg-card">
                 <TableRow
                   style={{ height: ROW_HEIGHT.monthBanner }}
                   className="hover:bg-transparent"
@@ -814,7 +890,7 @@ export function AttendanceWideGrid({
                   <TableHead
                     colSpan={stickyCols.length}
                     style={{ ...cellHeight(ROW_HEIGHT.monthBanner), left: 0 }}
-                    className="sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                    className="sticky z-20 overflow-hidden border-b border-border bg-muted px-2 py-1.5 text-left font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
                   >
                     Roster
                   </TableHead>
@@ -843,7 +919,7 @@ export function AttendanceWideGrid({
                       left: stickyOf('index').left,
                     }}
                     className={
-                      'sticky z-20 overflow-hidden border-b border-r border-border bg-muted/60 px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground' +
+                      'sticky z-20 overflow-hidden border-b border-r border-border bg-muted px-1 py-1 text-right font-mono text-[10px] font-semibold text-muted-foreground' +
                       (isLastSticky('index')
                         ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                         : '')
@@ -857,7 +933,7 @@ export function AttendanceWideGrid({
                       left: stickyOf('student').left,
                     }}
                     className={
-                      'sticky z-20 overflow-hidden border-b border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                      'sticky z-20 overflow-hidden border-b border-border bg-muted px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
                       (isLastSticky('student')
                         ? ' border-r-2 border-border shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                         : '')
@@ -872,7 +948,7 @@ export function AttendanceWideGrid({
                         left: stickyOf('busCare').left,
                       }}
                       className={
-                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
                         (isLastSticky('busCare')
                           ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                           : '')
@@ -888,7 +964,7 @@ export function AttendanceWideGrid({
                         left: stickyOf('academics').left,
                       }}
                       className={
-                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
                         (isLastSticky('academics')
                           ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                           : '')
@@ -904,7 +980,7 @@ export function AttendanceWideGrid({
                         left: stickyOf('admin').left,
                       }}
                       className={
-                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted/60 px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
+                        'sticky z-20 overflow-hidden border-b border-l border-border bg-muted px-2 py-1 text-left font-mono text-[10px] font-semibold text-muted-foreground' +
                         (isLastSticky('admin')
                           ? ' border-r-2 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]'
                           : '')

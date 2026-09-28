@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Clock,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -144,6 +146,8 @@ type Props = {
   priorGrades?: Record<string, PriorTermGrade[]>;
   currentTermNumber?: number;
   currentTermLabel?: string;
+  /** Shown in the bar above the grid while it is full screen, e.g. "English · P3 Courage · Term 1". */
+  fullScreenTitle?: string;
 };
 
 function parseCell(raw: string): number | null {
@@ -201,6 +205,7 @@ export function ScoreEntryGrid({
   priorGrades,
   currentTermNumber = 1,
   currentTermLabel = 'Term',
+  fullScreenTitle,
 }: Props) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const rowsRef = useRef(rows);
@@ -271,6 +276,24 @@ export function ScoreEntryGrid({
     [queryClientForProgress, sheetId, sheetShape]
   );
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
+
+  // Full screen: this same grid pinned over the whole window. Esc leaves it
+  // unless an open dialog, popover or select claims the key first (Radix
+  // marks the event handled, which is what `defaultPrevented` checks).
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => {
+    if (!fullScreen) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && !ev.defaultPrevented) setFullScreen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullScreen]);
   const { requireChangeReference, dialog: approvalDialog } =
     useChangeReference();
   // Slot labels — managed locally, PATCHed on blur.
@@ -930,6 +953,10 @@ export function ScoreEntryGrid({
   );
 
   return (
+    // Full screen pins this same element over the whole window (see the
+    // effect above) — it is not a copy in a dialog, so the approval dialog
+    // and the lookup open over it without nesting.
+    //
     // The whole grid goes inert and softens while a cell is saving. Score
     // entry is fast and typed blind — tab, type, tab — so the risk is not
     // that the teacher waits, it is that they have already typed into the
@@ -940,26 +967,39 @@ export function ScoreEntryGrid({
     // either.
     <div
       aria-busy={isSaving}
-      className={`space-y-3 transition ${
+      className={`transition ${
+        fullScreen
+          ? 'fixed inset-0 z-50 flex flex-col gap-3 bg-background p-4'
+          : 'space-y-3'
+      } ${
         isSaving ? 'pointer-events-none select-none opacity-60 blur-[1px]' : ''
       }`}
     >
-      <ScoringGuide
-        wwTotals={wwTotals}
-        ptTotals={ptTotals}
-        qaTotal={qaTotal}
-        labels={labels}
-        wwPct={wwPct}
-        ptPct={ptPct}
-        qaPct={qaPct}
-        wwScored={wwScored}
-        ptScored={ptScored}
-        canEditLabels={canEditLabels}
-        saving={savingLabels}
-        onSlotChange={onSlotChange}
-        onQaChange={onQaChange}
-        commit={saveLabels}
-      />
+      {fullScreen && fullScreenTitle && (
+        <h2 className="font-serif text-lg font-semibold tracking-tight text-foreground">
+          {fullScreenTitle}
+        </h2>
+      )}
+      {/* The scoring guide is set-up, not entry — full screen is for the
+          grid, so it steps aside there. */}
+      {!fullScreen && (
+        <ScoringGuide
+          wwTotals={wwTotals}
+          ptTotals={ptTotals}
+          qaTotal={qaTotal}
+          labels={labels}
+          wwPct={wwPct}
+          ptPct={ptPct}
+          qaPct={qaPct}
+          wwScored={wwScored}
+          ptScored={ptScored}
+          canEditLabels={canEditLabels}
+          saving={savingLabels}
+          onSlotChange={onSlotChange}
+          onQaChange={onQaChange}
+          commit={saveLabels}
+        />
+      )}
       <div className="flex items-center justify-between gap-3">
         <GridFilterToolbar
           filters={filters}
@@ -967,484 +1007,524 @@ export function ScoreEntryGrid({
           total={rows.length}
           visible={visibleRows.length}
         />
-        <GradeLookupDialog
-          rows={alertRows}
-          subjectName={subjectName}
-          isExaminable={!letterDisplay}
-          currentTermLabel={currentTermLabel}
-          weights={{ ww: wwPct, pt: ptPct, qa: qaPct }}
-        />
+        <div className="flex items-center gap-2">
+          <GradeLookupDialog
+            rows={alertRows}
+            subjectName={subjectName}
+            isExaminable={!letterDisplay}
+            currentTermLabel={currentTermLabel}
+            weights={{ ww: wwPct, pt: ptPct, qa: qaPct }}
+          />
+          {fullScreen && (
+            <span className="hidden text-xs text-muted-foreground lg:inline">
+              Press Esc to exit
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setFullScreen((v) => !v)}
+          >
+            {fullScreen ? (
+              <Minimize2 className="size-3.5" aria-hidden />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden />
+            )}
+            {fullScreen ? 'Exit full screen' : 'Full screen'}
+          </Button>
+        </div>
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <Table>
-          <TableHeader>
-            {/* Row 1 — group headers */}
-            <TableRow className="bg-muted/60 hover:bg-muted/60">
-              <TableHead
-                rowSpan={3}
-                className="sticky left-0 z-10 bg-muted/60 w-8 align-bottom text-right font-mono text-[10px] text-muted-foreground/60"
-              >
-                #
-              </TableHead>
-              <TableHead
-                rowSpan={3}
-                className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/60 bg-muted/60 align-bottom text-xs text-muted-foreground"
-              >
-                Student
-              </TableHead>
-              {wwLen > 0 && (
+      <Card
+        className={`overflow-hidden p-0 ${fullScreen ? 'min-h-0 flex-1' : ''}`}
+      >
+        {/* The grid scrolls inside a box no taller than the window (minus
+            the 3.5rem app header and a little air), like a spreadsheet: the
+            sideways scrollbar is always on screen and the header rows stay
+            pinned. It is a cap on HEIGHT, not on students — a short class
+            simply shows at its own height. In full screen it takes whatever
+            the window has left. */}
+        <div
+          className={`relative overflow-auto ${
+            fullScreen ? 'h-full' : 'max-h-[calc(100dvh-5.5rem)]'
+          }`}
+        >
+          <Table noWrapper>
+            <TableHeader className="sticky top-0 z-20 bg-card">
+              {/* Row 1 — group headers */}
+              <TableRow className="bg-muted/60 hover:bg-muted/60">
                 <TableHead
-                  colSpan={wwLen + 3}
-                  className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                  rowSpan={3}
+                  className="sticky left-0 z-10 bg-muted w-8 align-bottom text-right font-mono text-[10px] text-muted-foreground/60"
                 >
-                  Written Works ({wwPct}%)
+                  #
                 </TableHead>
-              )}
-              {ptLen > 0 && (
                 <TableHead
-                  colSpan={ptLen + 3}
-                  className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                  rowSpan={3}
+                  className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/60 bg-muted align-bottom text-xs text-muted-foreground"
                 >
-                  Performance Tasks ({ptPct}%)
+                  Student
                 </TableHead>
-              )}
-              <TableHead
-                colSpan={3}
-                className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
-              >
-                Quarterly Assessment ({qaPct}%)
-              </TableHead>
-              <TableHead
-                rowSpan={3}
-                className="border-l-2 border-border/40 align-bottom text-right text-[10px] text-muted-foreground/70"
-              >
-                Initial
-                <br />
-                Grade
-              </TableHead>
-              <TableHead
-                rowSpan={3}
-                className="align-bottom text-right text-xs text-muted-foreground"
-              >
-                Quarterly
-                <br />
-                Grade
-              </TableHead>
-              <TableHead
-                rowSpan={3}
-                className="align-bottom text-center text-xs text-muted-foreground"
-              >
-                {letterDisplay ? 'Override' : 'N/A'}
-              </TableHead>
-            </TableRow>
-
-            {/* Row 2 — column codes */}
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              {wwTotals.map((_, i) => (
+                {wwLen > 0 && (
+                  <TableHead
+                    colSpan={wwLen + 3}
+                    className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                  >
+                    Written Works ({wwPct}%)
+                  </TableHead>
+                )}
+                {ptLen > 0 && (
+                  <TableHead
+                    colSpan={ptLen + 3}
+                    className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                  >
+                    Performance Tasks ({ptPct}%)
+                  </TableHead>
+                )}
                 <TableHead
-                  key={`ww-lbl-${i}`}
-                  className="text-center font-mono text-xs font-semibold text-foreground"
+                  colSpan={3}
+                  className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                 >
-                  W{i + 1}
+                  Quarterly Assessment ({qaPct}%)
                 </TableHead>
-              ))}
-              <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                Total
-              </TableHead>
-              <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                PS
-              </TableHead>
-              <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
-                WS
-              </TableHead>
-              {ptLen > 0 && (
-                <>
-                  {ptTotals.map((_, i) => (
-                    <TableHead
-                      key={`pt-lbl-${i}`}
-                      className="text-center font-mono text-xs font-semibold text-foreground"
-                    >
-                      PT{i + 1}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                    Total
-                  </TableHead>
-                  <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                    PS
-                  </TableHead>
-                  <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
-                    WS
-                  </TableHead>
-                </>
-              )}
-              <TableHead className="text-center font-mono text-xs font-semibold text-foreground">
-                Exam
-              </TableHead>
-              <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                PS
-              </TableHead>
-              <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
-                WS
-              </TableHead>
-            </TableRow>
-
-            {/* Row 3 — max values reference row */}
-            <TableRow className="bg-muted/20 hover:bg-muted/20">
-              {wwTotals.map((max, i) => (
                 <TableHead
-                  key={`ww-max-${i}`}
-                  className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
+                  rowSpan={3}
+                  className="border-l-2 border-border/40 align-bottom text-right text-[10px] text-muted-foreground/70"
                 >
-                  {max}
+                  Initial
+                  <br />
+                  Grade
                 </TableHead>
-              ))}
-              <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                {wwMaxTotal}
-              </TableHead>
-              <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
-                100%
-              </TableHead>
-              <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                {wwPct}%
-              </TableHead>
-              {ptLen > 0 && (
-                <>
-                  {ptTotals.map((max, i) => (
-                    <TableHead
-                      key={`pt-max-${i}`}
-                      className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
-                    >
-                      {max}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                    {ptMaxTotal}
-                  </TableHead>
-                  <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
-                    100%
-                  </TableHead>
-                  <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                    {ptPct}%
-                  </TableHead>
-                </>
-              )}
-              <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                {qaTotal ?? '—'}
-              </TableHead>
-              <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
-                100%
-              </TableHead>
-              <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                {qaPct}%
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visibleRows.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={totalCols}
-                  className="py-10 text-center text-sm text-muted-foreground"
+                <TableHead
+                  rowSpan={3}
+                  className="align-bottom text-right text-xs text-muted-foreground"
                 >
-                  No students match the current filters.
-                </TableCell>
+                  Quarterly
+                  <br />
+                  Grade
+                </TableHead>
+                <TableHead
+                  rowSpan={3}
+                  className="align-bottom text-center text-xs text-muted-foreground"
+                >
+                  {letterDisplay ? 'Override' : 'N/A'}
+                </TableHead>
               </TableRow>
-            )}
-            {visibleRows.map((r) => {
-              const inputsDisabled = r.withdrawn || r.is_na || readOnly;
-              const rowClass = r.withdrawn
-                ? 'opacity-50'
-                : r.is_na
-                  ? 'text-muted-foreground'
-                  : '';
 
-              const wwTotal = sumScores(r.ww_scores, wwLen);
-              const ptTotal = sumScores(r.pt_scores, ptLen);
+              {/* Row 2 — column codes */}
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                {wwTotals.map((_, i) => (
+                  <TableHead
+                    key={`ww-lbl-${i}`}
+                    className="text-center font-mono text-xs font-semibold text-foreground"
+                  >
+                    W{i + 1}
+                  </TableHead>
+                ))}
+                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                  Total
+                </TableHead>
+                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                  PS
+                </TableHead>
+                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
+                  WS
+                </TableHead>
+                {ptLen > 0 && (
+                  <>
+                    {ptTotals.map((_, i) => (
+                      <TableHead
+                        key={`pt-lbl-${i}`}
+                        className="text-center font-mono text-xs font-semibold text-foreground"
+                      >
+                        PT{i + 1}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                      Total
+                    </TableHead>
+                    <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                      PS
+                    </TableHead>
+                    <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
+                      WS
+                    </TableHead>
+                  </>
+                )}
+                <TableHead className="text-center font-mono text-xs font-semibold text-foreground">
+                  Exam
+                </TableHead>
+                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                  PS
+                </TableHead>
+                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
+                  WS
+                </TableHead>
+              </TableRow>
 
-              const wwWs = r.ww_ps != null ? r.ww_ps * wwWeight : null;
-              const ptWs = r.pt_ps != null ? r.pt_ps * ptWeight : null;
-              const qaWs = r.qa_ps != null ? r.qa_ps * qaWeight : null;
-
-              return (
-                <TableRow
-                  key={r.section_student_id}
-                  className={`transition-colors duration-75 hover:bg-accent/30 ${rowClass}`}
-                >
-                  {/* # */}
-                  <TableCell className="sticky left-0 z-10 w-8 bg-card text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
-                    {r.index_number}
+              {/* Row 3 — max values reference row */}
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                {wwTotals.map((max, i) => (
+                  <TableHead
+                    key={`ww-max-${i}`}
+                    className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
+                  >
+                    {max}
+                  </TableHead>
+                ))}
+                <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                  {wwMaxTotal}
+                </TableHead>
+                <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
+                  100%
+                </TableHead>
+                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
+                  {wwPct}%
+                </TableHead>
+                {ptLen > 0 && (
+                  <>
+                    {ptTotals.map((max, i) => (
+                      <TableHead
+                        key={`pt-max-${i}`}
+                        className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
+                      >
+                        {max}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                      {ptMaxTotal}
+                    </TableHead>
+                    <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
+                      100%
+                    </TableHead>
+                    <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
+                      {ptPct}%
+                    </TableHead>
+                  </>
+                )}
+                <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                  {qaTotal ?? '—'}
+                </TableHead>
+                <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
+                  100%
+                </TableHead>
+                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
+                  {qaPct}%
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visibleRows.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={totalCols}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    No students match the current filters.
                   </TableCell>
+                </TableRow>
+              )}
+              {visibleRows.map((r) => {
+                const inputsDisabled = r.withdrawn || r.is_na || readOnly;
+                const rowClass = r.withdrawn
+                  ? 'opacity-50'
+                  : r.is_na
+                    ? 'text-muted-foreground'
+                    : '';
 
-                  {/* Student */}
-                  <TableCell className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/40 bg-card py-2">
-                    {canExcuse && !r.withdrawn ? (
-                      <HoverHint hint="Choose which assessments count for this student">
-                        <button
-                          type="button"
-                          onClick={() => setExcusingId(r.section_student_id)}
-                          className="whitespace-nowrap rounded-sm text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                const wwTotal = sumScores(r.ww_scores, wwLen);
+                const ptTotal = sumScores(r.pt_scores, ptLen);
+
+                const wwWs = r.ww_ps != null ? r.ww_ps * wwWeight : null;
+                const ptWs = r.pt_ps != null ? r.pt_ps * ptWeight : null;
+                const qaWs = r.qa_ps != null ? r.qa_ps * qaWeight : null;
+
+                return (
+                  <TableRow
+                    key={r.section_student_id}
+                    className={`transition-colors duration-75 hover:bg-accent/30 ${rowClass}`}
+                  >
+                    {/* # */}
+                    <TableCell className="sticky left-0 z-10 w-8 bg-card text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
+                      {r.index_number}
+                    </TableCell>
+
+                    {/* Student */}
+                    <TableCell className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/40 bg-card py-2">
+                      {canExcuse && !r.withdrawn ? (
+                        <HoverHint hint="Choose which assessments count for this student">
+                          <button
+                            type="button"
+                            onClick={() => setExcusingId(r.section_student_id)}
+                            className="whitespace-nowrap rounded-sm text-left text-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {r.student_name}
+                          </button>
+                        </HoverHint>
+                      ) : (
+                        <div
+                          className={
+                            r.withdrawn
+                              ? 'whitespace-nowrap text-sm font-medium text-muted-foreground line-through'
+                              : 'whitespace-nowrap text-sm font-medium text-foreground'
+                          }
                         >
                           {r.student_name}
-                        </button>
-                      </HoverHint>
-                    ) : (
-                      <div
-                        className={
-                          r.withdrawn
-                            ? 'whitespace-nowrap text-sm font-medium text-muted-foreground line-through'
-                            : 'whitespace-nowrap text-sm font-medium text-foreground'
-                        }
-                      >
-                        {r.student_name}
+                        </div>
+                      )}
+                      <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {r.student_number}
                       </div>
-                    )}
-                    <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                      {r.student_number}
-                    </div>
-                    {r.late_enrollee && !r.withdrawn && (
-                      <HoverHint
-                        hint={
-                          canExcuse
-                            ? 'Joined after the term began. A blank assessment counts as zero until you untick it: click the name.'
-                            : 'Joined after the term began. A blank assessment counts as zero until the registrar excuses it.'
-                        }
-                      >
-                        <span className="mt-0.5 inline-flex items-center rounded bg-brand-amber/10 px-1 py-px font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-amber">
-                          Late
-                        </span>
-                      </HoverHint>
-                    )}
-                  </TableCell>
+                      {r.late_enrollee && !r.withdrawn && (
+                        <HoverHint
+                          hint={
+                            canExcuse
+                              ? 'Joined after the term began. A blank assessment counts as zero until you untick it: click the name.'
+                              : 'Joined after the term began. A blank assessment counts as zero until the registrar excuses it.'
+                          }
+                        >
+                          <span className="mt-0.5 inline-flex items-center rounded bg-brand-amber/10 px-1 py-px font-mono text-[9px] font-semibold uppercase tracking-wider text-brand-amber">
+                            Late
+                          </span>
+                        </HoverHint>
+                      )}
+                    </TableCell>
 
-                  {/* WW inputs */}
-                  {wwTotals.map((max, i) => (
-                    <TableCell key={`ww-${i}`} className="px-1 py-1">
-                      {r.ww_excused?.includes(i + 1) ? (
-                        <ExcusedCell />
-                      ) : (
-                        <ScoreInput
-                          value={r.ww_scores[i] ?? null}
-                          max={max}
-                          plaintext={locked}
-                          disabled={inputsDisabled}
-                          onLocalChange={(v) =>
-                            updateLocal(r.section_student_id, (row) => ({
-                              ...row,
-                              ww_scores: replaceAt(
-                                row.ww_scores,
+                    {/* WW inputs */}
+                    {wwTotals.map((max, i) => (
+                      <TableCell key={`ww-${i}`} className="px-1 py-1">
+                        {r.ww_excused?.includes(i + 1) ? (
+                          <ExcusedCell />
+                        ) : (
+                          <ScoreInput
+                            value={r.ww_scores[i] ?? null}
+                            max={max}
+                            plaintext={locked}
+                            disabled={inputsDisabled}
+                            onLocalChange={(v) =>
+                              updateLocal(r.section_student_id, (row) => ({
+                                ...row,
+                                ww_scores: replaceAt(
+                                  row.ww_scores,
+                                  i,
+                                  v,
+                                  wwTotals.length
+                                ),
+                              }))
+                            }
+                            onCommit={(v) => {
+                              const next = replaceAt(
+                                r.ww_scores,
                                 i,
                                 v,
                                 wwTotals.length
-                              ),
-                            }))
-                          }
-                          onCommit={(v) => {
-                            const next = replaceAt(
-                              r.ww_scores,
-                              i,
-                              v,
-                              wwTotals.length
-                            );
-                            commitScore(
+                              );
+                              commitScore(
+                                r.section_student_id,
+                                'ww',
+                                i,
+                                { field: 'ww_scores', slotIndex: i },
+                                { ww_scores: next },
+                                v
+                              );
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                    ))}
+                    <ComputedCell value={wwTotal} dp={0} />
+                    <ComputedCell value={r.ww_ps} />
+                    <ComputedCell value={wwWs} groupEnd />
+
+                    {/* PT inputs */}
+                    {ptLen > 0 && (
+                      <>
+                        {ptTotals.map((max, i) => (
+                          <TableCell key={`pt-${i}`} className="px-1 py-1">
+                            {r.pt_excused?.includes(i + 1) ? (
+                              <ExcusedCell />
+                            ) : (
+                              <ScoreInput
+                                value={r.pt_scores[i] ?? null}
+                                max={max}
+                                plaintext={locked}
+                                disabled={inputsDisabled}
+                                onLocalChange={(v) =>
+                                  updateLocal(r.section_student_id, (row) => ({
+                                    ...row,
+                                    pt_scores: replaceAt(
+                                      row.pt_scores,
+                                      i,
+                                      v,
+                                      ptTotals.length
+                                    ),
+                                  }))
+                                }
+                                onCommit={(v) => {
+                                  const next = replaceAt(
+                                    r.pt_scores,
+                                    i,
+                                    v,
+                                    ptTotals.length
+                                  );
+                                  commitScore(
+                                    r.section_student_id,
+                                    'pt',
+                                    i,
+                                    { field: 'pt_scores', slotIndex: i },
+                                    { pt_scores: next },
+                                    v
+                                  );
+                                }}
+                              />
+                            )}
+                          </TableCell>
+                        ))}
+                        <ComputedCell value={ptTotal} dp={0} />
+                        <ComputedCell value={r.pt_ps} />
+                        <ComputedCell value={ptWs} groupEnd />
+                      </>
+                    )}
+
+                    {/* QA input */}
+                    <TableCell className="px-1 py-1">
+                      <ScoreInput
+                        value={r.qa_score}
+                        max={qaTotal}
+                        plaintext={locked}
+                        disabled={inputsDisabled}
+                        onLocalChange={(v) =>
+                          updateLocal(r.section_student_id, (row) => ({
+                            ...row,
+                            qa_score: v,
+                          }))
+                        }
+                        onCommit={(v) =>
+                          commitScore(
+                            r.section_student_id,
+                            'qa',
+                            null,
+                            { field: 'qa_score', slotIndex: null },
+                            { qa_score: v },
+                            v
+                          )
+                        }
+                      />
+                    </TableCell>
+                    <ComputedCell value={r.qa_ps} />
+                    <ComputedCell value={qaWs} groupEnd />
+
+                    {/* Initial grade — de-emphasised; the quarterly is the result the teacher cares about */}
+                    <TableCell className="border-l-2 border-border/30 px-2 text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
+                      {r.initial_grade != null
+                        ? r.initial_grade.toFixed(2)
+                        : '—'}
+                    </TableCell>
+
+                    {/* Quarterly grade — derived letter for non-examinable subjects (KD #104) */}
+                    <TableCell className="text-right tabular-nums">
+                      <QuarterlyPill
+                        value={r.quarterly_grade}
+                        // No colour until every counted slot has a score — a
+                        // part-filled row's grade is not a result yet.
+                        muted={
+                          r.withdrawn ||
+                          r.is_na ||
+                          readOnly ||
+                          !isRowComplete(r, sheetShape)
+                        }
+                        letter={
+                          letterDisplay
+                            ? resolveNonExaminableLetter({
+                                isNa: r.is_na,
+                                letterOverride: r.letter_grade,
+                                quarterly: r.quarterly_grade,
+                              })
+                            : undefined
+                        }
+                      />
+                    </TableCell>
+
+                    {/* N/A (examinable) — or override code —/N/A/UG/E for
+                      non-examinable subjects (KD #104). */}
+                    <TableCell className="text-center">
+                      {letterDisplay ? (
+                        <Select
+                          value={rowToOverrideChoice(r)}
+                          disabled={r.withdrawn || readOnly}
+                          onValueChange={(v) => {
+                            const next =
+                              OVERRIDE_CHOICE_TO_COLUMNS[v as OverrideChoice];
+                            const isNaChanged = next.is_na !== r.is_na;
+                            const letterChanged =
+                              next.letter_grade !== (r.letter_grade ?? null);
+                            if (!isNaChanged && !letterChanged) return;
+                            // A locked-sheet change request carries a single
+                            // field; the N/A↔UG/E jump touches both columns, so
+                            // make the registrar clear to '—' first.
+                            if (
+                              requireApproval &&
+                              isNaChanged &&
+                              letterChanged
+                            ) {
+                              toast.error(
+                                'On a locked sheet, set this to “—” first, then choose UG or E.'
+                              );
+                              return;
+                            }
+                            patchEntry(
                               r.section_student_id,
-                              'ww',
-                              i,
-                              { field: 'ww_scores', slotIndex: i },
-                              { ww_scores: next },
-                              v
+                              {
+                                field: letterChanged ? 'letter_grade' : 'is_na',
+                                slotIndex: null,
+                              },
+                              {
+                                is_na: next.is_na,
+                                letter_grade: next.letter_grade,
+                              }
+                            );
+                          }}
+                        >
+                          <SelectTrigger
+                            className="mx-auto h-7 w-[4.75rem] justify-center px-2 font-mono text-xs"
+                            aria-label="Grade override"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="NONE">—</SelectItem>
+                            <SelectItem value="NA">N/A</SelectItem>
+                            <SelectItem value="UG">UG</SelectItem>
+                            <SelectItem value="E">E</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Checkbox
+                          checked={r.is_na}
+                          disabled={r.withdrawn || readOnly}
+                          aria-label="Mark late enrollee N/A"
+                          onCheckedChange={(v) => {
+                            const next = v === true;
+                            updateLocal(r.section_student_id, (row) => ({
+                              ...row,
+                              is_na: next,
+                            }));
+                            patchEntry(
+                              r.section_student_id,
+                              { field: 'is_na', slotIndex: null },
+                              { is_na: next }
                             );
                           }}
                         />
                       )}
                     </TableCell>
-                  ))}
-                  <ComputedCell value={wwTotal} dp={0} />
-                  <ComputedCell value={r.ww_ps} />
-                  <ComputedCell value={wwWs} groupEnd />
-
-                  {/* PT inputs */}
-                  {ptLen > 0 && (
-                    <>
-                      {ptTotals.map((max, i) => (
-                        <TableCell key={`pt-${i}`} className="px-1 py-1">
-                          {r.pt_excused?.includes(i + 1) ? (
-                            <ExcusedCell />
-                          ) : (
-                            <ScoreInput
-                              value={r.pt_scores[i] ?? null}
-                              max={max}
-                              plaintext={locked}
-                              disabled={inputsDisabled}
-                              onLocalChange={(v) =>
-                                updateLocal(r.section_student_id, (row) => ({
-                                  ...row,
-                                  pt_scores: replaceAt(
-                                    row.pt_scores,
-                                    i,
-                                    v,
-                                    ptTotals.length
-                                  ),
-                                }))
-                              }
-                              onCommit={(v) => {
-                                const next = replaceAt(
-                                  r.pt_scores,
-                                  i,
-                                  v,
-                                  ptTotals.length
-                                );
-                                commitScore(
-                                  r.section_student_id,
-                                  'pt',
-                                  i,
-                                  { field: 'pt_scores', slotIndex: i },
-                                  { pt_scores: next },
-                                  v
-                                );
-                              }}
-                            />
-                          )}
-                        </TableCell>
-                      ))}
-                      <ComputedCell value={ptTotal} dp={0} />
-                      <ComputedCell value={r.pt_ps} />
-                      <ComputedCell value={ptWs} groupEnd />
-                    </>
-                  )}
-
-                  {/* QA input */}
-                  <TableCell className="px-1 py-1">
-                    <ScoreInput
-                      value={r.qa_score}
-                      max={qaTotal}
-                      plaintext={locked}
-                      disabled={inputsDisabled}
-                      onLocalChange={(v) =>
-                        updateLocal(r.section_student_id, (row) => ({
-                          ...row,
-                          qa_score: v,
-                        }))
-                      }
-                      onCommit={(v) =>
-                        commitScore(
-                          r.section_student_id,
-                          'qa',
-                          null,
-                          { field: 'qa_score', slotIndex: null },
-                          { qa_score: v },
-                          v
-                        )
-                      }
-                    />
-                  </TableCell>
-                  <ComputedCell value={r.qa_ps} />
-                  <ComputedCell value={qaWs} groupEnd />
-
-                  {/* Initial grade — de-emphasised; the quarterly is the result the teacher cares about */}
-                  <TableCell className="border-l-2 border-border/30 px-2 text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
-                    {r.initial_grade != null ? r.initial_grade.toFixed(2) : '—'}
-                  </TableCell>
-
-                  {/* Quarterly grade — derived letter for non-examinable subjects (KD #104) */}
-                  <TableCell className="text-right tabular-nums">
-                    <QuarterlyPill
-                      value={r.quarterly_grade}
-                      // No colour until every counted slot has a score — a
-                      // part-filled row's grade is not a result yet.
-                      muted={
-                        r.withdrawn ||
-                        r.is_na ||
-                        readOnly ||
-                        !isRowComplete(r, sheetShape)
-                      }
-                      letter={
-                        letterDisplay
-                          ? resolveNonExaminableLetter({
-                              isNa: r.is_na,
-                              letterOverride: r.letter_grade,
-                              quarterly: r.quarterly_grade,
-                            })
-                          : undefined
-                      }
-                    />
-                  </TableCell>
-
-                  {/* N/A (examinable) — or override code —/N/A/UG/E for
-                      non-examinable subjects (KD #104). */}
-                  <TableCell className="text-center">
-                    {letterDisplay ? (
-                      <Select
-                        value={rowToOverrideChoice(r)}
-                        disabled={r.withdrawn || readOnly}
-                        onValueChange={(v) => {
-                          const next =
-                            OVERRIDE_CHOICE_TO_COLUMNS[v as OverrideChoice];
-                          const isNaChanged = next.is_na !== r.is_na;
-                          const letterChanged =
-                            next.letter_grade !== (r.letter_grade ?? null);
-                          if (!isNaChanged && !letterChanged) return;
-                          // A locked-sheet change request carries a single
-                          // field; the N/A↔UG/E jump touches both columns, so
-                          // make the registrar clear to '—' first.
-                          if (requireApproval && isNaChanged && letterChanged) {
-                            toast.error(
-                              'On a locked sheet, set this to “—” first, then choose UG or E.'
-                            );
-                            return;
-                          }
-                          patchEntry(
-                            r.section_student_id,
-                            {
-                              field: letterChanged ? 'letter_grade' : 'is_na',
-                              slotIndex: null,
-                            },
-                            {
-                              is_na: next.is_na,
-                              letter_grade: next.letter_grade,
-                            }
-                          );
-                        }}
-                      >
-                        <SelectTrigger
-                          className="mx-auto h-7 w-[4.75rem] justify-center px-2 font-mono text-xs"
-                          aria-label="Grade override"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="NONE">—</SelectItem>
-                          <SelectItem value="NA">N/A</SelectItem>
-                          <SelectItem value="UG">UG</SelectItem>
-                          <SelectItem value="E">E</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Checkbox
-                        checked={r.is_na}
-                        disabled={r.withdrawn || readOnly}
-                        aria-label="Mark late enrollee N/A"
-                        onCheckedChange={(v) => {
-                          const next = v === true;
-                          updateLocal(r.section_student_id, (row) => ({
-                            ...row,
-                            is_na: next,
-                          }));
-                          patchEntry(
-                            r.section_student_id,
-                            { field: 'is_na', slotIndex: null },
-                            { is_na: next }
-                          );
-                        }}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
 
       {approvalDialog}

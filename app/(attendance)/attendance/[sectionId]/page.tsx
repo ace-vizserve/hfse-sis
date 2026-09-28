@@ -537,6 +537,11 @@ export default async function SectionAttendancePage({
           canEditBusCare={canEditBusCare}
           canEditAcademics={canEditAcademics}
           canEditAdmin={canEditAdmin}
+          title={
+            selectedTerm?.label
+              ? `${section.name} · ${selectedTerm.label}`
+              : section.name
+          }
         />
       )}
 
