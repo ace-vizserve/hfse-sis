@@ -8,6 +8,7 @@ import {
   loadEnrolledRoster,
   loadEventForWrite,
 } from '@/lib/house-points/queries';
+import { diffTeamPatch } from '@/lib/house-points/team-patch-diff';
 import { TeamPatchSchema } from '@/lib/schemas/house-points';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -108,15 +109,12 @@ export async function PATCH(
       validatedIds = uniqueIds;
     }
 
-    if (patch.name !== undefined) {
-      step = 'rename team';
-      const { error } = await service
-        .from('house_point_teams')
-        .update({ name: patch.name })
-        .eq('id', teamId);
-      if (error) throw new Error(`house_point_teams update: ${error.message}`);
-    }
-
+    // Existing members are needed both to DIFF a sent `sectionStudentIds`
+    // against (did the SET actually change, order aside?) and as the
+    // rollback source if a later replace-insert fails below — only fetched
+    // when members were actually sent, same "only pay for what changed"
+    // posture as PATCH /api/house-points/events/[eventId]'s existingPlaces.
+    let existingMemberIds: string[] = [];
     if (validatedIds !== null) {
       step = 'load existing members';
       const { data: existingRows, error: existingError } = await service
@@ -126,10 +124,36 @@ export async function PATCH(
       if (existingError) {
         throw new Error(`house_point_team_members: ${existingError.message}`);
       }
-      const existingIds = (existingRows ?? []).map(
+      existingMemberIds = (existingRows ?? []).map(
         (r) => (r as { section_student_id: string }).section_student_id
       );
+    }
 
+    // Field-by-field, VALUE-changed diff — not key presence. Resubmitting a
+    // team's own name, and/or its own member set (reordered or not), must
+    // not write and must not leave an empty `house_points.team.update`
+    // audit row. See lib/house-points/team-patch-diff.ts's header for the
+    // bug this fixes.
+    const diff = diffTeamPatch(
+      { name: team.name, memberIds: existingMemberIds },
+      { name: patch.name, sectionStudentIds: validatedIds ?? undefined }
+    );
+
+    // Fast no-op: neither field actually changed.
+    if (diff.name === undefined && diff.memberIds === undefined) {
+      return NextResponse.json({ ok: true, changed: false });
+    }
+
+    if (diff.name !== undefined) {
+      step = 'rename team';
+      const { error } = await service
+        .from('house_point_teams')
+        .update({ name: diff.name })
+        .eq('id', teamId);
+      if (error) throw new Error(`house_point_teams update: ${error.message}`);
+    }
+
+    if (diff.memberIds !== undefined) {
       step = 'delete existing members';
       const { error: deleteError } = await service
         .from('house_point_team_members')
@@ -145,7 +169,7 @@ export async function PATCH(
       const { error: insertError } = await service
         .from('house_point_team_members')
         .insert(
-          validatedIds.map((sectionStudentId) => ({
+          diff.memberIds.map((sectionStudentId) => ({
             team_id: teamId,
             section_student_id: sectionStudentId,
           }))
@@ -157,11 +181,11 @@ export async function PATCH(
         // NO members at all — put the old list back rather than shipping
         // that half-done state.
         step = 'restore members after failed replace';
-        if (existingIds.length > 0) {
+        if (existingMemberIds.length > 0) {
           const { error: restoreError } = await service
             .from('house_point_team_members')
             .insert(
-              existingIds.map((sectionStudentId) => ({
+              existingMemberIds.map((sectionStudentId) => ({
                 team_id: teamId,
                 section_student_id: sectionStudentId,
               }))
@@ -186,15 +210,17 @@ export async function PATCH(
       entityId: teamId,
       context: {
         event_id: team.event_id,
-        name: patch.name ?? team.name,
+        name: diff.name ?? team.name,
         eventName: event.name,
-        ...(validatedIds !== null ? { sectionStudentIds: validatedIds } : {}),
+        ...(diff.memberIds !== undefined
+          ? { sectionStudentIds: diff.memberIds }
+          : {}),
       },
     });
 
     if (event.ayCode) invalidateDrillTags('records', event.ayCode);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, changed: true });
   } catch (e) {
     return failure(step, e, `PATCH ${teamId}`);
   }
