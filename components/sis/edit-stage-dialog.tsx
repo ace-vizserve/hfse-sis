@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { AssessmentScoreField } from '@/components/sis/assessment-score-field';
 import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
 import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ import {
   STAGE_STATUS_OPTIONS,
   STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
+  checkStageScoreExtras,
   findStageCompletionBlockers,
   isStageStatusMissing,
   stageCompletionMessage,
@@ -320,6 +322,17 @@ export function EditStageDialog({
   // says nothing, so the record reads as worked when it is empty. Same rule as
   // the route, read from the same helper so the two cannot drift.
   const statusMissing = isStageStatusMissing(stageKey, effectiveStatus);
+
+  // Score extras (the assessment grades): the same rule the route applies,
+  // judged against the stored row so an untouched legacy grade passes. Each
+  // field shows its own message; this only keeps Save shut while one stands.
+  const scoreCheck = checkStageScoreExtras(
+    cols,
+    watchedExtras ?? undefined,
+    Object.fromEntries(
+      cols.extras.map((e) => [e.columnName, initialExtras[e.fieldKey] ?? null])
+    )
+  );
 
   const completionBlockers = findStageCompletionBlockers(
     stageKey,
@@ -813,53 +826,80 @@ export function EditStageDialog({
                         Stage details
                       </p>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        {cols.extras.map((e) => (
-                          <FormField
-                            key={e.fieldKey}
-                            control={form.control}
-                            name={`extras.${e.fieldKey}` as const}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">
-                                  {e.label}
-                                  {blockedFieldKeys.has(e.fieldKey) && (
-                                    <span className="text-destructive"> *</span>
-                                  )}
-                                </FormLabel>
-                                <FormControl>
-                                  {e.kind === 'date' ? (
-                                    <DatePicker
-                                      value={
-                                        (field.value as string | null) ?? ''
-                                      }
-                                      onChange={(next) =>
-                                        field.onChange(
-                                          next === '' ? null : next
-                                        )
-                                      }
-                                    />
-                                  ) : (
-                                    <Input
-                                      type="text"
-                                      value={
-                                        (field.value as string | null) ?? ''
-                                      }
-                                      onChange={(ev) =>
-                                        field.onChange(
-                                          ev.target.value === ''
-                                            ? null
-                                            : ev.target.value
-                                        )
-                                      }
-                                      placeholder=""
-                                    />
-                                  )}
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        ))}
+                        {/* Plain fields first, then the score pairs, so Math
+                            and English sit side by side on one row instead of
+                            landing diagonally in the two-column grid. */}
+                        {[
+                          ...cols.extras.filter((x) => x.kind !== 'score'),
+                          ...cols.extras.filter((x) => x.kind === 'score'),
+                        ].map((e) =>
+                          e.kind === 'score' ? (
+                            <FormField
+                              key={e.fieldKey}
+                              control={form.control}
+                              name={`extras.${e.fieldKey}` as const}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <AssessmentScoreField
+                                    label={e.label}
+                                    stored={initialExtras[e.fieldKey] ?? null}
+                                    onChange={field.onChange}
+                                    required={blockedFieldKeys.has(e.fieldKey)}
+                                  />
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <FormField
+                              key={e.fieldKey}
+                              control={form.control}
+                              name={`extras.${e.fieldKey}` as const}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-xs">
+                                    {e.label}
+                                    {blockedFieldKeys.has(e.fieldKey) && (
+                                      <span className="text-destructive">
+                                        {' '}
+                                        *
+                                      </span>
+                                    )}
+                                  </FormLabel>
+                                  <FormControl>
+                                    {e.kind === 'date' ? (
+                                      <DatePicker
+                                        value={
+                                          (field.value as string | null) ?? ''
+                                        }
+                                        onChange={(next) =>
+                                          field.onChange(
+                                            next === '' ? null : next
+                                          )
+                                        }
+                                      />
+                                    ) : (
+                                      <Input
+                                        type="text"
+                                        value={
+                                          (field.value as string | null) ?? ''
+                                        }
+                                        onChange={(ev) =>
+                                          field.onChange(
+                                            ev.target.value === ''
+                                              ? null
+                                              : ev.target.value
+                                          )
+                                        }
+                                        placeholder=""
+                                      />
+                                    )}
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )
+                        )}
                       </div>
                       {showCompletionNotice && (
                         <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
@@ -1066,6 +1106,7 @@ export function EditStageDialog({
                     disabled={
                       statusMissing ||
                       completionBlockers.length > 0 ||
+                      !scoreCheck.ok ||
                       (showOpenStepsWarning && !enrolAnyway) ||
                       (lastDayRequired && !lastDay) ||
                       (stageKey === 'application' &&
