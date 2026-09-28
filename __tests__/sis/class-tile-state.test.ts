@@ -2,48 +2,47 @@ import { describe, expect, it } from 'vitest';
 
 import { classTileState } from '@/lib/sis/class-tile-state';
 
-// The Class Assignment tile's states — the table in Phase 4 of
-// docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md.
+// The Class Assignment tile's states. Class assignment is Enrolled-only:
+// before Enrolled the tile shows a status line and no button.
 describe('classTileState', () => {
   const base = { classLevel: null, classSection: null, inClass: false };
 
-  it('offers "Choose a class" before enrolment when no class is chosen', () => {
-    expect(classTileState({ ...base, applicationStatus: 'Submitted' })).toEqual(
-      {
-        kind: 'choose',
-        line: 'No class chosen yet',
-        action: { mode: 'choose', label: 'Choose a class' },
-      }
-    );
+  it('offers no button before enrolment when no class is set', () => {
+    const state = classTileState({ ...base, applicationStatus: 'Submitted' });
+    expect(state).toEqual({
+      kind: 'before_enrolled',
+      line: 'Assigned after enrolment',
+    });
+    expect('action' in state).toBe(false);
   });
 
-  it('offers "Change class" before enrolment when a class is chosen', () => {
-    expect(
-      classTileState({
-        applicationStatus: 'Processing',
-        classLevel: 'Primary 3',
-        classSection: 'Courageous',
-        inClass: false,
-      })
-    ).toEqual({
-      kind: 'change_choice',
-      line: 'Joins Primary 3 · Courageous when enrolled',
-      action: { mode: 'choose', label: 'Change class' },
+  it('names a class set in Directus before enrolment, with no button', () => {
+    const state = classTileState({
+      applicationStatus: 'Processing',
+      classLevel: 'Primary 3',
+      classSection: 'Courageous',
+      inClass: false,
     });
+    expect(state).toEqual({
+      kind: 'before_enrolled',
+      line: 'Primary 3 · Courageous — joins when enrolled',
+    });
+    expect('action' in state).toBe(false);
   });
 
   it('treats a blank status as not enrolled yet', () => {
-    expect(classTileState({ ...base, applicationStatus: null }).kind).toBe(
-      'choose'
-    );
+    expect(classTileState({ ...base, applicationStatus: null })).toEqual({
+      kind: 'before_enrolled',
+      line: 'Assigned after enrolment',
+    });
   });
 
-  it('offers "Assign a class" in place mode for an enrolled child with no class', () => {
+  it('offers "Assign a class" for an enrolled child with no class', () => {
     for (const status of ['Enrolled', 'Enrolled (Conditional)']) {
       expect(classTileState({ ...base, applicationStatus: status })).toEqual({
         kind: 'awaiting',
         line: 'Awaiting class assignment',
-        action: { mode: 'place', label: 'Assign a class' },
+        action: { label: 'Assign a class' },
       });
     }
   });
@@ -59,19 +58,19 @@ describe('classTileState', () => {
     ).toEqual({
       kind: 'not_in_class_yet',
       line: 'Secondary 1 · Discipline 1 — not in the class yet',
-      action: { mode: 'place', label: 'Assign a class' },
+      action: { label: 'Assign a class' },
     });
   });
 
-  it('a level with no section is not a chosen class', () => {
+  it('a level with no section is not a named class', () => {
     expect(
       classTileState({
         applicationStatus: 'Submitted',
         classLevel: 'Primary 1',
         classSection: '  ',
         inClass: false,
-      }).kind
-    ).toBe('choose');
+      })
+    ).toEqual({ kind: 'before_enrolled', line: 'Assigned after enrolment' });
   });
 
   it('leaves a child on a class list to the existing Change section control', () => {
@@ -83,7 +82,7 @@ describe('classTileState', () => {
         inClass: true,
       })
     ).toEqual({ kind: 'in_class' });
-    // Including the in-class-but-Submitted children — never offered a choice.
+    // Including the in-class-but-Submitted children.
     expect(
       classTileState({
         applicationStatus: 'Submitted',

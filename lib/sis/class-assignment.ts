@@ -17,10 +17,11 @@ import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 // records-lite-page.tsx's private loadAvailableSections, and three
 // separate hardcoded copies of the 50-student cap).
 //
-// ⚠ A CHOSEN CLASS HOLDS A SEAT (2026-09-28,
-// docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md). A class
-// can now be chosen before the application is Enrolled; the child only joins
-// the roster at Enrolled. Between the two they are on nobody's roster, so a
+// ⚠ A CLASS ASSIGNED BEFORE ENROLMENT HOLDS A SEAT (2026-09-28,
+// docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md). The SIS
+// assigns a class only once the application is Enrolled, but Directus (and
+// the old enrolment link) can name one earlier; the child only joins the
+// roster at Enrolled. Between the two they are on nobody's roster, so a
 // headcount of the roster alone would let a class be promised to 55 children
 // and refuse the last five on enrolment day. Both the picker's numbers and the
 // cap below therefore add `countChosenSeats` — ONE count, so the picker and
@@ -34,9 +35,10 @@ export type AssignableSection = {
   /** On the class list now — active + late enrollees. */
   activeCount: number;
   /**
-   * Children who chose this class (in the SIS, Directus or the old enrolment
-   * link) but are not on its class list yet — usually because their
-   * application is not Enrolled. They hold a seat. See `countChosenSeats`.
+   * Children whose admissions row names this class (set in Directus or the
+   * old enrolment link) but who are not on its class list yet — usually
+   * because their application is not Enrolled. They hold a seat. See
+   * `countChosenSeats`.
    */
   chosenCount: number;
   /** `activeCount + chosenCount >= 50` — the same test the write path applies. */
@@ -70,7 +72,7 @@ function isTerminalApplicationStatus(status: string | null): boolean {
 }
 
 /**
- * Seats held by a chosen class, per section — pure, so it is tested without a
+ * Seats held by a class named on an admissions row, per section — pure, so it is tested without a
  * database.
  *
  * A row holds a seat in a section when its class resolves to that section the
@@ -83,8 +85,8 @@ function isTerminalApplicationStatus(status: string | null): boolean {
  * Not counted:
  *  - Cancelled / Withdrawn applications — they are not coming.
  *  - A child already on that section's class list — the roster count has them.
- *  - `excludeEnroleeNumber` — the child being placed, whose own chosen seat
- *    must not stand between them and the class they chose.
+ *  - `excludeEnroleeNumber` — the child being placed, whose own seat must not
+ *    stand between them and the class their row already names.
  */
 export function countChosenSeats(
   rows: readonly ChosenClassRow[],
@@ -119,7 +121,7 @@ function admissionsPrefix(ayCode: string): string {
 }
 
 /**
- * Every live admissions row of the AY whose chosen class sits at `levelLabel`.
+ * Every live admissions row of the AY whose named class sits at `levelLabel`.
  * Two reads, whatever the number of sections: the status rows naming a class
  * (filtered to the level here, in code, because the level is matched after
  * normalizing and a SQL filter would miss the legacy spellings), then the
@@ -234,7 +236,7 @@ function rosterStudentNumber(row: RosterRow): string | null {
 
 /**
  * Every section at the applicant's level, with live headcounts: who is on the
- * class list, and who has chosen the class but is not on it yet.
+ * class list, and who is assigned the class but not on it yet.
  * Returns every section regardless of capacity — callers (the picker UI)
  * show full sections as disabled rather than hiding them, so the registrar
  * has full visibility into state before deciding. `level` is null when the
@@ -242,7 +244,7 @@ function rosterStudentNumber(row: RosterRow): string | null {
  * callers should point the registrar at /records/level-mismatches in that
  * case rather than showing an empty section list.
  *
- * `excludeEnroleeNumber` leaves that child's own chosen seat out of the
+ * `excludeEnroleeNumber` leaves that child's own waiting seat out of the
  * counts, so a child is never shown their own class as full because of
  * themselves.
  */
@@ -296,7 +298,7 @@ export async function listAssignableSections(
   // shown in the picker must be the same number the cap enforces, or the
   // registrar sees "27 students" on a section the write path considers full.
   // The student number rides along so a child already on the list is not
-  // counted a second time as a chosen seat. Runs beside the admissions read.
+  // counted a second time as a waiting seat. Runs beside the admissions read.
   const [{ data: activeRows }, chosen] = await Promise.all([
     service
       .from('section_students')
@@ -320,7 +322,7 @@ export async function listAssignableSections(
     }
   }
 
-  // A failed admissions read costs the chosen counts, never the picker: the
+  // A failed admissions read costs the waiting counts, never the picker: the
   // write path re-checks at save time and refuses there if the read fails.
   if ('error' in chosen) {
     console.warn('[class-assignment] chosen-seat read failed:', chosen.error);
@@ -364,9 +366,9 @@ export async function listAssignableSections(
  * time (a second student could fill it between page-load and confirm).
  *
  * `exclude` names the child being placed. Their own seat — on the class list
- * already, or held by a class they chose — is not counted against them;
- * otherwise a child who chose the last seat would be refused it on the day
- * they enrol.
+ * already, or held by the class their admissions row names — is not counted
+ * against them; otherwise a child holding the last seat would be refused it
+ * on the day they enrol.
  */
 export async function validateSectionChoice(
   service: SupabaseClient,
@@ -441,7 +443,7 @@ export async function validateSectionChoice(
   //
   // Rows rather than a head count, because the student numbers are needed:
   // to leave out the child being placed, and so a child on the list is not
-  // counted again as a chosen seat. A class list is at most ~50 rows.
+  // counted again as a waiting seat. A class list is at most ~50 rows.
   const [{ data: rosterRows, error: rosterErr }, chosen] = await Promise.all([
     service
       .from('section_students')
@@ -477,7 +479,7 @@ export async function validateSectionChoice(
     return {
       error:
         chosenSeats > 0
-          ? `${row.name} is full: ${onList} in the class and ${chosenSeats} more who chose it and are waiting to be enrolled (${MAX_ACTIVE_PER_SECTION} places). Pick another class.`
+          ? `${row.name} is full: ${onList} in the class and ${chosenSeats} more assigned to it and waiting to enrol (${MAX_ACTIVE_PER_SECTION} places). Pick another class.`
           : `${row.name} is full (${MAX_ACTIVE_PER_SECTION} students). Pick another class.`,
     };
   }
@@ -493,9 +495,8 @@ export async function validateSectionChoice(
 }
 
 /**
- * Finds the SIS class a chosen class names — the class columns on an
- * admissions row, however they were filled in (SIS, Directus, the old
- * enrolment link). Resolved exactly as the sync resolves it, so a class this
+ * Finds the SIS class an admissions row names — its class columns, however
+ * they were filled in (SIS, Directus, the old enrolment link). Resolved exactly as the sync resolves it, so a class this
  * finds is a class the sync will place the child in.
  *
  * Returns a plain-English `reason` when there is no such class, for the
@@ -513,12 +514,12 @@ export async function resolveChosenSection(
   const levelLabel = normalizeLevelLabel(classLevel);
   if (!levelLabel) {
     return {
-      reason: `The class chosen for this child (${shown || 'no name'}) has no level with it.`,
+      reason: `The class set for this child (${shown || 'no name'}) has no level with it.`,
     };
   }
   const sectionName = normalizeSectionName(classSection);
   if (!sectionName) {
-    return { reason: 'No class has been chosen for this child.' };
+    return { reason: 'No class has been set for this child.' };
   }
 
   const { data: levelRow, error: levelErr } = await service
@@ -529,7 +530,7 @@ export async function resolveChosenSection(
   if (levelErr) return { reason: `Level lookup failed: ${levelErr.message}` };
   if (!levelRow) {
     return {
-      reason: `The class chosen for this child is ${shown}, but "${classLevel?.trim()}" is not a level the school uses.`,
+      reason: `The class set for this child is ${shown}, but "${classLevel?.trim()}" is not a level the school uses.`,
     };
   }
   const level = levelRow as { id: string; label: string };
@@ -545,7 +546,7 @@ export async function resolveChosenSection(
     return { reason: `Class lookup failed: ${sectionErr.message}` };
   if (!sectionRow) {
     return {
-      reason: `The class chosen for this child is ${shown}, but there is no class called "${sectionName}" in ${level.label} for ${ayCode}.`,
+      reason: `The class set for this child is ${shown}, but there is no class called "${sectionName}" in ${level.label} for ${ayCode}.`,
     };
   }
   return { sectionId: (sectionRow as { id: string }).id };

@@ -209,8 +209,8 @@ export function EditStageDialog({
   // enrolled, then losing the lot to a failed save.
   const prereqsAllMet = showPrereqChecklist && incompleteCount === 0;
 
-  // Set when the server refused the Enrolled flip because the class chosen
-  // before enrolment is gone, full, or at the wrong level
+  // Set when the server refused the Enrolled flip because the class set
+  // before enrolment (in Directus) is gone, full, or at the wrong level
   // (`chosen_class_unavailable`). Holds the server's sentence, shown above the
   // picker, and opens the picker for Enrolled (Conditional) too — the server
   // accepts a picked class on both, so the person can pick another class and
@@ -532,11 +532,11 @@ export function EditStageDialog({
         setServerNeedsLastDay(true);
         return body.error ?? 'Enter the last day at school.';
       }
-      // The class chosen before enrolment can't take them. Open the picker
+      // The class set before enrolment can't take them. Open the picker
       // with the reason above it; nothing was saved.
       if (body.code === 'chosen_class_unavailable') {
         const why =
-          body.error ?? 'The class chosen for this child can’t take them.';
+          body.error ?? 'The class set for this child can’t take them.';
         setChosenClassProblem(why);
         setSectionId(null);
         return why;
@@ -810,8 +810,9 @@ export function EditStageDialog({
                                 (b.activeCount + b.chosenCount)
                             )
                             .map((sec) => {
-                              // Children who chose a class hold a seat in it —
-                              // the same count the server's cap uses.
+                              // Children assigned a class but not yet enrolled
+                              // hold a seat in it — the same count the
+                              // server's cap uses.
                               const taken = sec.activeCount + sec.chosenCount;
                               const full = taken >= MAX_ACTIVE_PER_SECTION;
                               // Hint only — nothing is hidden or reordered.
@@ -846,7 +847,7 @@ export function EditStageDialog({
                                   <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
                                     {taken}/{MAX_ACTIVE_PER_SECTION}
                                     {sec.chosenCount > 0
-                                      ? ` · ${sec.chosenCount} not yet enrolled`
+                                      ? ` · ${sec.chosenCount} waiting to enrol`
                                       : ''}
                                     {full ? ' · Full' : ''}
                                   </span>

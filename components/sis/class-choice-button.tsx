@@ -3,10 +3,7 @@
 import { GraduationCap } from 'lucide-react';
 import * as React from 'react';
 
-import {
-  AssignSectionDialog,
-  type AssignSectionMode,
-} from '@/components/sis/assign-section-dialog';
+import { AssignSectionDialog } from '@/components/sis/assign-section-dialog';
 import { Button } from '@/components/ui/button';
 import type { ApplicationFit } from '@/lib/admissions/options';
 import type {
@@ -14,14 +11,13 @@ import type {
   AssignableSection,
 } from '@/lib/sis/class-assignment';
 
-// The Class Assignment tile's own button on the admissions record — "Choose a
-// class", "Change class" or "Assign a class" (see lib/sis/class-tile-state.ts
-// for which). Owns the open state for <AssignSectionDialog>; the tile around it
-// is a server component. Everything passed in is plain data — the page loads
-// the class list and the application fit on the server.
+// The Class Assignment tile's own "Assign a class" button on the admissions
+// record, shown only once the application is Enrolled (see
+// lib/sis/class-tile-state.ts). Owns the open state for <AssignSectionDialog>;
+// the tile around it is a server component. Everything passed in is plain
+// data — the page loads the class list and the application fit on the server.
 
 export function ClassChoiceButton({
-  mode,
   label,
   enroleeNumber,
   studentName,
@@ -30,7 +26,6 @@ export function ClassChoiceButton({
   sections,
   applicationFit,
 }: {
-  mode: AssignSectionMode;
   label: string;
   enroleeNumber: string;
   studentName: string;
@@ -54,7 +49,6 @@ export function ClassChoiceButton({
         {label}
       </Button>
       <AssignSectionDialog
-        mode={mode}
         enroleeNumber={enroleeNumber}
         studentName={studentName}
         ayCode={ayCode}

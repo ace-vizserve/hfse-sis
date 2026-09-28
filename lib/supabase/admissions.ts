@@ -21,7 +21,7 @@ export type AdmissionsRow = {
   enrolee_number: string | null; // admissions key, stamped onto section_students
   // e.g. "Submitted", "Enrolled". Required, not optional, on purpose: the sync
   // planner only lets an Enrolled / Enrolled (Conditional) child JOIN a class
-  // (a class can be chosen at any stage — the roster waits for enrolment), so
+  // (Directus can set a class at any stage — the roster waits for enrolment), so
   // a caller that forgot to read it would silently hold every child back.
   application_status: string | null;
 };
@@ -44,8 +44,8 @@ export function filterWithdrawnFromRoster(
 //   * classSection IS NOT NULL  (primary liveness signal — applicationStatus is unreliable)
 //   * applicationStatus NOT IN ('Cancelled', 'Withdrawn')
 //
-// Deliberately NOT narrowed to Enrolled. A class can be chosen before
-// enrolment, and only an Enrolled child may join the roster — but that rule is
+// Deliberately NOT narrowed to Enrolled. A class can be set (in Directus)
+// before enrolment, and only an Enrolled child may join the roster — but that rule is
 // enforced in `buildSyncPlan`, from `application_status`, not here. The
 // planner withdraws every active roster row it does not see in its input, so
 // dropping a not-yet-enrolled child from this list would withdraw the ones

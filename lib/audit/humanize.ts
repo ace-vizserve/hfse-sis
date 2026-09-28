@@ -123,7 +123,6 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'student.withdrawal.cascade': 'Student withdrawn',
   'student.reenrolment.cascade': 'Student re-enrolled',
   'sis.student.assign_section': 'Section assigned',
-  'sis.student.choose_section': 'Class chosen',
   'sis.student.auto_sync_batch': 'Students auto-synced',
   'sis.student.export_raw': 'Student data downloaded',
   'enrolment.metadata.update': 'Enrolment updated',
@@ -1441,28 +1440,6 @@ function templateSummary(
       if (term) parts.push(term);
       if (boolish(ctx.returned_to_previous_section) === true)
         parts.push('returned to a class they had left before');
-      return joinParts(parts);
-    }
-
-    case 'sis.student.choose_section': {
-      // "Ana Reyes · Class: Grit (Primary One) → Valor (Primary One)" — a
-      // choice can replace an earlier one, so the old class is shown too.
-      const classText = (v: unknown): string => {
-        const o = (v ?? {}) as Record<string, unknown>;
-        const section = str(o.classSection);
-        const level = str(o.classLevel);
-        if (section && level) return `${section} (${level})`;
-        return section || level;
-      };
-      const parts: string[] = [];
-      const lead = studentLead(ctx);
-      if (lead) parts.push(lead);
-      const change = diffText(
-        'Class',
-        classText(ctx.before),
-        classText(ctx.after)
-      );
-      if (change) parts.push(change);
       return joinParts(parts);
     }
 

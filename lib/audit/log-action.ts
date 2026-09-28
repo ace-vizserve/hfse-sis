@@ -26,10 +26,6 @@ export const ALL_AUDIT_ACTIONS = [
   'student.withdrawal.cascade',
   'student.reenrolment.cascade',
   'sis.student.assign_section',
-  // A class chosen before the application is Enrolled — admissions columns
-  // only, no roster row. Distinct from assign_section, which puts the child
-  // on a class list; "who promised this child a seat" is its own question.
-  'sis.student.choose_section',
   'sis.student.auto_sync_batch',
   // Somebody downloaded every admissions column for a set of students — a
   // bulk personal-data export. Logged who / which year / which columns / how

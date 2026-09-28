@@ -67,7 +67,8 @@ export async function GET(
 
   const service = createServiceClient();
   const [result, applicationFit] = await Promise.all([
-    // This child's own chosen class must not count against them in the picker.
+    // A class already named on this child's row must not count against them
+    // in the picker.
     listAssignableSections(service, ayCode, levelApplied, {
       excludeEnroleeNumber: enroleeNumber,
     }),

@@ -36,24 +36,15 @@ import { ApplicationMatchBadge } from '@/components/sis/application-match-badge'
 // The picker lists candidate sections at the applicant's levelApplied;
 // the parent component is responsible for filtering down to the right
 // level + including the live counts per section. A section is full when the
-// server says so (`isAtCapacity`: on the class list + chosen but not yet
-// enrolled ≥ 50) — the same test the write path applies — and renders
-// disabled with a "Full" badge.
+// server says so (`isAtCapacity`: on the class list + assigned on the
+// admissions row but not yet enrolled ≥ 50) — the same test the write path
+// applies — and renders disabled with a "Full" badge.
 //
-// Two modes (2026-09-28, docs/superpowers/plans/
-// 2026-09-28-class-assignment-any-stage.md). `place` puts an enrolled child in
-// the class now. `choose` records the class for a child not yet enrolled — no
-// class list, class number or start date until their application is Enrolled.
-// The route decides which it does from the application status; the mode here
-// only sets the words.
+// Enrolled children only — the route refuses anyone else.
 
 export type { AssignableSection };
 
-export type AssignSectionMode = 'choose' | 'place';
-
 export type AssignSectionDialogProps = {
-  /** Defaults to `place` — the Records queue and action card always place. */
-  mode?: AssignSectionMode;
   enroleeNumber: string;
   studentName: string;
   ayCode: string;
@@ -70,7 +61,6 @@ export type AssignSectionDialogProps = {
 };
 
 export function AssignSectionDialog({
-  mode = 'place',
   enroleeNumber,
   studentName,
   ayCode,
@@ -80,7 +70,6 @@ export function AssignSectionDialog({
   open,
   onOpenChange,
 }: AssignSectionDialogProps) {
-  const isChoose = mode === 'choose';
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
   // Set when the student turns out to be joining after the year began; the
@@ -118,7 +107,6 @@ export function AssignSectionDialog({
   const assignMutation = useMutation({
     mutationFn: (sectionId: string) =>
       apiFetch<{
-        mode?: 'chosen' | 'placed';
         sectionName?: string;
         levelLabel?: string;
         midTermEnrolment?: MidTermPayload | null;
@@ -140,17 +128,9 @@ export function AssignSectionDialog({
     if (!selectedId) return;
     setSubmitting(true);
     await run(() => assignMutation.mutateAsync(selectedId), {
-      pending: isChoose
-        ? `Choosing a class for ${studentName}…`
-        : `Assigning ${studentName}…`,
+      pending: `Assigning ${studentName}…`,
       success: (body) => {
         const where = body.sectionName ?? 'their new class';
-        // The server's answer wins over the dialog's mode: the route decides
-        // from the application status, which may have changed since the page
-        // rendered.
-        if (body.mode === 'chosen') {
-          return `Class chosen. ${studentName} joins ${where} when their application is Enrolled.`;
-        }
         // Don't promise a start date we're about to let them change — the
         // late-enrollee prompt can move it forward to a later term's first day.
         return body.midTermEnrolment
@@ -166,18 +146,11 @@ export function AssignSectionDialog({
             err.body && typeof err.body === 'object'
               ? (err.body as { error?: string }).error
               : undefined;
-          return (
-            serverError ??
-            (isChoose
-              ? `Couldn't choose the class (${err.status}).`
-              : `Couldn't assign the section (${err.status}).`)
-          );
+          return serverError ?? `Couldn't assign the section (${err.status}).`;
         }
         return err instanceof Error
           ? err.message
-          : isChoose
-            ? "Couldn't choose the class."
-            : "Couldn't assign the section.";
+          : "Couldn't assign the section.";
       },
       // Swap this dialog's body to the prompt rather than opening a second one.
       onResolved: (body) => {
@@ -229,17 +202,10 @@ export function AssignSectionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-serif text-xl">
             <GraduationCap className="size-4 text-brand-indigo" />
-            {isChoose
-              ? `Choose a class for ${studentName}`
-              : 'Assign to a class'}
+            Assign to a class
           </DialogTitle>
           <DialogDescription>
-            {isChoose ? (
-              <>
-                They join the class when their application is Enrolled. No class
-                number or start date is given until then.
-              </>
-            ) : level?.label ? (
+            {level?.label ? (
               <>
                 Pick a class for <strong>{studentName}</strong> at{' '}
                 <strong>{level.label}</strong>. Once assigned they join the
@@ -284,13 +250,14 @@ export function AssignSectionDialog({
                   {s.matchesApplication && <ApplicationMatchBadge />}
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  {/* Chosen seats count toward the 50-student cap, so they
-                      are shown beside the class list — otherwise a class
-                      reads "42 in class" and is marked Full. */}
+                  {/* Children assigned this class but not yet enrolled count
+                      toward the 50-student cap, so they are shown beside the
+                      class list — otherwise a class reads "42 in class" and
+                      is marked Full. */}
                   <span className="text-right text-[11px] tabular-nums text-muted-foreground">
                     {s.activeCount} in class
                     {s.chosenCount > 0 && (
-                      <> · {s.chosenCount} chosen, not yet enrolled</>
+                      <> · {s.chosenCount} waiting to enrol</>
                     )}
                   </span>
                   {s.isAtCapacity && (
@@ -367,10 +334,10 @@ export function AssignSectionDialog({
             type="button"
             onClick={submit}
             loading={submitting}
-            loadingText={isChoose ? 'Choosing…' : 'Assigning…'}
+            loadingText="Assigning…"
             disabled={!selectedId || !hasOptions}
           >
-            {isChoose ? 'Choose class' : 'Assign section'}
+            Assign section
           </Button>
         </DialogFooter>
       </DialogContent>

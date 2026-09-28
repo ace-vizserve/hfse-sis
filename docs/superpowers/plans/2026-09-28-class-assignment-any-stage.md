@@ -2,6 +2,19 @@
 
 2026-09-28. Mr Ace + Miss Apple.
 
+> ⚠ **SUPERSEDED THE SAME DAY — class assignment is ENROLLED-ONLY.** Miss
+> Apple's "editable anytime" turned out to mean the Application preferences
+> (level / class type / schedule from the parent form), not the class. Asked
+> directly: _"yes po need enrolled na po before namin ma-assign manually yung
+> section"_ — Ms Lala assigns it in the old enrolment system once a child is
+> fully enrolled, and they want that done in the SIS. So the "choose a class
+> before Enrolled" mode (Phase 2 step 1, the Phase 4 choose states) and the
+> "Class chosen, not enrolled" cohort were removed before deploy. Everything
+> else below shipped: the Enrolled gate in the sync, the seat count (Directus
+> can still set a class early), the flip check, the class-stage guard, the
+> nightly sync across years, and the in-place "Assign a class" for Enrolled
+> children.
+
 ## Why
 
 Admissions keep placing children in Directus because the SIS Class Assignment

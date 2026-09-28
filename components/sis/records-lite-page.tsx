@@ -101,7 +101,7 @@ export async function RecordsLitePage({
   const service = createServiceClient();
   const [{ level, sections: availableSections }, applicationFit] =
     await Promise.all([
-      // This child's own chosen class must not count against them.
+      // A class already named on this child's row must not count against them.
       listAssignableSections(service, currentEntry.ayCode, levelLabel, {
         excludeEnroleeNumber: currentEntry.enroleeNumber,
       }),

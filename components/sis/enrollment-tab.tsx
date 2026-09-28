@@ -111,11 +111,10 @@ type Props = {
    *  than by linking to `/sis/sections/[id]`, which `admissions` cannot open —
    *  they hold the placement right but not SIS Admin. */
   transfer?: SectionTransfer | null;
-  /** What the class tile's "Choose a class" / "Assign a class" dialog needs:
-   *  the classes at the child's level and what the application asked for.
-   *  Loaded by the page only when the viewer may place students and the child
-   *  is not on a class list; null otherwise, and the tile then offers no
-   *  button. */
+  /** What the class tile's "Assign a class" dialog needs: the classes at the
+   *  child's level and what the application asked for. Loaded by the page
+   *  only when the child is Enrolled, not on a class list, and the viewer may
+   *  place students; null otherwise, and the tile then offers no button. */
   classChoice?: ClassChoice | null;
 };
 
@@ -1171,16 +1170,16 @@ function StageStatusTile({
   canAssignSection: boolean;
   /** Data for the in-place "Change section" dialog. See Props. */
   transfer: SectionTransfer | null;
-  /** Data for the in-place choose / assign dialog. See Props. */
+  /** Data for the in-place assign dialog. See Props. */
   classChoice?: ClassChoice | null;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
   // The class stage has no edit control in its header. Its actions sit at the
-  // bottom of the tile, all opening in place (2026-09-28, docs/superpowers/
-  // plans/2026-09-28-class-assignment-any-stage.md): before Enrolled a class
-  // can be CHOSEN — it holds a seat, and the child joins the class list when
-  // their application is Enrolled; once Enrolled the class is ASSIGNED, which
+  // bottom of the tile, opening in place. Class assignment is Enrolled-only:
+  // before Enrolled the tile only says whether the admissions row already
+  // names a class (set in Directus), which the nightly auto-sync places once
+  // the application is Enrolled; once Enrolled the class is ASSIGNED, which
   // puts them on the list; once on it, moves go through the section-transfer
   // endpoint (KD #67). Which one applies is `classTileState`.
   const autoManaged = stage.key === 'class';
@@ -1233,8 +1232,9 @@ function StageStatusTile({
 
       {stage.updatedAt ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-          {/* "Assigned" only for a child on a class list — a class chosen
-              before enrolment has been updated, not assigned. */}
+          {/* "Assigned" only for a child on a class list — a class named on
+              the admissions row before enrolment has been updated, not
+              assigned. */}
           {autoManaged && (currentSectionId ? 'Assigned · ' : 'Updated · ')}
           {formatDate(stage.updatedAt)}
           {stage.updatedBy && (
@@ -1281,11 +1281,11 @@ function StageStatusTile({
           }
         />
       )}
-      {/* Not on a class list yet: where the class stands, then the one thing
-          to do about it — choose (before Enrolled) or assign (Enrolled), in
-          place. The status line shows to everyone; the button needs the
-          placement right AND the class list, which the page loads only for a
-          viewer who holds that right. */}
+      {/* Not on a class list yet: where the class stands, then — once
+          Enrolled — the one thing to do about it, assign, in place. The
+          status line shows to everyone; the button needs the placement right
+          AND the class list, which the page loads only for an Enrolled child
+          and a viewer who holds that right. */}
       {classLine && (
         <p className="pl-1 text-xs leading-snug text-muted-foreground">
           {classLine}
@@ -1293,7 +1293,6 @@ function StageStatusTile({
       )}
       {classAction && canAssignSection && classChoice && (
         <ClassChoiceButton
-          mode={classAction.mode}
           label={classAction.label}
           enroleeNumber={enroleeNumber}
           studentName={classChoice.studentName}

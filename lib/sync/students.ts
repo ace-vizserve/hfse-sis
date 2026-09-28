@@ -12,10 +12,11 @@ import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
 
 // ──────────────────────────────────────────────────────────────────────────
-// A class can be CHOSEN at any application status; a child JOINS it — roster
-// row, index number, start date — only once the application is Enrolled or
-// Enrolled (Conditional). Whatever tool wrote the class (SIS, Directus, the old
-// enrolment link), this is where the roster side is decided, so the rule lives
+// A class can be SET on the admissions row at any application status (Directus
+// allows it; the SIS itself assigns only once Enrolled); a child JOINS it —
+// roster row, index number, start date — only once the application is Enrolled
+// or Enrolled (Conditional). Whatever tool wrote the class (SIS, Directus, the
+// old enrolment link), this is where the roster side is decided, so the rule lives
 // here once and every admissions → roster path inherits it.
 //
 // ⚠ These are APPLICATION statuses (`ay{YY}_enrolment_status.applicationStatus`),
@@ -38,7 +39,7 @@ export function isEnrolledApplicationStatus(
 /**
  * The reason a sync hands back when the child has a class but is not enrolled
  * yet. Stable and exported because callers branch on it: for them it means
- * "class chosen, waiting for enrolment", an expected outcome and not a failure.
+ * "class set, waiting for enrolment", an expected outcome and not a failure.
  */
 export const NOT_ENROLLED_REASON = 'not enrolled yet';
 
@@ -671,7 +672,7 @@ export async function syncOneStudent(
       };
     }
 
-    // The roster waits for enrolment: a class chosen on a Submitted /
+    // The roster waits for enrolment: a class set on a Submitted /
     // Processing application is legal and is NOT a failure — the child joins
     // it when the application flips to Enrolled. Refusing here writes nothing,
     // so a child already sitting in a class (placed before this rule) stays

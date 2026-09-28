@@ -198,7 +198,7 @@ export async function POST(request: Request) {
         errors: plan.errors.length,
         changes: changesForLog,
         skipped: plan.errors,
-        // Class chosen, application not Enrolled yet — held off the roster by
+        // Class set, application not Enrolled yet — held off the roster by
         // the planner's Enrolled gate. Listed so "why isn't X in the class?"
         // has an answer in the log.
         waiting_for_enrolment: plan.waiting_for_enrolment,

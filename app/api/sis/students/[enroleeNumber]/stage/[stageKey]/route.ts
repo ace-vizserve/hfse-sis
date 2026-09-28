@@ -168,7 +168,7 @@ export async function PATCH(
   // every Enrolled flip claimed the student was unplaced and sent them to
   // "Students needing setup", including one already placed through the class
   // stage beforehand. De-duped so the class stage doesn't select it twice.
-  // `classLevel` rides along for 2b′, which resolves a class chosen before
+  // `classLevel` rides along for 2b′, which resolves a class set before
   // enrolment to a real SIS class on the Enrolled flip.
   const beforeSelect = Array.from(
     new Set([
@@ -323,20 +323,28 @@ export async function PATCH(
       )?.applicationStatus;
       const enrolled =
         appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)';
-      // Before Enrolled this path is refused too (2026-09-28). A class can now
-      // be CHOSEN at any stage, but assign-section's choose mode is where that
-      // is checked — the level must match, the class must exist and have a
+      // Before Enrolled this path is refused too (2026-09-28). Class
+      // assignment is Enrolled-only, and assign-section is where it is
+      // checked — the level must match, the class must exist and have a
       // seat. Writing the string here skipped all three, which is the exact
-      // Directus drift that feature exists to end.
+      // Directus drift those checks exist to end.
       //
       // A student with no class yet isn't transferring — they're being placed
-      // (or their class chosen) for the first time, which is what
-      // assign-section is for. Sending them to transfer-section would fail,
-      // because there is no source section to move them out of.
-      const route =
-        enrolled && currentSection
-          ? `POST /api/sis/students/${enroleeNumber}/transfer-section to move enrolled students between sections`
-          : `POST /api/sis/students/${enroleeNumber}/assign-section to choose or change this student's class`;
+      // for the first time, which is what assign-section is for. Sending them
+      // to transfer-section would fail, because there is no source section
+      // to move them out of.
+      if (!enrolled) {
+        return NextResponse.json(
+          {
+            error:
+              'A class can only be assigned once the application is Enrolled.',
+          },
+          { status: 422 }
+        );
+      }
+      const route = currentSection
+        ? `POST /api/sis/students/${enroleeNumber}/transfer-section to move enrolled students between sections`
+        : `POST /api/sis/students/${enroleeNumber}/assign-section to assign this student's class`;
       return NextResponse.json(
         {
           error: `Use ${route} — it checks the level, the class and its size.`,
@@ -588,16 +596,16 @@ export async function PATCH(
     }
   }
 
-  // 2b′) A class chosen BEFORE enrolment must still be usable on the day.
+  // 2b′) A class set BEFORE enrolment must still be usable on the day.
   //
-  // A class can now be chosen at any application status
-  // (docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md), and
-  // Directus / the old enrolment link can fill one in with no checks at all.
+  // Directus / the old enrolment link can fill in a class at any application
+  // status, with no checks at all (the SIS itself assigns only once Enrolled).
   // The child joins that class at THIS moment — the post-save sync in step 5
   // places them. So it is checked here, before anything is written, the way
   // a class picked in this dialog is checked in 2b: the class must exist in
   // the SIS for this year, match the child's level, and have room (counting
-  // other children who chose it, but not this child's own seat). If not, the
+  // other children assigned it and waiting to enrol, but not this child's own
+  // seat). If not, the
   // flip is refused with `chosen_class_unavailable` and the dialog offers the
   // class picker, so the person picks another class in the same save.
   // Without this the flip succeeded and the sync then failed after the fact
@@ -607,7 +615,7 @@ export async function PATCH(
   // Enrolled application (a remarks edit) must not be refused because their
   // class has since filled up.
   //
-  // Covers Enrolled (Conditional) too — the chosen class is placed by the same
+  // Covers Enrolled (Conditional) too — the class on the row is placed by the same
   // sync on both. That is NOT the KD #180 prereq gate, which Conditional still
   // skips; this only concerns the class. Because the dialog now offers the
   // picker on refusal, a class picked for a Conditional flip is accepted here
@@ -703,7 +711,7 @@ export async function PATCH(
           problem = resolved.reason;
         } else {
           // No level-match against `levelApplied` here: the class's level IS
-          // the chosen level, and a child deliberately placed at another level
+          // the named level, and a child deliberately placed at another level
           // (retained, accelerated — /records/level-mismatches) was placed by
           // the sync before this check existed. This check is only "does the
           // class exist and have a seat".
@@ -718,7 +726,7 @@ export async function PATCH(
             // The full-class message already ends "Pick another class." —
             // dropped so the sentence below does not say it twice.
             const why = validated.error.replace(/\s*Pick another class\.$/, '');
-            problem = `The class chosen for this child is ${chosenText}, and it can't take them: ${why}`;
+            problem = `The class set for this child is ${chosenText}, and it can't take them: ${why}`;
           }
         }
         if (problem) {
@@ -1039,9 +1047,9 @@ export async function PATCH(
           (status === 'Enrolled' || status === 'Enrolled (Conditional)') &&
           (result.reason === 'missing classLevel or classSection' ||
             result.reason === 'no studentNumber');
-        // Setting the class stage on an application that is not Enrolled yet
-        // is legal: it means "class chosen, joins when enrolled". The sync
-        // refuses it by design, so that refusal is not a failure either.
+        // A class on an application that is not Enrolled yet (set in
+        // Directus) means "joins when enrolled". The sync refuses it by
+        // design, so that refusal is not a failure either.
         const isChosenNotEnrolled = result.reason === NOT_ENROLLED_REASON;
         if (!isExpectedUnplacedSkip && !isChosenNotEnrolled) {
           autoSyncFailed = true;

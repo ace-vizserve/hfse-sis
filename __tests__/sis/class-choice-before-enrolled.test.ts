@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Phase 2 of docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md:
-// a class can be CHOSEN before the application is Enrolled (admissions columns
-// only), a chosen class HOLDS A SEAT, and the Enrolled flip refuses a chosen
-// class that can no longer take the child.
+// Phase 2 of docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md,
+// as it stands after choose mode was removed: class assignment is
+// Enrolled-only (assign-section refuses anyone else), a class already named on
+// the admissions row (set in Directus) HOLDS A SEAT, and the Enrolled flip
+// refuses such a class when it can no longer take the child.
 //
 // The routes run against a small in-memory stand-in for the Supabase query
 // builder: every query is recorded, and a per-test resolver answers it by
@@ -380,7 +381,7 @@ describe('validateSectionChoice counts chosen seats', () => {
     );
     expect(r).toHaveProperty('error');
     expect((r as { error: string }).error).toMatch(
-      /49 in the class and 1 more who chose it/
+      /49 in the class and 1 more assigned to it and waiting to enrol/
     );
   });
 
@@ -443,7 +444,7 @@ async function assignRequest(sectionId: string): Promise<Response> {
   ))!;
 }
 
-describe('assign-section — choose mode before Enrolled', () => {
+describe('assign-section — Enrolled only', () => {
   const submitted: World = {
     applicationStatus: 'Submitted',
     classLevel: null,
@@ -453,75 +454,37 @@ describe('assign-section — choose mode before Enrolled', () => {
     chosen: others(3),
   };
 
-  it('writes the admissions class columns only — no sync, no placement', async () => {
-    setWorld(submitted);
+  for (const status of ['Submitted', 'Ongoing Verification', 'Processing']) {
+    it(`refuses a ${status} applicant with 422 and writes nothing`, async () => {
+      setWorld({ ...submitted, applicationStatus: status });
+      const res = await assignRequest(SECTION.id);
+      expect(res.status).toBe(422);
+      expect((await res.json()).error).toBe(
+        `Only Enrolled applicants can be assigned to a class (this one is ${status}). They can be given a class once their application is Enrolled.`
+      );
+      expect(log.filter((q) => q.op !== 'select')).toEqual([]);
+      expect(h.syncOneStudent).not.toHaveBeenCalled();
+      expect(h.completePlacement).not.toHaveBeenCalled();
+      expect(h.logAction).not.toHaveBeenCalled();
+    });
+  }
+
+  it('refuses a blank status too, and writes nothing', async () => {
+    setWorld({ ...submitted, applicationStatus: '' });
     const res = await assignRequest(SECTION.id);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
-      mode: 'chosen',
-      sectionName: 'Discipline 1',
-      levelLabel: 'Primary One',
-    });
-    const writes = statusWrites();
-    expect(writes).toHaveLength(1);
-    expect(writes[0].payload).toMatchObject({
-      classSection: 'Discipline 1',
-      classLevel: 'Primary One',
-      classStatus: 'Finished',
-      classUpdatedby: 'registrar@hfse.test',
-    });
-    // Nothing on the roster side.
-    expect(h.syncOneStudent).not.toHaveBeenCalled();
-    expect(h.completePlacement).not.toHaveBeenCalled();
-    expect(
-      log.filter(
-        (q) =>
-          (q.table === 'section_students' || q.table === 'students') &&
-          q.op !== 'select'
-      )
-    ).toEqual([]);
-    expect(h.logAction).toHaveBeenCalledTimes(1);
-    expect(h.logAction.mock.calls[0][0]).toMatchObject({
-      action: 'sis.student.choose_section',
-      context: {
-        before: { classSection: null },
-        after: { classSection: 'Discipline 1' },
-      },
-    });
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/this one is not set/);
+    expect(statusWrites()).toEqual([]);
   });
 
-  it('overwrites an earlier choice', async () => {
+  it('refuses a Submitted applicant even when Directus already set a class', async () => {
     setWorld({
       ...submitted,
       classLevel: 'Primary One',
       classSection: 'Grit',
     });
     const res = await assignRequest(SECTION.id);
-    expect(res.status).toBe(200);
-    expect(statusWrites()[0].payload).toMatchObject({
-      classSection: 'Discipline 1',
-    });
-    expect(h.logAction.mock.calls[0][0]).toMatchObject({
-      context: {
-        before: { classSection: 'Grit' },
-        after: { classSection: 'Discipline 1' },
-      },
-    });
-  });
-
-  it('refuses a class that chosen seats have filled, and writes nothing', async () => {
-    setWorld({ ...submitted, roster: rosterOf(45), chosen: others(5) });
-    const res = await assignRequest(SECTION.id);
     expect(res.status).toBe(422);
-    expect((await res.json()).error).toMatch(/is full/);
-    expect(statusWrites()).toEqual([]);
-  });
-
-  it('refuses a child already on a class list, and writes nothing', async () => {
-    setWorld({ ...submitted, onRosterElsewhere: 'Grit' });
-    const res = await assignRequest(SECTION.id);
-    expect(res.status).toBe(422);
-    expect((await res.json()).error).toMatch(/already in Grit.*Move student/);
     expect(statusWrites()).toEqual([]);
   });
 
@@ -539,6 +502,23 @@ describe('assign-section — choose mode before Enrolled', () => {
     expect(await res.json()).toMatchObject({ mode: 'placed' });
     expect(h.syncOneStudent).toHaveBeenCalledTimes(1);
     expect(h.completePlacement).toHaveBeenCalledTimes(1);
+    expect(h.logAction.mock.calls[0][0]).toMatchObject({
+      action: 'sis.student.assign_section',
+    });
+  });
+
+  it('refuses an Enrolled child whose class the waiting seats have filled', async () => {
+    setWorld({
+      ...submitted,
+      applicationStatus: 'Enrolled (Conditional)',
+      roster: rosterOf(45),
+      chosen: others(5),
+    });
+    const res = await assignRequest(SECTION.id);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/is full/);
+    expect(statusWrites()).toEqual([]);
+    expect(h.syncOneStudent).not.toHaveBeenCalled();
   });
 });
 

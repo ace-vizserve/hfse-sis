@@ -75,7 +75,6 @@ export default async function SisAuditLogPage({
     'sis.house.update',
     'sis.school_student_number.update',
     'sis.student.assign_section',
-    'sis.student.choose_section',
     'sis.student.auto_sync_batch',
     // Somebody downloaded every admissions column for a set of students.
     'sis.student.export_raw',

@@ -56,7 +56,6 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { loadApplicationFit } from '@/lib/admissions/options-loader';
 import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
-import { APPLICATION_TERMINAL_STATUSES } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
@@ -206,15 +205,14 @@ export default async function SisStudentDetailPage({
       ? { ...storedStatus, classSection: currentSection.name }
       : storedStatus;
 
-  // The class tile's Choose / Assign dialog — only for a viewer who may place
-  // students, a child not on a class list, and an application that is not
-  // Cancelled / Withdrawn (the tile offers nothing then, so nothing is read).
+  // The class tile's Assign dialog — only for a viewer who may place
+  // students, a child not on a class list, and an application that is
+  // Enrolled / Enrolled (Conditional). Class assignment is Enrolled-only; the
+  // tile offers no button otherwise, so nothing is read.
   const needsClassChoice =
     canPlaceStudent &&
     !currentSection &&
-    !(APPLICATION_TERMINAL_STATUSES as readonly string[]).includes(
-      (storedStatus?.applicationStatus ?? '').trim()
-    );
+    ENROLLED_STATES.includes((storedStatus?.applicationStatus ?? '').trim());
 
   // All depend on the batch above — sequential to it, parallel to each other.
   const [lifecycleHistory, siblingSections, admissionOptions, classChoiceData] =
@@ -228,7 +226,8 @@ export default async function SisStudentDetailPage({
       loadProfileAdmissionOptions(selectedAy),
       needsClassChoice
         ? Promise.all([
-            // This child's own chosen class must not count against them.
+            // A class already named on this child's admissions row must not
+            // count against them.
             listAssignableSections(
               service,
               selectedAy,

@@ -905,7 +905,7 @@ export function findStageCompletionBlockers(
 //
 // `class` IS EXEMPT, for the same reason it is absent from
 // STAGE_STATUS_REQUIRED_FIELDS: it has no edit dialog (the tile offers
-// Choose / Assign a class instead), and its columns are written by the Enrolled flip and
+// Assign a class once Enrolled instead), and its columns are written by the Enrolled flip and
 // the assign-section route. Enforcing a status against write paths that never
 // set one would risk breaking section assignment to fix a blank field.
 export const STATUS_OPTIONAL_STAGES: readonly StageKey[] = ['class'] as const;

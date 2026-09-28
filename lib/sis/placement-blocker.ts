@@ -19,8 +19,8 @@ import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 // if it returns a sentence the sync would have failed for that reason.
 //
 // ⚠ Class size is NOT checked here. A full class is also a reason placement
-// fails, but how seats are counted is changing (chosen-but-not-enrolled
-// children now hold a seat), and a second copy of that count here would drift
+// fails, but seats also count children assigned a class and not yet enrolled,
+// and a second copy of that count here would drift
 // from the one the picker and the cap use.
 // ──────────────────────────────────────────────────────────────────────────
 
