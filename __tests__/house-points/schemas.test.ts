@@ -4,6 +4,7 @@ import {
   AddEntriesSchema,
   EntryPatchSchema,
   EventInputSchema,
+  EventPatchSchema,
   PlaceInputSchema,
   ScalesPutSchema,
   TeamInputSchema,
@@ -250,6 +251,87 @@ describe('EventInputSchema — attendance rejection', () => {
       })
     );
     expect(result.success).toBe(false);
+  });
+});
+
+describe('EventPatchSchema — cross-field refinements only fire when both relevant keys are in the same patch', () => {
+  it('(a) valid: placementMode "score" with no maxScore key at all (single-key patch)', () => {
+    // The stored row's maxScore is what decides here — this schema has no
+    // way to see it, so a patch that only touches placementMode must not be
+    // rejected for a field it never mentioned.
+    const result = EventPatchSchema.safeParse({ placementMode: 'score' });
+    expect(result.success).toBe(true);
+  });
+
+  it('(b) invalid: placementMode "score" + maxScore explicitly null in the same patch', () => {
+    const result = EventPatchSchema.safeParse({
+      placementMode: 'score',
+      maxScore: null,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((i) =>
+          i.message.includes('Enter the highest possible score')
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('(c) invalid: entrantKind "house" + placementMode "score" in the same patch', () => {
+    const result = EventPatchSchema.safeParse({
+      entrantKind: 'house',
+      placementMode: 'score',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((i) =>
+          i.message.includes('Houses are placed by hand')
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('(c-valid) accepts entrantKind "house" + placementMode "pick" together', () => {
+    const result = EventPatchSchema.safeParse({
+      entrantKind: 'house',
+      placementMode: 'pick',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('(c-partial) does not fire on entrantKind "house" alone (placementMode not in this patch)', () => {
+    // Mirrors (a): the stored placementMode decides, and this schema cannot
+    // read it from a patch that never mentions the field.
+    const result = EventPatchSchema.safeParse({ entrantKind: 'house' });
+    expect(result.success).toBe(true);
+  });
+
+  it('(d) invalid: places sent with duplicate ranks', () => {
+    const result = EventPatchSchema.safeParse({
+      places: [
+        place({ label: 'Gold', rank: 1, points: 5 }),
+        place({ label: 'Also Gold', rank: 1, points: 5 }),
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((i) =>
+          i.message.includes("can't share the same rank")
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('(e) {} succeeds — an empty patch is a no-op, not an error', () => {
+    // Unlike EntryPatchSchema/TeamPatchSchema, EventPatchSchema carries no
+    // "at least one field" refinement: the brief specifies that rule only
+    // for the entry and team patches. Documenting the actual, intended
+    // behaviour here rather than leaving it unasserted.
+    const result = EventPatchSchema.safeParse({});
+    expect(result.success).toBe(true);
   });
 });
 
