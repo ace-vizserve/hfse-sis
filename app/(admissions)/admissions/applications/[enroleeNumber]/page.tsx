@@ -53,7 +53,10 @@ import {
   canWriteStudentRecord,
 } from '@/lib/auth/student-record';
 import { getSessionUser } from '@/lib/supabase/server';
+import { loadApplicationFit } from '@/lib/admissions/options-loader';
 import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
+import { listAssignableSections } from '@/lib/sis/class-assignment';
+import { APPLICATION_TERMINAL_STATUSES } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
@@ -203,8 +206,18 @@ export default async function SisStudentDetailPage({
       ? { ...storedStatus, classSection: currentSection.name }
       : storedStatus;
 
-  // Both depend on the batch above — sequential to it, parallel to each other.
-  const [lifecycleHistory, siblingSections, admissionOptions] =
+  // The class tile's Choose / Assign dialog — only for a viewer who may place
+  // students, a child not on a class list, and an application that is not
+  // Cancelled / Withdrawn (the tile offers nothing then, so nothing is read).
+  const needsClassChoice =
+    canPlaceStudent &&
+    !currentSection &&
+    !(APPLICATION_TERMINAL_STATUSES as readonly string[]).includes(
+      (storedStatus?.applicationStatus ?? '').trim()
+    );
+
+  // All depend on the batch above — sequential to it, parallel to each other.
+  const [lifecycleHistory, siblingSections, admissionOptions, classChoiceData] =
     await Promise.all([
       lifecycleSnapshot.studentNumber
         ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
@@ -213,6 +226,23 @@ export default async function SisStudentDetailPage({
         ? getSiblingSections(currentSection.id)
         : Promise.resolve([]),
       loadProfileAdmissionOptions(selectedAy),
+      needsClassChoice
+        ? Promise.all([
+            // This child's own chosen class must not count against them.
+            listAssignableSections(
+              service,
+              selectedAy,
+              application.levelApplied,
+              { excludeEnroleeNumber: application.enroleeNumber }
+            ),
+            // What the parent asked for — marks matching classes in the picker.
+            loadApplicationFit(service, selectedAy, {
+              levelApplied: application.levelApplied,
+              classType: application.classType,
+              preferredSchedule: application.preferredSchedule,
+            }),
+          ])
+        : Promise.resolve(null),
     ]);
 
   const fullName =
@@ -232,6 +262,16 @@ export default async function SisStudentDetailPage({
         // The class they want may not exist yet — admissions cannot open SIS
         // Admin → Sections, so the dialog creates it at the child's level.
         addClassAt: currentSection.level,
+      }
+    : null;
+
+  // Plain data only — this crosses into a client component.
+  const classChoice = classChoiceData
+    ? {
+        studentName: fullName,
+        level: classChoiceData[0].level,
+        sections: classChoiceData[0].sections,
+        applicationFit: classChoiceData[1],
       }
     : null;
 
@@ -472,6 +512,7 @@ export default async function SisStudentDetailPage({
             canEdit={canEditRecord}
             canAssignSection={canPlaceStudent}
             transfer={sectionTransfer}
+            classChoice={classChoice}
           />
         </TabsContent>
 

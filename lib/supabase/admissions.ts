@@ -19,6 +19,11 @@ export type AdmissionsRow = {
   class_section: string | null; // e.g. "Patience" (may contain known typos)
   class_ay: string | null;      // e.g. "AY2026"
   enrolee_number: string | null; // admissions key, stamped onto section_students
+  // e.g. "Submitted", "Enrolled". Required, not optional, on purpose: the sync
+  // planner only lets an Enrolled / Enrolled (Conditional) child JOIN a class
+  // (a class can be chosen at any stage — the roster waits for enrolment), so
+  // a caller that forgot to read it would silently hold every child back.
+  application_status: string | null;
 };
 
 // Pure helper — removes any roster row whose enrolee_number is in
@@ -38,6 +43,19 @@ export function filterWithdrawnFromRoster(
 // Filter rules (from docs/context/06-admissions-integration.md):
 //   * classSection IS NOT NULL  (primary liveness signal — applicationStatus is unreliable)
 //   * applicationStatus NOT IN ('Cancelled', 'Withdrawn')
+//
+// Deliberately NOT narrowed to Enrolled. A class can be chosen before
+// enrolment, and only an Enrolled child may join the roster — but that rule is
+// enforced in `buildSyncPlan`, from `application_status`, not here. The
+// planner withdraws every active roster row it does not see in its input, so
+// dropping a not-yet-enrolled child from this list would withdraw the ones
+// already sitting in a class.
+//
+// ⚠ That protection only reaches children whose admissions row NAMES a class —
+// the `classSection IS NOT NULL` filter above drops the rest before the planner
+// sees them. A rostered child with a blank classSection (measured 2026-09-28:
+// 15 AY2026 Youngstarters) is still planned as a withdrawal by a bulk run, as
+// it was before the Enrolled gate. No screen calls the bulk route today.
 //
 // Post-enrolment withdrawal guard (Task 1 / KD #147):
 //   After Task 1 a student who enrolled then withdrew keeps
@@ -82,6 +100,7 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
     classLevel: string | null;
     classSection: string | null;
     classAY: string | null;
+    applicationStatus: string | null;
   };
 
   const apps = (appsRes.data ?? []) as AppRow[];
@@ -106,6 +125,7 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
       class_section: s.classSection,
       class_ay: s.classAY,
       enrolee_number: s.enroleeNumber,
+      application_status: s.applicationStatus,
     });
   }
 

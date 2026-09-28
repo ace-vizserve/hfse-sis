@@ -57,6 +57,7 @@ function row(overrides: Partial<AdmissionsRow>): AdmissionsRow {
     class_section: 'Patience',
     class_ay: 'AY2026',
     enrolee_number: null,
+    application_status: 'Enrolled',
     ...overrides,
   } as AdmissionsRow;
 }

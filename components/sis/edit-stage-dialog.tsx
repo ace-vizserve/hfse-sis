@@ -209,11 +209,27 @@ export function EditStageDialog({
   // enrolled, then losing the lot to a failed save.
   const prereqsAllMet = showPrereqChecklist && incompleteCount === 0;
 
+  // Set when the server refused the Enrolled flip because the class chosen
+  // before enrolment is gone, full, or at the wrong level
+  // (`chosen_class_unavailable`). Holds the server's sentence, shown above the
+  // picker, and opens the picker for Enrolled (Conditional) too — the server
+  // accepts a picked class on both, so the person can pick another class and
+  // save again without leaving the dialog.
+  const [chosenClassProblem, setChosenClassProblem] = useState<string | null>(
+    null
+  );
+  const enrollingNow =
+    effectiveStatus === 'Enrolled' ||
+    effectiveStatus === 'Enrolled (Conditional)';
+  useEffect(() => {
+    if (!enrollingNow) setChosenClassProblem(null);
+  }, [enrollingNow]);
+
   const canPickSectionNow =
     stageKey === 'application' &&
-    effectiveStatus === 'Enrolled' &&
     canAssignSection &&
-    prereqsAllMet;
+    ((effectiveStatus === 'Enrolled' && prereqsAllMet) ||
+      (enrollingNow && chosenClassProblem !== null));
 
   const [sectionId, setSectionId] = useState<string | null>(null);
 
@@ -240,6 +256,8 @@ export function EditStageDialog({
           id: string;
           name: string;
           activeCount: number;
+          /** Chose this class but not on its list yet — they hold a seat. */
+          chosenCount: number;
           classType: string | null;
           schedule: string | null;
         }[];
@@ -514,6 +532,15 @@ export function EditStageDialog({
         setServerNeedsLastDay(true);
         return body.error ?? 'Enter the last day at school.';
       }
+      // The class chosen before enrolment can't take them. Open the picker
+      // with the reason above it; nothing was saved.
+      if (body.code === 'chosen_class_unavailable') {
+        const why =
+          body.error ?? 'The class chosen for this child can’t take them.';
+        setChosenClassProblem(why);
+        setSectionId(null);
+        return why;
+      }
       if (Array.isArray(body.blockers) && body.blockers.length > 0) {
         if (stageKey === 'documents') {
           const docBlockers = body.blockers as Array<{
@@ -639,6 +666,7 @@ export function EditStageDialog({
           setLastDay('');
           setApprovedDate('');
           setServerNeedsLastDay(false);
+          setChosenClassProblem(null);
           form.reset({
             status: initialStatus,
             remarks: initialRemarks,
@@ -710,7 +738,9 @@ export function EditStageDialog({
                       <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                         {alreadyPlaced
                           ? 'Class'
-                          : 'Assign a class now (optional)'}
+                          : chosenClassProblem
+                            ? 'Pick another class'
+                            : 'Assign a class now (optional)'}
                       </p>
                       {/* Offering to place a student who is already placed was
                           the bug Mr Ace reported on 2026-09-16 — the picker was
@@ -734,6 +764,10 @@ export function EditStageDialog({
                             ? ' — withdrawn, and the place is kept.'
                             : '.'}{' '}
                           To move them, use Records → Students.
+                        </p>
+                      ) : chosenClassProblem ? (
+                        <p className="text-xs leading-relaxed text-destructive">
+                          {chosenClassProblem}
                         </p>
                       ) : (
                         <p className="text-xs leading-relaxed text-muted-foreground">
@@ -769,10 +803,17 @@ export function EditStageDialog({
                       ) : (
                         <div className="space-y-1.5">
                           {[...sectionsQuery.data.sections]
-                            .sort((a, b) => a.activeCount - b.activeCount)
+                            .sort(
+                              (a, b) =>
+                                a.activeCount +
+                                a.chosenCount -
+                                (b.activeCount + b.chosenCount)
+                            )
                             .map((sec) => {
-                              const full =
-                                sec.activeCount >= MAX_ACTIVE_PER_SECTION;
+                              // Children who chose a class hold a seat in it —
+                              // the same count the server's cap uses.
+                              const taken = sec.activeCount + sec.chosenCount;
+                              const full = taken >= MAX_ACTIVE_PER_SECTION;
                               // Hint only — nothing is hidden or reordered.
                               const matches = sectionMatchesApplication(
                                 sec,
@@ -803,7 +844,10 @@ export function EditStageDialog({
                                     {matches && <ApplicationMatchBadge />}
                                   </span>
                                   <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                                    {sec.activeCount}/{MAX_ACTIVE_PER_SECTION}
+                                    {taken}/{MAX_ACTIVE_PER_SECTION}
+                                    {sec.chosenCount > 0
+                                      ? ` · ${sec.chosenCount} not yet enrolled`
+                                      : ''}
                                     {full ? ' · Full' : ''}
                                   </span>
                                 </button>

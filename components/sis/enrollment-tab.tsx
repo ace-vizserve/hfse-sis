@@ -18,8 +18,8 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import Link from 'next/link';
 
+import { ClassChoiceButton } from '@/components/sis/class-choice-button';
 import { EditStageDialog } from '@/components/sis/edit-stage-dialog';
 import { type Field } from '@/components/sis/field-grid';
 import {
@@ -45,6 +45,12 @@ import {
   STAGE_COLUMN_MAP,
   type StageKey,
 } from '@/lib/schemas/sis';
+import type { ApplicationFit } from '@/lib/admissions/options';
+import type {
+  AssignableLevel,
+  AssignableSection,
+} from '@/lib/sis/class-assignment';
+import { classTileState } from '@/lib/sis/class-tile-state';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
@@ -105,6 +111,19 @@ type Props = {
    *  than by linking to `/sis/sections/[id]`, which `admissions` cannot open —
    *  they hold the placement right but not SIS Admin. */
   transfer?: SectionTransfer | null;
+  /** What the class tile's "Choose a class" / "Assign a class" dialog needs:
+   *  the classes at the child's level and what the application asked for.
+   *  Loaded by the page only when the viewer may place students and the child
+   *  is not on a class list; null otherwise, and the tile then offers no
+   *  button. */
+  classChoice?: ClassChoice | null;
+};
+
+export type ClassChoice = {
+  studentName: string;
+  level: AssignableLevel | null;
+  sections: AssignableSection[];
+  applicationFit: ApplicationFit | null;
 };
 
 export type SectionTransfer = {
@@ -308,6 +327,7 @@ export function EnrollmentTab({
   canEdit = false,
   canAssignSection = false,
   transfer = null,
+  classChoice = null,
 }: Props) {
   const s = status ?? ({} as StatusRow);
 
@@ -557,6 +577,7 @@ export function EnrollmentTab({
         canEdit={canEdit}
         canAssignSection={canAssignSection}
         transfer={transfer}
+        classChoice={classChoice}
       />
 
       {/* items-start so each card sizes to its own content. The default
@@ -1046,6 +1067,7 @@ function StatusGroupCard({
   canEdit,
   canAssignSection,
   transfer,
+  classChoice = null,
 }: {
   eyebrow: string;
   title: string;
@@ -1064,6 +1086,8 @@ function StatusGroupCard({
    *  group's class tile, threaded through unconditionally to match
    *  `canAssignSection`'s pattern. */
   transfer: SectionTransfer | null;
+  /** Only meaningful for the Placement group's class tile. */
+  classChoice?: ClassChoice | null;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -1117,6 +1141,7 @@ function StatusGroupCard({
             canEdit={canEdit}
             canAssignSection={canAssignSection}
             transfer={transfer}
+            classChoice={stage.key === 'class' ? classChoice : null}
           />
         ))}
       </div>
@@ -1133,6 +1158,7 @@ function StageStatusTile({
   canEdit,
   canAssignSection,
   transfer,
+  classChoice = null,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1145,21 +1171,30 @@ function StageStatusTile({
   canAssignSection: boolean;
   /** Data for the in-place "Change section" dialog. See Props. */
   transfer: SectionTransfer | null;
+  /** Data for the in-place choose / assign dialog. See Props. */
+  classChoice?: ClassChoice | null;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);
-  // The class stage has no edit control of its own here. Class Assignment is
-  // step 11 of HFSE's admission process, done in Records — either alongside
-  // the Enrolled flip or, normally, afterwards from the students-needing-setup
-  // queue. Post-placement changes route through the section-transfer endpoint
-  // (KD #67). So: hide the edit button, and point at whichever Records surface
-  // applies.
+  // The class stage has no edit control in its header. Its actions sit at the
+  // bottom of the tile, all opening in place (2026-09-28, docs/superpowers/
+  // plans/2026-09-28-class-assignment-any-stage.md): before Enrolled a class
+  // can be CHOSEN — it holds a seat, and the child joins the class list when
+  // their application is Enrolled; once Enrolled the class is ASSIGNED, which
+  // puts them on the list; once on it, moves go through the section-transfer
+  // endpoint (KD #67). Which one applies is `classTileState`.
   const autoManaged = stage.key === 'class';
-  const isEnrolledStatus =
-    applicationStatus === 'Enrolled' ||
-    applicationStatus === 'Enrolled (Conditional)';
-  const awaitingPlacement =
-    autoManaged && isEnrolledStatus && !currentSectionId;
+  const classState = autoManaged
+    ? classTileState({
+        applicationStatus,
+        classLevel: stage.extrasInitial.classLevel,
+        classSection: stage.extrasInitial.classSection,
+        inClass: !!currentSectionId,
+      })
+    : null;
+  const classLine = classState && 'line' in classState ? classState.line : null;
+  const classAction =
+    classState && 'action' in classState ? classState.action : null;
 
   return (
     <div
@@ -1180,11 +1215,7 @@ function StageStatusTile({
             {stage.label}
           </h3>
         </div>
-        {autoManaged ? (
-          <Badge variant="muted" className="shrink-0 gap-1">
-            Assigned in Records
-          </Badge>
-        ) : canEdit ? (
+        {autoManaged ? null : canEdit ? (
           <EditStageDialog
             ayCode={ayCode}
             enroleeNumber={enroleeNumber}
@@ -1202,7 +1233,9 @@ function StageStatusTile({
 
       {stage.updatedAt ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
-          {autoManaged && 'Assigned · '}
+          {/* "Assigned" only for a child on a class list — a class chosen
+              before enrolment has been updated, not assigned. */}
+          {autoManaged && (currentSectionId ? 'Assigned · ' : 'Updated · ')}
           {formatDate(stage.updatedAt)}
           {stage.updatedBy && (
             <span className="ml-1.5 normal-case text-muted-foreground/80">
@@ -1210,9 +1243,9 @@ function StageStatusTile({
             </span>
           )}
         </span>
-      ) : autoManaged ? (
+      ) : autoManaged && !classLine ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          {awaitingPlacement ? 'Awaiting class assignment' : 'Not assigned yet'}
+          Not assigned yet
         </span>
       ) : null}
       {stage.extras && stage.extras.some((e) => !isFieldEmpty(e)) && (
@@ -1248,16 +1281,27 @@ function StageStatusTile({
           }
         />
       )}
-      {/* Enrolled but unplaced — this tile is otherwise a dead end, because the
-          class stage has no edit control of its own (placement is done in
-          Records), so the queue is the only door out of here. */}
-      {awaitingPlacement && canAssignSection && (
-        <Button asChild variant="outline" size="sm" className="ml-1 self-start">
-          <Link href="/records/unsynced">
-            <GraduationCap className="size-3.5" />
-            Assign a class
-          </Link>
-        </Button>
+      {/* Not on a class list yet: where the class stands, then the one thing
+          to do about it — choose (before Enrolled) or assign (Enrolled), in
+          place. The status line shows to everyone; the button needs the
+          placement right AND the class list, which the page loads only for a
+          viewer who holds that right. */}
+      {classLine && (
+        <p className="pl-1 text-xs leading-snug text-muted-foreground">
+          {classLine}
+        </p>
+      )}
+      {classAction && canAssignSection && classChoice && (
+        <ClassChoiceButton
+          mode={classAction.mode}
+          label={classAction.label}
+          enroleeNumber={enroleeNumber}
+          studentName={classChoice.studentName}
+          ayCode={ayCode}
+          level={classChoice.level}
+          sections={classChoice.sections}
+          applicationFit={classChoice.applicationFit}
+        />
       )}
     </div>
   );

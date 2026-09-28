@@ -1,6 +1,11 @@
 'use client';
 
-import { ArrowUpRight, GraduationCap, UserX } from 'lucide-react';
+import {
+  ArrowUpRight,
+  GraduationCap,
+  TriangleAlert,
+  UserX,
+} from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -42,6 +47,9 @@ export type AssignableLevelSections = {
 //                        per-row sync is what the dialog effectively does
 //                        once the section is confirmed (the API route
 //                        is idempotent for the already-assigned case).
+//                        When the class filled in cannot be placed (row
+//                        carries a `blocker`), the reason cell says why and
+//                        the same button is how it gets fixed.
 //   no_student_number → No action button (Directus must issue the number
 //                        first); the registrar can still pivot via the
 //                        "Open in admissions" link to see the apps row.
@@ -183,11 +191,28 @@ export function UnsyncedStudentsQueue({
       {
         accessorKey: 'gapReason',
         header: "What's missing",
-        cell: ({ row }) => (
-          <span className="text-sm text-foreground">
-            {GAP_COPY[row.original.gapReason]}
-          </span>
-        ),
+        cell: ({ row }) => {
+          // A class filled in outside the SIS that cannot be placed. "Not yet
+          // synced" would read as "wait for tonight", and tonight fails the
+          // same way — so say it is stuck, and why, in the admin's words.
+          const blocker = row.original.blocker;
+          if (blocker) {
+            return (
+              <div className="max-w-sm space-y-0.5">
+                <div className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  Class can’t be placed
+                </div>
+                <p className="text-xs text-muted-foreground">{blocker}</p>
+              </div>
+            );
+          }
+          return (
+            <span className="text-sm text-foreground">
+              {GAP_COPY[row.original.gapReason]}
+            </span>
+          );
+        },
       },
       {
         id: 'actions',

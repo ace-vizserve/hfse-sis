@@ -4,6 +4,10 @@ import {
   getCurrentAcademicYear,
   getUpcomingAcademicYear,
 } from '@/lib/academic-year';
+import {
+  describePlacementBlocker,
+  type PlacementLookup,
+} from '@/lib/sis/placement-blocker';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -32,7 +36,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 //   not_synced         — apps + status both look valid (studentNumber
 //                        set, classSection set) but the student row is
 //                        still missing. Most likely a transient sync
-//                        failure; bulk-sync should pick it up.
+//                        failure; bulk-sync should pick it up — UNLESS the
+//                        class was filled in outside the SIS (Directus, the
+//                        old enrolment link) as something the SIS cannot
+//                        place. Those rows carry a plain-English `blocker`,
+//                        because the nightly sync fails on them every night.
 //
 // Cached per-AY with the existing `sis:${ayCode}` tag — already
 // invalidated by every admissions mutation, so this loader stays in
@@ -63,6 +71,13 @@ export type UnsyncedStudentRow = {
   classSection: string | null;
   applicationStatus: string;
   gapReason: UnsyncedGapReason;
+  /** `not_synced` only: why the class filled in on the admissions row (by
+   *  Directus or the old enrolment link) cannot be placed — a level the SIS
+   *  does not have, or a class that does not exist for this year. Plain
+   *  English, shown on the queue as-is. Null when nothing is known to be in
+   *  the way (the sync should succeed), and always null for the other gap
+   *  reasons. See `lib/sis/placement-blocker.ts`. */
+  blocker: string | null;
 };
 
 const ENROLLED_STATUSES = ['Enrolled', 'Enrolled (Conditional)'] as const;
@@ -79,24 +94,36 @@ async function loadUnsyncedUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  const [appsRes, statusRes, prefsRes] = await Promise.all([
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select(
-        'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied'
-      ),
-    admissions
-      .from(`${prefix}_enrolment_status`)
-      .select('enroleeNumber, classLevel, classSection, applicationStatus')
-      .in('applicationStatus', [...ENROLLED_STATUSES]),
-    // Read apart from the main select, and allowed to fail: `classType` was
-    // added to the portal later than the identity columns (see
-    // MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a missing column must
-    // cost only the section picker's hint, never the queue.
-    admissions
-      .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, classType, preferredSchedule'),
-  ]);
+  const [appsRes, statusRes, prefsRes, levelsRes, sectionsRes] =
+    await Promise.all([
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select(
+          'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied'
+        ),
+      admissions
+        .from(`${prefix}_enrolment_status`)
+        .select('enroleeNumber, classLevel, classSection, applicationStatus')
+        .in('applicationStatus', [...ENROLLED_STATUSES]),
+      // Read apart from the main select, and allowed to fail: `classType` was
+      // added to the portal later than the identity columns (see
+      // MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a missing column must
+      // cost only the section picker's hint, never the queue.
+      admissions
+        .from(`${prefix}_enrolment_applications`)
+        .select('enroleeNumber, classType, preferredSchedule'),
+      // The SIS's levels and this year's classes, read ONCE and used twice: the
+      // section ids scope the "already has a class" check below, and level +
+      // name let `describePlacementBlocker` say why a `not_synced` row's class
+      // cannot be placed. Same selects the sync itself runs.
+      service.from('levels').select('id, label'),
+      service
+        .from('sections')
+        .select(
+          'id, level_id, name, academic_year:academic_years!inner(ay_code)'
+        )
+        .eq('academic_year.ay_code', ayCode),
+    ]);
 
   if (appsRes.error) {
     console.warn(
@@ -211,10 +238,7 @@ async function loadUnsyncedUncached(
     const numberById = new Map(people.map((p) => [p.id, p.student_number]));
 
     if (people.length > 0) {
-      const { data: sectionRows, error: sectionErr } = await service
-        .from('sections')
-        .select('id, academic_year:academic_years!inner(ay_code)')
-        .eq('academic_year.ay_code', ayCode);
+      const { data: sectionRows, error: sectionErr } = sectionsRes;
       if (sectionErr) {
         // Deliberately NOT fail-soft. An empty section list would mark every
         // enrolled student as needing setup, which is a flood; an empty
@@ -251,6 +275,26 @@ async function loadUnsyncedUncached(
     }
   }
 
+  // What the blocker check compares against. Null when either read failed:
+  // an empty level or class list would make EVERY class look missing, and a
+  // queue full of false "no such class" rows is worse than the old silence —
+  // so on a failed read the rows simply carry no blocker, as before.
+  let placementLookup: PlacementLookup | null = null;
+  if (levelsRes.error || sectionsRes.error) {
+    console.warn(
+      '[sis/unsynced-students] levels / sections read failed (blockers off):',
+      levelsRes.error?.message ?? sectionsRes.error?.message
+    );
+  } else {
+    placementLookup = {
+      levels: (levelsRes.data ?? []) as Array<{ id: string; label: string }>,
+      sections: (sectionsRes.data ?? []) as Array<{
+        level_id: string;
+        name: string;
+      }>,
+    };
+  }
+
   const out: UnsyncedStudentRow[] = [];
   for (const status of statusRows) {
     const enroleeNumber = status.enroleeNumber!;
@@ -276,7 +320,7 @@ async function loadUnsyncedUncached(
 
     // 1. Apps-side has no studentNumber — Directus hasn't issued one yet.
     if (!app.studentNumber) {
-      out.push({ ...base, gapReason: 'no_student_number' });
+      out.push({ ...base, gapReason: 'no_student_number', blocker: null });
       continue;
     }
 
@@ -285,13 +329,22 @@ async function loadUnsyncedUncached(
 
     // 3. Not in grading schema. If classSection is missing the registrar
     //    can pick one via the assign-section dialog; otherwise it's an
-    //    ordinary "needs a bulk sync" case.
+    //    ordinary "needs a bulk sync" case — unless the class that was filled
+    //    in cannot be placed at all, in which case the nightly sync will fail
+    //    on it every night and the row has to say why.
     const hasClassSection =
       typeof status.classSection === 'string' &&
       status.classSection.trim().length > 0;
+    if (!hasClassSection) {
+      out.push({ ...base, gapReason: 'no_class_section', blocker: null });
+      continue;
+    }
     out.push({
       ...base,
-      gapReason: hasClassSection ? 'not_synced' : 'no_class_section',
+      gapReason: 'not_synced',
+      blocker: placementLookup
+        ? describePlacementBlocker(base, placementLookup)
+        : null,
     });
   }
 
@@ -329,6 +382,26 @@ export async function countUnsyncedEnrolledStudents(
 }
 
 /**
+ * The academic years the queue covers: the current AY plus the upcoming
+ * accepting AY, oldest first, never duplicated. Exported so the nightly
+ * auto-sync walks exactly the years the queue shows — a year the queue lists
+ * but the sync skips is a year whose children wait forever (the sync ran for
+ * the current AY only until 2026-09-28, while admissions were already placing
+ * AY2027 children).
+ */
+export async function listUnsyncedScopeAyCodes(): Promise<string[]> {
+  const [current, upcoming] = await Promise.all([
+    getCurrentAcademicYear(),
+    getUpcomingAcademicYear(),
+  ]);
+  return Array.from(
+    new Set(
+      [current?.ay_code, upcoming?.ay_code].filter((c): c is string => !!c)
+    )
+  ).sort();
+}
+
+/**
  * Every student waiting for setup, in EVERY academic year that can currently
  * have one — the current AY plus the upcoming accepting AY.
  *
@@ -345,16 +418,7 @@ export async function countUnsyncedEnrolledStudents(
  * reads together.
  */
 export async function loadUnsyncedInScope(): Promise<UnsyncedStudentRow[]> {
-  const [current, upcoming] = await Promise.all([
-    getCurrentAcademicYear(),
-    getUpcomingAcademicYear(),
-  ]);
-
-  const ayCodes = Array.from(
-    new Set(
-      [current?.ay_code, upcoming?.ay_code].filter((c): c is string => !!c)
-    )
-  );
+  const ayCodes = await listUnsyncedScopeAyCodes();
   if (ayCodes.length === 0) return [];
 
   const perAy = await Promise.all(ayCodes.map(loadUnsyncedEnrolledStudents));

@@ -67,7 +67,10 @@ export async function GET(
 
   const service = createServiceClient();
   const [result, applicationFit] = await Promise.all([
-    listAssignableSections(service, ayCode, levelApplied),
+    // This child's own chosen class must not count against them in the picker.
+    listAssignableSections(service, ayCode, levelApplied, {
+      excludeEnroleeNumber: enroleeNumber,
+    }),
     loadApplicationFit(service, ayCode, {
       levelApplied,
       classType: typeof prefs?.classType === 'string' ? prefs.classType : null,

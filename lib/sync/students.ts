@@ -11,6 +11,37 @@ import { fetchAllPages } from '@/lib/supabase/paginate';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
 
+// ──────────────────────────────────────────────────────────────────────────
+// A class can be CHOSEN at any application status; a child JOINS it — roster
+// row, index number, start date — only once the application is Enrolled or
+// Enrolled (Conditional). Whatever tool wrote the class (SIS, Directus, the old
+// enrolment link), this is where the roster side is decided, so the rule lives
+// here once and every admissions → roster path inherits it.
+//
+// ⚠ These are APPLICATION statuses (`ay{YY}_enrolment_status.applicationStatus`),
+// not the roster's `enrollment_status`. `ENROLLED_STATUSES` in
+// `lib/schemas/enrolment.ts` is the roster one ('active' / 'late_enrollee') —
+// same word, different column, and mixing them up refuses everybody.
+// ──────────────────────────────────────────────────────────────────────────
+export const ENROLLED_APPLICATION_STATUSES = [
+  'Enrolled',
+  'Enrolled (Conditional)',
+] as const;
+
+export function isEnrolledApplicationStatus(
+  status: string | null | undefined
+): boolean {
+  const s = (status ?? '').trim();
+  return (ENROLLED_APPLICATION_STATUSES as readonly string[]).includes(s);
+}
+
+/**
+ * The reason a sync hands back when the child has a class but is not enrolled
+ * yet. Stable and exported because callers branch on it: for them it means
+ * "class chosen, waiting for enrolment", an expected outcome and not a failure.
+ */
+export const NOT_ENROLLED_REASON = 'not enrolled yet';
+
 export type LevelRow = { id: string; label: string };
 export type SectionRow = { id: string; level_id: string; name: string };
 export type StudentRow = {
@@ -86,6 +117,10 @@ export type SyncPlan = {
   enrollment_inserts: EnrollmentInsert[];
   enrollment_status_changes: EnrollmentStatusChange[];
   errors: SyncError[];
+  // Rows with a class but no Enrolled application — held back from joining.
+  // Not errors: nothing is wrong with them, they are simply not due yet.
+  // `reason` is always NOT_ENROLLED_REASON.
+  waiting_for_enrolment: SyncError[];
   stats: {
     total_source_rows: number;
     students_to_add: number;
@@ -94,6 +129,7 @@ export type SyncPlan = {
     enrollments_to_withdraw: number;
     enrollments_to_reactivate: number;
     errors: number;
+    waiting_for_enrolment: number;
     by_level: Record<string, { add: number; update: number; withdraw: number }>;
   };
 };
@@ -111,8 +147,19 @@ export function buildSyncPlan(
     snapshot.students.map((s) => [s.student_number, s])
   );
   const enrollmentBySectionAndStudent = new Map<string, EnrollmentRow>();
+  // A student's rows that currently put them in a class — what a not-yet-
+  // enrolled row must leave exactly where it is (see the gate below).
+  const onRosterByStudent = new Map<string, EnrollmentRow[]>();
   for (const e of snapshot.enrollments) {
     enrollmentBySectionAndStudent.set(`${e.section_id}::${e.student_id}`, e);
+    if (
+      e.enrollment_status === 'active' ||
+      e.enrollment_status === 'late_enrollee'
+    ) {
+      const list = onRosterByStudent.get(e.student_id) ?? [];
+      list.push(e);
+      onRosterByStudent.set(e.student_id, list);
+    }
   }
 
   // Current max index per section (for appending new enrollees). Seeded from
@@ -133,6 +180,7 @@ export function buildSyncPlan(
     enrollment_inserts: [],
     enrollment_status_changes: [],
     errors: [],
+    waiting_for_enrolment: [],
     stats: {
       total_source_rows: rows.length,
       students_to_add: 0,
@@ -141,6 +189,7 @@ export function buildSyncPlan(
       enrollments_to_withdraw: 0,
       enrollments_to_reactivate: 0,
       errors: 0,
+      waiting_for_enrolment: 0,
       by_level: {},
     },
   };
@@ -164,6 +213,14 @@ export function buildSyncPlan(
   // the source roster don't claim two index numbers.
   const plannedEnrollments = new Set<string>();
 
+  const holdBack = (i: number, number: string) => {
+    plan.waiting_for_enrolment.push({
+      row_index: i,
+      student_number: number,
+      reason: NOT_ENROLLED_REASON,
+    });
+  };
+
   rows.forEach((row, i) => {
     const number = row.student_number?.trim() || null;
     if (!number) {
@@ -174,6 +231,41 @@ export function buildSyncPlan(
       });
       return;
     }
+
+    // ----- The Enrolled gate -----
+    // A child whose application is not Enrolled may have a class CHOSEN but
+    // may not JOIN it: no students row, no roster row, no index number.
+    //
+    // The gate is here, in the planner, and NOT a narrower admissions fetch,
+    // because of the withdrawal pass at the bottom: every active roster row
+    // missing from `seen` is planned as a withdrawal. Some children already
+    // sit in a class while their application still reads Submitted (placed
+    // before this rule existed). Dropping their rows from the input would have
+    // withdrawn every one of them on the next bulk sync. (A rostered child
+    // whose admissions row has NO class never reaches this loop — see
+    // `fetchAdmissionsRoster` — and is not covered by this.)
+    //
+    // So a not-yet-enrolled child splits two ways:
+    //   * Not on any roster → held back entirely (`waiting_for_enrolment`).
+    //   * Already on a roster → every class they are in is marked seen up
+    //     front, so nothing withdraws them, and the rest of the loop runs as
+    //     it always has for the name refresh. It still may not add a NEW
+    //     roster row or reactivate a withdrawn one — both are joining a class
+    //     (checked at the enrolment step below). A class changed in admissions
+    //     therefore leaves them where they are until they are enrolled.
+    const enrolled = isEnrolledApplicationStatus(row.application_status);
+    if (!enrolled) {
+      const existingStudent = studentByNumber.get(number);
+      const onRoster = existingStudent
+        ? (onRosterByStudent.get(existingStudent.id) ?? [])
+        : [];
+      if (onRoster.length === 0) {
+        holdBack(i, number);
+        return;
+      }
+      for (const e of onRoster) seen.add(`${e.section_id}::${number}`);
+    }
+
     const levelLabel = normalizeLevelLabel(row.class_level);
     if (!levelLabel) {
       plan.errors.push({
@@ -261,6 +353,11 @@ export function buildSyncPlan(
       );
       if (prevEnrollment) {
         if (prevEnrollment.enrollment_status === 'withdrawn') {
+          // Reactivating is joining the class again — Enrolled only.
+          if (!enrolled) {
+            holdBack(i, number);
+            return;
+          }
           plan.enrollment_status_changes.push({
             enrollment_id: prevEnrollment.id,
             student_number: number,
@@ -272,6 +369,13 @@ export function buildSyncPlan(
         }
         return; // already enrolled in this section, nothing else to do
       }
+    }
+
+    // A rostered, not-yet-enrolled child whose admissions class now names a
+    // different class: no new roster row until they are enrolled.
+    if (!enrolled) {
+      holdBack(i, number);
+      return;
     }
 
     if (plannedEnrollments.has(seenKey)) return;
@@ -318,6 +422,7 @@ export function buildSyncPlan(
   }
 
   plan.stats.errors = plan.errors.length;
+  plan.stats.waiting_for_enrolment = plan.waiting_for_enrolment.length;
   return plan;
 }
 
@@ -566,6 +671,16 @@ export async function syncOneStudent(
       };
     }
 
+    // The roster waits for enrolment: a class chosen on a Submitted /
+    // Processing application is legal and is NOT a failure — the child joins
+    // it when the application flips to Enrolled. Refusing here writes nothing,
+    // so a child already sitting in a class (placed before this rule) stays
+    // exactly as they are. The planner carries the same gate for the bulk
+    // path; this early return just saves the snapshot reads.
+    if (!isEnrolledApplicationStatus(status.applicationStatus)) {
+      return { ok: false, change: 'skipped', reason: NOT_ENROLLED_REASON };
+    }
+
     const admissionsRow: AdmissionsRow = {
       student_number: app.studentNumber,
       last_name: app.lastName,
@@ -575,6 +690,7 @@ export async function syncOneStudent(
       class_section: status.classSection,
       class_ay: ayCode,
       enrolee_number: enroleeNumber,
+      application_status: status.applicationStatus,
     };
 
     // 2. Load a minimal grading snapshot in parallel. The three queries are

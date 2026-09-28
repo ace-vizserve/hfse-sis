@@ -31,6 +31,9 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.stage.update',
   'sis.stp.update',
   'sis.precourse.update',
+  // A class chosen before enrolment is an admissions act (placement onto the
+  // class list stays a Records event, on /records/audit-log).
+  'sis.student.choose_section',
   // lib/audit/modules.ts files discount codes under Admissions, but this list
   // never carried them, so the page that owns them could not show them.
   'sis.discount_code.create',

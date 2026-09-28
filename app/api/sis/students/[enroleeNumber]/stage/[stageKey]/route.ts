@@ -23,7 +23,10 @@ import {
   validateTerminalReason,
   type StageKey,
 } from '@/lib/schemas/sis';
-import { validateSectionChoice } from '@/lib/sis/class-assignment';
+import {
+  resolveChosenSection,
+  validateSectionChoice,
+} from '@/lib/sis/class-assignment';
 import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
 import {
   DOCUMENT_SLOTS,
@@ -37,7 +40,11 @@ import {
 import { stampEnrolledAtIfNull } from '@/lib/sis/enrolled-at';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { syncOneStudent } from '@/lib/sync/students';
+import {
+  NOT_ENROLLED_REASON,
+  isEnrolledApplicationStatus,
+  syncOneStudent,
+} from '@/lib/sync/students';
 import {
   StageWithdrawalDatesSchema,
   buildCascadeSectionPatch,
@@ -161,12 +168,15 @@ export async function PATCH(
   // every Enrolled flip claimed the student was unplaced and sent them to
   // "Students needing setup", including one already placed through the class
   // stage beforehand. De-duped so the class stage doesn't select it twice.
+  // `classLevel` rides along for 2b′, which resolves a class chosen before
+  // enrolment to a real SIS class on the Enrolled flip.
   const beforeSelect = Array.from(
     new Set([
       cols.statusCol,
       cols.remarksCol,
       ...cols.extras.map((e) => e.columnName),
       'classSection',
+      'classLevel',
     ])
   ).join(', ');
   const { data: before, error: beforeErr } = await supabase
@@ -287,7 +297,7 @@ export async function PATCH(
     }
   }
 
-  // 2.0) Post-Enrolled section-change guard.
+  // 2.0) Section-change guard — every status, see below.
   // Section transfers for enrolled students must go through the dedicated
   // /transfer-section route, which atomically withdraws from the source
   // section + inserts into the target section in section_students. The
@@ -311,22 +321,28 @@ export async function PATCH(
       const appStatus = (
         appStatusRow as { applicationStatus: string | null } | null
       )?.applicationStatus;
-      if (appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)') {
-        // A student with no class yet isn't transferring — they're being
-        // placed for the first time (step 11), which is what assign-section
-        // is for. Sending them to transfer-section would fail, because there
-        // is no source section to move them out of. Now that enrolling
-        // without a class is the normal path, this is the common case.
-        const route = currentSection
+      const enrolled =
+        appStatus === 'Enrolled' || appStatus === 'Enrolled (Conditional)';
+      // Before Enrolled this path is refused too (2026-09-28). A class can now
+      // be CHOSEN at any stage, but assign-section's choose mode is where that
+      // is checked — the level must match, the class must exist and have a
+      // seat. Writing the string here skipped all three, which is the exact
+      // Directus drift that feature exists to end.
+      //
+      // A student with no class yet isn't transferring — they're being placed
+      // (or their class chosen) for the first time, which is what
+      // assign-section is for. Sending them to transfer-section would fail,
+      // because there is no source section to move them out of.
+      const route =
+        enrolled && currentSection
           ? `POST /api/sis/students/${enroleeNumber}/transfer-section to move enrolled students between sections`
-          : `POST /api/sis/students/${enroleeNumber}/assign-section to place this student in a class for the first time`;
-        return NextResponse.json(
-          {
-            error: `Use ${route} — this keeps section_students in sync atomically.`,
-          },
-          { status: 422 }
-        );
-      }
+          : `POST /api/sis/students/${enroleeNumber}/assign-section to choose or change this student's class`;
+      return NextResponse.json(
+        {
+          error: `Use ${route} — it checks the level, the class and its size.`,
+        },
+        { status: 422 }
+      );
     }
   }
 
@@ -537,11 +553,14 @@ export async function PATCH(
     }
 
     if (gate.assignsSection) {
+      // `exclude`: a child who chose this very class earlier holds a seat in
+      // it; that seat is theirs, not a reason to refuse them.
       const validated = await validateSectionChoice(
         supabase,
         parsed.data.section_id!,
         ayCode,
-        appLite.levelApplied
+        appLite.levelApplied,
+        { enroleeNumber, studentNumber: appLite.studentNumber }
       );
       if ('error' in validated) {
         return NextResponse.json(
@@ -566,6 +585,153 @@ export async function PATCH(
       const preClass = (before as unknown as Record<string, unknown>)
         .classSection as string | null | undefined;
       awaitingPlacement = !preClass?.trim();
+    }
+  }
+
+  // 2b′) A class chosen BEFORE enrolment must still be usable on the day.
+  //
+  // A class can now be chosen at any application status
+  // (docs/superpowers/plans/2026-09-28-class-assignment-any-stage.md), and
+  // Directus / the old enrolment link can fill one in with no checks at all.
+  // The child joins that class at THIS moment — the post-save sync in step 5
+  // places them. So it is checked here, before anything is written, the way
+  // a class picked in this dialog is checked in 2b: the class must exist in
+  // the SIS for this year, match the child's level, and have room (counting
+  // other children who chose it, but not this child's own seat). If not, the
+  // flip is refused with `chosen_class_unavailable` and the dialog offers the
+  // class picker, so the person picks another class in the same save.
+  // Without this the flip succeeded and the sync then failed after the fact
+  // ("roster sync was skipped"), or quietly put a 51st child in a class.
+  //
+  // Only on the transition INTO an Enrolled state: re-saving an already
+  // Enrolled application (a remarks edit) must not be refused because their
+  // class has since filled up.
+  //
+  // Covers Enrolled (Conditional) too — the chosen class is placed by the same
+  // sync on both. That is NOT the KD #180 prereq gate, which Conditional still
+  // skips; this only concerns the class. Because the dialog now offers the
+  // picker on refusal, a class picked for a Conditional flip is accepted here
+  // (2b handles plain Enrolled), with the same role and student-number rules
+  // `evaluateEnrolledFlip` applies.
+  if (
+    stageKey === 'application' &&
+    isEnrolledApplicationStatus(status) &&
+    !classAutoAssigned
+  ) {
+    const preRow = before as unknown as Record<string, unknown>;
+    const wasEnrolled = isEnrolledApplicationStatus(
+      (preRow[cols.statusCol] as string | null) ?? null
+    );
+    const pickedForConditional =
+      status === 'Enrolled (Conditional)'
+        ? (parsed.data.section_id ?? null)
+        : null;
+    const preLevel = (preRow.classLevel as string | null) ?? null;
+    const preSection = (preRow.classSection as string | null) ?? null;
+
+    if (!wasEnrolled && (pickedForConditional || preSection?.trim())) {
+      const { data: appRow, error: appErr } = await createAdmissionsClient()
+        .from(`${prefix}_enrolment_applications`)
+        .select('studentNumber, levelApplied')
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle();
+      if (appErr || !appRow) {
+        return NextResponse.json(
+          { error: 'Cannot enroll: application row missing' },
+          { status: 422 }
+        );
+      }
+      const app = appRow as {
+        studentNumber: string | null;
+        levelApplied: string | null;
+      };
+      const self = { enroleeNumber, studentNumber: app.studentNumber };
+
+      if (pickedForConditional) {
+        if (!canAssignSection(auth.role)) {
+          return NextResponse.json(
+            {
+              error:
+                'Class assignment is handled by Records. Enrol this student now and they will appear under Students awaiting class assignment.',
+              code: 'placement_forbidden',
+            },
+            { status: 403 }
+          );
+        }
+        if (!app.studentNumber) {
+          return NextResponse.json(
+            {
+              error:
+                'This applicant has no Student Number on file, so they cannot be added to a class roster yet. Contact admissions support to assign one, or enrol without a class for now.',
+              code: 'no_student_number',
+            },
+            { status: 422 }
+          );
+        }
+        const validated = await validateSectionChoice(
+          supabase,
+          pickedForConditional,
+          ayCode,
+          app.levelApplied,
+          self
+        );
+        if ('error' in validated) {
+          return NextResponse.json(
+            { error: `Cannot enroll: ${validated.error}` },
+            { status: 422 }
+          );
+        }
+        const classCols = STAGE_COLUMN_MAP.class;
+        update[classCols.statusCol] = 'Finished';
+        update['classLevel'] = validated.section.levelLabel;
+        update['classSection'] = validated.section.name;
+        update[classCols.updatedDateCol] = new Date().toISOString();
+        update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
+        classAutoAssigned = true;
+      } else {
+        const chosenText = [preLevel?.trim(), preSection?.trim()]
+          .filter(Boolean)
+          .join(' ');
+        const resolved = await resolveChosenSection(
+          supabase,
+          ayCode,
+          preLevel,
+          preSection
+        );
+        let problem: string | null = null;
+        if ('reason' in resolved) {
+          problem = resolved.reason;
+        } else {
+          // No level-match against `levelApplied` here: the class's level IS
+          // the chosen level, and a child deliberately placed at another level
+          // (retained, accelerated — /records/level-mismatches) was placed by
+          // the sync before this check existed. This check is only "does the
+          // class exist and have a seat".
+          const validated = await validateSectionChoice(
+            supabase,
+            resolved.sectionId,
+            ayCode,
+            null,
+            self
+          );
+          if ('error' in validated) {
+            // The full-class message already ends "Pick another class." —
+            // dropped so the sentence below does not say it twice.
+            const why = validated.error.replace(/\s*Pick another class\.$/, '');
+            problem = `The class chosen for this child is ${chosenText}, and it can't take them: ${why}`;
+          }
+        }
+        if (problem) {
+          return NextResponse.json(
+            {
+              error: `${problem} Pick another class to enrol them.`,
+              code: 'chosen_class_unavailable',
+              chosenClass: chosenText,
+            },
+            { status: 422 }
+          );
+        }
+      }
     }
   }
 
@@ -873,7 +1039,11 @@ export async function PATCH(
           (status === 'Enrolled' || status === 'Enrolled (Conditional)') &&
           (result.reason === 'missing classLevel or classSection' ||
             result.reason === 'no studentNumber');
-        if (!isExpectedUnplacedSkip) {
+        // Setting the class stage on an application that is not Enrolled yet
+        // is legal: it means "class chosen, joins when enrolled". The sync
+        // refuses it by design, so that refusal is not a failure either.
+        const isChosenNotEnrolled = result.reason === NOT_ENROLLED_REASON;
+        if (!isExpectedUnplacedSkip && !isChosenNotEnrolled) {
           autoSyncFailed = true;
           console.warn(
             '[stage PATCH] auto-sync failed:',
