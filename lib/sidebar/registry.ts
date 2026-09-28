@@ -27,7 +27,6 @@ import {
   Handshake,
   HeartPulse,
   History,
-  Hourglass,
   IdCard,
   KeyRound,
   LayoutDashboard,
@@ -358,8 +357,6 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // Documents a parent committed to send by a date they named.
       '/admissions/cohorts/promised': Handshake,
       '/admissions/cohorts/pre-course': ClipboardList,
-      // Class chosen, waiting for the application to reach Enrolled.
-      '/admissions/cohorts/class-chosen': Hourglass,
       '/admissions/feedback': MessageSquare,
       '/admissions/audit-log': ICON_AUDIT_LOG,
       '/sis/admin/discount-codes': ICON_DISCOUNT_CODES,

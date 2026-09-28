@@ -486,13 +486,6 @@ const ADMISSIONS_NAV: NavSection[] = [
         href: '/admissions/cohorts/pre-course',
         label: 'Pre-Course Counselling',
       },
-      // A class can be chosen before the application is Enrolled; the child
-      // joins it only on enrolment (2026-09-28 plan). This lists who is
-      // waiting, across the current and upcoming AY.
-      {
-        href: '/admissions/cohorts/class-chosen',
-        label: 'Class chosen, not enrolled',
-      },
     ],
   },
   {

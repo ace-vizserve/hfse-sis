@@ -4,7 +4,6 @@ import {
   FileTextIcon,
   GraduationCapIcon,
   HomeIcon,
-  HourglassIcon,
   InboxIcon,
   PlaneIcon,
   Settings2Icon,
@@ -241,12 +240,6 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Promised follow-ups (admissions)',
     group: 'Cohorts',
     icon: CalendarClockIcon,
-  },
-  {
-    href: '/admissions/cohorts/class-chosen',
-    label: 'Class chosen, not enrolled (admissions)',
-    group: 'Cohorts',
-    icon: HourglassIcon,
   },
   {
     href: '/records/cohorts/stp',
