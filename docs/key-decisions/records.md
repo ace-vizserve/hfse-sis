@@ -166,6 +166,29 @@ SIS Admin IA & navigation redesign (sub-project 2 of the umbrella, 2026-07-11; n
 
 **Five screens:** the Classroom student drawer; a per-class list `/classroom/[sectionId]/discipline` with its own File-a-record button and student picker (`file-discipline-record-button.tsx`); a read-only-plus-edit tab on the Records student page; and the school-wide register `/records/discipline`.
 
+### KD #228
+
+**Records → House points: standings per AY, events, and a grading-sheet-style score sheet per event** (2026-09-28, commits `433d7377`..`71771675`; migration `181_house_points.sql` NOT yet applied). Built to replace `House Points Tracking AY2026.xlsx` — 11 differently-laid-out event tabs, house colour typed on every row, totals copied by hand into a summary tab, and the only formula is `=SUM`. The SIS already stored each student's house (`students.house_id`, KD #178) but had no points. **It is standalone** — not tied to Awards (development-plan.md item #8) or the academic Gold/Silver/Bronze of KD #95.
+
+**The model.** An event's setup decides everything downstream: `entrant_kind` (student · team · house) decides who is entered; `placement_mode` (score · pick) decides how a placement is worked out; and a per-event rubric (`house_point_places`) is copied from the editable, cross-year `house_point_scales` (by `event_type`: internal · external · major · attendance) at event creation, then can be edited per event — VANDA's Honourable Mention was retyped to 17, ICAS High Distinction to 25. The event page (`/records/house-points/[eventId]`) is one score sheet, built on the grading module's `ScoreInput`: type a score (or pick a placement) and placement, points and house totals follow automatically.
+
+**The rules.**
+
+- **Points are never stored.** They are worked out at read time from scores, placements and the rubric in one pure module, `lib/house-points/compute.ts` — the same principle as Hard Rule #2.
+- **Dense ranking, ties share.** Within the event's `rank_within` group (section · level · event), 46, 46, 44 → 1st, 1st, 2nd — a tie shares the place and the next distinct score takes the very next place.
+- **Blank ≠ zero**, the same shape as Hard Rule #3: a `null` score gets no placement and no points; `0` is a real score and can place last.
+- **A team earns its place's points once per distinct house among its members** — Got Talent's 5-member band with 2 Green members gave Green 4 points once, not 8.
+- **A student can be on only one team per event** — enforced in the team picker and the team POST/PATCH routes (400), not by a DB constraint.
+- **Houses are entered via an explicit "Set up houses" button**, never created on page load — a GET must not write.
+
+**Who can edit.** `HOUSE_POINTS_WRITERS` = academic_coordinator, school_admin, superadmin (`lib/auth/student-record.ts`). The admissions role, which can open Records, gets view only.
+
+**Migration 181.** Adds `house_point_scales`, `house_point_events`, `house_point_places`, `house_point_entries`, `house_point_teams`, `house_point_team_members` (172 stays reserved). ⏳ **NOT yet applied to production and NOT browser-verified** — Mr Ace applies it; probe afterwards with `scripts/probe-migration-181.ts` (tables exist, scales seeded).
+
+**Deferred.** The **Attendance Challenge** (event type `attendance`, no participants — points per student per month computed from `attendance_absence_marks`, EX counts as present, the same rule the report-card rollup uses) has its own plan after this ships. A student's house points on their permanent record was not asked for.
+
+**Workbook reconciliation.** All 1,549 points in the workbook reproduce through `compute.ts`. VANDA's Honourable Mention scale is 17. Got Talent's team totals land Blue 10 / Orange 18 / Yellow 17 / Green 19 — each team's house credited once regardless of how many members it has on that team. Per the build's own constraint, no real student name from the workbook was carried into code, tests or this entry.
+
 **The register was Mr Ace's call, over my objection**, on 2026-08-21 — I argued nobody at the school had asked for it; he answered _"its common sense for software development bro"_, and he was right. It supersedes the earlier "do not pre-build the screen" note. It carries a **Slips outstanding** count and a **Slip back** facet (Returned / Not yet / —), so "which letters are still outstanding" is two clicks. ⚠ **Surfacing is not chasing:** no reminder, no computed deadline, no notification. Nothing sends anything.
 
 **The parent acknowledgement is tracked (122): `acknowledged_on date`, null until the signed slip comes back.** Mr Ace, 2026-08-18 — the school's warning letter ends with a tear-off receipt due back in two days, so **a letter is not finished when it is sent**. It is **one nullable date, not a flag plus a date**: two records of one fact drift the first time somebody sets one without the other.
