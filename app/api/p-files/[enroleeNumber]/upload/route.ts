@@ -23,10 +23,10 @@ function isPdf(file: File): boolean {
 }
 
 function isImage(file: File): boolean {
-  const imageMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
   if (imageMimeTypes.includes(file.type)) return true;
   const ext = (file.name ?? '').toLowerCase().split('.').pop() ?? '';
-  return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+  return ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
 }
 
 // Strip everything up to and including `/<bucket>/` from a Supabase Storage
@@ -167,7 +167,7 @@ export async function POST(
     }
     if (!isImage(files[0])) {
       return NextResponse.json(
-        { error: 'ID Picture must be an image file (JPG, PNG, GIF, or WEBP)' },
+        { error: 'ID Picture must be an image file (JPG, PNG, or WEBP)' },
         { status: 400 }
       );
     }

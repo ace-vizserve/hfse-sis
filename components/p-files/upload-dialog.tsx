@@ -43,13 +43,12 @@ const REPLACEMENT_NOTE_MAX = 500;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_TOTAL_SIZE = 30 * 1024 * 1024; // 30 MB
-const ACCEPT_TYPES = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-];
-const ACCEPT_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.webp';
+// The ID Picture takes one image; every other slot takes PDFs only. Mirrors the
+// upload route, which refuses anything else — the picker is narrowed here so
+// the wrong file can't be chosen in the first place.
+const ID_PICTURE_SLOT = 'idPicture';
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp'];
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -63,10 +62,10 @@ function isPdf(file: File): boolean {
   );
 }
 
-function isAccepted(file: File): boolean {
-  if (ACCEPT_TYPES.includes(file.type)) return true;
+function isImage(file: File): boolean {
+  if (IMAGE_TYPES.includes(file.type)) return true;
   const ext = file.name.toLowerCase().split('.').pop();
-  return ['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext ?? '');
+  return IMAGE_EXTS.includes(ext ?? '');
 }
 
 type UploadDialogProps = {
@@ -115,12 +114,20 @@ export function UploadDialog({
     if (!next) resetForm();
   }
 
+  const isIdPicture = slotKey === ID_PICTURE_SLOT;
+
   function addFiles(incoming: File[]) {
-    const valid = incoming.filter(isAccepted);
+    if (isIdPicture) {
+      const image = incoming.find(isImage);
+      if (!image || incoming.length > 1) {
+        toast.error('The ID Picture takes one image — JPG, PNG or WEBP');
+      }
+      if (image) setSelectedFiles([image]);
+      return;
+    }
+    const valid = incoming.filter(isPdf);
     if (valid.length < incoming.length) {
-      toast.error(
-        'Some files were skipped — only PDF, JPG, and PNG are accepted'
-      );
+      toast.error('Some files were skipped — only PDFs are accepted');
     }
     setSelectedFiles((prev) => [...prev, ...valid]);
   }
@@ -285,8 +292,11 @@ export function UploadDialog({
             </DialogTitle>
             <DialogDescription className="text-[13px] leading-relaxed">
               {isReplacement
-                ? 'The current file will be archived and viewable via History. Drop multiple PDFs to merge them into one document.'
-                : 'Upload on behalf of the parent. Drop multiple PDFs to merge them into one document.'}
+                ? 'The current file will be archived and viewable via History.'
+                : 'Upload on behalf of the parent.'}{' '}
+              {isIdPicture
+                ? 'The ID Picture is a single image.'
+                : 'PDFs only — drop several to merge them into one document.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -336,20 +346,28 @@ export function UploadDialog({
                         : 'Click to browse or drag files here'}
                     </p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      PDF, JPG, PNG · Max 10 MB per file
+                      {isIdPicture
+                        ? 'JPG, PNG, WEBP · One image · Max 10 MB'
+                        : 'PDF only · Max 10 MB per file'}
                     </p>
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Click or drop to add more files
+                    {isIdPicture
+                      ? 'Click or drop to choose a different image'
+                      : 'Click or drop to add more files'}
                   </p>
                 )}
 
                 <input
                   ref={fileRef}
                   type="file"
-                  multiple
-                  accept={ACCEPT_EXTENSIONS}
+                  multiple={!isIdPicture}
+                  accept={
+                    isIdPicture
+                      ? IMAGE_EXTS.map((e) => `.${e}`).join(',')
+                      : '.pdf,application/pdf'
+                  }
                   className="hidden"
                   disabled={busy}
                   onChange={handleFileChange}
