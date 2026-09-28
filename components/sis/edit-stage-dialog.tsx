@@ -694,7 +694,7 @@ export function EditStageDialog({
           `dvh` not `vh`: on mobile Safari the toolbar makes `vh` lie, which
           puts the footer under the browser chrome — the same bug the cap is
           here to fix. */}
-      <DialogContent className="flex max-h-[85dvh] max-w-xl! flex-col">
+      <DialogContent className="flex max-h-[85dvh] max-w-2xl! flex-col">
         {pendingMidTerm ? (
           // Scrolls on its own — it replaces the whole body, so it inherits the
           // cap but not the form's scroll container.
