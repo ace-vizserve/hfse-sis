@@ -10,7 +10,16 @@ import type {
   PlacementMode,
   RankWithin,
 } from '@/lib/house-points/compute';
-import { EventPatchSchema } from '@/lib/schemas/house-points';
+import {
+  diffEventFields,
+  placesUnchanged,
+  type ExistingPlaceForDiff,
+} from '@/lib/house-points/event-patch-diff';
+import {
+  EventPatchSchema,
+  mergedEventIssues,
+  type PlaceInput,
+} from '@/lib/schemas/house-points';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // PATCH  /api/house-points/events/[eventId]
@@ -94,21 +103,6 @@ function failure(step: string, e: unknown, what: string): NextResponse {
   );
 }
 
-// The one-of-seven patchable event columns, paired with the camelCase key
-// EventPatchSchema validates it under. Walked once to build both the SQL
-// update payload and the before/after audit diff, so the two cannot drift —
-// a field added to one without the other would either silently not persist
-// or silently not audit.
-const PATCHABLE_FIELDS = [
-  ['name', 'name'],
-  ['heldOn', 'held_on'],
-  ['eventType', 'event_type'],
-  ['entrantKind', 'entrant_kind'],
-  ['placementMode', 'placement_mode'],
-  ['maxScore', 'max_score'],
-  ['rankWithin', 'rank_within'],
-] as const;
-
 export async function PATCH(
   request: NextRequest,
   { params }: Ctx
@@ -137,25 +131,89 @@ export async function PATCH(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 
-    // Build the update payload and the before/after diff in one pass — see
-    // PATCHABLE_FIELDS's comment above.
-    const updateData: Record<string, unknown> = {};
-    const before: Record<string, unknown> = {};
-    const after: Record<string, unknown> = {};
-    for (const [patchKey, dbKey] of PATCHABLE_FIELDS) {
-      const value = patch[patchKey];
-      if (value === undefined) continue;
-      updateData[dbKey] = value;
-      if (value !== existing[dbKey as keyof EventDbRow]) {
-        before[patchKey] = existing[dbKey as keyof EventDbRow];
-        after[patchKey] = value;
-      }
+    // Field-by-field, VALUE-changed diff — not key presence. Resubmitting a
+    // whole form unchanged (Task 8's edit sheet does this) must not write,
+    // stamp updated_by/at, or leave an empty audit row. See
+    // lib/house-points/event-patch-diff.ts's header for the bug this fixes.
+    const { updateData, before, after } = diffEventFields(existing, patch);
+    const placesSent = patch.places !== undefined;
+
+    // Fast no-op: nothing was sent at all (EventPatchSchema allows `{}`).
+    if (Object.keys(updateData).length === 0 && !placesSent) {
+      return NextResponse.json({ ok: true, changed: false });
     }
 
-    const hasFieldChanges = Object.keys(updateData).length > 0;
-    const hasPlacesChange = patch.places !== undefined;
-    if (!hasFieldChanges && !hasPlacesChange) {
+    // The stored places are needed both to compare a SENT `places` array
+    // against (did it actually change?) and to fill in the "places" side of
+    // the MERGED event below whenever a places-adjacent field (placement
+    // mode, entrant kind, max score) is changing but `places` itself wasn't
+    // sent — only fetched when one of those is actually true.
+    const needsExistingPlaces =
+      placesSent ||
+      'placement_mode' in updateData ||
+      'entrant_kind' in updateData ||
+      'max_score' in updateData;
+
+    let existingPlaces: ExistingPlaceForDiff[] = [];
+    if (needsExistingPlaces) {
+      step = 'load existing places';
+      const { data: placeRows, error: placeErr } = await service
+        .from('house_point_places')
+        .select('id, label, rank, points')
+        .eq('event_id', eventId)
+        .order('sort_order', { ascending: true });
+      if (placeErr) throw new Error(`house_point_places: ${placeErr.message}`);
+      existingPlaces = (placeRows ?? []) as ExistingPlaceForDiff[];
+    }
+
+    const placesActuallyChanged =
+      placesSent && !placesUnchanged(existingPlaces, patch.places!);
+
+    // Second no-op guard: every field resubmitted identical AND a sent
+    // `places` array that's identical to what's stored — the "save the
+    // whole form unchanged" case.
+    if (Object.keys(updateData).length === 0 && !placesActuallyChanged) {
       return NextResponse.json({ ok: true, changed: false });
+    }
+
+    // Validate the MERGED (stored + patched) event against the same
+    // cross-field rules EventInputSchema enforces on a full create —
+    // EventPatchSchema alone can't see a rule spanning a sent field and an
+    // unsent one (mergedEventIssues's own header spells out the two real
+    // cases). Runs before any write, and before the DB's own check
+    // constraints get a chance to turn the same problem into a 500.
+    if (needsExistingPlaces) {
+      const mergedPlacementMode: PlacementMode =
+        patch.placementMode !== undefined
+          ? patch.placementMode
+          : existing.placement_mode;
+      const mergedEntrantKind: EntrantKind =
+        patch.entrantKind !== undefined
+          ? patch.entrantKind
+          : existing.entrant_kind;
+      const mergedMaxScore =
+        patch.maxScore !== undefined ? patch.maxScore : existing.max_score;
+      const mergedPlaces: PlaceInput[] = placesSent
+        ? patch.places!
+        : existingPlaces.map((p) => ({
+            id: p.id,
+            label: p.label,
+            rank: p.rank,
+            points: p.points,
+          }));
+
+      const issues = mergedEventIssues({
+        placementMode: mergedPlacementMode,
+        entrantKind: mergedEntrantKind,
+        maxScore: mergedMaxScore,
+        places: mergedPlaces,
+      });
+      if (issues.length > 0) {
+        return NextResponse.json(
+          { error: issues[0], details: issues },
+          { status: 400 }
+        );
+      }
     }
 
     // Switching placement_mode or entrant_kind is only a problem once the
@@ -181,21 +239,8 @@ export async function PATCH(
       }
     }
 
-    let existingPlaces: {
-      id: string;
-      label: string;
-      rank: number | null;
-      points: number;
-    }[] = [];
     let omittedIds: string[] = [];
-    if (hasPlacesChange) {
-      step = 'load existing places';
-      const { data: placeRows, error: placeErr } = await service
-        .from('house_point_places')
-        .select('id, label, rank, points')
-        .eq('event_id', eventId);
-      if (placeErr) throw new Error(`house_point_places: ${placeErr.message}`);
-      existingPlaces = (placeRows ?? []) as typeof existingPlaces;
+    if (placesActuallyChanged) {
       const existingIds = new Set(existingPlaces.map((p) => p.id));
 
       const incomingWithId = patch.places!.filter((p) => p.id !== undefined);
@@ -234,7 +279,7 @@ export async function PATCH(
     // Everything below this line writes. Every validation above ran first,
     // so nothing here should return a 4xx mid-write.
 
-    if (hasFieldChanges) {
+    if (Object.keys(updateData).length > 0) {
       step = 'update event';
       const { error } = await service
         .from('house_point_events')
@@ -247,7 +292,7 @@ export async function PATCH(
       if (error) throw new Error(`house_point_events update: ${error.message}`);
     }
 
-    if (hasPlacesChange) {
+    if (placesActuallyChanged) {
       if (omittedIds.length > 0) {
         step = 'delete omitted places';
         const { error } = await service

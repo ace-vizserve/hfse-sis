@@ -5,6 +5,7 @@ import {
   EntryPatchSchema,
   EventInputSchema,
   EventPatchSchema,
+  mergedEventIssues,
   PlaceInputSchema,
   ScalesPutSchema,
   TeamInputSchema,
@@ -399,6 +400,80 @@ describe('EntryPatchSchema', () => {
 
   it('rejects an empty object', () => {
     expect(EntryPatchSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('mergedEventIssues — the same cross-field rules run against a MERGED (stored + patched) event', () => {
+  // PATCH /api/house-points/events/[eventId] (app/api/house-points/events/
+  // [eventId]/route.ts) calls this on the merged values whenever a
+  // places-adjacent field or `places` itself is actually changing.
+  // EventPatchSchema alone can't see these rules because it only ever
+  // validates the keys a caller happened to send — these tests exercise the
+  // two real failures that fix round found: a single-key patch that would
+  // otherwise reach the DB's check constraint, and a places-only patch that
+  // would otherwise skip the gapless-rank rule entirely.
+
+  const gaplessPlaces: PlaceInput[] = [
+    place({ label: 'Gold', rank: 1, points: 5 }),
+    place({ label: 'Silver', rank: 2, points: 4 }),
+  ];
+
+  it('valid: a well-formed merged event has no issues', () => {
+    expect(
+      mergedEventIssues({
+        placementMode: 'score',
+        entrantKind: 'student',
+        maxScore: 100,
+        places: gaplessPlaces,
+      })
+    ).toEqual([]);
+  });
+
+  it('catches `{ placementMode: "score" }` alone merged against a stored maxScore of null — the DB-check-constraint case', () => {
+    const issues = mergedEventIssues({
+      placementMode: 'score',
+      entrantKind: 'student',
+      maxScore: null, // unchanged from storage; the patch never touched it
+      places: gaplessPlaces,
+    });
+    expect(issues).toContain('Enter the highest possible score.');
+  });
+
+  it('catches `{ entrantKind: "house" }` alone merged against a stored placementMode of "score"', () => {
+    const issues = mergedEventIssues({
+      placementMode: 'score', // unchanged from storage
+      entrantKind: 'house',
+      maxScore: 100,
+      places: gaplessPlaces,
+    });
+    expect(issues).toContain('Houses are placed by hand, not by score.');
+  });
+
+  it('catches a places-only patch that breaks gapless ranks on an (unchanged) score-mode event', () => {
+    const issues = mergedEventIssues({
+      placementMode: 'score', // unchanged from storage; the patch only sent places
+      entrantKind: 'student',
+      maxScore: 100,
+      places: [
+        place({ label: 'Gold', rank: 1, points: 5 }),
+        place({ label: 'Bronze', rank: 3, points: 3 }), // skips 2nd
+      ],
+    });
+    expect(issues.some((m) => m.includes('without gaps'))).toBe(true);
+  });
+
+  it('does not apply the gapless rule when the merged placementMode is "pick"', () => {
+    expect(
+      mergedEventIssues({
+        placementMode: 'pick',
+        entrantKind: 'student',
+        maxScore: null,
+        places: [
+          place({ label: 'Gold', rank: 1, points: 5 }),
+          place({ label: 'Bronze', rank: 3, points: 3 }),
+        ],
+      })
+    ).toEqual([]);
   });
 });
 

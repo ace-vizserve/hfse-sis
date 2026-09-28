@@ -170,6 +170,35 @@ function hasGaplessRanks(places: PlaceInput[]): boolean {
   return ranks.every((r, i) => r === i + 1);
 }
 
+/**
+ * The places-array cross-field rules, as plain messages rather than zod
+ * issues — the pure core `checkPlacesArray` wraps for a zod refinement, and
+ * that a PATCH route can also call directly when it needs to validate a
+ * MERGED (stored + patched) event that no zod schema ever sees as one object
+ * (see `mergedEventIssues` below and its call site in
+ * app/api/house-points/events/[eventId]/route.ts).
+ */
+export function placesArrayIssues(
+  places: PlaceInput[],
+  placementMode: PlacementMode | undefined
+): string[] {
+  const messages: string[] = [];
+  const { duplicateRank, tooManyCatchAlls } = placeRankIssues(places);
+  if (duplicateRank) {
+    messages.push("Two places can't share the same rank.");
+  }
+  if (tooManyCatchAlls) {
+    messages.push("Only one row can be 'everyone else'.");
+  }
+  // Gap check only makes sense once ranks are at least distinct — a
+  // duplicate would otherwise also fail this and pile on a second, more
+  // confusing message about the same rows.
+  if (placementMode === 'score' && !duplicateRank && !hasGaplessRanks(places)) {
+    messages.push('Places must go 1st, 2nd, 3rd… without gaps.');
+  }
+  return messages;
+}
+
 /** Shared by EventInputSchema and EventPatchSchema (when `places` is sent). */
 function checkPlacesArray(
   places: PlaceInput[],
@@ -177,31 +206,73 @@ function checkPlacesArray(
   ctx: z.RefinementCtx,
   path: (string | number)[] = ['places']
 ): void {
-  const { duplicateRank, tooManyCatchAlls } = placeRankIssues(places);
-  if (duplicateRank) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path,
-      message: "Two places can't share the same rank.",
+  for (const message of placesArrayIssues(places, placementMode)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+  }
+}
+
+/**
+ * The two simple event-level cross-field rules ("score mode needs a max
+ * score", "a house-entrant event is judged by hand") as plain messages,
+ * pulled out of EventInputSchema's superRefine below so a PATCH route can
+ * run the identical checks against a MERGED (stored + patched) event — see
+ * `mergedEventIssues`.
+ */
+export function eventCrossFieldIssues(input: {
+  placementMode: PlacementMode;
+  entrantKind: EntrantKind;
+  maxScore: number | null;
+}): { field: 'maxScore' | 'placementMode'; message: string }[] {
+  const issues: { field: 'maxScore' | 'placementMode'; message: string }[] = [];
+  if (input.placementMode === 'score' && input.maxScore === null) {
+    issues.push({
+      field: 'maxScore',
+      message: 'Enter the highest possible score.',
     });
   }
-  if (tooManyCatchAlls) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path,
-      message: "Only one row can be 'everyone else'.",
+  // Mirrors house_point_events_house_is_pick (migration 181): a raw score
+  // has no meaning compared house-to-house without a scored roster
+  // underneath it, so a house-entrant event is always judged by hand.
+  if (input.entrantKind === 'house' && input.placementMode !== 'pick') {
+    issues.push({
+      field: 'placementMode',
+      message: 'Houses are placed by hand, not by score.',
     });
   }
-  // Gap check only makes sense once ranks are at least distinct — a
-  // duplicate would otherwise also fail this and pile on a second, more
-  // confusing message about the same rows.
-  if (placementMode === 'score' && !duplicateRank && !hasGaplessRanks(places)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path,
-      message: 'Places must go 1st, 2nd, 3rd… without gaps.',
-    });
-  }
+  return issues;
+}
+
+/** The full merged-event shape `mergedEventIssues` validates — every field a
+ * PATCH route needs after merging the stored row with the sent patch. */
+export type MergedEventForValidation = {
+  placementMode: PlacementMode;
+  entrantKind: EntrantKind;
+  maxScore: number | null;
+  places: PlaceInput[];
+};
+
+/**
+ * ALL of EventInputSchema's cross-field rules (the two simple ones plus the
+ * places-array ones), run against a MERGED event rather than a zod object.
+ *
+ * WHY THIS EXISTS: EventPatchSchema can only validate the keys a caller
+ * actually sends (its own header comment says so) — a rule that spans a SENT
+ * field and an UNSENT one is invisible to it. Two real ways that bites:
+ * `{ placementMode: 'score' }` alone, sent against a stored `max_score` of
+ * `null`, passes EventPatchSchema and then hits the DB's
+ * `house_point_events_score_needs_max` check constraint as a raw 500; a
+ * places-only patch on an already-score-mode event skips the gapless-rank
+ * check entirely, because EventPatchSchema's own places check only runs
+ * `checkPlacesArray` against the SENT `placementMode` (usually absent on a
+ * places-only patch). The route builds the merged object (stored fields
+ * overridden by whichever the patch actually sent) and calls this instead of
+ * trusting the DB constraint or EventPatchSchema alone.
+ */
+export function mergedEventIssues(merged: MergedEventForValidation): string[] {
+  return [
+    ...eventCrossFieldIssues(merged).map((issue) => issue.message),
+    ...placesArrayIssues(merged.places, merged.placementMode),
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -247,21 +318,11 @@ const EventInputBaseSchema = z.object({
 
 export const EventInputSchema = EventInputBaseSchema.superRefine(
   (data, ctx) => {
-    if (data.placementMode === 'score' && data.maxScore === null) {
+    for (const issue of eventCrossFieldIssues(data)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['maxScore'],
-        message: 'Enter the highest possible score.',
-      });
-    }
-    // Mirrors house_point_events_house_is_pick (migration 181): a raw score
-    // has no meaning compared house-to-house without a scored roster
-    // underneath it, so a house-entrant event is always judged by hand.
-    if (data.entrantKind === 'house' && data.placementMode !== 'pick') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['placementMode'],
-        message: 'Houses are placed by hand, not by score.',
+        path: [issue.field],
+        message: issue.message,
       });
     }
     checkPlacesArray(data.places, data.placementMode, ctx);
