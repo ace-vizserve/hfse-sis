@@ -4,10 +4,8 @@ import { ArrowLeft } from 'lucide-react';
 
 import { AddParticipantsSheet } from '@/components/house-points/add-participants-sheet';
 import { EditEventSheet } from '@/components/house-points/edit-event-sheet';
-import {
-  ScoreSheet,
-  SetupHousesButton,
-} from '@/components/house-points/score-sheet';
+import { ScoreSheet } from '@/components/house-points/score-sheet';
+import { TeamSheet } from '@/components/house-points/team-sheet';
 import { PageShell } from '@/components/ui/page-shell';
 import type { Role } from '@/lib/auth/roles';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
@@ -65,11 +63,12 @@ export default async function HousePointsEventPage({
   if (!event) notFound();
 
   // Writers only: nobody else can open the sheets that use these. The roster
-  // is only needed where students are added one by one.
+  // is only needed where students are picked — added one by one, or ticked
+  // onto a team.
   const editable = canEdit && event.eventType !== 'attendance';
   const [scales, roster] = await Promise.all([
     editable ? loadScales() : Promise.resolve<Scale[]>([]),
-    canEdit && event.entrantKind === 'student'
+    canEdit && event.entrantKind !== 'house'
       ? loadEnrolledRoster(event.academicYearId)
       : Promise.resolve<RosterStudent[]>([]),
   ]);
@@ -78,12 +77,6 @@ export default async function HousePointsEventPage({
   const enteredIds = event.rows
     .map((r) => r.student?.sectionStudentId)
     .filter((id): id is string => Boolean(id));
-  const housesOnSheet = new Set(
-    event.rows.map((r) => r.houseId).filter(Boolean)
-  );
-  const missingHouseIds = houses
-    .filter((h) => !housesOnSheet.has(h.id))
-    .map((h) => h.id);
 
   return (
     <PageShell>
@@ -141,21 +134,26 @@ export default async function HousePointsEventPage({
                 enteredIds={enteredIds}
               />
             )}
-            {event.entrantKind === 'house' &&
-              participantCount > 0 &&
-              missingHouseIds.length > 0 && (
-                <SetupHousesButton
-                  eventId={event.id}
-                  houseIds={missingHouseIds}
-                />
-              )}
-            {/* Team events: "Add team" arrives with Task 10. */}
+            {event.entrantKind === 'team' && (
+              <TeamSheet
+                eventId={event.id}
+                eventName={event.name}
+                roster={roster}
+                houses={houses}
+              />
+            )}
+            {/* House events: no header button. The sheet itself offers
+                "Set up houses" when it is empty and "Add the missing
+                houses" when it is partly set up — one button each time,
+                never two. */}
           </div>
         )}
       </header>
 
       <ScoreSheet
         eventId={event.id}
+        eventName={event.name}
+        roster={roster}
         entrantKind={event.entrantKind}
         placementMode={event.placementMode}
         rankWithin={event.rankWithin}

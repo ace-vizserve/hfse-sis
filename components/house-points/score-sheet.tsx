@@ -1,11 +1,15 @@
 'use client';
 
-import { Flag, Trash2, Users } from 'lucide-react';
+import { Flag, Pencil, Trash2, Users, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { EventHeaderTotals } from '@/components/house-points/event-header-totals';
 import { PlaceBadge } from '@/components/house-points/place-badge';
+import {
+  TeamSheet,
+  type EditableTeam,
+} from '@/components/house-points/team-sheet';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -38,6 +42,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   houseTotals,
   resolveEntries,
+  teamHouses,
   type EntrantKind,
   type Place,
   type PlacementMode,
@@ -45,12 +50,13 @@ import {
   type ResolvedEntry,
 } from '@/lib/house-points/compute';
 import { parseScore } from '@/lib/house-points/parse-score';
-import type { EventRow } from '@/lib/house-points/queries';
+import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
 import { formatPoints } from '@/lib/house-points/standings';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { HouseRow } from '@/lib/sis/houses';
+import { cn } from '@/lib/utils';
 
 // An event's score sheet — "basically a grading sheet". Type a score (or pick
 // a place) and the Placement and Points columns fill in on their own, with the
@@ -68,6 +74,9 @@ import type { HouseRow } from '@/lib/sis/houses';
 
 type Props = {
   eventId: string;
+  eventName: string;
+  /** The year's enrolled roster — only loaded for writers on a team event (the edit-team drawer picks from it). */
+  roster: RosterStudent[];
   entrantKind: EntrantKind;
   placementMode: PlacementMode;
   rankWithin: RankWithin;
@@ -107,6 +116,8 @@ function compareStudentRows(a: EventRow, b: EventRow): number {
 
 export function ScoreSheet({
   eventId,
+  eventName,
+  roster,
   entrantKind,
   placementMode,
   rankWithin,
@@ -227,18 +238,23 @@ export function ScoreSheet({
     />
   );
 
-  // ── Team events — Task 10 builds these rows. ─────────────────────────────
   if (entrantKind === 'team') {
     return (
       <div className="space-y-6">
         {header}
-        <Card className="py-0">
-          <DataTableEmptyState
-            icon={Users}
-            title="Teams can't be entered here yet"
-            body="Team events are coming in the next update. Their points will count once per house among each team's members."
-          />
-        </Card>
+        <TeamTable
+          eventId={eventId}
+          eventName={eventName}
+          rows={rows}
+          roster={roster}
+          houses={houses}
+          placementMode={placementMode}
+          maxScore={maxScore}
+          places={sortedPlaces}
+          resolvedById={resolvedById}
+          canEdit={canEdit}
+          onSave={saveEntry}
+        />
       </div>
     );
   }
@@ -576,6 +592,381 @@ function StudentSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// ─── Teams ──────────────────────────────────────────────────────────────────
+
+/** Members shown under a team's name before "Show all". */
+const MEMBERS_SHOWN = 4;
+
+/**
+ * A team event's sheet. One table, never tabbed: a team's members can come
+ * from any class, so every team competes against every other in the event.
+ * Each row names the team and who is on it, takes its score (or place), and
+ * says which houses its points go to — once per house, however many of its
+ * students share one.
+ */
+function TeamTable({
+  eventId,
+  eventName,
+  rows,
+  roster,
+  houses,
+  placementMode,
+  maxScore,
+  places,
+  resolvedById,
+  canEdit,
+  onSave,
+}: {
+  eventId: string;
+  eventName: string;
+  rows: EventRow[];
+  roster: RosterStudent[];
+  houses: HouseRow[];
+  placementMode: PlacementMode;
+  maxScore: number | null;
+  places: Place[];
+  resolvedById: Map<string, ResolvedEntry>;
+  canEdit: boolean;
+  onSave: (entryId: string, patch: EntryPatch, who: string) => Promise<void>;
+}) {
+  const run = useWriteAction();
+  // The team stays set after the drawer closes, so its title doesn't flip to
+  // "Add a team" while the drawer slides away.
+  const [editing, setEditing] = useState<EditableTeam | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  const housesById = useMemo(
+    () => new Map(houses.map((h) => [h.id, h])),
+    [houses]
+  );
+  const sorted = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        collator.compare(a.team?.name ?? '', b.team?.name ?? '')
+      ),
+    [rows]
+  );
+  const isScore = placementMode === 'score';
+  // A team row grows with its member list, so its cells sit at the top. Plain
+  // text cells drop 6px to share a centre line with the 32px score box or
+  // place picker beside them; read-only, there are no boxes to line up with.
+  const lineUp = canEdit ? 'pt-4.5' : undefined;
+
+  async function confirmRemove() {
+    if (!removing) return;
+    setRemoveBusy(true);
+    // Through the TEAM route, never the entry's: deleting the team cascades
+    // its members and its entry, where deleting only the entry would leave
+    // the team and its member rows behind.
+    await run(
+      () =>
+        apiFetch<{ ok: true }>(
+          `/api/house-points/teams/${encodeURIComponent(removing.id)}`,
+          jsonInit('DELETE')
+        ),
+      {
+        pending: 'Removing…',
+        success: `Removed ${removing.name}`,
+        onResolved: () => setRemoving(null),
+      }
+    );
+    setRemoveBusy(false);
+  }
+
+  if (rows.length === 0) {
+    return (
+      <Card className="py-0">
+        <DataTableEmptyState
+          icon={UsersRound}
+          title="No teams entered yet"
+          body={
+            canEdit
+              ? 'Choose Add team to name each team and tick who is on it. Their scores go here, and placements and points follow.'
+              : 'Teams appear here once they are entered.'
+          }
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card className="overflow-hidden p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead className="w-12 text-right">#</TableHead>
+              <TableHead>Team</TableHead>
+              <TableHead className={isScore ? 'w-40' : 'w-52'}>
+                {isScore ? 'Score' : 'Placement'}
+              </TableHead>
+              {isScore && <TableHead>Placement</TableHead>}
+              <TableHead className="w-20 text-right">Points</TableHead>
+              <TableHead>Points to houses</TableHead>
+              {canEdit && (
+                <TableHead className="w-24">
+                  <span className="sr-only">Edit or remove</span>
+                </TableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((row, index) => {
+              const team = row.team;
+              const who = team?.name ?? 'this team';
+              const resolved = resolvedById.get(row.entryId);
+              const blank = isScore ? row.score === null : row.placeId === null;
+              const earned = blank || !resolved ? null : resolved.points;
+              const credited = teamHouses(team?.members ?? []);
+              const sharesAHouse = credited.some((h) => h.memberCount > 1);
+              return (
+                <TableRow key={row.entryId} className="[&>td]:align-top">
+                  <TableCell
+                    className={cn(
+                      lineUp,
+                      'text-right font-mono text-xs tabular-nums text-muted-foreground'
+                    )}
+                  >
+                    {index + 1}
+                  </TableCell>
+                  <TableCell className={cn(lineUp, 'whitespace-normal')}>
+                    <p className="text-sm font-medium text-foreground">
+                      {team?.name ?? 'Unknown team'}
+                    </p>
+                    <TeamMembers members={team?.members ?? []} />
+                  </TableCell>
+                  <TableCell>
+                    {isScore ? (
+                      <div className="flex items-center gap-2">
+                        <ScoreInput
+                          value={row.score}
+                          max={maxScore ?? Number.POSITIVE_INFINITY}
+                          plaintext={!canEdit}
+                          label={`Score for ${who}`}
+                          onCommit={(value) =>
+                            onSave(row.entryId, { score: value }, who)
+                          }
+                        />
+                        {maxScore !== null && (
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            / {formatPoints(maxScore)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <PlaceSelect
+                        value={row.placeId}
+                        places={places}
+                        plaintext={!canEdit}
+                        label={`Placement for ${who}`}
+                        onChange={(placeId) =>
+                          onSave(row.entryId, { placeId }, who)
+                        }
+                      />
+                    )}
+                  </TableCell>
+                  {isScore && (
+                    <TableCell className={lineUp}>
+                      <AutoPlacement row={row} resolved={resolved} />
+                    </TableCell>
+                  )}
+                  <TableCell className={cn(lineUp, 'text-right')}>
+                    <AutoPoints
+                      row={row}
+                      resolved={resolved}
+                      placementMode={placementMode}
+                    />
+                  </TableCell>
+                  <TableCell className={cn(lineUp, 'whitespace-normal')}>
+                    {credited.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        No house among its students
+                      </span>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
+                          {credited.map((h) => {
+                            const house = housesById.get(h.houseId);
+                            if (!house) return null;
+                            return (
+                              <li
+                                key={h.houseId}
+                                className="inline-flex items-center gap-1.5"
+                              >
+                                <HouseChip
+                                  name={house.name}
+                                  colourToken={house.colourToken}
+                                />
+                                {earned !== null && (
+                                  <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
+                                    +{formatPoints(earned)}
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        {sharesAHouse && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Counted once per house
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      {team && (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-muted-foreground hover:text-foreground"
+                            aria-label={`Edit ${who}`}
+                            onClick={() => {
+                              setEditing({
+                                id: team.id,
+                                name: team.name,
+                                memberIds: team.members.map(
+                                  (m) => m.sectionStudentId
+                                ),
+                              });
+                              setEditOpen(true);
+                            }}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-muted-foreground hover:text-destructive"
+                            aria-label={`Remove ${who}`}
+                            onClick={() =>
+                              setRemoving({ id: team.id, name: team.name })
+                            }
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Both on the page canvas, never inside one another: the edit drawer
+          holds no confirm, and the remove confirm opens from the row. */}
+      {canEdit && (
+        <TeamSheet
+          eventId={eventId}
+          eventName={eventName}
+          roster={roster}
+          houses={houses}
+          team={editing}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      )}
+
+      <AlertDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open && !removeBusy) setRemoving(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {removing?.name ?? 'this team'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The team, who is on it, and its score and placement are deleted.
+              Every house it earned points for here loses them. You can add the
+              team again later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={removeBusy}
+              onClick={() => setRemoving(null)}
+            >
+              Keep the team
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              loading={removeBusy}
+              loadingText="Removing…"
+              onClick={confirmRemove}
+            >
+              Remove team
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/** A team's students under its name — name and class, a long team folded. */
+function TeamMembers({ members }: { members: RosterStudent[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const sorted = useMemo(
+    () => [...members].sort((a, b) => collator.compare(a.name, b.name)),
+    [members]
+  );
+  if (sorted.length === 0) {
+    return (
+      <p className="mt-1 text-xs text-muted-foreground">Nobody on this team</p>
+    );
+  }
+  const folded = sorted.length > MEMBERS_SHOWN + 1 && !expanded;
+  const shown = folded ? sorted.slice(0, MEMBERS_SHOWN) : sorted;
+  return (
+    <div className="mt-1.5">
+      <ul className="space-y-0.5">
+        {shown.map((m) => (
+          <li
+            key={m.sectionStudentId}
+            className="flex min-w-0 items-baseline gap-2 text-xs"
+          >
+            <span className="truncate text-foreground">{m.name}</span>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {m.sectionName}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {sorted.length > MEMBERS_SHOWN + 1 && (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto px-0 py-0.5 text-xs"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded
+            ? 'Show fewer'
+            : `Show all ${sorted.length.toLocaleString('en-SG')}`}
+        </Button>
+      )}
     </div>
   );
 }

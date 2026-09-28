@@ -125,6 +125,29 @@ export function sumTotals(
   return result;
 }
 
+export type TeamHouse = { houseId: string; memberCount: number };
+
+/**
+ * A team's DISTINCT houses, in the order its members first name them, with
+ * how many members share each. The houses are what a team's placement is
+ * credited to — once each, never once per member; the counts let the sheet
+ * say "Counted once per house" when two members share one. Members with no
+ * house are skipped: they take part, but no house is owed their points.
+ */
+export function teamHouses(
+  members: readonly { houseId: string | null }[]
+): TeamHouse[] {
+  const counts = new Map<string, number>();
+  for (const m of members) {
+    if (m.houseId === null) continue;
+    counts.set(m.houseId, (counts.get(m.houseId) ?? 0) + 1);
+  }
+  return Array.from(counts, ([houseId, memberCount]) => ({
+    houseId,
+    memberCount,
+  }));
+}
+
 /** Group key helper for a student row. */
 export function groupKey(
   rankWithin: RankWithin,

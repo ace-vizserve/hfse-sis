@@ -1,4 +1,8 @@
-import { groupKey, type SheetEntry } from '@/lib/house-points/compute';
+import {
+  groupKey,
+  teamHouses,
+  type SheetEntry,
+} from '@/lib/house-points/compute';
 // Type-only: lib/house-points/queries.ts is `server-only`, and a type import
 // is erased before the client bundle sees it.
 import type { EventDetail } from '@/lib/house-points/queries';
@@ -25,12 +29,8 @@ export function toSheetEntries(
 ): SheetEntry[] {
   return detail.rows.map((row) => {
     if (row.kind === 'team') {
-      const houseIds = Array.from(
-        new Set(
-          (row.team?.members ?? [])
-            .map((m) => m.houseId)
-            .filter((id): id is string => id !== null)
-        )
+      const houseIds = teamHouses(row.team?.members ?? []).map(
+        (h) => h.houseId
       );
       return {
         id: row.entryId,

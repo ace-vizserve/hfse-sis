@@ -4,6 +4,7 @@ import {
   houseTotals,
   resolveEntries,
   sumTotals,
+  teamHouses,
   type Place,
   type SheetEntry,
 } from '@/lib/house-points/compute';
@@ -295,5 +296,45 @@ describe('groupKey', () => {
     expect(groupKey('section', 'sec-1', 'lvl-1')).toBe('sec-1');
     expect(groupKey('level', 'sec-1', 'lvl-1')).toBe('lvl-1');
     expect(groupKey('event', 'sec-1', 'lvl-1')).toBe('event');
+  });
+});
+
+describe('teamHouses', () => {
+  it('lists each distinct house once, in first-seen order, with how many members share it', () => {
+    expect(
+      teamHouses([
+        { houseId: 'blue' },
+        { houseId: 'green' },
+        { houseId: 'green' },
+        { houseId: null },
+        { houseId: 'blue' },
+        { houseId: 'green' },
+      ])
+    ).toEqual([
+      { houseId: 'blue', memberCount: 2 },
+      { houseId: 'green', memberCount: 3 },
+    ]);
+  });
+
+  it('skips members with no house, and a team of nobody housed has none', () => {
+    expect(teamHouses([{ houseId: null }, { houseId: null }])).toEqual([]);
+    expect(teamHouses([])).toEqual([]);
+  });
+
+  it('credits a placement once per distinct house, not once per member', () => {
+    const houseIds = teamHouses([
+      { houseId: 'blue' },
+      { houseId: 'blue' },
+      { houseId: 'green' },
+    ]).map((h) => h.houseId);
+    const resolved = resolveEntries(
+      [{ id: 't1', group: 'event', score: null, placeId: 'gold', houseIds }],
+      RANK_PLACES,
+      'pick'
+    );
+    expect(houseTotals(resolved, ['blue', 'green'])).toEqual({
+      blue: 5,
+      green: 5,
+    });
   });
 });
