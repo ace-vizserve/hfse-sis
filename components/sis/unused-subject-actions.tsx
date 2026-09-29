@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, PencilLine, Trash2 } from 'lucide-react';
+import { PencilLine, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -13,12 +13,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -41,8 +35,8 @@ import {
 // a class uses shows no Delete.
 //
 // Rename is two fields, so it happens in the row (inline); Delete cannot be
-// undone, so it asks first in a small confirm. The menu closes before the
-// confirm opens — nothing is nested.
+// undone, so it asks first in a small confirm. Both are plain icon buttons
+// in the row (pencil, trash) — no menu, so nothing is nested.
 
 type Subject = { id: string; code: string; name: string };
 
@@ -84,36 +78,34 @@ export function SubjectCatalogMenu({
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {onRename && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-6 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-            aria-label={`More for ${subject.name}`}
+            className="size-6 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label={`Rename ${subject.name}`}
+            title="Rename"
+            onClick={onRename}
           >
-            <MoreHorizontal className="size-3.5" />
+            <PencilLine className="size-3.5" />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {onRename && (
-            <DropdownMenuItem onSelect={onRename}>
-              <PencilLine className="size-3.5" />
-              Rename
-            </DropdownMenuItem>
-          )}
-          {described && (
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => setConfirmOpen(true)}
-            >
-              <Trash2 className="size-3.5" />
-              Delete subject
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        )}
+        {described && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground opacity-60 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label={`Delete ${subject.name}`}
+            title="Delete subject"
+            onClick={() => setConfirmOpen(true)}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        )}
+      </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
