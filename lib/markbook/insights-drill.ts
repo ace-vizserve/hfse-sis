@@ -1,5 +1,11 @@
 import type { TermLockProgress } from '@/lib/markbook/dashboard';
-import type { GradeEntryRow } from '@/lib/markbook/drill';
+import type {
+  ChangeRequestRow,
+  GradeEntryRow,
+  MarkbookDrillRow,
+  MarkbookDrillTarget,
+  SheetRow,
+} from '@/lib/markbook/drill';
 import type { GradeBand } from '@/lib/markbook/drill-filter';
 
 // The rules every Markbook Insights figure shares with the drill behind it
@@ -318,4 +324,85 @@ export function parseTrendSeriesKey(
   const ayCode = key.slice(i + 3);
   if (!/^AY\d{4}$/.test(ayCode)) return null;
   return { subjectName: key.slice(0, i), ayCode };
+}
+
+// ── Sheet summary line ──────────────────────────────────────────────────────
+
+function plural(n: number, word: string): string {
+  return `${n.toLocaleString('en-SG')} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function meanGrade(rows: GradeEntryRow[]): number | null {
+  const grades = rows
+    .map((r) => r.computedGrade)
+    .filter((g): g is number => g !== null);
+  return grades.length > 0
+    ? round1(grades.reduce((a, b) => a + b, 0) / grades.length)
+    : null;
+}
+
+/**
+ * One plain sentence under an Insights drill's title, computed from the rows
+ * listed with the same helpers the figure used — so the reader can see the
+ * list and the figure agree. Null for targets that need no summary.
+ */
+export function insightsDrillSummary(
+  target: MarkbookDrillTarget,
+  segment: string | null,
+  rows: MarkbookDrillRow[]
+): string | null {
+  switch (target) {
+    case 'subject-term-entries': {
+      const avg = meanGrade(rows as GradeEntryRow[]);
+      return avg === null
+        ? 'No grades in this list.'
+        : `${plural(rows.length, 'grade')} · average ${avg.toFixed(1)}`;
+    }
+    case 'level-term-entries': {
+      const seg = segment ? parseLevelTermSegment(segment) : null;
+      const entries = rows as GradeEntryRow[];
+      const avg = seg
+        ? levelAverageFromEntryRows(entries, seg.levelCode, seg.termNumber)
+        : null;
+      if (avg === null) return 'No grades in this list.';
+      const subjects = new Set(entries.map((r) => r.subjectCatalogName)).size;
+      return `${plural(rows.length, 'grade')} across ${plural(subjects, 'subject')} · level average ${avg.toFixed(1)} (each subject's average, averaged)`;
+    }
+    case 'subject-level-entries': {
+      const byTerm = new Map<number, GradeEntryRow[]>();
+      for (const r of rows as GradeEntryRow[]) {
+        const arr = byTerm.get(r.termNumber) ?? [];
+        arr.push(r);
+        byTerm.set(r.termNumber, arr);
+      }
+      if (byTerm.size === 0) return 'No grades in this list.';
+      return [...byTerm.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(
+          ([term, list]) =>
+            `Term ${term}: average ${(meanGrade(list) ?? 0).toFixed(1)} (${plural(list.length, 'grade')})`
+        )
+        .join(' → ');
+    }
+    case 'change-requests': {
+      const windowed = segment ? parseWindowedCrSegment(segment) : null;
+      if (!windowed) return null;
+      if (windowed.status === 'decided') {
+        const hours = averageDecisionHours(rows as ChangeRequestRow[]);
+        return hours === null
+          ? `No decisions in the last ${windowed.days} days.`
+          : `${plural(rows.length, 'decision')} · average ${hours} hours from request to decision`;
+      }
+      return `${plural(rows.length, 'request')} in the last ${windowed.days} days`;
+    }
+    case 'term-sheet-status': {
+      const sheets = rows as SheetRow[];
+      const locked = sheets.filter((s) => s.isLocked).length;
+      const pct =
+        sheets.length > 0 ? Math.round((locked / sheets.length) * 100) : 0;
+      return `${locked} of ${plural(sheets.length, 'sheet')} locked (${pct}%)`;
+    }
+    default:
+      return null;
+  }
 }

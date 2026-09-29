@@ -38,6 +38,7 @@ import {
   type SheetRow,
 } from '@/lib/markbook/drill';
 import { applyTargetFilterClient } from '@/lib/markbook/drill-filter';
+import { insightsDrillSummary } from '@/lib/markbook/insights-drill';
 
 // Stable reference so `rows` doesn't get a fresh [] each render while the query
 // is loading (downstream memos depend on its identity).
@@ -53,6 +54,14 @@ export type MarkbookDrillSheetProps = {
   initialEntries?: GradeEntryRow[];
   initialSheets?: SheetRow[];
   initialChangeRequests?: ChangeRequestRow[];
+  /** A line under the title. Wins over the automatic Insights summary. */
+  description?: React.ReactNode;
+  /**
+   * Show the plain-English line that ties the list to the Insights figure it
+   * opened from ("312 grades · average 84.3"). Off on the module dashboards,
+   * which keep their current look.
+   */
+  showInsightsSummary?: boolean;
 };
 
 const CANONICAL_LEVEL_ORDER = [
@@ -668,6 +677,8 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
     initialEntries,
     initialSheets,
     initialChangeRequests,
+    description,
+    showInsightsSummary,
   } = props;
 
   const kind = rowKindForTarget(target);
@@ -739,6 +750,13 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
   });
 
   const rows = drillQuery.data ?? EMPTY_ROWS;
+  const insightsSummary = React.useMemo(
+    () =>
+      showInsightsSummary
+        ? insightsDrillSummary(target, segment ?? null, rows)
+        : null,
+    [showInsightsSummary, target, segment, rows]
+  );
   const [globalFilter, _setGlobalFilter] = React.useState('');
   void _setGlobalFilter;
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
@@ -903,6 +921,7 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
       title={header.title}
       eyebrow={header.eyebrow}
       count={preFiltered.length}
+      description={description ?? insightsSummary ?? undefined}
       csvHref={csvHref}
       columns={columns}
       rows={preFiltered}
