@@ -548,7 +548,9 @@ export function HouseBreakdownTabs({
   /** Member add/remove — passed only for ENROLMENT_PLACEMENT_WRITERS. */
   manage?: HouseMembersManage | null;
 }) {
-  const [tab, setTab] = React.useState<BreakdownTab>('events');
+  // Members first and open by default — it carries "Add students", the one
+  // action on this page.
+  const [tab, setTab] = React.useState<BreakdownTab>('members');
 
   return (
     <Card className="min-w-0">
@@ -567,6 +569,10 @@ export function HouseBreakdownTabs({
           className="gap-4"
         >
           <TabsList className="max-w-full overflow-x-auto">
+            <TabsTrigger value="members" className="gap-1.5">
+              Members
+              <TabCount value={members.length} />
+            </TabsTrigger>
             <TabsTrigger value="events" className="gap-1.5">
               By event
               <TabCount value={events.length} />
@@ -574,10 +580,6 @@ export function HouseBreakdownTabs({
             <TabsTrigger value="students" className="gap-1.5">
               By student
               <TabCount value={students.length} />
-            </TabsTrigger>
-            <TabsTrigger value="members" className="gap-1.5">
-              Members
-              <TabCount value={members.length} />
             </TabsTrigger>
           </TabsList>
 
