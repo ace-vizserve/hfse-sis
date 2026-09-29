@@ -14,9 +14,10 @@ import {
 } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
-import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
-import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import { DonutChart } from '@/components/dashboard/charts/donut-chart';
+import { HeatmapGrid } from '@/components/dashboard/charts/heatmap-grid';
+import { LollipopChart } from '@/components/dashboard/charts/lollipop-chart';
+import { TreemapChart } from '@/components/dashboard/charts/treemap-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { HouseBreakdownTabs } from '@/components/house-points/house-breakdown-tables';
@@ -64,7 +65,7 @@ import { cn } from '@/lib/utils';
 // Houses are IDENTITY colours: every chart mark for a house wears that
 // house's colour (`houseChartColor` — the raw `--av-house-N` token; see its
 // comment for why the Tailwind colour variable draws black) and is named
-// beside it, by legend chip, card title or tooltip.
+// beside it, by column heading, card title or hover hint.
 
 const EMPTY: HouseBreakdown = {
   total: 0,
@@ -75,35 +76,26 @@ const EMPTY: HouseBreakdown = {
   awards: [],
 };
 
-/** The comparison-bar chart's own default height, which ChartSkeleton reserves. */
+/** The page's standard chart height, which ChartSkeleton reserves. */
 const CHART_HEIGHT = 260;
 
-function houseLegend(colourToken: string): ChartLegendChipColor {
-  switch (colourToken) {
-    case 'house-1':
-    case 'house-2':
-    case 'house-3':
-    case 'house-4':
-      return colourToken;
-    default:
-      return 'neutral';
-  }
-}
+/** The award donut keeps at most this many slices; past it, the tail is "Other". */
+const MAX_AWARD_SLICES = 6;
 
 /** Chart category labels have a fixed column; long names are cut, the tooltip keeps the whole. */
 function shorten(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-/** "LAST, First Middle" → "First LAST" for a compact bar label. */
+/** "LAST, First Middle" → "First LAST" for a compact chart label. */
 function shortName(name: string): string {
   const [last, first] = name.split(', ');
   return first ? `${first.split(' ')[0]} ${last}` : name;
 }
 
-/** A ranked horizontal list grows with its rows, never below the standard height. */
-function barHeight(rows: number): number {
-  return Math.max(CHART_HEIGHT, rows * 30 + 16);
+/** "Gold ×3" — the award's name with how many this house holds. */
+function awardSliceName(label: string, count: number): string {
+  return `${label} ×${count.toLocaleString('en-SG')}`;
 }
 
 function ChartCard({
@@ -245,27 +237,55 @@ export default async function HousePointsHousePage({
 
   // ── Chart data (plain values — the charts are client components). ────────
   const fill = houseChartColor(house.colourToken);
+  // Treemap: one block per event this house scored in, sized by its points.
   const byEvent = breakdown.events
     .filter((e) => e.points > 0)
-    .map((e) => ({ category: shorten(e.name, 26), current: e.points }));
-  const versusSeries = houses.map((h) => ({
+    .map((e) => ({ name: e.name, value: e.points }));
+  // Heatmap: events down, the four houses across, this house outlined.
+  const versusColumns = houses.map((h) => ({
     key: h.id,
     label: h.name,
     color: houseChartColor(h.colourToken),
-    legendColor: houseLegend(h.colourToken),
+    emphasis: h.id === house.id,
   }));
-  const versusData = contested.map((e) => {
-    const row: Record<string, string | number> = { x: shorten(e.name, 16) };
-    for (const h of houses) row[h.id] = e.totals[h.id] ?? 0;
-    return row;
-  });
-  const awardMix = breakdown.awards.map((a) => ({
-    category: shorten(`${a.label} ×${a.count.toLocaleString('en-SG')}`, 18),
-    current: a.points,
+  const versusRows = contested.map((e) => ({
+    key: e.id,
+    label: shorten(e.name, 26),
+    fullLabel: e.name,
+    values: Object.fromEntries(houses.map((h) => [h.id, e.totals[h.id] ?? 0])),
   }));
+  // Donut: each award's share of the points. Past six slices the smallest
+  // fold into one "Other" slice, so the ring never needs a seventh colour.
+  const awardsByPoints = [...breakdown.awards].sort(
+    (a, b) => b.points - a.points
+  );
+  const awardHead =
+    awardsByPoints.length > MAX_AWARD_SLICES
+      ? awardsByPoints.slice(0, MAX_AWARD_SLICES - 1)
+      : awardsByPoints;
+  const awardTail = awardsByPoints.slice(awardHead.length);
+  const awardMix = [
+    ...awardHead.map((a) => ({
+      name: awardSliceName(a.label, a.count),
+      value: a.points,
+    })),
+    ...(awardTail.length > 0
+      ? [
+          {
+            name: awardSliceName(
+              'Other',
+              awardTail.reduce((n, a) => n + a.count, 0)
+            ),
+            value: awardTail.reduce((n, a) => n + a.points, 0),
+          },
+        ]
+      : []),
+  ];
   const topStudents = studentsScoring.slice(0, 10).map((s) => ({
-    category: shorten(shortName(s.name), 24),
-    current: s.points,
+    key: s.studentId,
+    label: shorten(shortName(s.name), 24),
+    hint: s.name,
+    value: s.points,
   }));
 
   const fileStem = `house-points-${house.code.toLowerCase()}-${selectedAy}`;
@@ -363,13 +383,8 @@ export default async function HousePointsHousePage({
           icon={Swords}
           className="lg:col-span-2"
         >
-          {versusData.length > 0 ? (
-            <GroupedBarChart
-              series={versusSeries}
-              data={versusData}
-              yFormat="number"
-              height={CHART_HEIGHT}
-            />
+          {versusRows.length > 0 ? (
+            <HeatmapGrid columns={versusColumns} rows={versusRows} />
           ) : (
             <ChartEmpty
               icon={Swords}
@@ -386,14 +401,13 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {awardMix.length > 0 ? (
-            <ComparisonBarChart
+            <DonutChart
               data={awardMix}
-              orientation="horizontal"
-              yFormat="number"
-              color={fill}
-              seriesLabel={house.name}
-              categoryWidth={120}
-              height={barHeight(awardMix.length)}
+              layout="stacked"
+              height={180}
+              centerValue={awardsWon.toLocaleString('en-SG')}
+              centerLabel="Awards"
+              centerHint="Every award picked for this house's students, teams and house entries. The ring splits the house's points between them."
             />
           ) : (
             <ChartEmpty
@@ -413,20 +427,12 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {byEvent.length > 0 ? (
-            <ComparisonBarChart
-              data={byEvent}
-              orientation="horizontal"
-              yFormat="number"
-              color={fill}
-              seriesLabel={house.name}
-              categoryWidth={170}
-              height={barHeight(byEvent.length)}
-            />
+            <TreemapChart data={byEvent} color={fill} height={CHART_HEIGHT} />
           ) : (
             <ChartEmpty
               icon={CalendarCheck}
               title="No points from any event yet"
-              body="Events appear here, most points first, once the house scores."
+              body="Events appear here, each sized by its points, once the house scores."
             />
           )}
         </ChartCard>
@@ -438,14 +444,11 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {topStudents.length > 0 ? (
-            <ComparisonBarChart
-              data={topStudents}
-              orientation="horizontal"
-              yFormat="number"
+            <LollipopChart
+              rows={topStudents}
               color={fill}
-              seriesLabel={house.name}
-              categoryWidth={170}
-              height={barHeight(topStudents.length)}
+              labelWidth={150}
+              minHeight={CHART_HEIGHT}
             />
           ) : (
             <ChartEmpty

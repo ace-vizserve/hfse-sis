@@ -1,4 +1,7 @@
-import { ChartSkeleton } from '@/components/dashboard/charts/chart-skeleton';
+import {
+  ChartSkeleton,
+  type ChartKind,
+} from '@/components/dashboard/charts/chart-skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,12 +17,18 @@ import { cn } from '@/lib/utils';
  * change this file when that page changes.
  *
  * Back link, the dashboard hero (house tile + name + standing; year badges and
- * switcher on the right), four figure cards, a wide + narrow chart row, two
- * chart cards side by side, then the one tabbed card (three tabs, one table)
- * and the trust strip.
+ * switcher on the right), four figure cards, a wide heatmap + narrow donut
+ * row, a treemap and a lollipop list side by side, then the one tabbed card
+ * (three tabs, one table) and the trust strip.
  */
 
-function ChartCardSkeleton({ className }: { className?: string }) {
+function ChartCardSkeleton({
+  kind,
+  className,
+}: {
+  kind: ChartKind;
+  className?: string;
+}) {
   return (
     <Card className={cn('min-w-0', className)}>
       <CardHeader className="space-y-2">
@@ -27,7 +36,7 @@ function ChartCardSkeleton({ className }: { className?: string }) {
         <SkeletonText variant="title" className="w-56 max-w-full" />
       </CardHeader>
       <CardContent>
-        <ChartSkeleton kind="comparison-bar" />
+        <ChartSkeleton kind={kind} />
       </CardContent>
     </Card>
   );
@@ -60,12 +69,12 @@ export default function Loading() {
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCardSkeleton className="lg:col-span-2" />
-        <ChartCardSkeleton />
+        <ChartCardSkeleton kind="heatmap" className="lg:col-span-2" />
+        <ChartCardSkeleton kind="donut" />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCardSkeleton />
-        <ChartCardSkeleton />
+        <ChartCardSkeleton kind="treemap" />
+        <ChartCardSkeleton kind="lollipop" />
       </div>
 
       <Card className="min-w-0">
