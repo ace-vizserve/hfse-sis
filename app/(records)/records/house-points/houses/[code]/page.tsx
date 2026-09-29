@@ -91,6 +91,12 @@ function shorten(text: string, max: number): string {
 }
 
 /** "LAST, First Middle" → "First LAST" for a compact chart label. */
+/** "Courage, Energy, Drive and Leadership" — the house's core values as prose. */
+function listValues(values: string[]): string {
+  if (values.length <= 1) return values.join('');
+  return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`;
+}
+
 function shortName(name: string): string {
   const [last, first] = name.split(', ');
   return first ? `${first.split(' ')[0]} ${last}` : name;
@@ -322,9 +328,14 @@ export default async function HousePointsHousePage({
           />
         }
         description={
-          standing && placeLabel
+          // The house's core values lead (migration 111); its title ("The
+          // Flame") stays hidden until the house logos arrive.
+          (house.coreValues.length > 0
+            ? `${listValues(house.coreValues)}. `
+            : '') +
+          (standing && placeLabel
             ? `${placeLabel} in ${selectedAy} — ${standing.gapLabel.charAt(0).toLowerCase()}${standing.gapLabel.slice(1)}. Where its points came from, event by event and student by student.`
-            : `No house has points in ${selectedAy} yet. This page fills in as awards are picked on each event.`
+            : `No house has points in ${selectedAy} yet. This page fills in as awards are picked on each event.`)
         }
         badges={[
           { label: selectedAy },
