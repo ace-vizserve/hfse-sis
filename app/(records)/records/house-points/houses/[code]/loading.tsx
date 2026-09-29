@@ -17,9 +17,9 @@ import { cn } from '@/lib/utils';
  * change this file when that page changes.
  *
  * Back link, the dashboard hero (house tile + name + standing; year badges and
- * switcher on the right), four figure cards, a wide heatmap + narrow donut
- * row, a treemap and a lollipop list side by side, then the one tabbed card
- * (three tabs, one table) and the trust strip.
+ * switcher on the right), four figure cards, the house-share pie and award
+ * donut side by side, the points-by-event and top-students bar charts side by
+ * side, then the one tabbed card (three tabs, one table) and the trust strip.
  */
 
 function ChartCardSkeleton({
@@ -68,13 +68,13 @@ export default function Loading() {
         grid="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCardSkeleton kind="heatmap" className="lg:col-span-2" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCardSkeleton kind="donut" />
         <ChartCardSkeleton kind="donut" />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCardSkeleton kind="treemap" />
-        <ChartCardSkeleton kind="lollipop" />
+        <ChartCardSkeleton kind="comparison-bar" />
+        <ChartCardSkeleton kind="comparison-bar" />
       </div>
 
       <Card className="min-w-0">

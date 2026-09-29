@@ -14,10 +14,9 @@ import {
 } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { HeatmapGrid } from '@/components/dashboard/charts/heatmap-grid';
-import { LollipopChart } from '@/components/dashboard/charts/lollipop-chart';
-import { TreemapChart } from '@/components/dashboard/charts/treemap-chart';
+import { LabeledPieChart } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { HouseBreakdownTabs } from '@/components/house-points/house-breakdown-tables';
@@ -79,24 +78,26 @@ const EMPTY: HouseBreakdown = {
   awards: [],
 };
 
-/** The page's standard chart height, which ChartSkeleton reserves. */
-const CHART_HEIGHT = 260;
-
 /** The award donut keeps at most this many slices; past it, the tail is "Other". */
 const MAX_AWARD_SLICES = 6;
 
-/** Chart category labels have a fixed column; long names are cut, the tooltip keeps the whole. */
+/** A ranked bar chart's height for `n` bars — the Markbook Insights sizing. */
+function rankedBarsHeight(n: number): number {
+  return Math.max(200, n * 42 + 40);
+}
+
+/** Bar-chart category labels have a fixed column; long names are cut, the tooltip keeps the whole. */
 function shorten(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-/** "LAST, First Middle" → "First LAST" for a compact chart label. */
 /** "Courage, Energy, Drive and Leadership" — the house's core values as prose. */
 function listValues(values: string[]): string {
   if (values.length <= 1) return values.join('');
   return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`;
 }
 
+/** "LAST, First Middle" → "First LAST" for a compact chart label. */
 function shortName(name: string): string {
   const [last, first] = name.split(', ');
   return first ? `${first.split(' ')[0]} ${last}` : name;
@@ -249,22 +250,20 @@ export default async function HousePointsHousePage({
 
   // ── Chart data (plain values — the charts are client components). ────────
   const fill = houseChartColor(house.colourToken);
-  // Treemap: one block per event this house scored in, sized by its points.
-  const byEvent = breakdown.events
-    .filter((e) => e.points > 0)
-    .map((e) => ({ name: e.name, value: e.points }));
-  // Heatmap: events down, the four houses across, this house outlined.
-  const versusColumns = houses.map((h) => ({
-    key: h.id,
-    label: h.name,
-    color: houseChartColor(h.colourToken),
-    emphasis: h.id === house.id,
+  // House pie: each house's share of the year's points, in the standings'
+  // order, every slice in its own house's colour.
+  const houseShare = standings.map((s) => ({
+    name: s.house.name,
+    value: Math.max(0, s.total),
   }));
-  const versusRows = contested.map((e) => ({
-    key: e.id,
-    label: shorten(e.name, 26),
-    fullLabel: e.name,
-    values: Object.fromEntries(houses.map((h) => [h.id, e.totals[h.id] ?? 0])),
+  const houseShareColors = standings.map((s) =>
+    houseChartColor(s.house.colourToken)
+  );
+  // Events this house entered, most points first (the breakdown's order), so
+  // the ones it scored nothing in fall to the end.
+  const byEvent = breakdown.events.map((e) => ({
+    category: shorten(e.name, 24),
+    current: e.points,
   }));
   // Donut: each award's share of the points. Past six slices the smallest
   // fold into one "Other" slice, so the ring never needs a seventh colour.
@@ -294,10 +293,8 @@ export default async function HousePointsHousePage({
       : []),
   ];
   const topStudents = studentsScoring.slice(0, 10).map((s) => ({
-    key: s.studentId,
-    label: shorten(shortName(s.name), 24),
-    hint: s.name,
-    value: s.points,
+    category: shorten(shortName(s.name), 24),
+    current: s.points,
   }));
 
   const fileStem = `house-points-${house.code.toLowerCase()}-${selectedAy}`;
@@ -388,25 +385,28 @@ export default async function HousePointsHousePage({
         />
       </section>
 
-      {/* ── Charts — wide comparison + narrow breakdown, then two ranked lists ── */}
-      <section className="grid gap-4 lg:grid-cols-3">
+      {/* ── Charts — the two shares side by side, then two ranked bar charts ── */}
+      <section className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           eyebrow="Against the other houses"
           title={
-            contested.length > 0
-              ? `Top house at ${eventsWon} of ${contested.length} ${eventWord(contested.length)}`
-              : 'Every house, event by event'
+            placeLabel
+              ? `${house.name} is ${placeLabel} this year`
+              : "Every house's share of the points"
           }
           icon={Swords}
-          className="lg:col-span-2"
         >
-          {versusRows.length > 0 ? (
-            <HeatmapGrid columns={versusColumns} rows={versusRows} />
+          {anyPoints ? (
+            <LabeledPieChart
+              data={houseShare}
+              colors={houseShareColors}
+              height={220}
+            />
           ) : (
             <ChartEmpty
               icon={Swords}
-              title="No event has points yet"
-              body="Each event appears here once awards are picked on it."
+              title="No house has points yet"
+              body="Each house's share of the year's points appears here once awards are picked on an event."
             />
           )}
         </ChartCard>
@@ -420,8 +420,6 @@ export default async function HousePointsHousePage({
           {awardMix.length > 0 ? (
             <DonutChart
               data={awardMix}
-              layout="stacked"
-              height={180}
               centerValue={awardsWon.toLocaleString('en-SG')}
               centerLabel="Awards"
               centerHint="Every award picked for this house's students, teams and house entries. The ring splits the house's points between them."
@@ -444,12 +442,19 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {byEvent.length > 0 ? (
-            <TreemapChart data={byEvent} color={fill} height={CHART_HEIGHT} />
+            <ComparisonBarChart
+              data={byEvent}
+              orientation="horizontal"
+              yFormat="number"
+              height={rankedBarsHeight(byEvent.length)}
+              color={fill}
+              seriesLabel="Points"
+            />
           ) : (
             <ChartEmpty
               icon={CalendarCheck}
-              title="No points from any event yet"
-              body="Events appear here, each sized by its points, once the house scores."
+              title="No events entered yet"
+              body="Events appear here, most points first, once the house takes part."
             />
           )}
         </ChartCard>
@@ -461,11 +466,13 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {topStudents.length > 0 ? (
-            <LollipopChart
-              rows={topStudents}
+            <ComparisonBarChart
+              data={topStudents}
+              orientation="horizontal"
+              yFormat="number"
+              height={rankedBarsHeight(topStudents.length)}
               color={fill}
-              labelWidth={150}
-              minHeight={CHART_HEIGHT}
+              seriesLabel="Points"
             />
           ) : (
             <ChartEmpty

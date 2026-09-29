@@ -24,12 +24,6 @@ export type DonutChartProps = {
    */
   centerHint?: React.ReactNode;
   onSegmentClick?: (sliceName: string) => void;
-  /**
-   * `side` (default) puts the legend beside the ring. `stacked` centres the
-   * ring and puts the legend underneath at full width — for a narrow card,
-   * where a ring and a side legend would squeeze each other.
-   */
-  layout?: 'side' | 'stacked';
 };
 
 // The five series colours, then greys. A sixth or seventh slice is small by
@@ -49,19 +43,12 @@ function DonutChartImpl({
   centerValue,
   centerHint,
   onSegmentClick,
-  layout = 'side',
 }: DonutChartProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const sorted = [...data].sort((a, b) => b.value - a.value);
 
   return (
-    <div
-      className={
-        layout === 'stacked'
-          ? 'flex flex-col items-center gap-5'
-          : 'flex items-center gap-6'
-      }
-    >
+    <div className="flex items-center gap-6">
       <div className="relative shrink-0" style={{ width: height, height }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -132,13 +119,7 @@ function DonutChartImpl({
         )}
       </div>
 
-      <ul
-        className={
-          layout === 'stacked'
-            ? 'flex w-full min-w-0 flex-col gap-2.5'
-            : 'flex min-w-0 flex-1 flex-col gap-2.5'
-        }
-      >
+      <ul className="flex min-w-0 flex-1 flex-col gap-2.5">
         {sorted.map((slice, i) => {
           const idx = data.findIndex((d) => d.name === slice.name);
           const pct = total > 0 ? (slice.value / total) * 100 : 0;
