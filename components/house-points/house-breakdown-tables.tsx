@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -266,11 +267,6 @@ export function HouseMembersTable({
     ];
   }, [manage, houseName]);
 
-  const memberStudentIds = React.useMemo(
-    () => members.map((m) => m.studentId),
-    [members]
-  );
-
   async function confirmRemove() {
     if (!removing || !manage) return;
     const who = removing.name;
@@ -319,18 +315,6 @@ export function HouseMembersTable({
         initialSort={[{ id: 'class', desc: false }]}
         pageSize={25}
         csv={{ filename: `${fileStem}-members.csv` }}
-        toolbarTrailing={
-          manage ? (
-            <AddHouseMembersSheet
-              houseCode={manage.houseCode}
-              houseName={houseName}
-              ayCode={ayCode}
-              roster={manage.roster}
-              houses={manage.houses}
-              memberStudentIds={memberStudentIds}
-            />
-          ) : undefined
-        }
         emptyState={{
           title: 'No members yet',
           body: manage
@@ -551,6 +535,10 @@ export function HouseBreakdownTabs({
   // Members first and open by default — it carries "Add students", the one
   // action on this page.
   const [tab, setTab] = React.useState<BreakdownTab>('members');
+  const memberStudentIds = React.useMemo(
+    () => members.map((m) => m.studentId),
+    [members]
+  );
 
   return (
     <Card className="min-w-0">
@@ -561,6 +549,19 @@ export function HouseBreakdownTabs({
         <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
           {houseName}, row by row
         </CardTitle>
+        {/* In the card header so it is there whichever tab is open. */}
+        {manage && (
+          <CardAction>
+            <AddHouseMembersSheet
+              houseCode={manage.houseCode}
+              houseName={houseName}
+              ayCode={ayCode}
+              roster={manage.roster}
+              houses={manage.houses}
+              memberStudentIds={memberStudentIds}
+            />
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent>
         <Tabs
