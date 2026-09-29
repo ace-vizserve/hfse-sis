@@ -22,6 +22,7 @@ import {
   defaultColumnsForTarget,
   drillHeaderForTarget,
   DRILL_COLUMN_LABELS,
+  LEAVE_TYPE_LABELS,
   rowKindForTarget,
   type AttendanceDrillRow,
   type AttendanceDrillRowKind,
@@ -30,6 +31,7 @@ import {
   type CalendarDayRow,
   type CompassionateUsageRow,
   type DrillColumnKey,
+  type LeaveQuotaRow,
   type SectionAttendanceRow,
   type TopAbsentDrillRow,
   type VacationLeaveUsageRow,
@@ -672,6 +674,124 @@ function buildVacationLeaveColumns(
   return cols;
 }
 
+export function buildLeaveQuotaColumns(
+  visible: DrillColumnKey[]
+): ColumnDef<LeaveQuotaRow, unknown>[] {
+  const cols: ColumnDef<LeaveQuotaRow, unknown>[] = [];
+  for (const key of visible) {
+    switch (key) {
+      case 'studentName':
+        cols.push({
+          id: 'studentName',
+          accessorKey: 'studentName',
+          header: DRILL_COLUMN_LABELS.studentName,
+          cell: ({ row }) => (
+            <div className="space-y-0.5">
+              <Link
+                href={`/attendance/students/${encodeURIComponent(row.original.studentNumber)}`}
+                className="font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
+              >
+                {row.original.studentName}
+              </Link>
+              <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                {row.original.studentNumber}
+              </div>
+            </div>
+          ),
+        });
+        break;
+      case 'sectionName':
+        cols.push({
+          id: 'sectionName',
+          accessorKey: 'sectionName',
+          header: DRILL_COLUMN_LABELS.sectionName,
+          cell: ({ row }) => (
+            <span className="text-sm">{row.original.sectionName}</span>
+          ),
+        });
+        break;
+      case 'level':
+        cols.push({
+          id: 'level',
+          accessorKey: 'level',
+          header: DRILL_COLUMN_LABELS.level,
+          cell: ({ row }) => (
+            <span className="text-sm text-muted-foreground">
+              {row.original.level ?? '—'}
+            </span>
+          ),
+        });
+        break;
+      case 'leaveType':
+        cols.push({
+          id: 'leaveType',
+          accessorFn: (r) => LEAVE_TYPE_LABELS[r.leaveType],
+          header: DRILL_COLUMN_LABELS.leaveType,
+          cell: ({ row }) => (
+            <span className="text-sm">
+              {LEAVE_TYPE_LABELS[row.original.leaveType]}
+            </span>
+          ),
+        });
+        break;
+      case 'termNumber':
+        cols.push({
+          id: 'termNumber',
+          accessorFn: (r) => r.termNumber ?? 0,
+          header: DRILL_COLUMN_LABELS.termNumber,
+          cell: ({ row }) => (
+            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+              {row.original.termNumber == null
+                ? 'Whole year'
+                : `T${row.original.termNumber}`}
+            </span>
+          ),
+        });
+        break;
+      case 'allowance':
+        cols.push({
+          id: 'allowance',
+          accessorKey: 'allowance',
+          header: DRILL_COLUMN_LABELS.allowance,
+          cell: ({ row }) => (
+            <span className="font-mono tabular-nums">
+              {row.original.allowance}
+            </span>
+          ),
+        });
+        break;
+      case 'used':
+        cols.push({
+          id: 'used',
+          accessorKey: 'used',
+          header: DRILL_COLUMN_LABELS.used,
+          // Every row here is over its allowance — §9.3 destructive tone.
+          cell: ({ row }) => (
+            <span className="font-mono font-semibold tabular-nums text-destructive">
+              {row.original.used}
+            </span>
+          ),
+        });
+        break;
+    }
+  }
+  cols.push({
+    id: 'action',
+    header: '',
+    cell: ({ row }) => (
+      <Link
+        href={`/attendance/students/${encodeURIComponent(row.original.studentNumber)}`}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        View
+        <ArrowUpRight className="size-3" />
+      </Link>
+    ),
+    enableSorting: false,
+  });
+  return cols;
+}
+
 function buildCalendarColumns(
   visible: DrillColumnKey[]
 ): ColumnDef<CalendarDayRow, unknown>[] {
@@ -747,6 +867,7 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
     if (kind === 'section-rollup') return initialSectionAttendance ?? [];
     if (kind === 'compassionate') return initialCompassionate ?? [];
     if (kind === 'vacation-leave') return initialVacationLeave ?? [];
+    if (kind === 'leave-quota') return EMPTY_ROWS;
     return initialCalendar ?? [];
   }, [
     kind,
@@ -782,7 +903,9 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
             ? initialCompassionate !== undefined
             : kind === 'vacation-leave'
               ? initialVacationLeave !== undefined
-              : initialCalendar !== undefined;
+              : kind === 'leave-quota'
+                ? false
+                : initialCalendar !== undefined;
 
   // Read via TanStack Query. seedRows (when the parent hydrated us) are the
   // initialData, so the drill renders instantly and skips the round-trip
@@ -880,6 +1003,11 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
         AttendanceDrillRow,
         unknown
       >[];
+    if (kind === 'leave-quota')
+      return buildLeaveQuotaColumns(visibleColumnKeys) as ColumnDef<
+        AttendanceDrillRow,
+        unknown
+      >[];
     return buildCalendarColumns(visibleColumnKeys) as ColumnDef<
       AttendanceDrillRow,
       unknown
@@ -904,11 +1032,15 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
         if (groupBy === 'status') return r.status;
         if (groupBy === 'stage') return r.sectionName;
       }
+      if (kind === 'leave-quota' && groupBy === 'status') {
+        return LEAVE_TYPE_LABELS[(row as LeaveQuotaRow).leaveType];
+      }
       if (
         kind === 'top-absent' ||
         kind === 'section-rollup' ||
         kind === 'compassionate' ||
-        kind === 'vacation-leave'
+        kind === 'vacation-leave' ||
+        kind === 'leave-quota'
       ) {
         const lvl = (row as { level?: string | null }).level ?? null;
         if (groupBy === 'level') return lvl ?? 'Unknown';
@@ -965,6 +1097,7 @@ export function AttendanceDrillSheet(props: AttendanceDrillSheetProps) {
   if (initialFrom) csvParams.set('from', initialFrom);
   if (initialTo) csvParams.set('to', initialTo);
   if (segment) csvParams.set('segment', segment);
+  if (termId) csvParams.set('termId', termId);
   if (visibleColumnKeys.length)
     csvParams.set('columns', visibleColumnKeys.join(','));
   const csvHref = `/api/attendance/drill/${target}?${csvParams.toString()}`;
