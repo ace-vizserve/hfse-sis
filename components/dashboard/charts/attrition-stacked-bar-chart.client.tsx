@@ -20,12 +20,15 @@ import {
   BAR_CURSOR,
   BAR_RADIUS_END,
   BAR_RADIUS_TOP,
+  barClickHandler,
   CATEGORY_TICK,
   CHART_AXIS,
   CHART_GRID,
+  CLICKABLE_STYLE,
   SEGMENT_EDGE,
   SERIES_COLORS,
   SERIES_LEGEND,
+  type SegmentClickHandler,
 } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
@@ -38,6 +41,11 @@ export type AttritionStackedBarChartProps = {
   data: AttritionStackedBarPoint[];
   reasonKeys: string[];
   height?: number;
+  /**
+   * Makes each reason segment clickable. Reports `(level, reasonKey)` with
+   * the key exactly as passed in `reasonKeys`.
+   */
+  onSegmentClick?: SegmentClickHandler;
 };
 
 // Palette — reason segments cycle through the series colours.
@@ -65,6 +73,7 @@ function AttritionStackedBarChartImpl({
   data,
   reasonKeys,
   height = 260,
+  onSegmentClick,
 }: AttritionStackedBarChartProps) {
   if (data.length === 0 || reasonKeys.length === 0) return null;
 
@@ -154,6 +163,8 @@ function AttritionStackedBarChartImpl({
                   : BAR_RADIUS_TOP
                 : [0, 0, 0, 0]
             }
+            onClick={barClickHandler(onSegmentClick, 'level', key)}
+            style={onSegmentClick ? CLICKABLE_STYLE : undefined}
           />
         ))}
       </BarChart>

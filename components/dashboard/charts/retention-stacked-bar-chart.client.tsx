@@ -19,12 +19,15 @@ import {
   AXIS_TICK,
   BAR_CURSOR,
   BAR_RADIUS_TOP,
+  barClickHandler,
   CATEGORY_TICK,
   CHART_AXIS,
   CHART_GRID,
+  CLICKABLE_STYLE,
   MUTED_SERIES,
   SEGMENT_EDGE,
   VALUE_LABEL,
+  type SegmentClickHandler,
 } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
@@ -51,11 +54,17 @@ export type RetentionStackRow = {
 export type RetentionStackedBarChartProps = {
   data: RetentionStackRow[];
   height?: number;
+  /**
+   * Makes each segment clickable. Reports `(level, 'returned')` or
+   * `(level, 'didNotReturn')` — the row's own data keys.
+   */
+  onSegmentClick?: SegmentClickHandler;
 };
 
 function RetentionStackedBarChartImpl({
   data,
   height = 280,
+  onSegmentClick,
 }: RetentionStackedBarChartProps) {
   // Derive the top-of-bar rate label here so the public row shape stays the
   // caller's own data (no display strings leaking into the data contract).
@@ -125,6 +134,8 @@ function RetentionStackedBarChartImpl({
           {...SEGMENT_EDGE}
           maxBarSize={48}
           isAnimationActive={false}
+          onClick={barClickHandler(onSegmentClick, 'level', 'returned')}
+          style={onSegmentClick ? CLICKABLE_STYLE : undefined}
         />
         <Bar
           dataKey="didNotReturn"
@@ -135,6 +146,8 @@ function RetentionStackedBarChartImpl({
           radius={BAR_RADIUS_TOP}
           maxBarSize={48}
           isAnimationActive={false}
+          onClick={barClickHandler(onSegmentClick, 'level', 'didNotReturn')}
+          style={onSegmentClick ? CLICKABLE_STYLE : undefined}
         >
           <LabelList
             dataKey="pctLabel"
