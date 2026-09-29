@@ -54,8 +54,10 @@ export type ComparisonBarChartProps = {
   rotateLabels?: boolean;
   /**
    * The bars' fill as a CSS colour — for an identity colour such as a
-   * house's (`var(--color-house-2)`). Defaults to the first series colour.
-   * The value labels stay in ink whatever the fill.
+   * house's (`houseChartColor()` in lib/sis/houses.ts). Defaults to the
+   * first series colour. The value labels stay in ink whatever the fill.
+   * ⚠ Pass a variable that exists at runtime: a `--color-*` name Tailwind
+   * never saw literally in the source is not emitted, and the bar goes black.
    */
   color?: string;
   /** What the bar measures, as the tooltip names it. Defaults to "Current". */

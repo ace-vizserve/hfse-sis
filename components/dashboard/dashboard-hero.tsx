@@ -22,22 +22,38 @@ export function DashboardHero({
   description,
   badges,
   actions,
+  titleMark,
 }: {
   eyebrow: string;
   title: string;
   description?: string;
   badges?: HeroBadge[];
   actions?: React.ReactNode;
+  /**
+   * An identity mark set before the headline — e.g. a house's colour tile on
+   * that house's dashboard. Decorative: the title still names the thing.
+   */
+  titleMark?: React.ReactNode;
 }) {
+  const heading = (
+    <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+      {title}
+    </h1>
+  );
   return (
     <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div className="space-y-4">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           {eyebrow}
         </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          {title}
-        </h1>
+        {titleMark ? (
+          <div className="flex items-center gap-4">
+            {titleMark}
+            {heading}
+          </div>
+        ) : (
+          heading
+        )}
         {description && (
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {description}

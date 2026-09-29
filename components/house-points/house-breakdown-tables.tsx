@@ -5,7 +5,15 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { AwardTallyBadges } from '@/components/house-points/award-tally-badges';
 import { EventTypePill } from '@/components/house-points/event-type-pill';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
@@ -21,9 +29,11 @@ import {
   formatPoints,
 } from '@/lib/house-points/standings';
 
-// The two tables on /records/house-points/houses/[code]: where one house's
-// points came from, by event and by student. Rows are computed server-side
-// (lib/house-points/house-breakdown.ts); these only present them.
+// The three tables on /records/house-points/houses/[code] — where one house's
+// points came from, by event and by student, and who is in it — shown one at
+// a time in a single tabbed card (`HouseBreakdownTabs`, bottom of the file).
+// Rows are computed server-side (lib/house-points/house-breakdown.ts); these
+// only present them.
 
 const NO_AWARD = 'No award';
 
@@ -354,5 +364,115 @@ export function HouseStudentsTable({
         body: 'Clear the search or a filter to see more students.',
       }}
     />
+  );
+}
+
+// ── The tabbed card ─────────────────────────────────────────────────────────
+
+type BreakdownTab = 'events' | 'students' | 'members';
+
+function TabCount({ value }: { value: number }) {
+  // Same count chip as DataTable's own status tabs.
+  return (
+    <span className="rounded-sm bg-muted px-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+      {value.toLocaleString('en-SG')}
+    </span>
+  );
+}
+
+/**
+ * By event / By student / Members in ONE card, one table at a time (Mr Ace,
+ * 2026-09-29: "those 3 tables can be shown via tabs"). Each table keeps its
+ * own search, filters and CSV; By event is open first.
+ */
+export function HouseBreakdownTabs({
+  events,
+  students,
+  members,
+  houseName,
+  ayCode,
+  fileStem,
+  totalLabel,
+}: {
+  events: HouseEventLine[];
+  students: HouseStudentLine[];
+  members: HouseMember[];
+  houseName: string;
+  ayCode: string;
+  fileStem: string;
+  /** The house total as printed, for the team-result note under By student. */
+  totalLabel: string;
+}) {
+  const [tab, setTab] = React.useState<BreakdownTab>('events');
+
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          The detail
+        </CardDescription>
+        <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          {houseName}, row by row
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as BreakdownTab)}
+          className="gap-4"
+        >
+          <TabsList className="max-w-full overflow-x-auto">
+            <TabsTrigger value="events" className="gap-1.5">
+              By event
+              <TabCount value={events.length} />
+            </TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5">
+              By student
+              <TabCount value={students.length} />
+            </TabsTrigger>
+            <TabsTrigger value="members" className="gap-1.5">
+              Members
+              <TabCount value={members.length} />
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="events" className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              What {houseName} won at each event, and the points it brought.
+            </p>
+            <HouseEventsTable
+              events={events}
+              houseName={houseName}
+              fileStem={fileStem}
+            />
+          </TabsContent>
+
+          <TabsContent value="students" className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Every {houseName} student entered in an event this year. A team
+              result shows under each of its members, but the house total counts
+              it once, so these points can add up to more than {totalLabel}.
+            </p>
+            <HouseStudentsTable
+              students={students}
+              houseName={houseName}
+              fileStem={fileStem}
+            />
+          </TabsContent>
+
+          <TabsContent value="members" className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Every student enrolled in {ayCode} whose house is {houseName}.
+            </p>
+            <HouseMembersTable
+              members={members}
+              houseName={houseName}
+              ayCode={ayCode}
+              fileStem={fileStem}
+            />
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
   );
 }

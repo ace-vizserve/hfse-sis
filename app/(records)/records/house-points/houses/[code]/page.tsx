@@ -4,30 +4,31 @@ import type { ReactNode } from 'react';
 import {
   ArrowLeft,
   CalendarCheck,
+  ChartBar,
   Medal,
+  Swords,
   Trophy,
   TrendingUp,
   UserRound,
-  Users,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { MetricCard } from '@/components/dashboard/metric-card';
-import {
-  HouseEventsTable,
-  HouseMembersTable,
-  HouseStudentsTable,
-} from '@/components/house-points/house-breakdown-tables';
+import { HouseBreakdownTabs } from '@/components/house-points/house-breakdown-tables';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
@@ -42,15 +43,17 @@ import {
   type RosterStudent,
 } from '@/lib/house-points/queries';
 import { formatPoints, rankStandings } from '@/lib/house-points/standings';
-import { houseTileClass, listHouses } from '@/lib/sis/houses';
+import { houseChartColor, houseTileClass, listHouses } from '@/lib/sis/houses';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
-// One house's year as a dashboard (analytical archetype, 20-dashboards.md):
-// who it is and where it stands, its figures, four charts of where the points
-// came from, then the drill-down tables and its members. Reached from a
-// house's card on /records/house-points.
+// One house's year as a dashboard (analytical archetype, 20-dashboards.md),
+// built from the same pieces as the Records and Admissions dashboards:
+// DashboardHero, a 4-up MetricCard row, chart cards in the admissions card
+// chrome (eyebrow · serif title · icon tile), then ONE tabbed card holding the
+// By event / By student / Members tables. Reached from a house's card on
+// /records/house-points.
 //
 // Same guard as the other house-points pages (the `/records` ROUTE_ACCESS
 // row). Read-only: no write controls, so admissions sees what everyone does.
@@ -59,7 +62,9 @@ import { cn } from '@/lib/utils';
 // it lower-case, so it is normalised before the lookup.
 //
 // Houses are IDENTITY colours: every chart mark for a house wears that
-// house's token and sits beside its name (legend chip or title).
+// house's colour (`houseChartColor` — the raw `--av-house-N` token; see its
+// comment for why the Tailwind colour variable draws black) and is named
+// beside it, by legend chip, card title or tooltip.
 
 const EMPTY: HouseBreakdown = {
   total: 0,
@@ -70,19 +75,19 @@ const EMPTY: HouseBreakdown = {
   awards: [],
 };
 
-const HOUSE_TOKENS = new Set(['house-1', 'house-2', 'house-3', 'house-4']);
-
-/** A house's chart fill — its own token, or muted ink for an unknown one. */
-function houseFill(colourToken: string): string {
-  return HOUSE_TOKENS.has(colourToken)
-    ? `var(--color-${colourToken})`
-    : 'var(--color-ink-5)';
-}
+/** The comparison-bar chart's own default height, which ChartSkeleton reserves. */
+const CHART_HEIGHT = 260;
 
 function houseLegend(colourToken: string): ChartLegendChipColor {
-  return HOUSE_TOKENS.has(colourToken)
-    ? (colourToken as ChartLegendChipColor)
-    : 'neutral';
+  switch (colourToken) {
+    case 'house-1':
+    case 'house-2':
+    case 'house-3':
+    case 'house-4':
+      return colourToken;
+    default:
+      return 'neutral';
+  }
 }
 
 /** Chart category labels have a fixed column; long names are cut, the tooltip keeps the whole. */
@@ -96,23 +101,29 @@ function shortName(name: string): string {
   return first ? `${first.split(' ')[0]} ${last}` : name;
 }
 
+/** A ranked horizontal list grows with its rows, never below the standard height. */
 function barHeight(rows: number): number {
-  return Math.max(120, rows * 30 + 16);
+  return Math.max(CHART_HEIGHT, rows * 30 + 16);
 }
 
 function ChartCard({
   eyebrow,
   title,
-  description,
+  icon: Icon,
+  tileClassName,
+  className,
   children,
 }: {
   eyebrow: string;
   title: string;
-  description: string;
+  icon: LucideIcon;
+  tileClassName?: string;
+  className?: string;
   children: ReactNode;
 }) {
+  // The admissions dashboard's chart-card chrome (applications-by-level-card).
   return (
-    <Card className="min-w-0">
+    <Card className={cn('h-full min-w-0', className)}>
       <CardHeader>
         <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
           {eyebrow}
@@ -120,39 +131,36 @@ function ChartCard({
         <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
           {title}
         </CardTitle>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <CardAction>
+          <div
+            className={cn(
+              'flex size-9 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-brand-tile',
+              tileClassName ?? 'from-brand-indigo to-brand-navy'
+            )}
+          >
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
   );
 }
 
-function ChartEmpty({ text }: { text: string }) {
-  return (
-    <p className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border px-4 text-center text-sm text-muted-foreground">
-      {text}
-    </p>
-  );
-}
-
-function SectionHeading({
-  id,
+function ChartEmpty({
+  icon: Icon,
   title,
-  description,
+  body,
 }: {
-  id: string;
+  icon: LucideIcon;
   title: string;
-  description: string;
+  body: string;
 }) {
   return (
-    <div className="space-y-1">
-      <h2
-        id={id}
-        className="font-serif text-xl font-semibold tracking-tight text-foreground"
-      >
-        {title}
-      </h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
+    <div className="flex h-[260px] flex-col items-center justify-center gap-2 text-center">
+      <Icon className="size-6 text-muted-foreground/60" />
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-xs text-xs text-muted-foreground">{body}</p>
     </div>
   );
 }
@@ -189,14 +197,13 @@ export default async function HousePointsHousePage({
   if (!currentAy) {
     return (
       <PageShell>
-        <div className="text-sm text-destructive">
-          No current academic year configured.
-        </div>
+        <NoCurrentAyCard />
       </PageShell>
     );
   }
   const selectedAy =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
+  const isCurrentAy = selectedAy === currentAy.ay_code;
 
   const ayId = await getAyIdByCode(selectedAy);
   const [breakdown, roster] = ayId
@@ -217,14 +224,15 @@ export default async function HousePointsHousePage({
   const gap = isLeading
     ? breakdown.total - (runnerUp?.total ?? breakdown.total)
     : (leader?.total ?? 0) - breakdown.total;
+  const placeLabel =
+    standing && anyPoints
+      ? `${ordinal(standing.place)} of ${houses.length}`
+      : null;
 
   // ── Figures ─────────────────────────────────────────────────────────────
   const eventsScored = breakdown.events.filter((e) => e.points > 0).length;
   const studentsScoring = breakdown.students.filter((s) => s.points > 0);
   const awardsWon = breakdown.awards.reduce((n, a) => n + a.count, 0);
-  const mostHeld = breakdown.awards.reduce<
-    (typeof breakdown.awards)[number] | null
-  >((best, a) => (!best || a.count > best.count ? a : best), null);
 
   // Where this house topped an event (ties count), of those anyone scored in.
   const contested = breakdown.eventTotals.filter((e) =>
@@ -236,14 +244,14 @@ export default async function HousePointsHousePage({
   }).length;
 
   // ── Chart data (plain values — the charts are client components). ────────
-  const fill = houseFill(house.colourToken);
+  const fill = houseChartColor(house.colourToken);
   const byEvent = breakdown.events
     .filter((e) => e.points > 0)
     .map((e) => ({ category: shorten(e.name, 26), current: e.points }));
   const versusSeries = houses.map((h) => ({
     key: h.id,
     label: h.name,
-    color: houseFill(h.colourToken),
+    color: houseChartColor(h.colourToken),
     legendColor: houseLegend(h.colourToken),
   }));
   const versusData = contested.map((e) => {
@@ -252,7 +260,7 @@ export default async function HousePointsHousePage({
     return row;
   });
   const awardMix = breakdown.awards.map((a) => ({
-    category: shorten(`${a.label} ×${a.count.toLocaleString('en-SG')}`, 26),
+    category: shorten(`${a.label} ×${a.count.toLocaleString('en-SG')}`, 18),
     current: a.points,
   }));
   const topStudents = studentsScoring.slice(0, 10).map((s) => ({
@@ -263,6 +271,7 @@ export default async function HousePointsHousePage({
   const fileStem = `house-points-${house.code.toLowerCase()}-${selectedAy}`;
   const backHref = `/records/house-points?ay=${encodeURIComponent(selectedAy)}`;
   const tile = houseTileClass(house.colourToken);
+  const eventWord = (n: number) => `event${n === 1 ? '' : 's'}`;
 
   return (
     <PageShell>
@@ -274,54 +283,44 @@ export default async function HousePointsHousePage({
         House points
       </Link>
 
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Records · House points · {selectedAy}
-          </p>
-          <div className="flex items-center gap-4">
-            <div
-              className={cn(
-                'size-11 shrink-0 rounded-xl shadow-brand-tile md:size-12',
-                tile
-              )}
-              aria-hidden
-            />
-            <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-              {house.name}.
-            </h1>
-          </div>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {standing && anyPoints ? (
-              <>
-                <span className="font-medium text-foreground">
-                  {ordinal(standing.place)} of {houses.length}
-                </span>{' '}
-                in {selectedAy} ({standing.gapLabel}). Where its points came
-                from, event by event and student by student.
-              </>
-            ) : (
-              <>
-                No house has points in {selectedAy} yet. This page fills in as
-                awards are picked on each event.
-              </>
+      <DashboardHero
+        eyebrow="Records · House points"
+        title={house.name}
+        titleMark={
+          <div
+            className={cn(
+              'size-11 shrink-0 rounded-xl shadow-brand-tile md:size-12',
+              tile
             )}
-          </p>
-        </div>
-        <AySwitcher current={selectedAy} options={ayCodes} />
-      </header>
+            aria-hidden
+          />
+        }
+        description={
+          standing && placeLabel
+            ? `${placeLabel} in ${selectedAy} — ${standing.gapLabel.charAt(0).toLowerCase()}${standing.gapLabel.slice(1)}. Where its points came from, event by event and student by student.`
+            : `No house has points in ${selectedAy} yet. This page fills in as awards are picked on each event.`
+        }
+        badges={[
+          { label: selectedAy },
+          {
+            label: isCurrentAy ? 'Current' : 'Historical',
+            tone: isCurrentAy ? 'mint' : 'muted',
+          },
+        ]}
+        actions={
+          <AySwitcher current={selectedAy} options={ayCodes} className="w-40" />
+        }
+      />
 
-      {/* ── Figures ─────────────────────────────────────────────────────── */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* ── Figures — the Records / Admissions 4-up KPI row ──────────────── */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Total points"
           value={formatPoints(breakdown.total)}
           icon={Trophy}
           tileClassName={tile}
           subtext={
-            standing
-              ? `${ordinal(standing.place)} of ${houses.length} houses`
-              : undefined
+            placeLabel ? `${placeLabel} houses` : `No points in ${selectedAy}`
           }
           hint="Every point this house earned this year — the same figure as on the standings."
         />
@@ -339,7 +338,7 @@ export default async function HousePointsHousePage({
           value={eventsScored}
           icon={CalendarCheck}
           tileClassName={tile}
-          subtext={`Top house at ${eventsWon} of ${contested.length} event${contested.length === 1 ? '' : 's'}`}
+          subtext={`Top house at ${eventsWon} of ${contested.length} ${eventWord(contested.length)}`}
           hint="Events where this house earned at least one point. Top house counts ties."
         />
         <MetricCard
@@ -347,72 +346,44 @@ export default async function HousePointsHousePage({
           value={studentsScoring.length}
           icon={UserRound}
           tileClassName={tile}
-          subtext={`${breakdown.students.length.toLocaleString('en-SG')} took part in an event`}
-        />
-        <MetricCard
-          label="Awards won"
-          value={awardsWon}
-          icon={Medal}
-          tileClassName={tile}
-          subtext={mostHeld ? `Most held: ${mostHeld.label}` : 'None yet'}
-          hint="Every award picked for this house's students, teams and house entries, Participation included."
-        />
-        <MetricCard
-          label="Members"
-          value={members.length}
-          icon={Users}
-          tileClassName={tile}
-          subtext={`Students enrolled in ${selectedAy}`}
+          subtext={`Of ${members.length.toLocaleString('en-SG')} members · ${awardsWon.toLocaleString('en-SG')} awards won`}
+          hint="Students with at least one point this year. Awards counts every award picked for the house's students, teams and house entries, Participation included."
         />
       </section>
 
-      {/* ── Charts ──────────────────────────────────────────────────────── */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <ChartCard
-          eyebrow="Points by event"
-          title="Where the points came from"
-          description={`${house.name}'s points at each event, most first.`}
-        >
-          {byEvent.length > 0 ? (
-            <ComparisonBarChart
-              data={byEvent}
-              orientation="horizontal"
-              yFormat="number"
-              color={fill}
-              seriesLabel="Points"
-              categoryWidth={170}
-              height={barHeight(byEvent.length)}
-            />
-          ) : (
-            <ChartEmpty text="No points from any event yet." />
-          )}
-        </ChartCard>
-
+      {/* ── Charts — wide comparison + narrow breakdown, then two ranked lists ── */}
+      <section className="grid gap-4 lg:grid-cols-3">
         <ChartCard
           eyebrow="Against the other houses"
-          title="Every house, event by event"
-          description={
+          title={
             contested.length > 0
-              ? `${house.name} was top house at ${eventsWon} of ${contested.length} event${contested.length === 1 ? '' : 's'} with points.`
-              : 'No event has points yet.'
+              ? `Top house at ${eventsWon} of ${contested.length} ${eventWord(contested.length)}`
+              : 'Every house, event by event'
           }
+          icon={Swords}
+          className="lg:col-span-2"
         >
           {versusData.length > 0 ? (
             <GroupedBarChart
               series={versusSeries}
               data={versusData}
               yFormat="number"
-              height={280}
+              height={CHART_HEIGHT}
             />
           ) : (
-            <ChartEmpty text="No event has points yet." />
+            <ChartEmpty
+              icon={Swords}
+              title="No event has points yet"
+              body="Each event appears here once awards are picked on it."
+            />
           )}
         </ChartCard>
 
         <ChartCard
           eyebrow="Award mix"
-          title="Awards held"
-          description="Points each award brought, with how many times the house holds it."
+          title="Points by award"
+          icon={Medal}
+          tileClassName={tile}
         >
           {awardMix.length > 0 ? (
             <ComparisonBarChart
@@ -420,19 +391,51 @@ export default async function HousePointsHousePage({
               orientation="horizontal"
               yFormat="number"
               color={fill}
-              seriesLabel="Points"
-              categoryWidth={170}
+              seriesLabel={house.name}
+              categoryWidth={120}
               height={barHeight(awardMix.length)}
             />
           ) : (
-            <ChartEmpty text="No awards yet this year." />
+            <ChartEmpty
+              icon={Medal}
+              title="No awards yet"
+              body={`Awards appear once one is picked for ${house.name}.`}
+            />
+          )}
+        </ChartCard>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ChartCard
+          eyebrow="Points by event"
+          title={`Where ${house.name}'s points came from`}
+          icon={CalendarCheck}
+          tileClassName={tile}
+        >
+          {byEvent.length > 0 ? (
+            <ComparisonBarChart
+              data={byEvent}
+              orientation="horizontal"
+              yFormat="number"
+              color={fill}
+              seriesLabel={house.name}
+              categoryWidth={170}
+              height={barHeight(byEvent.length)}
+            />
+          ) : (
+            <ChartEmpty
+              icon={CalendarCheck}
+              title="No points from any event yet"
+              body="Events appear here, most points first, once the house scores."
+            />
           )}
         </ChartCard>
 
         <ChartCard
           eyebrow="Top contributors"
           title="Students with the most points"
-          description="The top ten. A team result counts in full for each member."
+          icon={UserRound}
+          tileClassName={tile}
         >
           {topStudents.length > 0 ? (
             <ComparisonBarChart
@@ -440,66 +443,42 @@ export default async function HousePointsHousePage({
               orientation="horizontal"
               yFormat="number"
               color={fill}
-              seriesLabel="Points"
+              seriesLabel={house.name}
               categoryWidth={170}
               height={barHeight(topStudents.length)}
             />
           ) : (
-            <ChartEmpty text="No student has earned points yet." />
+            <ChartEmpty
+              icon={UserRound}
+              title="No student has earned points yet"
+              body="The top ten appear here. A team result counts in full for each member."
+            />
           )}
         </ChartCard>
       </section>
 
-      {/* ── Drill-down ──────────────────────────────────────────────────── */}
-      <section className="space-y-3" aria-labelledby="by-event">
-        <SectionHeading
-          id="by-event"
-          title="By event"
-          description={`What ${house.name} won at each event, and the points it brought.`}
-        />
-        <HouseEventsTable
-          events={breakdown.events}
-          houseName={house.name}
-          fileStem={fileStem}
-        />
-      </section>
+      {/* ── Drill-down — three tables, one card, one at a time ────────────── */}
+      <HouseBreakdownTabs
+        events={breakdown.events}
+        students={breakdown.students}
+        members={members}
+        houseName={house.name}
+        ayCode={selectedAy}
+        fileStem={fileStem}
+        totalLabel={formatPoints(breakdown.total)}
+      />
 
-      <section className="space-y-3" aria-labelledby="by-student">
-        <SectionHeading
-          id="by-student"
-          title="By student"
-          description={`Every ${house.name} student entered in an event this year.`}
-        />
-        <HouseStudentsTable
-          students={breakdown.students}
-          houseName={house.name}
-          fileStem={fileStem}
-        />
-        <p className="text-xs text-muted-foreground">
-          A team result shows under each of its members, but the house total
-          counts it once, so these points can add up to more than{' '}
-          {formatPoints(breakdown.total)}.
-        </p>
-      </section>
-
-      <section className="space-y-3" aria-labelledby="members">
-        <SectionHeading
-          id="members"
-          title="Members"
-          description={`Every student enrolled in ${selectedAy} whose house is ${house.name}.`}
-        />
-        <HouseMembersTable
-          members={members}
-          houseName={house.name}
-          ayCode={selectedAy}
-          fileStem={fileStem}
-        />
-      </section>
-
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        {selectedAy} · {house.name} · {breakdown.eventTotals.length} event
-        {breakdown.eventTotals.length === 1 ? '' : 's'}
-      </p>
+      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <ChartBar className="size-3" strokeWidth={2.25} />
+        <span>{selectedAy}</span>
+        <span className="text-border">·</span>
+        <span>{house.name}</span>
+        <span className="text-border">·</span>
+        <span>
+          {breakdown.eventTotals.length}{' '}
+          {eventWord(breakdown.eventTotals.length)}
+        </span>
+      </div>
     </PageShell>
   );
 }

@@ -131,6 +131,34 @@ export function houseTileClass(colourToken: string): string {
 }
 
 /**
+ * A house's colour as a CSS value for a chart mark or an SVG fill.
+ *
+ * ⚠ THE RAW `--av-house-N` TOKEN, NEVER `--color-house-N`. Tailwind v4's
+ * `@theme inline` only emits a `--color-*` custom property when something in
+ * the scanned source names it literally; the house utilities inline the
+ * `--av-*` value instead, so the Tailwind colour variable for house N resolves to nothing and
+ * the SVG fill falls back to BLACK. That shipped once (2026-09-29: every bar
+ * on the house page was black). The `--av-*` values are always on `:root`.
+ *
+ * Literal per-token strings, for the same reason as `houseTileClass`. Unknown
+ * tokens get muted ink so a house without a colour still draws.
+ */
+export function houseChartColor(colourToken: string): string {
+  switch (colourToken) {
+    case 'house-1':
+      return 'var(--av-house-1)';
+    case 'house-2':
+      return 'var(--av-house-2)';
+    case 'house-3':
+      return 'var(--av-house-3)';
+    case 'house-4':
+      return 'var(--av-house-4)';
+    default:
+      return 'var(--av-ink-5)';
+  }
+}
+
+/**
  * Every house, in display order. Request-scoped cache — the four rows are
  * read by the students list, the permanent record and the roster chips within
  * one render.
