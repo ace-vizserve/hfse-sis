@@ -2,7 +2,10 @@
 
 import type { NationalityByLevel } from '@/lib/admissions/insights-funnel';
 
-import { SERIES_COLORS } from '@/components/dashboard/charts/chart-primitives';
+import {
+  SERIES_COLORS,
+  type SegmentClickHandler,
+} from '@/components/dashboard/charts/chart-primitives';
 import { HoverHint } from '@/components/ui/hover-hint';
 
 // Nationality composition per year group — one full-width bar per level.
@@ -41,10 +44,18 @@ function colorFor(name: string, legend: string[]): string {
 export function NationalityByLevelBars({
   data,
   unitLabel,
+  onSegmentClick,
 }: {
   data: NationalityByLevel;
   /** What one unit is, e.g. "enrolled students". */
   unitLabel: string;
+  /**
+   * Makes each segment a button. Reports `(level, nationality)` with the
+   * row's level exactly as shown and the segment's nationality (`'Other'` /
+   * `'Unspecified'` included). Click, Enter or Space — the segments are
+   * already focusable through their hint.
+   */
+  onSegmentClick?: SegmentClickHandler;
 }) {
   const { legend, rows } = data;
   if (rows.length === 0) return null;
@@ -84,11 +95,36 @@ export function NationalityByLevelBars({
                     hint={`${row.level} · ${seg.nationality}: ${seg.count} (${share.toFixed(1)}%)`}
                   >
                     <span
-                      className="h-full"
+                      className={
+                        onSegmentClick
+                          ? 'h-full cursor-pointer transition-opacity hover:opacity-80 focus-visible:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+                          : 'h-full'
+                      }
                       style={{
                         width: `${share}%`,
                         background: colorFor(seg.nationality, legend),
                       }}
+                      role={onSegmentClick ? 'button' : undefined}
+                      aria-label={
+                        onSegmentClick
+                          ? `${row.level} · ${seg.nationality}: ${seg.count}`
+                          : undefined
+                      }
+                      onClick={
+                        onSegmentClick
+                          ? () => onSegmentClick(row.level, seg.nationality)
+                          : undefined
+                      }
+                      onKeyDown={
+                        onSegmentClick
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSegmentClick(row.level, seg.nationality);
+                              }
+                            }
+                          : undefined
+                      }
                     />
                   </HoverHint>
                 );

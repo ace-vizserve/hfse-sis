@@ -1,6 +1,9 @@
 import { Globe2 } from 'lucide-react';
 
-import { SERIES_COLORS } from '@/components/dashboard/charts/chart-primitives';
+import {
+  SERIES_COLORS,
+  type SegmentClickHandler,
+} from '@/components/dashboard/charts/chart-primitives';
 import { LabeledPieChart } from '@/components/dashboard/charts/labeled-pie-chart';
 import type { NationalityMixRow } from '@/lib/admissions/insights-funnel';
 
@@ -45,6 +48,7 @@ export function NationalityMixPie({
   compareRows,
   compareLabel,
   unitLabel,
+  onSegmentClick,
 }: {
   rows: NationalityMixRow[];
   /** Prior-AY rows, or null when no comparison year is selected. */
@@ -52,6 +56,12 @@ export function NationalityMixPie({
   compareLabel?: string | null;
   /** What one slice counts, e.g. "applicants" or "enrolled students". */
   unitLabel: string;
+  /**
+   * Makes each slice and legend row clickable. Reports `(nationality)` —
+   * including the synthetic `'Other'` and `'Unspecified'` buckets, which the
+   * drill must resolve to exactly the rows they count.
+   */
+  onSegmentClick?: SegmentClickHandler;
 }) {
   const total = rows.reduce((s, r) => s + r.count, 0);
 
@@ -128,6 +138,7 @@ export function NationalityMixPie({
         data={rows.map((r) => ({ name: r.nationality, value: r.count }))}
         colors={colors}
         height={240}
+        onSegmentClick={onSegmentClick}
       />
 
       {biggestShift && compareLabel && (
