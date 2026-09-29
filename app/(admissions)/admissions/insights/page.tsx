@@ -24,22 +24,10 @@ import { MetricCard } from '@/components/dashboard/metric-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
-import {
-  TrendChart,
-  type TrendPoint,
-} from '@/components/dashboard/charts/trend-chart';
-import {
-  ComparisonBarChart,
-  type ComparisonBarPoint,
-} from '@/components/dashboard/charts/comparison-bar-chart';
-import {
-  GroupedBarChart,
-  type GroupedBarSeries,
-} from '@/components/dashboard/charts/grouped-bar-chart';
-import {
-  DonutChart,
-  type DonutSlice,
-} from '@/components/dashboard/charts/donut-chart';
+import type { TrendPoint } from '@/components/dashboard/charts/trend-chart';
+import type { ComparisonBarPoint } from '@/components/dashboard/charts/comparison-bar-chart';
+import type { GroupedBarSeries } from '@/components/dashboard/charts/grouped-bar-chart';
+import type { DonutSlice } from '@/components/dashboard/charts/donut-chart';
 import {
   Card,
   CardAction,
@@ -66,13 +54,7 @@ import {
   getWithdrawnByLevel,
   type CategoryMixRow,
 } from '@/lib/admissions/insights-funnel';
-import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
-import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
-import {
-  FEEDBACK_RATING_MAX,
-  FEEDBACK_RATING_MIN,
-  getAdmissionsFeedback,
-} from '@/lib/admissions/feedback';
+import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
   getAdmissionsTerminalReasons,
   growthDelta,
@@ -98,6 +80,22 @@ import {
 } from '@/lib/dashboard/range';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { AdmissionsDrillSheet } from '@/components/admissions/drills/admissions-drill-sheet';
+import {
+  AssessmentConversionDrillChart,
+  CancellationReasonsDrillDonut,
+  CategoryMixDrillChart,
+  FeedbackRatingDrillChart,
+  IntakeTrendDrillChart,
+  NationalityByLevelDrillBars,
+  NationalityMixDrillPie,
+  ReferralVolumeDrillDonut,
+  TerminalReasonsSeeAll,
+  TopReasonPerLevelList,
+  WithdrawnByLevelDrillDonut,
+} from '@/components/admissions/drills/insights-drill-cards';
+import { feedbackRatingBuckets } from '@/lib/admissions/feedback-drill';
+import { INSIGHTS_SCOPE_LABEL } from '@/lib/admissions/insights-drill-segments';
 
 const ALLOWED_ROLES = new Set([
   'admissions',
@@ -119,6 +117,7 @@ function InsightChartCard({
   title,
   icon: Icon,
   scopeNote,
+  headerAction,
   children,
 }: {
   cap: string;
@@ -130,6 +129,8 @@ function InsightChartCard({
    * A mono caption alone is too easy to skim past when the stakes are
    * "these two conversion % bars aren't measuring the same thing." */
   scopeNote?: string;
+  /** A control beside the icon tile — the list blocks' ghost "See all". */
+  headerAction?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -148,44 +149,16 @@ function InsightChartCard({
           </span>
         )}
         <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
+          <div className="flex items-center gap-2">
+            {headerAction}
+            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Icon className="size-4" />
+            </div>
           </div>
         </CardAction>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
-  );
-}
-
-// One row for "top reason per level" — the ProjectListRow replacement. Too
-// small to promote to components/; only used here.
-function TopReasonRow({
-  level,
-  reason,
-  count,
-}: {
-  level: string;
-  reason: string;
-  count: number;
-}) {
-  return (
-    <div className="flex items-center gap-3.5 border-t border-hairline py-3 first:border-t-0 first:pt-1">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-        <GraduationCap className="size-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13.5px] font-semibold text-foreground">
-          {level}
-        </div>
-        <div className="truncate text-[11.5px] text-muted-foreground">
-          {reason}
-        </div>
-      </div>
-      <span className="shrink-0 font-mono text-[13px] font-bold text-foreground">
-        {count.toLocaleString('en-SG')}
-      </span>
-    </div>
   );
 }
 
@@ -396,16 +369,11 @@ export default async function AdmissionsInsightsPage({
   // "share of whole" framing this data doesn't need. Every tier renders
   // (including zero-count ones) so a gap in the distribution is visible,
   // not silently dropped.
-  // Buckets come from the scale itself, not a literal — this histogram and
-  // `lib/admissions/feedback.ts`'s average have to cover the same values, or
-  // the card shows an average its own bars cannot add up to.
-  const ratingChartData: ComparisonBarPoint[] = Array.from(
-    { length: FEEDBACK_RATING_MAX - FEEDBACK_RATING_MIN + 1 },
-    (_, i) => FEEDBACK_RATING_MIN + i
-  ).map((stars) => ({
-    category: `${stars}★`,
-    current: feedback.rows.filter((r) => r.feedbackRating === stars).length,
-  }));
+  // Buckets come from `feedbackRatingBuckets` (lib/admissions/feedback-drill.ts),
+  // the same rule each bar's drill filters with (KD #229).
+  const ratingChartData: ComparisonBarPoint[] = feedbackRatingBuckets(
+    feedback.rows
+  ).map((b) => ({ category: `${b.stars}★`, current: b.count }));
   const priorAvgRating = priorFeedback?.stats.avgRating ?? null;
   const ratingDelta =
     feedback.stats.avgRating !== null && priorAvgRating !== null
@@ -448,8 +416,9 @@ export default async function AdmissionsInsightsPage({
   // selection can never drift between the two.
   const reasonBars = selectTopReasonBars(terminal.overall);
 
-  // Top reason per level — the label shown in each TopReasonRow, resolved
-  // once here so the JSX list and the CSV export read the identical value.
+  // Top reason per level — the label shown in each TopReasonPerLevelList row,
+  // resolved once here so the JSX list and the CSV export read the identical
+  // value.
   const terminalByLevelRows = terminal.byLevel.map((lvl) => ({
     level: lvl.level,
     count: lvl.count,
@@ -613,14 +582,6 @@ export default async function AdmissionsInsightsPage({
     value: row.count,
   }));
 
-  // §5 — cancellation reasons: topReasons + the overflow bucket are a genuine
-  // partition of terminal.total (otherReasonsCount is explicitly the
-  // remainder) — DonutChart is the correct fit for a mutually-exclusive share.
-  const reasonDonutData: DonutSlice[] = reasonBars.map((r) => ({
-    name: r.label,
-    value: r.count,
-  }));
-
   // §4b — assessment performance vs conversion. Matches the operational
   // dashboard's AssessmentOutcomesChart visual language (subject on the
   // x-axis, one clustered bar per outcome, legend) — but GROUPED, not
@@ -781,6 +742,14 @@ export default async function AdmissionsInsightsPage({
             delta={applicationsDelta ?? undefined}
             deltaGoodWhen="up"
             comparisonLabel={applicationsCaption}
+            drillSheet={() => (
+              <AdmissionsDrillSheet
+                target="funnel-stage"
+                segment="Submitted"
+                ayCode={selectedAy}
+                scopeLabel={INSIGHTS_SCOPE_LABEL}
+              />
+            )}
           />
           <MetricCard
             label="Conversion rate"
@@ -792,6 +761,15 @@ export default async function AdmissionsInsightsPage({
             deltaFormat="absolute"
             deltaUnit="pp"
             comparisonLabel={conversionCaption}
+            drillSheet={() => (
+              <AdmissionsDrillSheet
+                target="funnel-stage"
+                segment="Submitted"
+                ayCode={selectedAy}
+                scopeLabel={INSIGHTS_SCOPE_LABEL}
+                initialGroupBy="status"
+              />
+            )}
           />
           {/* Avg. days to enrol — CONDITIONAL: only when sampleSize > 0
               (early-in-AY / sparse cohorts suppress it rather than show a
@@ -803,6 +781,13 @@ export default async function AdmissionsInsightsPage({
               format="days"
               icon={Clock}
               subtext={`${selectedAy} · n=${timeToEnroll.sampleSize.toLocaleString('en-SG')}`}
+              drillSheet={() => (
+                <AdmissionsDrillSheet
+                  target="avg-time"
+                  ayCode={selectedAy}
+                  scopeLabel={INSIGHTS_SCOPE_LABEL}
+                />
+              )}
             />
           )}
         </section>
@@ -835,11 +820,12 @@ export default async function AdmissionsInsightsPage({
                     delta={intakeTrendDelta}
                   />
                 )}
-                <TrendChart
+                <IntakeTrendDrillChart
                   label="Applications"
                   current={intakeCurrentPts}
                   comparison={intakeComparePts}
-                  yFormat="number"
+                  selectedAy={selectedAy}
+                  compareAy={compareAy}
                 />
               </div>
             ) : (
@@ -867,12 +853,9 @@ export default async function AdmissionsInsightsPage({
               <EmptyChartState message="No parents have rated the application form yet this academic year." />
             ) : (
               <>
-                <ComparisonBarChart
+                <FeedbackRatingDrillChart
                   data={ratingChartData}
-                  orientation="vertical"
-                  yFormat="number"
-                  height={200}
-                  rotateLabels={false}
+                  ayCode={selectedAy}
                 />
                 <p className="mt-3 font-mono text-[10.5px] text-muted-foreground">
                   {feedback.stats.ratingCount.toLocaleString('en-SG')} response
@@ -921,10 +904,11 @@ export default async function AdmissionsInsightsPage({
               <EmptyChartState message="No applications have been withdrawn this academic year." />
             ) : (
               <>
-                <DonutChart
+                <WithdrawnByLevelDrillDonut
                   data={withdrawnDonutData}
                   centerValue={totalWithdrawn.toLocaleString('en-SG')}
                   centerLabel="Withdrawn"
+                  ayCode={selectedAy}
                 />
                 {showTopWithdrawnLevel ? (
                   <RecommendationCallout tone="watch" className="mt-5">
@@ -955,14 +939,13 @@ export default async function AdmissionsInsightsPage({
               <EmptyChartState message="No assessment results recorded yet for this academic year." />
             ) : (
               <>
-                <GroupedBarChart
+                <AssessmentConversionDrillChart
                   series={ASSESSMENT_SERIES.map((s) => ({
                     key: s.key,
                     label: s.label,
                   }))}
                   data={assessmentGroupedData}
-                  yFormat="percent"
-                  height={240}
+                  ayCode={selectedAy}
                 />
                 {showAssessmentGap ? (
                   <RecommendationCallout tone="watch" className="mt-5">
@@ -986,10 +969,11 @@ export default async function AdmissionsInsightsPage({
               title={reasonTitle}
               icon={Megaphone}
             >
-              <DonutChart
-                data={reasonDonutData}
+              <CancellationReasonsDrillDonut
+                bars={reasonBars}
                 centerValue={terminal.total.toLocaleString('en-SG')}
                 centerLabel="Cancellations"
+                ayCode={selectedAy}
               />
               {showTopReason ? (
                 <RecommendationCallout tone="watch" className="mt-5">
@@ -1005,17 +989,12 @@ export default async function AdmissionsInsightsPage({
               cap="Top reason per level"
               title="By level"
               icon={GraduationCap}
+              headerAction={<TerminalReasonsSeeAll ayCode={selectedAy} />}
             >
-              <div>
-                {terminalByLevelRows.map((lvl) => (
-                  <TopReasonRow
-                    key={lvl.level}
-                    level={lvl.level}
-                    reason={lvl.topReasonLabel ?? '—'}
-                    count={lvl.count}
-                  />
-                ))}
-              </div>
+              <TopReasonPerLevelList
+                ayCode={selectedAy}
+                rows={terminalByLevelRows}
+              />
             </InsightChartCard>
           </div>
         )}
@@ -1040,10 +1019,11 @@ export default async function AdmissionsInsightsPage({
               <EmptyChartState message="No referral sources recorded yet." />
             ) : (
               <>
-                <DonutChart
-                  data={referralDonutData}
+                <ReferralVolumeDrillDonut
+                  rows={referralConversion}
                   centerValue={totalReferralApplicants.toLocaleString('en-SG')}
                   centerLabel="Applicants"
+                  ayCode={selectedAy}
                 />
                 {showBestRef ? (
                   <RecommendationCallout tone="positive" className="mt-5">
@@ -1068,11 +1048,11 @@ export default async function AdmissionsInsightsPage({
             scopeNote="All applicants — includes cancelled/withdrawn"
           >
             {haveCategoryMixData ? (
-              <GroupedBarChart
+              <CategoryMixDrillChart
                 series={categoryMixSeries}
                 data={categoryMixData}
-                yFormat="number"
-                height={260}
+                selectedAy={selectedAy}
+                compareAy={compareAy}
               />
             ) : (
               <EmptyChartState message="No applications recorded yet for this academic year." />
@@ -1090,11 +1070,12 @@ export default async function AdmissionsInsightsPage({
             scopeNote="All applicants — includes cancelled/withdrawn"
           >
             {nationalityMix.length > 0 ? (
-              <NationalityMixPie
+              <NationalityMixDrillPie
                 rows={nationalityMix}
                 compareRows={priorNationalityMix}
                 compareLabel={compareAy}
                 unitLabel="applicants"
+                ayCode={selectedAy}
               />
             ) : (
               <EmptyChartState message="No applications recorded yet for this academic year." />
@@ -1108,9 +1089,10 @@ export default async function AdmissionsInsightsPage({
             scopeNote="All applicants — level as applied for"
           >
             {nationalityByLevel.rows.length > 0 ? (
-              <NationalityByLevelBars
+              <NationalityByLevelDrillBars
                 data={nationalityByLevel}
                 unitLabel="applicants"
+                ayCode={selectedAy}
               />
             ) : (
               <EmptyChartState message="No applications recorded yet for this academic year." />
