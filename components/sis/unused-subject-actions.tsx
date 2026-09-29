@@ -84,7 +84,7 @@ export function SubjectCatalogMenu({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-6 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            className="size-6 text-foreground hover:text-brand-indigo-deep"
             aria-label={`Rename ${subject.name}`}
             title="Rename"
             onClick={onRename}
@@ -97,7 +97,7 @@ export function SubjectCatalogMenu({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-6 text-muted-foreground opacity-60 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+            className="size-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
             aria-label={`Delete ${subject.name}`}
             title="Delete subject"
             onClick={() => setConfirmOpen(true)}

@@ -479,10 +479,9 @@ export function SubjectCatalogCard({
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                // Always visible, faint at rest: at opacity-0 it
-                                // could not be found by looking, and a tablet
-                                // never hovers so it never appeared at all.
-                                className="size-6 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                                // Always visible at full strength — Mr Ace
+                                // (2026-09-29): row actions are not greyed out.
+                                className="size-6 shrink-0 text-foreground hover:text-brand-indigo-deep"
                                 onClick={() => setEditSubject(subject)}
                                 aria-label={`Edit ${subject.name}`}
                               >
