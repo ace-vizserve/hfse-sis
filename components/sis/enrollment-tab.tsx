@@ -47,6 +47,7 @@ import {
   type StageKey,
 } from '@/lib/schemas/sis';
 import { resolveCategory } from '@/lib/p-files/document-config';
+import { formatAssessmentGrade } from '@/lib/admissions/assessment-grade';
 import type { ApplicationFit } from '@/lib/admissions/options';
 import type {
   AssignableLevel,
@@ -397,13 +398,12 @@ export function EnrollmentTab({
       updatedBy: s.assessmentUpdatedBy,
       extras: [
         { label: 'Schedule', value: s.assessmentSchedule, asDate: true },
-        {
-          label: 'Math',
-          value: s.assessmentGradeMath as string | number | null,
-        },
+        // "93.55% (29/31)", "77%", or the words of an unparseable legacy
+        // value — never the HTML Directus wraps them in.
+        { label: 'Math', value: formatAssessmentGrade(s.assessmentGradeMath) },
         {
           label: 'English',
-          value: s.assessmentGradeEnglish as string | number | null,
+          value: formatAssessmentGrade(s.assessmentGradeEnglish),
         },
         { label: 'Medical', value: s.assessmentMedical },
       ],

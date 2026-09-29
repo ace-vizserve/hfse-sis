@@ -3,6 +3,10 @@ import { unstable_cache } from 'next/cache';
 import { applyDateRangeFilter } from '@/lib/dashboard/drill-range';
 import { prefixFor } from '@/lib/admissions/_shared';
 import {
+  classifyAssessmentGrade,
+  formatAssessmentGrade,
+} from '@/lib/admissions/assessment-grade';
+import {
   daysSinceUpdate as stalenessDaysSinceUpdate,
   isFollowUpStaleness,
   stalenessLabel,
@@ -106,22 +110,13 @@ function deriveStage(status: string | null): string {
   return s;
 }
 
-function classifyAssessmentValue(
-  raw: string | number | null
-): 'pass' | 'fail' | 'unknown' {
-  if (raw === null || raw === undefined) return 'unknown';
-  if (typeof raw === 'number') return raw >= 60 ? 'pass' : 'fail';
-  const s = String(raw).trim();
-  if (!s) return 'unknown';
-  const n = Number(s);
-  if (!Number.isNaN(n)) return n >= 60 ? 'pass' : 'fail';
-  const letter = s.toUpperCase()[0];
-  if (['A', 'B', 'C'].includes(letter)) return 'pass';
-  if (['D', 'F'].includes(letter)) return 'fail';
-  return 'unknown';
-}
+// Same rule as the dashboard chart (lib/admissions/dashboard.ts), read through
+// `parseAssessmentGrade` so HTML-wrapped Directus values classify — the chart
+// and its drill must agree or a segment click lands on the wrong rows.
+const classifyAssessmentValue = classifyAssessmentGrade;
 
-function combinedAssessmentOutcome(
+/** Pure — exported for unit tests. */
+export function combinedAssessmentOutcome(
   math: string | number | null,
   eng: string | number | null
 ): 'pass' | 'fail' | 'unknown' {
@@ -326,12 +321,9 @@ async function loadDrillRowsUncached(input: {
       stage: deriveStage(status),
       pipelineStage: derivePipelineStage(s),
       referralSource: (a.howDidYouKnowAboutHFSEIS ?? '').trim() || null,
-      assessmentMath:
-        s?.assessmentGradeMath != null ? String(s.assessmentGradeMath) : null,
-      assessmentEnglish:
-        s?.assessmentGradeEnglish != null
-          ? String(s.assessmentGradeEnglish)
-          : null,
+      // Formatted for display AND the CSV ("93.55% (29/31)", never HTML).
+      assessmentMath: formatAssessmentGrade(s?.assessmentGradeMath),
+      assessmentEnglish: formatAssessmentGrade(s?.assessmentGradeEnglish),
       assessmentMathOutcome: classifyAssessmentValue(
         s?.assessmentGradeMath ?? null
       ),

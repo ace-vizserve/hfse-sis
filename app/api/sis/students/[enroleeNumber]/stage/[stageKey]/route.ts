@@ -10,6 +10,7 @@ import {
 import { logAction } from '@/lib/audit/log-action';
 import {
   APPLICATION_TERMINAL_STATUSES,
+  checkStageScoreExtras,
   ENROLLED_PREREQ_STAGES,
   evaluateEnrolledFlip,
   findStageCompletionBlockers,
@@ -115,7 +116,10 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const { status, remarks, extras } = parsed.data;
+  const { status, remarks } = parsed.data;
+  // `let`: the 'score' extras are normalised to `score/max` once the stored
+  // row is known (1.2 below).
+  let extras = parsed.data.extras;
 
   // The two withdrawal dates (migration 163). Read beside the stage payload
   // rather than inside it: they are written to the class roster by the
@@ -200,6 +204,31 @@ export async function PATCH(
       { error: 'No status row for this enrolee in this AY' },
       { status: 404 }
     );
+  }
+
+  // 1.2) Score extras (the assessment's Math / English grades). A changed
+  // value must be `score/max` with both numbers, max > 0 and 0 ≤ score ≤ max,
+  // and is stored normalised ("29.50/31" → "29.5/31"). A value identical to
+  // the stored one is an untouched legacy grade and passes as-is — only a
+  // change is judged. Same rule as the edit dialog (checkStageScoreExtras).
+  if (extras) {
+    const scoreCheck = checkStageScoreExtras(
+      cols,
+      extras,
+      before as unknown as Record<string, unknown>
+    );
+    if (!scoreCheck.ok) {
+      const first = scoreCheck.errors[0];
+      return NextResponse.json(
+        {
+          error: `${first.label}: ${first.error}`,
+          code: 'invalid_score',
+          fields: scoreCheck.errors,
+        },
+        { status: 400 }
+      );
+    }
+    extras = { ...extras, ...scoreCheck.normalised };
   }
 
   // ⚠ THERE IS NO POST-ENROLMENT FREEZE ANY MORE (removed 2026-09-10; it was

@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { prefixFor } from '@/lib/admissions/_shared';
+import { classifyAssessmentGrade } from '@/lib/admissions/assessment-grade';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   computeDelta,
@@ -426,23 +427,11 @@ export type AssessmentOutcomes = {
 };
 
 // HFSE uses a 60% pass mark on the entrance assessment (confirmed by Joann in
-// the AY2026 onboarding notes). Grades are stored as strings that may be
-// numeric ("72"), letter ("B+"), or blank. Letter grades follow the standard
-// A/B/C = pass, D/F = fail convention.
-function classifyAssessment(
-  raw: string | number | null
-): 'pass' | 'fail' | 'unknown' {
-  if (raw === null || raw === undefined) return 'unknown';
-  if (typeof raw === 'number') return raw >= 60 ? 'pass' : 'fail';
-  const s = String(raw).trim();
-  if (!s) return 'unknown';
-  const n = Number(s);
-  if (!Number.isNaN(n)) return n >= 60 ? 'pass' : 'fail';
-  const letter = s.toUpperCase()[0];
-  if (['A', 'B', 'C'].includes(letter)) return 'pass';
-  if (['D', 'F'].includes(letter)) return 'fail';
-  return 'unknown';
-}
+// the AY2026 onboarding notes). Grades are free text, mostly HTML-wrapped by
+// Directus ("<p>93.55% (29/31)</p>"), so they are read through
+// `parseAssessmentGrade` — until 2026-09-28 every `<p>`-wrapped value fell to
+// "unknown". A bare letter grade keeps the A/B/C pass, D/F fail rule.
+const classifyAssessment = classifyAssessmentGrade;
 
 export async function getAssessmentOutcomes(
   ayCode: string

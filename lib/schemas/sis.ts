@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { checkAssessmentScoreSubmission } from '@/lib/admissions/assessment-grade';
 import { COUNTRY_NAME_SET } from '@/lib/data/countries';
 import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 // The rich-text sibling of this file's `optionalText`, borrowed rather than
@@ -1251,14 +1252,65 @@ export type StageColumns = {
   updatedDateCol: string;
   updatedByCol: string;
   // Stage-specific columns (invoice / schedule / payment date / etc).
-  // Each entry: { fieldKey, columnName, kind ('text' | 'date') }
+  // Each entry: { fieldKey, columnName, kind, label }
+  //   'text'  — free text
+  //   'date'  — yyyy-MM-dd
+  //   'score' — a score out of a total, typed as two numbers and stored as
+  //             exactly `score/max` ("29/31"); see checkStageScoreExtras.
   extras: Array<{
     fieldKey: string;
     columnName: string;
-    kind: 'text' | 'date';
+    kind: 'text' | 'date' | 'score';
     label: string;
   }>;
 };
+
+export type StageScoreExtraError = {
+  fieldKey: string;
+  label: string;
+  field: 'score' | 'max';
+  error: string;
+};
+
+/**
+ * Validate and normalise every 'score' extra in a stage payload. Shared by
+ * the stage PATCH route and the edit dialog, so the button that disables and
+ * the server that refuses apply one rule.
+ *
+ * Only a CHANGE is judged: a submitted value identical to the stored one (an
+ * untouched legacy Directus grade such as "<p>93.55% (29/31)</p>" or "na")
+ * passes unchanged, so it can never block saving the stage's other fields.
+ * A changed value must be `score/max` with both numbers, max > 0 and
+ * 0 ≤ score ≤ max; blank clears. Pure; never throws.
+ */
+export function checkStageScoreExtras(
+  cols: StageColumns,
+  extras: Record<string, string | null | undefined> | undefined,
+  storedRow: Record<string, unknown>
+):
+  | { ok: true; normalised: Record<string, string | null> }
+  | { ok: false; errors: StageScoreExtraError[] } {
+  const normalised: Record<string, string | null> = {};
+  const errors: StageScoreExtraError[] = [];
+  for (const e of cols.extras) {
+    if (e.kind !== 'score') continue;
+    const submitted = extras?.[e.fieldKey];
+    if (submitted === undefined) continue;
+    const check = checkAssessmentScoreSubmission(
+      submitted,
+      storedRow[e.columnName]
+    );
+    if (check.ok) normalised[e.fieldKey] = check.value;
+    else
+      errors.push({
+        fieldKey: e.fieldKey,
+        label: e.label,
+        field: check.field,
+        error: check.error,
+      });
+  }
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, normalised };
+}
 
 export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
   application: {
@@ -1330,13 +1382,13 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
       {
         fieldKey: 'math',
         columnName: 'assessmentGradeMath',
-        kind: 'text',
+        kind: 'score',
         label: 'Math grade',
       },
       {
         fieldKey: 'english',
         columnName: 'assessmentGradeEnglish',
-        kind: 'text',
+        kind: 'score',
         label: 'English grade',
       },
       {
