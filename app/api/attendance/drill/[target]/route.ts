@@ -5,6 +5,7 @@ import {
   defaultColumnsForTarget,
   drillHeaderForTarget,
   DRILL_COLUMN_LABELS,
+  LEAVE_TYPE_LABELS,
   rowKindForTarget,
   type AttendanceDrillRow,
   type AttendanceDrillRowKind,
@@ -13,6 +14,7 @@ import {
   type CalendarDayRow,
   type CompassionateUsageRow,
   type DrillColumnKey,
+  type LeaveQuotaRow,
   type SectionAttendanceRow,
   type TopAbsentDrillRow,
   type VacationLeaveUsageRow,
@@ -35,6 +37,7 @@ const VALID_TARGETS: AttendanceDrillTarget[] = [
   'attendance-by-section',
   'compassionate-quota',
   'vacation-leave-quota',
+  'over-leave-quota',
 ];
 
 const ALLOWED_ROLES = [
@@ -79,7 +82,9 @@ export async function GET(
   // server-only imports (the rollup runs against this value when the
   // student's column is NULL).
   const schoolConfig =
-    target === 'vacation-leave-quota' ? await getSchoolConfig() : null;
+    target === 'vacation-leave-quota' || target === 'over-leave-quota'
+      ? await getSchoolConfig()
+      : null;
 
   const rows = await buildAttendanceDrillRows({
     ayCode,
@@ -266,6 +271,29 @@ function csvCell(
         return r.remainingThisTerm;
       case 'isOverTermQuota':
         return r.isOverTermQuota ? 'Yes' : 'No';
+      default:
+        return '';
+    }
+  }
+  if (kind === 'leave-quota') {
+    const r = row as LeaveQuotaRow;
+    switch (key) {
+      case 'studentName':
+        return r.studentName;
+      case 'studentNumber':
+        return r.studentNumber;
+      case 'sectionName':
+        return r.sectionName;
+      case 'level':
+        return r.level ?? '';
+      case 'leaveType':
+        return LEAVE_TYPE_LABELS[r.leaveType];
+      case 'termNumber':
+        return r.termNumber == null ? 'Whole year' : `T${r.termNumber}`;
+      case 'allowance':
+        return r.allowance;
+      case 'used':
+        return r.used;
       default:
         return '';
     }

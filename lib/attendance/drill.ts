@@ -46,7 +46,8 @@ export type AttendanceDrillTarget =
   | 'top-active' // student × attendance % (highest attenders)
   | 'attendance-by-section' // section × attendance %
   | 'compassionate-quota' // student × quota usage (AY-wide)
-  | 'vacation-leave-quota'; // student × vacation-leave quota (per term, KD #94)
+  | 'vacation-leave-quota' // student × vacation-leave quota (per term, KD #94)
+  | 'over-leave-quota'; // student × leave type, over the allowance only (Attendance Insights)
 
 export type AttendanceDrillRowKind =
   | 'entry'
@@ -54,6 +55,7 @@ export type AttendanceDrillRowKind =
   | 'section-rollup'
   | 'compassionate'
   | 'vacation-leave'
+  | 'leave-quota'
   | 'calendar-day';
 
 export function rowKindForTarget(
@@ -79,6 +81,8 @@ export function rowKindForTarget(
       return 'compassionate';
     case 'vacation-leave-quota':
       return 'vacation-leave';
+    case 'over-leave-quota':
+      return 'leave-quota';
     default: {
       const _exhaustive: never = t;
       throw new Error(`unreachable target: ${String(_exhaustive)}`);
@@ -159,6 +163,32 @@ export type VacationLeaveUsageRow = {
   isOverTermQuota: boolean;
 };
 
+/**
+ * One student over ONE leave allowance — the rows behind Attendance Insights'
+ * "Over their leave quota" card. That card adds compassionate-over to
+ * vacation-over, so a student over both is counted twice; here they are two
+ * rows, one per leave type, and the list's length is the card's number.
+ */
+export type LeaveQuotaRow = {
+  leaveType: 'compassionate' | 'vacation';
+  studentSectionId: string;
+  studentName: string;
+  studentNumber: string;
+  sectionId: string;
+  sectionName: string;
+  level: string | null;
+  /** Vacation only — the compassionate allowance is per year. */
+  termNumber: number | null;
+  allowance: number;
+  used: number;
+  isOver: boolean;
+};
+
+export const LEAVE_TYPE_LABELS: Record<LeaveQuotaRow['leaveType'], string> = {
+  compassionate: 'Compassionate leave',
+  vacation: 'Vacation leave',
+};
+
 export type CalendarDayRow = {
   date: string;
   termId: string;
@@ -178,6 +208,7 @@ export type AttendanceDrillRow =
   | SectionAttendanceRow
   | CompassionateUsageRow
   | VacationLeaveUsageRow
+  | LeaveQuotaRow
   | CalendarDayRow;
 
 // ─── Range input ────────────────────────────────────────────────────────────
@@ -1094,13 +1125,70 @@ export function selectAtRiskVacationLeave(
     });
 }
 
+/** Both leave roll-ups as one list, one row per student per leave type. */
+export function toLeaveQuotaRows(
+  compassionate: CompassionateUsageRow[],
+  vacation: VacationLeaveUsageRow[]
+): LeaveQuotaRow[] {
+  const rows: LeaveQuotaRow[] = [];
+  for (const r of compassionate) {
+    rows.push({
+      leaveType: 'compassionate',
+      studentSectionId: r.studentSectionId,
+      studentName: r.studentName,
+      studentNumber: r.studentNumber,
+      sectionId: r.sectionId,
+      sectionName: r.sectionName,
+      level: r.level,
+      termNumber: null,
+      allowance: r.allowance,
+      used: r.used,
+      isOver: r.isOverQuota,
+    });
+  }
+  for (const r of vacation) {
+    rows.push({
+      leaveType: 'vacation',
+      studentSectionId: r.studentSectionId,
+      studentName: r.studentName,
+      studentNumber: r.studentNumber,
+      sectionId: r.sectionId,
+      sectionName: r.sectionName,
+      level: r.level,
+      termNumber: r.termNumber,
+      allowance: r.allowance,
+      used: r.usedThisTerm,
+      isOver: r.isOverTermQuota,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Over the allowance only — the predicate behind both the Insights "Over their
+ * leave quota" card and the `over-leave-quota` drill. `leaveType` narrows to
+ * one allowance (the compassionate list's "See all"). Furthest over first.
+ */
+export function selectOverLeaveQuota(
+  rows: LeaveQuotaRow[],
+  leaveType: string | null = null
+): LeaveQuotaRow[] {
+  return rows
+    .filter((r) => r.isOver && (leaveType == null || r.leaveType === leaveType))
+    .sort(
+      (a, b) =>
+        b.used - b.allowance - (a.used - a.allowance) ||
+        a.studentName.localeCompare(b.studentName)
+    );
+}
+
 // ─── Public builders ────────────────────────────────────────────────────────
 
 export type BuildDrillRowsInput = DrillRangeInput & {
   target: AttendanceDrillTarget;
   segment?: string | null;
-  // termId is required for the 'vacation-leave-quota' target (per KD #94).
-  // Other targets ignore it.
+  // termId is required for 'vacation-leave-quota' and 'over-leave-quota'
+  // (per KD #94 the vacation allowance is per term). Other targets ignore it.
   termId?: string | null;
   // School-wide VL allowance default — caller (drill API route or page)
   // fetches from school_config and passes in. Defaults to 1.
@@ -1172,6 +1260,25 @@ export async function buildAttendanceDrillRows(
       input.defaultVlAllowance ?? 1
     )) as AttendanceDrillRow[];
     return applyTargetFilter(rows, input.target, input.segment ?? null);
+  }
+  if (kind === 'leave-quota') {
+    // One scan feeds both roll-ups — the same two functions buildAllRowSets
+    // runs for the Insights card, so the list is made of the card's rows.
+    const entries = await loadEntryRows(input.ayCode);
+    const [compassionate, vacation] = await Promise.all([
+      rollupCompassionate(input.ayCode, entries),
+      rollupVacationLeave(
+        input.ayCode,
+        input.termId ?? null,
+        input.defaultVlAllowance ?? 1,
+        entries
+      ),
+    ]);
+    return applyTargetFilter(
+      toLeaveQuotaRows(compassionate, vacation) as AttendanceDrillRow[],
+      input.target,
+      input.segment ?? null
+    );
   }
   // compassionate
   const compassionate = (await rollupCompassionate(
@@ -1413,6 +1520,11 @@ export function applyTargetFilter(
       return selectAtRiskVacationLeave(
         rows as VacationLeaveUsageRow[]
       ) as AttendanceDrillRow[];
+    case 'over-leave-quota':
+      return selectOverLeaveQuota(
+        rows as LeaveQuotaRow[],
+        segment
+      ) as AttendanceDrillRow[];
     case 'attendance-by-section':
       // No narrowing: the card is a bar per section over exactly this set.
       return rows;
@@ -1447,7 +1559,8 @@ export type DrillColumnKey =
   | 'termNumber'
   | 'usedThisTerm'
   | 'remainingThisTerm'
-  | 'isOverTermQuota';
+  | 'isOverTermQuota'
+  | 'leaveType';
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   studentName: 'Student',
@@ -1474,6 +1587,7 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   usedThisTerm: 'Used this term',
   remainingThisTerm: 'Remaining this term',
   isOverTermQuota: 'Over term quota?',
+  leaveType: 'Leave type',
 };
 
 const ENTRY_COLUMNS: DrillColumnKey[] = [
@@ -1522,6 +1636,15 @@ const VACATION_LEAVE_COLUMNS: DrillColumnKey[] = [
   'isOverTermQuota',
 ];
 const CALENDAR_COLUMNS: DrillColumnKey[] = ['date', 'dayType', 'label'];
+const LEAVE_QUOTA_COLUMNS: DrillColumnKey[] = [
+  'studentName',
+  'sectionName',
+  'level',
+  'leaveType',
+  'termNumber',
+  'allowance',
+  'used',
+];
 
 export function allColumnsForKind(
   kind: AttendanceDrillRowKind
@@ -1537,6 +1660,8 @@ export function allColumnsForKind(
       return COMPASSIONATE_COLUMNS;
     case 'vacation-leave':
       return VACATION_LEAVE_COLUMNS;
+    case 'leave-quota':
+      return LEAVE_QUOTA_COLUMNS;
     case 'calendar-day':
       return CALENDAR_COLUMNS;
   }
@@ -1626,6 +1751,16 @@ export function drillHeaderForTarget(
         title: segment
           ? `Vacation-leave quota — ${segment}`
           : 'Students at or over their vacation-leave quota this term',
+      };
+    case 'over-leave-quota':
+      return {
+        eyebrow: 'Leave quotas',
+        title:
+          segment === 'compassionate'
+            ? 'Students over their compassionate-leave allowance this year'
+            : segment === 'vacation'
+              ? 'Students over their vacation-leave allowance this term'
+              : 'Students over a leave allowance',
       };
     default:
       return { eyebrow: 'Drill', title: 'Attendance' };
