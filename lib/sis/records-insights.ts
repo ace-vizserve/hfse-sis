@@ -19,6 +19,7 @@ import {
   enrolledCategoryBucket,
   isMidYearJoinKind,
   isTerminalLevel,
+  levelLabelOf,
   MONTH_LABELS,
   movementLevelOf,
   movementMonthIndex,
@@ -243,95 +244,141 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Cross-AY retention
+// On-roll rows — the ONE predicate every enrolled-population loader and its
+// drill share: the year's class rows that are not withdrawn (graduated rows
+// included), inner-joined to their section + level. Counted as ROWS.
 // ──────────────────────────────────────────────────────────────────────────
 
-/**
- * Returns both a flat Set of student_numbers AND a map of
- * student_number → level label for per-level retention bucketing.
- * The level label is the canonical word-form from `levels.label`
- * (e.g. "Primary 1"), falling back to `levels.code` ("P1") if missing.
- * When a student appears in multiple sections in the same AY (mid-year
- * transfer), the first non-null level encountered is used — level is
- * stable within an AY in practice.
- */
-async function loadEnrolledStudentData(ayCode: string): Promise<{
-  studentNumbers: Set<string>;
-  levelByStudentNumber: Map<string, string>;
-}> {
-  const service = createServiceClient();
-  const { data: ay } = await service
+export type ServiceClient = ReturnType<typeof createServiceClient>;
+
+export const ON_ROLL_LEVEL_SELECT =
+  'section:sections!inner(academic_year_id, levels!inner(label, code))';
+
+export async function resolveAyId(
+  service: ServiceClient,
+  ayCode: string
+): Promise<string | null> {
+  const { data } = await service
     .from('academic_years')
     .select('id')
     .eq('ay_code', ayCode)
     .maybeSingle();
-  const ayId = (ay as { id: string } | null)?.id;
-  if (!ayId)
-    return { studentNumbers: new Set(), levelByStudentNumber: new Map() };
-
-  // Walk past the PostgREST 1000-row cap — a growing school's roster (esp. the
-  // prior AY's) can exceed it, and a silent truncation would undercount
-  // retention (the exact metric where that goes unnoticed).
-  type EnrolRow = {
-    student:
-      | { student_number: string | null }
-      | { student_number: string | null }[]
-      | null;
-    section:
-      | {
-          levels:
-            | { label: string | null; code: string }
-            | { label: string | null; code: string }[]
-            | null;
-        }
-      | {
-          levels:
-            | { label: string | null; code: string }
-            | { label: string | null; code: string }[]
-            | null;
-        }[]
-      | null;
-  };
-  const rows = await fetchAllPages<EnrolRow>((from, to) =>
-    service
-      .from('section_students')
-      .select(
-        'student:students(student_number), section:sections!inner(academic_year_id, levels!inner(label, code))'
-      )
-      .eq('section.academic_year_id', ayId)
-      .neq('enrollment_status', 'withdrawn')
-      .range(from, to)
-  );
-
-  const studentNumbers = new Set<string>();
-  const levelByStudentNumber = new Map<string, string>();
-  for (const r of rows) {
-    const s = Array.isArray(r.student) ? r.student[0] : r.student;
-    if (!s?.student_number) continue;
-    const sn = s.student_number;
-    studentNumbers.add(sn);
-    if (!levelByStudentNumber.has(sn)) {
-      const sec = Array.isArray(r.section) ? r.section[0] : r.section;
-      if (sec) {
-        const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;
-        const label = lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown';
-        levelByStudentNumber.set(sn, label);
-      }
-    }
-  }
-  return { studentNumbers, levelByStudentNumber };
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /**
- * @deprecated Use `loadEnrolledStudentData` for new callers.
- * Kept as a thin wrapper to avoid breaking `loadRecordsRetention`.
+ * Every on-roll class row of the year, past the PostgREST 1000-row cap.
+ * `select` MUST embed `section:sections!inner(academic_year_id …)` — the
+ * year filter runs on that embed.
  */
-async function loadEnrolledStudentNumbers(
-  ayCode: string
-): Promise<Set<string>> {
-  const { studentNumbers } = await loadEnrolledStudentData(ayCode);
-  return studentNumbers;
+export function fetchOnRollRows<T>(
+  service: ServiceClient,
+  ayId: string,
+  select: string
+): Promise<T[]> {
+  // `select` is a runtime string, so supabase-js cannot infer the row type —
+  // the cast names it. The builder itself is passed through untouched, so
+  // fetchAllPages still appends its `id` tie-break ORDER BY.
+  return fetchAllPages<T>(
+    (from, to) =>
+      service
+        .from('section_students')
+        .select(select)
+        .eq('section.academic_year_id', ayId)
+        .neq('enrollment_status', 'withdrawn')
+        .range(from, to) as unknown as PromiseLike<{
+        data: T[] | null;
+        error: { message: string } | null;
+      }>
+  );
 }
+
+type LevelEmbedRow = { label: string | null; code: string };
+export type OnRollSectionEmbed = {
+  id?: string;
+  academic_year_id?: string;
+  name?: string | null;
+  levels: LevelEmbedRow | LevelEmbedRow[] | null;
+};
+export type OnRollRow = {
+  section: OnRollSectionEmbed | OnRollSectionEmbed[] | null;
+};
+
+export function sectionOf(r: OnRollRow): OnRollSectionEmbed | null {
+  return Array.isArray(r.section) ? (r.section[0] ?? null) : r.section;
+}
+
+/** Enrolled headcount: class rows per level label (Insights §1). */
+export function headcountFromRows(rows: OnRollRow[]): RecordsHeadcount {
+  const levelCounts = new Map<string, number>();
+  for (const r of rows) {
+    const sec = sectionOf(r);
+    if (!sec) continue;
+    const label = levelLabelOf(sec.levels);
+    levelCounts.set(label, (levelCounts.get(label) ?? 0) + 1);
+  }
+  const byLevel: LevelCount[] = [...levelCounts.entries()]
+    .map(([level, count]) => ({ level, count }))
+    .sort((a, b) => a.level.localeCompare(b.level));
+  const total = byLevel.reduce((s, l) => s + l.count, 0);
+  return { total, byLevel };
+}
+
+export type EnroleeValueRow = {
+  enroleeNumber: string | null;
+  category?: string | null;
+  nationality?: string | null;
+};
+
+/** enroleeNumber → the admissions value, blanks skipped. */
+export function valueByEnroleeNumber(
+  appRows: EnroleeValueRow[],
+  key: 'category' | 'nationality'
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const a of appRows) {
+    const v = a[key];
+    if (a.enroleeNumber && v) out.set(a.enroleeNumber, v);
+  }
+  return out;
+}
+
+/** The whole year's applications table, read the way every mix loader reads it. */
+export async function fetchEnroleeValueMap(
+  service: ServiceClient,
+  ayCode: string,
+  key: 'category' | 'nationality'
+): Promise<Map<string, string>> {
+  const appRows = await fetchAllPages<EnroleeValueRow>(
+    (from, to) =>
+      service
+        .from(`${prefixFor(ayCode)}_enrolment_applications`)
+        .select(`enroleeNumber, ${key}`)
+        .range(from, to) as unknown as PromiseLike<{
+        data: EnroleeValueRow[] | null;
+        error: { message: string } | null;
+      }>
+  );
+  return valueByEnroleeNumber(appRows, key);
+}
+
+/** Nationality × level inputs: section level label + the raw enrolee's nationality. */
+export function nationalityByLevelInputs(
+  rows: Array<OnRollRow & { enrolee_number: string | null }>,
+  nationalityByEnroleeNumber: Map<string, string>
+): { level: string; nationality: string | null }[] {
+  return rows.map((r) => {
+    const en = r.enrolee_number?.trim();
+    return {
+      level: levelLabelOf(sectionOf(r)?.levels),
+      nationality: (en && nationalityByEnroleeNumber.get(en)) || null,
+    };
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cross-AY retention
+// ──────────────────────────────────────────────────────────────────────────
 
 export type Retention = {
   priorAy: string | null;
@@ -349,6 +396,133 @@ export type LevelRetentionRow = {
   didNotReturn: number;
   pct: number | null;
 };
+
+export type EnrolRow = OnRollRow & {
+  student:
+    | { student_number: string | null }
+    | { student_number: string | null }[]
+    | null;
+};
+
+export type EnrolledStudentData = {
+  studentNumbers: Set<string>;
+  levelByStudentNumber: Map<string, string>;
+};
+
+/**
+ * One entry per student_number, with the level of the first row that has a
+ * section (level is stable within an AY in practice). Rows with no student
+ * number are skipped.
+ */
+export function enrolledStudentDataFrom(rows: EnrolRow[]): EnrolledStudentData {
+  const studentNumbers = new Set<string>();
+  const levelByStudentNumber = new Map<string, string>();
+  for (const r of rows) {
+    const s = Array.isArray(r.student) ? r.student[0] : r.student;
+    if (!s?.student_number) continue;
+    const sn = s.student_number;
+    studentNumbers.add(sn);
+    if (!levelByStudentNumber.has(sn)) {
+      const sec = sectionOf(r);
+      if (sec) levelByStudentNumber.set(sn, levelLabelOf(sec.levels));
+    }
+  }
+  return { studentNumbers, levelByStudentNumber };
+}
+
+/**
+ * Returns both a flat Set of student_numbers AND a map of
+ * student_number → level label for per-level retention bucketing.
+ * The level label is the canonical word-form from `levels.label`
+ * (e.g. "Primary 1"), falling back to `levels.code` ("P1") if missing.
+ * When a student appears in multiple sections in the same AY (mid-year
+ * transfer), the first non-null level encountered is used — level is
+ * stable within an AY in practice.
+ */
+export async function loadEnrolledStudentData(
+  ayCode: string
+): Promise<EnrolledStudentData> {
+  const service = createServiceClient();
+  const ayId = await resolveAyId(service, ayCode);
+  if (!ayId)
+    return { studentNumbers: new Set(), levelByStudentNumber: new Map() };
+  const rows = await fetchOnRollRows<EnrolRow>(
+    service,
+    ayId,
+    `student:students(student_number), ${ON_ROLL_LEVEL_SELECT}`
+  );
+  return enrolledStudentDataFrom(rows);
+}
+
+export type RetentionCohortMember = {
+  studentNumber: string;
+  /** Prior-year level label; null when no level is on record. */
+  level: string | null;
+  returned: boolean;
+};
+
+/**
+ * The retention cohort: every prior-year student, marked returned when on
+ * roll in the current year. The terminal level (S4) graduates rather than
+ * leaves, so it is dropped unless `includeTerminal`. A student with no level
+ * is NOT assumed terminal.
+ */
+export function retentionCohortFrom(
+  prior: EnrolledStudentData,
+  currentNumbers: ReadonlySet<string>,
+  opts: { includeTerminal?: boolean } = {}
+): RetentionCohortMember[] {
+  const out: RetentionCohortMember[] = [];
+  for (const sn of prior.studentNumbers) {
+    const level = prior.levelByStudentNumber.get(sn) ?? null;
+    if (!opts.includeTerminal && isTerminalLevel(level ?? '')) continue;
+    out.push({ studentNumber: sn, level, returned: currentNumbers.has(sn) });
+  }
+  return out;
+}
+
+export function retentionFromCohort(
+  priorAy: string,
+  cohort: RetentionCohortMember[]
+): Retention {
+  const priorTotal = cohort.length;
+  const returned = cohort.filter((m) => m.returned).length;
+  return {
+    priorAy,
+    returned,
+    didNotReturn: priorTotal - returned,
+    priorTotal,
+    pct:
+      priorTotal === 0 ? null : Math.round((returned / priorTotal) * 1000) / 10,
+  };
+}
+
+/** Per prior-year level, worst rate first. Students with no level are skipped. */
+export function retentionByLevelFromCohort(
+  cohort: RetentionCohortMember[]
+): LevelRetentionRow[] {
+  const byLevel = new Map<string, { total: number; returned: number }>();
+  for (const m of cohort) {
+    if (m.level === null) continue;
+    const bucket = byLevel.get(m.level) ?? { total: 0, returned: 0 };
+    bucket.total += 1;
+    if (m.returned) bucket.returned += 1;
+    byLevel.set(m.level, bucket);
+  }
+  return [...byLevel.entries()]
+    .map(([level, { total, returned }]) => ({
+      level,
+      priorTotal: total,
+      returned,
+      didNotReturn: total - returned,
+      pct: total === 0 ? null : Math.round((returned / total) * 1000) / 10,
+    }))
+    .sort((a, b) => {
+      const aRate = a.pct ?? 100;
+      const bRate = b.pct ?? 100;
+      return aRate - bRate || a.level.localeCompare(b.level);
+    });
+}
 
 /**
  * Of priorAy's enrolled students, how many are also enrolled in currentAy.
@@ -371,28 +545,14 @@ async function loadRecordsRetention(
       pct: null,
     };
   }
-  const [currentNumbers, priorData] = await Promise.all([
-    loadEnrolledStudentNumbers(currentAy),
+  const [current, prior] = await Promise.all([
+    loadEnrolledStudentData(currentAy),
     loadEnrolledStudentData(priorAy),
   ]);
-  let returned = 0;
-  let priorTotal = 0;
-  for (const sn of priorData.studentNumbers) {
-    // A student with no level on record is NOT assumed terminal — counted, so
-    // the exclusion never over-reaches on missing data.
-    const level = priorData.levelByStudentNumber.get(sn) ?? '';
-    if (isTerminalLevel(level)) continue;
-    priorTotal += 1;
-    if (currentNumbers.has(sn)) returned += 1;
-  }
-  return {
+  return retentionFromCohort(
     priorAy,
-    returned,
-    didNotReturn: priorTotal - returned,
-    priorTotal,
-    pct:
-      priorTotal === 0 ? null : Math.round((returned / priorTotal) * 1000) / 10,
-  };
+    retentionCohortFrom(prior, current.studentNumbers)
+  );
 }
 
 /**
@@ -407,37 +567,15 @@ async function loadRecordsRetentionByLevel(
   priorAy: string | null
 ): Promise<LevelRetentionRow[]> {
   if (!priorAy) return [];
-  const [currentData, priorData] = await Promise.all([
+  const [current, prior] = await Promise.all([
     loadEnrolledStudentData(currentAy),
     loadEnrolledStudentData(priorAy),
   ]);
-  const currentNumbers = currentData.studentNumbers;
-  const priorLevelMap = priorData.levelByStudentNumber;
-
-  // Bucket prior-year students by their prior-year level.
-  const byLevel = new Map<string, { total: number; returned: number }>();
-  for (const [sn, level] of priorLevelMap) {
-    if (!byLevel.has(level)) byLevel.set(level, { total: 0, returned: 0 });
-    const bucket = byLevel.get(level)!;
-    bucket.total += 1;
-    if (currentNumbers.has(sn)) bucket.returned += 1;
-  }
-
-  return [...byLevel.entries()]
-    .map(([level, { total, returned }]) => ({
-      level,
-      priorTotal: total,
-      returned,
-      didNotReturn: total - returned,
-      pct: total === 0 ? null : Math.round((returned / total) * 1000) / 10,
-    }))
-    .sort((a, b) => {
-      // Sort by retention rate ascending (worst first — the levels losing most
-      // students are the most diagnostically interesting).
-      const aRate = a.pct ?? 100;
-      const bRate = b.pct ?? 100;
-      return aRate - bRate || a.level.localeCompare(b.level);
-    });
+  return retentionByLevelFromCohort(
+    retentionCohortFrom(prior, current.studentNumbers, {
+      includeTerminal: true,
+    })
+  );
 }
 
 const CACHE_TTL_SECONDS = 60;
@@ -505,57 +643,14 @@ export async function getInsightsHeadcount(
   ayCode: string
 ): Promise<RecordsHeadcount> {
   const service = createServiceClient();
-  const { data: ay } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ay as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return { total: 0, byLevel: [] };
-
-  type SsRow = {
-    section:
-      | {
-          levels:
-            | { label: string | null; code: string }
-            | { label: string | null; code: string }[]
-            | null;
-        }
-      | {
-          levels:
-            | { label: string | null; code: string }
-            | { label: string | null; code: string }[]
-            | null;
-        }[]
-      | null;
-  };
-
-  const rows = await fetchAllPages<SsRow>((from, to) =>
-    service
-      .from('section_students')
-      .select(
-        'section:sections!inner(academic_year_id, levels!inner(label, code))'
-      )
-      .eq('section.academic_year_id', ayId)
-      .neq('enrollment_status', 'withdrawn')
-      .range(from, to)
+  const rows = await fetchOnRollRows<OnRollRow>(
+    service,
+    ayId,
+    ON_ROLL_LEVEL_SELECT
   );
-
-  const levelCounts = new Map<string, number>();
-  for (const r of rows) {
-    const sec = Array.isArray(r.section) ? r.section[0] : r.section;
-    if (!sec) continue;
-    const lvl = Array.isArray(sec.levels) ? sec.levels[0] : sec.levels;
-    const label = lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown';
-    levelCounts.set(label, (levelCounts.get(label) ?? 0) + 1);
-  }
-
-  const byLevel: LevelCount[] = [...levelCounts.entries()]
-    .map(([level, count]) => ({ level, count }))
-    .sort((a, b) => a.level.localeCompare(b.level));
-
-  const total = byLevel.reduce((s, l) => s + l.count, 0);
-  return { total, byLevel };
+  return headcountFromRows(rows);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -613,40 +708,16 @@ async function loadEnrolledCategoryMixUncached(
   ayCode: string
 ): Promise<CategoryMixRow[]> {
   const service = createServiceClient();
-  const { data: ay } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ay as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return computeEnrolledCategoryMix([], new Map());
-
-  type SsRow = { enrolee_number: string | null };
-  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
-    service
-      .from('section_students')
-      .select('enrolee_number, section:sections!inner(academic_year_id)')
-      .eq('section.academic_year_id', ayId)
-      .neq('enrollment_status', 'withdrawn')
-      .range(from, to)
-  );
-
-  const prefix = prefixFor(ayCode);
-  type AppRow = { enroleeNumber: string | null; category: string | null };
-  const appRows = await fetchAllPages<AppRow>((from, to) =>
-    service
-      .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, category')
-      .range(from, to)
-  );
-
-  const categoryByEnroleeNumber = new Map<string, string>();
-  for (const a of appRows) {
-    if (a.enroleeNumber && a.category) {
-      categoryByEnroleeNumber.set(a.enroleeNumber, a.category);
-    }
-  }
-
+  const [enrolledRows, categoryByEnroleeNumber] = await Promise.all([
+    fetchOnRollRows<{ enrolee_number: string | null }>(
+      service,
+      ayId,
+      `enrolee_number, ${ON_ROLL_LEVEL_SELECT}`
+    ),
+    fetchEnroleeValueMap(service, ayCode, 'category'),
+  ]);
   return computeEnrolledCategoryMix(
     enrolledRows.map((r) => ({ enroleeNumber: r.enrolee_number })),
     categoryByEnroleeNumber
@@ -703,40 +774,16 @@ async function loadEnrolledNationalityMixUncached(
   ayCode: string
 ): Promise<NationalityMixRow[]> {
   const service = createServiceClient();
-  const { data: ay } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ay as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return computeEnrolledNationalityMix([], new Map());
-
-  type SsRow = { enrolee_number: string | null };
-  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
-    service
-      .from('section_students')
-      .select('enrolee_number, section:sections!inner(academic_year_id)')
-      .eq('section.academic_year_id', ayId)
-      .neq('enrollment_status', 'withdrawn')
-      .range(from, to)
-  );
-
-  const prefix = prefixFor(ayCode);
-  type AppRow = { enroleeNumber: string | null; nationality: string | null };
-  const appRows = await fetchAllPages<AppRow>((from, to) =>
-    service
-      .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, nationality')
-      .range(from, to)
-  );
-
-  const nationalityByEnroleeNumber = new Map<string, string>();
-  for (const a of appRows) {
-    if (a.enroleeNumber && a.nationality) {
-      nationalityByEnroleeNumber.set(a.enroleeNumber, a.nationality);
-    }
-  }
-
+  const [enrolledRows, nationalityByEnroleeNumber] = await Promise.all([
+    fetchOnRollRows<{ enrolee_number: string | null }>(
+      service,
+      ayId,
+      `enrolee_number, ${ON_ROLL_LEVEL_SELECT}`
+    ),
+    fetchEnroleeValueMap(service, ayCode, 'nationality'),
+  ]);
   return computeEnrolledNationalityMix(
     enrolledRows.map((r) => ({ enroleeNumber: r.enrolee_number })),
     nationalityByEnroleeNumber
@@ -777,59 +824,18 @@ async function loadEnrolledNationalityByLevelUncached(
   ayCode: string
 ): Promise<NationalityByLevel> {
   const service = createServiceClient();
-  const { data: ay } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('ay_code', ayCode)
-    .maybeSingle();
-  const ayId = (ay as { id: string } | null)?.id;
+  const ayId = await resolveAyId(service, ayCode);
   if (!ayId) return computeNationalityByLevel([]);
-
-  type SsRow = {
-    enrolee_number: string | null;
-    section: unknown;
-  };
-  const enrolledRows = await fetchAllPages<SsRow>((from, to) =>
-    service
-      .from('section_students')
-      .select(
-        'enrolee_number, section:sections!inner(academic_year_id, levels!inner(label, code))'
-      )
-      .eq('section.academic_year_id', ayId)
-      .neq('enrollment_status', 'withdrawn')
-      .range(from, to)
-  );
-
-  const prefix = prefixFor(ayCode);
-  type AppRow = { enroleeNumber: string | null; nationality: string | null };
-  const appRows = await fetchAllPages<AppRow>((from, to) =>
-    service
-      .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, nationality')
-      .range(from, to)
-  );
-  const nationalityByEnroleeNumber = new Map<string, string>();
-  for (const a of appRows) {
-    if (a.enroleeNumber && a.nationality) {
-      nationalityByEnroleeNumber.set(a.enroleeNumber, a.nationality);
-    }
-  }
-
+  const [enrolledRows, nationalityByEnroleeNumber] = await Promise.all([
+    fetchOnRollRows<OnRollRow & { enrolee_number: string | null }>(
+      service,
+      ayId,
+      `enrolee_number, ${ON_ROLL_LEVEL_SELECT}`
+    ),
+    fetchEnroleeValueMap(service, ayCode, 'nationality'),
+  ]);
   return computeNationalityByLevel(
-    enrolledRows.map((r) => {
-      const sec = (Array.isArray(r.section) ? r.section[0] : r.section) as {
-        levels?:
-          | { label?: string; code?: string }
-          | { label?: string; code?: string }[];
-      } | null;
-      const lvlRaw = sec?.levels;
-      const lvl = Array.isArray(lvlRaw) ? lvlRaw[0] : lvlRaw;
-      const en = r.enrolee_number?.trim();
-      return {
-        level: lvl?.label?.trim() || lvl?.code?.trim() || 'Unknown',
-        nationality: (en && nationalityByEnroleeNumber.get(en)) || null,
-      };
-    })
+    nationalityByLevelInputs(enrolledRows, nationalityByEnroleeNumber)
   );
 }
 
