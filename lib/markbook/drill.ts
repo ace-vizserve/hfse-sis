@@ -18,6 +18,7 @@ import {
   parseSubjectLevelSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
+  parseWindowedCrSegment,
 } from '@/lib/markbook/insights-drill';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
@@ -1501,11 +1502,25 @@ export function drillHeaderForTarget(
         eyebrow: 'Drill · Sheets locked',
         title: 'Locked grading sheets',
       };
-    case 'change-requests':
+    case 'change-requests': {
+      const windowed = segment ? parseWindowedCrSegment(segment) : null;
+      if (windowed) {
+        const what =
+          windowed.status === null
+            ? 'Change requests'
+            : windowed.status === 'decided'
+              ? 'Decided requests'
+              : `${windowed.status.charAt(0).toUpperCase()}${windowed.status.slice(1)} requests`;
+        return {
+          eyebrow: 'Drill · Change requests',
+          title: `${what} · last ${windowed.days} days`,
+        };
+      }
       return {
         eyebrow: 'Drill · Change requests',
         title: segment ? `Change requests · ${segment}` : 'Change requests',
       };
+    }
     case 'publication-coverage':
       return {
         eyebrow: 'Drill · Publication coverage',

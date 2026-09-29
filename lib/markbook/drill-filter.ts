@@ -6,12 +6,16 @@ import type {
   SheetRow,
 } from '@/lib/markbook/drill';
 import {
+  changeRequestWindowStart,
+  decisionMs,
+  isInChangeRequestWindow,
   isInsightsAverageRow,
   isTopBand,
   parseLevelTermSegment,
   parseSubjectLevelSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
+  parseWindowedCrSegment,
 } from '@/lib/markbook/insights-drill';
 
 // Client-safe Markbook drill-filter module. Single source of truth for two
@@ -179,8 +183,27 @@ export function applyTargetFilter(
         (r) => r.isLocked
       ) as MarkbookDrillRow[];
     }
-    case 'change-requests':
+    case 'change-requests': {
       if (!segment) return rows;
+      // Insights cards: '30d' / '30d:pending' / '30d:decided' — the rolling
+      // window getChangeRequestSummary counts over, and for 'decided' the
+      // requests its average decision time is taken over (KD #229).
+      const windowed = parseWindowedCrSegment(segment);
+      if (windowed) {
+        const since = changeRequestWindowStart(windowed.days);
+        const inWindow = (rows as ChangeRequestRow[]).filter((r) =>
+          isInChangeRequestWindow(r.requestedAt, since)
+        );
+        if (windowed.status === null) return inWindow as MarkbookDrillRow[];
+        if (windowed.status === 'decided') {
+          return inWindow.filter(
+            (r) => decisionMs(r) !== null
+          ) as MarkbookDrillRow[];
+        }
+        return inWindow.filter(
+          (r) => r.status === windowed.status
+        ) as MarkbookDrillRow[];
+      }
       // 'decided' = the set the avg-decision-time KPI averages over: any
       // request with a reviewed_at AND a terminal status. Keeps the drill
       // aligned with the headline number when the user clicks it.
@@ -196,6 +219,7 @@ export function applyTargetFilter(
       return (rows as ChangeRequestRow[]).filter(
         (r) => r.status === segment
       ) as MarkbookDrillRow[];
+    }
     case 'publication-coverage':
       if (!segment) return rows;
       if (segment === 'published') {

@@ -48,16 +48,23 @@ vi.mock('@/lib/dashboard/ay-id', () => ({
 }));
 
 import { sgToday } from '@/lib/dates';
-import { getGradeDistribution } from '@/lib/markbook/dashboard';
+import {
+  getChangeRequestSummary,
+  getGradeDistribution,
+  getSheetLockProgressByTerm,
+} from '@/lib/markbook/dashboard';
 import {
   getSubjectLevelTrend,
   getSubjectPerformanceTrend,
 } from '@/lib/markbook/compare';
 import {
   buildMarkbookDrillRows,
+  type ChangeRequestRow,
   type GradeEntryRow,
+  type SheetRow,
 } from '@/lib/markbook/drill';
 import {
+  averageDecisionHours,
   levelAverageFromEntryRows,
   levelAveragesForPeriod,
   levelTermSegment,
@@ -65,6 +72,7 @@ import {
   subjectLevelSegment,
   subjectTermSegment,
   topBandSegment,
+  windowedCrSegment,
 } from '@/lib/markbook/insights-drill';
 import {
   buildSubjectLevelPoints,
@@ -284,4 +292,78 @@ describe('subject-level-entries — term-over-term movement bars', () => {
     );
     expect(rows.some((r) => r.termNumber === 2)).toBe(false);
   });
+});
+
+describe('change-requests — the 30-day cards', () => {
+  const crRows = async (ayCode: string, segment: string) =>
+    (await buildMarkbookDrillRows({
+      ayCode,
+      target: 'change-requests',
+      segment,
+    })) as ChangeRequestRow[];
+
+  it('Change requests (30d) = every request in the window', async () => {
+    const s = await getChangeRequestSummary('AY2026', 30);
+    const rows = await crRows('AY2026', windowedCrSegment(30));
+    expect(s.total).toBe(5);
+    expect(rows.length).toBe(s.total);
+    expect(rows.map((r) => r.requestId).sort()).toEqual([
+      'cr-1',
+      'cr-2',
+      'cr-3',
+      'cr-4',
+      'cr-7',
+    ]);
+  });
+
+  it("Pending decisions = the window's pending requests", async () => {
+    const s = await getChangeRequestSummary('AY2026', 30);
+    expect(
+      (await crRows('AY2026', windowedCrSegment(30, 'pending'))).length
+    ).toBe(s.byStatus.pending);
+  });
+
+  it('Avg decision time = the average over exactly the listed requests', async () => {
+    const s = await getChangeRequestSummary('AY2026', 30);
+    const rows = await crRows('AY2026', windowedCrSegment(30, 'decided'));
+    expect(rows.map((r) => r.requestId).sort()).toEqual(['cr-2', 'cr-3']);
+    expect(averageDecisionHours(rows)).toBe(s.avgDecisionHours);
+    expect(s.avgDecisionHours).toBe(21);
+  });
+
+  it('the comparison year counts its own requests', async () => {
+    const s = await getChangeRequestSummary('AY2025', 30);
+    expect((await crRows('AY2025', windowedCrSegment(30))).length).toBe(
+      s.total
+    );
+  });
+
+  it('the dashboard\'s plain "decided" segment is unchanged', async () => {
+    const ids = (await crRows('AY2026', 'decided'))
+      .map((r) => r.requestId)
+      .sort();
+    expect(ids).toEqual(['cr-2', 'cr-3', 'cr-4']);
+  });
+});
+
+describe('term-sheet-status T<n> — "Sheets locked · per term" bars', () => {
+  it.each([
+    ['AY2026', 'ay26'],
+    ['AY2025', 'ay25'],
+  ])(
+    '%s: every sheet in the term, and the locked share matches the bar',
+    async (ayCode, ayId) => {
+      const progress = await getSheetLockProgressByTerm(ayId, ayCode);
+      expect(progress.length).toBeGreaterThan(0);
+      for (const t of progress) {
+        const rows = (await buildMarkbookDrillRows({
+          ayCode,
+          target: 'term-sheet-status',
+          segment: `T${t.termNumber}`,
+        })) as SheetRow[];
+        expect(rows.length).toBe(t.locked + t.open);
+        expect(rows.filter((r) => r.isLocked).length).toBe(t.locked);
+      }
+    }
+  );
 });
