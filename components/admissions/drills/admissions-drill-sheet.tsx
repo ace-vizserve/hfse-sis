@@ -221,7 +221,7 @@ const UNKNOWN_STATUS: StatusStyle = {
     'border-hairline bg-gradient-to-b from-muted to-muted/60 text-ink-3',
 };
 
-function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: string }) {
   const style = STATUS_STYLES[status] ?? UNKNOWN_STATUS;
   const Icon = style.icon;
   return (
