@@ -1,7 +1,7 @@
 /**
- * Rename + delete for an UNUSED catalog subject
+ * Rename (any subject's name; an unused one's code) + delete for a catalog subject
  * (PATCH/DELETE /api/sis/admin/subjects/catalog/[id], lib/sis/subjects/usage.ts),
- * and the create path saving the three per-year names with the weights
+ * and the create path saving the year description (never a per-year name) with the weights
  * (POST /api/sis/admin/subjects).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -425,12 +425,37 @@ describe('PATCH rename', () => {
     });
   });
 
-  it('refuses to rename a subject in use', async () => {
+  it('renames a subject in use (name only), audited before/after', async () => {
     db.subject_level_offerings = [{ subject_id: SUBJ }];
+    db.grading_sheets = [{ subject_id: SUBJ }];
     const res = await patch({ name: 'Typo' });
+    expect(res.status).toBe(200);
+    expect(db.subjects[0]).toMatchObject({ code: 'TYPO', name: 'Typo' });
+    expect(logAction).toHaveBeenCalledTimes(1);
+    expect(logAction.mock.calls[0][0]).toMatchObject({
+      action: 'subject.rename',
+      context: {
+        before: { code: 'TYPO', name: 'Tpyo' },
+        after: { code: 'TYPO', name: 'Typo' },
+      },
+    });
+  });
+
+  it('refuses to change the code of a subject in use', async () => {
+    db.subject_level_offerings = [{ subject_id: SUBJ }];
+    const res = await patch({ code: 'TYPO2', name: 'Typo' });
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(/already in use.*renamed\.$/);
-    expect(db.subjects[0].name).toBe('Tpyo');
+    expect((await res.json()).error).toMatch(
+      /already in use.*given a new code\.$/
+    );
+    expect(db.subjects[0]).toMatchObject({ code: 'TYPO', name: 'Tpyo' });
+    expect(logAction).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing and logs nothing when the name is unchanged', async () => {
+    const res = await patch({ name: 'Tpyo' });
+    expect(res.status).toBe(200);
+    expect(logAction).not.toHaveBeenCalled();
   });
 
   it('refuses a code another subject already has', async () => {
@@ -449,8 +474,8 @@ describe('PATCH rename', () => {
   });
 });
 
-describe('POST /api/sis/admin/subjects saves the year names', () => {
-  it('stores the three names with the weights, blank as null', async () => {
+describe('POST /api/sis/admin/subjects saves the year description only', () => {
+  it('stores the description with the weights and never the per-year names', async () => {
     db.subjects.push({
       id: '22222222-2222-4222-8222-222222222222',
       code: 'STAR',
@@ -483,10 +508,11 @@ describe('POST /api/sis/admin/subjects saves the year names', () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0].table).toBe('subject_configs');
     expect(inserts[0].values).toMatchObject({
-      display_name: 'STAR',
-      report_label: null,
       description: 'Sports, Talent, Arts and Rhythm',
       ww_weight: '0.40',
     });
+    // One subject name (2026-09-29): the per-year columns are never written.
+    expect(inserts[0].values).not.toHaveProperty('display_name');
+    expect(inserts[0].values).not.toHaveProperty('report_label');
   });
 });

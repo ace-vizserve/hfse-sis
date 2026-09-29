@@ -61,9 +61,8 @@ export type SubjectConfigFormSubject = {
   name: string;
   is_examinable: boolean;
   grading_method: GradingMethod;
-  // NO report_label here any more. It is per academic year since migration
-  // 138, so it lives on the draft below beside the other per-year fields —
-  // this type is the slice that is true in EVERY year.
+  // This type is the slice that is true in EVERY year. `name` is the
+  // subject's one name (2026-09-29) — no per-year name or report label.
 };
 
 // A `subject_configs` row is subject-scoped only (migration 080 — no level
@@ -78,14 +77,10 @@ export type SubjectConfigFormDraft = SubjectConfigFormSubject & {
   pt_max_slots: number;
   qa_max: number; // max possible QA score (default 30 per Hard Rule #1)
   reportSubjectId: string;
-  // The three per-year fields. Shown in create mode too, where they are
-  // sent with the weights instead of saved on blur (see the JSX group).
-  //
-  // display_name  — what it is CALLED this year, on every screen (137).
-  // report_label  — what the REPORT CARD calls it this year, if different (138).
-  // description   — what it IS, shown on the grading sheet page (138).
-  display_name: string | null;
-  report_label: string | null;
+  // What it IS this year, shown on the grading sheet page (138). The only
+  // per-year text left: since 2026-09-29 a subject has ONE name,
+  // `subjects.name`, edited in "Subject identity" below. The per-year
+  // display_name / report_label columns are no longer written (KD #203).
   description: string | null;
 };
 
@@ -170,28 +165,21 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   );
   const [isExaminable, setIsExaminable] = useState(initialIsExaminable);
   const [gradingMethod, setGradingMethod] = useState(initialGradingMethod);
-  // ── The three per-year text fields (migrations 137 + 138) ────────────
-  // All free text, so none can auto-save on every keystroke the way the
-  // Selects above do; in edit mode each saves on blur (create mode sends them
-  // with the weights, since there is no row to save into yet), and only when the value actually
-  // changed since its last successful save. That is tracked with a ref rather
-  // than by re-comparing against the prop, because the prop stays stale for
-  // the rest of this mount once a save succeeds — the drawer does not re-fetch
-  // until it closes and reopens.
+  // ── Name + description — free text, saved on blur ────────────────────
+  // Neither can auto-save on every keystroke the way the Selects above do;
+  // each saves on blur, and only when the value actually changed since its
+  // last successful save. That is tracked with a ref rather than by
+  // re-comparing against the prop, because the prop stays stale for the rest
+  // of this mount once a save succeeds — the drawer does not re-fetch until
+  // it closes and reopens.
   //
-  // All three write to THIS YEAR's `subject_configs` row. Nothing on this form
-  // writes a name to `subjects` any more: migration 138 moved the report label
-  // off it, because "what the report card calls this" turned out to be a
-  // per-year question exactly like the name is.
-  const initialDisplayName =
-    mode === 'edit' ? (props.draft.display_name ?? '') : '';
-  const [displayName, setDisplayName] = useState(initialDisplayName);
-  const lastSavedDisplayNameRef = useRef(initialDisplayName);
-
-  const initialReportLabel =
-    mode === 'edit' ? (props.draft.report_label ?? '') : '';
-  const [reportLabel, setReportLabel] = useState(initialReportLabel);
-  const lastSavedReportLabelRef = useRef(initialReportLabel);
+  // The NAME is the subject's one name, `subjects.name`, in every year
+  // (2026-09-29, Mr Ace: "theres too many layers for a subject name"). It
+  // saves through PATCH /catalog/[id] — in create mode too, since the
+  // subject row already exists. The DESCRIPTION is this year's
+  // `subject_configs` row (create mode sends it with the weights).
+  const [name, setName] = useState(subjectName);
+  const lastSavedNameRef = useRef(subjectName);
 
   const initialDescription =
     mode === 'edit' ? (props.draft.description ?? '') : '';
@@ -212,10 +200,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setReportSubjectId(props.draft.reportSubjectId);
       setIsExaminable(props.draft.is_examinable);
       setGradingMethod(props.draft.grading_method);
-      setDisplayName(props.draft.display_name ?? '');
-      lastSavedDisplayNameRef.current = props.draft.display_name ?? '';
-      setReportLabel(props.draft.report_label ?? '');
-      lastSavedReportLabelRef.current = props.draft.report_label ?? '';
+      setName(props.draft.name);
+      lastSavedNameRef.current = props.draft.name;
       setDescription(props.draft.description ?? '');
       lastSavedDescriptionRef.current = props.draft.description ?? '';
     } else {
@@ -230,10 +216,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setGradingMethod(props.subject.grading_method);
       // Reset so switching from an edited subject to a new one cannot carry
       // a stale value into the next mount.
-      setDisplayName('');
-      lastSavedDisplayNameRef.current = '';
-      setReportLabel('');
-      lastSavedReportLabelRef.current = '';
+      setName(props.subject.name);
+      lastSavedNameRef.current = props.subject.name;
       setDescription('');
       lastSavedDescriptionRef.current = '';
     }
@@ -261,11 +245,9 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
           academic_year_id: props.ayId,
           subject_id: subjectId,
           ...weightsPayload,
-          // Create mode has no row to save the three names into on blur, so
-          // they ride along with the weights and land in the same insert.
+          // Create mode has no row to save the description into on blur, so
+          // it rides along with the weights and lands in the same insert.
           // The route stores blank as null.
-          display_name: displayName,
-          report_label: reportLabel,
           description,
         });
 
@@ -292,7 +274,7 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       pending: `Saving weights for ${subjectCode}…`,
       success:
         mode === 'edit'
-          ? `${subjectName}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
+          ? `${lastSavedNameRef.current}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
           : `Set weights for ${subjectCode}`,
       error: (e: unknown) => (e instanceof Error ? e.message : 'Save failed'),
       onResolved: () => onSaved?.(),
@@ -337,16 +319,16 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     }
   }
 
-  // ── Grade type + grading method + report label — new in Task 2 (+
-  // ── Grade type + grading method — both modes ─────────────────────────
-  // Auto-save on change, mirroring reports-to's pattern. These two live on
+  // ── Name + grade type + grading method — both modes ──────────────────
+  // Grade type and method auto-save on change, mirroring reports-to's
+  // pattern; the name saves on blur (onNameBlur). All three live on
   // `subjects` (no AY dimension) — PATCH /catalog/[id] is the one route that
-  // reaches them; the subject_configs routes above can't. They are the only
-  // things left on this form that are true in every year at once.
+  // reaches them; the subject_configs routes above can't.
   const catalogMutation = useMutation({
     mutationFn: (patch: {
       is_examinable?: boolean;
       grading_method?: GradingMethod;
+      name?: string;
     }) =>
       apiFetch(
         `/api/sis/admin/subjects/catalog/${subjectId}`,
@@ -386,22 +368,39 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     void saveCatalogPatch({ grading_method: next });
   }
 
-  // ── Name in this academic year (migration 137) ───────────────────────
-  // Saves on blur through the same PATCH the weights use, because the name
-  // lives on the same `subject_configs` row. Two things about the payload are
-  // deliberate:
-  //
-  //   1. It sends the weights FROM THE SAVED DRAFT, not from the fields on
-  //      screen. Someone can be part-way through retyping a weight when they
-  //      tab out of the name box, and a rename must never commit a number they
-  //      hadn't finished. Sending the stored values makes this save inert on
-  //      every field but the name.
-  //   2. Because those numbers therefore always match what is stored, the
-  //      route takes its rename-only path: it writes the name, logs it, and
-  //      skips the grading-sheet resync entirely. It also leaves
-  //      `weights_confirmed` alone, so renaming a subject whose weights are
-  //      still flagged for review does not quietly mark them reviewed.
-  //
+  // The subject's one name — `subjects.name`, every year. Saved on blur; a
+  // blank box is put back rather than saved (a subject must have a name).
+  // The route writes a `subject.rename` audit row with before/after.
+  async function onNameBlur() {
+    const next = name.trim();
+    if (next === lastSavedNameRef.current) {
+      setName(next);
+      return;
+    }
+    if (!next) {
+      setName(lastSavedNameRef.current);
+      toast.error('A subject needs a name.');
+      return;
+    }
+    const before = lastSavedNameRef.current;
+    const result = await run(
+      () => catalogMutation.mutateAsync({ name: next }),
+      {
+        pending: false,
+        success: `Renamed “${before}” to “${next}”`,
+        error: (e: unknown) =>
+          e instanceof Error ? e.message : 'Could not rename',
+      }
+    );
+    if (result === undefined) {
+      setName(lastSavedNameRef.current);
+      return;
+    }
+    lastSavedNameRef.current = next;
+    setName(next);
+  }
+
+  // ── Description in this academic year (migration 138) ────────────────
   // Does NOT call onSaved() — same reasoning as the other auto-saving fields;
   // the drawer stays open while the admin carries on.
   const perYearMutation = useMutation({
@@ -419,21 +418,20 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   });
 
   /**
-   * Save one per-year text field on blur.
+   * Save the per-year description on blur.
    *
-   * Shared by all three (name, report label, description) because the awkward
-   * part is identical for each and getting it wrong is silent: the payload
-   * carries the SAVED weights from the draft, never what is currently typed in
-   * the weight boxes. Someone can be mid-edit on a weight when they tab out of
-   * a text field, and a rename must not commit a number they had not finished.
+   * The payload carries the SAVED weights from the draft, never what is
+   * currently typed in the weight boxes. Someone can be mid-edit on a weight
+   * when they tab out of a text field, and that must not commit a number they
+   * had not finished.
    *
-   * Sending the stored numbers is also what puts the route on its rename-only
+   * Sending the stored numbers is also what puts the route on its text-only
    * path — it writes the field, logs it, skips the grading-sheet resync, and
    * leaves `weights_confirmed` alone, so editing text on a subject whose
    * weights are still flagged for review does not quietly mark them reviewed.
    */
   async function savePerYearField(
-    field: 'display_name' | 'report_label' | 'description',
+    field: 'description',
     value: string,
     lastSaved: React.RefObject<string>,
     setValue: (v: string) => void,
@@ -476,32 +474,6 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     setValue(next);
   }
 
-  function onDisplayNameBlur() {
-    void savePerYearField(
-      'display_name',
-      displayName,
-      lastSavedDisplayNameRef,
-      setDisplayName,
-      (next) =>
-        next
-          ? `${subjectCode} is called “${next}” in ${ayCode}`
-          : `${subjectCode} is called “${subjectName}” again in ${ayCode}`
-    );
-  }
-
-  function onReportLabelBlur() {
-    void savePerYearField(
-      'report_label',
-      reportLabel,
-      lastSavedReportLabelRef,
-      setReportLabel,
-      (next) =>
-        next
-          ? `${subjectCode} prints as “${next}” on ${ayCode} report cards`
-          : `${subjectCode} prints under its own name on ${ayCode} report cards`
-    );
-  }
-
   function onDescriptionBlur() {
     void savePerYearField(
       'description',
@@ -524,74 +496,96 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
-        {/* What this subject is called and what it is, IN THIS YEAR — first, and
-          in its own group.
+        {/* The subject's ONE name + grade type + grading method — all on the
+          `subjects` row, so true in every academic year at once. The name
+          leads: it is what the admin opened the drawer looking at. Since
+          2026-09-29 there is no separate per-year name or report card label
+          (KD #203 update, Mr Ace: "theres too many layers for a subject
+          name"). Saved on blur through PATCH /catalog/[id], audited. */}
+        <FieldRow
+          eyebrow="Subject identity"
+          helper="Applies to this subject in every academic year, not just the one shown here."
+        >
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label
+                htmlFor={`subject-name-${subjectId}`}
+                className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground"
+              >
+                Subject name
+              </Label>
+              <Input
+                id={`subject-name-${subjectId}`}
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => void onNameBlur()}
+                maxLength={128}
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                The name on every screen and on report cards, past years
+                included. The code stays{' '}
+                <span className="font-mono font-semibold text-foreground">
+                  {subjectCode}
+                </span>
+                , so marks and weights are untouched.
+              </p>
+            </div>
 
-          None of this could sit inside "Subject identity" below: that group's
-          helper says in as many words that its fields apply to every academic
-          year, and these are the opposite claim about the same subject. The
-          school renamed MAPEH to STAR for AY2026 while AY2025 keeps saying
-          MAPEH, so the year in the eyebrow is the group's whole meaning and
-          leads.
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Grade type
+                </Label>
+                <Select
+                  value={isExaminable ? 'numeric' : 'letter'}
+                  onValueChange={(v) =>
+                    onGradeTypeChange(v as 'numeric' | 'letter')
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="numeric">Numeric</SelectItem>
+                    <SelectItem value="letter">Letter</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Grading method
+                </Label>
+                <Select
+                  value={gradingMethod}
+                  onValueChange={(v) =>
+                    onGradingMethodChange(v as GradingMethod)
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GRADING_METHOD_VALUES.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {GRADING_METHOD_LABELS[v]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </FieldRow>
 
-          The three read top to bottom as one sentence about the year: what it
-          is called, what it prints as if that differs, and what it stands for.
-
-          Shown in BOTH modes. They used to be edit-only, because each saves on
-          blur into this year's row and a subject being created has none yet —
-          which meant naming a subject for a new year took two trips into the
-          drawer. Now edit mode still saves each on blur (savePerYearField),
-          and create mode sends all three with the weights, so the row is born
-          with its names (POST /api/sis/admin/subjects). */}
+        {/* What it stands for, IN THIS YEAR — the one per-year text field.
+          Edit mode saves on blur into this year's row; create mode sends it
+          with the weights (POST /api/sis/admin/subjects). */}
         <FieldRow
           eyebrow={`In ${ayCode}`}
           helper={`Only ${ayCode} is affected. Other years keep what they already have.`}
         >
           <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Subject name
-              </Label>
-              <Input
-                type="text"
-                placeholder={subjectName}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                onBlur={onDisplayNameBlur}
-                maxLength={128}
-                aria-label={`Name for ${subjectCode} in ${ayCode}`}
-              />
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                What staff see this subject called in {ayCode}. Leave blank to
-                keep calling it &ldquo;{subjectName}&rdquo;. The subject code
-                stays{' '}
-                <span className="font-mono font-semibold text-foreground">
-                  {subjectCode}
-                </span>{' '}
-                either way, so marks, weights and past years are untouched.
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Name on the report card
-              </Label>
-              <Input
-                type="text"
-                placeholder={displayName.trim() || subjectName}
-                value={reportLabel}
-                onChange={(e) => setReportLabel(e.target.value)}
-                onBlur={onReportLabelBlur}
-                maxLength={128}
-                aria-label={`Report card name for ${subjectCode} in ${ayCode}`}
-              />
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Only fill this in if the report card should say something
-                different from the name above. Leave blank and the card uses the
-                same name every other screen does.
-              </p>
-            </div>
-
             <div className="space-y-1">
               <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 What it stands for
@@ -610,55 +604,6 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
                 opening it knows what the name means. Staff only — this never
                 appears on a report card.
               </p>
-            </div>
-          </div>
-        </FieldRow>
-
-        {/* Grade type + grading method — global to this subject, not scoped
-          to the AY on screen (subjects has no AY dimension). */}
-        <FieldRow
-          eyebrow="Subject identity"
-          helper="Applies to this subject in every academic year, not just the one shown here."
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Grade type
-              </Label>
-              <Select
-                value={isExaminable ? 'numeric' : 'letter'}
-                onValueChange={(v) =>
-                  onGradeTypeChange(v as 'numeric' | 'letter')
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="numeric">Numeric</SelectItem>
-                  <SelectItem value="letter">Letter</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Grading method
-              </Label>
-              <Select
-                value={gradingMethod}
-                onValueChange={(v) => onGradingMethodChange(v as GradingMethod)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GRADING_METHOD_VALUES.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {GRADING_METHOD_LABELS[v]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </FieldRow>

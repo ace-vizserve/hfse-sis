@@ -205,7 +205,7 @@ describe('subjectPerYearTextUnchanged', () => {
   });
 });
 
-describe('SubjectConfigUpdateSchema — display_name', () => {
+describe('SubjectConfigUpdateSchema — description, and no per-year names', () => {
   const WEIGHTS = {
     ww_weight: 40,
     pt_weight: 40,
@@ -215,45 +215,55 @@ describe('SubjectConfigUpdateSchema — display_name', () => {
     qa_max: 30,
   };
 
-  it('accepts a save with no display_name at all', () => {
+  it('drops display_name / report_label — nothing writes them since 2026-09-29', () => {
+    // One subject name (KD #203 update): the name is `subjects.name`, edited
+    // through the catalogue route. A stray per-year name is stripped here, so
+    // the route can never write it.
+    const parsed = SubjectConfigUpdateSchema.parse({
+      ...WEIGHTS,
+      display_name: 'STAR',
+      report_label: 'STAR',
+    }) as Record<string, unknown>;
+    expect('display_name' in parsed).toBe(false);
+    expect('report_label' in parsed).toBe(false);
+  });
+
+  it('accepts a save with no description at all', () => {
     const parsed = SubjectConfigUpdateSchema.parse(WEIGHTS);
     // Absent must stay absent. A `.transform()` on the optional field would
-    // turn this into `null` and clear the stored rename — the exact reason the
+    // turn this into `null` and clear the stored value — the exact reason the
     // normalisation lives in the route instead.
-    expect('display_name' in parsed && parsed.display_name !== undefined).toBe(
+    expect('description' in parsed && parsed.description !== undefined).toBe(
       false
     );
   });
 
-  it('accepts a name and trims it', () => {
+  it('accepts a description and trims it', () => {
     expect(
-      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: '  STAR  ' })
-        .display_name
-    ).toBe('STAR');
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, description: '  Arts  ' })
+        .description
+    ).toBe('Arts');
   });
 
-  it('accepts an explicit null (clear the override)', () => {
+  it('accepts an explicit null (clear it)', () => {
     expect(
-      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: null })
-        .display_name
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, description: null })
+        .description
     ).toBeNull();
   });
 
   it('leaves a blank string for the route to normalise, rather than rejecting it', () => {
-    // Migration 137's CHECK refuses a blank string, so the route turns '' into
-    // null. Rejecting here instead would make "clear the name" impossible from
-    // a text input the user simply emptied.
     expect(
-      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, display_name: '   ' })
-        .display_name
+      SubjectConfigUpdateSchema.parse({ ...WEIGHTS, description: '   ' })
+        .description
     ).toBe('');
   });
 
-  it('refuses a name longer than the column allows', () => {
+  it('refuses a description longer than the column allows', () => {
     expect(
       SubjectConfigUpdateSchema.safeParse({
         ...WEIGHTS,
-        display_name: 'x'.repeat(129),
+        description: 'x'.repeat(201),
       }).success
     ).toBe(false);
   });

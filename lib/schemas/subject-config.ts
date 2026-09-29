@@ -19,38 +19,19 @@ export const SubjectConfigUpdateSchema = z
     // per Hard Rule #1 canonical case; registrars can vary (e.g. 50 for
     // Math, 20 for Art).
     qa_max: z.number().int().min(1).max(100),
-    // What this subject is called in THIS academic year (migration 137) —
-    // MAPEH in AY2025, STAR in AY2026. NULL/absent falls back to
-    // subjects.name; see lib/sis/subjects/display-name.ts.
+    // NO display_name / report_label (2026-09-29, KD #203 update). A subject
+    // has ONE name, `subjects.name`, edited in its drawer through
+    // PATCH /catalog/[id]. The per-year columns stay in the database (every
+    // production row is null, so the resolvers fall through to the name) but
+    // nothing writes them any more; zod strips them if a caller sends them.
     //
-    // ⚠ Display only. `subjects.code` is the identity and never changes with a
-    // rename, so no code-keyed list (MAPEH_FAMILY_CODES and the 20/60/20
-    // split, MOTHER_TONGUE_SUBJECT_CODES, the deployment importer's
-    // SUBJECT_MAP) is affected by anything typed here.
-    //
-    // ⚠ Deliberately NO `.transform()` normalising '' -> null on ANY of the
-    // three text fields below: zod runs a transform on an `.optional()`
-    // field's ABSENT value too, which would turn "the caller never mentioned
-    // this field" into "clear it" and silently wipe an existing value on every
+    // ⚠ Deliberately NO `.transform()` normalising '' -> null on the text
+    // field below: zod runs a transform on an `.optional()` field's ABSENT
+    // value too, which would turn "the caller never mentioned this field"
+    // into "clear it" and silently wipe an existing value on every
     // weights-only save. The route normalises instead, where "was this key
     // present" is still knowable.
-    display_name: z
-      .string()
-      .trim()
-      .max(128, 'Keep the subject name under 128 characters')
-      .nullable()
-      .optional(),
-    // What the REPORT CARD calls this subject in this academic year
-    // (migration 138). Distinct from display_name above, which is what every
-    // other screen calls it — the two were one fallback chain until the
-    // report label leaked onto markbook screens, and keeping them apart is
-    // the point. Same no-transform reasoning as display_name.
-    report_label: z
-      .string()
-      .trim()
-      .max(128, 'Keep the report card name under 128 characters')
-      .nullable()
-      .optional(),
+    //
     // What the subject IS, in this year — "STAR" is "Sports, Talent, Arts and
     // Rhythm" (migration 138). Rendered on the grading sheet page. Longer cap
     // than the two names because it is a phrase, not a label, but still short
@@ -87,11 +68,10 @@ export const SubjectConfigCreateSchema = z
     ww_max_slots: z.number().int().min(1).max(5),
     pt_max_slots: z.number().int().min(1).max(5),
     qa_max: z.number().int().min(1).max(100),
-    // The three per-year names, saved with the weights when the year's row is
-    // first made. Same fields and limits as SubjectConfigUpdateSchema; the
-    // route stores blank as null (the DB CHECK refuses blank strings).
-    display_name: z.string().trim().max(128).nullable().optional(),
-    report_label: z.string().trim().max(128).nullable().optional(),
+    // The year's description, saved with the weights when the year's row is
+    // first made. Same limit as SubjectConfigUpdateSchema; the route stores
+    // blank as null (the DB CHECK refuses blank strings). No per-year names
+    // (2026-09-29) — see SubjectConfigUpdateSchema.
     description: z.string().trim().max(200).nullable().optional(),
   })
   .refine((v) => v.ww_weight + v.pt_weight + v.qa_weight === 100, {

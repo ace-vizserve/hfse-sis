@@ -91,8 +91,6 @@ function draftFromRow(
     pt_max_slots: cfg.pt_max_slots,
     qa_max: cfg.qa_max,
     reportSubjectId: row.reportSubjectId,
-    display_name: cfg.display_name,
-    report_label: cfg.report_label,
     description: cfg.description,
   };
 }
@@ -213,7 +211,7 @@ export function SubjectCatalogCard({
 }: {
   catalog: CatalogSubjectRow[];
   /** Subjects nothing uses yet, in any year (lib/sis/subjects/usage.ts) —
-   * the only ones offered Rename. */
+   * the only ones offered Change code. */
   unusedSubjectIds?: string[];
   /** Subjects no class uses, each with what a Delete takes with it — the
    * only ones offered Delete. */
@@ -489,7 +487,7 @@ export function SubjectCatalogCard({
                                 Edit
                               </Button>
                             </HoverHint>
-                            {/* Rename — only a subject nothing uses yet;
+                            {/* Change code — only a subject nothing uses yet;
                                 Delete — any subject no class uses (see
                                 unused-subject-actions.tsx). Renders nothing
                                 when neither applies. */}

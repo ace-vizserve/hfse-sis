@@ -61,11 +61,15 @@ function renderCreate(code: string) {
 // PercentField renders WW, PT, QA in that fixed order — no htmlFor/id
 // association to the visible label, so DOM order is the reliable query.
 function weightInputs() {
-  // The three per-year name boxes come first (shown in create mode too since
-  // 2026-09-29); the weights are the boxes after them.
+  // The subject name and the year's description come first (both modes);
+  // the weights are the boxes after them.
+  const name = screen.getByLabelText(/^subject name$/i);
   const inputs = screen
     .getAllByRole('textbox')
-    .filter((el) => !/ in AY\d{4}$/.test(el.getAttribute('aria-label') ?? ''));
+    .filter(
+      (el) =>
+        el !== name && !/ in AY\d{4}$/.test(el.getAttribute('aria-label') ?? '')
+    );
   return { ww: inputs[0], pt: inputs[1], qa: inputs[2] };
 }
 
@@ -161,23 +165,15 @@ describe('SubjectConfigForm (create mode — DepEd default weights)', () => {
 });
 
 /**
- * Edit mode — the per-year subject name (migration 137).
+ * The subject's ONE name (2026-09-29, KD #203 update).
  *
- * The school renamed MAPEH to STAR for AY2026 and AY2025 must keep saying
- * MAPEH, so this box writes to THIS year's subject_configs row and nothing
- * else. Two behaviours are pinned because both fail silently:
- *
- *   • The save carries the SAVED weights, never what is currently typed in the
- *     weight boxes. Someone can be mid-edit on a weight when they tab out of
- *     the name field, and a rename must not commit a number they had not
- *     finished. Sending the stored values is also what puts the route on its
- *     rename-only path — no grading-sheet resync, no weights_confirmed flip.
- *   • Clearing the box sends '' so the route can drop the override and go back
- *     to the catalogue name.
+ * Prefilled with the real catalogue name (not a placeholder) and saved on blur
+ * through the CATALOGUE route (`subjects.name`, every year, audited as
+ * subject.rename). There is no per-year name or report-card label any more.
  */
 const CONFIG_UUID = '33333333-3333-4333-8333-333333333333';
 
-function renderEdit(displayName: string | null) {
+function renderEdit() {
   return renderWithClient(
     <SubjectConfigForm
       mode="edit"
@@ -196,8 +192,6 @@ function renderEdit(displayName: string | null) {
         pt_max_slots: 5,
         qa_max: 30,
         reportSubjectId: SUBJECT_UUID,
-        display_name: displayName,
-        report_label: null,
         description: null,
       }}
       subjects={[]}
@@ -205,131 +199,142 @@ function renderEdit(displayName: string | null) {
   );
 }
 
-// ANCHORED. "Report card name for MAPEH in AY2026" also contains "name for
-// MAPEH in AY2026", so an unanchored pattern matches two inputs and the query
-// throws rather than picking one.
 function nameBox() {
-  return screen.getByLabelText(/^name for MAPEH in AY2026$/i);
-}
-
-function reportLabelBox() {
-  return screen.getByLabelText(/^report card name for MAPEH in AY2026$/i);
+  return screen.getByLabelText(/^subject name$/i);
 }
 
 function descriptionBox() {
   return screen.getByLabelText(/^description for MAPEH in AY2026$/i);
 }
 
-// EDIT mode renders THREE free-text fields ahead of the weights — the "In
-// AY2026" group: subject name, name on the report card, and what it stands
-// for. So the weights start three further along than in create mode.
-//
-// (Getting this wrong is not subtle in a good way: an earlier version of this
-// helper typed a weight into the report-label box and saved it to the
-// catalogue route. Positional queries are used because PercentField's visible
-// label has no htmlFor/id association to its input.)
-function editWeightInputs() {
-  const inputs = screen.getAllByRole('textbox');
-  return { ww: inputs[3], pt: inputs[4], qa: inputs[5] };
-}
-
-describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
-  it('starts blank when the subject has no per-year name, showing the catalogue name as the placeholder', () => {
-    renderEdit(null);
-    expect(nameBox()).toHaveValue('');
-    expect(nameBox()).toHaveAttribute('placeholder', 'MAPEH');
+describe('SubjectConfigForm — one subject name', () => {
+  it('shows the catalogue name as the value, not a placeholder', () => {
+    renderEdit();
+    expect(nameBox()).toHaveValue('MAPEH');
+    expect(nameBox()).not.toHaveAttribute('placeholder');
   });
 
-  it('seeds from the stored name when one is already set', () => {
-    renderEdit('STAR');
-    expect(nameBox()).toHaveValue('STAR');
+  it('has no per-year name or report card label box', () => {
+    renderEdit();
+    expect(screen.queryByLabelText(/report card name/i)).toBeNull();
+    expect(screen.queryByLabelText(/^name for MAPEH in/i)).toBeNull();
   });
 
-  it('saves on blur, sending the SAVED weights rather than what is typed in the weight boxes', async () => {
+  it('saves a rename on blur to the catalogue route, name only', async () => {
     const user = userEvent.setup();
     const fetchSpy = stubFetch(() =>
       Promise.resolve(jsonResponse({ ok: true }))
     );
-    renderEdit(null);
+    renderEdit();
 
-    // Half-finished weight edit — 7 alone does not sum to 100 and was never
-    // saved. It must not ride along with the rename.
-    const { ww } = editWeightInputs();
-    await user.clear(ww);
-    await user.type(ww, '7');
-    expect(ww).toHaveValue('7');
-
+    await user.clear(nameBox());
     await user.type(nameBox(), 'STAR');
     await user.tab();
 
     await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
     const [url, init] = writeCalls(fetchSpy)[0];
-    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
+    expect(url).toBe(`/api/sis/admin/subjects/catalog/${SUBJECT_UUID}`);
     expect((init as RequestInit).method).toBe('PATCH');
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toMatchObject({
-      display_name: 'STAR',
-      ww_weight: 20,
-      pt_weight: 60,
-      qa_weight: 20,
-      ww_max_slots: 5,
-      pt_max_slots: 5,
-      qa_max: 30,
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      name: 'STAR',
     });
   });
 
-  it('sends an empty name when the box is cleared, so the override is dropped', async () => {
+  it('does not call the API when the name was not changed', async () => {
     const user = userEvent.setup();
     const fetchSpy = stubFetch(() =>
       Promise.resolve(jsonResponse({ ok: true }))
     );
-    renderEdit('STAR');
-
-    await user.clear(nameBox());
-    await user.tab();
-
-    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
-    const [, init] = writeCalls(fetchSpy)[0];
-    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
-      display_name: '',
-    });
-  });
-
-  it('does not call the API when the name was not touched', async () => {
-    const user = userEvent.setup();
-    const fetchSpy = stubFetch(() =>
-      Promise.resolve(jsonResponse({ ok: true }))
-    );
-    renderEdit('STAR');
+    renderEdit();
 
     await user.click(nameBox());
     await user.tab();
 
-    // No WRITE. The drawer does read the per-term weights on open, and that is
-    // not what this test is about — an untouched name must not SAVE anything.
     expect(writeCalls(fetchSpy)).toHaveLength(0);
+  });
+
+  it('puts a cleared name back instead of saving a blank', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit();
+
+    await user.clear(nameBox());
+    await user.tab();
+
+    expect(nameBox()).toHaveValue('MAPEH');
+    expect(writeCalls(fetchSpy)).toHaveLength(0);
+    expect(toastError).toHaveBeenCalled();
   });
 
   it('puts the box back to the saved name when the save fails', async () => {
     const user = userEvent.setup();
     stubFetch(() => Promise.resolve(jsonResponse({ error: 'nope' }, 500)));
-    renderEdit('STAR');
+    renderEdit();
 
     await user.clear(nameBox());
     await user.type(nameBox(), 'Rhythm');
     await user.tab();
 
-    await waitFor(() => expect(nameBox()).toHaveValue('STAR'));
+    await waitFor(() => expect(nameBox()).toHaveValue('MAPEH'));
   });
 
-  it('is offered in create mode too, and saved with the weights', async () => {
+  it('is offered in create mode too, saved straight to the catalogue', async () => {
     const user = userEvent.setup();
     const fetchSpy = stubFetch(() =>
       Promise.resolve(jsonResponse({ ok: true, id: 'cfg-new' }))
     );
     renderCreate('MAPEH');
 
-    await user.type(screen.getByLabelText(/^name for MAPEH in/i), 'STAR');
+    expect(nameBox()).toHaveValue('MAPEH');
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'STAR');
+    await user.tab();
+
+    await waitFor(() => expect(writeCalls(fetchSpy)).toHaveLength(1));
+    const [url] = writeCalls(fetchSpy)[0] as [string, RequestInit];
+    expect(url).toBe(`/api/sis/admin/subjects/catalog/${SUBJECT_UUID}`);
+  });
+});
+
+/**
+ * The year's description (migration 138) — the one per-year text field left.
+ * It saves to the per-year config route; a field that posts to the wrong
+ * endpoint still looks like it saved.
+ */
+describe('SubjectConfigForm (description in this academic year)', () => {
+  it('saves the description on blur to the config route, with the SAVED weights', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    renderEdit();
+
+    await user.type(descriptionBox(), 'Sports, Talent, Arts and Rhythm');
+    await user.tab();
+
+    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
+    const [url, init] = writeCalls(fetchSpy)[0];
+    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({
+      description: 'Sports, Talent, Arts and Rhythm',
+      ww_weight: 20,
+      pt_weight: 60,
+      qa_weight: 20,
+    });
+    expect(body.display_name).toBeUndefined();
+    expect(body.report_label).toBeUndefined();
+  });
+
+  it('create mode sends the description with the weights, and no per-year name', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true, id: 'cfg-new' }))
+    );
+    renderCreate('MAPEH');
+
     await user.type(
       screen.getByLabelText(/^description for MAPEH in/i),
       'Sports, Talent, Arts and Rhythm'
@@ -342,86 +347,11 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
     await waitFor(() => expect(writeCalls(fetchSpy)).toHaveLength(1));
     const [url, init] = writeCalls(fetchSpy)[0] as [string, RequestInit];
     expect(url).toBe('/api/sis/admin/subjects');
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      display_name: 'STAR',
-      report_label: '',
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
       description: 'Sports, Talent, Arts and Rhythm',
     });
-  });
-});
-
-/**
- * Edit mode — the other two per-year fields (migration 138).
- *
- * `report_label` used to live on `subjects`, with no academic year on it at
- * all, and the form saved it through the CATALOGUE route. Both facts changed:
- * it is per year now, and it saves through the same subject_configs PATCH the
- * name does. `description` is new.
- *
- * The route is what these pin — a field that posts to the wrong endpoint still
- * looks like it saved.
- */
-describe('SubjectConfigForm (edit mode — report card name and description)', () => {
-  it('offers all three per-year fields, and none of them in create mode', () => {
-    renderEdit(null);
-    expect(nameBox()).toBeInTheDocument();
-    expect(reportLabelBox()).toBeInTheDocument();
-    expect(descriptionBox()).toBeInTheDocument();
-  });
-
-  it('saves the report card name to the config route, not the catalogue route', async () => {
-    const user = userEvent.setup();
-    const fetchSpy = stubFetch(() =>
-      Promise.resolve(jsonResponse({ ok: true }))
-    );
-    renderEdit(null);
-
-    await user.type(reportLabelBox(), 'Mother Tongue');
-    await user.tab();
-
-    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
-    const [url, init] = writeCalls(fetchSpy)[0];
-    // The catalogue route would be /catalog/<subjectId>. This must be the
-    // per-year config route.
-    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toMatchObject({
-      report_label: 'Mother Tongue',
-      // Saved weights ride along untouched, same as for the name.
-      ww_weight: 20,
-      pt_weight: 60,
-      qa_weight: 20,
-    });
-    // The other two per-year fields are NOT sent — an unsent field means
-    // "don't touch", and naming them here would clear them.
     expect(body.display_name).toBeUndefined();
-    expect(body.description).toBeUndefined();
-  });
-
-  it('saves the description to the config route', async () => {
-    const user = userEvent.setup();
-    const fetchSpy = stubFetch(() =>
-      Promise.resolve(jsonResponse({ ok: true }))
-    );
-    renderEdit(null);
-
-    await user.type(descriptionBox(), 'Sports, Talent, Arts and Rhythm');
-    await user.tab();
-
-    await waitFor(() => expect(writeCalls(fetchSpy).length).toBeGreaterThan(0));
-    const [url, init] = writeCalls(fetchSpy)[0];
-    expect(url).toBe(`/api/sis/admin/subjects/${CONFIG_UUID}`);
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body).toMatchObject({
-      description: 'Sports, Talent, Arts and Rhythm',
-    });
     expect(body.report_label).toBeUndefined();
-  });
-
-  it('shows the year name as the report-card placeholder, so the default is visible', () => {
-    // Leaving the report-card box blank means "print what everything else
-    // shows". The placeholder says so by BEING that value.
-    renderEdit('STAR');
-    expect(reportLabelBox()).toHaveAttribute('placeholder', 'STAR');
   });
 });

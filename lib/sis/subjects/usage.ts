@@ -6,9 +6,10 @@ export type { SubjectSetupSummary } from './setup-summary';
 
 // When can a catalog subject be renamed or deleted from Subject Setup?
 //
-// RENAME (code + name) — only a subject NOTHING uses yet: `findSubjectUsage`
-// over every reference below. Anything else keeps its code (code-keyed lists
-// match on it) and is renamed per year through subject_configs.display_name.
+// CHANGE CODE — only a subject NOTHING uses yet: `findSubjectUsage` over
+// every reference below. Anything else keeps its code (code-keyed lists
+// match on it). The NAME is not gated at all since 2026-09-29: any subject's
+// name can change, audited (PATCH /catalog/[id]).
 //
 // DELETE — any subject no CLASS uses (Mr Ace, 2026-09-29: "in use means a
 // section is using it"). A class uses it when it has a grading sheet, a

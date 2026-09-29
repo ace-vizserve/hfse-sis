@@ -21,12 +21,13 @@ import {
   type SubjectSetupSummary,
 } from '@/lib/sis/subjects/setup-summary';
 
-// Rename and Delete for a catalog subject (lib/sis/subjects/usage.ts has both
-// rules; the route enforces them again).
+// Change code and Delete for a catalog subject (lib/sis/subjects/usage.ts has
+// both rules; the route enforces them again).
 //
-// Rename — only a subject NOTHING uses yet (no weights in any year, no class,
-// no teacher): a typo being corrected. A subject in use is renamed per year
-// through "Subject name" in its edit drawer instead; its code never changes.
+// Change code — only a subject NOTHING uses yet (no weights in any year, no
+// class, no teacher): a typo being corrected. The NAME is not changed here
+// any more (2026-09-29): any subject's one name is edited in its drawer
+// ("Subject name", via Edit), so this row action is the code only.
 //
 // Delete — any subject no CLASS uses (2026-09-29). Its weights, level
 // offerings and report-card mapping go with it, and the confirm says so in
@@ -34,7 +35,7 @@ import {
 // itself. The whole setup is snapshotted into the audit log first. A subject
 // a class uses shows no Delete.
 //
-// Rename is two fields, so it happens in the row (inline); Delete cannot be
+// Change code is one field, so it happens in the row (inline); Delete cannot be
 // undone, so it asks first in a small confirm. Both are plain icon buttons
 // in the row (pencil, trash) — no menu, so nothing is nested.
 
@@ -46,7 +47,7 @@ export function SubjectCatalogMenu({
   deleteSetup,
 }: {
   subject: Subject;
-  /** Present only when the subject may be renamed. */
+  /** Present only when the subject's code may be changed. */
   onRename?: () => void;
   /** Present only when the subject may be deleted — what goes with it. */
   deleteSetup?: SubjectSetupSummary;
@@ -85,11 +86,11 @@ export function SubjectCatalogMenu({
             variant="outline"
             size="sm"
             className="h-7 px-2.5 text-xs"
-            aria-label={`Rename ${subject.name}`}
+            aria-label={`Change the code of ${subject.name}`}
             onClick={onRename}
           >
             <PencilLine className="size-3.5" />
-            Rename
+            Change code
           </Button>
         )}
         {described && (
@@ -152,7 +153,7 @@ export function SubjectCatalogMenu({
   );
 }
 
-/** The Subject cell while renaming: code + name, saved together. */
+/** The Subject cell while changing the code. The name stays as it is. */
 export function SubjectRenameInline({
   subject,
   onDone,
@@ -161,15 +162,13 @@ export function SubjectRenameInline({
   onDone: () => void;
 }) {
   const [code, setCode] = useState(subject.code);
-  const [name, setName] = useState(subject.name);
   const [busy, setBusy] = useState(false);
   const run = useWriteAction();
 
   const nextCode = code.trim().toUpperCase();
-  const nextName = name.trim();
   const codeOk = /^[A-Z0-9_-]{1,32}$/.test(nextCode);
-  const changed = nextCode !== subject.code || nextName !== subject.name;
-  const canSave = codeOk && nextName.length > 0 && changed && !busy;
+  const changed = nextCode !== subject.code;
+  const canSave = codeOk && changed && !busy;
 
   async function save() {
     if (!canSave) return;
@@ -178,11 +177,11 @@ export function SubjectRenameInline({
       () =>
         apiFetch(
           `/api/sis/admin/subjects/catalog/${subject.id}`,
-          jsonInit('PATCH', { code: nextCode, name: nextName })
+          jsonInit('PATCH', { code: nextCode })
         ),
       {
-        pending: `Renaming ${subject.name}…`,
-        success: `Renamed to ${nextName} (${nextCode})`,
+        pending: `Changing the code of ${subject.name}…`,
+        success: `${subject.name} now has the code ${nextCode}`,
         onResolved: onDone,
       }
     );
@@ -206,13 +205,9 @@ export function SubjectRenameInline({
         className="h-8 w-28 font-mono text-[12px] uppercase"
         autoFocus
       />
-      <Input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        maxLength={128}
-        aria-label="Subject name"
-        className="h-8 min-w-40 flex-1"
-      />
+      <span className="font-serif text-[14px] font-semibold text-foreground">
+        {subject.name}
+      </span>
       <Button
         type="submit"
         size="sm"

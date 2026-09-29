@@ -55,12 +55,12 @@ export async function PATCH(
     ww_max_slots,
     pt_max_slots,
     qa_max,
-    display_name,
-    report_label,
     description,
   } = parsed.data;
 
-  // Normalise the three per-year text fields HERE, not in the schema. Three
+  // Normalise the per-year description HERE (the only per-year text field
+  // written since 2026-09-29 — display_name / report_label are no longer
+  // accepted, KD #203 update), not in the schema. Three
   // states have to survive to this line and a zod `.transform()` would
   // collapse two of them:
   //   • key absent   -> undefined -> don't touch what is stored
@@ -72,8 +72,6 @@ export async function PATCH(
   const clearable = (v: string | null | undefined) =>
     v === undefined ? undefined : v === null || v.length === 0 ? null : v;
 
-  const nextDisplayName = clearable(display_name);
-  const nextReportLabel = clearable(report_label);
   const nextDescription = clearable(description);
 
   const service = createServiceClient();
@@ -81,7 +79,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('subject_configs')
     .select(
-      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, display_name, report_label, description'
+      'id, academic_year_id, subject_id, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, qa_max, weights_confirmed, description'
     )
     .eq('id', configId)
     .maybeSingle();
@@ -117,20 +115,16 @@ export async function PATCH(
   };
   const numbersUnchanged = subjectConfigUnchanged(before, submission);
 
-  // The three per-year TEXT fields are compared SEPARATELY (migrations 137 +
+  // The per-year TEXT field (description) is compared SEPARATELY (migrations 137 +
   // 138). They have to participate in the no-op decision or a text-only save
   // would be swallowed by the guard above and answered `{ ok: true }` with
   // nothing written — but they must not be folded into the same verdict,
   // because the two halves have different consequences. See
   // subjectPerYearTextUnchanged.
   const textEdits: Array<{
-    column: 'display_name' | 'report_label' | 'description';
+    column: 'description';
     next: string | null | undefined;
-  }> = [
-    { column: 'display_name', next: nextDisplayName },
-    { column: 'report_label', next: nextReportLabel },
-    { column: 'description', next: nextDescription },
-  ];
+  }> = [{ column: 'description', next: nextDescription }];
   const changedText = textEdits.filter(
     (e) => !subjectPerYearTextUnchanged(before[e.column], e.next)
   );
@@ -284,7 +278,7 @@ export async function PATCH(
       pt_max_slots,
       qa_max,
       weights_confirmed: true,
-      // Spread, not `display_name: nextDisplayName`, so each key is genuinely
+      // Spread, not `description: nextDescription`, so each key is genuinely
       // absent when the caller never sent it — writing `undefined` into the
       // payload would serialise to null and clear a stored value on every
       // weights-only save. See `clearable` above.

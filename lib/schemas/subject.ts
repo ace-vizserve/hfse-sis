@@ -75,10 +75,10 @@ export const SubjectCatalogUpdateSchema = z
     // fields that genuinely have no year: a subject either is examinable or is
     // not, in every year at once.
     //
-    // Rename — code and/or name. The route accepts these ONLY for an unused
-    // subject (lib/sis/subjects/usage.ts): code is the identity every
-    // code-keyed list matches on, so renaming one in use is not a typo fix.
-    // A used subject's per-year name is display_name on subject_configs.
+    // Name — any subject, in use or not, audited as `subject.rename`
+    // (2026-09-29, Mr Ace: one name per subject, edited in its drawer).
+    // Code — ONLY an unused subject (lib/sis/subjects/usage.ts): code is the
+    // identity every code-keyed list matches on.
     code: SubjectCodeField.optional(),
     name: SubjectNameField.optional(),
   })

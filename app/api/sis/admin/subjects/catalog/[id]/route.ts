@@ -24,10 +24,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 // subject_configs, a different table. This is the Tune step's
 // SubjectConfigForm grade-type/grading-method fields' write path.
 //
-// It also renames — `code` and/or `name` — but ONLY an unused subject
-// (lib/sis/subjects/usage.ts). A subject in use keeps its code (every
-// code-keyed list matches on it) and is renamed per year through
-// subject_configs.display_name instead. DELETE below is looser (2026-09-29):
+// It also renames. The NAME of any subject, in use or not (2026-09-29 — a
+// subject has one name, edited in its drawer; every change is a
+// `subject.rename` audit row with before/after). The CODE only for an unused
+// subject (lib/sis/subjects/usage.ts) — every code-keyed list matches on it.
+// Nothing writes subject_configs.display_name any more (KD #203 update).
+// DELETE below is looser (2026-09-29):
 // it only refuses a subject a CLASS uses, and takes the rest of the setup
 // with it.
 //
@@ -84,11 +86,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'subject not found' }, { status: 404 });
   const subject = before as SubjectRecord;
 
-  const renaming =
-    (parsed.data.code !== undefined && parsed.data.code !== subject.code) ||
-    (parsed.data.name !== undefined && parsed.data.name !== subject.name);
+  const changingCode =
+    parsed.data.code !== undefined && parsed.data.code !== subject.code;
+  const changingName =
+    parsed.data.name !== undefined && parsed.data.name !== subject.name;
+  const renaming = changingCode || changingName;
 
-  if (renaming) {
+  // The NAME changes for any subject, in use or not — it is audited below
+  // (2026-09-29, Mr Ace: "you dont have to be hard on rules bro, as long as
+  // all is audit logged"). The CODE is identity, so only an unused subject's
+  // may change.
+  if (changingCode) {
     let usage: string[];
     try {
       usage = await findSubjectUsage(service, subjectId);
@@ -100,11 +108,11 @@ export async function PATCH(
     }
     if (usage.length > 0) {
       return NextResponse.json(
-        { error: subjectInUseMessage(usage, 'renamed'), usage },
+        { error: subjectInUseMessage(usage, 'given a new code'), usage },
         { status: 409 }
       );
     }
-    if (parsed.data.code !== undefined && parsed.data.code !== subject.code) {
+    {
       const { data: clash } = await service
         .from('subjects')
         .select('id')
@@ -126,10 +134,8 @@ export async function PATCH(
     patch.is_examinable = parsed.data.is_examinable;
   if (parsed.data.grading_method !== undefined)
     patch.grading_method = parsed.data.grading_method;
-  if (renaming) {
-    if (parsed.data.code !== undefined) patch.code = parsed.data.code;
-    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
-  }
+  if (changingCode) patch.code = parsed.data.code;
+  if (changingName) patch.name = parsed.data.name;
   // The report label used to be normalised here too. It moved to
   // `subject_configs` in migration 138 (per academic year).
 
