@@ -27,6 +27,7 @@ import type { Scale } from '@/lib/house-points/queries';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { EventInputSchema } from '@/lib/schemas/house-points';
+import type { HouseRow } from '@/lib/sis/houses';
 
 // "Edit event" — the same fields as "New event" (EventSetupFields), filled
 // with this event's own setup. Places keep their ids, so the route updates
@@ -37,8 +38,11 @@ import { EventInputSchema } from '@/lib/schemas/house-points';
 // the change with a 409 anyway.
 //
 // DELETE is asked INSIDE the drawer, as an inline panel, never as a dialog on
-// top of it (Mr Ace: never nest dialogs). It is only offered while the event
-// has no participants; the route refuses otherwise.
+// top of it (Mr Ace: never nest dialogs). Any event can be deleted, with or
+// without participants (Mr Ace, 2026-09-29: "you dont have to be hard on
+// rules bro, as long as all is audit logged") — the route snapshots every
+// result into the one audit row it writes, so the confirm panel below states
+// exactly what disappears instead of refusing the action.
 
 export type EditableEvent = {
   id: string;
@@ -68,13 +72,48 @@ function valuesFrom(event: EditableEvent): EventFormValues {
   };
 }
 
+/** Only the houses this event actually credited, richest first — what the delete confirm names. */
+function houseLines(
+  totals: Record<string, number>,
+  houses: HouseRow[]
+): { name: string; points: number }[] {
+  return houses
+    .map((h) => ({ name: h.name, points: totals[h.id] ?? 0 }))
+    .filter((h) => h.points > 0)
+    .sort((a, b) => b.points - a.points);
+}
+
+/** Plain-English scope for the confirm panel — what the delete actually takes with it. */
+function deleteScopeText(
+  eventName: string,
+  participantCount: number,
+  lines: { name: string; points: number }[]
+): string {
+  if (participantCount === 0) {
+    return `This deletes ${eventName}. Nobody has been entered yet. The change is recorded in the audit log.`;
+  }
+  const results = participantCount === 1 ? 'result' : 'results';
+  const houseText = lines.length
+    ? ` ${lines
+        .map((h, i) =>
+          i === 0 ? `${h.name} loses ${h.points}` : `${h.name} ${h.points}`
+        )
+        .join(', ')}.`
+    : '';
+  return `This deletes ${eventName} and its ${participantCount} ${results}.${houseText} The change is recorded in the audit log.`;
+}
+
 export function EditEventSheet({
   event,
   participantCount,
+  totals,
+  houses,
   scales,
 }: {
   event: EditableEvent;
   participantCount: number;
+  totals: Record<string, number>;
+  houses: HouseRow[];
   scales: Scale[];
 }) {
   const router = useRouter();
@@ -148,7 +187,7 @@ export function EditEventSheet({
         ),
       {
         pending: 'Deleting event…',
-        success: 'Event deleted',
+        success: `Deleted ${event.name}`,
         // This page is about to stop existing; the list is where the user
         // lands, and it renders fresh on arrival.
         refresh: false,
@@ -219,8 +258,12 @@ export function EditEventSheet({
                       Delete {event.name}?
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      The event and its rubric are removed for good. This
-                      can&rsquo;t be undone.
+                      {deleteScopeText(
+                        event.name,
+                        participantCount,
+                        houseLines(totals, houses)
+                      )}{' '}
+                      This can&rsquo;t be undone.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -249,21 +292,15 @@ export function EditEventSheet({
             )}
 
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-background px-6 py-4">
-              {hasParticipants ? (
-                <p className="max-w-56 text-xs text-muted-foreground">
-                  To delete this event, remove everyone from its sheet first.
-                </p>
-              ) : (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={busy || confirmingDelete}
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <Trash2 className="size-4" />
-                  Delete event
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={busy || confirmingDelete}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="size-4" />
+                Delete event
+              </Button>
               <div className="flex gap-2">
                 <Button
                   type="button"

@@ -119,6 +119,8 @@ export default async function HousePointsEventPage({
                   places: event.places,
                 }}
                 participantCount={participantCount}
+                totals={event.totals}
+                houses={houses}
                 scales={scales}
               />
             )}

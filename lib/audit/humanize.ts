@@ -291,6 +291,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'template.subject_config.delete': 'Template subject removed',
   'template.subject_config.bulk_delete': 'Template subjects removed',
   'subject.create': 'Subject created',
+  'subject.rename': 'Subject renamed',
+  'subject.delete': 'Subject deleted',
   'template.apply': 'Template applied',
   'school_config.update': 'School settings updated',
 
@@ -1585,11 +1587,35 @@ function templateSummary(
     // they validated, same convention as `sis.document.approve` reading
     // `rejection_reason` straight off its own route's body.
     case 'house_points.event.create':
-    case 'house_points.event.update':
-    case 'house_points.event.delete': {
+    case 'house_points.event.update': {
       const parts: string[] = [];
       const name = str(ctx.name);
       if (name) parts.push(name);
+      const type =
+        (HOUSE_POINTS_EVENT_TYPE_LABELS as Record<string, string>)[
+          str(ctx.eventType)
+        ] ?? '';
+      if (type) parts.push(type);
+      const entrant =
+        (HOUSE_POINTS_ENTRANT_KIND_LABELS as Record<string, string>)[
+          str(ctx.entrantKind)
+        ] ?? '';
+      if (entrant) parts.push(entrant);
+      const heldOn = fmtMaybeDate(ctx.heldOn);
+      if (heldOn) parts.push(heldOn);
+      return joinParts(parts);
+    }
+
+    // Any event can be deleted now, participants or not (KD #228 update) —
+    // this row is often the only surviving record of what it held, so the
+    // summary leads with the result count. `eventName` is the new key; older
+    // rows (from when delete only fired on an empty event) wrote `name`.
+    case 'house_points.event.delete': {
+      const parts: string[] = [];
+      const name = str(ctx.eventName) || str(ctx.name);
+      if (name) parts.push(name);
+      const count = numish(ctx.resultCount);
+      if (count !== null) parts.push(`${plural(count, 'result')}`);
       const type =
         (HOUSE_POINTS_EVENT_TYPE_LABELS as Record<string, string>)[
           str(ctx.eventType)

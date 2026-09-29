@@ -10,8 +10,9 @@ import {
   placesUnchanged,
   type ExistingPlaceForDiff,
 } from '@/lib/house-points/event-patch-diff';
-import { toNum } from '@/lib/house-points/queries';
+import { loadEvent, toNum, type EventDetail } from '@/lib/house-points/queries';
 import { EventPatchSchema } from '@/lib/schemas/house-points';
+import { listHouses, type HouseRow } from '@/lib/sis/houses';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // PATCH  /api/house-points/events/[eventId]
@@ -332,6 +333,76 @@ export async function PATCH(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// DELETE snapshot — Mr Ace, 2026-09-29: "you dont have to be hard on rules
+// bro, as long as all is audit logged". An event with results can be deleted
+// outright; what makes that safe is that the ONE audit row written below
+// carries enough of the event back (every result's entrant, award and
+// points, plus the rubric it was scored against) that it could be typed back
+// in by hand. `loadEvent` already coerces every `numeric` column via `toNum`
+// (see toPlace in lib/house-points/queries.ts), so nothing read from it here
+// needs re-coercing.
+
+type ResultSnapshotEntrant =
+  | { kind: 'student'; name: string; studentNumber: string; className: string }
+  | {
+      kind: 'team';
+      teamName: string;
+      members: { name: string; studentNumber: string }[];
+    }
+  | { kind: 'house'; houseName: string };
+
+type ResultSnapshot = {
+  // null when the underlying student/team/house row no longer resolves
+  // (e.g. a since-deleted team) — the award is still worth recording.
+  entrant: ResultSnapshotEntrant | null;
+  award: { label: string; points: number } | null;
+};
+
+function buildResultsSnapshot(
+  event: EventDetail,
+  houseNameById: Map<string, string>
+): ResultSnapshot[] {
+  const placesById = new Map(event.places.map((p) => [p.id, p]));
+  return event.rows.map((row) => {
+    const place = row.placeId ? (placesById.get(row.placeId) ?? null) : null;
+    const award = place ? { label: place.label, points: place.points } : null;
+
+    let entrant: ResultSnapshotEntrant | null = null;
+    if (row.kind === 'student' && row.student) {
+      entrant = {
+        kind: 'student',
+        name: row.student.name,
+        studentNumber: row.student.studentNumber,
+        className: row.student.sectionName,
+      };
+    } else if (row.kind === 'team' && row.team) {
+      entrant = {
+        kind: 'team',
+        teamName: row.team.name,
+        members: row.team.members.map((m) => ({
+          name: m.name,
+          studentNumber: m.studentNumber,
+        })),
+      };
+    } else if (row.kind === 'house' && row.houseId) {
+      const houseName = houseNameById.get(row.houseId);
+      if (houseName) entrant = { kind: 'house', houseName };
+    }
+
+    return { entrant, award };
+  });
+}
+
+function pointsByHouseName(
+  totals: Record<string, number>,
+  houses: HouseRow[]
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const h of houses) out[h.name] = totals[h.id] ?? 0;
+  return out;
+}
+
 export async function DELETE(
   _request: NextRequest,
   { params }: Ctx
@@ -349,19 +420,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 
-    step = 'check for participants';
-    const { count, error: countError } = await service
-      .from('house_point_entries')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', eventId);
-    if (countError)
-      throw new Error(`house_point_entries: ${countError.message}`);
-    if ((count ?? 0) > 0) {
-      return NextResponse.json(
-        { error: 'Remove every participant first' },
-        { status: 409 }
-      );
-    }
+    // Any event can be deleted, participants or not (KD #228 update, Mr
+    // Ace 2026-09-29) — the 409 that used to sit here is gone. What replaces
+    // it as the safety net is the snapshot below, taken BEFORE the delete.
+    step = 'load snapshot';
+    const houses = await listHouses();
+    const detail = await loadEvent(eventId, houses);
+    const houseNameById = new Map(houses.map((h) => [h.id, h.name]));
+    const results = detail ? buildResultsSnapshot(detail, houseNameById) : [];
+    const pointsByHouse = detail
+      ? pointsByHouseName(detail.totals, houses)
+      : {};
+    const placesSnapshot = (detail?.places ?? []).map((p) => ({
+      label: p.label,
+      rank: p.rank,
+      points: p.points,
+    }));
 
     step = 'delete event';
     const { error: deleteError } = await service
@@ -379,10 +453,14 @@ export async function DELETE(
       entityType: 'house_point_event',
       entityId: eventId,
       context: {
-        name: existing.name,
+        eventName: existing.name,
         eventType: existing.event_type,
         entrantKind: existing.entrant_kind,
         heldOn: existing.held_on,
+        resultCount: results.length,
+        pointsByHouse,
+        results,
+        places: placesSnapshot,
       },
     });
 
