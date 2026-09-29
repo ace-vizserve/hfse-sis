@@ -403,7 +403,7 @@ export async function loadScales(): Promise<Scale[]>;
     - When `places` is present: upsert the places carrying an `id` that belongs to this event, insert those without one, and delete the omitted ones. **If an omitted place is referenced by an entry's `place_id`, return 409** "A student already has that placement. Change their placement first."
     - Switching `placement_mode` or `entrant_kind` while the event has entries → 409 "This event already has participants, so its setup can't change."
     - Audit `house_points.event.update` with a before/after of the changed fields.
-  - **DELETE /events/[eventId]:** 409 "Remove every participant first" if any entry exists. Otherwise delete it and audit `house_points.event.delete`.
+  - **DELETE /events/[eventId]:** deletes the event regardless of participants (KD #228 update, 2026-09-29 — "as long as all is audit logged"). Snapshots every result (entrant, award, points) and the rubric into the ONE `house_points.event.delete` audit row before deleting; entries/places/teams/members cascade (migration 181).
   - **PUT /scales:**
     - Delete then insert that event_type's rows (sort_order = index), in two statements with a clear error step.
     - Audit `house_points.scales.update` with before/after rows.
@@ -528,7 +528,7 @@ export async function loadScales(): Promise<Scale[]>;
 - Page:
   - The same role guard. A back link to `/records/house-points`.
   - The eyebrow is `Records · House points · {type label}`, and the h1 is the event name.
-  - For writers: "Edit event" (outline, opens `edit-event-sheet`, which reuses `EventSetupFields`, locks entrant/mode when there are participants, and has a Delete event button, destructive with an AlertDialog, only when there are no participants) and "Add students" / "Add houses".
+  - For writers: "Edit event" (outline, opens `edit-event-sheet`, which reuses `EventSetupFields`, locks entrant/mode when there are participants, and always has a Delete event button — an inline confirm panel, never a nested dialog — that deletes the event with or without participants, KD #228 update) and "Add students" / "Add houses".
   - 404 via `notFound()` when the event is missing.
 - **Header totals:** four house stat cards (as on the standings page) for this event, plus a §9.4 accent info panel listing the rubric as badges, using the medal tokens for ranks 1–3. The panel reads "The top N scores in each class are placed" (wording follows rank_within) or "Placements are picked by hand".
 - **Score sheet (student entrants):**
