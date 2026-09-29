@@ -37,7 +37,9 @@ export function RecordNotFound({
   scope?: string;
 }) {
   return (
-    <PageShell>
+    // Fills the space under the module header and centres the card in it —
+    // 12rem ≈ the AY banner + sticky header + the content area's padding.
+    <PageShell className="flex min-h-[calc(100svh-12rem)] flex-col justify-center">
       <Card className="mx-auto w-full max-w-xl">
         <CardContent className="flex flex-col items-center gap-5 px-6 py-12 text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
