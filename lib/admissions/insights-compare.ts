@@ -28,6 +28,7 @@ import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   AY_MONTH_LABELS,
+  intakeMonthIndex,
   type AyMonthLabel,
 } from '@/lib/admissions/insights-predicates';
 
@@ -86,12 +87,10 @@ export function shapeIntakeTrendPoints(
   const buckets = new Map<string, Map<number, number>>();
 
   for (const row of rows) {
-    if (!row.createdAt) continue;
-    // createdAt is a UTC ISO string; slicing to 'yyyy-MM' is safe for our
-    // month-index derivation (application submissions are SGT business-hours,
-    // so UTC vs SGT month rarely differs).
-    const monthIndex = new Date(row.createdAt).getUTCMonth(); // 0-based
-    if (monthIndex > 10) continue; // Skip December (outside HFSE AY)
+    // Shared with the `intake-month` drill (KD #229): UTC month of
+    // created_at, year ignored, December / blank / unreadable dropped.
+    const monthIndex = intakeMonthIndex(row.createdAt);
+    if (monthIndex === null) continue;
 
     if (!buckets.has(row.ayCode)) buckets.set(row.ayCode, new Map());
     const ay = buckets.get(row.ayCode)!;
@@ -157,6 +156,21 @@ export function computeIntakeTrendCutoffs(
 // Data fetcher
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The applications the intake trend counts: only those with an applicant
+ * number, because no drill can list one without it (the drill's row set is
+ * keyed on `enroleeNumber`, lib/admissions/drill.ts). Pure — exported for
+ * unit tests.
+ */
+export function intakeRowsFromApps(
+  ayCode: string,
+  apps: { enroleeNumber: string | null; created_at: string | null }[]
+): { ayCode: string; createdAt: string | null }[] {
+  return apps
+    .filter((a) => !!a.enroleeNumber)
+    .map((a) => ({ ayCode, createdAt: a.created_at }));
+}
+
 async function loadIntakeTrendByAyUncached(
   ays: AyTrendRequest[]
 ): Promise<AyTrendPoint[]> {
@@ -169,18 +183,21 @@ async function loadIntakeTrendByAyUncached(
     ays.map(async ({ ayCode }) => {
       const prefix = prefixFor(ayCode);
       const appsTable = `${prefix}_enrolment_applications`;
-      type AppDateRow = { created_at: string | null };
+      type AppDateRow = {
+        enroleeNumber: string | null;
+        created_at: string | null;
+      };
       const rows = await fetchAllPages<AppDateRow>(
         (from, to) =>
           supabase
             .from(appsTable)
-            .select('created_at')
+            .select('enroleeNumber, created_at')
             .range(from, to) as unknown as PromiseLike<{
             data: AppDateRow[] | null;
             error: { message: string } | null;
           }>
       );
-      return rows.map((r) => ({ ayCode, createdAt: r.created_at }));
+      return intakeRowsFromApps(ayCode, rows);
     })
   );
 

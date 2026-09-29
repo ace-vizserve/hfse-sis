@@ -21,6 +21,11 @@ import {
 import { isActiveFunnelStatus } from '@/lib/schemas/sis';
 import { isSlotApplicable } from '@/lib/p-files/document-config';
 import { completionBand } from '@/lib/p-files/completion-band';
+import {
+  daysToEnrol,
+  FUNNEL_STAGES,
+  hasReachedFunnelStage,
+} from '@/lib/admissions/insights-predicates';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -38,25 +43,6 @@ const CACHE_TTL_SECONDS = 600;
 function tag(ayCode: string): string[] {
   return ['admissions-dashboard', `admissions-dashboard:${ayCode}`];
 }
-
-// Canonical 7 statuses from the spec (08-admission-dashboard.md §1.1).
-// Any other value returned by the admissions DB folds into "Other" and is
-// surfaced to the user rather than silently dropped.
-const PIPELINE_STATUSES = [
-  'Submitted',
-  'Ongoing Verification',
-  'Processing',
-  'Enrolled',
-  'Enrolled (Conditional)',
-  'Withdrawn',
-  'Cancelled',
-] as const;
-type PipelineStatus = (typeof PIPELINE_STATUSES)[number];
-
-type PipelineCounts = Record<PipelineStatus, number> & {
-  Other: number;
-  total: number;
-};
 
 type StatusLite = {
   enroleeNumber: string | null;
@@ -199,31 +185,6 @@ function loadJoinedRows(ayCode: string): Promise<JoinedRow[]> {
 // Aggregators — each takes rows from loadJoinedRows and reduces them.
 // ──────────────────────────────────────────────────────────────────────────
 
-async function getPipelineCounts(ayCode: string): Promise<PipelineCounts> {
-  const rows = await loadJoinedRows(ayCode);
-  const counts: PipelineCounts = {
-    Submitted: 0,
-    'Ongoing Verification': 0,
-    Processing: 0,
-    Enrolled: 0,
-    'Enrolled (Conditional)': 0,
-    Withdrawn: 0,
-    Cancelled: 0,
-    Other: 0,
-    total: 0,
-  };
-  for (const r of rows) {
-    counts.total += 1;
-    const s = (r.applicationStatus ?? '').trim();
-    if ((PIPELINE_STATUSES as readonly string[]).includes(s)) {
-      counts[s as PipelineStatus] += 1;
-    } else {
-      counts.Other += 1;
-    }
-  }
-  return counts;
-}
-
 export type TimeToEnrollment = {
   avgDays: number;
   sampleSize: number;
@@ -247,24 +208,21 @@ export type TimeToEnrollment = {
 // timezone-agnostic so plain UTC arithmetic is correct here.
 // ──────────────────────────────────────────────────────────────────────────
 
-/** Pure helper — testable without the cache layer. */
+/** Pure helper — testable without the cache layer. Same rule as the
+ *  `avg-time` drill row (`daysToEnrol`, lib/admissions/insights-predicates.ts),
+ *  so the card's sample is exactly the list it opens (KD #229). */
 export function computeAverageTimeToEnrollment(
   rows: Pick<JoinedRow, 'applicationStatus' | 'created_at' | 'enrolledAt'>[]
 ): TimeToEnrollment {
   let total = 0;
   let n = 0;
   for (const r of rows) {
-    if (
-      r.applicationStatus !== 'Enrolled' &&
-      r.applicationStatus !== 'Enrolled (Conditional)'
-    )
-      continue;
-    if (!r.created_at || !r.enrolledAt) continue;
-    const start = Date.parse(r.created_at);
-    const end = Date.parse(r.enrolledAt);
-    if (Number.isNaN(start) || Number.isNaN(end)) continue;
-    const days = Math.round((end - start) / 86_400_000);
-    if (days < 0) continue; // guard against bad data
+    const days = daysToEnrol({
+      status: r.applicationStatus,
+      createdAt: r.created_at,
+      enrolledAt: r.enrolledAt,
+    });
+    if (days === null) continue;
     total += days;
     n += 1;
   }
@@ -295,40 +253,19 @@ export type FunnelStage = {
 };
 
 // Funnel counts are cumulative: every enrolled application also passed
-// through verification and processing, so we count a status as having reached
-// every earlier stage. That's how the spec funnel reads in practice.
-export async function getConversionFunnel(
-  ayCode: string
-): Promise<FunnelStage[]> {
-  const counts = await getPipelineCounts(ayCode);
-  const stages = [
-    {
-      stage: 'Submitted',
-      count:
-        counts.Submitted +
-        counts['Ongoing Verification'] +
-        counts.Processing +
-        counts.Enrolled +
-        counts['Enrolled (Conditional)'],
-    },
-    {
-      stage: 'Ongoing Verification',
-      count:
-        counts['Ongoing Verification'] +
-        counts.Processing +
-        counts.Enrolled +
-        counts['Enrolled (Conditional)'],
-    },
-    {
-      stage: 'Processing',
-      count:
-        counts.Processing + counts.Enrolled + counts['Enrolled (Conditional)'],
-    },
-    {
-      stage: 'Enrolled',
-      count: counts.Enrolled + counts['Enrolled (Conditional)'],
-    },
-  ];
+// through verification and processing, so a status counts toward every
+// earlier stage. The stage rule is the shared `hasReachedFunnelStage`, which
+// the `funnel-stage` drill filters with too (KD #229) — a blank or
+// unrecognised status reaches no stage, on the card and in the list.
+/** Pure — exported for unit tests. */
+export function computeConversionFunnel(
+  rows: Pick<JoinedRow, 'applicationStatus'>[]
+): FunnelStage[] {
+  const stages = FUNNEL_STAGES.map((stage) => ({
+    stage,
+    count: rows.filter((r) => hasReachedFunnelStage(r.applicationStatus, stage))
+      .length,
+  }));
   const out: FunnelStage[] = [];
   for (let i = 0; i < stages.length; i++) {
     const prev = i === 0 ? stages[i].count : stages[i - 1].count;
@@ -339,6 +276,12 @@ export async function getConversionFunnel(
     out.push({ ...stages[i], dropOffPct });
   }
   return out;
+}
+
+export async function getConversionFunnel(
+  ayCode: string
+): Promise<FunnelStage[]> {
+  return computeConversionFunnel(await loadJoinedRows(ayCode));
 }
 
 export type OutdatedRow = {
