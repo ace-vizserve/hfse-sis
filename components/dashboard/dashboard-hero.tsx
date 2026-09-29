@@ -72,8 +72,13 @@ export function DashboardHero({
   );
 }
 
-function HeroBadgeChip({ badge }: { badge: HeroBadge }) {
-  const tone = badge.tone ?? 'default';
+/**
+ * The hero badge's classes, exported so a clickable badge (the Markbook
+ * Insights top-band badge, KD #229) looks exactly like a static one.
+ */
+export function heroBadgeClassName(
+  tone: NonNullable<HeroBadge['tone']>
+): string {
   // Mint/amber carry a real semantic ("good"/"watch") — gradient wash, same
   // recipe as MetricCard's delta chip and every other state-bearing tint in
   // the app (KD #84's flat→gradient sweep: no semantic tint is ever flat).
@@ -82,7 +87,7 @@ function HeroBadgeChip({ badge }: { badge: HeroBadge }) {
   // true absence/non-signal. Default carries no color signal at all — a
   // light brand wash (matching the scopeNote chip below) reads as
   // "informational" without competing with the semantic tones.
-  const className = cn(
+  return cn(
     'h-7 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]',
     tone === 'mint' &&
       'border-brand-mint bg-gradient-to-b from-brand-mint/35 to-brand-mint/15 text-ink',
@@ -92,8 +97,14 @@ function HeroBadgeChip({ badge }: { badge: HeroBadge }) {
     tone === 'default' &&
       'border-brand-indigo-soft/50 bg-gradient-to-b from-brand-indigo/12 to-brand-indigo/4 text-brand-indigo-deep'
   );
+}
+
+function HeroBadgeChip({ badge }: { badge: HeroBadge }) {
   return (
-    <Badge variant="outline" className={className}>
+    <Badge
+      variant="outline"
+      className={heroBadgeClassName(badge.tone ?? 'default')}
+    >
       {badge.label}
     </Badge>
   );
