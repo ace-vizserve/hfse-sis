@@ -72,7 +72,11 @@ import {
   type DashboardSearchParams,
   type Delta,
 } from '@/lib/dashboard/range';
-import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
+import { compareLevelLabels } from '@/lib/sis/levels';
+import {
+  INSIGHTS_MOVEMENT_MONTHS,
+  levelShortCode,
+} from '@/lib/sis/insights-shared';
 import { getMovementEvents } from '@/lib/sis/movements';
 import {
   getEnrolledCategoryMix,
@@ -83,7 +87,6 @@ import {
   getRecordsRetentionByLevel,
   growthDelta,
   isTerminalLevel,
-  MONTH_LABELS,
   monthlyMovementSeries,
   rollupMovements,
   WITHDRAWAL_CONTROLLABILITY,
@@ -114,17 +117,7 @@ const TERM_LABELS: Record<number, string> = {
 
 // HFSE's AY calendar runs January–November (KD #13) — the monthly movement
 // chart shares this 11-column axis.
-const AY_MONTHS: string[] = MONTH_LABELS.slice(0, 11);
-
-// Level-label → short code (e.g. "Primary One" → "P1") for the compact
-// population-by-level bar axis — derived from the canonical LEVEL_LABELS map so
-// the codes can never drift from the level catalog.
-const LABEL_TO_CODE: Record<string, string> = Object.fromEntries(
-  Object.entries(LEVEL_LABELS).map(([code, label]) => [label, code])
-);
-function levelShortCode(label: string): string {
-  return LABEL_TO_CODE[label] ?? label;
-}
+const AY_MONTHS: readonly string[] = INSIGHTS_MOVEMENT_MONTHS;
 
 // Reverse lookup: humanized withdrawal-reason label → raw enum key, so each
 // reason donut slice is coloured by the SAME controllability classification

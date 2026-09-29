@@ -12,14 +12,27 @@ import {
 } from '@/lib/admissions/insights-funnel';
 import { growthDelta, type Growth } from '@/lib/dashboard/growth';
 import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
-import {
-  WITHDRAWAL_REASON_LABELS,
-  WITHDRAWAL_REASON_VALUES,
-  type WithdrawalReason,
-} from '@/lib/schemas/enrolment';
 import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 import { getLevelDistribution, type LevelCount } from '@/lib/sis/dashboard';
-import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
+import {
+  controllabilityOf,
+  enrolledCategoryBucket,
+  isMidYearJoinKind,
+  isTerminalLevel,
+  MONTH_LABELS,
+  movementLevelOf,
+  movementMonthIndex,
+  UNSPECIFIED_CATEGORY,
+  withdrawalReasonLabelOf,
+} from '@/lib/sis/insights-shared';
+
+export {
+  isTerminalLevel,
+  MONTH_LABELS,
+  TERMINAL_LEVEL_CODES,
+  WITHDRAWAL_CONTROLLABILITY,
+  type WithdrawalControllability,
+} from '@/lib/sis/insights-shared';
 import { getMovementEvents, type MovementEvent } from '@/lib/sis/movements';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -56,46 +69,6 @@ export type WithdrawalByReasonAndLevel = {
   total: number;
 };
 
-/**
- * Controllability classification for withdrawal reasons.
- * controllable = school can realistically act on it;
- * structural   = largely external, school cannot prevent.
- */
-export type WithdrawalControllability = 'controllable' | 'structural';
-
-/**
- * Maps every WITHDRAWAL_REASON_VALUES member to controllable or structural.
- * Classification:
- *   financial       → controllable (payment plans, fee concessions)
- *   disciplinary    → controllable (behavioural intervention, mediation)
- *   academic_fit    → controllable (academic support, parental engagement)
- *   transferred_other_school → structural (family choice; departure already done)
- *   family_relocation        → structural (geography; out of school's hands)
- *   health          → structural (medical — school can support but rarely change)
- *   other           → structural (catch-all; unknown cause ≠ actionable)
- *
- * NOTE: 'other' and null/Unspecified are treated as structural so the
- * "controllable %" is always conservative (never inflated by unknowns).
- */
-export const WITHDRAWAL_CONTROLLABILITY: Record<
-  WithdrawalReason,
-  WithdrawalControllability
-> = {
-  financial: 'controllable',
-  disciplinary: 'controllable',
-  academic_fit: 'controllable',
-  transferred_other_school: 'structural',
-  family_relocation: 'structural',
-  health: 'structural',
-  other: 'structural',
-} satisfies Record<WithdrawalReason, WithdrawalControllability>;
-
-// Compile-time exhaustiveness guard — if WITHDRAWAL_REASON_VALUES ever gains a
-// new member, the satisfies above will produce a type error until we classify it.
-const _exhaustive: typeof WITHDRAWAL_CONTROLLABILITY =
-  WITHDRAWAL_CONTROLLABILITY;
-void _exhaustive;
-
 export type ControllabilityBreakdown = {
   controllableCount: number;
   structuralCount: number;
@@ -125,7 +98,6 @@ export type MovementRollup = {
   lateByTerm: TermCountRow[];
 };
 
-const UNSPECIFIED = 'Unspecified';
 function bump<K>(m: Map<K, number>, k: K) {
   m.set(k, (m.get(k) ?? 0) + 1);
 }
@@ -167,15 +139,10 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
   const controllableByLabelAndLevel = new Map<string, number>(); // key = `${label}::${level}`
 
   for (const e of events) {
-    const level = (e.level ?? '').trim() || 'Unknown';
+    const level = movementLevelOf(e);
     if (e.kind === 'withdrawn') {
       counts.withdrawn += 1;
-      const reasonLabel =
-        ((e as { reasonLabel?: string | null }).reasonLabel ?? '').trim() ||
-        UNSPECIFIED;
-      const rawReason = (
-        (e as { reason?: string | null }).reason ?? ''
-      ).trim() as WithdrawalReason | '';
+      const reasonLabel = withdrawalReasonLabelOf(e);
 
       bump(wReason, reasonLabel);
       bump(wLevel, level);
@@ -184,22 +151,15 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
       if (!wReasonByLevel.has(level)) wReasonByLevel.set(level, new Map());
       bump(wReasonByLevel.get(level)!, reasonLabel);
 
-      // Controllability classification using raw enum key.
-      if (
-        rawReason &&
-        (WITHDRAWAL_REASON_VALUES as readonly string[]).includes(rawReason)
-      ) {
-        const controllability =
-          WITHDRAWAL_CONTROLLABILITY[rawReason as WithdrawalReason];
-        if (controllability === 'controllable') {
-          controllableCount += 1;
-          bump(controllableByLabel, reasonLabel);
-          bump(controllableByLabelAndLevel, `${reasonLabel}::${level}`);
-        } else {
-          structuralCount += 1;
-        }
+      // Controllability — the same classifier the withdrawals drill reads.
+      const bucket = controllabilityOf(e.reason);
+      if (bucket === 'controllable') {
+        controllableCount += 1;
+        bump(controllableByLabel, reasonLabel);
+        bump(controllableByLabelAndLevel, `${reasonLabel}::${level}`);
+      } else if (bucket === 'structural') {
+        structuralCount += 1;
       } else {
-        // No raw reason (null or unrecognized) → unspecified → structural bucket
         unspecifiedCount += 1;
       }
     } else if (e.kind === 'late-enrolled') {
@@ -285,35 +245,6 @@ export function rollupMovements(events: MovementEvent[]): MovementRollup {
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-AY retention
 // ──────────────────────────────────────────────────────────────────────────
-
-/**
- * Terminal grade codes. A prior-year student in one of these levels GRADUATED
- * — their absence the next year is completion, not attrition — so they are
- * excluded from retention entirely (both the overall rate below AND the
- * by-level breakdown on the Insights page, which imports `isTerminalLevel`).
- * Post-migration 086 the catalog is a fixed P1–P6 / S1–S4, so S4 is the only
- * terminal level; a set keeps it obvious and extensible.
- */
-export const TERMINAL_LEVEL_CODES: ReadonlySet<string> = new Set(['S4']);
-
-// Every terminal code is a real catalog key, so the mapped labels are all
-// defined — no filtering needed.
-const TERMINAL_LEVEL_LABELS: ReadonlySet<string> = new Set(
-  [...TERMINAL_LEVEL_CODES].map(
-    (code) => LEVEL_LABELS[code as keyof typeof LEVEL_LABELS]
-  )
-);
-
-/**
- * True when a level value is a terminal grade. Accepts BOTH the word-form
- * label ("Secondary 4") and the short code ("S4") because
- * `loadEnrolledStudentData` stores the label but falls back to the code when
- * `levels.label` is null — so callers can pass whichever they hold.
- */
-export function isTerminalLevel(levelValue: string): boolean {
-  const v = levelValue.trim();
-  return TERMINAL_LEVEL_CODES.has(v) || TERMINAL_LEVEL_LABELS.has(v);
-}
 
 /**
  * Returns both a flat Set of student_numbers AND a map of
@@ -661,20 +592,19 @@ export function computeEnrolledCategoryMix(
   const counts = new Map<string, number>(ENROLEE_CATEGORIES.map((c) => [c, 0]));
   let unspecified = 0;
   for (const r of enrolledRows) {
-    const en = r.enroleeNumber?.trim();
-    const cat = (en ? categoryByEnroleeNumber.get(en) : undefined)?.trim();
-    if (cat && counts.has(cat)) {
-      counts.set(cat, (counts.get(cat) ?? 0) + 1);
-    } else {
-      unspecified += 1;
-    }
+    const bucket = enrolledCategoryBucket(
+      r.enroleeNumber,
+      categoryByEnroleeNumber
+    );
+    if (bucket === UNSPECIFIED_CATEGORY) unspecified += 1;
+    else counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
   const out: CategoryMixRow[] = ENROLEE_CATEGORIES.map((category) => ({
     category,
     count: counts.get(category) ?? 0,
   }));
   if (unspecified > 0) {
-    out.push({ category: 'Unspecified', count: unspecified });
+    out.push({ category: UNSPECIFIED_CATEGORY, count: unspecified });
   }
   return out;
 }
@@ -926,21 +856,6 @@ export function getEnrolledNationalityByLevel(
 // date (yyyy-mm-dd), locale-independent.
 // ──────────────────────────────────────────────────────────────────────────
 
-export const MONTH_LABELS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
-
 /**
  * Pure: compute per-month net movement from a pre-fetched events array for
  * one AY. Returns 12 points (Jan–Dec), value = net (can be 0 or negative).
@@ -968,9 +883,9 @@ export function netMovementByMonth(
 ): AyTrendPoint[] {
   const net = new Array<number>(12).fill(0);
   for (const e of events) {
-    const monthIdx = Number(e.date.slice(5, 7)) - 1; // 0-based
-    if (monthIdx < 0 || monthIdx > 11) continue;
-    if (e.kind === 'late-enrolled' || e.kind === 're-enrolled') {
+    const monthIdx = movementMonthIndex(e.date);
+    if (monthIdx < 0) continue;
+    if (isMidYearJoinKind(e.kind)) {
       net[monthIdx] += 1;
     } else if (e.kind === 'withdrawn') {
       net[monthIdx] -= 1;
@@ -1015,9 +930,9 @@ export function monthlyMovementSeries(
   const enrollments = new Array(months.length).fill(0);
   const withdrawals = new Array(months.length).fill(0);
   for (const e of events) {
-    const monthIdx = Number(e.date.slice(5, 7)) - 1; // 0-based
+    const monthIdx = movementMonthIndex(e.date);
     if (monthIdx < 0 || monthIdx >= months.length) continue;
-    if (e.kind === 'late-enrolled' || e.kind === 're-enrolled') {
+    if (isMidYearJoinKind(e.kind)) {
       enrollments[monthIdx] += 1;
     } else if (e.kind === 'withdrawn') {
       withdrawals[monthIdx] += 1;
