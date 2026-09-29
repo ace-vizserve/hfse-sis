@@ -12,6 +12,17 @@ import {
   houseMembers,
   type BreakdownEventInput,
 } from '@/lib/house-points/house-breakdown';
+import {
+  entrantLabel,
+  entriesCsv,
+  entryRowsFor,
+  houseEventRows,
+  scoringEvents,
+  scoringStudents,
+  teamMembersLabel,
+  uniqueCategories,
+  type HouseEntryDrill,
+} from '@/lib/house-points/drill';
 import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
 
@@ -207,5 +218,113 @@ describe('buildHouseBreakdown', () => {
       students: [],
       awards: [],
     });
+  });
+});
+
+describe('house page drill rows', () => {
+  const h1 = buildHouseBreakdown(EVENTS, 'h1', HOUSES);
+
+  it('lists every award the house earned, a team once, no award-less entries', () => {
+    expect(h1.entries.map((e) => [e.id, e.kind, e.award, e.points])).toEqual([
+      ['e1', 'student', 'Gold', 10],
+      ['e2', 'student', 'Participation', 1],
+      ['t1', 'team', 'Gold', 20],
+      ['hh1', 'house', 'Gold', 5],
+    ]);
+    // The entries add up to the house total — the team is not repeated.
+    expect(h1.entries.reduce((s, e) => s + e.points, 0)).toBe(h1.total);
+    const team = h1.entries.find((e) => e.kind === 'team')!;
+    expect(team.entrant).toBe('Team 1');
+    expect(team.studentIds).toEqual(['stu-A', 'stu-B']);
+    expect(team.members.map((m) => [m.name, m.inHouse])).toEqual([
+      ['STUDENT, A', true],
+      ['STUDENT, B', true],
+      ['STUDENT, C', false],
+    ]);
+    expect(teamMembersLabel(team)).toBe(
+      'STUDENT, A (P3 Kind); STUDENT, B (P4 Hope); STUDENT, C (P3 Kind) — another house'
+    );
+    expect(entrantLabel(team, 'Red House')).toBe('Team 1 (team)');
+    expect(entrantLabel(h1.entries[3], 'Red House')).toBe(
+      'Red House (whole house)'
+    );
+  });
+
+  it('narrows entries to what was clicked', () => {
+    const ids = (drill: HouseEntryDrill) =>
+      entryRowsFor(h1.entries, drill).map((e) => e.id);
+    expect(ids({ target: 'entries' })).toEqual(['e1', 'e2', 't1', 'hh1']);
+    expect(
+      ids({ target: 'award', label: 'Gold ×3', awards: ['Gold'] })
+    ).toEqual(['e1', 't1', 'hh1']);
+    expect(
+      ids({
+        target: 'award',
+        label: 'Other',
+        awards: ['Participation', 'Gold'],
+      })
+    ).toEqual(['e1', 'e2', 't1', 'hh1']);
+    expect(ids({ target: 'event', eventId: 'ev-sprint' })).toEqual([
+      'e1',
+      'e2',
+    ]);
+    // A student's drill includes their team's award.
+    expect(ids({ target: 'student', studentId: 'stu-B' })).toEqual([
+      'e2',
+      't1',
+    ]);
+  });
+
+  it('matches the KPI counts', () => {
+    expect(scoringEvents(h1.events).map((e) => e.name)).toEqual([
+      'Relay',
+      'Sprint',
+      'Cheer',
+    ]);
+    expect(scoringStudents(h1.students).map((s) => s.name)).toEqual([
+      'STUDENT, A',
+      'STUDENT, B',
+    ]);
+  });
+
+  it("gives another house's events with its place, ties sharing", () => {
+    expect(houseEventRows(h1.eventTotals, 'h2')).toEqual([
+      {
+        eventId: 'ev-sprint',
+        name: 'Sprint',
+        heldOn: '2026-03-01',
+        points: 6,
+        place: 2,
+        houseCount: 4,
+      },
+      {
+        eventId: 'ev-relay',
+        name: 'Relay',
+        heldOn: '2026-04-01',
+        points: 20,
+        place: 1,
+        houseCount: 4,
+      },
+    ]);
+  });
+
+  it('writes the CSV with only the visible columns, in order', () => {
+    const csv = entriesCsv(
+      entryRowsFor(h1.entries, { target: 'event', eventId: 'ev-relay' }),
+      ['points', 'entrant', 'award'],
+      'Red House'
+    );
+    expect(csv.replace('﻿', '').split('\n')).toEqual([
+      'Student or team,Award,Points',
+      '"Team 1 (team): STUDENT, A (P3 Kind); STUDENT, B (P4 Hope); STUDENT, C (P3 Kind) — another house",Gold,20',
+    ]);
+  });
+
+  it('numbers colliding chart labels so each bar maps to one row', () => {
+    expect(uniqueCategories(['Relay…', 'Sprint', 'Relay…'])).toEqual([
+      'Relay…',
+      'Sprint',
+      'Relay… (2)',
+    ]);
   });
 });

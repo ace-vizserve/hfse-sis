@@ -14,11 +14,19 @@ import {
 } from 'lucide-react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
-import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
-import { DonutChart } from '@/components/dashboard/charts/donut-chart';
-import { LabeledPieChart } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { MetricCard } from '@/components/dashboard/metric-card';
+import {
+  AwardMixDrillChart,
+  EventBarsDrillChart,
+  HouseShareDrillChart,
+  StudentBarsDrillChart,
+} from '@/components/house-points/drills/chart-drill-cards';
+import {
+  HouseEntriesDrillSheet,
+  HouseEventsDrillSheet,
+  HouseStudentsDrillSheet,
+} from '@/components/house-points/drills/house-drill-sheets';
 import { HouseBreakdownTabs } from '@/components/house-points/house-breakdown-tables';
 import {
   Card,
@@ -34,6 +42,11 @@ import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { ordinal } from '@/lib/house-points/defaults';
+import {
+  scoringEvents,
+  scoringStudents,
+  uniqueCategories,
+} from '@/lib/house-points/drill';
 import {
   houseMembers,
   type HouseBreakdown,
@@ -56,6 +69,11 @@ import { cn } from '@/lib/utils';
 // By event / By student / Members tables. Reached from a house's card on
 // /records/house-points.
 //
+// Three KPI cards and all four charts open the shared DrillDownSheet, wired as
+// the Admissions dashboard does (MetricCard `drillSheet`, chart
+// `onSegmentClick`); see components/house-points/drills/. Their rows are this
+// breakdown's own, so no drill route is involved.
+//
 // Same guard as the other house-points pages (the `/records` ROUTE_ACCESS
 // row). The one write here is the Members tab's add / remove, shown to
 // ENROLMENT_PLACEMENT_WRITERS (the gate on a student's house everywhere);
@@ -76,6 +94,7 @@ const EMPTY: HouseBreakdown = {
   events: [],
   students: [],
   awards: [],
+  entries: [],
 };
 
 /** The award donut keeps at most this many slices; past it, the tail is "Other". */
@@ -235,8 +254,9 @@ export default async function HousePointsHousePage({
       : null;
 
   // ── Figures ─────────────────────────────────────────────────────────────
-  const eventsScored = breakdown.events.filter((e) => e.points > 0).length;
-  const studentsScoring = breakdown.students.filter((s) => s.points > 0);
+  const scoredEvents = scoringEvents(breakdown.events);
+  const eventsScored = scoredEvents.length;
+  const studentsScoring = scoringStudents(breakdown.students);
   const awardsWon = breakdown.awards.reduce((n, a) => n + a.count, 0);
 
   // Where this house topped an event (ties count), of those anyone scored in.
@@ -259,11 +279,23 @@ export default async function HousePointsHousePage({
   const houseShareColors = standings.map((s) =>
     houseChartColor(s.house.colourToken)
   );
+  const shareHouses = standings.map((s) => ({
+    id: s.house.id,
+    code: s.house.code,
+    name: s.house.name,
+  }));
   // Events this house entered, most points first (the breakdown's order), so
   // the ones it scored nothing in fall to the end.
-  const byEvent = breakdown.events.map((e) => ({
-    category: shorten(e.name, 24),
+  // Each bar carries its event / student id, so a click opens that one's
+  // awards; the shortened labels are numbered if two collide.
+  const eventCategories = uniqueCategories(
+    breakdown.events.map((e) => shorten(e.name, 24))
+  );
+  const byEvent = breakdown.events.map((e, i) => ({
+    category: eventCategories[i],
     current: e.points,
+    id: e.id,
+    label: e.name,
   }));
   // Donut: each award's share of the points. Past six slices the smallest
   // fold into one "Other" slice, so the ring never needs a seventh colour.
@@ -279,6 +311,7 @@ export default async function HousePointsHousePage({
     ...awardHead.map((a) => ({
       name: awardSliceName(a.label, a.count),
       value: a.points,
+      awards: [a.label],
     })),
     ...(awardTail.length > 0
       ? [
@@ -288,13 +321,21 @@ export default async function HousePointsHousePage({
               awardTail.reduce((n, a) => n + a.count, 0)
             ),
             value: awardTail.reduce((n, a) => n + a.points, 0),
+            awards: awardTail.map((a) => a.label),
           },
         ]
       : []),
   ];
-  const topStudents = studentsScoring.slice(0, 10).map((s) => ({
-    category: shorten(shortName(s.name), 24),
+  const topTen = studentsScoring.slice(0, 10);
+  const studentCategories = uniqueCategories(
+    topTen.map((s) => shorten(shortName(s.name), 24))
+  );
+  const topStudents = topTen.map((s, i) => ({
+    category: studentCategories[i],
     current: s.points,
+    id: s.studentId,
+    label: s.name,
+    studentNumber: s.studentNumber,
   }));
 
   const fileStem = `house-points-${house.code.toLowerCase()}-${selectedAy}`;
@@ -357,6 +398,17 @@ export default async function HousePointsHousePage({
             placeLabel ? `${placeLabel} houses` : `No points in ${selectedAy}`
           }
           hint="Every point this house earned this year — the same figure as on the standings."
+          drillSheet={() => (
+            <HouseEntriesDrillSheet
+              drill={{ target: 'entries' }}
+              entries={breakdown.entries}
+              houseName={house.name}
+              eyebrow="Total points"
+              title={`Every award ${house.name} earned`}
+              description={`${formatPoints(breakdown.total)} points in ${selectedAy}, award by award.`}
+              csvFilename={`${fileStem}-awards.csv`}
+            />
+          )}
         />
         <MetricCard
           label={isLeading ? 'Lead over the next house' : 'Behind the leader'}
@@ -374,6 +426,15 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
           subtext={`Top house at ${eventsWon} of ${contested.length} ${eventWord(contested.length)}`}
           hint="Events where this house earned at least one point. Top house counts ties."
+          drillSheet={() => (
+            <HouseEventsDrillSheet
+              events={scoredEvents}
+              eyebrow="Events scored in"
+              title={`Events ${house.name} scored in`}
+              description={`Every event in ${selectedAy} where ${house.name} earned at least one point.`}
+              csvFilename={`${fileStem}-events-scored.csv`}
+            />
+          )}
         />
         <MetricCard
           label="Students who earned points"
@@ -382,6 +443,15 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
           subtext={`Of ${members.length.toLocaleString('en-SG')} members · ${awardsWon.toLocaleString('en-SG')} awards won`}
           hint="Students with at least one point this year. Awards counts every award picked for the house's students, teams and house entries, Participation included."
+          drillSheet={() => (
+            <HouseStudentsDrillSheet
+              students={studentsScoring}
+              eyebrow="Students who earned points"
+              title={`${house.name}'s students with points`}
+              description="A team award counts in full for each member, so these points can add up to more than the house total."
+              csvFilename={`${fileStem}-students-scored.csv`}
+            />
+          )}
         />
       </section>
 
@@ -397,10 +467,14 @@ export default async function HousePointsHousePage({
           icon={Swords}
         >
           {anyPoints ? (
-            <LabeledPieChart
+            <HouseShareDrillChart
               data={houseShare}
               colors={houseShareColors}
-              height={220}
+              houses={shareHouses}
+              eventTotals={breakdown.eventTotals}
+              ayCode={selectedAy}
+              currentHouseId={house.id}
+              fileStem={fileStem}
             />
           ) : (
             <ChartEmpty
@@ -418,11 +492,14 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {awardMix.length > 0 ? (
-            <DonutChart
-              data={awardMix}
+            <AwardMixDrillChart
+              slices={awardMix}
               centerValue={awardsWon.toLocaleString('en-SG')}
               centerLabel="Awards"
               centerHint="Every award picked for this house's students, teams and house entries. The ring splits the house's points between them."
+              entries={breakdown.entries}
+              houseName={house.name}
+              fileStem={fileStem}
             />
           ) : (
             <ChartEmpty
@@ -442,13 +519,13 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {byEvent.length > 0 ? (
-            <ComparisonBarChart
-              data={byEvent}
-              orientation="horizontal"
-              yFormat="number"
+            <EventBarsDrillChart
+              bars={byEvent}
               height={rankedBarsHeight(byEvent.length)}
               color={fill}
-              seriesLabel="Points"
+              entries={breakdown.entries}
+              houseName={house.name}
+              fileStem={fileStem}
             />
           ) : (
             <ChartEmpty
@@ -466,13 +543,13 @@ export default async function HousePointsHousePage({
           tileClassName={tile}
         >
           {topStudents.length > 0 ? (
-            <ComparisonBarChart
-              data={topStudents}
-              orientation="horizontal"
-              yFormat="number"
+            <StudentBarsDrillChart
+              bars={topStudents}
               height={rankedBarsHeight(topStudents.length)}
               color={fill}
-              seriesLabel="Points"
+              entries={breakdown.entries}
+              houseName={house.name}
+              fileStem={fileStem}
             />
           ) : (
             <ChartEmpty

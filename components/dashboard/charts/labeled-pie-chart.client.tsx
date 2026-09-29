@@ -21,6 +21,8 @@ export type LabeledPieChartProps = {
   data: LabeledPieSlice[];
   colors?: string[];
   height?: number;
+  /** Makes each slice and legend row clickable — same behaviour as DonutChart's. */
+  onSegmentClick?: (sliceName: string) => void;
 };
 
 // Same cycle as DonutChart: the five series colours, then greys for the small
@@ -74,6 +76,7 @@ function LabeledPieChartImpl({
   data,
   colors = DEFAULT_COLORS,
   height = 260,
+  onSegmentClick,
 }: LabeledPieChartProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const sorted = [...data].sort((a, b) => b.value - a.value);
@@ -94,6 +97,14 @@ function LabeledPieChartImpl({
               label={renderSliceLabel}
               {...SEGMENT_EDGE}
               isAnimationActive={false}
+              onClick={
+                onSegmentClick
+                  ? (payload: { name?: string }) => {
+                      if (payload?.name) onSegmentClick(payload.name);
+                    }
+                  : undefined
+              }
+              style={onSegmentClick ? { cursor: 'pointer' } : undefined}
             >
               {data.map((_, i) => (
                 <Cell key={i} fill={colors[i % colors.length]} />
@@ -118,7 +129,25 @@ function LabeledPieChartImpl({
           const idx = data.findIndex((d) => d.name === slice.name);
           const pct = total > 0 ? (slice.value / total) * 100 : 0;
           return (
-            <li key={slice.name} className="flex items-center gap-3">
+            <li
+              key={slice.name}
+              className={`flex items-center gap-3${onSegmentClick ? ' cursor-pointer rounded-md transition-colors hover:bg-accent/40' : ''}`}
+              onClick={
+                onSegmentClick ? () => onSegmentClick(slice.name) : undefined
+              }
+              role={onSegmentClick ? 'button' : undefined}
+              tabIndex={onSegmentClick ? 0 : undefined}
+              onKeyDown={
+                onSegmentClick
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSegmentClick(slice.name);
+                      }
+                    }
+                  : undefined
+              }
+            >
               <span
                 className="size-2.5 shrink-0 rounded-[3px]"
                 style={{ backgroundColor: colors[idx % colors.length] }}

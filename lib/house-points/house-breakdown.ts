@@ -2,6 +2,7 @@ import {
   houseTotals,
   resolveEntries,
   sumTotals,
+  type EntrantKind,
   type EventType,
   type Place,
 } from '@/lib/house-points/compute';
@@ -60,6 +61,42 @@ export type HouseStudentLine = {
   points: number;
 };
 
+/** A team member on a team entry — `inHouse` marks this house's own members. */
+export type HouseEntryMember = {
+  studentId: string;
+  studentNumber: string;
+  name: string;
+  sectionName: string;
+  inHouse: boolean;
+};
+
+/**
+ * One award this house earned: a student's, a team's or a whole-house entry.
+ * Only entries with an award picked are listed (no award = no points). A team
+ * entry is ONE line however many of this house's students are on it — the
+ * house is credited once — and `studentIds` names those students so a
+ * student's drill can still find it.
+ */
+export type HouseEntryLine = {
+  id: string;
+  eventId: string;
+  eventName: string;
+  heldOn: string | null;
+  eventType: EventType;
+  kind: EntrantKind;
+  /** The student's or team's name; null for a whole-house entry. */
+  entrant: string | null;
+  studentNumber: string | null;
+  sectionName: string | null;
+  /** Every member of a team entry (other houses' too); [] otherwise. */
+  members: HouseEntryMember[];
+  award: string;
+  awardRank: number | null;
+  points: number;
+  /** This house's students on the entry: the entrant, or its team members. */
+  studentIds: string[];
+};
+
 export type HouseBreakdown = {
   total: number;
   /** Every house's year total (the standings figures) — for this house's place. */
@@ -74,6 +111,8 @@ export type HouseBreakdown = {
   events: HouseEventLine[];
   students: HouseStudentLine[];
   awards: AwardTally[];
+  /** Every award this house earned, event by event (the drill sheets' rows). */
+  entries: HouseEntryLine[];
 };
 
 /** Medals first (by rank), then everything else by points, then name. */
@@ -130,6 +169,7 @@ export function buildHouseBreakdown(
   const students = new Map<string, StudentAcc>();
   const ids = [...allHouseIds];
   const perEventTotals: Record<string, number>[] = [];
+  const entryLines: HouseEntryLine[] = [];
 
   for (const event of events) {
     const resolved = resolveEntries(toSheetEntries(event), event.places);
@@ -158,6 +198,46 @@ export function buildHouseBreakdown(
           : row.kind === 'team'
             ? (row.team?.members ?? [])
             : [];
+
+      if (entry.place) {
+        entryLines.push({
+          id: row.entryId,
+          eventId: event.id,
+          eventName: event.name,
+          heldOn: event.heldOn,
+          eventType: event.eventType,
+          kind: row.kind,
+          entrant:
+            row.kind === 'student'
+              ? (row.student?.name ?? null)
+              : row.kind === 'team'
+                ? (row.team?.name ?? null)
+                : null,
+          studentNumber:
+            row.kind === 'student'
+              ? (row.student?.studentNumber ?? null)
+              : null,
+          sectionName:
+            row.kind === 'student' ? (row.student?.sectionName ?? null) : null,
+          members:
+            row.kind === 'team'
+              ? (row.team?.members ?? []).map((m) => ({
+                  studentId: m.studentId,
+                  studentNumber: m.studentNumber,
+                  name: m.name,
+                  sectionName: m.sectionName,
+                  inHouse: m.houseId === houseId,
+                }))
+              : [],
+          award: entry.place.label.trim(),
+          awardRank: entry.place.rank,
+          points: entry.points,
+          studentIds: members
+            .filter((m) => m.houseId === houseId)
+            .map((m) => m.studentId),
+        });
+      }
+
       for (const m of members) {
         if (m.houseId !== houseId) continue;
         let acc = students.get(m.studentId);
@@ -219,6 +299,7 @@ export function buildHouseBreakdown(
       }))
       .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
     awards: sortedTallies(yearAwards),
+    entries: entryLines,
   };
 }
 
