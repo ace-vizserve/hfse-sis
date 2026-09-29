@@ -24,7 +24,8 @@ describe('weightBucketForSubjectCode (fractions)', () => {
     // ("Physical Education", Regular-track twin of PEH, migration 082)
     // shares the same real 20/60/20 header — confirmed during the
     // PE/PEH import-confusion correction.
-    const mapehCodes = ['MAPEH', 'CL', 'CA', 'PEH', 'PMPD', 'PESTD'];
+    // STAR replaced MAPEH from AY2026 on as its own subject (2026-09-29).
+    const mapehCodes = ['MAPEH', 'STAR', 'CL', 'CA', 'PEH', 'PMPD', 'PESTD'];
     for (const code of mapehCodes) {
       expect(weightBucketForSubjectCode(code)).toEqual({
         ww: 0.2,

@@ -91,10 +91,15 @@ export const ALIASES: Record<string, string | null> = {
   'Relief Teacher': null,
 };
 
-// The school's own words for four subjects. STAR ("Sports, Talent, Arts and
-// Rhythm") is what the timetable calls MAPEH throughout; the sheet misspells
-// the other three. Written out rather than fuzzy-matched, same reason as the
-// teacher aliases.
+// The school's own words for three subjects: the sheet misspells them.
+// Written out rather than fuzzy-matched, same reason as the teacher aliases.
+//
+// 2026-09-29: the `MAPEH: ['star']` alias is GONE. STAR ("Sports, Talent,
+// Arts and Rhythm") replaced MAPEH from AY2026 on as a real subject named
+// STAR, so a "STAR" cell now matches that subject by its own name. Keeping
+// the alias would have matched every such cell TWICE — once to STAR, once to
+// MAPEH — and proposed a MAPEH assignment in a year that no longer offers it.
+// The data move: scripts/backfill/move-ay2026-mapeh-to-star.ts.
 //
 // ⚠ "Homeroom and Values Education" is NOT here on purpose. It appears in
 // eleven cells and is not a subject — it is the form adviser's own pastoral
@@ -106,7 +111,6 @@ export const ALIASES: Record<string, string | null> = {
 // both. Neither of those two teachers has an account, so resolving it would
 // produce rows that cannot be written anyway.
 export const SUBJECT_ALIASES: Record<string, string[]> = {
-  MAPEH: ['star'],
   Mathematics: ['mathermatics'],
   'Pastoral Ministry and Personal Development': ['pastrolministry'],
   'Mother Tongue': ['mothertingue'],

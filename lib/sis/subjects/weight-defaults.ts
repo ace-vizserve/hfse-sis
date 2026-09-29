@@ -38,6 +38,12 @@ const DEFAULT_BUCKET: WeightFractions = { ww: 0.3, pt: 0.5, qa: 0.2 };
 const MATH_SCIENCE_CODES = new Set(['MATH', 'SCI']);
 const MAPEH_FAMILY_CODES = new Set([
   'MAPEH',
+  // 2026-09-29: STAR ("Sports, Talent, Arts and Rhythm") REPLACED MAPEH from
+  // AY2026 on as a real subject of its own (code STAR), no longer MAPEH with
+  // a per-year display name (KD #203). Same 20/60/20 split as the MAPEH it
+  // replaces. MAPEH stays listed for AY2025, which keeps its MAPEH grades.
+  // The data move: scripts/backfill/move-ay2026-mapeh-to-star.ts.
+  'STAR',
   'CL',
   'CA',
   'PEH',
