@@ -1,5 +1,15 @@
 import { unstable_cache } from 'next/cache';
 import { ENROLLED_STATUSES, isEnrolledStatus } from '@/lib/schemas/enrolment';
+import {
+  isMidYearJoinKind,
+  isOnRoll,
+  levelMatchesSegment,
+  MONTH_LABELS,
+  movementMonthIndex,
+  parseInsightsSegment,
+  type ControllabilityBucket,
+} from '@/lib/sis/insights-shared';
+import { LEVEL_LABELS } from '@/lib/sis/levels';
 
 import {
   STAGE_COLUMN_MAP,
@@ -66,7 +76,28 @@ export type RecordsDrillTarget =
   | 'expiring-docs'
   | 'backlog-by-document'
   | 'students-by-level'
-  | 'class-assignment-readiness';
+  | 'class-assignment-readiness'
+  // Records Insights (KD #229). Rows come from lib/sis/insights-drill-rows.ts,
+  // not buildRecordsDrillRows — see INSIGHTS_DRILL_TARGETS.
+  | 'enrolled-headcount'
+  | 'retention'
+  | 'late-enrollees'
+  | 'withdrawals'
+  | 'movement-month'
+  | 'category'
+  | 'nationality';
+
+/** Targets whose rows are built by `buildInsightsDrillRows`, not `buildRecordsDrillRows`. */
+export const INSIGHTS_DRILL_TARGETS: ReadonlySet<RecordsDrillTarget> =
+  new Set<RecordsDrillTarget>([
+    'enrolled-headcount',
+    'retention',
+    'late-enrollees',
+    'withdrawals',
+    'movement-month',
+    'category',
+    'nationality',
+  ]);
 
 // ─── Row shape ──────────────────────────────────────────────────────────────
 
@@ -104,6 +135,27 @@ export type RecordsDrillRow = {
    * count==drill) — see `applyTargetFilter`.
    */
   docSlotBuckets?: Record<string, BacklogBucketValue>;
+  // ── Records Insights fields (set only by lib/sis/insights-drill-rows.ts) ──
+  /** Withdrawal events: the reason label the rollup counts ('Unspecified' when none). */
+  withdrawalReason?: string | null;
+  /** Withdrawal events: WITHDRAWAL_CONTROLLABILITY of the raw reason. */
+  controllable?: ControllabilityBucket | null;
+  /** On-roll rows: enrolee category bucket (ENROLEE_CATEGORIES or 'Unspecified'). */
+  category?: string | null;
+  /** On-roll rows: canonical nationality, null when none on record. */
+  nationality?: string | null;
+  /** On-roll rows: the nationality pie's slice for this row (top 8, 'Other', 'Unspecified'). */
+  nationalityMixBucket?: string | null;
+  /** On-roll rows: the nationality-by-level bar segment (global top 6, 'Other', 'Unspecified'). */
+  nationalityLevelBucket?: string | null;
+  /** Retention cohort rows: on roll again in the selected year. */
+  returned?: boolean | null;
+  /** Late-enrolled events: the joining term number. */
+  joinedTerm?: number | null;
+  /** Movement rows: which event this row is. */
+  movementKind?: 'late-enrolled' | 're-enrolled' | 'withdrawn' | null;
+  /** Movement rows: the event date the monthly chart buckets by (ISO). */
+  movementDate?: string | null;
 };
 
 const CORE_DOC_STATUS_COLUMNS = [
@@ -981,6 +1033,98 @@ export function applyTargetFilter(
           r.sectionId === null &&
           !isSoftClosed(r)
       );
+    // ── Records Insights. The row builders already hold each loader's
+    // population; these cases re-assert it and apply the clicked segment. A
+    // segment that does not parse opens nothing, never everyone.
+    case 'enrolled-headcount': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter(
+        (r) =>
+          isOnRoll(r.enrollmentStatus) &&
+          (seg.level === undefined || levelMatchesSegment(r.level, seg.level))
+      );
+    }
+    case 'category': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter(
+        (r) =>
+          isOnRoll(r.enrollmentStatus) &&
+          (seg.category === undefined || r.category === seg.category)
+      );
+    }
+    case 'nationality': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter((r) => {
+        if (!isOnRoll(r.enrollmentStatus)) return false;
+        if (seg.nationality === undefined) return true;
+        if (seg.level !== undefined) {
+          return (
+            levelMatchesSegment(r.level, seg.level) &&
+            r.nationalityLevelBucket === seg.nationality
+          );
+        }
+        return r.nationalityMixBucket === seg.nationality;
+      });
+    }
+    case 'retention': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter(
+        (r) =>
+          typeof r.returned === 'boolean' &&
+          (seg.level === undefined ||
+            levelMatchesSegment(r.level, seg.level)) &&
+          (seg.outcome === undefined ||
+            (seg.outcome === 'returned' && r.returned) ||
+            (seg.outcome === 'didNotReturn' && !r.returned))
+      );
+    }
+    case 'late-enrollees': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter(
+        (r) =>
+          r.movementKind === 'late-enrolled' &&
+          (seg.level === undefined ||
+            levelMatchesSegment(r.level, seg.level)) &&
+          (seg.term === undefined ||
+            (typeof r.joinedTerm === 'number' &&
+              String(r.joinedTerm) === seg.term))
+      );
+    }
+    case 'withdrawals': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg) return [];
+      return rows.filter(
+        (r) =>
+          r.movementKind === 'withdrawn' &&
+          (seg.level === undefined ||
+            levelMatchesSegment(r.level, seg.level)) &&
+          (seg.reason === undefined || r.withdrawalReason === seg.reason)
+      );
+    }
+    case 'movement-month': {
+      const seg = parseInsightsSegment(segment);
+      if (!seg || !seg.flow || !seg.month) return [];
+      const monthIdx = (MONTH_LABELS as readonly string[]).indexOf(seg.month);
+      if (monthIdx < 0) return [];
+      const isFlow =
+        seg.flow === 'enrollments'
+          ? (k: string) => isMidYearJoinKind(k)
+          : seg.flow === 'withdrawals'
+            ? (k: string) => k === 'withdrawn'
+            : null;
+      if (!isFlow) return [];
+      return rows.filter(
+        (r) =>
+          !!r.movementKind &&
+          isFlow(r.movementKind) &&
+          movementMonthIndex(r.movementDate) === monthIdx
+      );
+    }
     default: {
       const _exhaustive: never = target;
       throw new Error(`unreachable target: ${String(_exhaustive)}`);
@@ -1003,7 +1147,14 @@ export type DrillColumnKey =
   | 'enrollmentDate'
   | 'withdrawalDate'
   | 'daysSinceUpdate'
-  | 'documentsComplete';
+  | 'documentsComplete'
+  | 'withdrawalReason'
+  | 'controllable'
+  | 'category'
+  | 'nationality'
+  | 'returned'
+  | 'joinedTerm'
+  | 'movementDate';
 
 export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
   'fullName',
@@ -1019,6 +1170,13 @@ export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
   'withdrawalDate',
   'daysSinceUpdate',
   'documentsComplete',
+  'withdrawalReason',
+  'controllable',
+  'category',
+  'nationality',
+  'returned',
+  'joinedTerm',
+  'movementDate',
 ];
 
 export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
@@ -1037,6 +1195,13 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   withdrawalDate: 'Withdrawn on',
   daysSinceUpdate: 'Days since update',
   documentsComplete: 'Documents',
+  withdrawalReason: 'Reason',
+  controllable: 'Preventable?',
+  category: 'Category',
+  nationality: 'Nationality',
+  returned: 'Came back?',
+  joinedTerm: 'Joined in',
+  movementDate: 'Date',
 };
 
 export function defaultColumnsForTarget(
@@ -1087,7 +1252,44 @@ export function defaultColumnsForTarget(
       return ['fullName', 'level', 'documentsComplete', 'daysSinceUpdate'];
     case 'class-assignment-readiness':
       return ['fullName', 'level', 'enrollmentDate', 'daysSinceUpdate'];
+    case 'enrolled-headcount':
+      return [
+        'fullName',
+        'level',
+        'sectionName',
+        'enrollmentStatus',
+        'enrollmentDate',
+      ];
+    case 'category':
+      return ['fullName', 'level', 'sectionName', 'category'];
+    case 'nationality':
+      return ['fullName', 'level', 'sectionName', 'nationality'];
+    case 'retention':
+      return ['fullName', 'level', 'sectionName', 'returned'];
+    case 'late-enrollees':
+      return ['fullName', 'level', 'sectionName', 'joinedTerm', 'movementDate'];
+    case 'withdrawals':
+      return [
+        'fullName',
+        'level',
+        'withdrawalReason',
+        'controllable',
+        'withdrawalDate',
+      ];
+    case 'movement-month':
+      return [
+        'fullName',
+        'level',
+        'sectionName',
+        'movementDate',
+        'enrollmentStatus',
+      ];
   }
+}
+
+/** A segment's level for a title: the chart's code shown as its name. */
+function levelTitle(v: string): string {
+  return (LEVEL_LABELS as Record<string, string>)[v] ?? v;
 }
 
 export function drillHeaderForTarget(
@@ -1118,6 +1320,92 @@ export function drillHeaderForTarget(
         eyebrow: 'Drill · Class assignment',
         title: 'Active without section',
       };
+    case 'enrolled-headcount': {
+      const s = parseInsightsSegment(segment);
+      return {
+        eyebrow: 'Drill · Enrolled',
+        title: s?.level
+          ? `Enrolled in ${levelTitle(s.level)}`
+          : 'Enrolled students',
+      };
+    }
+    case 'category': {
+      const s = parseInsightsSegment(segment);
+      const c = s?.category;
+      return {
+        eyebrow: 'Drill · Category',
+        title: !c
+          ? 'Enrolled students by category'
+          : c === 'Unspecified'
+            ? 'No category on record'
+            : `${c} students`,
+      };
+    }
+    case 'nationality': {
+      const s = parseInsightsSegment(segment);
+      const n = s?.nationality;
+      const name = !n
+        ? 'Enrolled students by nationality'
+        : n === 'Other'
+          ? 'Other nationalities'
+          : n === 'Unspecified'
+            ? 'No nationality on record'
+            : n;
+      return {
+        eyebrow: 'Drill · Nationality',
+        title: s?.level ? `${levelTitle(s.level)} · ${name}` : name,
+      };
+    }
+    case 'retention': {
+      const s = parseInsightsSegment(segment);
+      if (!s?.level)
+        return { eyebrow: 'Drill · Retention', title: 'Who came back' };
+      const outcome =
+        s.outcome === 'returned'
+          ? ' · came back'
+          : s.outcome === 'didNotReturn'
+            ? ' · did not come back'
+            : '';
+      return {
+        eyebrow: 'Drill · Retention',
+        title: `${levelTitle(s.level)}${outcome}`,
+      };
+    }
+    case 'late-enrollees': {
+      const s = parseInsightsSegment(segment);
+      return {
+        eyebrow: 'Drill · Late enrollees',
+        title: s?.term
+          ? `Joined late in Term ${s.term}`
+          : s?.level
+            ? `Late enrollees in ${levelTitle(s.level)}`
+            : 'Late enrollees',
+      };
+    }
+    case 'withdrawals': {
+      const s = parseInsightsSegment(segment);
+      const parts = [
+        s?.level ? levelTitle(s.level) : null,
+        s?.reason ?? null,
+      ].filter((p): p is string => !!p);
+      return {
+        eyebrow: 'Drill · Withdrawals',
+        title:
+          parts.length > 0
+            ? `Withdrawals · ${parts.join(' · ')}`
+            : 'Withdrawals this year',
+      };
+    }
+    case 'movement-month': {
+      const s = parseInsightsSegment(segment);
+      return {
+        eyebrow: 'Drill · Movement',
+        title:
+          s?.flow === 'withdrawals'
+            ? `Withdrew in ${s.month ?? ''}`.trim()
+            : `Joined mid-year in ${s?.month ?? ''}`.trim(),
+      };
+    }
   }
 }
 
