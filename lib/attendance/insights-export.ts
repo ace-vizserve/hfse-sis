@@ -67,7 +67,6 @@ export type BuildAttendanceInsightsExportInput = {
   haveQuotaRisk: boolean;
   compassionateOver: CompassionateUsageRow[];
   vacationOver: VacationLeaveUsageRow[];
-  vacationApproaching: VacationLeaveUsageRow[];
 };
 
 export function buildAttendanceInsightsExport(
@@ -91,7 +90,6 @@ export function buildAttendanceInsightsExport(
     haveQuotaRisk,
     compassionateOver,
     vacationOver,
-    vacationApproaching,
   } = input;
 
   const scope: ExportScopeLine[] = [
@@ -246,13 +244,6 @@ export function buildAttendanceInsightsExport(
           r.usedThisTerm,
           r.allowance,
           'Over',
-        ]),
-        ...vacationApproaching.map((r) => [
-          r.studentName,
-          r.sectionName,
-          r.usedThisTerm,
-          r.allowance,
-          'Approaching',
         ]),
       ],
     });

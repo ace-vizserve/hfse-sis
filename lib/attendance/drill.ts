@@ -1185,7 +1185,6 @@ export function selectOverLeaveQuota(
 export type LeaveQuotaSummary = {
   compassionateOver: CompassionateUsageRow[];
   vacationOver: VacationLeaveUsageRow[];
-  vacationApproaching: VacationLeaveUsageRow[];
   overLeaveQuotaCount: number;
   haveQuotaRisk: boolean;
 };
@@ -1193,29 +1192,29 @@ export type LeaveQuotaSummary = {
 /**
  * Everything the Attendance Insights leave-quota KPI and lists show, built
  * from the same selectors their drills filter with — so "Over their leave
- * quota" = the `over-leave-quota` rows, the compassionate list = segment
- * `compassionate`, and the vacation list (over + at the limit) = the
- * `vacation-leave-quota` rows.
+ * quota" = the `over-leave-quota` rows, and each list = that target's
+ * `compassionate` / `vacation` segment.
+ *
+ * Over quota only. There is no "at the limit" tier: with the usual
+ * allowance of 1 trip a term, every student who has taken their one trip
+ * would sit in it, so it flagged normal use rather than risk (Mr Ace,
+ * 2026-09-30).
  */
 export function summariseLeaveQuota(
   compassionate: CompassionateUsageRow[],
   vacation: VacationLeaveUsageRow[]
 ): LeaveQuotaSummary {
   const compassionateOver = compassionate.filter((r) => r.isOverQuota);
-  const vacationAtRisk = selectAtRiskVacationLeave(vacation);
-  const vacationOver = vacationAtRisk.filter((r) => r.isOverTermQuota);
-  const vacationApproaching = vacationAtRisk.filter((r) => !r.isOverTermQuota);
+  const vacationOver = selectAtRiskVacationLeave(vacation).filter(
+    (r) => r.isOverTermQuota
+  );
   return {
     compassionateOver,
     vacationOver,
-    vacationApproaching,
     overLeaveQuotaCount: selectOverLeaveQuota(
       toLeaveQuotaRows(compassionate, vacation)
     ).length,
-    haveQuotaRisk:
-      compassionateOver.length > 0 ||
-      vacationOver.length > 0 ||
-      vacationApproaching.length > 0,
+    haveQuotaRisk: compassionateOver.length > 0 || vacationOver.length > 0,
   };
 }
 

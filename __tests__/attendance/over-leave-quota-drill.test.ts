@@ -24,7 +24,6 @@ import {
   applyTargetFilter,
   defaultColumnsForTarget,
   rowKindForTarget,
-  selectAtRiskVacationLeave,
   selectOverLeaveQuota,
   summariseLeaveQuota,
   toLeaveQuotaRows,
@@ -192,29 +191,30 @@ describe('summariseLeaveQuota — the Insights quota lists', () => {
     expect(ids(summary.compassionateOver)).toEqual(ids(drill('compassionate')));
   });
 
-  it('vacation list (over + approaching) = the vacation-leave-quota drill rows', () => {
-    const drillRows = applyTargetFilter(
-      vacationRows as AttendanceDrillRow[],
-      'vacation-leave-quota',
-      null
-    );
-    expect(
-      summary.vacationOver.length + summary.vacationApproaching.length
-    ).toBe(drillRows.length);
-    expect([...summary.vacationOver, ...summary.vacationApproaching]).toEqual(
-      selectAtRiskVacationLeave(vacationRows)
-    );
+  it('vacation list = the vacation "See all" rows (over quota only)', () => {
+    const ids = (rows: Array<{ studentSectionId: string }>) =>
+      rows.map((r) => r.studentSectionId).sort();
+    const seeAll = applyTargetFilter(
+      toLeaveQuotaRows([], vacationRows) as AttendanceDrillRow[],
+      'over-leave-quota',
+      'vacation'
+    ) as Array<{ studentSectionId: string }>;
+    expect(ids(summary.vacationOver)).toEqual(ids(seeAll));
+    expect(summary.vacationOver.every((r) => r.isOverTermQuota)).toBe(true);
   });
 
-  it('does not call a zero allowance with no trips "approaching"', () => {
-    const s = summariseLeaveQuota([], [vacation('Zed', 0, 0)]);
-    expect(s.vacationApproaching).toEqual([]);
+  it('does not list a student who has only used their allowance', () => {
+    const s = summariseLeaveQuota([], [vacation('Cleo', 1)]);
+    expect(s.vacationOver).toEqual([]);
     expect(s.haveQuotaRisk).toBe(false);
   });
 
-  it('flags risk when anyone is over or at the vacation limit', () => {
+  it('flags risk only when someone is over a quota', () => {
     expect(summary.haveQuotaRisk).toBe(true);
-    expect(summariseLeaveQuota([], [vacation('Cleo', 1)]).haveQuotaRisk).toBe(
+    expect(summariseLeaveQuota([], [vacation('Zed', 0, 0)]).haveQuotaRisk).toBe(
+      false
+    );
+    expect(summariseLeaveQuota([], [vacation('Max', 2)]).haveQuotaRisk).toBe(
       true
     );
   });

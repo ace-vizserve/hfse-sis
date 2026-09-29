@@ -290,25 +290,17 @@ async function InsightsExportButton({
   rowSetsPromise: ReturnType<typeof buildAllRowSets>;
   base: Omit<
     Parameters<typeof buildAttendanceInsightsExport>[0],
-    | 'haveQuotaRisk'
-    | 'compassionateOver'
-    | 'vacationOver'
-    | 'vacationApproaching'
+    'haveQuotaRisk' | 'compassionateOver' | 'vacationOver'
   >;
 }) {
-  const {
-    compassionateOver,
-    vacationOver,
-    vacationApproaching,
-    haveQuotaRisk,
-  } = await resolveQuotaRows(rowSetsPromise);
+  const { compassionateOver, vacationOver, haveQuotaRisk } =
+    await resolveQuotaRows(rowSetsPromise);
   return (
     <ExportCsvButton
       data={buildAttendanceInsightsExport({
         ...base,
         compassionateOver,
         vacationOver,
-        vacationApproaching,
         haveQuotaRisk,
       })}
     />
@@ -990,12 +982,8 @@ async function LeaveQuotaSection({
   ayCode: string;
   termId: string | null;
 }) {
-  const {
-    compassionateOver,
-    vacationOver,
-    vacationApproaching,
-    haveQuotaRisk,
-  } = await resolveQuotaRows(rowSetsPromise);
+  const { compassionateOver, vacationOver, haveQuotaRisk } =
+    await resolveQuotaRows(rowSetsPromise);
 
   return (
     <>
@@ -1005,7 +993,7 @@ async function LeaveQuotaSection({
           title="Everyone is within allowance"
           icon={HeartHandshake}
         >
-          <EmptyChartState message="No student is over or approaching a leave quota this period." />
+          <EmptyChartState message="No student is over a leave quota this period." />
         </InsightChartCard>
       ) : (
         <>
@@ -1053,91 +1041,48 @@ async function LeaveQuotaSection({
               )}
             </InsightChartCard>
 
-            {/* Vacation — over quota + approaching (per term) */}
+            {/* Vacation — over quota only (per term) */}
             <InsightChartCard
               cap="Vacation leave · per term"
-              title={
-                vacationApproaching.length > 0
-                  ? `Over quota · +${vacationApproaching.length} approaching`
-                  : 'Over quota'
-              }
+              title="Over quota"
               icon={Umbrella}
               action={
                 termId ? (
                   <SeeAllDrillButton
-                    target="vacation-leave-quota"
+                    target="over-leave-quota"
+                    segment="vacation"
                     ayCode={ayCode}
                     termId={termId}
                   />
                 ) : undefined
               }
             >
-              {vacationOver.length === 0 && vacationApproaching.length === 0 ? (
+              {vacationOver.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   No one over the vacation-leave allowance this term.
                 </p>
               ) : (
-                <>
-                  {vacationOver.map((r) => (
-                    <RosterRow
-                      key={`over-${r.studentSectionId}`}
-                      icon={AlertTriangle}
-                      iconGradient="destructive"
-                      name={
-                        r.studentNumber ? (
-                          <IdentifierLink
-                            href={`/attendance/students/${r.studentNumber}`}
-                          >
-                            {r.studentName}
-                          </IdentifierLink>
-                        ) : (
-                          r.studentName
-                        )
-                      }
-                      subtitle={r.sectionName}
-                      value={`${r.usedThisTerm} / ${r.allowance} trips`}
-                      badge={{ text: 'Over', tone: 'destructive' }}
-                    />
-                  ))}
-                  {vacationApproaching.length > 0 && (
-                    <>
-                      {vacationOver.length > 0 && (
-                        <div className="flex items-center gap-2 py-2.5">
-                          <div className="h-px flex-1 bg-hairline" />
-                          <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brand-amber">
-                            <AlertTriangle
-                              className="size-2.5"
-                              strokeWidth={2.25}
-                            />
-                            Approaching limit
-                          </span>
-                          <div className="h-px flex-1 bg-hairline" />
-                        </div>
-                      )}
-                      {vacationApproaching.map((r) => (
-                        <RosterRow
-                          key={`approaching-${r.studentSectionId}`}
-                          icon={Clock}
-                          iconGradient="amber"
-                          name={
-                            r.studentNumber ? (
-                              <IdentifierLink
-                                href={`/attendance/students/${r.studentNumber}`}
-                              >
-                                {r.studentName}
-                              </IdentifierLink>
-                            ) : (
-                              r.studentName
-                            )
-                          }
-                          subtitle={r.sectionName}
-                          value={`${r.usedThisTerm} / ${r.allowance} trips`}
-                          badge={{ text: 'Approaching', tone: 'amber' }}
-                        />
-                      ))}
-                    </>
-                  )}
-                </>
+                vacationOver.map((r) => (
+                  <RosterRow
+                    key={r.studentSectionId}
+                    icon={AlertTriangle}
+                    iconGradient="destructive"
+                    name={
+                      r.studentNumber ? (
+                        <IdentifierLink
+                          href={`/attendance/students/${r.studentNumber}`}
+                        >
+                          {r.studentName}
+                        </IdentifierLink>
+                      ) : (
+                        r.studentName
+                      )
+                    }
+                    subtitle={r.sectionName}
+                    value={`${r.usedThisTerm} / ${r.allowance} trips`}
+                    badge={{ text: 'Over', tone: 'destructive' }}
+                  />
+                ))
               )}
             </InsightChartCard>
           </div>
@@ -1155,14 +1100,6 @@ async function LeaveQuotaSection({
                 .filter(Boolean)
                 .join(' · ')}{' '}
               — these cases need a review.
-            </RecommendationCallout>
-          ) : vacationApproaching.length > 0 ? (
-            <RecommendationCallout tone="watch">
-              {vacationApproaching.length} student
-              {vacationApproaching.length === 1 ? '' : 's'}{' '}
-              {vacationApproaching.length === 1 ? 'has' : 'have'} used up their
-              vacation-leave allowance this term — worth a heads-up before any
-              further requests.
             </RecommendationCallout>
           ) : null}
         </>

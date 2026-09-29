@@ -56,23 +56,6 @@ const vacationOver: VacationLeaveUsageRow[] = [
   },
 ];
 
-const vacationApproaching: VacationLeaveUsageRow[] = [
-  {
-    studentSectionId: 'ss4',
-    studentName: 'Dan Koh',
-    studentNumber: 'S004',
-    sectionId: 'sec1',
-    sectionName: 'P1-A',
-    level: 'P1',
-    termId: 'term1',
-    termNumber: 1,
-    allowance: 1,
-    usedThisTerm: 1,
-    remainingThisTerm: 0,
-    isOverTermQuota: false,
-  },
-];
-
 const attendanceMixPieData = [
   { name: 'Present', value: 80 },
   { name: 'Late', value: 7 },
@@ -171,7 +154,6 @@ const baseInput: BuildAttendanceInsightsExportInput = {
   haveQuotaRisk: true,
   compassionateOver,
   vacationOver,
-  vacationApproaching,
 };
 
 describe('buildAttendanceInsightsExport', () => {
@@ -378,10 +360,7 @@ describe('buildAttendanceInsightsExport', () => {
       'Allowance',
       'Status',
     ]);
-    expect(vacation.rows).toEqual([
-      ['Cara Ong', 'P1-A', 2, 1, 'Over'],
-      ['Dan Koh', 'P1-A', 1, 1, 'Approaching'],
-    ]);
+    expect(vacation.rows).toEqual([['Cara Ong', 'P1-A', 2, 1, 'Over']]);
   });
 
   it('omits both leave-quota sections when the page shows the all-clear placeholder', () => {
