@@ -38,6 +38,7 @@ export type AttendanceDrillTarget =
   | 'lates' // late entries
   | 'excused' // excused entries
   | 'absent' // absent entries
+  | 'present' // present entries (Insights mix pie + composition bars)
   | 'daily-attendance-day' // entries on a specific day
   | 'ex-reason' // entries with that EX reason
   | 'day-type' // calendar days of that type
@@ -63,6 +64,7 @@ export function rowKindForTarget(
     case 'lates':
     case 'excused':
     case 'absent':
+    case 'present':
     case 'daily-attendance-day':
     case 'ex-reason':
       return 'entry';
@@ -1328,6 +1330,10 @@ export function applyTargetFilter(
       return (rows as AttendanceEntryRow[]).filter(
         (r) => r.status === 'A'
       ) as AttendanceDrillRow[];
+    case 'present':
+      return (rows as AttendanceEntryRow[]).filter(
+        (r) => r.status === 'P'
+      ) as AttendanceDrillRow[];
     case 'daily-attendance-day':
       if (!segment) return rows;
       return (rows as AttendanceEntryRow[]).filter(
@@ -1543,7 +1549,7 @@ export function defaultColumnsForTarget(
   // allows that column for `status='EX'`. Strip it from the defaults so the
   // drill doesn't render an always-blank Reason column. The Columns
   // dropdown can still surface it on demand.
-  if (target === 'lates' || target === 'absent') {
+  if (target === 'lates' || target === 'absent' || target === 'present') {
     // Lates/absences have neither a reason nor a note by construction
     // (both columns are EX-only at the database).
     return ENTRY_COLUMNS.filter((c) => c !== 'exReason' && c !== 'notes');
@@ -1573,6 +1579,8 @@ export function drillHeaderForTarget(
       };
     case 'absent':
       return { eyebrow: 'Attendance', title: 'Students absent on each date' };
+    case 'present':
+      return { eyebrow: 'Attendance', title: 'Students present on each date' };
     case 'daily-attendance-day':
       return {
         eyebrow: 'Attendance',

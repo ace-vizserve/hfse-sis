@@ -26,6 +26,7 @@ const VALID_TARGETS: AttendanceDrillTarget[] = [
   'lates',
   'excused',
   'absent',
+  'present',
   'daily-attendance-day',
   'ex-reason',
   'day-type',
