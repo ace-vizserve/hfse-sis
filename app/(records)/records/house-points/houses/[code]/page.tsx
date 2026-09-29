@@ -317,7 +317,7 @@ export default async function HousePointsHousePage({
 
       <DashboardHero
         eyebrow="Records · House points"
-        title={house.name}
+        title={house.title ? `${house.name} · ${house.title}` : house.name}
         titleMark={
           <div
             className={cn(
@@ -329,7 +329,7 @@ export default async function HousePointsHousePage({
         }
         description={
           // The house's core values lead (migration 111); its title ("The
-          // Flame") stays hidden until the house logos arrive.
+          // Flame") sits in the page title above.
           (house.coreValues.length > 0
             ? `${listValues(house.coreValues)}. `
             : '') +
