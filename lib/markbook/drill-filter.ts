@@ -5,7 +5,12 @@ import type {
   MarkbookDrillTarget,
   SheetRow,
 } from '@/lib/markbook/drill';
-import { isTopBand, parseTopBandSegment } from '@/lib/markbook/insights-drill';
+import {
+  isInsightsAverageRow,
+  isTopBand,
+  parseSubjectTermSegment,
+  parseTopBandSegment,
+} from '@/lib/markbook/insights-drill';
 
 // Client-safe Markbook drill-filter module. Single source of truth for two
 // things that used to be triplicated / duplicated across dashboard.ts,
@@ -311,6 +316,19 @@ export function applyTargetFilter(
       if (!segment) return rows;
       return (rows as GradeEntryRow[]).filter(
         (r) => r.enteredBy === segment
+      ) as MarkbookDrillRow[];
+    }
+    case 'subject-term-entries': {
+      // Insights trend bar / subject-to-watch bar: the entries
+      // getSubjectPerformanceTrend averages — examinable, not N.A., with a
+      // grade — for one catalogue subject in one term, every section.
+      const seg = segment ? parseSubjectTermSegment(segment) : null;
+      if (!seg) return [];
+      return (rows as GradeEntryRow[]).filter(
+        (r) =>
+          isInsightsAverageRow(r) &&
+          r.subjectCatalogName === seg.subjectName &&
+          r.termNumber === seg.termNumber
       ) as MarkbookDrillRow[];
     }
     default: {

@@ -13,7 +13,10 @@ import {
   classifyGradeBucket,
   type GradeBand,
 } from '@/lib/markbook/drill-filter';
-import { parseTopBandSegment } from '@/lib/markbook/insights-drill';
+import {
+  parseSubjectTermSegment,
+  parseTopBandSegment,
+} from '@/lib/markbook/insights-drill';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -50,7 +53,8 @@ export type MarkbookDrillTarget =
   | 'term-sheet-status'
   | 'term-publication-status'
   | 'sheet-readiness-section'
-  | 'teacher-entry-velocity';
+  | 'teacher-entry-velocity'
+  | 'subject-term-entries';
 
 export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 
@@ -62,7 +66,9 @@ export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 // Entry targets behind a Markbook Insights figure (KD #229). Tasks 5.4–5.6 add
 // to it. Each loads whole-year entries (no from/to) and keeps a grade that has
 // no raw scores behind it, as the Insights averages do.
-const INSIGHTS_ENTRY_TARGETS = new Set<MarkbookDrillTarget>();
+const INSIGHTS_ENTRY_TARGETS = new Set<MarkbookDrillTarget>([
+  'subject-term-entries',
+]);
 
 export function isTermScopedEntryTarget(t: MarkbookDrillTarget): boolean {
   return (
@@ -98,6 +104,7 @@ export function rowKindForTarget(t: MarkbookDrillTarget): MarkbookDrillRowKind {
     case 'grade-entries':
     case 'grade-bucket-entries':
     case 'teacher-entry-velocity':
+    case 'subject-term-entries':
       return 'entry';
     case 'sheets-locked':
     case 'publication-coverage':
@@ -129,6 +136,12 @@ export type GradeEntryRow = {
   subjectCode: string;
   /** The label people read; the code is an ID shown beside it (2026-09-29). */
   subjectName: string;
+  /**
+   * `subjects.name` — the catalogue name, NOT this year's display name. The
+   * Insights subject averages (lib/markbook/compare.ts) group by it, so the
+   * drills behind them filter by it (KD #229). Never shown; identity only.
+   */
+  subjectCatalogName: string;
   termNumber: number;
   termId: string;
   wwScores: (number | null)[]; // per-slot WW scores (length matches sheet's ww_totals)
@@ -253,6 +266,7 @@ async function resolveAyContext(ayCode: string): Promise<{
   subjects: Map<string, string>;
   subjectNames: Map<string, string>;
   subjectExaminable: Map<string, boolean>;
+  subjectCatalogNames: Map<string, string>;
 }> {
   const service = createServiceClient();
   const { data: ayRow } = await service
@@ -271,6 +285,7 @@ async function resolveAyContext(ayCode: string): Promise<{
       subjects: new Map(),
       subjectNames: new Map(),
       subjectExaminable: new Map(),
+      subjectCatalogNames: new Map(),
     };
   }
   const [sectionsRes, levelsRes, termsRes, subjectsRes] = await Promise.all([
@@ -296,10 +311,12 @@ async function resolveAyContext(ayCode: string): Promise<{
   const terms = (termsRes.data ?? []) as TermLite[];
   const subjects = new Map<string, string>();
   const subjectExaminable = new Map<string, boolean>();
+  const subjectCatalogNames = new Map<string, string>();
   const subjectRows = (subjectsRes.data ?? []) as SubjectLite[];
   for (const s of subjectRows) {
     subjects.set(s.id, s.code);
     subjectExaminable.set(s.id, s.is_examinable === true);
+    subjectCatalogNames.set(s.id, s.name);
   }
   // `subjectNames` feeds drill row labels, which are read by a person, so it
   // carries the name THIS year uses — STAR in AY2026, MAPEH in AY2025
@@ -319,6 +336,7 @@ async function resolveAyContext(ayCode: string): Promise<{
     subjects,
     subjectNames,
     subjectExaminable,
+    subjectCatalogNames,
   };
 }
 
@@ -559,6 +577,8 @@ async function loadEntryRowsUncached(
       sectionName: section.name,
       subjectCode,
       subjectName,
+      subjectCatalogName:
+        ctx.subjectCatalogNames.get(sheet.subject_id) ?? subjectCode,
       termNumber: term.term_number,
       termId: term.id,
       wwScores: e.ww_scores ?? [],
@@ -1380,6 +1400,14 @@ export function defaultColumnsForTarget(
         'computedGrade',
         'enteredAt',
       ];
+    case 'subject-term-entries':
+      return [
+        'studentName',
+        'subjectCode',
+        'sectionName',
+        'level',
+        'computedGrade',
+      ];
     case 'teacher-entry-velocity':
       return [
         'enteredBy',
@@ -1513,6 +1541,15 @@ export function drillHeaderForTarget(
         eyebrow: 'Drill · Teacher velocity',
         title: segment ? `Entries by ${segment}` : 'Entries by teacher',
       };
+    case 'subject-term-entries': {
+      const seg = segment ? parseSubjectTermSegment(segment) : null;
+      return {
+        eyebrow: 'Drill · Subject average',
+        title: seg
+          ? `${seg.subjectName} · Term ${seg.termNumber}`
+          : 'Subject average',
+      };
+    }
     default: {
       const _exhaustive: never = target;
       throw new Error(`unreachable target: ${String(_exhaustive)}`);

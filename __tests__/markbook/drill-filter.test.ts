@@ -96,6 +96,7 @@ function makeEntry(overrides: Partial<GradeEntryRow> = {}): GradeEntryRow {
     sectionName: 'Obedience',
     subjectCode: 'ENG',
     subjectName: 'English',
+    subjectCatalogName: 'English',
     termNumber: 1,
     termId: 'term-1',
     wwScores: [8, 9],

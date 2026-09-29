@@ -49,12 +49,14 @@ vi.mock('@/lib/dashboard/ay-id', () => ({
 
 import { sgToday } from '@/lib/dates';
 import { getGradeDistribution } from '@/lib/markbook/dashboard';
+import { getSubjectPerformanceTrend } from '@/lib/markbook/compare';
 import {
   buildMarkbookDrillRows,
   type GradeEntryRow,
 } from '@/lib/markbook/drill';
 import {
   pickGradeDistributionTerm,
+  subjectTermSegment,
   topBandSegment,
 } from '@/lib/markbook/insights-drill';
 
@@ -133,5 +135,64 @@ describe('top-band badge → grade-bucket-entries top|T<n>', () => {
       (r) => r.entryId
     );
     expect(ids).not.toContain('ge-sh-sec26-a-MATH-T2-1');
+  });
+});
+
+describe('subject-term-entries — trend bars and subjects to watch', () => {
+  it.each([
+    ['AY2026', 'Mathematics', 2],
+    ['AY2026', 'English', 3],
+    ['AY2025', 'Mathematics', 1], // a comparison-year bar opens AY2025
+  ])(
+    '%s %s T%s: the plotted average is the mean of the listed grades',
+    async (ayCode, subject, term) => {
+      const points = await getSubjectPerformanceTrend(
+        termCells(['AY2026', 'AY2025'])
+      );
+      const point = points.find(
+        (p) =>
+          p.ayCode === ayCode &&
+          p.subjectName === subject &&
+          p.periodLabel === `T${term}`
+      );
+      const rows = await entryRows(
+        ayCode,
+        'subject-term-entries',
+        subjectTermSegment(subject, term)
+      );
+
+      expect(rows.map((r) => r.entryId).sort()).toEqual(
+        expectedIds(
+          fx.entries,
+          (e) =>
+            e.ayCode === ayCode &&
+            e.subjectName === subject &&
+            e.termNumber === term
+        )
+      );
+      expect(mean1(rows.map((r) => r.computedGrade as number))).toBe(
+        point?.avgGrade
+      );
+    }
+  );
+
+  it('counts the unlevelled section and the withdrawn student, as the chart does', async () => {
+    const ids = (
+      await entryRows('AY2026', 'subject-term-entries', 'Mathematics|T3')
+    ).map((r) => r.entryId);
+    expect(ids).toContain('ge-sh-sec26-x-MATH-T3-0');
+    expect(ids).toContain('ge-sh-sec26-a-MATH-T3-2');
+  });
+
+  it('a subject the chart does not plot (not examinable) opens an empty list', async () => {
+    expect(
+      await entryRows('AY2026', 'subject-term-entries', 'Music|T2')
+    ).toEqual([]);
+  });
+
+  it('a malformed segment opens an empty list, not every row', async () => {
+    expect(
+      await entryRows('AY2026', 'subject-term-entries', 'Mathematics')
+    ).toEqual([]);
   });
 });

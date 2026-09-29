@@ -28,6 +28,7 @@ const VALID_TARGETS: MarkbookDrillTarget[] = [
   'term-publication-status',
   'sheet-readiness-section',
   'teacher-entry-velocity',
+  'subject-term-entries',
 ];
 
 const ALLOWED_ROLES = [
