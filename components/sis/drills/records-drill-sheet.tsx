@@ -45,6 +45,8 @@ export type RecordsDrillSheetProps = {
   target: RecordsDrillTarget;
   segment?: string | null;
   ayCode: string;
+  /** Retention only: the comparison year whose students the list holds. */
+  compareAy?: string;
   /** When set, these clamp the dataset to the page-level date range. */
   initialFrom?: string;
   initialTo?: string;
@@ -168,6 +170,24 @@ function DocsCell({ complete, total }: { complete: number; total: number }) {
   );
 }
 
+function ControllableBadge({
+  value,
+}: {
+  value: RecordsDrillRow['controllable'];
+}) {
+  if (value === 'controllable')
+    return <Badge variant="blocked">Preventable</Badge>;
+  if (value === 'structural') return <Badge variant="muted">Structural</Badge>;
+  return <Badge variant="muted">Not recorded</Badge>;
+}
+
+function ReturnedBadge({ returned }: { returned: boolean | null | undefined }) {
+  if (returned === true) return <Badge variant="success">Came back</Badge>;
+  if (returned === false)
+    return <Badge variant="muted">Did not come back</Badge>;
+  return <span className="text-sm text-muted-foreground">—</span>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 
@@ -197,6 +217,7 @@ function buildDrillUrl(
   ayCode: string,
   from: string | undefined,
   to: string | undefined,
+  compareAy: string | undefined,
   segment: string | null | undefined,
   format: 'json' | 'csv',
   visibleColumnKeys?: string[]
@@ -205,6 +226,7 @@ function buildDrillUrl(
   params.set('ay', ayCode);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  if (compareAy) params.set('compareAy', compareAy);
   if (segment) params.set('segment', segment);
   if (format === 'csv') {
     params.set('format', 'csv');
@@ -404,6 +426,84 @@ function buildColumnDef(
         ),
         enableSorting: true,
       };
+    case 'withdrawalReason':
+      return {
+        id: 'withdrawalReason',
+        accessorKey: 'withdrawalReason',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.withdrawalReason ?? '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'controllable':
+      return {
+        id: 'controllable',
+        accessorKey: 'controllable',
+        header,
+        cell: ({ row }) => (
+          <ControllableBadge value={row.original.controllable} />
+        ),
+        enableSorting: true,
+      };
+    case 'category':
+      return {
+        id: 'category',
+        accessorKey: 'category',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.category ?? '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'nationality':
+      return {
+        id: 'nationality',
+        accessorKey: 'nationality',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.nationality ?? 'Not recorded'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'returned':
+      return {
+        id: 'returned',
+        accessorKey: 'returned',
+        header,
+        cell: ({ row }) => <ReturnedBadge returned={row.original.returned} />,
+        enableSorting: true,
+      };
+    case 'joinedTerm':
+      return {
+        id: 'joinedTerm',
+        accessorKey: 'joinedTerm',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {row.original.joinedTerm ? `Term ${row.original.joinedTerm}` : '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'movementDate':
+      return {
+        id: 'movementDate',
+        accessorKey: 'movementDate',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {formatDate(row.original.movementDate ?? null)}
+          </span>
+        ),
+        enableSorting: true,
+      };
     default: {
       // Exhaustiveness guard.
       const _exhaustive: never = key;
@@ -419,6 +519,7 @@ export function RecordsDrillSheet({
   target,
   segment,
   ayCode,
+  compareAy,
   initialFrom,
   initialTo,
   initialRows,
@@ -444,6 +545,7 @@ export function RecordsDrillSheet({
       from: initialFrom ?? null,
       to: initialTo ?? null,
       segment: segment ?? null,
+      compareAy: compareAy ?? null,
     }),
     queryFn: async ({ signal }) => {
       const url = buildDrillUrl(
@@ -451,6 +553,7 @@ export function RecordsDrillSheet({
         ayCode,
         initialFrom,
         initialTo,
+        compareAy,
         segment,
         'json'
       );
@@ -577,6 +680,7 @@ export function RecordsDrillSheet({
     ayCode,
     initialFrom,
     initialTo,
+    compareAy,
     segment,
     'csv',
     visibleColumnKeys

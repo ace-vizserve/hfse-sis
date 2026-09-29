@@ -12,6 +12,7 @@ export type DrillRange = {
   from?: string | null;
   to?: string | null;
   segment?: string | null;
+  compareAy?: string | null;
 };
 
 export const queryKeys = {

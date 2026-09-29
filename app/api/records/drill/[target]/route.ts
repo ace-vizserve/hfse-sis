@@ -10,10 +10,12 @@ import {
   defaultColumnsForTarget,
   drillHeaderForTarget,
   DRILL_COLUMN_LABELS,
+  INSIGHTS_DRILL_TARGETS,
   type DrillColumnKey,
   type RecordsDrillRow,
   type RecordsDrillTarget,
 } from '@/lib/sis/drill';
+import { buildInsightsDrillRows } from '@/lib/sis/insights-drill-rows';
 
 const VALID_TARGETS: RecordsDrillTarget[] = [
   'enrollments-range',
@@ -23,6 +25,13 @@ const VALID_TARGETS: RecordsDrillTarget[] = [
   'students-by-level',
   'backlog-by-document',
   'class-assignment-readiness',
+  'enrolled-headcount',
+  'retention',
+  'late-enrollees',
+  'withdrawals',
+  'movement-month',
+  'category',
+  'nationality',
 ];
 
 const DOC_TARGETS: ReadonlySet<RecordsDrillTarget> =
@@ -68,14 +77,26 @@ export async function GET(
   const format = url.searchParams.get('format') ?? 'json';
   const columnsParam = url.searchParams.get('columns');
 
-  const all = await buildRecordsDrillRows(
-    { ayCode, from, to },
-    {
-      withDocs: DOC_TARGETS.has(target),
-      withDocSlotBuckets: target === 'backlog-by-document',
-    }
-  );
+  const compareAy = url.searchParams.get('compareAy');
+  if (compareAy !== null && !/^AY\d{4}$/.test(compareAy)) {
+    return NextResponse.json({ error: 'invalid_compare_ay' }, { status: 400 });
+  }
+  if (target === 'retention' && !compareAy) {
+    return NextResponse.json({ error: 'missing_compare_ay' }, { status: 400 });
+  }
+
   const rangeForFilter = from && to ? { from, to } : undefined;
+  // Insights targets read their loader's own population (KD #229); every
+  // dashboard target keeps the shared class-row set.
+  const all = INSIGHTS_DRILL_TARGETS.has(target)
+    ? await buildInsightsDrillRows(target, ayCode, compareAy)
+    : await buildRecordsDrillRows(
+        { ayCode, from, to },
+        {
+          withDocs: DOC_TARGETS.has(target),
+          withDocSlotBuckets: target === 'backlog-by-document',
+        }
+      );
   let rows = applyTargetFilter(all, target, segment, rangeForFilter);
 
   // H3: class-assignment-readiness drill must include enrolled students with
@@ -99,6 +120,7 @@ export async function GET(
     target,
     segment,
     ayCode,
+    compareAy,
     eyebrow: header.eyebrow,
     title: header.title,
   });
@@ -145,6 +167,12 @@ function csvResponse(
   });
 }
 
+const CONTROLLABLE_WORDS = {
+  controllable: 'Preventable',
+  structural: 'Structural',
+  unspecified: 'Not recorded',
+} as const;
+
 function csvCell(row: RecordsDrillRow, key: DrillColumnKey): string | number {
   switch (key) {
     case 'fullName':
@@ -173,6 +201,20 @@ function csvCell(row: RecordsDrillRow, key: DrillColumnKey): string | number {
       return row.daysSinceUpdate ?? '';
     case 'documentsComplete':
       return `${row.documentsComplete}/${row.documentsTotal}`;
+    case 'withdrawalReason':
+      return row.withdrawalReason ?? '';
+    case 'controllable':
+      return row.controllable ? CONTROLLABLE_WORDS[row.controllable] : '';
+    case 'category':
+      return row.category ?? '';
+    case 'nationality':
+      return row.nationality ?? '';
+    case 'returned':
+      return row.returned === true ? 'Yes' : row.returned === false ? 'No' : '';
+    case 'joinedTerm':
+      return row.joinedTerm ? `Term ${row.joinedTerm}` : '';
+    case 'movementDate':
+      return row.movementDate?.slice(0, 10) ?? '';
   }
 }
 
