@@ -20,6 +20,30 @@ import {
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
+import {
+  AY_MONTH_LABELS,
+  canonicaliseLevelApplied,
+  canonicaliseNationality,
+  categoryMixKey,
+  daysToEnrol,
+  decodePairSegment,
+  hasReachedFunnelStage,
+  intakeMonthIndex,
+  isFunnelStageName,
+  isWithdrawnApplication,
+  levelAsAppliedKey,
+  NATIONALITY_BY_LEVEL_LIMIT,
+  NATIONALITY_MIX_LIMIT,
+  nationalityBucketer,
+  OVERFLOW_SEGMENT,
+  reasonLabel,
+  referralBucketer,
+  referralSourceKey,
+  terminalReasonKey,
+  topReasonKeys,
+  type AyMonthLabel,
+} from '@/lib/admissions/insights-predicates';
+
 // Drill-down primitives shared across every Admissions drill target.
 //
 // One unified `DrillRow` shape powers all 12 drill surfaces. Each target
@@ -50,7 +74,16 @@ export type DrillTarget =
   | 'time-to-enroll-bucket'
   | 'applications-by-level'
   | 'doc-completion'
-  | 'outdated';
+  | 'outdated'
+  // Admissions Insights (KD #229) — each filters with the predicate its
+  // Insights loader counts with (lib/admissions/insights-predicates.ts).
+  | 'intake-month'
+  | 'withdrawn-by-level'
+  | 'assessment-all'
+  | 'terminal-reason'
+  | 'referral-all'
+  | 'category'
+  | 'nationality';
 
 export type DrillRow = {
   enroleeNumber: string;
@@ -88,6 +121,17 @@ export type DrillRow = {
   hasMissingDocs: boolean;
   documentsComplete: number; // count of present core docs
   documentsTotal: number; // count of core doc slots tracked
+  /** The application's own `levelApplied`, raw. The Insights withdrawn,
+   *  cancellation-reason and nationality charts group by this — NOT `level`,
+   *  which prefers the status table's classLevel. */
+  levelAsApplied: string | null;
+  /** `terminalReasonKey(applicationTerminalReason)`: null = none recorded,
+   *  'Unspecified' = recorded blank. */
+  terminalReason: string | null;
+  /** Enrolee category as the parent portal stored it, trimmed. */
+  category: string | null;
+  /** `canonicaliseNationality(nationality)`. */
+  nationality: string | null;
 };
 
 export type DrillRangeInput = {
@@ -169,6 +213,8 @@ async function loadDrillRowsUncached(input: {
     levelApplied: string | null;
     created_at: string | null;
     howDidYouKnowAboutHFSEIS: string | null;
+    category: string | null;
+    nationality: string | null;
   };
   type StatusLite = {
     enroleeNumber: string | null;
@@ -182,6 +228,7 @@ async function loadDrillRowsUncached(input: {
     levelApplied: string | null;
     assessmentGradeMath: string | number | null;
     assessmentGradeEnglish: string | number | null;
+    applicationTerminalReason: string | null;
   } & Record<string, string | null | number>;
 
   type P<T> = PromiseLike<{
@@ -198,6 +245,7 @@ async function loadDrillRowsUncached(input: {
     'levelApplied',
     'assessmentGradeMath',
     'assessmentGradeEnglish',
+    '"applicationTerminalReason"',
     ...STAGE_KEYS.map((k) => STAGE_COLUMN_MAP[k].updatedDateCol),
   ].join(', ');
 
@@ -210,7 +258,7 @@ async function loadDrillRowsUncached(input: {
           supabase
             .from(appsTable)
             .select(
-              'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at, howDidYouKnowAboutHFSEIS'
+              'enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, levelApplied, created_at, howDidYouKnowAboutHFSEIS, category, nationality'
             )
             .range(from, to) as unknown as P<AppLite>
       ),
@@ -269,19 +317,18 @@ async function loadDrillRowsUncached(input: {
 
     const createdMs = a.created_at ? Date.parse(a.created_at) : NaN;
     const updatedMs = updated ? Date.parse(updated) : NaN;
-    const enrolledMs = enrolledAt ? Date.parse(enrolledAt) : NaN;
 
     const isEnrolled = ENROLLED_STATUSES.has(status);
     // enrollmentDate: only set when we have a real (non-fallback) timestamp.
     const enrollmentDate = isEnrolled && enrolledAt ? enrolledAt : null;
 
-    const daysToEnroll =
-      isEnrolled &&
-      !Number.isNaN(createdMs) &&
-      !Number.isNaN(enrolledMs) &&
-      enrolledMs >= createdMs
-        ? Math.round((enrolledMs - createdMs) / 86_400_000)
-        : null;
+    // Shared with getAverageTimeToEnrollment (KD #229) — the card's sample is
+    // exactly the rows with a non-null value here.
+    const daysToEnroll = daysToEnrol({
+      status,
+      createdAt: a.created_at,
+      enrolledAt,
+    });
     const daysSinceUpdate = !Number.isNaN(updatedMs)
       ? Math.floor((today - updatedMs) / 86_400_000)
       : null;
@@ -345,6 +392,10 @@ async function loadDrillRowsUncached(input: {
       hasMissingDocs: true,
       documentsComplete: 0,
       documentsTotal,
+      levelAsApplied: a.levelApplied ?? null,
+      terminalReason: terminalReasonKey(s?.applicationTerminalReason),
+      category: (a.category ?? '').trim() || null,
+      nationality: canonicaliseNationality(a.nationality ?? null),
     });
   }
   return out;
@@ -447,7 +498,9 @@ export async function buildDrillRows(
   // fields skip that query entirely.
   const cached = await unstable_cache(
     () => loadDrillRowsUncached({ ayCode: input.ayCode }),
-    ['admissions-drill', 'rows', input.ayCode],
+    // v2: DrillRow gained levelAsApplied / terminalReason / category /
+    // nationality (KD #229) — a stale v1 entry would serve rows without them.
+    ['admissions-drill', 'rows-v2', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
   const scoped = applyScopeFilter(cached, input, options?.target);
@@ -503,35 +556,13 @@ export function applyTargetFilter(
       return rows;
     case 'avg-time':
       return rows.filter((r) => r.daysToEnroll !== null);
-    case 'funnel-stage': {
-      // Cumulative funnel — every later stage row counts toward earlier stages.
-      const stages = [
-        'Submitted',
-        'Ongoing Verification',
-        'Processing',
-        'Enrolled',
-      ];
-      const idx = stages.indexOf(segment ?? '');
-      if (idx === -1) return rows;
-      const ENROLLED = ['Enrolled', 'Enrolled (Conditional)'];
-      return rows.filter((r) => {
-        if (segment === 'Submitted') {
-          return r.status !== 'Cancelled' && r.status !== 'Withdrawn';
-        }
-        if (segment === 'Ongoing Verification') {
-          return ['Ongoing Verification', 'Processing', ...ENROLLED].includes(
-            r.status
-          );
-        }
-        if (segment === 'Processing') {
-          return ['Processing', ...ENROLLED].includes(r.status);
-        }
-        if (segment === 'Enrolled') {
-          return ENROLLED.includes(r.status);
-        }
-        return true;
-      });
-    }
+    case 'funnel-stage':
+      // Same stage rule as getConversionFunnel (hasReachedFunnelStage): a
+      // blank or unrecognised status reaches no stage, so "Applications
+      // received" equals this list. This target had no caller before the
+      // Insights page (KD #229), so aligning it changed no dashboard.
+      if (!isFunnelStageName(segment)) return rows;
+      return rows.filter((r) => hasReachedFunnelStage(r.status, segment));
     case 'pipeline-stage':
       if (!segment) return rows;
       // The chart's segments are now `applicationStatus` values (Submitted,
@@ -626,9 +657,120 @@ export function applyTargetFilter(
         if (!isActiveFunnelStatus(r.status)) return false;
         return isFollowUpStaleness(stalenessLabel(r.rawDaysSinceUpdate));
       });
+    case 'intake-month': {
+      // getIntakeTrendByAy: UTC month of created_at, year ignored.
+      if (!segment) {
+        return rows.filter((r) => intakeMonthIndex(r.applicationDate) !== null);
+      }
+      const month = AY_MONTH_LABELS.indexOf(segment as AyMonthLabel);
+      if (month === -1) return [];
+      return rows.filter((r) => intakeMonthIndex(r.applicationDate) === month);
+    }
+    case 'withdrawn-by-level': {
+      // getWithdrawnByLevel: status Withdrawn, grouped by the level as applied.
+      const withdrawn = rows.filter((r) => isWithdrawnApplication(r.status));
+      if (!segment) return withdrawn;
+      return withdrawn.filter(
+        (r) => levelAsAppliedKey(r.levelAsApplied) === segment
+      );
+    }
+    case 'assessment-all': {
+      // getConversionByAssessment: every applicant, terminal included.
+      if (!segment) return rows;
+      const parsed = parseAssessmentAllSegment(segment);
+      if (!parsed) return [];
+      return rows.filter(
+        (r) =>
+          (parsed.subject === 'math'
+            ? r.assessmentMathOutcome
+            : r.assessmentEnglishOutcome) === parsed.outcome
+      );
+    }
+    case 'terminal-reason': {
+      // getAdmissionsTerminalReasons: applications with a reason recorded.
+      const withReason = rows.filter((r) => r.terminalReason !== null);
+      if (!segment) return withReason;
+      const pair = decodePairSegment(segment);
+      if (!pair) return [];
+      // The overflow is ranked over EVERY reason, as selectTopReasonBars
+      // ranks terminal.overall.
+      const named =
+        pair.second === OVERFLOW_SEGMENT
+          ? topReasonKeys(withReason.map((r) => r.terminalReason as string))
+          : null;
+      return withReason.filter((r) => {
+        if (pair.first && levelAsAppliedKey(r.levelAsApplied) !== pair.first) {
+          return false;
+        }
+        if (pair.second === '') return true;
+        if (named) return !named.has(r.terminalReason as string);
+        return r.terminalReason === pair.second;
+      });
+    }
+    case 'referral-all': {
+      // getReferralConversion: every applicant, terminal included.
+      if (!segment) return rows;
+      if (segment === OVERFLOW_SEGMENT) {
+        const bucketOf = referralBucketer(
+          rows.map((r) => referralSourceKey(r.referralSource))
+        );
+        return rows.filter(
+          (r) =>
+            bucketOf(referralSourceKey(r.referralSource)) === OVERFLOW_SEGMENT
+        );
+      }
+      return rows.filter(
+        (r) => referralSourceKey(r.referralSource) === segment
+      );
+    }
+    case 'category':
+      // getCategoryMix: every applicant, blank/unknown as Unspecified.
+      if (!segment) return rows;
+      return rows.filter((r) => categoryMixKey(r.category) === segment);
+    case 'nationality': {
+      // getNationalityMix (no level) / getApplicantNationalityByLevel (level).
+      if (!segment) return rows;
+      const pair = decodePairSegment(segment);
+      if (!pair) return [];
+      if (!pair.first) {
+        const bucketOf = nationalityBucketer(
+          rows.map((r) => r.nationality),
+          NATIONALITY_MIX_LIMIT
+        );
+        return rows.filter((r) => bucketOf(r.nationality) === pair.second);
+      }
+      const bucketOf = nationalityBucketer(
+        rows.map((r) => r.nationality),
+        NATIONALITY_BY_LEVEL_LIMIT
+      );
+      return rows.filter(
+        (r) =>
+          canonicaliseLevelApplied(r.levelAsApplied) === pair.first &&
+          (pair.second === '' || bucketOf(r.nationality) === pair.second)
+      );
+    }
     default:
       return rows;
   }
+}
+
+/** `'math:pass'` … `'eng:notAssessed'` → subject + the drill row's outcome
+ *  value. `notAssessed` is the chart's name for `unknown`. */
+export function parseAssessmentAllSegment(
+  segment: string
+): { subject: 'math' | 'eng'; outcome: 'pass' | 'fail' | 'unknown' } | null {
+  const colon = segment.indexOf(':');
+  if (colon === -1) return null;
+  const subject = segment.slice(0, colon);
+  const raw = segment.slice(colon + 1);
+  if (subject !== 'math' && subject !== 'eng') return null;
+  const outcome =
+    raw === 'pass' || raw === 'fail'
+      ? raw
+      : raw === 'notAssessed' || raw === 'unknown'
+        ? 'unknown'
+        : null;
+  return outcome ? { subject, outcome } : null;
 }
 
 function parseTimeToEnrollBucket(
@@ -665,7 +807,11 @@ export type DrillColumnKey =
   | 'daysToEnroll'
   | 'daysSinceUpdate'
   | 'daysInPipeline'
-  | 'documentsComplete';
+  | 'documentsComplete'
+  | 'levelAsApplied'
+  | 'terminalReason'
+  | 'category'
+  | 'nationality';
 
 export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
   'fullName',
@@ -684,6 +830,10 @@ export const ALL_DRILL_COLUMNS: DrillColumnKey[] = [
   'assessmentMath',
   'assessmentEnglish',
   'documentsComplete',
+  'levelAsApplied',
+  'terminalReason',
+  'category',
+  'nationality',
 ];
 
 export function defaultColumnsForTarget(target: DrillTarget): DrillColumnKey[] {
@@ -793,6 +943,51 @@ export function defaultColumnsForTarget(target: DrillTarget): DrillColumnKey[] {
         'level',
         'daysSinceUpdate',
       ];
+    case 'intake-month':
+      return [
+        'fullName',
+        'enroleeNumber',
+        'status',
+        'level',
+        'applicationDate',
+      ];
+    case 'withdrawn-by-level':
+      return [
+        'fullName',
+        'enroleeNumber',
+        'levelAsApplied',
+        'status',
+        'applicationDate',
+      ];
+    case 'assessment-all':
+      return [
+        'fullName',
+        'enroleeNumber',
+        'status',
+        'level',
+        'assessmentMath',
+        'assessmentEnglish',
+      ];
+    case 'terminal-reason':
+      return [
+        'fullName',
+        'enroleeNumber',
+        'status',
+        'levelAsApplied',
+        'terminalReason',
+      ];
+    case 'referral-all':
+      return ['fullName', 'enroleeNumber', 'referralSource', 'status', 'level'];
+    case 'category':
+      return ['fullName', 'enroleeNumber', 'category', 'status', 'level'];
+    case 'nationality':
+      return [
+        'fullName',
+        'enroleeNumber',
+        'nationality',
+        'levelAsApplied',
+        'status',
+      ];
     default:
       return ['fullName', 'enroleeNumber', 'status', 'level'];
   }
@@ -815,6 +1010,10 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   daysSinceUpdate: 'Days since update',
   daysInPipeline: 'Days in pipeline',
   documentsComplete: 'Documents',
+  levelAsApplied: 'Level applied for',
+  terminalReason: 'Reason',
+  category: 'Category',
+  nationality: 'Nationality',
 };
 
 // Title + eyebrow per target. Used in the drill sheet header.
@@ -846,9 +1045,12 @@ export function drillHeaderForTarget(
     case 'funnel-stage':
       return {
         eyebrow: 'Admissions funnel',
-        title: segment
-          ? `Applicants who reached the ${segment} stage`
-          : 'Applicants by funnel stage reached',
+        title:
+          segment === 'Submitted'
+            ? 'Applications received'
+            : segment
+              ? `Applicants who reached the ${segment} stage`
+              : 'Applicants by funnel stage reached',
       };
     case 'pipeline-stage':
       return {
@@ -920,6 +1122,102 @@ export function drillHeaderForTarget(
         eyebrow: 'Drill · Outdated',
         title: 'Applications with no recent activity',
       };
+    case 'intake-month':
+      return {
+        eyebrow: 'Admissions insights',
+        title: segment
+          ? `Applications received in ${segment}`
+          : 'Applications received by month',
+      };
+    case 'withdrawn-by-level':
+      return {
+        eyebrow: 'Admissions insights',
+        title: segment
+          ? `Withdrawn applications for ${segment}`
+          : 'Withdrawn applications',
+      };
+    case 'assessment-all': {
+      const parsed = segment ? parseAssessmentAllSegment(segment) : null;
+      if (!parsed) {
+        return {
+          eyebrow: 'Admissions insights',
+          title: 'Applicants by entrance assessment result',
+        };
+      }
+      const subject = parsed.subject === 'math' ? 'Maths' : 'English';
+      return {
+        eyebrow: 'Admissions insights',
+        title:
+          parsed.outcome === 'unknown'
+            ? `Applicants with no ${subject} assessment result`
+            : `Applicants who ${parsed.outcome === 'pass' ? 'passed' : 'did not pass'} the ${subject} assessment`,
+      };
+    }
+    case 'terminal-reason': {
+      const pair = segment ? decodePairSegment(segment) : null;
+      if (!pair) {
+        return {
+          eyebrow: 'Admissions insights',
+          title: 'Every application with a cancellation reason',
+        };
+      }
+      const reason =
+        pair.second === OVERFLOW_SEGMENT
+          ? 'other reasons'
+          : pair.second
+            ? reasonLabel(pair.second)
+            : null;
+      return {
+        eyebrow: 'Admissions insights',
+        title:
+          pair.first && reason
+            ? `${pair.first}: cancelled or withdrawn — ${reason}`
+            : pair.first
+              ? `Cancellation reasons for ${pair.first}`
+              : `Cancelled or withdrawn — ${reason}`,
+      };
+    }
+    case 'referral-all':
+      return {
+        eyebrow: 'Admissions insights',
+        title: !segment
+          ? 'Applicants by how they heard about HFSE'
+          : segment === OVERFLOW_SEGMENT
+            ? 'Applicants from other referral sources'
+            : segment === 'Not specified'
+              ? 'Applicants who did not say how they heard about HFSE'
+              : `Applicants who heard about HFSE from ${segment}`,
+      };
+    case 'category':
+      return {
+        eyebrow: 'Admissions insights',
+        title: !segment
+          ? 'Applicants by category'
+          : segment === 'Unspecified'
+            ? 'Applicants with no category recorded'
+            : `${segment} applicants`,
+      };
+    case 'nationality': {
+      const pair = segment ? decodePairSegment(segment) : null;
+      if (!pair) {
+        return {
+          eyebrow: 'Admissions insights',
+          title: 'Applicants by nationality',
+        };
+      }
+      const who =
+        pair.second === 'Other'
+          ? 'Applicants of other nationalities'
+          : pair.second === 'Unspecified'
+            ? 'Applicants with no nationality recorded'
+            : pair.second
+              ? `${pair.second} applicants`
+              : 'Applicants';
+      return {
+        eyebrow: 'Admissions insights',
+        title: pair.first ? `${who} for ${pair.first}` : who,
+      };
+    }
     default:
       return { eyebrow: 'Drill', title: 'Applications' };
   }

@@ -37,6 +37,7 @@ import {
   type DrillRow,
   type DrillTarget,
 } from '@/lib/admissions/drill';
+import { reasonLabel } from '@/lib/admissions/insights-predicates';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
@@ -601,6 +602,57 @@ function buildColumnDef(
             complete={row.original.documentsComplete}
             total={row.original.documentsTotal}
           />
+        ),
+        enableSorting: true,
+      };
+    case 'levelAsApplied':
+      return {
+        id: 'levelAsApplied',
+        accessorKey: 'levelAsApplied',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.levelAsApplied?.trim() || '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'terminalReason':
+      return {
+        id: 'terminalReason',
+        accessorFn: (r) =>
+          r.terminalReason ? reasonLabel(r.terminalReason) : '',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-foreground">
+            {row.original.terminalReason
+              ? reasonLabel(row.original.terminalReason)
+              : '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'category':
+      return {
+        id: 'category',
+        accessorKey: 'category',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.category ?? '—'}
+          </span>
+        ),
+        enableSorting: true,
+      };
+    case 'nationality':
+      return {
+        id: 'nationality',
+        accessorKey: 'nationality',
+        header,
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.nationality ?? '—'}
+          </span>
         ),
         enableSorting: true,
       };

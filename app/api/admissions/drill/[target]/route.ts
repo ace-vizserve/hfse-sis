@@ -12,6 +12,7 @@ import {
   type DrillRow,
   type DrillTarget,
 } from '@/lib/admissions/drill';
+import { reasonLabel } from '@/lib/admissions/insights-predicates';
 import { buildCsv } from '@/lib/csv';
 
 const VALID_TARGETS: DrillTarget[] = [
@@ -27,6 +28,13 @@ const VALID_TARGETS: DrillTarget[] = [
   'applications-by-level',
   'doc-completion',
   'outdated',
+  'intake-month',
+  'withdrawn-by-level',
+  'assessment-all',
+  'terminal-reason',
+  'referral-all',
+  'category',
+  'nationality',
 ];
 
 const ALLOWED_ROLES = [
@@ -158,6 +166,14 @@ function csvResponse(
           return r.daysInPipeline;
         case 'documentsComplete':
           return `${r.documentsComplete}/${r.documentsTotal}`;
+        case 'levelAsApplied':
+          return r.levelAsApplied ?? '';
+        case 'terminalReason':
+          return r.terminalReason ? reasonLabel(r.terminalReason) : '';
+        case 'category':
+          return r.category ?? '';
+        case 'nationality':
+          return r.nationality ?? '';
         default:
           return '';
       }

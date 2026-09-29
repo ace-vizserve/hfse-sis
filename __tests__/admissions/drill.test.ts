@@ -93,6 +93,10 @@ function makeRow(overrides: Partial<DrillRow>): DrillRow {
     hasMissingDocs: true,
     documentsComplete: 0,
     documentsTotal: 5,
+    levelAsApplied: 'P1',
+    terminalReason: null,
+    category: null,
+    nationality: null,
     ...overrides,
   };
 }
