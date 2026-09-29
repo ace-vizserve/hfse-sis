@@ -28,6 +28,7 @@ import {
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
   ALL_DRILL_COLUMNS,
   DRILL_COLUMN_LABELS,
@@ -882,32 +883,38 @@ export function AdmissionsDrillSheet({
     (rows.length === 0 || drillQuery.isPlaceholderData)
   ) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
-          <AlertTriangle className="size-6" />
+      <SheetContent
+        side="right"
+        className="sm:max-w-3xl w-full flex flex-col gap-0 p-0"
+      >
+        <SheetTitle className="sr-only">{heading.title}</SheetTitle>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+            <AlertTriangle className="size-6" />
+          </div>
+          <div className="space-y-1">
+            <p className="font-serif text-lg font-semibold text-foreground">
+              Couldn’t load {heading.title.toLowerCase()}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {drillQuery.error instanceof Error
+                ? drillQuery.error.message
+                : 'Something went wrong while loading this list.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void drillQuery.refetch()}
+            disabled={drillQuery.isFetching}
+          >
+            <RotateCcw
+              className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
+            />
+            Try again
+          </Button>
         </div>
-        <div className="space-y-1">
-          <p className="font-serif text-lg font-semibold text-foreground">
-            Couldn’t load {heading.title.toLowerCase()}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {drillQuery.error instanceof Error
-              ? drillQuery.error.message
-              : 'Something went wrong while loading this list.'}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void drillQuery.refetch()}
-          disabled={drillQuery.isFetching}
-        >
-          <RotateCcw
-            className={cn('size-4', drillQuery.isFetching && 'animate-spin')}
-          />
-          Try again
-        </Button>
-      </div>
+      </SheetContent>
     );
   }
 

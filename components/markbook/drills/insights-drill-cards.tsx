@@ -23,6 +23,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger } from '@/components/ui/sheet';
 import type { MarkbookDrillTarget } from '@/lib/markbook/drill';
+// TopBandYear moves through the shared, client-safe lib so buildTopBandYears
+// (the page's ordering fix, KD #229 follow-up) and this drill share one type
+// — re-exported so every existing import of it from here keeps working.
+import { type TopBandYear } from '@/lib/markbook/insights-compare';
 import {
   levelTermSegment,
   parseTrendSeriesKey,
@@ -31,6 +35,8 @@ import {
   topBandSegment,
 } from '@/lib/markbook/insights-drill';
 import { cn } from '@/lib/utils';
+
+export type { TopBandYear };
 
 // Markbook Insights (KD #229): each wrapper holds the clicked segment and
 // opens the Markbook drill for it. A Server Component cannot hand a chart a
@@ -213,13 +219,6 @@ export function SheetLockDrillChart({
 // The badge compares two years' share of grades at 85 and above, each in the
 // term its histogram reads. It opens this year's list; the sheet offers the
 // comparison year's list in place (no second dialog).
-
-export type TopBandYear = {
-  ayCode: string;
-  termNumber: number;
-  topCount: number;
-  total: number;
-};
 
 export function TopBandBadgeDrill({
   badge,

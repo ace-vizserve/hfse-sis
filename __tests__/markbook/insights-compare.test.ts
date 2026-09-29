@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildMultiAyTrend,
+  buildTopBandYears,
   topBandBadge,
   type TrendPoint,
 } from '@/lib/markbook/insights-compare';
@@ -69,6 +70,96 @@ describe('topBandBadge', () => {
     const badge = topBandBadge(10, 80, 'AY2024');
     expect(badge.label).toBe('▼ 70pp vs AY2024');
     expect(badge.tone).toBe('amber');
+  });
+});
+
+// ── buildTopBandYears ──────────────────────────────────────────────────────────
+// The badge always OPENS the year at index 0 by default (TopBandBadgeDrill
+// picks years[index % years.length], index reset to 0 on close), and offers
+// any other year only via its "Show {ay} instead" button. So the selected
+// year must sort first whenever it appears at all — a badge titled "vs
+// {compareAy}" must not default-open the comparison year's list.
+
+describe('buildTopBandYears', () => {
+  it('selected year only, has graded marks → one entry', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+      null
+    );
+    expect(years).toEqual([
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+    ]);
+  });
+
+  it('selected has no graded marks and there is no comparison → no entries (nothing to open)', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 2, topCount: 0, total: 0 },
+      null
+    );
+    expect(years).toEqual([]);
+  });
+
+  it('both years have data → selected first, comparison second', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+      { ayCode: 'AY2025', termNumber: 2, topCount: 20, total: 50 }
+    );
+    expect(years.map((y) => y.ayCode)).toEqual(['AY2026', 'AY2025']);
+  });
+
+  // The regression this pins: the selected year had 0 graded marks while the
+  // comparison year had data. The old page code only pushed the comparison
+  // year, so the badge (about the SELECTED year) opened the comparison
+  // year's list by default with no way to tell. The fix keeps the selected
+  // year first — even with 0/0 — so the default open is the selected year,
+  // and the comparison year is reachable only through the "Show … instead"
+  // button (years.length > 1).
+  it('selected has no graded marks but comparison does → selected still sorts first', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 3, topCount: 0, total: 0 },
+      { ayCode: 'AY2025', termNumber: 3, topCount: 15, total: 60 }
+    );
+    expect(years.map((y) => y.ayCode)).toEqual(['AY2026', 'AY2025']);
+    expect(years[0]).toEqual({
+      ayCode: 'AY2026',
+      termNumber: 3,
+      topCount: 0,
+      total: 0,
+    });
+  });
+
+  // Out of scope for this fix: the selected AY has no candidate term AT ALL
+  // (never resolves, not merely "0 graded marks so far"), so there is no
+  // segment to open its list with. The comparison year is still listed —
+  // unchanged from before this fix — it just ends up as the only entry.
+  it('selected term unresolved → comparison still listed alone', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: null, topCount: 0, total: 0 },
+      { ayCode: 'AY2025', termNumber: 3, topCount: 15, total: 60 }
+    );
+    expect(years).toEqual([
+      { ayCode: 'AY2025', termNumber: 3, topCount: 15, total: 60 },
+    ]);
+  });
+
+  it('comparison term unresolved → comparison omitted, selected kept', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+      { ayCode: 'AY2025', termNumber: null, topCount: 0, total: 0 }
+    );
+    expect(years).toEqual([
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+    ]);
+  });
+
+  it('comparison has zero total → treated as no comparison data', () => {
+    const years = buildTopBandYears(
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+      { ayCode: 'AY2025', termNumber: 2, topCount: 0, total: 0 }
+    );
+    expect(years).toEqual([
+      { ayCode: 'AY2026', termNumber: 2, topCount: 10, total: 40 },
+    ]);
   });
 });
 

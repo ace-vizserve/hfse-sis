@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/admissions/drills/admissions-drill-she
 import { DrillDownSheet } from '@/components/dashboard/drill-down-sheet';
 import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton';
 import { Button } from '@/components/ui/button';
+import { SheetContent, SheetTitle } from '@/components/ui/sheet';
 import type { FeedbackRow } from '@/lib/admissions/feedback';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
@@ -187,25 +188,31 @@ export function FeedbackRatingDrillSheet({
 
   if (query.isError) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
-          <AlertTriangle className="size-6" />
+      <SheetContent
+        side="right"
+        className="sm:max-w-3xl w-full flex flex-col gap-0 p-0"
+      >
+        <SheetTitle className="sr-only">{title}</SheetTitle>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-b from-destructive/15 to-destructive/5 text-destructive ring-1 ring-inset ring-destructive/20">
+            <AlertTriangle className="size-6" />
+          </div>
+          <p className="font-serif text-lg font-semibold text-foreground">
+            Couldn’t load these ratings
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void query.refetch()}
+            disabled={query.isFetching}
+          >
+            <RotateCcw
+              className={cn('size-4', query.isFetching && 'animate-spin')}
+            />
+            Try again
+          </Button>
         </div>
-        <p className="font-serif text-lg font-semibold text-foreground">
-          Couldn’t load these ratings
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void query.refetch()}
-          disabled={query.isFetching}
-        >
-          <RotateCcw
-            className={cn('size-4', query.isFetching && 'animate-spin')}
-          />
-          Try again
-        </Button>
-      </div>
+      </SheetContent>
     );
   }
 

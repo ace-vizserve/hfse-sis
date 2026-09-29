@@ -42,6 +42,68 @@ export function topBandBadge(
   return { label: `▼ ${Math.abs(delta)}pp vs ${compareAy}`, tone: 'amber' };
 }
 
+// ── buildTopBandYears ──────────────────────────────────────────────────────────
+
+export type TopBandYearCandidate = {
+  ayCode: string;
+  /** The term the year's grade histogram reads; null when no candidate term
+   *  could be resolved for that academic year. */
+  termNumber: number | null;
+  topCount: number;
+  total: number;
+};
+
+export type TopBandYear = {
+  ayCode: string;
+  termNumber: number;
+  topCount: number;
+  total: number;
+};
+
+/**
+ * Build the `years` list `TopBandBadgeDrill` opens from — the top-band hero
+ * badge on Markbook Insights (KD #229).
+ *
+ * `TopBandBadgeDrill` always opens `years[0]` by default and offers every
+ * other entry only through its "Show {ay} instead" button. The badge itself
+ * is titled about the SELECTED year ("▲ Npp vs {compareAy}" / "Building
+ * history"), so the selected year must be `years[0]` whenever it appears at
+ * all — a selected year with 0 graded marks must not let the comparison
+ * year's list open by default just because it sorted first.
+ *
+ * The selected year is included even at 0/0 when the comparison year has
+ * real data, purely so it can occupy index 0 and the comparison stays
+ * reachable via the button. With no comparison at all, a selected year with
+ * no graded marks is dropped — nothing to drill into, so the badge renders
+ * as a plain, non-clickable badge instead.
+ */
+export function buildTopBandYears(
+  selected: TopBandYearCandidate,
+  compare: TopBandYearCandidate | null
+): TopBandYear[] {
+  const compareHasData =
+    compare !== null && compare.termNumber !== null && compare.total > 0;
+
+  const years: TopBandYear[] = [];
+  if (selected.termNumber !== null && (selected.total > 0 || compareHasData)) {
+    years.push({
+      ayCode: selected.ayCode,
+      termNumber: selected.termNumber,
+      topCount: selected.topCount,
+      total: selected.total,
+    });
+  }
+  if (compareHasData) {
+    years.push({
+      ayCode: compare.ayCode,
+      termNumber: compare.termNumber as number,
+      topCount: compare.topCount,
+      total: compare.total,
+    });
+  }
+  return years;
+}
+
 // ── buildMultiAyTrend ─────────────────────────────────────────────────────────
 
 export type TrendPoint = {
