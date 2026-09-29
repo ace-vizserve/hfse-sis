@@ -78,31 +78,31 @@ export function SubjectCatalogMenu({
 
   return (
     <>
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         {onRename && (
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6 text-foreground hover:text-brand-indigo-deep"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-xs"
             aria-label={`Rename ${subject.name}`}
-            title="Rename"
             onClick={onRename}
           >
             <PencilLine className="size-3.5" />
+            Rename
           </Button>
         )}
         {described && (
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            variant="destructive"
+            size="sm"
+            className="h-7 px-2.5 text-xs"
             aria-label={`Delete ${subject.name}`}
-            title="Delete subject"
             onClick={() => setConfirmOpen(true)}
           >
             <Trash2 className="size-3.5" />
+            Delete
           </Button>
         )}
       </div>

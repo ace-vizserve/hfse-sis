@@ -470,22 +470,23 @@ export function SubjectCatalogCard({
                           />
                         </TableCell>
                         <TableCell>
-                          <span className="flex items-center gap-0.5">
+                          <span className="flex items-center justify-end gap-1.5">
                             <HoverHint
                               hint={`Edit ${subject.name}`}
                               focusable={false}
                             >
                               <Button
                                 type="button"
-                                variant="ghost"
-                                size="icon"
-                                // Always visible at full strength — Mr Ace
-                                // (2026-09-29): row actions are not greyed out.
-                                className="size-6 shrink-0 text-foreground hover:text-brand-indigo-deep"
+                                variant="outline"
+                                size="sm"
+                                // Labelled buttons, not faint icons — Mr Ace
+                                // (2026-09-29).
+                                className="h-7 shrink-0 px-2.5 text-xs"
                                 onClick={() => setEditSubject(subject)}
                                 aria-label={`Edit ${subject.name}`}
                               >
-                                <Pencil className="size-3" />
+                                <Pencil className="size-3.5" />
+                                Edit
                               </Button>
                             </HoverHint>
                             {/* Rename — only a subject nothing uses yet;
