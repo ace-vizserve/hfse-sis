@@ -25,6 +25,7 @@ import {
   CHART_GRID,
   formatterFor,
   MUTED_SERIES,
+  type SegmentClickHandler,
   VALUE_LABEL,
   type YFormat,
 } from './chart-primitives';
@@ -43,7 +44,7 @@ export type ComparisonBarChartProps = {
   height?: number;
   orientation?: 'vertical' | 'horizontal';
   yFormat?: YFormat;
-  onSegmentClick?: (category: string) => void;
+  onSegmentClick?: SegmentClickHandler;
   /**
    * Tilt vertical-orientation category labels -30° so long names (e.g.
    * "Ongoing Verification") don't collide at 6+ buckets. Default true keeps

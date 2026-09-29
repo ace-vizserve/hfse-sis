@@ -3,7 +3,11 @@
 import * as React from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
-import { SEGMENT_EDGE, SERIES_COLORS } from './chart-primitives';
+import {
+  SEGMENT_EDGE,
+  SERIES_COLORS,
+  type SegmentClickHandler,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 /**
@@ -22,7 +26,7 @@ export type LabeledPieChartProps = {
   colors?: string[];
   height?: number;
   /** Makes each slice and legend row clickable — same behaviour as DonutChart's. */
-  onSegmentClick?: (sliceName: string) => void;
+  onSegmentClick?: SegmentClickHandler;
 };
 
 // Same cycle as DonutChart: the five series colours, then greys for the small

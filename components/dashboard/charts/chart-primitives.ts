@@ -7,6 +7,7 @@
  */
 
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
+import type { BarRectangleItem } from 'recharts';
 
 export type YFormat = 'number' | 'percent' | 'days';
 
@@ -120,3 +121,53 @@ export const VALUE_LABEL = {
   fontFamily: 'var(--font-mono)',
   fill: 'var(--color-ink-2)',
 } as const;
+
+// ─── CLICKABLE SEGMENTS ──────────────────────────────────────────────────
+//
+// A chart that drills reports the part the reader clicked: its category (the
+// x value, the level, the slice) and, on a chart with more than one series,
+// which series. One type for every chart, so a drill wrapper can hand any of
+// them the same setter. The second argument is optional, so an existing
+// `(segment: string) => void` handler still fits.
+//
+// Setting the prop changes one visual thing: the pointer. Hover emphasis is
+// what each chart already has (BAR_CURSOR behind a bar, ACTIVE_DOT on a line).
+
+export type SegmentClickHandler = (category: string, series?: string) => void;
+
+/** On a clickable bar or dot. */
+export const CLICKABLE_STYLE = { cursor: 'pointer' } as const;
+
+/**
+ * Report a clicked data row. Skips a row with no string category (nothing
+ * to drill into), and calls with ONE argument when the chart has no series,
+ * so a single-series caller sees exactly `(category)`.
+ */
+export function reportSegment(
+  onSegmentClick: SegmentClickHandler,
+  row: unknown,
+  categoryKey: string,
+  series?: string
+): void {
+  const category = (row as Record<string, unknown> | null | undefined)?.[
+    categoryKey
+  ];
+  if (typeof category !== 'string' || category === '') return;
+  if (series === undefined) onSegmentClick(category);
+  else onSegmentClick(category, series);
+}
+
+/**
+ * A `<Bar onClick>` for one series. Undefined when the chart is not
+ * clickable, so the bar is exactly as before. Recharts hands the handler the
+ * clicked rectangle; its data row is on `.payload`.
+ */
+export function barClickHandler(
+  onSegmentClick: SegmentClickHandler | undefined,
+  categoryKey: string,
+  series?: string
+): ((item: BarRectangleItem) => void) | undefined {
+  if (!onSegmentClick) return undefined;
+  return (item) =>
+    reportSegment(onSegmentClick, item?.payload, categoryKey, series);
+}

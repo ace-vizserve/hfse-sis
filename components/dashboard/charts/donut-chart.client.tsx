@@ -5,7 +5,11 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 import { HoverHint } from '@/components/ui/hover-hint';
 
-import { SEGMENT_EDGE, SERIES_COLORS } from './chart-primitives';
+import {
+  SEGMENT_EDGE,
+  SERIES_COLORS,
+  type SegmentClickHandler,
+} from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
 
 export type DonutSlice = { name: string; value: number };
@@ -23,7 +27,7 @@ export type DonutChartProps = {
    * that made the headline figure the one inert thing on the chart.
    */
   centerHint?: React.ReactNode;
-  onSegmentClick?: (sliceName: string) => void;
+  onSegmentClick?: SegmentClickHandler;
 };
 
 // The five series colours, then greys. A sixth or seventh slice is small by
