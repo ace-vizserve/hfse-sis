@@ -74,9 +74,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         held_on: input.heldOn,
         event_type: input.eventType,
         entrant_kind: input.entrantKind,
-        placement_mode: input.placementMode,
-        max_score: input.maxScore,
-        rank_within: input.rankWithin,
+        // Awards are always picked by hand (KD #228). These three columns
+        // are left over from a removed "ranked from scores" mode; they are
+        // written with their pick-mode values and never read.
+        placement_mode: 'pick',
+        max_score: null,
+        rank_within: 'event',
         created_by: auth.user.id,
       })
       .select('id')
@@ -129,7 +132,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         name: input.name,
         eventType: input.eventType,
         entrantKind: input.entrantKind,
-        placementMode: input.placementMode,
         heldOn: input.heldOn,
         places: input.places.map((p) => ({
           label: p.label,

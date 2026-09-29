@@ -1,22 +1,17 @@
-import { Hand, ListOrdered } from 'lucide-react';
+import { Hand } from 'lucide-react';
 
 import { HouseStatCard } from '@/components/house-points/house-stat-card';
 import { PlaceBadge } from '@/components/house-points/place-badge';
-import type {
-  EntrantKind,
-  Place,
-  PlacementMode,
-  RankWithin,
-} from '@/lib/house-points/compute';
+import type { EntrantKind, Place } from '@/lib/house-points/compute';
 import { ordinal } from '@/lib/house-points/defaults';
 import { rankStandings } from '@/lib/house-points/standings';
 import type { HouseRow } from '@/lib/sis/houses';
 
 // The top of an event's page: what each house has taken from THIS event, then
-// the rubric the sheet below is placed by.
+// the rubric of awards the sheet below picks from.
 //
 // Rendered by the score sheet, from the same in-memory rows the table edits —
-// so a score typed below moves these four figures the moment it is committed,
+// so an award picked below moves these four figures the moment it is saved,
 // with no refetch. No hooks here; it is a pure view of what it is handed.
 
 type Props = {
@@ -26,8 +21,6 @@ type Props = {
   /** How many of this event's entrants belong to each house id. */
   entrantsByHouse: Record<string, number>;
   entrantKind: EntrantKind;
-  placementMode: PlacementMode;
-  rankWithin: RankWithin;
   places: Place[];
 };
 
@@ -36,8 +29,6 @@ export function EventHeaderTotals({
   totals,
   entrantsByHouse,
   entrantKind,
-  placementMode,
-  rankWithin,
   places,
 }: Props) {
   const standings = rankStandings(houses, totals);
@@ -73,18 +64,13 @@ export function EventHeaderTotals({
         </div>
       )}
 
-      <RubricPanel
-        entrantKind={entrantKind}
-        placementMode={placementMode}
-        rankWithin={rankWithin}
-        places={places}
-      />
+      <RubricPanel places={places} />
     </div>
   );
 }
 
 function entrantDetail(kind: EntrantKind, count: number): string {
-  if (kind === 'house') return 'Not placed yet';
+  if (kind === 'house') return 'No award yet';
   const noun =
     kind === 'team'
       ? count === 1
@@ -96,59 +82,23 @@ function entrantDetail(kind: EntrantKind, count: number): string {
   return count === 0 ? `No ${noun} entered` : `${count} ${noun} entered`;
 }
 
-/** "The top 3 scores in each class are placed" — worded by rank_within. */
-function rubricTitle(
-  entrantKind: EntrantKind,
-  placementMode: PlacementMode,
-  rankWithin: RankWithin,
-  places: Place[]
-): string {
-  if (placementMode === 'pick') return 'Placements are picked by hand';
-  const ranked = places.filter((p) => p.rank !== null).length;
-  // Teams and houses always rank across the whole event (queries.ts).
-  const scope =
-    entrantKind !== 'student' || rankWithin === 'event'
-      ? ''
-      : rankWithin === 'section'
-        ? ' in each class'
-        : ' in each level';
-  return ranked === 1
-    ? `The top score${scope} is placed`
-    : `The top ${ranked} scores${scope} are placed`;
-}
-
-function RubricPanel({
-  entrantKind,
-  placementMode,
-  rankWithin,
-  places,
-}: Omit<Props, 'houses' | 'totals' | 'entrantsByHouse'>) {
+function RubricPanel({ places }: { places: Place[] }) {
   const sorted = [...places].sort((a, b) => a.sortOrder - b.sortOrder);
-  const catchAll = sorted.find((p) => p.rank === null);
-  const Icon = placementMode === 'pick' ? Hand : ListOrdered;
-
-  let body: string;
-  if (placementMode === 'pick') {
-    body = 'Choose each place from the list on the row. Each place earns:';
-  } else if (catchAll) {
-    body = `Equal scores share a place. Anyone else with a score gets ${catchAll.label}. A blank score earns nothing.`;
-  } else {
-    body =
-      'Equal scores share a place. Anyone else earns no points, and a blank score earns nothing.';
-  }
 
   // §9.4 accent panel — informational, the reader carries on around it.
   return (
     <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft bg-accent p-5">
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-        <Icon className="size-4" />
+        <Hand className="size-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-3">
         <div className="space-y-1.5">
           <p className="font-serif text-base font-semibold text-foreground">
-            {rubricTitle(entrantKind, placementMode, rankWithin, places)}
+            Awards are picked by hand
           </p>
-          <p className="text-sm text-muted-foreground">{body}</p>
+          <p className="text-sm text-muted-foreground">
+            Choose each award from the list on the row. Each award earns:
+          </p>
         </div>
         {sorted.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Rubric">

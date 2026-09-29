@@ -46,9 +46,6 @@ function blankValues(ayCode: string, scales: Scale[]): EventFormValues {
     heldOn: null,
     eventType: 'internal',
     entrantKind: 'student',
-    placementMode: 'score',
-    maxScore: null,
-    rankWithin: 'event',
     places: placesFromScale(scales.find((s) => s.eventType === 'internal')),
   };
 }
@@ -87,12 +84,7 @@ export function NewEventSheet({
   }
 
   async function onSubmit(values: EventFormValues) {
-    const body: EventFormValues = {
-      ...values,
-      // A score only has a ceiling when scores are used at all.
-      maxScore: values.placementMode === 'score' ? values.maxScore : null,
-    };
-    await run(() => createMutation.mutateAsync(body), {
+    await run(() => createMutation.mutateAsync(values), {
       pending: 'Creating event…',
       success: 'Event created',
       onResolved: (created) => {
@@ -154,8 +146,8 @@ export function NewEventSheet({
             New event
           </SheetTitle>
           <SheetDescription>
-            Set how it is placed and what each place is worth. You add the
-            students, teams or houses on the next page.
+            Set its awards and what each one is worth. You add the students,
+            teams or houses on the next page.
           </SheetDescription>
         </SheetHeader>
 

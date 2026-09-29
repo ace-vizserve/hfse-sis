@@ -20,14 +20,13 @@ import {
 import {
   EVENT_TYPE_SHORT_LABELS,
   formatEventDate,
-  formatPoints,
 } from '@/lib/house-points/standings';
 import { listHouses } from '@/lib/sis/houses';
 import { getSessionUser } from '@/lib/supabase/server';
 
 // One house-points event: its four house totals, its rubric, and the score
-// sheet itself — "basically a grading sheet". Type a score (or pick a place)
-// and the placement and points fill in on their own.
+// sheet itself — "basically a grading sheet". Pick each entrant's award and
+// the points fill in on their own (KD #228).
 //
 // Same guard as /records/house-points: admissions may VIEW, only
 // HOUSE_POINTS_WRITERS may change anything. `canEdit` is the one switch for
@@ -117,9 +116,6 @@ export default async function HousePointsEventPage({
                     'attendance'
                   >,
                   entrantKind: event.entrantKind,
-                  placementMode: event.placementMode,
-                  maxScore: event.maxScore,
-                  rankWithin: event.rankWithin,
                   places: event.places,
                 }}
                 participantCount={participantCount}
@@ -157,9 +153,6 @@ export default async function HousePointsEventPage({
         eventName={event.name}
         roster={roster}
         entrantKind={event.entrantKind}
-        placementMode={event.placementMode}
-        rankWithin={event.rankWithin}
-        maxScore={event.maxScore}
         places={event.places}
         rows={event.rows}
         houses={houses}
@@ -177,24 +170,15 @@ export default async function HousePointsEventPage({
 function describeEvent(event: {
   heldOn: string | null;
   entrantKind: 'student' | 'team' | 'house';
-  placementMode: 'score' | 'pick';
-  maxScore: number | null;
 }): string {
   const when = event.heldOn ? `Held on ${formatEventDate(event.heldOn)}. ` : '';
   const who =
     event.entrantKind === 'student'
-      ? 'Students'
+      ? 'each student'
       : event.entrantKind === 'team'
-        ? 'Teams'
-        : 'Houses';
-  const how =
-    event.placementMode === 'score'
-      ? `${who} are placed by their score${
-          event.maxScore !== null
-            ? `, out of ${formatPoints(event.maxScore)}`
-            : ''
-        }.`
-      : `${who} are placed by hand.`;
+        ? 'each team'
+        : 'each house';
+  const how = `Pick the award ${who} won; it earns that award's points.`;
   const where =
     event.entrantKind === 'student'
       ? " Each student's points go to their house."

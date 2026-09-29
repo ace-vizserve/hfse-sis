@@ -117,8 +117,9 @@ export default async function HousePointsPage({
             House points.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every point a student earns goes to their house. Enter scores under
-            an event, and placements, points and standings follow on their own.
+            Every point a student earns goes to their house. Pick each
+            entrant&rsquo;s award under an event, and points and standings
+            follow on their own.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">

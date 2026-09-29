@@ -1,50 +1,35 @@
-import {
-  groupKey,
-  teamHouses,
-  type SheetEntry,
-} from '@/lib/house-points/compute';
+import { teamHouses, type SheetEntry } from '@/lib/house-points/compute';
 // Type-only: lib/house-points/queries.ts is `server-only`, and a type import
 // is erased before the client bundle sees it.
 import type { EventDetail } from '@/lib/house-points/queries';
 
 // The single pure mapper from a resolved EventRow to the SheetEntry shape
-// lib/house-points/compute.ts ranks and totals.
+// lib/house-points/compute.ts totals.
 //
 // Its own client-safe module (no `server-only`) because the score sheet runs
-// it IN THE BROWSER after every keystroke-commit, so placements, points and
-// the header totals move with the typing rather than waiting for a refetch.
+// it IN THE BROWSER after every award pick, so points and the header totals
+// move straight away rather than waiting for a refetch.
 // lib/house-points/queries.ts re-exports it, so the server loaders and the
-// client sheet share exactly one copy of the grouping rules.
+// client sheet share exactly one copy of the house rules.
 
 /**
- * A student row's group is its ranking scope (`groupKey`); a team's or a
- * house's group is always 'event' — a relay or a banner competition is
- * ranked against every other entrant in the event, never bucketed by section
- * or level. A team's houseIds are its members' DISTINCT non-null houses
- * (compute.ts credits a placement once per distinct house); a student's is
- * `[houseId]` or `[]`; a house row's is `[houseId]`.
+ * A team's houseIds are its members' DISTINCT non-null houses (compute.ts
+ * credits an award once per distinct house); a student's is `[houseId]` or
+ * `[]`; a house row's is `[houseId]`.
  */
 export function toSheetEntries(
-  detail: Pick<EventDetail, 'rankWithin' | 'rows'>
+  detail: Pick<EventDetail, 'rows'>
 ): SheetEntry[] {
   return detail.rows.map((row) => {
     if (row.kind === 'team') {
       const houseIds = teamHouses(row.team?.members ?? []).map(
         (h) => h.houseId
       );
-      return {
-        id: row.entryId,
-        group: 'event',
-        score: row.score,
-        placeId: row.placeId,
-        houseIds,
-      };
+      return { id: row.entryId, placeId: row.placeId, houseIds };
     }
     if (row.kind === 'house') {
       return {
         id: row.entryId,
-        group: 'event',
-        score: row.score,
         placeId: row.placeId,
         houseIds: row.houseId ? [row.houseId] : [],
       };
@@ -53,8 +38,6 @@ export function toSheetEntries(
     const s = row.student;
     return {
       id: row.entryId,
-      group: s ? groupKey(detail.rankWithin, s.sectionId, s.levelId) : 'event',
-      score: row.score,
       placeId: row.placeId,
       houseIds: s?.houseId ? [s.houseId] : [],
     };

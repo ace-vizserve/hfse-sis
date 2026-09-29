@@ -16,21 +16,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import type {
-  EntrantKind,
-  PlacementMode,
-  RankWithin,
-} from '@/lib/house-points/compute';
+import type { EntrantKind } from '@/lib/house-points/compute';
 import {
   nextRank,
-  ordinal,
   placesFromScale,
   sameRubric,
 } from '@/lib/house-points/defaults';
@@ -47,6 +35,11 @@ import { cn } from '@/lib/utils';
 // piece of behaviour that is about the fields themselves: picking a Type
 // refills the rubric from that type's standing point scale, asking first when
 // somebody has already changed the rubric.
+//
+// Every event is a rubric of awards → points, and the organiser picks each
+// entrant's award on the sheet (KD #228). There is no scoring or ranking to
+// set up. Each award's hidden `rank` only gives its badge a medal colour; the
+// award order is the row order here.
 
 export type EventFormValues = EventInput;
 type CreatableType = EventInput['eventType'];
@@ -75,7 +68,7 @@ const ENTRANT_OPTIONS: Option<EntrantKind>[] = [
   {
     value: 'student',
     label: 'Students',
-    hint: 'Each student is placed on their own.',
+    hint: 'Each student gets their own award.',
   },
   {
     value: 'team',
@@ -85,31 +78,9 @@ const ENTRANT_OPTIONS: Option<EntrantKind>[] = [
   {
     value: 'house',
     label: 'Houses',
-    hint: 'Each house is placed as a whole.',
+    hint: 'Each house gets an award as a whole.',
   },
 ];
-
-const PLACEMENT_OPTIONS: Option<PlacementMode>[] = [
-  {
-    value: 'score',
-    label: 'Ranked from scores',
-    hint: 'Enter each score. The highest takes 1st place.',
-  },
-  {
-    value: 'pick',
-    label: 'Picked by hand',
-    hint: 'Choose each place yourself.',
-  },
-];
-
-const RANK_WITHIN_OPTIONS: { value: RankWithin; label: string }[] = [
-  { value: 'section', label: 'Each class' },
-  { value: 'level', label: 'Each level' },
-  { value: 'event', label: 'Whole event' },
-];
-
-/** The rank Select's value for the "everyone else" row (rank null). */
-const EVERYONE_ELSE = 'everyone-else';
 
 /** Every label a validation error can point at, in the form's own words. */
 export const EVENT_FIELD_LABELS: Record<string, string> = {
@@ -117,9 +88,6 @@ export const EVENT_FIELD_LABELS: Record<string, string> = {
   heldOn: 'Date',
   eventType: 'Type',
   entrantKind: 'Who is entered',
-  placementMode: 'How placements are decided',
-  maxScore: 'Highest possible score',
-  rankWithin: 'Rank students within',
   places: 'Rubric',
 };
 
@@ -194,9 +162,9 @@ export function EventSetupFields({
   /** The standing point scales, from `loadScales()`. */
   scales: Scale[];
   /**
-   * The event already has entrants: who is entered and how they are placed
-   * can no longer change, because every score and place already recorded was
-   * given under those rules. Passed by the edit sheet (Task 9).
+   * The event already has entrants: who is entered can no longer change,
+   * because every award already recorded was given to those entrants.
+   * Passed by the edit sheet (Task 9).
    */
   lockSetup?: boolean;
 }) {
@@ -205,10 +173,7 @@ export function EventSetupFields({
     control,
     name: 'places',
   });
-  const entrantKind = useWatch({ control, name: 'entrantKind' });
-  const placementMode = useWatch({ control, name: 'placementMode' });
   const places = useWatch({ control, name: 'places' }) ?? [];
-  const isScore = placementMode === 'score';
 
   // The type the user has just switched to, while we ask whether their own
   // rubric should be replaced by its defaults. Asked INLINE, above the
@@ -239,20 +204,6 @@ export function EventSetupFields({
       setPendingType(null);
     } else {
       setPendingType(next);
-    }
-  }
-
-  function changeEntrant(next: EntrantKind) {
-    form.setValue('entrantKind', next, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    // Mirrors the database rule: a house has no score of its own to rank.
-    if (next === 'house' && form.getValues('placementMode') !== 'pick') {
-      form.setValue('placementMode', 'pick', {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
     }
   }
 
@@ -314,7 +265,7 @@ export function EventSetupFields({
               />
             </FormControl>
             <FormDescription>
-              Each type starts with its own points for each place.
+              Each type starts with its own awards and points.
             </FormDescription>
             <FormMessage />
           </FormItem>
@@ -332,112 +283,25 @@ export function EventSetupFields({
                 idPrefix="hp-entrant"
                 options={ENTRANT_OPTIONS}
                 value={field.value}
-                onChange={changeEntrant}
+                onChange={field.onChange}
                 disabled={lockSetup}
                 columns={3}
               />
             </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={control}
-        name="placementMode"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>How placements are decided</FormLabel>
-            <FormControl>
-              <RadioCards
-                idPrefix="hp-placement"
-                options={PLACEMENT_OPTIONS}
-                value={field.value}
-                onChange={field.onChange}
-                disabled={lockSetup}
-                disabledValues={entrantKind === 'house' ? ['score'] : []}
-                columns={2}
-              />
-            </FormControl>
-            {lockSetup ? (
+            {lockSetup && (
               <FormDescription>
-                These can&rsquo;t change once people are entered, because their
-                scores and places were recorded under them.
+                This can&rsquo;t change once people are entered, because their
+                awards were given to them.
               </FormDescription>
-            ) : entrantKind === 'house' ? (
-              <FormDescription>
-                Houses are always picked by hand — a house has no score of its
-                own to rank.
-              </FormDescription>
-            ) : null}
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {isScore && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            control={control}
-            name="maxScore"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Highest possible score</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="any"
-                    className="tabular-nums"
-                    name={field.name}
-                    ref={field.ref}
-                    onBlur={field.onBlur}
-                    value={field.value ?? ''}
-                    onChange={(e) =>
-                      field.onChange(toNumberOrNull(e.target.value))
-                    }
-                    placeholder="50"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
             )}
-          />
-          {/* Teams and houses are always ranked across the whole event, so
-              this only means something when students are entered alone. */}
-          {entrantKind === 'student' && (
-            <FormField
-              control={control}
-              name="rankWithin"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Rank students within</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {RANK_WITHIN_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-        </div>
-      )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      {/* The rubric — a short list of places, each worth some points. A
+      {/* The rubric — a short list of awards, each worth some points. A
           field array rather than a table: it is a handful of rows edited in
-          place, and every row is the same three controls. */}
+          place, and every row is the same controls. */}
       {/* §9.4 accent panel, advisory: the reader can carry on around it. */}
       {pendingType && (
         <div
@@ -454,7 +318,7 @@ export function EventSetupFields({
                 defaults?
               </p>
               <p className="text-sm text-muted-foreground">
-                You&rsquo;ve changed the places or points below, so they are
+                You&rsquo;ve changed the awards or points below, so they are
                 kept until you choose.
               </p>
             </div>
@@ -492,23 +356,14 @@ export function EventSetupFields({
             Rubric
           </h3>
           <p className="text-xs text-muted-foreground">
-            {isScore
-              ? 'The points each place earns. "Everyone else" covers anyone with a score who didn\'t place.'
-              : 'The places you can pick from, and the points each one earns.'}
+            The awards you pick from on the sheet, and the points each one
+            earns. They appear on the sheet in this order.
           </p>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border">
-          <div
-            className={cn(
-              'grid items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground',
-              isScore
-                ? 'grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_2rem]'
-                : 'grid-cols-[minmax(0,1fr)_5.5rem_2rem]'
-            )}
-          >
-            <span>Label</span>
-            {isScore && <span>Rank</span>}
+          <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_2rem] items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+            <span>Award</span>
             <span className="text-right">Points</span>
             <span className="sr-only">Remove</span>
           </div>
@@ -516,16 +371,10 @@ export function EventSetupFields({
           <ul className="divide-y divide-border">
             {fields.map((row, index) => {
               const current = places[index];
-              const rankOptions = Math.max(places.length, current?.rank ?? 0);
               return (
                 <li
                   key={row.id}
-                  className={cn(
-                    'grid items-start gap-2 px-3 py-2',
-                    isScore
-                      ? 'grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_2rem]'
-                      : 'grid-cols-[minmax(0,1fr)_5.5rem_2rem]'
-                  )}
+                  className="grid grid-cols-[minmax(0,1fr)_5.5rem_2rem] items-start gap-2 px-3 py-2"
                 >
                   <FormField
                     control={control}
@@ -533,61 +382,15 @@ export function EventSetupFields({
                     render={({ field }) => (
                       <FormItem className="gap-1">
                         <FormLabel className="sr-only">
-                          Label for row {index + 1}
+                          Award {index + 1}
                         </FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="1st place" />
+                          <Input {...field} placeholder="Gold" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  {isScore && (
-                    <FormField
-                      control={control}
-                      name={`places.${index}.rank`}
-                      render={({ field }) => (
-                        <FormItem className="gap-1">
-                          <FormLabel className="sr-only">
-                            Rank for row {index + 1}
-                          </FormLabel>
-                          <Select
-                            value={
-                              field.value === null
-                                ? EVERYONE_ELSE
-                                : String(field.value)
-                            }
-                            onValueChange={(v) =>
-                              field.onChange(
-                                v === EVERYONE_ELSE ? null : Number(v)
-                              )
-                            }
-                          >
-                            <FormControl>
-                              <SelectTrigger className="w-full tabular-nums">
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {Array.from(
-                                { length: rankOptions },
-                                (_, i) => i + 1
-                              ).map((r) => (
-                                <SelectItem key={r} value={String(r)}>
-                                  {ordinal(r)}
-                                </SelectItem>
-                              ))}
-                              <SelectItem value={EVERYONE_ELSE}>
-                                Everyone else
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
 
                   <FormField
                     control={control}
@@ -595,7 +398,7 @@ export function EventSetupFields({
                     render={({ field }) => (
                       <FormItem className="gap-1">
                         <FormLabel className="sr-only">
-                          Points for row {index + 1}
+                          Points for award {index + 1}
                         </FormLabel>
                         <FormControl>
                           <Input
@@ -608,7 +411,7 @@ export function EventSetupFields({
                             ref={field.ref}
                             onBlur={field.onBlur}
                             // Blank is kept as NaN so the schema answers
-                            // "Enter the points for this place." — never a
+                            // "Enter the points for this award." — never a
                             // silent 0.
                             value={Number.isNaN(field.value) ? '' : field.value}
                             onChange={(e) =>
@@ -630,7 +433,7 @@ export function EventSetupFields({
                     className="size-9 text-muted-foreground hover:text-destructive"
                     onClick={() => remove(index)}
                     disabled={fields.length === 1}
-                    aria-label={`Remove ${current?.label || `row ${index + 1}`}`}
+                    aria-label={`Remove ${current?.label || `award ${index + 1}`}`}
                   >
                     <X className="size-4" />
                   </Button>
@@ -649,17 +452,18 @@ export function EventSetupFields({
               onClick={() =>
                 append({
                   label: '',
+                  // Unseen: only picks the badge colour, never a placement.
                   rank: nextRank(form.getValues('places')),
                   points: Number.NaN,
                 })
               }
             >
               <Plus className="size-4" />
-              Add a place
+              Add an award
             </Button>
             {fields.length >= MAX_PLACES && (
               <span className="text-xs text-muted-foreground">
-                An event can have up to {MAX_PLACES} places.
+                An event can have up to {MAX_PLACES} awards.
               </span>
             )}
           </div>

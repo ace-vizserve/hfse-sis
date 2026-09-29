@@ -22,12 +22,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import type {
-  EntrantKind,
-  Place,
-  PlacementMode,
-  RankWithin,
-} from '@/lib/house-points/compute';
+import type { EntrantKind, Place } from '@/lib/house-points/compute';
 import type { Scale } from '@/lib/house-points/queries';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -37,9 +32,9 @@ import { EventInputSchema } from '@/lib/schemas/house-points';
 // with this event's own setup. Places keep their ids, so the route updates
 // the rows that already exist rather than replacing the rubric wholesale.
 //
-// Once anyone is entered, who is entered and how they are placed are locked
-// (`lockSetup`) — every score and place already recorded was given under them,
-// and the route refuses the change with a 409 anyway.
+// Once anyone is entered, who is entered is locked (`lockSetup`) — every
+// award already recorded was given to those entrants, and the route refuses
+// the change with a 409 anyway.
 //
 // DELETE is asked INSIDE the drawer, as an inline panel, never as a dialog on
 // top of it (Mr Ace: never nest dialogs). It is only offered while the event
@@ -52,9 +47,6 @@ export type EditableEvent = {
   heldOn: string | null;
   eventType: EventFormValues['eventType'];
   entrantKind: EntrantKind;
-  placementMode: PlacementMode;
-  maxScore: number | null;
-  rankWithin: RankWithin;
   places: Place[];
 };
 
@@ -65,9 +57,6 @@ function valuesFrom(event: EditableEvent): EventFormValues {
     heldOn: event.heldOn,
     eventType: event.eventType,
     entrantKind: event.entrantKind,
-    placementMode: event.placementMode,
-    maxScore: event.maxScore,
-    rankWithin: event.rankWithin,
     places: [...event.places]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((p) => ({
@@ -110,14 +99,9 @@ export function EditEventSheet({
   }
 
   async function onSubmit(values: EventFormValues) {
-    // Everything but the year, which never changes. A score only has a
-    // ceiling when scores are used at all.
-    const { ayCode: _ayCode, ...rest } = values;
+    // Everything but the year, which never changes.
+    const { ayCode: _ayCode, ...body } = values;
     void _ayCode;
-    const body = {
-      ...rest,
-      maxScore: values.placementMode === 'score' ? values.maxScore : null,
-    };
     await run(
       () =>
         apiFetch<{ ok: true; changed: boolean }>(
@@ -201,7 +185,7 @@ export function EditEventSheet({
           </SheetTitle>
           <SheetDescription>
             {hasParticipants
-              ? 'Change the name, date, type or rubric. Placements and points on the sheet follow the new rubric straight away.'
+              ? 'Change the name, date, type or rubric. Awards and points on the sheet follow the new rubric straight away.'
               : 'Change anything about this event. Nobody is entered yet.'}
           </SheetDescription>
         </SheetHeader>

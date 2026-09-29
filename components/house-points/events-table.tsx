@@ -14,7 +14,6 @@ import type { EventSummary } from '@/lib/house-points/queries';
 import {
   ENTRANT_KIND_FILTER_LABELS,
   NO_POINTS_YET,
-  PLACEMENT_MODE_FILTER_LABELS,
   eventWinnerIds,
   matchesAny,
 } from '@/lib/house-points/sheet-filters';
@@ -172,22 +171,6 @@ function buildColumns(houses: HouseRow[]): ColumnDef<EventSummary, unknown>[] {
         ]),
     },
     {
-      id: 'placedBy',
-      accessorFn: (r) => PLACEMENT_MODE_FILTER_LABELS[r.placementMode],
-      header: 'Placed by',
-      meta: { label: 'Placed by' },
-      cell: ({ row }) => (
-        <span className="text-sm text-foreground">
-          {PLACEMENT_MODE_FILTER_LABELS[row.original.placementMode]}
-        </span>
-      ),
-      enableSorting: false,
-      filterFn: (row, _id, value) =>
-        matchesAny(value, [
-          PLACEMENT_MODE_FILTER_LABELS[row.original.placementMode],
-        ]),
-    },
-    {
       id: 'wonBy',
       accessorFn: (r) => winnerNames(r, houses).join(', '),
       header: 'Won by',
@@ -220,7 +203,6 @@ function winnerNames(event: EventSummary, houses: HouseRow[]): string[] {
 /** Helper columns hidden until switched on from Columns. */
 const HIDDEN_HELPER_COLUMNS = {
   enteredAs: false,
-  placedBy: false,
   wonBy: false,
 };
 
@@ -262,13 +244,6 @@ export function EventsTable({
           .map((k) => ENTRANT_KIND_FILTER_LABELS[k]),
       },
       {
-        columnId: 'placedBy',
-        label: 'Placed by',
-        valueOptions: (['score', 'pick'] as const)
-          .filter((m) => events.some((e) => e.placementMode === m))
-          .map((m) => PLACEMENT_MODE_FILTER_LABELS[m]),
-      },
-      {
         columnId: 'wonBy',
         label: 'Won by',
         valueOptions: [...houses.map((h) => h.name), NO_POINTS_YET],
@@ -287,7 +262,7 @@ export function EventsTable({
           title="No events yet"
           body={
             canEdit
-              ? 'Create an event for each competition, add who took part, and enter their scores. Every house total on this page adds up from there.'
+              ? 'Create an event for each competition, add who took part, and pick the award each one won. Every house total on this page adds up from there.'
               : 'Events appear here once they are created.'
           }
           className={canEdit && emptyAction ? 'pb-4' : undefined}

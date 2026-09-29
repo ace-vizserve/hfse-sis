@@ -4,11 +4,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import {
-  loadEventForWrite,
-  loadRosterByIds,
-  toNumOrNull,
-} from '@/lib/house-points/queries';
+import { loadEventForWrite, loadRosterByIds } from '@/lib/house-points/queries';
 import {
   blocksTeamEntryDelete,
   REMOVE_TEAM_INSTEAD_ERROR,
@@ -21,8 +17,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // DELETE /api/house-points/entries/[entryId]
 //
 // One entry on an event's score sheet — a student, a team, or a house. PATCH
-// changes its score (score-mode events) or its place (pick-mode events);
-// DELETE removes it outright (a team's own entry can also be removed this
+// changes the award picked for it (or clears it: `placeId: null`); DELETE removes it outright (a team's own entry can also be removed this
 // way, though DELETE /api/house-points/teams/[teamId] is the usual path for
 // a team since it also clears the team and its members).
 //
@@ -37,7 +32,6 @@ type EntryRow = {
   section_student_id: string | null;
   team_id: string | null;
   house_id: string | null;
-  score: number | string | null;
   place_id: string | null;
 };
 
@@ -66,9 +60,7 @@ async function loadEntryRow(
 ): Promise<EntryRow | null> {
   const { data, error } = await service
     .from('house_point_entries')
-    .select(
-      'id, event_id, section_student_id, team_id, house_id, score, place_id'
-    )
+    .select('id, event_id, section_student_id, team_id, house_id, place_id')
     .eq('id', entryId)
     .maybeSingle();
   if (error) throw new Error(`house_point_entries: ${error.message}`);
@@ -141,77 +133,32 @@ export async function PATCH(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 
-    const existingScore = toNumOrNull(entry.score);
-
-    // Fetched once, ahead of both the placeId validation and the audit
-    // row's before/after labels — needed whenever a placeId is being
-    // written OR the entry already carries one (score-only patch on an
-    // already-placed pick-mode entry still needs the label for `before`).
-    let places: { id: string; label: string }[] = [];
-    if (patch.placeId !== undefined || entry.place_id !== null) {
-      step = 'load places';
-      const { data: placeRows, error: placesError } = await service
-        .from('house_point_places')
-        .select('id, label')
-        .eq('event_id', event.id);
-      if (placesError) {
-        throw new Error(`house_point_places: ${placesError.message}`);
-      }
-      places = (placeRows ?? []) as { id: string; label: string }[];
+    // Fetched once, for both the placeId check and the audit row's
+    // before/after award labels.
+    step = 'load places';
+    const { data: placeRows, error: placesError } = await service
+      .from('house_point_places')
+      .select('id, label')
+      .eq('event_id', event.id);
+    if (placesError) {
+      throw new Error(`house_point_places: ${placesError.message}`);
     }
+    const places = (placeRows ?? []) as { id: string; label: string }[];
     const labelFor = (id: string | null): string | null =>
       id ? (places.find((p) => p.id === id)?.label ?? null) : null;
 
-    const updateData: Record<string, number | string | null> = {};
-    let changed = false;
-
-    if (patch.score !== undefined) {
-      if (event.placementMode !== 'score') {
-        return NextResponse.json(
-          { error: "Scores aren't entered for this event." },
-          { status: 400 }
-        );
-      }
-      if (
-        patch.score !== null &&
-        event.maxScore !== null &&
-        patch.score > event.maxScore
-      ) {
-        return NextResponse.json(
-          { error: `Score can't be more than ${event.maxScore}` },
-          { status: 400 }
-        );
-      }
-      if (patch.score !== existingScore) {
-        updateData.score = patch.score;
-        changed = true;
-      }
+    if (patch.placeId !== null && !places.some((p) => p.id === patch.placeId)) {
+      return NextResponse.json(
+        { error: "That award isn't on this event's rubric." },
+        { status: 400 }
+      );
     }
 
-    if (patch.placeId !== undefined) {
-      if (event.placementMode !== 'pick') {
-        return NextResponse.json(
-          { error: "Places aren't picked by hand for this event." },
-          { status: 400 }
-        );
-      }
-      if (
-        patch.placeId !== null &&
-        !places.some((p) => p.id === patch.placeId)
-      ) {
-        return NextResponse.json({ error: 'Unknown place.' }, { status: 400 });
-      }
-      if (patch.placeId !== entry.place_id) {
-        updateData.place_id = patch.placeId;
-        changed = true;
-      }
-    }
-
-    // Resubmitting the value already stored — a no-op, no write and no
+    // Resubmitting the award already stored — a no-op, no write and no
     // audit row (Task 5's review required this for the sibling event PATCH;
     // the same non-negotiable applies here so re-saving an unchanged score
     // sheet row doesn't spam the audit log).
-    if (!changed) {
+    if (patch.placeId === entry.place_id) {
       return NextResponse.json({ ok: true, changed: false });
     }
 
@@ -219,7 +166,7 @@ export async function PATCH(
     const { error: updateError } = await service
       .from('house_point_entries')
       .update({
-        ...updateData,
+        place_id: patch.placeId,
         updated_by: auth.user.id,
         updated_at: new Date().toISOString(),
       })
@@ -228,14 +175,7 @@ export async function PATCH(
       throw new Error(`house_point_entries update: ${updateError.message}`);
     }
 
-    const finalScore =
-      'score' in updateData
-        ? (updateData.score as number | null)
-        : existingScore;
-    const finalPlaceId =
-      'place_id' in updateData
-        ? (updateData.place_id as string | null)
-        : entry.place_id;
+    const finalPlaceId = patch.placeId;
 
     step = 'resolve identity';
     const identity = await resolveEntryIdentity(service, entry);
@@ -252,19 +192,14 @@ export async function PATCH(
         eventName: event.name,
         ...identity,
         before: {
-          score: existingScore,
           placeId: entry.place_id,
           placeLabel: labelFor(entry.place_id),
         },
         after: {
-          score: finalScore,
           placeId: finalPlaceId,
           placeLabel: labelFor(finalPlaceId),
         },
-        ...(patch.score !== undefined ? { score: patch.score } : {}),
-        ...(patch.placeId !== undefined
-          ? { placeLabel: labelFor(finalPlaceId) }
-          : {}),
+        placeLabel: labelFor(finalPlaceId),
       },
     });
 
@@ -272,7 +207,7 @@ export async function PATCH(
 
     return NextResponse.json({
       ok: true,
-      entry: { id: entryId, score: finalScore, placeId: finalPlaceId },
+      entry: { id: entryId, placeId: finalPlaceId },
     });
   } catch (e) {
     return failure(step, e, `PATCH ${entryId}`);
@@ -302,7 +237,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 
-    // A team's entry carries the team's placement/score — deleting it here
+    // A team's entry carries the team's award — deleting it here
     // orphans the team (it stays on the roster with members but no sheet
     // row) and permanently locks its members as "on another team" (KD
     // #228's one-team-per-student rule keys off house_point_team_members,

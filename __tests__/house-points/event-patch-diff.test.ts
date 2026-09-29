@@ -26,9 +26,6 @@ function storedEvent(
     held_on: '2026-10-01',
     event_type: 'internal',
     entrant_kind: 'student',
-    placement_mode: 'score',
-    max_score: 100,
-    rank_within: 'event',
     ...overrides,
   };
 }
@@ -45,9 +42,6 @@ describe('diffEventFields', () => {
       // EventPatch's narrower CREATABLE_EVENT_TYPE_VALUES.
       eventType: 'internal',
       entrantKind: existing.entrant_kind,
-      placementMode: existing.placement_mode,
-      maxScore: existing.max_score,
-      rankWithin: existing.rank_within,
     };
     const { updateData, before, after } = diffEventFields(existing, patch);
     expect(updateData).toEqual({});
@@ -75,9 +69,9 @@ describe('diffEventFields', () => {
     expect(after).toEqual({});
   });
 
-  it('treats an explicit maxScore: null as a real value, not "not sent"', () => {
-    const existing = storedEvent({ max_score: null });
-    const patch: EventPatch = { maxScore: null };
+  it('treats an explicit heldOn: null as a real value, not "not sent"', () => {
+    const existing = storedEvent({ held_on: null });
+    const patch: EventPatch = { heldOn: null };
     const { updateData, before, after } = diffEventFields(existing, patch);
     // Same as stored (null === null) — no change, nothing in the diff.
     expect(updateData).toEqual({});
@@ -85,13 +79,13 @@ describe('diffEventFields', () => {
     expect(after).toEqual({});
   });
 
-  it('detects clearing maxScore from a real number to null', () => {
-    const existing = storedEvent({ max_score: 100 });
-    const patch: EventPatch = { maxScore: null };
+  it('detects clearing heldOn from a date to null', () => {
+    const existing = storedEvent({ held_on: '2026-10-01' });
+    const patch: EventPatch = { heldOn: null };
     const { updateData, before, after } = diffEventFields(existing, patch);
-    expect(updateData).toEqual({ max_score: null });
-    expect(before).toEqual({ maxScore: 100 });
-    expect(after).toEqual({ maxScore: null });
+    expect(updateData).toEqual({ held_on: null });
+    expect(before).toEqual({ heldOn: '2026-10-01' });
+    expect(after).toEqual({ heldOn: null });
   });
 });
 

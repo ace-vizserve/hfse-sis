@@ -15,11 +15,15 @@ import 'server-only';
 // new entries, so it only offers students currently on the roster.
 //
 // `toSheetEntries` (lib/house-points/sheet-entries.ts, re-exported below) is the single pure mapper from a resolved EventRow to the
-// SheetEntry shape lib/house-points/compute.ts ranks and totals — used by
-// both `loadAyEvents` (one totals-only pass per event, for the year list)
-// and `loadEvent` (the full score sheet for one event), so the grouping
-// rules (a team/house always ranks as 'event'; a student ranks by
-// rankWithin) live in exactly one place.
+// SheetEntry shape lib/house-points/compute.ts totals — used by both
+// `loadAyEvents` (one totals-only pass per event, for the year list) and
+// `loadEvent` (the full score sheet for one event), so the house rules (a
+// team credits each of its distinct houses once) live in exactly one place.
+//
+// Awards are always picked by hand (KD #228). The event columns
+// `placement_mode`, `max_score`, `rank_within` and the entry column `score`
+// are left over from a "ranked from scores" mode that was removed before it
+// was used; nothing here reads them.
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
@@ -32,8 +36,6 @@ import {
   type EntrantKind,
   type EventType,
   type Place,
-  type PlacementMode,
-  type RankWithin,
 } from '@/lib/house-points/compute';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
 
@@ -60,7 +62,6 @@ export type EventSummary = {
   heldOn: string | null;
   eventType: EventType;
   entrantKind: EntrantKind;
-  placementMode: PlacementMode;
   entrantCount: number;
   totals: Record<string, number>; // keyed by house id
 };
@@ -68,8 +69,6 @@ export type EventSummary = {
 export type EventDetail = EventSummary & {
   academicYearId: string;
   ayCode: string;
-  maxScore: number | null;
-  rankWithin: RankWithin;
   places: Place[];
   rows: EventRow[]; // one per entry, in display order
 };
@@ -77,7 +76,6 @@ export type EventDetail = EventSummary & {
 export type EventRow = {
   entryId: string;
   kind: EntrantKind;
-  score: number | null;
   placeId: string | null;
   student: RosterStudent | null; // kind 'student'
   team: { id: string; name: string; members: RosterStudent[] } | null; // kind 'team'
@@ -253,12 +251,9 @@ type EventRowDb = {
   held_on: string | null;
   event_type: EventType;
   entrant_kind: EntrantKind;
-  placement_mode: PlacementMode;
-  rank_within: RankWithin;
 };
 
 type EventDetailRowDb = EventRowDb & {
-  max_score: number | string | null;
   academic_year_id: string;
   academic_years: { ay_code: string } | { ay_code: string }[] | null;
 };
@@ -278,7 +273,6 @@ type EntryRowDb = {
   section_student_id: string | null;
   team_id: string | null;
   house_id: string | null;
-  score: number | string | null;
   place_id: string | null;
 };
 
@@ -300,7 +294,7 @@ function toPlace(row: PlaceRowDb): Place {
 // need (setup + AY, no places/rows/totals). Deliberately NOT `loadEvent`
 // above: that one also fetches every place, entry, team and roster row for
 // the full score sheet, which a write route that only needs to check
-// `entrantKind`/`placementMode`/`maxScore` and stamp `academic_year_id` for
+// `entrantKind` and stamp `academic_year_id` for
 // cache invalidation has no reason to pay for. One function so the three
 // call sites (POST entries, PATCH/DELETE one entry, POST/PATCH/DELETE a
 // team) read the same shape rather than three slightly different inline
@@ -310,8 +304,6 @@ export type EventForWrite = {
   id: string;
   name: string;
   entrantKind: EntrantKind;
-  placementMode: PlacementMode;
-  maxScore: number | null;
   academicYearId: string;
   ayCode: string | null;
 };
@@ -320,8 +312,6 @@ type EventForWriteRowDb = {
   id: string;
   name: string;
   entrant_kind: EntrantKind;
-  placement_mode: PlacementMode;
-  max_score: number | string | null;
   academic_year_id: string;
   academic_years: { ay_code: string } | { ay_code: string }[] | null;
 };
@@ -332,9 +322,7 @@ export async function loadEventForWrite(
 ): Promise<EventForWrite | null> {
   const { data, error } = await service
     .from('house_point_events')
-    .select(
-      'id, name, entrant_kind, placement_mode, max_score, academic_year_id, academic_years(ay_code)'
-    )
+    .select('id, name, entrant_kind, academic_year_id, academic_years(ay_code)')
     .eq('id', eventId)
     .maybeSingle();
   if (error) throw new Error(`loadEventForWrite: ${error.message}`);
@@ -345,8 +333,6 @@ export async function loadEventForWrite(
     id: row.id,
     name: row.name,
     entrantKind: row.entrant_kind,
-    placementMode: row.placement_mode,
-    maxScore: toNumOrNull(row.max_score),
     academicYearId: row.academic_year_id,
     ayCode: ay?.ay_code ?? null,
   };
@@ -376,7 +362,6 @@ function buildEventRows(
       return {
         entryId: entry.id,
         kind: 'team',
-        score: toNumOrNull(entry.score),
         placeId: entry.place_id,
         student: null,
         team: team ? { id: team.id, name: team.name, members } : null,
@@ -387,7 +372,6 @@ function buildEventRows(
       return {
         entryId: entry.id,
         kind: 'house',
-        score: toNumOrNull(entry.score),
         placeId: entry.place_id,
         student: null,
         team: null,
@@ -401,7 +385,6 @@ function buildEventRows(
     return {
       entryId: entry.id,
       kind: 'student',
-      score: toNumOrNull(entry.score),
       placeId: entry.place_id,
       student,
       team: null,
@@ -483,7 +466,7 @@ function groupByTeamId(members: TeamMemberRowDb[]): Map<string, string[]> {
 /**
  * Every event run in `ayId`, with each event's per-house totals already
  * computed. Fetches places/entries/teams/members for the WHOLE year's event
- * ids in a handful of `.in('event_id', ids)` queries, then ranks and totals
+ * ids in a handful of `.in('event_id', ids)` queries, then totals
  * each event in memory — never one query per event.
  */
 export async function loadAyEvents(
@@ -493,9 +476,7 @@ export async function loadAyEvents(
   const service = createServiceClient();
   const { data: eventRows, error: eventsError } = await service
     .from('house_point_events')
-    .select(
-      'id, name, held_on, event_type, entrant_kind, placement_mode, rank_within'
-    )
+    .select('id, name, held_on, event_type, entrant_kind')
     .eq('academic_year_id', ayId)
     .order('held_on', { ascending: false })
     .order('name', { ascending: true });
@@ -519,9 +500,7 @@ export async function loadAyEvents(
     fetchAllPages<EntryRowDb>((from, to) =>
       service
         .from('house_point_entries')
-        .select(
-          'id, event_id, section_student_id, team_id, house_id, score, place_id'
-        )
+        .select('id, event_id, section_student_id, team_id, house_id, place_id')
         .in('event_id', eventIds)
         .range(from, to)
     ),
@@ -571,15 +550,7 @@ export async function loadAyEvents(
       rosterMap
     );
     const eventPlaces = (placesByEvent.get(event.id) ?? []).map(toPlace);
-    const sheetEntries = toSheetEntries({
-      rankWithin: event.rank_within,
-      rows,
-    });
-    const resolved = resolveEntries(
-      sheetEntries,
-      eventPlaces,
-      event.placement_mode
-    );
+    const resolved = resolveEntries(toSheetEntries({ rows }), eventPlaces);
     const totals = houseTotals(resolved, houseIds);
     return {
       id: event.id,
@@ -587,7 +558,6 @@ export async function loadAyEvents(
       heldOn: event.held_on,
       eventType: event.event_type,
       entrantKind: event.entrant_kind,
-      placementMode: event.placement_mode,
       entrantCount: rows.length,
       totals,
     };
@@ -605,7 +575,7 @@ export async function loadEvent(
   const { data: eventRow, error: eventError } = await service
     .from('house_point_events')
     .select(
-      'id, name, held_on, event_type, entrant_kind, placement_mode, rank_within, max_score, academic_year_id, academic_years(ay_code)'
+      'id, name, held_on, event_type, entrant_kind, academic_year_id, academic_years(ay_code)'
     )
     .eq('id', eventId)
     .maybeSingle();
@@ -628,9 +598,7 @@ export async function loadEvent(
     fetchAllPages<EntryRowDb>((from, to) =>
       service
         .from('house_point_entries')
-        .select(
-          'id, event_id, section_student_id, team_id, house_id, score, place_id'
-        )
+        .select('id, event_id, section_student_id, team_id, house_id, place_id')
         .eq('event_id', eventId)
         // "Display order" = the order entries were added.
         .order('created_at', { ascending: true })
@@ -670,8 +638,7 @@ export async function loadEvent(
     rosterMap
   );
   const places = placeRows.map(toPlace);
-  const sheetEntries = toSheetEntries({ rankWithin: event.rank_within, rows });
-  const resolved = resolveEntries(sheetEntries, places, event.placement_mode);
+  const resolved = resolveEntries(toSheetEntries({ rows }), places);
   const totals = houseTotals(
     resolved,
     houses.map((h) => h.id)
@@ -683,13 +650,10 @@ export async function loadEvent(
     heldOn: event.held_on,
     eventType: event.event_type,
     entrantKind: event.entrant_kind,
-    placementMode: event.placement_mode,
     entrantCount: rows.length,
     totals,
     academicYearId: event.academic_year_id,
     ayCode: ay?.ay_code ?? '',
-    maxScore: toNumOrNull(event.max_score),
-    rankWithin: event.rank_within,
     places,
     rows,
   };

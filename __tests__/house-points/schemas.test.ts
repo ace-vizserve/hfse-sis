@@ -5,7 +5,6 @@ import {
   EntryPatchSchema,
   EventInputSchema,
   EventPatchSchema,
-  mergedEventIssues,
   PlaceInputSchema,
   ScalesPutSchema,
   TeamInputSchema,
@@ -28,9 +27,6 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
     heldOn: '2026-10-01',
     eventType: 'internal' as const,
     entrantKind: 'student' as const,
-    placementMode: 'score' as const,
-    maxScore: 100,
-    rankWithin: 'event' as const,
     places: [
       place({ label: 'Gold', rank: 1, points: 5 }),
       place({ label: 'Silver', rank: 2, points: 4 }),
@@ -41,11 +37,11 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe('PlaceInputSchema', () => {
-  it('accepts a ranked place', () => {
+  it('accepts an award with a medal rank', () => {
     expect(PlaceInputSchema.safeParse(place()).success).toBe(true);
   });
 
-  it('accepts a null-rank "everyone else" place', () => {
+  it('accepts an unranked award such as Participation', () => {
     expect(PlaceInputSchema.safeParse(place({ rank: null })).success).toBe(
       true
     );
@@ -68,271 +64,91 @@ describe('PlaceInputSchema', () => {
   });
 });
 
-describe('EventInputSchema — happy path', () => {
-  it('accepts a well-formed score-mode event', () => {
-    const result = EventInputSchema.safeParse(baseEvent());
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a well-formed pick-mode event with no maxScore', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({
-        placementMode: 'pick',
-        maxScore: null,
-        places: [
-          place({ label: 'Winner', rank: 1, points: 20 }),
-          place({ label: 'Participation', rank: null, points: 5 }),
-        ],
-      })
-    );
-    expect(result.success).toBe(true);
-  });
-});
-
-describe('EventInputSchema — score mode needs maxScore', () => {
-  it('valid: score mode with a maxScore', () => {
-    expect(
-      EventInputSchema.safeParse(
-        baseEvent({ placementMode: 'score', maxScore: 50 })
-      ).success
-    ).toBe(true);
-  });
-
-  it('invalid: score mode with maxScore null', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({ placementMode: 'score', maxScore: null })
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes('Enter the highest possible score')
-        )
-      ).toBe(true);
-    }
-  });
-});
-
-describe('EventInputSchema — house entrants must use pick mode', () => {
-  it('valid: house entrant with pick mode', () => {
-    expect(
-      EventInputSchema.safeParse(
-        baseEvent({
-          entrantKind: 'house',
-          placementMode: 'pick',
-          maxScore: null,
-          places: [
-            place({ label: 'Winner', rank: 1, points: 20 }),
-            place({ label: 'Participation', rank: null, points: 5 }),
-          ],
-        })
-      ).success
-    ).toBe(true);
-  });
-
-  it('invalid: house entrant with score mode', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({ entrantKind: 'house', placementMode: 'score', maxScore: 50 })
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes('Houses are placed by hand')
-        )
-      ).toBe(true);
-    }
-  });
-});
-
-describe('EventInputSchema — ranks among places must be unique', () => {
-  it('valid: no two places share a rank', () => {
+describe('EventInputSchema — a rubric of awards', () => {
+  it('accepts a well-formed event', () => {
     expect(EventInputSchema.safeParse(baseEvent()).success).toBe(true);
   });
 
-  it('invalid: two places share rank 1', () => {
+  it('accepts house, team and student entrants alike', () => {
+    for (const entrantKind of ['student', 'team', 'house']) {
+      expect(
+        EventInputSchema.safeParse(baseEvent({ entrantKind })).success
+      ).toBe(true);
+    }
+  });
+
+  it('places no rule on ranks — duplicates, gaps and several unranked awards are all fine', () => {
     const result = EventInputSchema.safeParse(
       baseEvent({
         places: [
           place({ label: 'Gold', rank: 1, points: 5 }),
           place({ label: 'Also Gold', rank: 1, points: 5 }),
-        ],
-      })
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes("can't share the same rank")
-        )
-      ).toBe(true);
-    }
-  });
-});
-
-describe('EventInputSchema — at most one "everyone else" place', () => {
-  it('valid: one null-rank place', () => {
-    expect(EventInputSchema.safeParse(baseEvent()).success).toBe(true);
-  });
-
-  it('invalid: two null-rank places', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({
-        places: [
-          place({ label: 'Gold', rank: 1, points: 5 }),
-          place({ label: 'Participation A', rank: null, points: 1 }),
-          place({ label: 'Participation B', rank: null, points: 1 }),
-        ],
-      })
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes("Only one row can be 'everyone else'")
-        )
-      ).toBe(true);
-    }
-  });
-});
-
-describe('EventInputSchema — score-mode ranks must be gapless', () => {
-  it('valid: ranks run 1, 2, 3 with no gaps', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({
-        places: [
-          place({ label: 'Gold', rank: 1, points: 5 }),
-          place({ label: 'Silver', rank: 2, points: 4 }),
           place({ label: 'Bronze', rank: 3, points: 3 }),
+          place({ label: 'Merit', rank: null, points: 2 }),
+          place({ label: 'Participation', rank: null, points: 1 }),
         ],
       })
     );
     expect(result.success).toBe(true);
   });
 
-  it('invalid: ranks skip from 1 to 3', () => {
-    const result = EventInputSchema.safeParse(
-      baseEvent({
-        places: [
-          place({ label: 'Gold', rank: 1, points: 5 }),
-          place({ label: 'Bronze', rank: 3, points: 3 }),
-        ],
-      })
-    );
+  it('needs at least one award', () => {
+    const result = EventInputSchema.safeParse(baseEvent({ places: [] }));
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.error.issues.some((i) => i.message.includes('without gaps'))
+        result.error.issues.some((i) =>
+          i.message.includes('Add at least one award')
+        )
       ).toBe(true);
     }
   });
 
-  it('valid: pick mode may skip ranks (no gapless rule applies)', () => {
+  it('ignores the removed score fields — a stale client cannot set them', () => {
     const result = EventInputSchema.safeParse(
-      baseEvent({
-        placementMode: 'pick',
-        maxScore: null,
-        places: [
-          place({ label: 'Gold', rank: 1, points: 5 }),
-          place({ label: 'Bronze', rank: 3, points: 3 }),
-        ],
-      })
+      baseEvent({ placementMode: 'score', maxScore: 50, rankWithin: 'level' })
     );
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('placementMode');
+      expect(result.data).not.toHaveProperty('maxScore');
+      expect(result.data).not.toHaveProperty('rankWithin');
+    }
   });
 });
 
 describe('EventInputSchema — attendance rejection', () => {
   it('rejects eventType "attendance"', () => {
     const result = EventInputSchema.safeParse(
-      baseEvent({
-        eventType: 'attendance',
-        placementMode: 'pick',
-        maxScore: null,
-      })
+      baseEvent({ eventType: 'attendance' })
     );
     expect(result.success).toBe(false);
   });
 });
 
-describe('EventPatchSchema — cross-field refinements only fire when both relevant keys are in the same patch', () => {
-  it('(a) valid: placementMode "score" with no maxScore key at all (single-key patch)', () => {
-    // The stored row's maxScore is what decides here — this schema has no
-    // way to see it, so a patch that only touches placementMode must not be
-    // rejected for a field it never mentioned.
-    const result = EventPatchSchema.safeParse({ placementMode: 'score' });
-    expect(result.success).toBe(true);
-  });
-
-  it('(b) invalid: placementMode "score" + maxScore explicitly null in the same patch', () => {
-    const result = EventPatchSchema.safeParse({
-      placementMode: 'score',
-      maxScore: null,
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes('Enter the highest possible score')
-        )
-      ).toBe(true);
-    }
-  });
-
-  it('(c) invalid: entrantKind "house" + placementMode "score" in the same patch', () => {
-    const result = EventPatchSchema.safeParse({
-      entrantKind: 'house',
-      placementMode: 'score',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes('Houses are placed by hand')
-        )
-      ).toBe(true);
-    }
-  });
-
-  it('(c-valid) accepts entrantKind "house" + placementMode "pick" together', () => {
-    const result = EventPatchSchema.safeParse({
-      entrantKind: 'house',
-      placementMode: 'pick',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('(c-partial) does not fire on entrantKind "house" alone (placementMode not in this patch)', () => {
-    // Mirrors (a): the stored placementMode decides, and this schema cannot
-    // read it from a patch that never mentions the field.
-    const result = EventPatchSchema.safeParse({ entrantKind: 'house' });
-    expect(result.success).toBe(true);
-  });
-
-  it('(d) invalid: places sent with duplicate ranks', () => {
-    const result = EventPatchSchema.safeParse({
-      places: [
-        place({ label: 'Gold', rank: 1, points: 5 }),
-        place({ label: 'Also Gold', rank: 1, points: 5 }),
-      ],
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) =>
-          i.message.includes("can't share the same rank")
-        )
-      ).toBe(true);
-    }
-  });
-
-  it('(e) {} succeeds — an empty patch is a no-op, not an error', () => {
+describe('EventPatchSchema', () => {
+  it('{} succeeds — an empty patch is a no-op, not an error', () => {
     // Unlike EntryPatchSchema/TeamPatchSchema, EventPatchSchema carries no
-    // "at least one field" refinement: the brief specifies that rule only
-    // for the entry and team patches. Documenting the actual, intended
-    // behaviour here rather than leaving it unasserted.
-    const result = EventPatchSchema.safeParse({});
+    // "at least one field" rule — the route answers `{ changed: false }`.
+    expect(EventPatchSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts a places-only patch', () => {
+    expect(
+      EventPatchSchema.safeParse({
+        places: [place({ label: 'Winner', rank: null, points: 20 })],
+      }).success
+    ).toBe(true);
+  });
+
+  it('strips the removed score fields', () => {
+    const result = EventPatchSchema.safeParse({
+      placementMode: 'score',
+      maxScore: 10,
+      rankWithin: 'section',
+    });
     expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({});
   });
 });
 
@@ -385,127 +201,27 @@ describe('AddEntriesSchema — exactly one of sectionStudentIds / houseIds', () 
   });
 });
 
-describe('EntryPatchSchema', () => {
-  it('valid: score only', () => {
-    expect(EntryPatchSchema.safeParse({ score: 10 }).success).toBe(true);
-  });
-
-  it('valid: score null (clearing it)', () => {
-    expect(EntryPatchSchema.safeParse({ score: null }).success).toBe(true);
-  });
-
-  it('valid: placeId only', () => {
+describe('EntryPatchSchema — an award, or none', () => {
+  it('valid: an award id', () => {
     expect(EntryPatchSchema.safeParse({ placeId: HOUSE_A }).success).toBe(true);
+  });
+
+  it('valid: null clears the award', () => {
+    expect(EntryPatchSchema.safeParse({ placeId: null }).success).toBe(true);
   });
 
   it('rejects an empty object', () => {
     expect(EntryPatchSchema.safeParse({}).success).toBe(false);
   });
 
-  it('rounds a score to 2 decimals — numeric(8,2) is what actually gets stored', () => {
-    const result = EntryPatchSchema.safeParse({ score: 12.345 });
+  it('rejects a score — scores are no longer entered', () => {
+    expect(EntryPatchSchema.safeParse({ score: 10 }).success).toBe(false);
+  });
+
+  it('drops a score sent alongside an award', () => {
+    const result = EntryPatchSchema.safeParse({ placeId: HOUSE_A, score: 10 });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.score).toBe(12.35);
-    }
-  });
-
-  it('rounds down as well as up', () => {
-    const result = EntryPatchSchema.safeParse({ score: 12.344 });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.score).toBe(12.34);
-    }
-  });
-
-  it('leaves an already-2-decimal score unchanged', () => {
-    const result = EntryPatchSchema.safeParse({ score: 12.3 });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.score).toBe(12.3);
-    }
-  });
-
-  it('does not transform a null score', () => {
-    const result = EntryPatchSchema.safeParse({ score: null });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.score).toBeNull();
-    }
-  });
-});
-
-describe('mergedEventIssues — the same cross-field rules run against a MERGED (stored + patched) event', () => {
-  // PATCH /api/house-points/events/[eventId] (app/api/house-points/events/
-  // [eventId]/route.ts) calls this on the merged values whenever a
-  // places-adjacent field or `places` itself is actually changing.
-  // EventPatchSchema alone can't see these rules because it only ever
-  // validates the keys a caller happened to send — these tests exercise the
-  // two real failures that fix round found: a single-key patch that would
-  // otherwise reach the DB's check constraint, and a places-only patch that
-  // would otherwise skip the gapless-rank rule entirely.
-
-  const gaplessPlaces: PlaceInput[] = [
-    place({ label: 'Gold', rank: 1, points: 5 }),
-    place({ label: 'Silver', rank: 2, points: 4 }),
-  ];
-
-  it('valid: a well-formed merged event has no issues', () => {
-    expect(
-      mergedEventIssues({
-        placementMode: 'score',
-        entrantKind: 'student',
-        maxScore: 100,
-        places: gaplessPlaces,
-      })
-    ).toEqual([]);
-  });
-
-  it('catches `{ placementMode: "score" }` alone merged against a stored maxScore of null — the DB-check-constraint case', () => {
-    const issues = mergedEventIssues({
-      placementMode: 'score',
-      entrantKind: 'student',
-      maxScore: null, // unchanged from storage; the patch never touched it
-      places: gaplessPlaces,
-    });
-    expect(issues).toContain('Enter the highest possible score.');
-  });
-
-  it('catches `{ entrantKind: "house" }` alone merged against a stored placementMode of "score"', () => {
-    const issues = mergedEventIssues({
-      placementMode: 'score', // unchanged from storage
-      entrantKind: 'house',
-      maxScore: 100,
-      places: gaplessPlaces,
-    });
-    expect(issues).toContain('Houses are placed by hand, not by score.');
-  });
-
-  it('catches a places-only patch that breaks gapless ranks on an (unchanged) score-mode event', () => {
-    const issues = mergedEventIssues({
-      placementMode: 'score', // unchanged from storage; the patch only sent places
-      entrantKind: 'student',
-      maxScore: 100,
-      places: [
-        place({ label: 'Gold', rank: 1, points: 5 }),
-        place({ label: 'Bronze', rank: 3, points: 3 }), // skips 2nd
-      ],
-    });
-    expect(issues.some((m) => m.includes('without gaps'))).toBe(true);
-  });
-
-  it('does not apply the gapless rule when the merged placementMode is "pick"', () => {
-    expect(
-      mergedEventIssues({
-        placementMode: 'pick',
-        entrantKind: 'student',
-        maxScore: null,
-        places: [
-          place({ label: 'Gold', rank: 1, points: 5 }),
-          place({ label: 'Bronze', rank: 3, points: 3 }),
-        ],
-      })
-    ).toEqual([]);
+    if (result.success) expect(result.data).toEqual({ placeId: HOUSE_A });
   });
 });
 

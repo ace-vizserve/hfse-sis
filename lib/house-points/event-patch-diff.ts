@@ -12,12 +12,7 @@
  * in app/api/house-points/events/[eventId]/route.ts.
  */
 
-import type {
-  EntrantKind,
-  EventType,
-  PlacementMode,
-  RankWithin,
-} from '@/lib/house-points/compute';
+import type { EntrantKind, EventType } from '@/lib/house-points/compute';
 import type { EventPatch, PlaceInput } from '@/lib/schemas/house-points';
 
 /** The stored event columns `diffEventFields` compares a patch against. */
@@ -26,9 +21,6 @@ export type EventFieldsForDiff = {
   held_on: string | null;
   event_type: EventType;
   entrant_kind: EntrantKind;
-  placement_mode: PlacementMode;
-  max_score: number | null;
-  rank_within: RankWithin;
 };
 
 // Pairs a patch's camelCase key with the stored row's db column — walked
@@ -40,9 +32,6 @@ const PATCHABLE_FIELDS = [
   ['heldOn', 'held_on'],
   ['eventType', 'event_type'],
   ['entrantKind', 'entrant_kind'],
-  ['placementMode', 'placement_mode'],
-  ['maxScore', 'max_score'],
-  ['rankWithin', 'rank_within'],
 ] as const satisfies readonly (readonly [
   keyof EventPatch,
   keyof EventFieldsForDiff,

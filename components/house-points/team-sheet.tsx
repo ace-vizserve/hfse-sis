@@ -29,8 +29,8 @@ import type { HouseRow } from '@/lib/sis/houses';
 // A team on a team event: its name and who is on it. One drawer for both
 // jobs — "Add team" in the page header (uncontrolled, brings its own trigger)
 // and the pencil on a team's row (controlled by the score sheet, which owns
-// the row). Members can come from any class: a team event ranks across the
-// whole event.
+// the row). Members can come from any class: a team event is not
+// split by class or level.
 //
 // While ticking, the drawer shows which houses the team's points will go to,
 // counted once per house — the rule the sheet itself follows, seen before the

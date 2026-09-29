@@ -21,7 +21,6 @@ import {
   type FocusEvent,
   type ReactNode,
 } from 'react';
-import { toast } from 'sonner';
 
 import { EventHeaderTotals } from '@/components/house-points/event-header-totals';
 import { PlaceBadge } from '@/components/house-points/place-badge';
@@ -58,25 +57,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   houseTotals,
   resolveEntries,
   teamHouses,
   type EntrantKind,
   type Place,
-  type PlacementMode,
-  type RankWithin,
   type ResolvedEntry,
 } from '@/lib/house-points/compute';
-import { parseScore } from '@/lib/house-points/parse-score';
 import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
 import {
   EMPTY_SHEET_FILTER,
+  NO_AWARD,
   NO_HOUSE,
-  NO_PLACEMENT,
-  NO_SCORE_YET,
   isSheetFilterActive,
   matchesSheetFilter,
   type SheetFilter,
@@ -88,19 +82,19 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { HouseRow } from '@/lib/sis/houses';
 import { cn } from '@/lib/utils';
 
-// An event's score sheet — "basically a grading sheet". Type a score (or pick
-// a place) and the Placement and Points columns fill in on their own, with the
-// four house totals above moving in step.
+// An event's score sheet — "basically a grading sheet". Pick each entrant's
+// award and the Points column fills in on its own, with the four house totals
+// above moving in step. Every event is a rubric of awards → points; nothing
+// is ranked and no scores are typed (KD #228).
 //
 // WHY THE MATHS RUNS HERE AS WELL AS ON THE SERVER. Nothing is stored but the
-// raw score or the picked place (points are computed, never saved), so the
-// sheet runs the SAME pure `resolveEntries` / `houseTotals` the server loaders
-// use, across the whole event after every change. Ties therefore settle live:
-// type a second 46 and both rows read 1st at once. The server never trusts
-// these figures — it recomputes them itself on every read.
+// picked award (points are computed, never saved), so the sheet runs the SAME
+// pure `resolveEntries` / `houseTotals` the server loaders use, across the
+// whole event after every change. The server never trusts these figures — it
+// recomputes them itself on every read.
 //
-// Custom Table rather than DataTable (09 §5 step 5): a numeric grid editor
-// with Blank ≠ Zero inputs, the same reason /grading/[id] is custom.
+// Custom Table rather than DataTable (09 §5 step 5): an inline grid editor,
+// the same reason /grading/[id] is custom.
 
 type Props = {
   eventId: string;
@@ -108,24 +102,19 @@ type Props = {
   /** The year's enrolled roster — only loaded for writers on a team event (the edit-team drawer picks from it). */
   roster: RosterStudent[];
   entrantKind: EntrantKind;
-  placementMode: PlacementMode;
-  rankWithin: RankWithin;
-  maxScore: number | null;
   places: Place[];
   rows: EventRow[];
   houses: HouseRow[];
   canEdit: boolean;
 };
 
-type EntryPatch = { score: number | null } | { placeId: string | null };
-
 type EntryPatchResponse = {
   ok: true;
   changed?: boolean;
-  entry?: { id: string; score: number | null; placeId: string | null };
+  entry?: { id: string; placeId: string | null };
 };
 
-/** The Select's value for "No placement" — a place id is always a uuid. */
+/** The Select's value for "No award" — an award id is always a uuid. */
 const NO_PLACE = 'none';
 
 const collator = new Intl.Collator('en-SG', {
@@ -167,10 +156,8 @@ function compareSortValues(a: SortValue, b: SortValue, dir: SortDir): number {
  * Click-to-sort for the sheet's plain tables.
  *
  * THE ORDER IS A SNAPSHOT. It is taken from the live figures when a header is
- * clicked (and, on the student sheet, when the class tab changes), then held
- * while scores are typed — so a row never jumps away from the box being typed
- * into, and Enter still moves down the rows as they are shown. Click the
- * header again to sort by the new figures. Ties keep the default order; a row
+ * clicked, then held while awards are picked — so a row never jumps away from
+ * the picker just used. Click the header again to sort by the new figures. Ties keep the default order; a row
  * added since the snapshot goes to the bottom. With no header chosen the
  * table keeps its default order.
  */
@@ -209,7 +196,7 @@ function useSnapshotSort<K extends string>(
     );
   }, [rows, order]);
 
-  return { sort, toggle, resort: () => snapshot(sort), ordered };
+  return { sort, toggle, ordered };
 }
 
 /** A clickable column head that looks exactly like the DataTable's SortableHeader. */
@@ -257,44 +244,33 @@ function SortHead<K extends string>({
   );
 }
 
-/** The live points a row earns, or null while it has no score / place. */
+/** The live points a row earns, or null while it has no award. */
 function livePoints(
   row: EventRow,
-  resolved: ResolvedEntry | undefined,
-  placementMode: PlacementMode
+  resolved: ResolvedEntry | undefined
 ): number | null {
-  const blank =
-    placementMode === 'score' ? row.score === null : row.placeId === null;
-  return blank || !resolved ? null : resolved.points;
+  return row.placeId === null || !resolved ? null : resolved.points;
 }
 
-/** The live placement's position in the place list, or null for none. */
-function livePlaceOrder(
+/** The live award's position in the rubric, or null for none. */
+function liveAwardOrder(
   row: EventRow,
-  resolved: ResolvedEntry | undefined,
-  placementMode: PlacementMode
+  resolved: ResolvedEntry | undefined
 ): number | null {
-  const blank =
-    placementMode === 'score' ? row.score === null : row.placeId === null;
-  return blank ? null : (resolved?.place?.sortOrder ?? null);
+  return row.placeId === null ? null : (resolved?.place?.sortOrder ?? null);
 }
 
 // ─── Filtering ──────────────────────────────────────────────────────────────
 
 /**
- * Search, house and placement filters for a sheet's table.
+ * Search, house and award filters for a sheet's table.
  *
- * FILTERS READ THE SAVED VALUES, AND THE ROW YOU ARE IN STAYS PUT. A score
- * only counts once it is committed (blur or Enter), and the row holding focus
- * is never filtered out — so filtering on "No score yet" and typing down the
- * list works: each row leaves the list only after you have moved on from it,
- * and a score typed in one row can't make the row you have just moved to
- * vanish when it re-ranks the others.
+ * FILTERS READ THE SAVED VALUES, AND THE ROW YOU ARE IN STAYS PUT. The row
+ * holding focus is never filtered out — so filtering on "No award" and picking
+ * down the list works: each row leaves the list only after you have moved on
+ * from it.
  */
-function useSheetFilter(
-  resolvedById: Map<string, ResolvedEntry>,
-  placementMode: PlacementMode
-) {
+function useSheetFilter(resolvedById: Map<string, ResolvedEntry>) {
   const [filter, setFilter] = useState<SheetFilter>(EMPTY_SHEET_FILTER);
   const [pinned, setPinned] = useState<string | null>(null);
   const active = isSheetFilterActive(filter);
@@ -304,12 +280,7 @@ function useSheetFilter(
     return rows.filter(
       (row) =>
         row.entryId === pinned ||
-        matchesSheetFilter(
-          row,
-          resolvedById.get(row.entryId),
-          placementMode,
-          filter
-        )
+        matchesSheetFilter(row, resolvedById.get(row.entryId), filter)
     );
   }
 
@@ -343,19 +314,12 @@ function houseFilterOptions(houses: HouseRow[]): FacetOption[] {
   ];
 }
 
-/** The event's places in rubric order, then the "nothing yet" answers — worded as the cells word them. */
-function placementFilterOptions(
-  places: Place[],
-  placementMode: PlacementMode
-): FacetOption[] {
-  const own = places.map((p) => ({ value: p.id, label: p.label }));
-  return placementMode === 'score'
-    ? [
-        ...own,
-        { value: NO_PLACEMENT, label: 'Not placed' },
-        { value: NO_SCORE_YET, label: 'No score yet' },
-      ]
-    : [...own, { value: NO_PLACEMENT, label: 'No placement' }];
+/** The event's awards in rubric order, then "No award" — worded as the cells word it. */
+function awardFilterOptions(places: Place[]): FacetOption[] {
+  return [
+    ...places.map((p) => ({ value: p.id, label: p.label })),
+    { value: NO_AWARD, label: 'No award' },
+  ];
 }
 
 /** The DataTable toolbar, rebuilt for a plain Table: search, facets, Clear, and the count. */
@@ -366,7 +330,7 @@ function SheetToolbar({
   onClear,
   searchPlaceholder,
   houseOptions,
-  placementOptions,
+  awardOptions,
   shown,
   total,
   noun,
@@ -377,7 +341,7 @@ function SheetToolbar({
   onClear: () => void;
   searchPlaceholder: string;
   houseOptions: FacetOption[];
-  placementOptions: FacetOption[];
+  awardOptions: FacetOption[];
   shown: number;
   total: number;
   noun: { one: string; many: string };
@@ -403,10 +367,10 @@ function SheetToolbar({
         onChange={(houses) => onChange({ ...filter, houses })}
       />
       <FacetDropdown
-        label="Placement"
-        options={placementOptions}
-        selected={filter.placements}
-        onChange={(placements) => onChange({ ...filter, placements })}
+        label="Award"
+        options={awardOptions}
+        selected={filter.awards}
+        onChange={(awards) => onChange({ ...filter, awards })}
       />
       {active && (
         <Button
@@ -461,9 +425,6 @@ export function ScoreSheet({
   eventName,
   roster,
   entrantKind,
-  placementMode,
-  rankWithin,
-  maxScore,
   places,
   rows: serverRows,
   houses,
@@ -492,13 +453,9 @@ export function ScoreSheet({
   );
 
   const resolvedById = useMemo(() => {
-    const resolved = resolveEntries(
-      toSheetEntries({ rankWithin, rows }),
-      places,
-      placementMode
-    );
+    const resolved = resolveEntries(toSheetEntries({ rows }), places);
     return new Map(resolved.map((r) => [r.id, r]));
-  }, [rows, places, placementMode, rankWithin]);
+  }, [rows, places]);
 
   const totals = useMemo(
     () =>
@@ -524,37 +481,37 @@ export function ScoreSheet({
   }
 
   /**
-   * Save one row. The change is shown at once (placements and totals
+   * Save one row's award. The change is shown at once (points and totals
    * recompute from it), then confirmed by the server, then reverted if the
    * server refused it. No page refresh: everything the save moves is derived
    * from rows already in memory — the same reasoning as the grading grid.
    */
-  async function saveEntry(entryId: string, patch: EntryPatch, who: string) {
+  async function saveAward(
+    entryId: string,
+    placeId: string | null,
+    who: string
+  ) {
     const before = rowsRef.current.find((r) => r.entryId === entryId);
     if (!before) return;
-    const previous = { score: before.score, placeId: before.placeId };
-    if ('score' in patch && patch.score === previous.score) return;
-    if ('placeId' in patch && patch.placeId === previous.placeId) return;
+    const previous = { placeId: before.placeId };
+    if (placeId === previous.placeId) return;
 
-    patchRow(entryId, patch);
+    patchRow(entryId, { placeId });
     const result = await run(
       () =>
         apiFetch<EntryPatchResponse>(
           `/api/house-points/entries/${encodeURIComponent(entryId)}`,
-          jsonInit('PATCH', patch)
+          jsonInit('PATCH', { placeId })
         ),
       {
         pending: 'Saving…',
-        // The row itself shows the saved value, its place and its points — a
-        // toast per score would be noise.
+        // The row itself shows the saved award and its points — a toast per
+        // pick would be noise.
         success: () => null,
         refresh: false,
         onResolved: (data) => {
           if (data.entry) {
-            patchRow(entryId, {
-              score: data.entry.score,
-              placeId: data.entry.placeId,
-            });
+            patchRow(entryId, { placeId: data.entry.placeId });
           }
         },
         error: (err) =>
@@ -574,8 +531,6 @@ export function ScoreSheet({
       totals={totals}
       entrantsByHouse={entrantsByHouse}
       entrantKind={entrantKind}
-      placementMode={placementMode}
-      rankWithin={rankWithin}
       places={places}
     />
   );
@@ -590,12 +545,10 @@ export function ScoreSheet({
           rows={rows}
           roster={roster}
           houses={houses}
-          placementMode={placementMode}
-          maxScore={maxScore}
           places={sortedPlaces}
           resolvedById={resolvedById}
           canEdit={canEdit}
-          onSave={saveEntry}
+          onPick={saveAward}
         />
       </div>
     );
@@ -612,9 +565,7 @@ export function ScoreSheet({
           places={sortedPlaces}
           resolvedById={resolvedById}
           canEdit={canEdit}
-          onPick={(row, placeId, who) =>
-            saveEntry(row.entryId, { placeId }, who)
-          }
+          onPick={(row, placeId, who) => saveAward(row.entryId, placeId, who)}
         />
       </div>
     );
@@ -626,55 +577,39 @@ export function ScoreSheet({
       <StudentSheet
         rows={rows}
         houses={houses}
-        placementMode={placementMode}
-        rankWithin={rankWithin}
-        maxScore={maxScore}
         places={sortedPlaces}
         resolvedById={resolvedById}
         canEdit={canEdit}
-        onSave={saveEntry}
+        onPick={saveAward}
       />
     </div>
   );
 }
 
+type OnPick = (
+  entryId: string,
+  placeId: string | null,
+  who: string
+) => Promise<void>;
+
 // ─── Students ───────────────────────────────────────────────────────────────
 
-type Group = { key: string; label: string; count: number };
-
-function groupOf(
-  row: EventRow,
-  rankWithin: RankWithin
-): { key: string; label: string } {
-  const s = row.student;
-  if (!s) return { key: 'unknown', label: 'No class' };
-  if (rankWithin === 'section')
-    return { key: s.sectionId, label: s.sectionName };
-  return { key: s.levelId, label: s.levelLabel || 'No level' };
-}
-
-type StudentSortKey = 'name' | 'house' | 'score' | 'placement' | 'points';
+type StudentSortKey = 'name' | 'house' | 'award' | 'points';
 
 function StudentSheet({
   rows,
   houses,
-  placementMode,
-  rankWithin,
-  maxScore,
   places,
   resolvedById,
   canEdit,
-  onSave,
+  onPick,
 }: {
   rows: EventRow[];
   houses: HouseRow[];
-  placementMode: PlacementMode;
-  rankWithin: RankWithin;
-  maxScore: number | null;
   places: Place[];
   resolvedById: Map<string, ResolvedEntry>;
   canEdit: boolean;
-  onSave: (entryId: string, patch: EntryPatch, who: string) => Promise<void>;
+  onPick: OnPick;
 }) {
   const run = useWriteAction();
   const [removing, setRemoving] = useState<EventRow | null>(null);
@@ -688,7 +623,6 @@ function StudentSheet({
   const {
     sort,
     toggle: onSort,
-    resort,
     ordered: sorted,
   } = useSnapshotSort<StudentSortKey>(byClass, (row, key) => {
     const resolved = resolvedById.get(row.entryId);
@@ -699,48 +633,16 @@ function StudentSheet({
         const id = row.student?.houseId;
         return (id && housesById.get(id)?.name) || null;
       }
-      case 'score':
-        return row.score;
-      case 'placement':
-        return livePlaceOrder(row, resolved, placementMode);
+      case 'award':
+        return liveAwardOrder(row, resolved);
       case 'points':
-        return livePoints(row, resolved, placementMode);
+        return livePoints(row, resolved);
     }
   });
 
-  // One group at a time, always set, no "All" — the tab IS the ranking scope,
-  // so the table on screen is exactly the set of students competing for the
-  // same places. A whole-event ranking has one group and needs no tabs.
-  const grouped = rankWithin !== 'event';
-  const groups = useMemo<Group[]>(() => {
-    if (!grouped) return [];
-    const map = new Map<string, Group>();
-    for (const row of sorted) {
-      const { key, label } = groupOf(row, rankWithin);
-      const g = map.get(key);
-      if (g) g.count += 1;
-      else map.set(key, { key, label, count: 1 });
-    }
-    return Array.from(map.values()).sort((a, b) =>
-      collator.compare(a.label, b.label)
-    );
-  }, [grouped, sorted, rankWithin]);
-
-  const [chosenGroup, setChosenGroup] = useState<string | null>(null);
-  // A chosen group that no longer exists (its last student was removed)
-  // falls back to the first one — never to nothing.
-  const activeGroup =
-    groups.find((g) => g.key === chosenGroup)?.key ?? groups[0]?.key ?? null;
-  const inTab = grouped
-    ? sorted.filter((r) => groupOf(r, rankWithin).key === activeGroup)
-    : sorted;
-  // Filters narrow the active tab; they don't change what the tabs count.
-  const sheetFilter = useSheetFilter(resolvedById, placementMode);
-  const visible = sheetFilter.apply(inTab);
-
-  const isScore = placementMode === 'score';
-  const showClassUnderName = rankWithin !== 'section';
-  const columnCount = (isScore ? 6 : 5) + (canEdit ? 1 : 0);
+  const sheetFilter = useSheetFilter(resolvedById);
+  const visible = sheetFilter.apply(sorted);
+  const columnCount = 5 + (canEdit ? 1 : 0);
 
   async function confirmRemove() {
     if (!removing) return;
@@ -769,7 +671,7 @@ function StudentSheet({
           title="No students entered yet"
           body={
             canEdit
-              ? 'Choose Add students to enter everyone who took part. Their scores go here, and placements and points follow.'
+              ? 'Choose Add students to enter everyone who took part. Pick their awards here, and points follow.'
               : 'Students appear here once they are entered.'
           }
         />
@@ -786,42 +688,11 @@ function StudentSheet({
         onClear={sheetFilter.clear}
         searchPlaceholder="Search name or student number"
         houseOptions={houseFilterOptions(houses)}
-        placementOptions={placementFilterOptions(places, placementMode)}
+        awardOptions={awardFilterOptions(places)}
         shown={visible.length}
-        total={inTab.length}
-        noun={
-          grouped
-            ? {
-                one: `student in this ${rankWithin === 'section' ? 'class' : 'level'}`,
-                many: `students in this ${rankWithin === 'section' ? 'class' : 'level'}`,
-              }
-            : { one: 'student', many: 'students' }
-        }
+        total={sorted.length}
+        noun={{ one: 'student', many: 'students' }}
       />
-
-      {grouped && groups.length > 0 && (
-        <Tabs
-          value={activeGroup ?? undefined}
-          onValueChange={(v) => {
-            setChosenGroup(v);
-            resort();
-          }}
-        >
-          <TabsList
-            className="h-auto max-w-full flex-wrap"
-            aria-label={rankWithin === 'section' ? 'Class' : 'Level'}
-          >
-            {groups.map((g) => (
-              <TabsTrigger key={g.key} value={g.key} className="gap-1.5">
-                {g.label}
-                <span className="font-mono text-[10px] tabular-nums opacity-70">
-                  {g.count}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      )}
 
       <Card className="overflow-hidden p-0">
         <Table>
@@ -835,18 +706,13 @@ function StudentSheet({
                 House
               </SortHead>
               <SortHead
-                sortKey={isScore ? 'score' : 'placement'}
+                sortKey="award"
                 sort={sort}
                 onSort={onSort}
-                className={isScore ? 'w-40' : 'w-52'}
+                className="w-52"
               >
-                {isScore ? 'Score' : 'Placement'}
+                Award
               </SortHead>
-              {isScore && (
-                <SortHead sortKey="placement" sort={sort} onSort={onSort}>
-                  Placement
-                </SortHead>
-              )}
               <SortHead
                 sortKey="points"
                 sort={sort}
@@ -892,8 +758,7 @@ function StudentSheet({
                       <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                         {s ? (
                           <>
-                            {s.studentNumber}
-                            {showClassUnderName && ` · ${s.sectionName}`}
+                            {s.studentNumber} · {s.sectionName}
                           </>
                         ) : (
                           'No longer on the roster'
@@ -914,46 +779,16 @@ function StudentSheet({
                     )}
                   </TableCell>
                   <TableCell>
-                    {isScore ? (
-                      <div className="flex items-center gap-2">
-                        <ScoreInput
-                          value={row.score}
-                          max={maxScore ?? Number.POSITIVE_INFINITY}
-                          plaintext={!canEdit}
-                          label={`Score for ${who}`}
-                          onCommit={(value) =>
-                            onSave(row.entryId, { score: value }, who)
-                          }
-                        />
-                        {maxScore !== null && (
-                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            / {formatPoints(maxScore)}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <PlaceSelect
-                        value={row.placeId}
-                        places={places}
-                        plaintext={!canEdit}
-                        label={`Placement for ${who}`}
-                        onChange={(placeId) =>
-                          onSave(row.entryId, { placeId }, who)
-                        }
-                      />
-                    )}
-                  </TableCell>
-                  {isScore && (
-                    <TableCell>
-                      <AutoPlacement row={row} resolved={resolved} />
-                    </TableCell>
-                  )}
-                  <TableCell className="text-right">
-                    <AutoPoints
-                      row={row}
-                      resolved={resolved}
-                      placementMode={placementMode}
+                    <PlaceSelect
+                      value={row.placeId}
+                      places={places}
+                      plaintext={!canEdit}
+                      label={`Award for ${who}`}
+                      onChange={(placeId) => onPick(row.entryId, placeId, who)}
                     />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AutoPoints row={row} resolved={resolved} />
                   </TableCell>
                   {canEdit && (
                     <TableCell>
@@ -990,9 +825,8 @@ function StudentSheet({
               Remove {removing?.student?.name ?? 'this student'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Their score and placement for this event are deleted, and their
-              house loses any points they earned here. You can add them again
-              later.
+              Their award for this event is deleted, and their house loses any
+              points they earned here. You can add them again later.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1027,10 +861,9 @@ const MEMBERS_SHOWN = 4;
 
 /**
  * A team event's sheet. One table, never tabbed: a team's members can come
- * from any class, so every team competes against every other in the event.
- * Each row names the team and who is on it, takes its score (or place), and
- * says which houses its points go to — once per house, however many of its
- * students share one.
+ * from any class, so every team is listed together. Each row names the team
+ * and who is on it, takes its award, and says which houses its points go to —
+ * once per house, however many of its students share one.
  */
 function TeamTable({
   eventId,
@@ -1038,24 +871,20 @@ function TeamTable({
   rows,
   roster,
   houses,
-  placementMode,
-  maxScore,
   places,
   resolvedById,
   canEdit,
-  onSave,
+  onPick,
 }: {
   eventId: string;
   eventName: string;
   rows: EventRow[];
   roster: RosterStudent[];
   houses: HouseRow[];
-  placementMode: PlacementMode;
-  maxScore: number | null;
   places: Place[];
   resolvedById: Map<string, ResolvedEntry>;
   canEdit: boolean;
-  onSave: (entryId: string, patch: EntryPatch, who: string) => Promise<void>;
+  onPick: OnPick;
 }) {
   const run = useWriteAction();
   // The team stays set after the drawer closes, so its title doesn't flip to
@@ -1082,19 +911,19 @@ function TeamTable({
     sort,
     toggle: onSort,
     ordered: sorted,
-  } = useSnapshotSort<'name' | 'points'>(byName, (row, key) =>
-    key === 'name'
-      ? (row.team?.name ?? null)
-      : livePoints(row, resolvedById.get(row.entryId), placementMode)
-  );
-  const isScore = placementMode === 'score';
-  const sheetFilter = useSheetFilter(resolvedById, placementMode);
+  } = useSnapshotSort<'name' | 'award' | 'points'>(byName, (row, key) => {
+    const resolved = resolvedById.get(row.entryId);
+    if (key === 'name') return row.team?.name ?? null;
+    if (key === 'award') return liveAwardOrder(row, resolved);
+    return livePoints(row, resolved);
+  });
+  const sheetFilter = useSheetFilter(resolvedById);
   const visible = sheetFilter.apply(sorted);
-  const columnCount = (isScore ? 6 : 5) + (canEdit ? 1 : 0);
+  const columnCount = 5 + (canEdit ? 1 : 0);
   const memberships = useMemo(() => membershipsOf(rows), [rows]);
   // A team row grows with its member list, so its cells sit at the top. Plain
-  // text cells drop 6px to share a centre line with the 32px score box or
-  // place picker beside them; read-only, there are no boxes to line up with.
+  // text cells drop 6px to share a centre line with the 32px award picker
+  // beside them; read-only, there is no picker to line up with.
   const lineUp = canEdit ? 'pt-4.5' : undefined;
 
   async function confirmRemove() {
@@ -1126,7 +955,7 @@ function TeamTable({
           title="No teams entered yet"
           body={
             canEdit
-              ? 'Choose Add team to name each team and tick who is on it. Their scores go here, and placements and points follow.'
+              ? 'Choose Add team to name each team and tick who is on it. Pick their awards here, and points follow.'
               : 'Teams appear here once they are entered.'
           }
         />
@@ -1143,7 +972,7 @@ function TeamTable({
         onClear={sheetFilter.clear}
         searchPlaceholder="Search team or member"
         houseOptions={houseFilterOptions(houses)}
-        placementOptions={placementFilterOptions(places, placementMode)}
+        awardOptions={awardFilterOptions(places)}
         shown={visible.length}
         total={sorted.length}
         noun={{ one: 'team', many: 'teams' }}
@@ -1157,10 +986,14 @@ function TeamTable({
               <SortHead sortKey="name" sort={sort} onSort={onSort}>
                 Team
               </SortHead>
-              <TableHead className={isScore ? 'w-40' : 'w-52'}>
-                {isScore ? 'Score' : 'Placement'}
-              </TableHead>
-              {isScore && <TableHead>Placement</TableHead>}
+              <SortHead
+                sortKey="award"
+                sort={sort}
+                onSort={onSort}
+                className="w-52"
+              >
+                Award
+              </SortHead>
               <SortHead
                 sortKey="points"
                 sort={sort}
@@ -1190,8 +1023,7 @@ function TeamTable({
               const team = row.team;
               const who = team?.name ?? 'this team';
               const resolved = resolvedById.get(row.entryId);
-              const blank = isScore ? row.score === null : row.placeId === null;
-              const earned = blank || !resolved ? null : resolved.points;
+              const earned = livePoints(row, resolved);
               const credited = teamHouses(team?.members ?? []);
               const sharesAHouse = credited.some((h) => h.memberCount > 1);
               return (
@@ -1215,46 +1047,16 @@ function TeamTable({
                     <TeamMembers members={team?.members ?? []} />
                   </TableCell>
                   <TableCell>
-                    {isScore ? (
-                      <div className="flex items-center gap-2">
-                        <ScoreInput
-                          value={row.score}
-                          max={maxScore ?? Number.POSITIVE_INFINITY}
-                          plaintext={!canEdit}
-                          label={`Score for ${who}`}
-                          onCommit={(value) =>
-                            onSave(row.entryId, { score: value }, who)
-                          }
-                        />
-                        {maxScore !== null && (
-                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            / {formatPoints(maxScore)}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <PlaceSelect
-                        value={row.placeId}
-                        places={places}
-                        plaintext={!canEdit}
-                        label={`Placement for ${who}`}
-                        onChange={(placeId) =>
-                          onSave(row.entryId, { placeId }, who)
-                        }
-                      />
-                    )}
-                  </TableCell>
-                  {isScore && (
-                    <TableCell className={lineUp}>
-                      <AutoPlacement row={row} resolved={resolved} />
-                    </TableCell>
-                  )}
-                  <TableCell className={cn(lineUp, 'text-right')}>
-                    <AutoPoints
-                      row={row}
-                      resolved={resolved}
-                      placementMode={placementMode}
+                    <PlaceSelect
+                      value={row.placeId}
+                      places={places}
+                      plaintext={!canEdit}
+                      label={`Award for ${who}`}
+                      onChange={(placeId) => onPick(row.entryId, placeId, who)}
                     />
+                  </TableCell>
+                  <TableCell className={cn(lineUp, 'text-right')}>
+                    <AutoPoints row={row} resolved={resolved} />
                   </TableCell>
                   <TableCell className={cn(lineUp, 'whitespace-normal')}>
                     {credited.length === 0 ? (
@@ -1366,8 +1168,8 @@ function TeamTable({
               Remove {removing?.name ?? 'this team'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the team, its members and its score or placement.
-              Points it earned come off the house totals.
+              This removes the team, its members and its award. Points it earned
+              come off the house totals.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1477,7 +1279,7 @@ function HouseSheet({
   } = useSnapshotSort<'name' | 'points'>(houseRows, (row, key) =>
     key === 'name'
       ? ((row.houseId && housesById.get(row.houseId)?.name) ?? null)
-      : livePoints(row, resolvedById.get(row.entryId), 'pick')
+      : livePoints(row, resolvedById.get(row.entryId))
   );
 
   if (rows.length === 0) {
@@ -1488,7 +1290,7 @@ function HouseSheet({
           title="The houses aren't on this sheet yet"
           body={
             canEdit
-              ? 'Set up the houses to add all four to the sheet, then pick where each one placed.'
+              ? 'Set up the houses to add all four to the sheet, then pick the award each one won.'
               : 'The houses appear here once they are set up.'
           }
           className={canEdit ? 'pb-4' : undefined}
@@ -1529,7 +1331,7 @@ function HouseSheet({
               <SortHead sortKey="name" sort={sort} onSort={onSort}>
                 House
               </SortHead>
-              <TableHead className="w-60">Placement</TableHead>
+              <TableHead className="w-60">Award</TableHead>
               <SortHead
                 sortKey="points"
                 sort={sort}
@@ -1563,16 +1365,12 @@ function HouseSheet({
                         value={row.placeId}
                         places={places}
                         plaintext={!canEdit}
-                        label={`Placement for ${house.name}`}
+                        label={`Award for ${house.name}`}
                         onChange={(placeId) => onPick(row, placeId, house.name)}
                       />
                     </TableCell>
                     <TableCell className="text-right">
-                      <AutoPoints
-                        row={row}
-                        resolved={resolved}
-                        placementMode="pick"
-                      />
+                      <AutoPoints row={row} resolved={resolved} />
                     </TableCell>
                   </TableRow>
                 );
@@ -1636,88 +1434,7 @@ function SetupHousesButton({
 
 // ─── Cells ──────────────────────────────────────────────────────────────────
 
-/**
- * A score box, after ScoreInput in components/grading/score-entry-grid.tsx: a
- * local draft, committed on blur or Enter, blank ≠ zero, and flagged
- * (`aria-invalid`) the moment it goes over the highest possible score. Enter
- * also moves to the next row's box, the way a grading sheet is typed down.
- */
-function ScoreInput({
-  value,
-  max,
-  plaintext,
-  label,
-  onCommit,
-}: {
-  value: number | null;
-  max: number;
-  plaintext: boolean;
-  label: string;
-  onCommit: (value: number | null) => void;
-}) {
-  const [text, setText] = useState(display(value));
-  const [lastValue, setLastValue] = useState(value);
-  // Re-sync the draft when the value changes underneath it — a failed save
-  // reverted, or the server echoed back what was typed. A draft that already
-  // reads as the new value is left alone.
-  if (lastValue !== value) {
-    setLastValue(value);
-    if (parseScore(text, max).value !== value) setText(display(value));
-  }
-
-  if (plaintext) {
-    return (
-      <span className="inline-block min-w-14 font-mono text-sm tabular-nums text-foreground">
-        {value === null ? '—' : formatPoints(value)}
-      </span>
-    );
-  }
-
-  const parsed = parseScore(text, max);
-
-  function commit() {
-    const result = parseScore(text, max);
-    if (result.error) {
-      // Nothing is sent. The box goes back to what is saved and says why.
-      toast.error(result.error);
-      setText(display(value));
-      return;
-    }
-    onCommit(result.value);
-  }
-
-  return (
-    <Input
-      type="text"
-      inputMode="decimal"
-      autoComplete="off"
-      aria-label={label}
-      aria-invalid={parsed.error ? true : undefined}
-      data-score-input=""
-      value={text}
-      placeholder="—"
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        const current = e.currentTarget;
-        const all = Array.from(
-          document.querySelectorAll<HTMLInputElement>('[data-score-input]')
-        );
-        const next = all[all.indexOf(current) + 1];
-        if (next) next.focus();
-        else current.blur();
-      }}
-      className="h-8 w-20 px-2 text-right font-mono tabular-nums aria-[invalid=true]:bg-destructive/5"
-    />
-  );
-}
-
-function display(value: number | null): string {
-  return value === null ? '' : String(value);
-}
-
+/** The award picker on a row: the event's rubric, in order, then "No award". */
 function PlaceSelect({
   value,
   places,
@@ -1736,7 +1453,7 @@ function PlaceSelect({
     return current ? (
       <PlaceBadge place={current} />
     ) : (
-      <span className="text-xs text-muted-foreground">No placement</span>
+      <span className="text-xs text-muted-foreground">No award</span>
     );
   }
   return (
@@ -1753,45 +1470,26 @@ function PlaceSelect({
             {place.label}
           </SelectItem>
         ))}
-        <SelectItem value={NO_PLACE}>No placement</SelectItem>
+        <SelectItem value={NO_PLACE}>No award</SelectItem>
       </SelectContent>
     </Select>
   );
 }
 
-function AutoPlacement({
-  row,
-  resolved,
-}: {
-  row: EventRow;
-  resolved: ResolvedEntry | undefined;
-}) {
-  if (row.score === null) {
-    return <span className="text-xs text-muted-foreground">No score yet</span>;
-  }
-  if (!resolved?.place) {
-    return <span className="text-xs text-muted-foreground">Not placed</span>;
-  }
-  return <PlaceBadge place={resolved.place} />;
-}
-
 function AutoPoints({
   row,
   resolved,
-  placementMode,
 }: {
   row: EventRow;
   resolved: ResolvedEntry | undefined;
-  placementMode: PlacementMode;
 }) {
-  const blank =
-    placementMode === 'score' ? row.score === null : row.placeId === null;
-  if (blank || !resolved) {
+  const points = livePoints(row, resolved);
+  if (points === null) {
     return <span className="text-muted-foreground">—</span>;
   }
   return (
     <span className="font-serif text-base font-semibold tabular-nums text-foreground">
-      {formatPoints(resolved.points)}
+      {formatPoints(points)}
     </span>
   );
 }

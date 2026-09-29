@@ -64,21 +64,17 @@ function makeStudent(overrides: Partial<RosterStudent> = {}): RosterStudent {
   };
 }
 
-function detail(
-  rankWithin: EventDetail['rankWithin'],
-  rows: EventRow[]
-): Pick<EventDetail, 'rankWithin' | 'rows'> {
-  return { rankWithin, rows };
+function detail(rows: EventRow[]): Pick<EventDetail, 'rows'> {
+  return { rows };
 }
 
 describe('toSheetEntries', () => {
-  it('a student row in section mode takes its section as group', () => {
+  it("a student row credits the student's house and carries the picked award", () => {
     const rows: EventRow[] = [
       {
         entryId: 'e1',
         kind: 'student',
-        score: 10,
-        placeId: null,
+        placeId: 'place-1',
         student: makeStudent({
           sectionId: 'sec-42',
           levelId: 'lvl-9',
@@ -88,25 +84,12 @@ describe('toSheetEntries', () => {
         houseId: null,
       },
     ];
-    const [entry] = toSheetEntries(detail('section', rows));
-    expect(entry.group).toBe('sec-42');
-    expect(entry.houseIds).toEqual(['house-blue']);
-  });
-
-  it('a student row in level mode takes its level as group', () => {
-    const rows: EventRow[] = [
-      {
-        entryId: 'e1',
-        kind: 'student',
-        score: 10,
-        placeId: null,
-        student: makeStudent({ sectionId: 'sec-42', levelId: 'lvl-9' }),
-        team: null,
-        houseId: null,
-      },
-    ];
-    const [entry] = toSheetEntries(detail('level', rows));
-    expect(entry.group).toBe('lvl-9');
+    const [entry] = toSheetEntries(detail(rows));
+    expect(entry).toEqual({
+      id: 'e1',
+      placeId: 'place-1',
+      houseIds: ['house-blue'],
+    });
   });
 
   it('a student with no house gets []', () => {
@@ -114,23 +97,21 @@ describe('toSheetEntries', () => {
       {
         entryId: 'e1',
         kind: 'student',
-        score: 10,
         placeId: null,
         student: makeStudent({ houseId: null }),
         team: null,
         houseId: null,
       },
     ];
-    const [entry] = toSheetEntries(detail('event', rows));
+    const [entry] = toSheetEntries(detail(rows));
     expect(entry.houseIds).toEqual([]);
   });
 
-  it("a team with members in houses [B, G, G] gets houseIds [B, G] and group 'event'", () => {
+  it('a team with members in houses [B, G, G] gets houseIds [B, G]', () => {
     const rows: EventRow[] = [
       {
         entryId: 'e2',
         kind: 'team',
-        score: null,
         placeId: 'place-1',
         student: null,
         team: {
@@ -145,11 +126,8 @@ describe('toSheetEntries', () => {
         houseId: null,
       },
     ];
-    // rankWithin is 'section' here on purpose: a team's group must stay
-    // 'event' regardless of rankWithin, unlike a student row.
-    const [entry] = toSheetEntries(detail('section', rows));
+    const [entry] = toSheetEntries(detail(rows));
     expect(entry.houseIds).toEqual(['B', 'G']);
-    expect(entry.group).toBe('event');
   });
 
   it('a house row', () => {
@@ -157,16 +135,14 @@ describe('toSheetEntries', () => {
       {
         entryId: 'e3',
         kind: 'house',
-        score: null,
         placeId: 'place-1',
         student: null,
         team: null,
         houseId: 'house-orange',
       },
     ];
-    const [entry] = toSheetEntries(detail('event', rows));
+    const [entry] = toSheetEntries(detail(rows));
     expect(entry.houseIds).toEqual(['house-orange']);
-    expect(entry.group).toBe('event');
     expect(entry.id).toBe('e3');
     expect(entry.placeId).toBe('place-1');
   });

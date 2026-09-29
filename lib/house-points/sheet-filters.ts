@@ -1,7 +1,6 @@
 import {
   teamHouses,
   type EntrantKind,
-  type PlacementMode,
   type ResolvedEntry,
 } from '@/lib/house-points/compute';
 import type { EventRow } from '@/lib/house-points/queries';
@@ -17,12 +16,6 @@ export const ENTRANT_KIND_FILTER_LABELS: Record<EntrantKind, string> = {
   student: 'Students',
   team: 'Teams',
   house: 'Houses',
-};
-
-/** "Placed by" — how the event's placements were decided. */
-export const PLACEMENT_MODE_FILTER_LABELS: Record<PlacementMode, string> = {
-  score: 'Scores',
-  pick: 'By hand',
 };
 
 /** "Won by" for an event where no house has a point yet. */
@@ -54,28 +47,26 @@ export function matchesAny(
 
 /** House facet value for a student (or team) with no house. */
 export const NO_HOUSE = 'no-house';
-/** Placement facet value for a row with a result but no place. */
-export const NO_PLACEMENT = 'no-placement';
-/** Placement facet value for a scored event's row with no score typed. */
-export const NO_SCORE_YET = 'no-score';
+/** Award facet value for a row with no award picked. */
+export const NO_AWARD = 'no-award';
 
 export type SheetFilter = {
   query: string;
   houses: string[];
-  placements: string[];
+  awards: string[];
 };
 
 export const EMPTY_SHEET_FILTER: SheetFilter = {
   query: '',
   houses: [],
-  placements: [],
+  awards: [],
 };
 
 export function isSheetFilterActive(filter: SheetFilter): boolean {
   return (
     filter.query.trim() !== '' ||
     filter.houses.length > 0 ||
-    filter.placements.length > 0
+    filter.awards.length > 0
   );
 }
 
@@ -90,17 +81,15 @@ export function rowHouseKeys(row: EventRow): string[] {
 }
 
 /**
- * The placement facet value a row answers to, from its SAVED value: a place
- * id, "no score yet" (scored events only), or "no placement".
+ * The award facet value a row answers to, from its SAVED value: the award's
+ * id, or "no award" (nothing picked, or a pick no longer on the rubric).
  */
-export function rowPlacementKey(
+export function rowAwardKey(
   row: EventRow,
-  resolved: ResolvedEntry | undefined,
-  placementMode: PlacementMode
+  resolved: ResolvedEntry | undefined
 ): string {
-  if (placementMode === 'score' && row.score === null) return NO_SCORE_YET;
-  if (placementMode === 'pick' && row.placeId === null) return NO_PLACEMENT;
-  return resolved?.place?.id ?? NO_PLACEMENT;
+  if (row.placeId === null) return NO_AWARD;
+  return resolved?.place?.id ?? NO_AWARD;
 }
 
 /** Everything the search box looks through for one row, lower-cased. */
@@ -132,17 +121,10 @@ export function matchesQuery(row: EventRow, query: string): boolean {
 export function matchesSheetFilter(
   row: EventRow,
   resolved: ResolvedEntry | undefined,
-  placementMode: PlacementMode,
   filter: SheetFilter
 ): boolean {
   if (!matchesQuery(row, filter.query)) return false;
   if (!matchesAny(filter.houses, rowHouseKeys(row))) return false;
-  if (
-    !matchesAny(filter.placements, [
-      rowPlacementKey(row, resolved, placementMode),
-    ])
-  ) {
-    return false;
-  }
+  if (!matchesAny(filter.awards, [rowAwardKey(row, resolved)])) return false;
   return true;
 }

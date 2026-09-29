@@ -4,16 +4,15 @@ import type { Place, ResolvedEntry } from '@/lib/house-points/compute';
 import type { EventRow, RosterStudent } from '@/lib/house-points/queries';
 import {
   EMPTY_SHEET_FILTER,
+  NO_AWARD,
   NO_HOUSE,
-  NO_PLACEMENT,
-  NO_SCORE_YET,
   eventWinnerIds,
   isSheetFilterActive,
   matchesAny,
   matchesQuery,
   matchesSheetFilter,
+  rowAwardKey,
   rowHouseKeys,
-  rowPlacementKey,
 } from '@/lib/house-points/sheet-filters';
 
 const GOLD: Place = {
@@ -43,7 +42,6 @@ function studentRow(over: Partial<EventRow> = {}, s = student()): EventRow {
   return {
     entryId: 'e1',
     kind: 'student',
-    score: null,
     placeId: null,
     student: s,
     team: null,
@@ -55,9 +53,7 @@ function studentRow(over: Partial<EventRow> = {}, s = student()): EventRow {
 function resolved(place: Place | null): ResolvedEntry {
   return {
     id: 'e1',
-    group: 'g',
-    score: 1,
-    placeId: null,
+    placeId: place?.id ?? null,
     houseIds: [],
     place,
     points: place?.points ?? 0,
@@ -126,25 +122,19 @@ describe('rowHouseKeys', () => {
   });
 });
 
-describe('rowPlacementKey', () => {
-  it('scored event: blank score is No score yet, not No placement', () => {
-    expect(rowPlacementKey(studentRow(), undefined, 'score')).toBe(
-      NO_SCORE_YET
+describe('rowAwardKey', () => {
+  it('no award picked is No award', () => {
+    expect(rowAwardKey(studentRow(), undefined)).toBe(NO_AWARD);
+  });
+  it('a picked award is its own key', () => {
+    expect(rowAwardKey(studentRow({ placeId: 'gold' }), resolved(GOLD))).toBe(
+      'gold'
     );
   });
-  it('scored event: a zero is a real score', () => {
-    expect(
-      rowPlacementKey(studentRow({ score: 0 }), resolved(null), 'score')
-    ).toBe(NO_PLACEMENT);
-    expect(
-      rowPlacementKey(studentRow({ score: 0 }), resolved(GOLD), 'score')
-    ).toBe('gold');
-  });
-  it('hand-placed event: no place picked is No placement', () => {
-    expect(rowPlacementKey(studentRow(), undefined, 'pick')).toBe(NO_PLACEMENT);
-    expect(
-      rowPlacementKey(studentRow({ placeId: 'gold' }), resolved(GOLD), 'pick')
-    ).toBe('gold');
+  it('a pick that is no longer on the rubric is No award', () => {
+    expect(rowAwardKey(studentRow({ placeId: 'gone' }), resolved(null))).toBe(
+      NO_AWARD
+    );
   });
 });
 
@@ -176,25 +166,25 @@ describe('matchesSheetFilter', () => {
   it('passes everything with no filter', () => {
     expect(isSheetFilterActive(EMPTY_SHEET_FILTER)).toBe(false);
     expect(
-      matchesSheetFilter(studentRow(), undefined, 'score', EMPTY_SHEET_FILTER)
+      matchesSheetFilter(studentRow(), undefined, EMPTY_SHEET_FILTER)
     ).toBe(true);
   });
-  it('needs the search, the house and the placement all to match', () => {
-    const row = studentRow({ score: 40 });
+  it('needs the search, the house and the award all to match', () => {
+    const row = studentRow({ placeId: 'gold' });
     const filter = {
       query: 'tan',
       houses: ['red'],
-      placements: ['gold'],
+      awards: ['gold'],
     };
     expect(isSheetFilterActive(filter)).toBe(true);
-    expect(matchesSheetFilter(row, resolved(GOLD), 'score', filter)).toBe(true);
+    expect(matchesSheetFilter(row, resolved(GOLD), filter)).toBe(true);
     expect(
-      matchesSheetFilter(row, resolved(GOLD), 'score', {
+      matchesSheetFilter(row, resolved(GOLD), {
         ...filter,
         houses: ['blue'],
       })
     ).toBe(false);
-    expect(matchesSheetFilter(row, resolved(null), 'score', filter)).toBe(
+    expect(matchesSheetFilter(studentRow(), resolved(null), filter)).toBe(
       false
     );
   });

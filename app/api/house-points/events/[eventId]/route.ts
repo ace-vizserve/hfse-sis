@@ -4,27 +4,14 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { HOUSE_POINTS_WRITERS } from '@/lib/auth/student-record';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import type {
-  EntrantKind,
-  EventType,
-  PlacementMode,
-  RankWithin,
-} from '@/lib/house-points/compute';
+import type { EntrantKind, EventType } from '@/lib/house-points/compute';
 import {
   diffEventFields,
   placesUnchanged,
   type ExistingPlaceForDiff,
 } from '@/lib/house-points/event-patch-diff';
-import { toNum, toNumOrNull } from '@/lib/house-points/queries';
-import {
-  maxScoreLoweredBelowStoredScore,
-  SCORES_TOO_HIGH_ERROR,
-} from '@/lib/house-points/write-guards';
-import {
-  EventPatchSchema,
-  mergedEventIssues,
-  type PlaceInput,
-} from '@/lib/schemas/house-points';
+import { toNum } from '@/lib/house-points/queries';
+import { EventPatchSchema } from '@/lib/schemas/house-points';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // PATCH  /api/house-points/events/[eventId]
@@ -41,15 +28,11 @@ type EventDbRow = {
   held_on: string | null;
   event_type: EventType;
   entrant_kind: EntrantKind;
-  placement_mode: PlacementMode;
-  max_score: number | null;
-  rank_within: RankWithin;
   academic_year_id: string;
   ayCode: string | null;
 };
 
-type EventDbRowRaw = Omit<EventDbRow, 'max_score' | 'ayCode'> & {
-  max_score: number | string | null;
+type EventDbRowRaw = Omit<EventDbRow, 'ayCode'> & {
   academic_years: { ay_code: string } | { ay_code: string }[] | null;
 };
 
@@ -65,7 +48,7 @@ async function loadEventRow(
   const { data, error } = await service
     .from('house_point_events')
     .select(
-      'id, name, held_on, event_type, entrant_kind, placement_mode, max_score, rank_within, academic_year_id, academic_years(ay_code)'
+      'id, name, held_on, event_type, entrant_kind, academic_year_id, academic_years(ay_code)'
     )
     .eq('id', eventId)
     .maybeSingle();
@@ -78,9 +61,6 @@ async function loadEventRow(
     held_on: raw.held_on,
     event_type: raw.event_type,
     entrant_kind: raw.entrant_kind,
-    placement_mode: raw.placement_mode,
-    max_score: toNumOrNull(raw.max_score),
-    rank_within: raw.rank_within,
     academic_year_id: raw.academic_year_id,
     ayCode: toAyCode(raw.academic_years),
   };
@@ -143,19 +123,10 @@ export async function PATCH(
       return NextResponse.json({ ok: true, changed: false });
     }
 
-    // The stored places are needed both to compare a SENT `places` array
-    // against (did it actually change?) and to fill in the "places" side of
-    // the MERGED event below whenever a places-adjacent field (placement
-    // mode, entrant kind, max score) is changing but `places` itself wasn't
-    // sent — only fetched when one of those is actually true.
-    const needsExistingPlaces =
-      placesSent ||
-      'placement_mode' in updateData ||
-      'entrant_kind' in updateData ||
-      'max_score' in updateData;
-
+    // The stored places are needed to compare a SENT `places` array against
+    // (did it actually change?) — only fetched when `places` was sent.
     let existingPlaces: ExistingPlaceForDiff[] = [];
-    if (needsExistingPlaces) {
+    if (placesSent) {
       step = 'load existing places';
       const { data: placeRows, error: placeErr } = await service
         .from('house_point_places')
@@ -165,8 +136,8 @@ export async function PATCH(
       if (placeErr) throw new Error(`house_point_places: ${placeErr.message}`);
       // `points` is `numeric(6,2)` (migration 181) — supabase-js can hand
       // this back as a STRING ("5.00"). Coerced here, at the fetch site, so
-      // every downstream reader (placesUnchanged's comparison, the merged
-      // validation below, and before.places on the audit row) sees a real
+      // every downstream reader (placesUnchanged's comparison and
+      // before.places on the audit row) sees a real
       // number rather than comparing e.g. `5 === "5.00"` and calling an
       // identical resubmission a change.
       existingPlaces = (
@@ -194,52 +165,9 @@ export async function PATCH(
       return NextResponse.json({ ok: true, changed: false });
     }
 
-    // Validate the MERGED (stored + patched) event against the same
-    // cross-field rules EventInputSchema enforces on a full create —
-    // EventPatchSchema alone can't see a rule spanning a sent field and an
-    // unsent one (mergedEventIssues's own header spells out the two real
-    // cases). Runs before any write, and before the DB's own check
-    // constraints get a chance to turn the same problem into a 500.
-    if (needsExistingPlaces) {
-      const mergedPlacementMode: PlacementMode =
-        patch.placementMode !== undefined
-          ? patch.placementMode
-          : existing.placement_mode;
-      const mergedEntrantKind: EntrantKind =
-        patch.entrantKind !== undefined
-          ? patch.entrantKind
-          : existing.entrant_kind;
-      const mergedMaxScore =
-        patch.maxScore !== undefined ? patch.maxScore : existing.max_score;
-      const mergedPlaces: PlaceInput[] = placesSent
-        ? patch.places!
-        : existingPlaces.map((p) => ({
-            id: p.id,
-            label: p.label,
-            rank: p.rank,
-            points: p.points,
-          }));
-
-      const issues = mergedEventIssues({
-        placementMode: mergedPlacementMode,
-        entrantKind: mergedEntrantKind,
-        maxScore: mergedMaxScore,
-        places: mergedPlaces,
-      });
-      if (issues.length > 0) {
-        return NextResponse.json(
-          { error: issues[0], details: issues },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Switching placement_mode or entrant_kind is only a problem once the
-    // event has participants — an empty event can still be reshaped freely.
-    if (
-      before.placementMode !== undefined ||
-      before.entrantKind !== undefined
-    ) {
+    // Switching entrant_kind is only a problem once the event has
+    // participants — an empty event can still be reshaped freely.
+    if (before.entrantKind !== undefined) {
       step = 'check entries for setup change';
       const { count, error } = await service
         .from('house_point_entries')
@@ -252,45 +180,6 @@ export async function PATCH(
             error:
               "This event already has participants, so its setup can't change.",
           },
-          { status: 409 }
-        );
-      }
-    }
-
-    // Lowering max_score below a score already entered would leave that
-    // entry showing a score higher than the sheet now allows — refused
-    // rather than silently letting a stale-looking score sit there. Only a
-    // LOWER max_score is a problem, so the entries query below only runs
-    // once that much is already true — raising it, or an unrelated field
-    // change, never pays for it.
-    if (
-      'max_score' in updateData &&
-      existing.max_score !== null &&
-      (updateData.max_score as number) < existing.max_score
-    ) {
-      step = 'check entries for lowered max score';
-      const newMax = updateData.max_score as number;
-      const { data: highRows, error } = await service
-        .from('house_point_entries')
-        .select('score')
-        .eq('event_id', eventId)
-        .not('score', 'is', null)
-        .order('score', { ascending: false })
-        .limit(1);
-      if (error) throw new Error(`house_point_entries: ${error.message}`);
-      const highestScore = toNumOrNull(
-        (highRows?.[0] as { score: number | string | null } | undefined)
-          ?.score ?? null
-      );
-      if (
-        maxScoreLoweredBelowStoredScore(
-          newMax,
-          existing.max_score,
-          highestScore
-        )
-      ) {
-        return NextResponse.json(
-          { error: SCORES_TOO_HIGH_ERROR },
           { status: 409 }
         );
       }
@@ -325,7 +214,7 @@ export async function PATCH(
           return NextResponse.json(
             {
               error:
-                'Someone in this event already has that placement. Change their placement first.',
+                'Someone in this event already has that award. Change their award first.',
             },
             { status: 409 }
           );

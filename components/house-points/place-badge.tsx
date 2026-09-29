@@ -3,9 +3,10 @@ import type { Place } from '@/lib/house-points/compute';
 import { formatPoints } from '@/lib/house-points/standings';
 import { cn } from '@/lib/utils';
 
-// A place on an event's rubric — 1st, 2nd, 3rd wear the medal tokens, every
-// other place a plain outline. Used by the rubric panel above the score sheet
-// and by the Placement column inside it, so a place looks the same in the key
+// An award on an event's rubric — ranks 1, 2, 3 wear the medal tokens, every
+// other award a plain outline. The rank decides nothing else: awards are
+// picked by hand (KD #228). Used by the rubric panel above the score sheet
+// and by the Award column inside it, so an award looks the same in the key
 // as it does on the row (09a §10: a legend is pixel-identical to what it keys).
 //
 // Outline recipe, not solid: the bright medal stop is a FILL and fails as text

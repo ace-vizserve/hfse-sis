@@ -111,8 +111,8 @@ export function AddParticipantsSheet({
             Add students
           </SheetTitle>
           <SheetDescription>
-            Tick everyone who took part. You enter their scores on the sheet
-            once they are added.
+            Tick everyone who took part. You pick their awards on the sheet once
+            they are added.
           </SheetDescription>
         </SheetHeader>
 

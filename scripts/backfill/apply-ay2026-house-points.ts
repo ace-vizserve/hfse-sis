@@ -1565,8 +1565,6 @@ function computeTotals(
       sheetHouses && e.row.sheetHouse ? hid(e.row.sheetHouse) : e.cand.houseId;
     entries.push({
       id: `s${n}`,
-      group: 'event',
-      score: null,
       placeId: `p${e.placeIdx}`,
       houseIds: houseId ? [houseId] : [],
     });
@@ -1584,8 +1582,6 @@ function computeTotals(
         : e.members.map((m) => ({ houseId: m.houseId }));
     entries.push({
       id: `t${n}`,
-      group: 'event',
-      score: null,
       placeId: `p${e.placeIdx}`,
       houseIds: teamHouses(members).map((h) => h.houseId),
     });
@@ -1593,14 +1589,12 @@ function computeTotals(
   pl.houseEntries.forEach((e, n) =>
     entries.push({
       id: `h${n}`,
-      group: 'event',
-      score: null,
       placeId: `p${e.placeIdx}`,
       houseIds: [roster.houseIdByColour.get(e.colour)!],
     })
   );
   const ids = COLOURS.map((c) => roster.houseIdByColour.get(c)!);
-  const totals = houseTotals(resolveEntries(entries, placeObjs, 'pick'), ids);
+  const totals = houseTotals(resolveEntries(entries, placeObjs), ids);
   const out = {} as Record<Colour, number>;
   for (const c of COLOURS) out[c] = totals[roster.houseIdByColour.get(c)!] ?? 0;
   return out;
@@ -2195,7 +2189,6 @@ async function writeAll(
         name: ev.name,
         eventType: ev.eventType,
         entrantKind: ev.entrantKind,
-        placementMode: 'pick',
         heldOn: null,
         places: ev.places.map((p) => ({
           label: p.label,
@@ -2280,9 +2273,6 @@ async function main() {
       heldOn: null,
       eventType: ev.eventType,
       entrantKind: ev.entrantKind,
-      placementMode: 'pick',
-      maxScore: null,
-      rankWithin: 'event',
       places: ev.places,
     });
     if (!parsed.success)

@@ -1623,14 +1623,12 @@ function templateSummary(
       const parts: string[] = [];
       const who = studentLead(ctx) || str(ctx.teamName) || str(ctx.houseName);
       if (who) parts.push(who);
-      if ('score' in ctx) {
-        const score = ctx.score;
-        parts.push(
-          score === null ? 'Score cleared' : `Score: ${str(score) || '—'}`
-        );
+      // Awards are always picked by hand (KD #228); there is no score.
+      const award = str(ctx.placeLabel);
+      if (award) parts.push(`Award: ${award}`);
+      else if ('placeLabel' in ctx && ctx.placeLabel === null) {
+        parts.push('Award cleared');
       }
-      const place = str(ctx.placeLabel);
-      if (place) parts.push(`Place: ${place}`);
       return joinParts(parts);
     }
 
