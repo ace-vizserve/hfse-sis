@@ -63,6 +63,7 @@ import {
 import { buildMarkbookInsightsExport } from '@/lib/markbook/insights-export';
 import {
   buildMultiAyTrend,
+  buildTopBandYears,
   selectSubjectsToWatch,
   selectTopMovementSubjects,
   topBandBadge,
@@ -283,6 +284,15 @@ export default async function MarkbookInsightsPage({
   const growthBadge = topBandBadge(topBandPct, compareTopBandPct, compareAy);
 
   type DistTermRow = DistributionTermCandidate & { academic_year_id: string };
+  const distTermsError = (
+    distTermsRes as { error?: { message: string } | null }
+  ).error;
+  if (distTermsError) {
+    // The badge still falls back to a non-clickable "Building history" state
+    // when distTerms comes back empty — this is visibility for that silent
+    // fallback, not a thrown error.
+    console.error('[markbook-insights] terms query failed:', distTermsError);
+  }
   const distTerms = ((distTermsRes as { data: DistTermRow[] | null }).data ??
     []) as DistTermRow[];
   const today = sgToday();
@@ -299,27 +309,28 @@ export default async function MarkbookInsightsPage({
       .reduce((s, b) => s + b.count, 0),
     total: (dist ?? []).reduce((s, b) => s + b.count, 0),
   });
-  const topBandYears: TopBandYear[] = [];
+  // buildTopBandYears keeps the selected year at index 0 whenever it appears
+  // at all — TopBandBadgeDrill always opens years[0] by default, and the
+  // badge itself is titled about the SELECTED year, so a selected year with
+  // 0 graded marks must not let the comparison year's list open by default
+  // (see lib/markbook/insights-compare.ts and its test for the regression
+  // this fixes).
   const selectedDistTerm = distTermNumber(ayId);
-  if (selectedDistTerm !== null && totalGraded > 0) {
-    topBandYears.push({
+  const compareDistTerm = distTermNumber(compareAyId);
+  const topBandYears: TopBandYear[] = buildTopBandYears(
+    {
       ayCode: selectedAy,
       termNumber: selectedDistTerm,
       ...countTop(gradeDist),
-    });
-  }
-  const compareDistTerm = distTermNumber(compareAyId);
-  if (
-    compareAy &&
-    compareDistTerm !== null &&
-    countTop(compareGradeDist).total > 0
-  ) {
-    topBandYears.push({
-      ayCode: compareAy,
-      termNumber: compareDistTerm,
-      ...countTop(compareGradeDist),
-    });
-  }
+    },
+    compareAy
+      ? {
+          ayCode: compareAy,
+          termNumber: compareDistTerm,
+          ...countTop(compareGradeDist),
+        }
+      : null
+  );
 
   // Term periods across whichever AYs are in scope — shared x-axis.
   const periods = [

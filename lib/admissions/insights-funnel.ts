@@ -169,7 +169,6 @@ function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
 
 // Terminal statuses excluded from "applied" counts in conversion metrics.
 const TERMINAL_STATUSES = new Set(['Cancelled', 'Withdrawn']);
-const ENROLLED_STATUSES = new Set(['Enrolled', 'Enrolled (Conditional)']);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Conversion by level
@@ -229,7 +228,7 @@ export function computeConversionByLevel(
     const level = raw || 'Unknown';
 
     applied.set(level, (applied.get(level) ?? 0) + 1);
-    if (ENROLLED_STATUSES.has(r.applicationStatus ?? '')) {
+    if (isEnrolledApplication(r.applicationStatus)) {
       enrolled.set(level, (enrolled.get(level) ?? 0) + 1);
     }
   }

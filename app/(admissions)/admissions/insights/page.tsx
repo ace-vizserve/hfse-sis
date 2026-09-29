@@ -38,7 +38,6 @@ import {
 } from '@/components/ui/card';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
-import { cn } from '@/lib/utils';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getAverageTimeToEnrollment,

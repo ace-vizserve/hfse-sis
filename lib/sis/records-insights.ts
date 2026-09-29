@@ -632,7 +632,7 @@ export async function getRecordsHeadcount(
 /**
  * Insights-scoped headcount — reads `section_students` so that §1 enrolled
  * count and §4 retention (which also reads section_students via
- * `loadEnrolledStudentNumbers`) share the same source and are always
+ * `loadEnrolledStudentData`) share the same source and are always
  * internally consistent. Returns per-level counts using the canonical word-form
  * level label (e.g. "Primary 1") for display in the Insights page.
  *
