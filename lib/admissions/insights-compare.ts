@@ -26,28 +26,12 @@ import type { AyTrendPoint } from '@/lib/dashboard/insights-trend';
 import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import {
+  AY_MONTH_LABELS,
+  type AyMonthLabel,
+} from '@/lib/admissions/insights-predicates';
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Constants
-// ──────────────────────────────────────────────────────────────────────────────
-
-/** HFSE AY months in order (Jan = 0 … Nov = 10). December is excluded — it
- *  falls outside the HFSE academic year window (KD #13). */
-export const AY_MONTH_LABELS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-] as const;
-
-export type AyMonthLabel = (typeof AY_MONTH_LABELS)[number];
+export { AY_MONTH_LABELS, type AyMonthLabel };
 
 /**
  * The in-progress month label for the DB-current AY's intake trend — the

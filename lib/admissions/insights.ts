@@ -4,9 +4,14 @@ import { unstable_cache } from 'next/cache';
 
 import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
-import { APPLICATION_TERMINAL_REASON_LABELS } from '@/lib/schemas/sis';
+import {
+  reasonLabel,
+  TOP_REASON_COUNT,
+  type ReasonCount,
+} from '@/lib/admissions/insights-predicates';
 
-export type ReasonCount = { reason: string; count: number };
+export { reasonLabel, TOP_REASON_COUNT, type ReasonCount };
+
 export type TerminalReasonRollup = {
   overall: ReasonCount[];
   byLevel: { level: string; count: number; reasons: ReasonCount[] }[];
@@ -64,20 +69,7 @@ export { growthDelta, type Growth } from '@/lib/dashboard/growth';
 // "never re-implement a selection rule" rule).
 // ──────────────────────────────────────────────────────────────────────────
 
-/** Humanize a terminal-reason code via the schema label map; fall back to the
- *  raw stored string (e.g. 'Unspecified' / 'Other free-text') when unmapped. */
-export function reasonLabel(reason: string): string {
-  return (
-    (APPLICATION_TERMINAL_REASON_LABELS as Record<string, string>)[reason] ??
-    reason
-  );
-}
-
 export type ReasonBar = { key: string; label: string; count: number };
-
-/** How many individual reasons the donut names before folding the rest into
- *  a single "Other reasons" bucket. */
-export const TOP_REASON_COUNT = 5;
 
 /**
  * Top `TOP_REASON_COUNT` cancellation reasons + an overflow bucket, for the

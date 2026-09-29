@@ -3,11 +3,18 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 
 import { prefixFor } from '@/lib/admissions/_shared';
-import { COUNTRY_NAME_SET } from '@/lib/data/countries';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import {
+  canonicaliseLevelApplied,
+  canonicaliseNationality,
+} from '@/lib/admissions/insights-predicates';
+
+// Moved to the client-safe predicates module (KD #229); re-exported so every
+// existing import of these from here keeps working.
+export { canonicaliseLevelApplied, canonicaliseNationality };
 
 // ──────────────────────────────────────────────────────────────────────────
 // Conversion breakdowns for the Admissions Insights page — by level and by
@@ -434,34 +441,6 @@ export type NationalityMixRow = {
   foldedCount?: number;
 };
 
-/** Spelling variants seen in production that `countries-list` names
- *  differently. Keyed lowercase; extend only from probe output, never from
- *  imagination. */
-const NATIONALITY_ALIASES: Record<string, string> = {
-  'viet nam': 'Vietnam',
-};
-
-/** lowercase country name → its canonical casing, built once. Catches future
- *  case variants ("philippines") that don't exist in the data today. */
-const CANONICAL_BY_LOWER: Map<string, string> = new Map(
-  Array.from(COUNTRY_NAME_SET, (name) => [name.toLowerCase(), name])
-);
-
-/**
- * Trim, collapse internal whitespace, apply a known alias, then snap to the
- * canonical country-name casing when we recognise it. An unrecognised value
- * is preserved exactly as the parent typed it — better a bar labelled with
- * their words than one silently dropped or renamed.
- *
- * Returns null for blank/null, which the caller buckets as 'Unspecified'.
- */
-export function canonicaliseNationality(value: string | null): string | null {
-  const trimmed = (value ?? '').trim().replace(/\s+/g, ' ');
-  if (!trimmed) return null;
-  const aliased = NATIONALITY_ALIASES[trimmed.toLowerCase()] ?? trimmed;
-  return CANONICAL_BY_LOWER.get(aliased.toLowerCase()) ?? aliased;
-}
-
 /**
  * Count applications per nationality, most common first.
  *
@@ -536,33 +515,6 @@ export type NationalityByLevel = {
   legend: string[];
   rows: NationalityLevelRow[];
 };
-
-/**
- * Admissions' `levelApplied` is free text and drifts. Measured on production
- * 2026-08-17: AY2026 spells the same preschool programme four ways
- * ("Youngstarters | Little Stars" and "YoungStarter Little Star" among them),
- * and AY2025 leaves it blank on 79 of 822 rows.
- *
- * This folds the SPELLING variants together — casing, pluralisation and the
- * separator — and nothing else. It never merges two different year groups,
- * and an unrecognised value passes through untouched so a genuinely new level
- * shows up rather than hiding inside a bucket.
- *
- * Records does not need this: enrolled students take their level from the
- * managed `levels` table, which has exactly ten values and no drift.
- */
-export function canonicaliseLevelApplied(raw: string | null): string {
-  const trimmed = (raw ?? '').trim().replace(/\s+/g, ' ');
-  if (!trimmed) return 'Not specified';
-  const flat = trimmed.toLowerCase().replace(/[^a-z]/g, '');
-  if (flat.startsWith('youngstarter')) {
-    if (flat.includes('little')) return 'Youngstarters | Little Stars';
-    if (flat.includes('junior')) return 'Youngstarters | Junior Stars';
-    if (flat.includes('senior')) return 'Youngstarters | Senior Stars';
-    return 'Youngstarters';
-  }
-  return trimmed;
-}
 
 export function computeNationalityByLevel(
   rows: { level: string | null; nationality: string | null }[],
