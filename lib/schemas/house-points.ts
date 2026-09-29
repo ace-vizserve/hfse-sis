@@ -256,3 +256,30 @@ export const ScalesPutSchema = z.object({
     .max(MAX_PLACES, `You can add up to ${MAX_PLACES} rows.`),
 });
 export type ScalesPutInput = z.infer<typeof ScalesPutSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// House members — the house page's add/remove (/api/sis/houses/[code]/members).
+// The sibling of lib/schemas/sis.ts's HouseAssignmentSchema (one student,
+// from their record); kept here because lib/schemas/sis.ts is shared by many
+// in-flight changes and this contract belongs to the house page. Ids are
+// section_student ids — what the page's picker and Members table list —
+// scoped to `ayCode`'s enrolled roster.
+export const MAX_HOUSE_MEMBERS_PER_ADD = 200;
+
+export const HouseMembersAddSchema = z.object({
+  ayCode: z.string().trim().min(1, 'Choose a school year.'),
+  sectionStudentIds: z
+    .array(uuid('Unknown student.'))
+    .min(1, 'Tick at least one student.')
+    .max(
+      MAX_HOUSE_MEMBERS_PER_ADD,
+      `Add up to ${MAX_HOUSE_MEMBERS_PER_ADD} students at a time.`
+    ),
+});
+export type HouseMembersAddInput = z.infer<typeof HouseMembersAddSchema>;
+
+export const HouseMemberRemoveSchema = z.object({
+  ayCode: z.string().trim().min(1, 'Choose a school year.'),
+  sectionStudentId: uuid('Unknown student.'),
+});
+export type HouseMemberRemoveInput = z.infer<typeof HouseMemberRemoveSchema>;

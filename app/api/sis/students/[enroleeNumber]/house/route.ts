@@ -7,6 +7,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { HouseAssignmentSchema } from '@/lib/schemas/sis';
+import { houseAuditContext } from '@/lib/sis/house-audit';
 import { listHouses } from '@/lib/sis/houses';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -129,16 +130,15 @@ export async function PATCH(
     action: 'sis.house.update',
     entityType: 'enrolment_application',
     entityId: enroleeNumber,
-    context: {
+    // Shared with the house page's bulk route, so both read alike.
+    context: houseAuditContext({
       enroleeNumber,
       studentNumber,
-      student_id: studentId,
+      studentId,
       before,
       after: houseId,
-      // Names, not just ids — the audit log is read by people.
-      before_name: before == null ? null : (nameById.get(before) ?? null),
-      after_name: houseId == null ? null : (nameById.get(houseId) ?? null),
-    },
+      nameById,
+    }),
   });
 
   // Without these the students list serves a stale house for up to 10 minutes

@@ -2,9 +2,20 @@
 
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
+import { UserMinus } from 'lucide-react';
 
+import { AddHouseMembersSheet } from '@/components/house-points/add-house-members-sheet';
 import { AwardTallyBadges } from '@/components/house-points/award-tally-badges';
 import { EventTypePill } from '@/components/house-points/event-type-pill';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -22,12 +33,16 @@ import {
   type HouseMember,
   type HouseStudentLine,
 } from '@/lib/house-points/house-breakdown';
+import type { RosterStudent } from '@/lib/house-points/queries';
 import { matchesAny } from '@/lib/house-points/sheet-filters';
 import {
   EVENT_TYPE_SHORT_LABELS,
   formatEventDate,
   formatPoints,
 } from '@/lib/house-points/standings';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import type { HouseRow } from '@/lib/sis/houses';
 
 // The three tables on /records/house-points/houses/[code] — where one house's
 // points came from, by event and by student, and who is in it — shown one at
@@ -196,17 +211,88 @@ const MEMBER_COLUMNS: ColumnDef<HouseMember, unknown>[] = [
   },
 ];
 
+/** What the Members tab needs to add and remove members — writers only. */
+export type HouseMembersManage = {
+  houseCode: string;
+  /** The year's ENROLLED roster, for the add picker. */
+  roster: RosterStudent[];
+  houses: HouseRow[];
+};
+
 export function HouseMembersTable({
   members,
   houseName,
   ayCode,
   fileStem,
+  manage = null,
 }: {
   members: HouseMember[];
   houseName: string;
   ayCode: string;
   fileStem: string;
+  /** Present for ENROLMENT_PLACEMENT_WRITERS; null shows the table read-only. */
+  manage?: HouseMembersManage | null;
 }) {
+  const [removing, setRemoving] = React.useState<HouseMember | null>(null);
+  const [removeBusy, setRemoveBusy] = React.useState(false);
+  const run = useWriteAction();
+
+  const columns = React.useMemo<ColumnDef<HouseMember, unknown>[]>(() => {
+    if (!manage) return MEMBER_COLUMNS;
+    return [
+      ...MEMBER_COLUMNS,
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { label: 'Actions', excludeFromExport: true },
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground hover:text-destructive"
+              aria-label={`Remove ${row.original.name} from ${houseName}`}
+              title="Remove from house"
+              onClick={() => setRemoving(row.original)}
+            >
+              <UserMinus className="size-4" />
+            </Button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ];
+  }, [manage, houseName]);
+
+  const memberStudentIds = React.useMemo(
+    () => members.map((m) => m.studentId),
+    [members]
+  );
+
+  async function confirmRemove() {
+    if (!removing || !manage) return;
+    const who = removing.name;
+    setRemoveBusy(true);
+    await run(
+      () =>
+        apiFetch<{ ok: true }>(
+          `/api/sis/houses/${encodeURIComponent(manage.houseCode)}/members`,
+          jsonInit('DELETE', {
+            ayCode,
+            sectionStudentId: removing.sectionStudentId,
+          })
+        ),
+      {
+        pending: 'Removing…',
+        success: `Removed ${who} from ${houseName}`,
+        onResolved: () => setRemoving(null),
+      }
+    );
+    setRemoveBusy(false);
+  }
+
   const facets = React.useMemo(() => {
     const collator = new Intl.Collator('en', { numeric: true });
     return [
@@ -221,26 +307,82 @@ export function HouseMembersTable({
   }, [members]);
 
   return (
-    <DataTable<HouseMember>
-      data={members}
-      columns={MEMBER_COLUMNS}
-      getRowId={(row) => row.studentId}
-      searchKeys={[(r) => r.name, (r) => r.studentNumber]}
-      searchPlaceholder="Search members"
-      facets={facets}
-      url={{ enabled: true, namespace: 'house-members' }}
-      initialSort={[{ id: 'class', desc: false }]}
-      pageSize={25}
-      csv={{ filename: `${fileStem}-members.csv` }}
-      emptyState={{
-        title: 'No members yet',
-        body: `No student enrolled in ${ayCode} is in ${houseName}. A student's house is set on their record.`,
-      }}
-      emptyFilteredState={{
-        title: 'No members match.',
-        body: 'Clear the search or a filter to see every member.',
-      }}
-    />
+    <>
+      <DataTable<HouseMember>
+        data={members}
+        columns={columns}
+        getRowId={(row) => row.studentId}
+        searchKeys={[(r) => r.name, (r) => r.studentNumber]}
+        searchPlaceholder="Search members"
+        facets={facets}
+        url={{ enabled: true, namespace: 'house-members' }}
+        initialSort={[{ id: 'class', desc: false }]}
+        pageSize={25}
+        csv={{ filename: `${fileStem}-members.csv` }}
+        toolbarTrailing={
+          manage ? (
+            <AddHouseMembersSheet
+              houseCode={manage.houseCode}
+              houseName={houseName}
+              ayCode={ayCode}
+              roster={manage.roster}
+              houses={manage.houses}
+              memberStudentIds={memberStudentIds}
+            />
+          ) : undefined
+        }
+        emptyState={{
+          title: 'No members yet',
+          body: manage
+            ? `No student enrolled in ${ayCode} is in ${houseName}. Choose Add students to ${houseName} to put some in.`
+            : `No student enrolled in ${ayCode} is in ${houseName}. A student's house is set on their record.`,
+        }}
+        emptyFilteredState={{
+          title: 'No members match.',
+          body: 'Clear the search or a filter to see every member.',
+        }}
+      />
+
+      {/* On the page canvas, not inside a drawer, so the confirm is not
+          nested in anything. */}
+      <AlertDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open && !removeBusy) setRemoving(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {removing?.name ?? 'this student'} from {houseName}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They will have no house until someone puts them in one, and the
+              house points they have earned leave {houseName} with them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={removeBusy}
+              onClick={() => setRemoving(null)}
+            >
+              Keep them
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              loading={removeBusy}
+              loadingText="Removing…"
+              onClick={confirmRemove}
+            >
+              Remove from house
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -393,6 +535,7 @@ export function HouseBreakdownTabs({
   ayCode,
   fileStem,
   totalLabel,
+  manage = null,
 }: {
   events: HouseEventLine[];
   students: HouseStudentLine[];
@@ -402,6 +545,8 @@ export function HouseBreakdownTabs({
   fileStem: string;
   /** The house total as printed, for the team-result note under By student. */
   totalLabel: string;
+  /** Member add/remove — passed only for ENROLMENT_PLACEMENT_WRITERS. */
+  manage?: HouseMembersManage | null;
 }) {
   const [tab, setTab] = React.useState<BreakdownTab>('events');
 
@@ -469,6 +614,7 @@ export function HouseBreakdownTabs({
               houseName={houseName}
               ayCode={ayCode}
               fileStem={fileStem}
+              manage={manage}
             />
           </TabsContent>
         </Tabs>

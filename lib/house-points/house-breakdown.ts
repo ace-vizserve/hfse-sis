@@ -224,6 +224,8 @@ export function buildHouseBreakdown(
 
 export type HouseMember = {
   studentId: string;
+  /** One of their enrolled roster rows — what "Remove from house" sends. */
+  sectionStudentId: string;
   studentNumber: string;
   name: string;
   sectionName: string;
@@ -248,6 +250,7 @@ export function houseMembers(
     if (s.houseId !== houseId || byStudent.has(s.studentId)) continue;
     byStudent.set(s.studentId, {
       studentId: s.studentId,
+      sectionStudentId: s.sectionStudentId,
       studentNumber: s.studentNumber,
       name: s.name,
       sectionName: s.sectionName,

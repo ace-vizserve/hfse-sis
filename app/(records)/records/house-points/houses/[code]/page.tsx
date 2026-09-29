@@ -32,6 +32,7 @@ import {
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { getAyIdByCode } from '@/lib/dashboard/ay-id';
 import { ordinal } from '@/lib/house-points/defaults';
 import {
@@ -57,7 +58,9 @@ import { cn } from '@/lib/utils';
 // /records/house-points.
 //
 // Same guard as the other house-points pages (the `/records` ROUTE_ACCESS
-// row). Read-only: no write controls, so admissions sees what everyone does.
+// row). The one write here is the Members tab's add / remove, shown to
+// ENROLMENT_PLACEMENT_WRITERS (the gate on a student's house everywhere);
+// everything else is read-only.
 //
 // `code` is the house's stable code (H1–H4, never renamed); the URL carries
 // it lower-case, so it is normalised before the lookup.
@@ -205,6 +208,9 @@ export default async function HousePointsHousePage({
       ])
     : [EMPTY, [] as RosterStudent[]];
   const members = houseMembers(roster, house.id);
+  const canManage = (ENROLMENT_PLACEMENT_WRITERS as readonly string[]).includes(
+    sessionUser.role ?? ''
+  );
 
   // ── Standing — the standings page's own ranking, so ties share a place. ──
   const standings = rankStandings(houses, breakdown.yearTotals);
@@ -469,6 +475,9 @@ export default async function HousePointsHousePage({
         ayCode={selectedAy}
         fileStem={fileStem}
         totalLabel={formatPoints(breakdown.total)}
+        manage={
+          canManage && ayId ? { houseCode: house.code, roster, houses } : null
+        }
       />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

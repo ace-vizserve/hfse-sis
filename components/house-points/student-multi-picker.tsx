@@ -50,6 +50,7 @@ export function StudentMultiPicker({
   locked,
   unavailable = NONE,
   unavailableLabel = 'Not available',
+  showNoHouse = false,
   onChange,
   className,
 }: {
@@ -63,6 +64,11 @@ export function StudentMultiPicker({
   unavailable?: ReadonlySet<string>;
   /** Said beside an unavailable student, e.g. "On another team". */
   unavailableLabel?: string;
+  /**
+   * Say "No house" beside a student without one. The house page's picker
+   * needs it — there the house IS the question; an event's picker does not.
+   */
+  showNoHouse?: boolean;
   onChange: (next: Set<string>) => void;
   className?: string;
 }) {
@@ -197,12 +203,18 @@ export function StudentMultiPicker({
                     <span className="sr-only"> (ticked)</span>
                   )}
                 </span>
-                {house && (
+                {house ? (
                   <HouseChip
                     name={house.name}
                     colourToken={house.colourToken}
                     className="hidden shrink-0 sm:inline-flex"
                   />
+                ) : (
+                  showNoHouse && (
+                    <span className="hidden shrink-0 rounded-md border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground sm:inline-flex">
+                      No house
+                    </span>
+                  )
                 )}
                 <span className="shrink-0 text-[11px] text-muted-foreground">
                   {s.sectionName}
