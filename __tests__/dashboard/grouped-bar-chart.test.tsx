@@ -10,7 +10,7 @@
  */
 import * as React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart.client';
 
 vi.mock('recharts', async () => {
@@ -198,5 +198,76 @@ describe('GroupedBarChart', () => {
 
     const labelText = container.querySelector('.recharts-label-list text');
     expect(labelText?.textContent ?? '').toBe('');
+  });
+});
+
+describe('GroupedBarChart onSegmentClick', () => {
+  const series = [
+    { key: 'AY2026', label: 'AY2026' },
+    { key: 'AY2025', label: 'AY2025', muted: true },
+  ];
+  const data = [
+    { x: 'T1', AY2026: 94, AY2025: 91 },
+    { x: 'T2', AY2026: 92, AY2025: 90 },
+  ];
+
+  it("reports the clicked bar's category and series — the comparison year included", () => {
+    const onSegmentClick = vi.fn();
+    const { container } = render(
+      <GroupedBarChart
+        series={series}
+        data={data}
+        onSegmentClick={onSegmentClick}
+      />
+    );
+    // Recharts draws series by series: AY2026 T1, AY2026 T2, AY2025 T1, AY2025 T2.
+    const bars = container.querySelectorAll('.recharts-bar-rectangle path');
+    fireEvent.click(bars[1]);
+    fireEvent.click(bars[2]);
+    expect(onSegmentClick.mock.calls).toEqual([
+      ['T2', 'AY2026'],
+      ['T1', 'AY2025'],
+    ]);
+  });
+
+  it('still reports the click when highlightX draws the bars as Cells', () => {
+    const onSegmentClick = vi.fn();
+    const { container } = render(
+      <GroupedBarChart
+        series={[{ key: 'rate', label: 'Rate' }]}
+        data={[
+          { x: 'T1', rate: 94 },
+          { x: 'T2', rate: 92 },
+        ]}
+        highlightX="T2"
+        onSegmentClick={onSegmentClick}
+      />
+    );
+    fireEvent.click(
+      container.querySelectorAll('.recharts-bar-rectangle path')[0]
+    );
+    expect(onSegmentClick.mock.calls).toEqual([['T1', 'rate']]);
+  });
+
+  it('shows the pointer on every bar only when clickable', () => {
+    const clickable = render(
+      <GroupedBarChart series={series} data={data} onSegmentClick={vi.fn()} />
+    );
+    const clickableBars = clickable.container.querySelectorAll(
+      '.recharts-bar-rectangle path'
+    );
+    expect(clickableBars.length).toBeGreaterThan(0);
+    clickableBars.forEach((el) =>
+      expect(el.getAttribute('style') ?? '').toContain('cursor: pointer')
+    );
+
+    const plain = render(<GroupedBarChart series={series} data={data} />);
+    const plainBars = plain.container.querySelectorAll(
+      '.recharts-bar-rectangle path'
+    );
+    expect(plainBars.length).toBeGreaterThan(0);
+    plainBars.forEach((el) =>
+      expect(el.getAttribute('style') ?? '').not.toContain('cursor')
+    );
   });
 });

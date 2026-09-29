@@ -21,14 +21,17 @@ import {
   AXIS_TICK,
   BAR_CURSOR,
   BAR_RADIUS_TOP,
+  barClickHandler,
   CATEGORY_TICK,
   CHART_AXIS,
   CHART_GRID,
+  CLICKABLE_STYLE,
   formatterFor,
   MUTED_SERIES,
   SERIES_COLORS,
   SERIES_LEGEND,
   VALUE_LABEL,
+  type SegmentClickHandler,
   type YFormat,
 } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
@@ -69,6 +72,12 @@ export type GroupedBarChartProps = {
    *  period) — its bars render at full opacity, all others dimmed. Unset
    *  leaves every bar at its normal series fill (no behavior change). */
   highlightX?: string;
+  /**
+   * Makes each bar clickable. Reports `(x, series key)` — on a year-compare
+   * chart the series key is the AY code, so a click on last year's bar
+   * names last year.
+   */
+  onSegmentClick?: SegmentClickHandler;
 };
 
 // Non-muted series cycle through the chart palette; a muted series (the
@@ -119,6 +128,7 @@ function GroupedBarChartImpl({
   yDomain,
   showValueLabels,
   highlightX,
+  onSegmentClick,
 }: GroupedBarChartProps) {
   const yFormatter = formatterFor(yFormat);
   const { fill, legend } = resolvePalette(series);
@@ -176,6 +186,8 @@ function GroupedBarChartImpl({
             maxBarSize={40}
             radius={BAR_RADIUS_TOP}
             isAnimationActive={false}
+            onClick={barClickHandler(onSegmentClick, 'x', s.key)}
+            style={onSegmentClick ? CLICKABLE_STYLE : undefined}
           >
             {highlightX &&
               data.map((row, ri) => (
