@@ -175,6 +175,10 @@ export const ALL_AUDIT_ACTIONS = [
   'template.subject_config.delete',
   'template.subject_config.bulk_delete',
   'subject.create',
+  // Only ever an UNUSED subject (no year config, no sheet, no teacher) — the
+  // catalog route refuses both on anything in use.
+  'subject.rename',
+  'subject.delete',
   'template.apply',
   'school_config.update',
   'user.invite',

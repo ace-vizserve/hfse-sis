@@ -87,6 +87,12 @@ export const SubjectConfigCreateSchema = z
     ww_max_slots: z.number().int().min(1).max(5),
     pt_max_slots: z.number().int().min(1).max(5),
     qa_max: z.number().int().min(1).max(100),
+    // The three per-year names, saved with the weights when the year's row is
+    // first made. Same fields and limits as SubjectConfigUpdateSchema; the
+    // route stores blank as null (the DB CHECK refuses blank strings).
+    display_name: z.string().trim().max(128).nullable().optional(),
+    report_label: z.string().trim().max(128).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
   })
   .refine((v) => v.ww_weight + v.pt_weight + v.qa_weight === 100, {
     message: 'WW + PT + QA must sum to 100',

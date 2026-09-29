@@ -78,8 +78,8 @@ export type SubjectConfigFormDraft = SubjectConfigFormSubject & {
   pt_max_slots: number;
   qa_max: number; // max possible QA score (default 30 per Hard Rule #1)
   reportSubjectId: string;
-  // The three per-year fields. All edit-mode only: each needs a per-year row,
-  // and create mode has none yet.
+  // The three per-year fields. Shown in create mode too, where they are
+  // sent with the weights instead of saved on blur (see the JSX group).
   //
   // display_name  — what it is CALLED this year, on every screen (137).
   // report_label  — what the REPORT CARD calls it this year, if different (138).
@@ -172,7 +172,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
   const [gradingMethod, setGradingMethod] = useState(initialGradingMethod);
   // ── The three per-year text fields (migrations 137 + 138) ────────────
   // All free text, so none can auto-save on every keystroke the way the
-  // Selects above do; each saves on blur, and only when the value actually
+  // Selects above do; in edit mode each saves on blur (create mode sends them
+  // with the weights, since there is no row to save into yet), and only when the value actually
   // changed since its last successful save. That is tracked with a ref rather
   // than by re-comparing against the prop, because the prop stays stale for
   // the rest of this mount once a save succeeds — the drawer does not re-fetch
@@ -227,9 +228,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setQaMax('30');
       setIsExaminable(props.subject.is_examinable);
       setGradingMethod(props.subject.grading_method);
-      // Create mode renders none of the three per-year fields, but they are
-      // reset anyway so switching from an edited subject to a new one cannot
-      // carry a stale value into the next mount.
+      // Reset so switching from an edited subject to a new one cannot carry
+      // a stale value into the next mount.
       setDisplayName('');
       lastSavedDisplayNameRef.current = '';
       setReportLabel('');
@@ -261,6 +261,12 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
           academic_year_id: props.ayId,
           subject_id: subjectId,
           ...weightsPayload,
+          // Create mode has no row to save the three names into on blur, so
+          // they ride along with the weights and land in the same insert.
+          // The route stores blank as null.
+          display_name: displayName,
+          report_label: reportLabel,
+          description,
         });
 
   const saveWeightsMutation = useMutation({
@@ -530,80 +536,83 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
 
           The three read top to bottom as one sentence about the year: what it
           is called, what it prints as if that differs, and what it stands for.
-          Edit mode only — each needs this year's row, and a subject being
-          created has none yet. */}
-        {mode === 'edit' && (
-          <FieldRow
-            eyebrow={`In ${ayCode}`}
-            helper={`Only ${ayCode} is affected. Other years keep what they already have.`}
-          >
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  Subject name
-                </Label>
-                <Input
-                  type="text"
-                  placeholder={subjectName}
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  onBlur={onDisplayNameBlur}
-                  maxLength={128}
-                  aria-label={`Name for ${subjectCode} in ${ayCode}`}
-                />
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  What staff see this subject called in {ayCode}. Leave blank to
-                  keep calling it &ldquo;{subjectName}&rdquo;. The subject code
-                  stays{' '}
-                  <span className="font-mono font-semibold text-foreground">
-                    {subjectCode}
-                  </span>{' '}
-                  either way, so marks, weights and past years are untouched.
-                </p>
-              </div>
 
-              <div className="space-y-1">
-                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  Name on the report card
-                </Label>
-                <Input
-                  type="text"
-                  placeholder={displayName.trim() || subjectName}
-                  value={reportLabel}
-                  onChange={(e) => setReportLabel(e.target.value)}
-                  onBlur={onReportLabelBlur}
-                  maxLength={128}
-                  aria-label={`Report card name for ${subjectCode} in ${ayCode}`}
-                />
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Only fill this in if the report card should say something
-                  different from the name above. Leave blank and the card uses
-                  the same name every other screen does.
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  What it stands for
-                </Label>
-                <Input
-                  type="text"
-                  placeholder="Sports, Talent, Arts and Rhythm"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={onDescriptionBlur}
-                  maxLength={200}
-                  aria-label={`Description for ${subjectCode} in ${ayCode}`}
-                />
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Shown under the heading on the grading sheet, so a teacher
-                  opening it knows what the name means. Staff only — this never
-                  appears on a report card.
-                </p>
-              </div>
+          Shown in BOTH modes. They used to be edit-only, because each saves on
+          blur into this year's row and a subject being created has none yet —
+          which meant naming a subject for a new year took two trips into the
+          drawer. Now edit mode still saves each on blur (savePerYearField),
+          and create mode sends all three with the weights, so the row is born
+          with its names (POST /api/sis/admin/subjects). */}
+        <FieldRow
+          eyebrow={`In ${ayCode}`}
+          helper={`Only ${ayCode} is affected. Other years keep what they already have.`}
+        >
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                Subject name
+              </Label>
+              <Input
+                type="text"
+                placeholder={subjectName}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onBlur={onDisplayNameBlur}
+                maxLength={128}
+                aria-label={`Name for ${subjectCode} in ${ayCode}`}
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                What staff see this subject called in {ayCode}. Leave blank to
+                keep calling it &ldquo;{subjectName}&rdquo;. The subject code
+                stays{' '}
+                <span className="font-mono font-semibold text-foreground">
+                  {subjectCode}
+                </span>{' '}
+                either way, so marks, weights and past years are untouched.
+              </p>
             </div>
-          </FieldRow>
-        )}
+
+            <div className="space-y-1">
+              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                Name on the report card
+              </Label>
+              <Input
+                type="text"
+                placeholder={displayName.trim() || subjectName}
+                value={reportLabel}
+                onChange={(e) => setReportLabel(e.target.value)}
+                onBlur={onReportLabelBlur}
+                maxLength={128}
+                aria-label={`Report card name for ${subjectCode} in ${ayCode}`}
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Only fill this in if the report card should say something
+                different from the name above. Leave blank and the card uses the
+                same name every other screen does.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                What it stands for
+              </Label>
+              <Input
+                type="text"
+                placeholder="Sports, Talent, Arts and Rhythm"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={onDescriptionBlur}
+                maxLength={200}
+                aria-label={`Description for ${subjectCode} in ${ayCode}`}
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Shown under the heading on the grading sheet, so a teacher
+                opening it knows what the name means. Staff only — this never
+                appears on a report card.
+              </p>
+            </div>
+          </div>
+        </FieldRow>
 
         {/* Grade type + grading method — global to this subject, not scoped
           to the AY on screen (subjects has no AY dimension). */}

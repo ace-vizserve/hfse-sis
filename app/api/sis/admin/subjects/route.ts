@@ -38,6 +38,13 @@ export async function POST(request: NextRequest) {
     pt_max_slots,
     qa_max,
   } = parsed.data;
+  // The year's names, set alongside the weights. Blank = not set (null) —
+  // the DB CHECK refuses blank strings, and null means "fall back".
+  const blankToNull = (v: string | null | undefined) =>
+    v && v.trim() ? v.trim() : null;
+  const display_name = blankToNull(parsed.data.display_name);
+  const report_label = blankToNull(parsed.data.report_label);
+  const description = blankToNull(parsed.data.description);
 
   const service = createServiceClient();
 
@@ -97,6 +104,9 @@ export async function POST(request: NextRequest) {
       ww_max_slots,
       pt_max_slots,
       qa_max,
+      display_name,
+      report_label,
+      description,
     })
     .select('id')
     .single();
@@ -129,6 +139,9 @@ export async function POST(request: NextRequest) {
         qa_weight: Number(qa_dec),
       },
       max_slots: { ww_max_slots, pt_max_slots, qa_max },
+      display_name,
+      report_label,
+      description,
     },
   });
 

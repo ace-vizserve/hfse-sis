@@ -29,6 +29,8 @@ const SIS_AUDIT_ALLOWLIST = [
   'approval_stage.approver.revoke',
   // Subject catalog (KD #72)
   'subject.create',
+  'subject.rename',
+  'subject.delete',
   'subject_config.create',
   'subject_config.update',
   // Per-term weights (migration 159) — "Filipino has no exam in Term 3". It

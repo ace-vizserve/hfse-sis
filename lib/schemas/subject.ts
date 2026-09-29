@@ -24,21 +24,24 @@ export const GRADING_METHOD_LABELS: Record<GradingMethod, string> = {
   no_sheet: 'No sheet — recorded elsewhere',
 };
 
+const SubjectCodeField = z
+  .string()
+  .trim()
+  .min(1, 'Code required')
+  .max(32, 'Keep code under 32 chars')
+  .regex(
+    /^[A-Z0-9_-]+$/,
+    'Code must be uppercase letters, digits, underscore, or hyphen'
+  );
+const SubjectNameField = z
+  .string()
+  .trim()
+  .min(1, 'Name required')
+  .max(128, 'Keep name under 128 chars');
+
 export const SubjectCreateSchema = z.object({
-  code: z
-    .string()
-    .trim()
-    .min(1, 'Code required')
-    .max(32, 'Keep code under 32 chars')
-    .regex(
-      /^[A-Z0-9_-]+$/,
-      'Code must be uppercase letters, digits, underscore, or hyphen'
-    ),
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Name required')
-    .max(128, 'Keep name under 128 chars'),
+  code: SubjectCodeField,
+  name: SubjectNameField,
   is_examinable: z.boolean(),
   grading_method: z.enum(GRADING_METHOD_VALUES),
   // NO report_label. It moved to `subject_configs` in migration 138, because
@@ -71,11 +74,23 @@ export const SubjectCatalogUpdateSchema = z
     // now and belongs to SubjectConfigUpdateSchema. This schema is for the two
     // fields that genuinely have no year: a subject either is examinable or is
     // not, in every year at once.
+    //
+    // Rename — code and/or name. The route accepts these ONLY for an unused
+    // subject (lib/sis/subjects/usage.ts): code is the identity every
+    // code-keyed list matches on, so renaming one in use is not a typo fix.
+    // A used subject's per-year name is display_name on subject_configs.
+    code: SubjectCodeField.optional(),
+    name: SubjectNameField.optional(),
   })
   .refine(
-    (v) => v.is_examinable !== undefined || v.grading_method !== undefined,
+    (v) =>
+      v.is_examinable !== undefined ||
+      v.grading_method !== undefined ||
+      v.code !== undefined ||
+      v.name !== undefined,
     {
-      message: 'At least one field (is_examinable, grading_method) is required',
+      message:
+        'At least one field (is_examinable, grading_method, code, name) is required',
     }
   );
 export type SubjectCatalogUpdateInput = z.infer<

@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock } from 'lucide-react';
+import { ArrowUpRight, Lock } from 'lucide-react';
+import Link from 'next/link';
 
 import { LockToggle } from '@/components/grading/lock-toggle';
 import { TotalsEditor } from '@/components/grading/totals-editor';
@@ -134,6 +135,15 @@ export function SectionTermSheetsDialog({
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
+                    {/* Straight to the sheet in Markbook, to see the marks
+                        themselves. Ghost: it leaves the page, it changes
+                        nothing, and the lock button already carries colour. */}
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/markbook/grading/${term.sheetId}`}>
+                        <ArrowUpRight className="size-3.5" />
+                        View sheet
+                      </Link>
+                    </Button>
                     <TotalsEditor
                       sheetId={term.sheetId}
                       wwTotals={term.wwTotals}

@@ -18,6 +18,10 @@ import {
 import { NewSubjectForm } from '@/components/sis/new-subject-form';
 import { SectionTermSheetsDialog } from '@/components/sis/section-term-sheets-dialog';
 import {
+  SubjectRenameInline,
+  UnusedSubjectMenu,
+} from '@/components/sis/unused-subject-actions';
+import {
   SubjectConfigForm,
   type SubjectConfigFormDraft,
   type SubjectConfigFormSubject,
@@ -203,8 +207,12 @@ export function SubjectCatalogCard({
   sections,
   defaultSectionLevelType,
   sheetImpactByConfigId,
+  unusedSubjectIds = [],
 }: {
   catalog: CatalogSubjectRow[];
+  /** Subjects nothing uses yet, in any year (lib/sis/subjects/usage.ts) —
+   * the only ones offered Rename and Delete. */
+  unusedSubjectIds?: string[];
   levelLabel: string;
   ayCode: string;
   ayId: string;
@@ -238,6 +246,8 @@ export function SubjectCatalogCard({
   const [addOpen, setAddOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const unusedIds = new Set(unusedSubjectIds);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   // The class chip that was clicked. Carries ONE of that class's sheets for
   // this subject; the dialog finds its sibling terms, which is the whole point
   // — a chip has only ever pointed at one of the four.
@@ -380,7 +390,7 @@ export function SubjectCatalogCard({
                   <TableHead>Subject</TableHead>
                   <TableHead>Used by</TableHead>
                   <TableHead>Weights (WW · PT · QA)</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead className="w-14" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -424,14 +434,21 @@ export function SubjectCatalogCard({
                           </HoverHint>
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1 leading-tight">
-                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                              {subject.code}
-                            </span>
-                            <span className="font-serif text-[14px] font-semibold text-foreground">
-                              {subject.name}
-                            </span>
-                          </div>
+                          {renamingId === subject.id ? (
+                            <SubjectRenameInline
+                              subject={subject}
+                              onDone={() => setRenamingId(null)}
+                            />
+                          ) : (
+                            <div className="flex flex-col gap-1 leading-tight">
+                              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                {subject.code}
+                              </span>
+                              <span className="font-serif text-[14px] font-semibold text-foreground">
+                                {subject.name}
+                              </span>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <UsedByCell
@@ -448,24 +465,34 @@ export function SubjectCatalogCard({
                           />
                         </TableCell>
                         <TableCell>
-                          <HoverHint
-                            hint={`Edit ${subject.name}`}
-                            focusable={false}
-                          >
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              // Always visible, faint at rest: at opacity-0 it
-                              // could not be found by looking, and a tablet
-                              // never hovers so it never appeared at all.
-                              className="size-6 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                              onClick={() => setEditSubject(subject)}
-                              aria-label={`Edit ${subject.name}`}
+                          <span className="flex items-center gap-0.5">
+                            <HoverHint
+                              hint={`Edit ${subject.name}`}
+                              focusable={false}
                             >
-                              <Pencil className="size-3" />
-                            </Button>
-                          </HoverHint>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                // Always visible, faint at rest: at opacity-0 it
+                                // could not be found by looking, and a tablet
+                                // never hovers so it never appeared at all.
+                                className="size-6 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                                onClick={() => setEditSubject(subject)}
+                                aria-label={`Edit ${subject.name}`}
+                              >
+                                <Pencil className="size-3" />
+                              </Button>
+                            </HoverHint>
+                            {/* Rename + Delete — only for a subject nothing
+                                uses yet (see unused-subject-actions.tsx). */}
+                            {unusedIds.has(subject.id) && (
+                              <UnusedSubjectMenu
+                                subject={subject}
+                                onRename={() => setRenamingId(subject.id)}
+                              />
+                            )}
+                          </span>
                         </TableCell>
                       </TableRow>
                       {expandable && isOpen && impact ? (

@@ -106,6 +106,8 @@ describe('subjectReportName stays on the report card', () => {
       'components/sis/subject-config-form.tsx',
       // The write path.
       'app/api/sis/admin/subjects/[configId]/route.ts',
+      // Create: the year's row can be born with its report card name.
+      'app/api/sis/admin/subjects/route.ts',
       'lib/schemas/subject-config.ts',
       'lib/sis/subject-config-unchanged.ts',
     ];

@@ -60,13 +60,12 @@ function renderCreate(code: string) {
 
 // PercentField renders WW, PT, QA in that fixed order — no htmlFor/id
 // association to the visible label, so DOM order is the reliable query.
-//
-// CREATE mode renders no free-text field before them: all three per-year
-// fields (name, report-card name, description) need a subject_configs row and
-// a subject being created has none. So the weights are the first textboxes on
-// the form.
 function weightInputs() {
-  const inputs = screen.getAllByRole('textbox');
+  // The three per-year name boxes come first (shown in create mode too since
+  // 2026-09-29); the weights are the boxes after them.
+  const inputs = screen
+    .getAllByRole('textbox')
+    .filter((el) => !/ in AY\d{4}$/.test(el.getAttribute('aria-label') ?? ''));
   return { ww: inputs[0], pt: inputs[1], qa: inputs[2] };
 }
 
@@ -323,9 +322,31 @@ describe('SubjectConfigForm (edit mode — name in this academic year)', () => {
     await waitFor(() => expect(nameBox()).toHaveValue('STAR'));
   });
 
-  it('is not offered in create mode — a per-year name needs this year’s row', () => {
+  it('is offered in create mode too, and saved with the weights', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true, id: 'cfg-new' }))
+    );
     renderCreate('MAPEH');
-    expect(screen.queryByLabelText(/name for MAPEH in/i)).toBeNull();
+
+    await user.type(screen.getByLabelText(/^name for MAPEH in/i), 'STAR');
+    await user.type(
+      screen.getByLabelText(/^description for MAPEH in/i),
+      'Sports, Talent, Arts and Rhythm'
+    );
+    await user.tab();
+    // Blur saves nothing in create mode — there is no row yet.
+    expect(writeCalls(fetchSpy)).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: /set weights/i }));
+    await waitFor(() => expect(writeCalls(fetchSpy)).toHaveLength(1));
+    const [url, init] = writeCalls(fetchSpy)[0] as [string, RequestInit];
+    expect(url).toBe('/api/sis/admin/subjects');
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      display_name: 'STAR',
+      report_label: '',
+      description: 'Sports, Talent, Arts and Rhythm',
+    });
   });
 });
 
