@@ -10,6 +10,16 @@ import { compareLevelLabels } from '@/lib/sis/levels';
 import {
   canonicaliseLevelApplied,
   canonicaliseNationality,
+  categoryMixKey,
+  isEnrolledApplication,
+  isWithdrawnApplication,
+  levelAsAppliedKey,
+  NATIONALITY_BY_LEVEL_LIMIT,
+  NATIONALITY_MIX_LIMIT,
+  rankKeys,
+  REFERRAL_TOP_COUNT,
+  referralSourceKey,
+  UNSPECIFIED_CATEGORY,
 } from '@/lib/admissions/insights-predicates';
 
 // Moved to the client-safe predicates module (KD #229); re-exported so every
@@ -36,12 +46,12 @@ const CACHE_TTL_SECONDS = 60;
 // Internal row shapes fetched from the DB
 // ──────────────────────────────────────────────────────────────────────────
 
-type StatusFunnelRow = {
+export type StatusFunnelRow = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
 };
 
-type AppFunnelRow = {
+export type AppFunnelRow = {
   enroleeNumber: string | null;
   levelApplied: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
@@ -49,7 +59,7 @@ type AppFunnelRow = {
   nationality: string | null;
 };
 
-type JoinedFunnelRow = {
+export type JoinedFunnelRow = {
   enroleeNumber: string;
   applicationStatus: string | null;
   levelApplied: string | null;
@@ -57,6 +67,38 @@ type JoinedFunnelRow = {
   category: string | null;
   nationality: string | null;
 };
+
+/**
+ * Application-first join — the same join the drill row set uses
+ * (lib/admissions/drill.ts loadDrillRowsUncached): one row per application
+ * with an applicant number, its LAST status row, nothing for a status row
+ * with no application. Until KD #229 this loader iterated status rows, so an
+ * orphan status row was counted and a duplicated one counted twice — numbers
+ * no drill could list. Pure — exported for unit tests.
+ */
+export function joinFunnelRows(
+  statusRows: StatusFunnelRow[],
+  appRows: AppFunnelRow[]
+): JoinedFunnelRow[] {
+  const statusByEnrolee = new Map<string, StatusFunnelRow>();
+  for (const s of statusRows) {
+    if (s.enroleeNumber) statusByEnrolee.set(s.enroleeNumber, s);
+  }
+  const out: JoinedFunnelRow[] = [];
+  for (const a of appRows) {
+    if (!a.enroleeNumber) continue;
+    const s = statusByEnrolee.get(a.enroleeNumber);
+    out.push({
+      enroleeNumber: a.enroleeNumber,
+      applicationStatus: s?.applicationStatus ?? null,
+      levelApplied: a.levelApplied ?? null,
+      howDidYouKnowAboutHFSEIS: a.howDidYouKnowAboutHFSEIS ?? null,
+      category: a.category ?? null,
+      nationality: a.nationality ?? null,
+    });
+  }
+  return out;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Loader
@@ -100,25 +142,7 @@ async function loadFunnelRowsUncached(
     return [];
   }
 
-  const appByEnrolee = new Map<string, AppFunnelRow>();
-  for (const a of appRows) {
-    if (a.enroleeNumber) appByEnrolee.set(a.enroleeNumber, a);
-  }
-
-  const out: JoinedFunnelRow[] = [];
-  for (const s of statusRows) {
-    if (!s.enroleeNumber) continue;
-    const app = appByEnrolee.get(s.enroleeNumber);
-    out.push({
-      enroleeNumber: s.enroleeNumber,
-      applicationStatus: s.applicationStatus ?? null,
-      levelApplied: app?.levelApplied ?? null,
-      howDidYouKnowAboutHFSEIS: app?.howDidYouKnowAboutHFSEIS ?? null,
-      category: app?.category ?? null,
-      nationality: app?.nationality ?? null,
-    });
-  }
-  return out;
+  return joinFunnelRows(statusRows, appRows);
 }
 
 function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
@@ -130,7 +154,8 @@ function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
     // field reads as null everywhere while the row counts look perfectly
     // correct. Bump this whenever JoinedFunnelRow gains or loses a field.
     // (v2: added `nationality`, 2026-08-17.)
-    ['admissions-funnel-v2', ayCode],
+    // (v3: application-first join, KD #229, 2026-09-29.)
+    ['admissions-funnel-v3', ayCode],
     {
       revalidate: CACHE_TTL_SECONDS,
       tags: ['admissions-dashboard', `admissions-dashboard:${ayCode}`],
@@ -279,8 +304,8 @@ export function computeWithdrawnByLevel(
 ): LevelWithdrawnRow[] {
   const counts = new Map<string, number>();
   for (const r of rows) {
-    if (r.applicationStatus !== 'Withdrawn') continue;
-    const level = (r.levelApplied ?? '').trim() || 'Unknown';
+    if (!isWithdrawnApplication(r.applicationStatus)) continue;
+    const level = levelAsAppliedKey(r.levelApplied);
     counts.set(level, (counts.get(level) ?? 0) + 1);
   }
   return Array.from(counts.entries())
@@ -297,6 +322,9 @@ export type ReferralConversionRow = {
   applied: number;
   enrolled: number;
   conversionPct: number;
+  /** Only on the folded 'Other' row — the sources past the top eight. Lets
+   *  the drill tell it from a source a parent literally named "Other". */
+  folded?: true;
 };
 
 type SimpleRow2 = {
@@ -309,21 +337,20 @@ type SimpleRow2 = {
 export function computeReferralConversion(
   rows: SimpleRow2[]
 ): ReferralConversionRow[] {
-  const applied = new Map<string, number>();
   const enrolled = new Map<string, number>();
-
+  const keys: string[] = [];
   for (const r of rows) {
-    const raw = (r.howDidYouKnowAboutHFSEIS ?? '').trim();
-    const source = raw || 'Not specified';
-
-    applied.set(source, (applied.get(source) ?? 0) + 1);
-    if (ENROLLED_STATUSES.has(r.applicationStatus ?? '')) {
+    const source = referralSourceKey(r.howDidYouKnowAboutHFSEIS);
+    keys.push(source);
+    if (isEnrolledApplication(r.applicationStatus)) {
       enrolled.set(source, (enrolled.get(source) ?? 0) + 1);
     }
   }
 
-  const all: ReferralConversionRow[] = Array.from(applied.entries()).map(
-    ([source, app]) => {
+  // Shared ranking (count desc, then name) — the `referral-all` drill folds
+  // with the same order, so its overflow is exactly this Other row.
+  const all: ReferralConversionRow[] = rankKeys(keys).map(
+    ({ key: source, count: app }) => {
       const enr = enrolled.get(source) ?? 0;
       return {
         source,
@@ -334,13 +361,9 @@ export function computeReferralConversion(
     }
   );
 
-  all.sort((a, b) => b.applied - a.applied || a.source.localeCompare(b.source));
-
-  // Cap at top 8; fold the rest into "Other".
-  const TOP = 8;
-  if (all.length <= TOP) return all;
-  const top = all.slice(0, TOP);
-  const rest = all.slice(TOP);
+  if (all.length <= REFERRAL_TOP_COUNT) return all;
+  const top = all.slice(0, REFERRAL_TOP_COUNT);
+  const rest = all.slice(REFERRAL_TOP_COUNT);
   const otherApplied = rest.reduce((s, r) => s + r.applied, 0);
   const otherEnrolled = rest.reduce((s, r) => s + r.enrolled, 0);
   top.push({
@@ -349,6 +372,7 @@ export function computeReferralConversion(
     enrolled: otherEnrolled,
     conversionPct:
       otherApplied > 0 ? Math.round((otherEnrolled / otherApplied) * 100) : 0,
+    folded: true,
   });
   return top;
 }
@@ -385,11 +409,11 @@ export function computeCategoryMix(rows: CategoryRow[]): CategoryMixRow[] {
   const counts = new Map<string, number>(ENROLEE_CATEGORIES.map((c) => [c, 0]));
   let unspecified = 0;
   for (const r of rows) {
-    const cat = (r.category ?? '').trim();
-    if (cat && counts.has(cat)) {
-      counts.set(cat, (counts.get(cat) ?? 0) + 1);
-    } else {
+    const key = categoryMixKey(r.category);
+    if (key === UNSPECIFIED_CATEGORY) {
       unspecified += 1;
+    } else {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
   const out: CategoryMixRow[] = ENROLEE_CATEGORIES.map((category) => ({
@@ -455,9 +479,9 @@ export type NationalityMixRow = {
  */
 export function computeNationalityMix(
   rows: { nationality: string | null }[],
-  limit = 8
+  limit = NATIONALITY_MIX_LIMIT
 ): NationalityMixRow[] {
-  const counts = new Map<string, number>();
+  const names: string[] = [];
   let unspecified = 0;
 
   for (const r of rows) {
@@ -466,14 +490,15 @@ export function computeNationalityMix(
       unspecified += 1;
       continue;
     }
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    names.push(name);
   }
 
-  const all = Array.from(counts.entries())
-    .map(([nationality, count]) => ({ nationality, count }))
-    .sort(
-      (a, b) => b.count - a.count || a.nationality.localeCompare(b.nationality)
-    );
+  // Shared ranking (count desc, then name) — nationalityBucketer folds with
+  // the same order, so the `nationality` drill's Other is this Other.
+  const all = rankKeys(names).map(({ key, count }) => ({
+    nationality: key,
+    count,
+  }));
 
   const out: NationalityMixRow[] = all.slice(0, Math.max(0, limit));
   const rest = all.slice(Math.max(0, limit));
@@ -518,7 +543,7 @@ export type NationalityByLevel = {
 
 export function computeNationalityByLevel(
   rows: { level: string | null; nationality: string | null }[],
-  limit = 6
+  limit = NATIONALITY_BY_LEVEL_LIMIT
 ): NationalityByLevel {
   // Canonicalise once, up front, so the global ranking and the per-level
   // buckets can never disagree about what a country is called.
@@ -527,14 +552,9 @@ export function computeNationalityByLevel(
     nationality: canonicaliseNationality(r.nationality),
   }));
 
-  const globalCounts = new Map<string, number>();
-  for (const r of normalised) {
-    if (!r.nationality) continue;
-    globalCounts.set(r.nationality, (globalCounts.get(r.nationality) ?? 0) + 1);
-  }
-  const ranked = [...globalCounts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([name]) => name);
+  const ranked = rankKeys(
+    normalised.flatMap((r) => (r.nationality ? [r.nationality] : []))
+  ).map((r) => r.key);
   const top = new Set(ranked.slice(0, Math.max(0, limit)));
 
   const byLevel = new Map<string, Map<string, number>>();
