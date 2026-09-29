@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
+import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 
 // GET /api/grading-sheets/[id]/section-terms
 //
@@ -20,7 +21,8 @@ import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 // no route in from that screen. Measured 2026-09-23: 123 of 125 AY2026
 // class+subject pairs carry all four terms.
 //
-// Read-only. Every write still goes to the routes that already own it.
+// Read-only. Every write still goes to the routes that already own it
+// (removing an empty sheet: DELETE /api/grading-sheets/[id]).
 
 export async function GET(
   _request: NextRequest,
@@ -121,6 +123,16 @@ export async function GET(
     qa_weight: number | string | null;
   };
   const sheets = (sheetsRes.data ?? []) as SheetRow[];
+
+  let removability: Awaited<ReturnType<typeof loadSheetRemovability>>;
+  try {
+    removability = await loadSheetRemovability(service, sheets);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'could not check the sheets' },
+      { status: 500 }
+    );
+  }
   const pct = (n: number) => Math.round(n * 100);
 
   // Every term of the year, including ones with no sheet. A class that joined
@@ -159,6 +171,14 @@ export async function GET(
         sheet.ww_weight != null &&
         sheet.pt_weight != null &&
         sheet.qa_weight != null,
+      // Whether "Remove sheet" is offered, and why not when it isn't — so the
+      // drawer never needs a second call. DELETE re-checks; this is a preview.
+      removable: sheet
+        ? (removability.get(sheet.id)?.removable ?? false)
+        : false,
+      removeBlockedReason: sheet
+        ? (removability.get(sheet.id)?.reason ?? null)
+        : null,
     };
   });
 

@@ -12,6 +12,10 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 export const ALL_AUDIT_ACTIONS = [
   'sheet.create',
   'sheet.bulk_create',
+  // A grading sheet nothing was ever entered on, removed (KD #131 update,
+  // 2026-09-29). The context carries what it was — class, subject, term, AY
+  // and how many blank rows went with it.
+  'sheet.delete',
   'sheet.lock',
   'sheet.unlock',
   'sheet.unlock_force_with_pending_crs',

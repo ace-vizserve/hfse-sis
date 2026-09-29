@@ -40,17 +40,18 @@ There is no `/api/students` list route — student lists load in server componen
 
 ## Grading Sheets
 
-| Route                              | Method   | Role                  | Description                                                    |
-| ---------------------------------- | -------- | --------------------- | -------------------------------------------------------------- |
-| `/api/grading-sheets`              | GET/POST | teacher+ / registrar+ | List sheets (teachers see their assignments) / create          |
-| `/api/grading-sheets/:id`          | GET      | teacher+              | Get sheet with all entries                                     |
-| `/api/grading-sheets/:id/lock`     | POST     | registrar+            | Lock a sheet                                                   |
-| `/api/grading-sheets/:id/unlock`   | POST     | registrar+            | Unlock a sheet                                                 |
-| `/api/grading-sheets/:id/totals`   | PATCH    | registrar+            | Update WW/PT/QA max totals                                     |
-| `/api/grading-sheets/:id/labels`   | PATCH    | teacher+              | WW/PT slot metadata: label, date administered, page# (KD #105) |
-| `/api/grading-sheets/bulk-create`  | POST     | registrar+            | Create sheets for many sections at once                        |
-| `/api/grading-sheets/bulk-lock`    | POST     | registrar+            | Lock up to 200 unlocked sheets (KD #131)                       |
-| `/api/grading-sheets/lock-overdue` | POST     | cron                  | Auto-lock past-due sheets (`Bearer CRON_SECRET`)               |
+| Route                              | Method   | Role                  | Description                                                                   |
+| ---------------------------------- | -------- | --------------------- | ----------------------------------------------------------------------------- |
+| `/api/grading-sheets`              | GET/POST | teacher+ / registrar+ | List sheets (teachers see their assignments) / create                         |
+| `/api/grading-sheets/:id`          | GET      | teacher+              | Get sheet with all entries                                                    |
+| `/api/grading-sheets/:id`          | DELETE   | registrar+            | Remove a sheet with nothing ever entered; 409 otherwise (KD #131, 2026-09-29) |
+| `/api/grading-sheets/:id/lock`     | POST     | registrar+            | Lock a sheet                                                                  |
+| `/api/grading-sheets/:id/unlock`   | POST     | registrar+            | Unlock a sheet                                                                |
+| `/api/grading-sheets/:id/totals`   | PATCH    | registrar+            | Update WW/PT/QA max totals                                                    |
+| `/api/grading-sheets/:id/labels`   | PATCH    | teacher+              | WW/PT slot metadata: label, date administered, page# (KD #105)                |
+| `/api/grading-sheets/bulk-create`  | POST     | registrar+            | Create sheets for many sections at once                                       |
+| `/api/grading-sheets/bulk-lock`    | POST     | registrar+            | Lock up to 200 unlocked sheets (KD #131)                                      |
+| `/api/grading-sheets/lock-overdue` | POST     | cron                  | Auto-lock past-due sheets (`Bearer CRON_SECRET`)                              |
 
 ## Grade Entries
 

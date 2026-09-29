@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, ChevronDown, Lock, LockOpen } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ChevronDown,
+  Lock,
+  LockOpen,
+  Trash2,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import {
@@ -31,7 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
-import { ApiError, apiFetch } from '@/lib/query/fetcher';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 // One class's four terms for one subject, side by side, each editable in place.
@@ -62,6 +68,10 @@ type TermRow = {
   qaTotal: number | null;
   weights: ComponentWeights;
   weightsOverridden: boolean;
+  /** Nothing ever entered on this term's sheet — "Remove sheet" is offered. */
+  removable: boolean;
+  /** Why it isn't, in the words the button shows. */
+  removeBlockedReason: string | null;
 };
 
 type Payload = {
@@ -87,7 +97,14 @@ export function SectionTermSheetsDialog({
   onOpenChange: (next: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const queryKey = ['section-term-sheets', sheetId];
+  // The route finds the class's terms FROM one sheet. Remove that very sheet
+  // and the next read would 404, so the drawer re-anchors on a term that is
+  // still there. Keyed on the prop, so a different chip starts fresh.
+  const [reanchor, setReanchor] = useState<{ from: string; to: string } | null>(
+    null
+  );
+  const anchorId = reanchor?.from === sheetId ? reanchor.to : sheetId;
+  const queryKey = ['section-term-sheets', anchorId];
   // Owned by the drawer, not the form: a save collapses the row, which
   // unmounts the form while the write is still reporting itself.
   const run = useWriteAction();
@@ -96,7 +113,7 @@ export function SectionTermSheetsDialog({
   const { data, isPending, isError, error, refetch } = useQuery<Payload>({
     queryKey,
     queryFn: () =>
-      apiFetch<Payload>(`/api/grading-sheets/${sheetId}/section-terms`),
+      apiFetch<Payload>(`/api/grading-sheets/${anchorId}/section-terms`),
     enabled: open,
   });
 
@@ -104,6 +121,19 @@ export function SectionTermSheetsDialog({
   // TanStack Query, so the `router.refresh()` every write already does cannot
   // reach this list — each write here re-reads it explicitly.
   const reload = () => void queryClient.invalidateQueries({ queryKey });
+
+  // A term's sheet is gone. Collapse the row; if it was the anchor, move to a
+  // term that still has one — or close, when it was the class's last sheet.
+  const onRemoved = (removedId: string) => {
+    setEditingTermId(null);
+    if (removedId !== anchorId) {
+      reload();
+      return;
+    }
+    const next = terms?.find((t) => t.sheetId && t.sheetId !== removedId);
+    if (next?.sheetId) setReanchor({ from: sheetId, to: next.sheetId });
+    else onOpenChange(false);
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -151,7 +181,9 @@ export function SectionTermSheetsDialog({
                 <TermEditor
                   term={term}
                   payload={data}
+                  sectionName={sectionName}
                   run={run}
+                  onRemoved={onRemoved}
                   onClose={() => setEditingTermId(null)}
                   onSaved={() => {
                     setEditingTermId(null);
@@ -532,14 +564,18 @@ function WeightsSummary({
 function TermEditor({
   term,
   payload,
+  sectionName,
   run,
+  onRemoved,
   onClose,
   onSaved,
   onLockChanged,
 }: {
   term: TermRow;
   payload: Payload;
+  sectionName: string;
   run: ReturnType<typeof useWriteAction>;
+  onRemoved: (sheetId: string) => void;
   onClose: () => void;
   onSaved: () => void;
   onLockChanged: () => void;
@@ -596,6 +632,113 @@ function TermEditor({
         onSaved={onSaved}
         onCancel={onClose}
       />
+
+      <RemoveSheetZone
+        term={term}
+        subjectName={payload.subject.name}
+        sectionName={sectionName}
+        run={run}
+        onRemoved={onRemoved}
+      />
+    </div>
+  );
+}
+
+// ─── Remove an empty sheet ─────────────────────────────────────────────────
+//
+// Only a sheet nothing was ever entered on (KD #131 update, 2026-09-29) — the
+// route decides, `removable` previews it. The confirm opens IN the row, never
+// as a dialog over the drawer (Mr Ace: never nest dialogs).
+
+function RemoveSheetZone({
+  term,
+  subjectName,
+  sectionName,
+  run,
+  onRemoved,
+}: {
+  term: TermRow;
+  subjectName: string;
+  sectionName: string;
+  run: ReturnType<typeof useWriteAction>;
+  onRemoved: (sheetId: string) => void;
+}) {
+  const sheetId = term.sheetId!;
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    setBusy(true);
+    const result = await run(
+      () =>
+        apiFetch<{ ok: true }>(
+          `/api/grading-sheets/${sheetId}`,
+          jsonInit('DELETE')
+        ),
+      {
+        pending: 'Removing sheet…',
+        success: `Term ${term.termNumber}’s sheet removed`,
+        onResolved: () => onRemoved(sheetId),
+      }
+    );
+    setBusy(false);
+    if (result === undefined) setConfirming(false);
+  }
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      {confirming ? (
+        <div
+          role="group"
+          aria-label={`Remove Term ${term.termNumber}’s sheet`}
+          className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4"
+        >
+          <p className="text-[13px] leading-relaxed text-foreground">
+            Remove Term {term.termNumber}&rsquo;s {subjectName} sheet for{' '}
+            {sectionName}? It has no scores, so nothing is lost.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={busy}
+              onClick={() => void remove()}
+            >
+              <Trash2 className="size-3.5" />
+              {busy ? 'Removing…' : 'Remove sheet'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              Keep it
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="text-[13px] text-muted-foreground">
+            {term.removable
+              ? 'Nothing has been entered on this sheet, so it can be removed.'
+              : (term.removeBlockedReason ?? 'This sheet can’t be removed.')}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!term.removable}
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setConfirming(true)}
+          >
+            <Trash2 className="size-3.5" />
+            Remove sheet
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

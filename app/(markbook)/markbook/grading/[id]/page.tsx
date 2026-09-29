@@ -54,7 +54,9 @@ import {
 } from '@/lib/change-requests/filing-route';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { isRowComplete } from '@/lib/grading/row-complete';
+import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { RequestEditButton } from './request-edit-button';
+import { RemoveSheetButton } from './remove-sheet-button';
 
 /**
  * Human label for a change-request target field, e.g. WW1 / PT2 / QA /
@@ -448,6 +450,26 @@ export default async function GradingSheetPage({
   // ⚠ A failure here must not take the sheet down with it. The form then
   // says it could not show the steps, and the filing route — which decides
   // for itself either way — still refuses anything that cannot be approved.
+  // "Remove sheet" — offered only when nothing was ever entered on it (KD #131
+  // update, 2026-09-29). Asked only of an oversight viewer on an open sheet;
+  // a check that fails simply hides the button, and DELETE re-checks anyway.
+  let removable = false;
+  if (canManage && !sheet.is_locked) {
+    try {
+      const verdict = (
+        await loadSheetRemovability(createServiceClient(), [
+          { id: sheet.id, is_locked: sheet.is_locked },
+        ])
+      ).get(sheet.id);
+      removable = verdict?.removable ?? false;
+    } catch (e) {
+      console.error(
+        '[grading sheet] removability could not be checked',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   let filingRoute: GradeChangeFilingRoute | null = null;
   if (sheet.is_locked && isAssignedTeacher && section?.id) {
     try {
@@ -657,6 +679,16 @@ export default async function GradingSheetPage({
           )}
           {canManage && (
             <LockToggle sheetId={sheet.id} isLocked={sheet.is_locked} />
+          )}
+          {canManage && removable && (
+            <RemoveSheetButton
+              sheetId={sheet.id}
+              termLabel={term?.label ?? 'this term'}
+              subjectName={subjectLabel ?? 'subject'}
+              sectionName={[level?.label, section?.name]
+                .filter(Boolean)
+                .join(' ')}
+            />
           )}
         </div>
       </header>

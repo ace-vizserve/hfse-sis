@@ -33,6 +33,7 @@ import {
 export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sheet.create',
   'sheet.bulk_create',
+  'sheet.delete',
   'sheet.lock',
   'sheet.unlock',
   'sheet.unlock_force_with_pending_crs',

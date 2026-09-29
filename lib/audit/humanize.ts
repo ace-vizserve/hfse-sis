@@ -81,6 +81,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Grading sheets
   'sheet.create': 'Sheet created',
   'sheet.bulk_create': 'Sheets created',
+  'sheet.delete': 'Sheet removed',
   'sheet.lock': 'Sheet locked',
   'sheet.unlock': 'Sheet unlocked',
   'sheet.unlock_force_with_pending_crs':
@@ -2365,6 +2366,7 @@ function templateSummary(
     // Grading sheets ---------------------------------------------------------
     case 'sheet.create':
     case 'sheet.bulk_create':
+    case 'sheet.delete':
     case 'sheet.lock':
     case 'sheet.unlock':
     case 'sheet.unlock_force_with_pending_crs':
@@ -2397,6 +2399,11 @@ function templateSummary(
       const seeded = numish(ctx.entries_seeded);
       if (action === 'sheet.create' && seeded !== null)
         parts.push(`${plural(seeded, 'student')} added`);
+      if (action === 'sheet.delete') {
+        if (boolish(ctx.partial) === true)
+          parts.push('not removed — scores were entered at the same moment');
+        else parts.push('nothing had been entered');
+      }
       if (str(ctx.via) === 'bulk')
         parts.push('locked together with other sheets');
       if (action.startsWith('sheet.unlock')) {

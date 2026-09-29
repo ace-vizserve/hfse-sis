@@ -35,6 +35,7 @@ const ACTION_LABELS: Record<string, string> = {
   'sheet.unlock': 'Grading sheet unlocked',
   'sheet.create': 'Grading sheet created',
   'sheet.bulk_create': 'Grading sheets bulk-created',
+  'sheet.delete': 'Grading sheet removed',
   'sheet.lock_overdue_batch': 'Sheets auto-locked (overdue)',
   'publication.create': 'Report card published',
   'publication.delete': 'Publication removed',

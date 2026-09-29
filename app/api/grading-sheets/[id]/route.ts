@@ -1,7 +1,13 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import { logAction } from '@/lib/audit/log-action';
+import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
+import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
+import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // GET /api/grading-sheets/[id]
 // Returns the full sheet: config, section+level, term, subject, and all
@@ -89,4 +95,177 @@ export async function GET(
     : sheet;
 
   return NextResponse.json({ sheet: sheetOut, entries: sorted });
+}
+
+// DELETE /api/grading-sheets/[id] — remove a sheet NOTHING was ever entered on.
+//
+// Mr Ace, 2026-09-29: "theres no way to un-attach a grading sheet to a
+// section". Same audience as creating one (POST /api/grading-sheets) and as
+// editing its totals. The rule lives in `lib/grading/sheet-removal.ts`: refused
+// when the sheet is locked, when any row holds anything (a 0 included — Hard
+// Rule #3), or when the sheet has any grade history or change request. Grade
+// entries with a value are never deleted (Hard Rule #6); only a sheet whose
+// rows are all blank goes, rows and all, with one audit row saying what it was.
+//
+// ⚠ NO TRANSACTION IN SUPABASE-JS, SO THE ORDER IS THE SAFETY. The blank rows
+// go first, and only rows that are STILL blank (the filter below), then the
+// sheet. `grade_entries` and `grade_audit_log` both reference the sheet with
+// ON DELETE RESTRICT, so if a teacher typed a first score between the check and
+// the delete — a new row, or a row the filter kept — the sheet delete fails and
+// the sheet stays, with its marks. The worst a failure leaves is a sheet
+// missing some blank rows, which the grid does not need (it lists the roster,
+// migration 156).
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireRole([
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
+  if ('error' in auth) return auth.error;
+
+  const { id: sheetId } = await params;
+  const service = createServiceClient();
+
+  const { data: sheet, error: sheetErr } = await service
+    .from('grading_sheets')
+    .select(
+      'id, is_locked, term_id, section_id, subject_id, section:sections(academic_year_id)'
+    )
+    .eq('id', sheetId)
+    .maybeSingle();
+  if (sheetErr)
+    return NextResponse.json({ error: sheetErr.message }, { status: 500 });
+  if (!sheet)
+    return NextResponse.json({ error: 'sheet not found' }, { status: 404 });
+
+  let verdict;
+  try {
+    verdict = (
+      await loadSheetRemovability(service, [
+        { id: sheet.id, is_locked: sheet.is_locked },
+      ])
+    ).get(sheet.id);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'could not check the sheet' },
+      { status: 500 }
+    );
+  }
+  if (!verdict)
+    return NextResponse.json(
+      { error: 'could not check the sheet' },
+      { status: 500 }
+    );
+  if (!verdict.removable) {
+    return NextResponse.json(
+      { error: verdict.reason, code: `sheet_${verdict.block}` },
+      { status: 409 }
+    );
+  }
+
+  // Snapshot what the sheet WAS before it goes — after the delete there is
+  // nothing left to look the labels up from.
+  const labels = await loadOneSheetAuditLabels(service, sheet.id);
+  const section = (
+    Array.isArray(sheet.section) ? sheet.section[0] : sheet.section
+  ) as { academic_year_id: string } | null;
+  let ayCode: string | null = null;
+  if (section?.academic_year_id) {
+    const { data: ayRow } = await service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', section.academic_year_id)
+      .maybeSingle();
+    ayCode = (ayRow as { ay_code: string } | null)?.ay_code ?? null;
+  }
+
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+  const baseContext = {
+    ...labels,
+    term_id: sheet.term_id,
+    section_id: sheet.section_id,
+    subject_id: sheet.subject_id,
+    academic_year_id: section?.academic_year_id ?? null,
+    ay_code: ayCode,
+    // Blank rows the sheet carried when it was checked.
+    entry_rows: verdict.entryCount,
+    entries_removed: 0,
+  };
+
+  // Blank rows only — belt and braces over the check above. A row that gained
+  // a score since is left in place, and its FK then refuses the sheet delete.
+  const { data: removedRows, error: entErr } = await service
+    .from('grade_entries')
+    .delete()
+    .eq('grading_sheet_id', sheet.id)
+    .is('ww_ps', null)
+    .is('pt_ps', null)
+    .is('qa_score', null)
+    .is('initial_grade', null)
+    .is('quarterly_grade', null)
+    .is('letter_grade', null)
+    .eq('is_na', false)
+    .select('id');
+  if (entErr)
+    return NextResponse.json({ error: entErr.message }, { status: 500 });
+  const entriesRemoved = (removedRows ?? []).length;
+
+  const { error: delErr } = await service
+    .from('grading_sheets')
+    .delete()
+    .eq('id', sheet.id);
+  if (delErr) {
+    // Something now references the sheet — most likely a score typed in the
+    // last second. The sheet stays; say what was taken off it.
+    if (entriesRemoved > 0) {
+      await logAction({
+        service,
+        actor,
+        action: 'sheet.delete',
+        entityType: 'grading_sheet',
+        entityId: sheet.id,
+        context: {
+          ...baseContext,
+          entries_removed: entriesRemoved,
+          partial: true,
+          failed_step: 'delete_sheet',
+          error: delErr.message,
+        },
+      });
+    }
+    return NextResponse.json(
+      {
+        error:
+          delErr.code === '23503'
+            ? 'Scores were entered on this sheet just now, so it wasn’t removed.'
+            : delErr.message,
+      },
+      { status: delErr.code === '23503' ? 409 : 500 }
+    );
+  }
+
+  await logAction({
+    service,
+    actor,
+    action: 'sheet.delete',
+    entityType: 'grading_sheet',
+    entityId: sheet.id,
+    context: { ...baseContext, entries_removed: entriesRemoved },
+  });
+
+  // What creating one busts (POST /api/grading-sheets + bulk-create): the
+  // markbook drills, and SIS — subject setup lists each class's sheets.
+  if (ayCode) {
+    invalidateDrillTags('markbook', ayCode);
+    revalidateTag(`sis:${ayCode}`, 'max');
+  }
+
+  return NextResponse.json({ ok: true, entries_removed: entriesRemoved });
 }
