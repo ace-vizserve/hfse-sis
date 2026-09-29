@@ -18,34 +18,32 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
-import { AttritionStackedBarChart } from '@/components/dashboard/charts/attrition-stacked-bar-chart';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
-import {
-  ComparisonBarChart,
-  type ComparisonBarPoint,
-} from '@/components/dashboard/charts/comparison-bar-chart';
-import {
-  ComposedBarLineChart,
-  type ComposedBarLinePoint,
-} from '@/components/dashboard/charts/composed-bar-line-chart';
-import {
-  DonutChart,
-  type DonutSlice,
-} from '@/components/dashboard/charts/donut-chart';
-import {
-  GroupedBarChart,
-  type GroupedBarSeries,
-} from '@/components/dashboard/charts/grouped-bar-chart';
-import {
-  RetentionStackedBarChart,
-  type RetentionStackRow,
-} from '@/components/dashboard/charts/retention-stacked-bar-chart';
+import type { ComparisonBarPoint } from '@/components/dashboard/charts/comparison-bar-chart';
+import type { ComposedBarLinePoint } from '@/components/dashboard/charts/composed-bar-line-chart';
+import type { DonutSlice } from '@/components/dashboard/charts/donut-chart';
+import type { GroupedBarSeries } from '@/components/dashboard/charts/grouped-bar-chart';
+import type { RetentionStackRow } from '@/components/dashboard/charts/retention-stacked-bar-chart';
 import { SparklineChart } from '@/components/dashboard/charts/sparkline-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
+import {
+  AttritionDrillCard,
+  CategoryMixDrillCard,
+  LateByLevelDrillCard,
+  LateByTermDrillCard,
+  MovementDrillCard,
+  NationalityByLevelDrillCard,
+  NationalityMixDrillCard,
+  PopulationByLevelDrillCard,
+  RecordsSeeAllButton,
+  RetentionByLevelDrillCard,
+  WithdrawalReasonsDrillCard,
+} from '@/components/sis/drills/insights-drill-cards';
+import { RecordsDrillSheet } from '@/components/sis/drills/records-drill-sheet';
 import {
   Card,
   CardAction,
@@ -92,8 +90,6 @@ import {
   WITHDRAWAL_CONTROLLABILITY,
 } from '@/lib/sis/records-insights';
 import { buildRecordsInsightsExport } from '@/lib/sis/records-insights-export';
-import { NationalityByLevelBars } from '@/components/dashboard/insights/nationality-by-level-bars';
-import { NationalityMixPie } from '@/components/dashboard/insights/nationality-mix-pie';
 import {
   WITHDRAWAL_REASON_LABELS,
   type WithdrawalReason,
@@ -151,12 +147,14 @@ function InsightChartCard({
   title,
   icon: Icon,
   scopeNote,
+  action,
   children,
 }: {
   cap: string;
   title: string;
   icon: LucideIcon;
   scopeNote?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -175,8 +173,11 @@ function InsightChartCard({
           </span>
         )}
         <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
+          <div className="flex items-center gap-2">
+            {action}
+            <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Icon className="size-4" />
+            </div>
           </div>
         </CardAction>
       </CardHeader>
@@ -630,6 +631,12 @@ export default async function RecordsInsightsPage({
                 : undefined
             }
             subtext={selectedAy}
+            drillSheet={() => (
+              <RecordsDrillSheet
+                target="enrolled-headcount"
+                ayCode={selectedAy}
+              />
+            )}
           />
           <MetricCard
             label="Retention rate"
@@ -647,6 +654,17 @@ export default async function RecordsInsightsPage({
                   ? `No data for ${compareAy}`
                   : 'Pick a comparison year above'
             }
+            drillSheet={
+              retentionState === 'ok' && compareAy
+                ? () => (
+                    <RecordsDrillSheet
+                      target="retention"
+                      ayCode={selectedAy}
+                      compareAy={compareAy}
+                    />
+                  )
+                : undefined
+            }
           />
           <MetricCard
             label="Late enrollees"
@@ -654,6 +672,9 @@ export default async function RecordsInsightsPage({
             format="number"
             icon={Clock}
             subtext={selectedAy}
+            drillSheet={() => (
+              <RecordsDrillSheet target="late-enrollees" ayCode={selectedAy} />
+            )}
           />
         </section>
 
@@ -670,12 +691,14 @@ export default async function RecordsInsightsPage({
             {populationComposedData.length === 0 ? (
               <EmptyChartState message="No enrolled students recorded for this year yet." />
             ) : (
-              <ComposedBarLineChart
+              <PopulationByLevelDrillCard
                 data={populationComposedData}
                 barLabel={selectedAy}
                 lineLabel={compareAy}
                 yFormat="number"
                 height={300}
+                selectedAy={selectedAy}
+                compareAy={compareAy}
               />
             )}
           </InsightChartCard>
@@ -689,11 +712,13 @@ export default async function RecordsInsightsPage({
             scopeNote="Enrolled students — excludes withdrawn"
           >
             {haveCategoryMixData ? (
-              <GroupedBarChart
+              <CategoryMixDrillCard
                 series={categoryMixSeries}
                 data={categoryMixData}
                 yFormat="number"
                 height={260}
+                selectedAy={selectedAy}
+                compareAy={compareAy}
               />
             ) : (
               <EmptyChartState message="No enrolled students recorded for this year yet." />
@@ -711,11 +736,12 @@ export default async function RecordsInsightsPage({
             scopeNote="Enrolled students — excludes withdrawn"
           >
             {nationalityMix.length > 0 ? (
-              <NationalityMixPie
+              <NationalityMixDrillCard
                 rows={nationalityMix}
                 compareRows={priorNationalityMix}
                 compareLabel={compareAy}
                 unitLabel="enrolled students"
+                ayCode={selectedAy}
               />
             ) : (
               <EmptyChartState message="No enrolled students recorded for this year yet." />
@@ -729,9 +755,10 @@ export default async function RecordsInsightsPage({
             scopeNote="Enrolled students — excludes withdrawn"
           >
             {nationalityByLevel.rows.length > 0 ? (
-              <NationalityByLevelBars
+              <NationalityByLevelDrillCard
                 data={nationalityByLevel}
                 unitLabel="enrolled students"
+                ayCode={selectedAy}
               />
             ) : (
               <EmptyChartState message="No enrolled students recorded for this year yet." />
@@ -748,11 +775,12 @@ export default async function RecordsInsightsPage({
           {!haveMovementActivity ? (
             <EmptyChartState message="No mid-year movement recorded this year yet." />
           ) : (
-            <GroupedBarChart
+            <MovementDrillCard
               series={MOVEMENT_SERIES}
               data={movementBarData}
               yFormat="number"
               height={260}
+              ayCode={selectedAy}
             />
           )}
         </InsightChartCard>
@@ -793,7 +821,11 @@ export default async function RecordsInsightsPage({
                   Which cohorts didn&rsquo;t return? · worst first · bar height
                   = cohort size · excludes S4 (graduates)
                 </p>
-                <RetentionStackedBarChart data={retentionStackData} />
+                <RetentionByLevelDrillCard
+                  data={retentionStackData}
+                  ayCode={selectedAy}
+                  compareAy={compareAy!}
+                />
                 {showWorstRetentionLevel ? (
                   <RecommendationCallout tone="watch" className="mt-5">
                     {worstRetentionLevel.item!.level} returned at{' '}
@@ -850,12 +882,13 @@ export default async function RecordsInsightsPage({
               {lateLevelDonutData.length === 0 ? (
                 <EmptyChartState message="No level breakdown available." />
               ) : (
-                <DonutChart
+                <LateByLevelDrillCard
                   data={lateLevelDonutData}
                   centerValue={rollup.counts.lateEnrolled.toLocaleString(
                     'en-SG'
                   )}
                   centerLabel="Late"
+                  ayCode={selectedAy}
                 />
               )}
             </InsightChartCard>
@@ -867,11 +900,12 @@ export default async function RecordsInsightsPage({
               {lateTermBarData.length === 0 ? (
                 <EmptyChartState message="No term breakdown available." />
               ) : (
-                <ComparisonBarChart
+                <LateByTermDrillCard
                   data={lateTermBarData}
                   orientation="horizontal"
                   yFormat="number"
                   height={200}
+                  ayCode={selectedAy}
                 />
               )}
             </InsightChartCard>
@@ -926,6 +960,11 @@ export default async function RecordsInsightsPage({
                     <span className="font-medium">health</span>.
                   </p>
                 </div>
+                <RecordsSeeAllButton
+                  target="withdrawals"
+                  ayCode={selectedAy}
+                  className="shrink-0 self-start"
+                />
               </div>
             )}
 
@@ -937,13 +976,14 @@ export default async function RecordsInsightsPage({
               >
                 {hasSpecifiedWithdrawalReasons ? (
                   <>
-                    <DonutChart
+                    <WithdrawalReasonsDrillCard
                       data={reasonDonutData}
                       colors={reasonDonutColors}
                       centerValue={rollup.counts.withdrawn.toLocaleString(
                         'en-SG'
                       )}
                       centerLabel="Withdrawn"
+                      ayCode={selectedAy}
                     />
                     {showActCallout ? (
                       <RecommendationCallout tone="act" className="mt-5">
@@ -964,6 +1004,12 @@ export default async function RecordsInsightsPage({
                 cap="Where withdrawals concentrate"
                 title="By level"
                 icon={GraduationCap}
+                action={
+                  <RecordsSeeAllButton
+                    target="withdrawals"
+                    ayCode={selectedAy}
+                  />
+                }
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -1013,9 +1059,10 @@ export default async function RecordsInsightsPage({
                 title="Reason concentration by level"
                 icon={Megaphone}
               >
-                <AttritionStackedBarChart
+                <AttritionDrillCard
                   data={attritionStackedData}
                   reasonKeys={rollup.withdrawalReasonKeys}
+                  ayCode={selectedAy}
                 />
               </InsightChartCard>
             )}
