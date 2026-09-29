@@ -1,4 +1,5 @@
 import type { TermLockProgress } from '@/lib/markbook/dashboard';
+import type { GradeEntryRow } from '@/lib/markbook/drill';
 import type { GradeBand } from '@/lib/markbook/drill-filter';
 
 // The rules every Markbook Insights figure shares with the drill behind it
@@ -180,6 +181,34 @@ export function levelAveragesForPeriod(
     levelCode,
     avg: round1(avgs.reduce((a, b) => a + b, 0) / avgs.length),
   }));
+}
+
+/**
+ * The level point, recomputed from drill rows with the chart's own rule: each
+ * catalogue subject's average (1 dp), then levelAveragesForPeriod.
+ */
+export function levelAverageFromEntryRows(
+  rows: GradeEntryRow[],
+  levelCode: string,
+  termNumber: number
+): number | null {
+  const bySubject = new Map<string, number[]>();
+  for (const r of rows) {
+    if (r.level !== levelCode || r.termNumber !== termNumber) continue;
+    if (!isInsightsAverageRow(r)) continue;
+    const arr = bySubject.get(r.subjectCatalogName) ?? [];
+    arr.push(r.computedGrade as number);
+    bySubject.set(r.subjectCatalogName, arr);
+  }
+  const period = `T${termNumber}`;
+  const points: SubjectAveragePoint[] = [...bySubject.values()].map(
+    (grades) => ({
+      periodLabel: period,
+      levelCode,
+      avgGrade: round1(grades.reduce((a, b) => a + b, 0) / grades.length),
+    })
+  );
+  return levelAveragesForPeriod(points, period)[0]?.avg ?? null;
 }
 
 // ── Top band ────────────────────────────────────────────────────────────────

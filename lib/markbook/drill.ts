@@ -14,6 +14,7 @@ import {
   type GradeBand,
 } from '@/lib/markbook/drill-filter';
 import {
+  parseLevelTermSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
 } from '@/lib/markbook/insights-drill';
@@ -54,7 +55,8 @@ export type MarkbookDrillTarget =
   | 'term-publication-status'
   | 'sheet-readiness-section'
   | 'teacher-entry-velocity'
-  | 'subject-term-entries';
+  | 'subject-term-entries'
+  | 'level-term-entries';
 
 export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 
@@ -68,6 +70,7 @@ export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 // no raw scores behind it, as the Insights averages do.
 const INSIGHTS_ENTRY_TARGETS = new Set<MarkbookDrillTarget>([
   'subject-term-entries',
+  'level-term-entries',
 ]);
 
 export function isTermScopedEntryTarget(t: MarkbookDrillTarget): boolean {
@@ -105,6 +108,7 @@ export function rowKindForTarget(t: MarkbookDrillTarget): MarkbookDrillRowKind {
     case 'grade-bucket-entries':
     case 'teacher-entry-velocity':
     case 'subject-term-entries':
+    case 'level-term-entries':
       return 'entry';
     case 'sheets-locked':
     case 'publication-coverage':
@@ -1401,6 +1405,7 @@ export function defaultColumnsForTarget(
         'enteredAt',
       ];
     case 'subject-term-entries':
+    case 'level-term-entries':
       return [
         'studentName',
         'subjectCode',
@@ -1548,6 +1553,15 @@ export function drillHeaderForTarget(
         title: seg
           ? `${seg.subjectName} · Term ${seg.termNumber}`
           : 'Subject average',
+      };
+    }
+    case 'level-term-entries': {
+      const seg = segment ? parseLevelTermSegment(segment) : null;
+      return {
+        eyebrow: 'Drill · Level average',
+        title: seg
+          ? `${seg.levelCode} · Term ${seg.termNumber}`
+          : 'Level average',
       };
     }
     default: {

@@ -8,6 +8,7 @@ import type {
 import {
   isInsightsAverageRow,
   isTopBand,
+  parseLevelTermSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
 } from '@/lib/markbook/insights-drill';
@@ -328,6 +329,18 @@ export function applyTargetFilter(
         (r) =>
           isInsightsAverageRow(r) &&
           r.subjectCatalogName === seg.subjectName &&
+          r.termNumber === seg.termNumber
+      ) as MarkbookDrillRow[];
+    }
+    case 'level-term-entries': {
+      // Insights level point: the entries getSubjectLevelTrend sums for one
+      // level in one term (a section whose level is unknown is in none).
+      const seg = segment ? parseLevelTermSegment(segment) : null;
+      if (!seg) return [];
+      return (rows as GradeEntryRow[]).filter(
+        (r) =>
+          isInsightsAverageRow(r) &&
+          r.level === seg.levelCode &&
           r.termNumber === seg.termNumber
       ) as MarkbookDrillRow[];
     }

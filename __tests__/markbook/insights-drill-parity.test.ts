@@ -49,16 +49,23 @@ vi.mock('@/lib/dashboard/ay-id', () => ({
 
 import { sgToday } from '@/lib/dates';
 import { getGradeDistribution } from '@/lib/markbook/dashboard';
-import { getSubjectPerformanceTrend } from '@/lib/markbook/compare';
+import {
+  getSubjectLevelTrend,
+  getSubjectPerformanceTrend,
+} from '@/lib/markbook/compare';
 import {
   buildMarkbookDrillRows,
   type GradeEntryRow,
 } from '@/lib/markbook/drill';
 import {
+  levelAverageFromEntryRows,
+  levelAveragesForPeriod,
+  levelTermSegment,
   pickGradeDistributionTerm,
   subjectTermSegment,
   topBandSegment,
 } from '@/lib/markbook/insights-drill';
+import { buildSubjectLevelPoints } from '@/lib/markbook/insights-level';
 
 let fx: { tables: Tables; entries: FixtureEntry[] };
 
@@ -194,5 +201,48 @@ describe('subject-term-entries — trend bars and subjects to watch', () => {
     expect(
       await entryRows('AY2026', 'subject-term-entries', 'Mathematics')
     ).toEqual([]);
+  });
+});
+
+describe('level-term-entries — "Which levels are struggling?" point', () => {
+  it('each point equals the mean of its subject averages over the listed grades', async () => {
+    const plotted = levelAveragesForPeriod(
+      buildSubjectLevelPoints(
+        await getSubjectLevelTrend(termCells(['AY2026']))
+      ),
+      'T3'
+    );
+    expect(plotted.map((p) => p.levelCode).sort()).toEqual(['P1', 'P2']);
+    for (const { levelCode, avg } of plotted) {
+      const rows = await entryRows(
+        'AY2026',
+        'level-term-entries',
+        levelTermSegment(levelCode, 3)
+      );
+      expect(rows.map((r) => r.entryId).sort()).toEqual(
+        expectedIds(
+          fx.entries,
+          (e) =>
+            e.ayCode === 'AY2026' &&
+            e.levelCode === levelCode &&
+            e.termNumber === 3
+        )
+      );
+      expect(levelAverageFromEntryRows(rows, levelCode, 3)).toBe(avg);
+    }
+  });
+
+  it('the unlevelled section is in no level, as on the chart', async () => {
+    const all = [
+      ...(await entryRows('AY2026', 'level-term-entries', 'P1|T3')),
+      ...(await entryRows('AY2026', 'level-term-entries', 'P2|T3')),
+    ];
+    expect(all.some((r) => r.sectionName === 'Unlevelled')).toBe(false);
+  });
+
+  it('a level with nothing that term opens an empty list', async () => {
+    expect(await entryRows('AY2026', 'level-term-entries', 'S4|T3')).toEqual(
+      []
+    );
   });
 });
