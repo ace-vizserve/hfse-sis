@@ -62,10 +62,14 @@ import {
   levelAveragesForPeriod,
   levelTermSegment,
   pickGradeDistributionTerm,
+  subjectLevelSegment,
   subjectTermSegment,
   topBandSegment,
 } from '@/lib/markbook/insights-drill';
-import { buildSubjectLevelPoints } from '@/lib/markbook/insights-level';
+import {
+  buildSubjectLevelPoints,
+  computeTermDelta,
+} from '@/lib/markbook/insights-level';
 
 let fx: { tables: Tables; entries: FixtureEntry[] };
 
@@ -244,5 +248,40 @@ describe('level-term-entries — "Which levels are struggling?" point', () => {
     expect(await entryRows('AY2026', 'level-term-entries', 'S4|T3')).toEqual(
       []
     );
+  });
+});
+
+describe('subject-level-entries — term-over-term movement bars', () => {
+  it('lists the first and latest term, each matching its plotted average', async () => {
+    const deltas = computeTermDelta(
+      buildSubjectLevelPoints(await getSubjectLevelTrend(termCells(['AY2026'])))
+    );
+    expect(deltas.length).toBeGreaterThan(0);
+    for (const d of deltas) {
+      const rows = await entryRows(
+        'AY2026',
+        'subject-level-entries',
+        subjectLevelSegment(d.subjectName, d.levelCode)
+      );
+      const first = rows.filter((r) => `T${r.termNumber}` === d.fromPeriod);
+      const last = rows.filter((r) => `T${r.termNumber}` === d.toPeriod);
+      expect(new Set(rows.map((r) => `T${r.termNumber}`))).toEqual(
+        new Set([d.fromPeriod, d.toPeriod])
+      );
+      expect(first.length + last.length).toBe(rows.length);
+      expect(mean1(first.map((r) => r.computedGrade as number))).toBe(
+        d.firstAvg
+      );
+      expect(mean1(last.map((r) => r.computedGrade as number))).toBe(d.lastAvg);
+    }
+  });
+
+  it('leaves out the terms between first and latest', async () => {
+    const rows = await entryRows(
+      'AY2026',
+      'subject-level-entries',
+      'Mathematics|P1'
+    );
+    expect(rows.some((r) => r.termNumber === 2)).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ import {
 } from '@/lib/markbook/drill-filter';
 import {
   parseLevelTermSegment,
+  parseSubjectLevelSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
 } from '@/lib/markbook/insights-drill';
@@ -56,7 +57,8 @@ export type MarkbookDrillTarget =
   | 'sheet-readiness-section'
   | 'teacher-entry-velocity'
   | 'subject-term-entries'
-  | 'level-term-entries';
+  | 'level-term-entries'
+  | 'subject-level-entries';
 
 export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 
@@ -71,6 +73,7 @@ export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 const INSIGHTS_ENTRY_TARGETS = new Set<MarkbookDrillTarget>([
   'subject-term-entries',
   'level-term-entries',
+  'subject-level-entries',
 ]);
 
 export function isTermScopedEntryTarget(t: MarkbookDrillTarget): boolean {
@@ -109,6 +112,7 @@ export function rowKindForTarget(t: MarkbookDrillTarget): MarkbookDrillRowKind {
     case 'teacher-entry-velocity':
     case 'subject-term-entries':
     case 'level-term-entries':
+    case 'subject-level-entries':
       return 'entry';
     case 'sheets-locked':
     case 'publication-coverage':
@@ -1413,6 +1417,8 @@ export function defaultColumnsForTarget(
         'level',
         'computedGrade',
       ];
+    case 'subject-level-entries':
+      return ['studentName', 'sectionName', 'termNumber', 'computedGrade'];
     case 'teacher-entry-velocity':
       return [
         'enteredBy',
@@ -1562,6 +1568,15 @@ export function drillHeaderForTarget(
         title: seg
           ? `${seg.levelCode} · Term ${seg.termNumber}`
           : 'Level average',
+      };
+    }
+    case 'subject-level-entries': {
+      const seg = segment ? parseSubjectLevelSegment(segment) : null;
+      return {
+        eyebrow: 'Drill · First term vs latest',
+        title: seg
+          ? `${seg.subjectName} · ${seg.levelCode}`
+          : 'Term-over-term movement',
       };
     }
     default: {

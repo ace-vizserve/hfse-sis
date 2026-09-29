@@ -9,6 +9,7 @@ import {
   isInsightsAverageRow,
   isTopBand,
   parseLevelTermSegment,
+  parseSubjectLevelSegment,
   parseSubjectTermSegment,
   parseTopBandSegment,
 } from '@/lib/markbook/insights-drill';
@@ -342,6 +343,26 @@ export function applyTargetFilter(
           isInsightsAverageRow(r) &&
           r.level === seg.levelCode &&
           r.termNumber === seg.termNumber
+      ) as MarkbookDrillRow[];
+    }
+    case 'subject-level-entries': {
+      // Insights movement pair: computeTermDelta compares the EARLIEST and
+      // LATEST term holding grades for this subject × level. List those two
+      // terms' entries only; the Term column tells them apart.
+      const seg = segment ? parseSubjectLevelSegment(segment) : null;
+      if (!seg) return [];
+      const matching = (rows as GradeEntryRow[]).filter(
+        (r) =>
+          isInsightsAverageRow(r) &&
+          r.subjectCatalogName === seg.subjectName &&
+          r.level === seg.levelCode
+      );
+      if (matching.length === 0) return [];
+      const terms = matching.map((r) => r.termNumber);
+      const first = Math.min(...terms);
+      const last = Math.max(...terms);
+      return matching.filter(
+        (r) => r.termNumber === first || r.termNumber === last
       ) as MarkbookDrillRow[];
     }
     default: {
