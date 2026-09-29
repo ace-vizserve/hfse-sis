@@ -5,6 +5,7 @@ import type {
   MarkbookDrillTarget,
   SheetRow,
 } from '@/lib/markbook/drill';
+import { isTopBand, parseTopBandSegment } from '@/lib/markbook/insights-drill';
 
 // Client-safe Markbook drill-filter module. Single source of truth for two
 // things that used to be triplicated / duplicated across dashboard.ts,
@@ -209,6 +210,16 @@ export function applyTargetFilter(
         (r) => r.isExaminable && !r.isNa
       );
       if (!segment) return examinable as MarkbookDrillRow[];
+      // Insights top-band badge: VS + O together, in the one term the
+      // histogram reads (`top|T2`), or every term (`top`).
+      const top = parseTopBandSegment(segment);
+      if (top) {
+        return examinable.filter(
+          (r) =>
+            isTopBand(r.gradeBucket) &&
+            (top.termNumber === null || r.termNumber === top.termNumber)
+        ) as MarkbookDrillRow[];
+      }
       // Accept either the bucket key ('o', 'vs', …) or the bucket label.
       const key = GRADE_BANDS.some((b) => b.key === segment)
         ? (segment as GradeBand)

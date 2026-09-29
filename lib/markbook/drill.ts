@@ -13,6 +13,7 @@ import {
   classifyGradeBucket,
   type GradeBand,
 } from '@/lib/markbook/drill-filter';
+import { parseTopBandSegment } from '@/lib/markbook/insights-drill';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { SUBJECT_ROLES } from '@/lib/schemas/teacher-assignment';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -58,8 +59,38 @@ export type MarkbookDrillRowKind = 'entry' | 'sheet' | 'change-request';
 // ('teacher-entry-velocity') instead loads AY-wide and clamps by enteredAt —
 // it measures grading ACTIVITY in the window, not state for a term. Splitting
 // the load here keeps applyScopeFilter's entry branch a clean pass-through.
+// Entry targets behind a Markbook Insights figure (KD #229). Tasks 5.4–5.6 add
+// to it. Each loads whole-year entries (no from/to) and keeps a grade that has
+// no raw scores behind it, as the Insights averages do.
+const INSIGHTS_ENTRY_TARGETS = new Set<MarkbookDrillTarget>();
+
 export function isTermScopedEntryTarget(t: MarkbookDrillTarget): boolean {
-  return t === 'grade-entries' || t === 'grade-bucket-entries';
+  return (
+    t === 'grade-entries' ||
+    t === 'grade-bucket-entries' ||
+    INSIGHTS_ENTRY_TARGETS.has(t)
+  );
+}
+
+// Which entries the loader keeps. 'any-score' is the dashboard's "grade
+// entered" rule (some raw score filled). 'score-or-grade' also keeps a
+// quarterly grade with no scores behind it — the grade histogram and the
+// Insights averages count those, so the drills behind them must too.
+export type EntryKeepRule = 'any-score' | 'score-or-grade';
+
+export function entryKeepRuleFor(
+  target: MarkbookDrillTarget,
+  segment?: string | null
+): EntryKeepRule {
+  if (INSIGHTS_ENTRY_TARGETS.has(target)) return 'score-or-grade';
+  if (
+    target === 'grade-bucket-entries' &&
+    segment &&
+    parseTopBandSegment(segment)
+  ) {
+    return 'score-or-grade';
+  }
+  return 'any-score';
 }
 
 export function rowKindForTarget(t: MarkbookDrillTarget): MarkbookDrillRowKind {
@@ -296,7 +327,8 @@ async function resolveAyContext(ayCode: string): Promise<{
 async function loadEntryRowsUncached(
   ayCode: string,
   from?: string,
-  to?: string
+  to?: string,
+  keep: EntryKeepRule = 'any-score'
 ): Promise<GradeEntryRow[]> {
   const service = createServiceClient();
   const ctx = await resolveAyContext(ayCode);
@@ -438,7 +470,11 @@ async function loadEntryRowsUncached(
     if ((e.pt_scores ?? []).some((s) => s !== null)) return true;
     return false;
   };
-  const gradedEntries = entries.filter(hasAnyGrade);
+  const keepEntry =
+    keep === 'score-or-grade'
+      ? (e: EntryLite) => hasAnyGrade(e) || e.quarterly_grade !== null
+      : hasAnyGrade;
+  const gradedEntries = entries.filter(keepEntry);
 
   // section_students → student_id + section_id resolution.
   const ssIds = Array.from(new Set(entries.map((e) => e.section_student_id)));
@@ -843,9 +879,10 @@ async function loadChangeRequestRowsUncached(
 async function loadEntryRows(
   ayCode: string,
   from?: string,
-  to?: string
+  to?: string,
+  keep: EntryKeepRule = 'any-score'
 ): Promise<GradeEntryRow[]> {
-  return loadEntryRowsUncached(ayCode, from, to);
+  return loadEntryRowsUncached(ayCode, from, to, keep);
 }
 
 async function loadSheetRows(ayCode: string): Promise<SheetRow[]> {
@@ -1049,7 +1086,8 @@ export async function buildMarkbookDrillRows(
       rows = (await loadEntryRows(
         input.ayCode,
         input.from,
-        input.to
+        input.to,
+        entryKeepRuleFor(input.target, input.segment)
       )) as MarkbookDrillRow[];
     } else {
       // Activity target ('teacher-entry-velocity'): load AY-wide (no term
@@ -1439,11 +1477,22 @@ export function drillHeaderForTarget(
               ? 'Sections without a publication'
               : 'Publication coverage',
       };
-    case 'grade-bucket-entries':
+    case 'grade-bucket-entries': {
+      const top = segment ? parseTopBandSegment(segment) : null;
+      if (top) {
+        return {
+          eyebrow: 'Drill · Top grades',
+          title:
+            top.termNumber === null
+              ? 'Grades of 85 and above'
+              : `Grades of 85 and above · Term ${top.termNumber}`,
+        };
+      }
       return {
         eyebrow: 'Drill · Grade band',
         title: segment ? `Band: ${segment}` : 'Grade band',
       };
+    }
     case 'term-sheet-status':
       return {
         eyebrow: 'Drill · Sheet progress',
