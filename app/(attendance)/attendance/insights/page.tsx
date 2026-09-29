@@ -17,11 +17,14 @@ import Link from 'next/link';
 import { Suspense, type ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import { AttendanceDrillSheet } from '@/components/attendance/drills/attendance-drill-sheet';
 import {
-  LabeledPieChart,
-  type LabeledPieSlice,
-} from '@/components/dashboard/charts/labeled-pie-chart';
+  AttendanceMixPieDrill,
+  CompositionBarsDrill,
+  SeeAllDrillButton,
+  TermRateBarsDrill,
+} from '@/components/attendance/drills/insights-drill-cards';
+import type { LabeledPieSlice } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
@@ -49,10 +52,14 @@ import { getAttendanceKpisRange } from '@/lib/attendance/dashboard';
 import {
   buildAllRowSets,
   getTopAbsentByTerm,
+  summariseLeaveQuota,
   type TermWindowInput,
 } from '@/lib/attendance/drill';
+import {
+  buildTermWindowMap,
+  resolveSelectedTermId,
+} from '@/lib/attendance/insights-drill';
 import { buildAttendanceInsightsExport } from '@/lib/attendance/insights-export';
-import { isApproachingVlQuota } from '@/lib/attendance/insights-watchlist';
 import {
   getAttendanceMixByTerm,
   getAttendanceRateTrendByAy,
@@ -124,12 +131,15 @@ function InsightChartCard({
   title,
   icon: Icon,
   scopeNote,
+  action,
   children,
 }: {
   cap: string;
   title: string;
   icon: LucideIcon;
   scopeNote?: string;
+  /** A "See all" button for blocks that are themselves short lists. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -146,7 +156,8 @@ function InsightChartCard({
             {scopeNote}
           </span>
         )}
-        <CardAction>
+        <CardAction className="flex items-center gap-2">
+          {action}
           <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
             <Icon className="size-4" />
           </div>
@@ -230,42 +241,43 @@ function RosterRow({
 // boundary around the whole lower half, which would have held the leave-quota
 // number in the KPI row hostage to the section below it.
 
-/** The quota rows, derived once and shared by all three. */
+/**
+ * The quota rows, derived once and shared by all three. `summariseLeaveQuota`
+ * uses the same selectors the drill targets filter with, so each list here and
+ * the sheet its "See all" opens hold the same students.
+ */
 async function resolveQuotaRows(
   rowSetsPromise: ReturnType<typeof buildAllRowSets>
 ) {
   const rowSets = await rowSetsPromise;
-  const compassionateOver = rowSets.compassionate.filter((r) => r.isOverQuota);
-  const vacationOver = rowSets.vacationLeave.filter((r) => r.isOverTermQuota);
-  const vacationApproaching = rowSets.vacationLeave.filter((r) =>
-    isApproachingVlQuota(r.remainingThisTerm, r.isOverTermQuota)
-  );
-  return {
-    compassionateOver,
-    vacationOver,
-    vacationApproaching,
-    haveQuotaRisk:
-      compassionateOver.length > 0 ||
-      vacationOver.length > 0 ||
-      vacationApproaching.length > 0,
-  };
+  return summariseLeaveQuota(rowSets.compassionate, rowSets.vacationLeave);
 }
 
 /** "Over their leave quota" — one KPI card in the hero row. */
 async function LeaveQuotaMetric({
   rowSetsPromise,
+  ayCode,
+  termId,
 }: {
   rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  ayCode: string;
+  termId: string | null;
 }) {
-  const { compassionateOver, vacationOver } =
-    await resolveQuotaRows(rowSetsPromise);
+  const { overLeaveQuotaCount } = await resolveQuotaRows(rowSetsPromise);
   return (
     <MetricCard
       label="Over their leave quota"
-      value={compassionateOver.length + vacationOver.length}
+      value={overLeaveQuotaCount}
       format="number"
       icon={ShieldAlert}
       subtext="Leave quotas"
+      drillSheet={() => (
+        <AttendanceDrillSheet
+          target="over-leave-quota"
+          ayCode={ayCode}
+          termId={termId ?? undefined}
+        />
+      )}
     />
   );
 }
@@ -284,10 +296,21 @@ async function InsightsExportButton({
     | 'vacationApproaching'
   >;
 }) {
-  const quota = await resolveQuotaRows(rowSetsPromise);
+  const {
+    compassionateOver,
+    vacationOver,
+    vacationApproaching,
+    haveQuotaRisk,
+  } = await resolveQuotaRows(rowSetsPromise);
   return (
     <ExportCsvButton
-      data={buildAttendanceInsightsExport({ ...base, ...quota })}
+      data={buildAttendanceInsightsExport({
+        ...base,
+        compassionateOver,
+        vacationOver,
+        vacationApproaching,
+        haveQuotaRisk,
+      })}
     />
   );
 }
@@ -387,10 +410,11 @@ export default async function AttendanceInsightsPage({
         defaultPreset: 'thisAY',
       });
 
-  // Resolve current term so the vacation-leave quota (per-term, KD #94) can be
-  // counted. Prefer the current-flagged term in the selected AY; fall back to
-  // the earliest term.
-  let currentTermId: string | null = null;
+  // The vacation-leave quota is per term (KD #94) and this page is scoped to
+  // the term in the picker, so the quota is counted for THAT term. It used to
+  // take the `is_current` term whatever was picked — choosing Term 2 still
+  // listed another term's vacation leave, and its "See all" could not match.
+  let selectedTermId: string | null = null;
   const { data: ayRow } = await service
     .from('academic_years')
     .select('id')
@@ -399,13 +423,12 @@ export default async function AttendanceInsightsPage({
   if (ayRow) {
     const { data: termRows } = await service
       .from('terms')
-      .select('id, term_number, is_current')
-      .eq('academic_year_id', (ayRow as { id: string }).id)
-      .order('term_number', { ascending: true });
-    type TermRow = { id: string; term_number: number; is_current: boolean };
-    const terms = (termRows ?? []) as TermRow[];
-    const active = terms.find((t) => t.is_current) ?? terms[0] ?? null;
-    if (active) currentTermId = active.id;
+      .select('id, term_number')
+      .eq('academic_year_id', (ayRow as { id: string }).id);
+    selectedTermId = resolveSelectedTermId(
+      (termRows ?? []) as Array<{ id: string; term_number: number }>,
+      selectedTermNumber
+    );
   }
 
   const schoolConfig = await getSchoolConfig();
@@ -437,6 +460,15 @@ export default async function AttendanceInsightsPage({
 
   const trendAys = compareAy ? [selectedAy, compareAy] : [selectedAy];
 
+  // Every term's dates for each year the term-by-term chart plots, so a bar
+  // opens that term in THAT bar's year — the comparison year included.
+  const termWindows = buildTermWindowMap([
+    { ayCode: selectedAy, byNumber: windows.term.byNumber },
+    ...(compareAy && compareWindows
+      ? [{ ayCode: compareAy, byNumber: compareWindows.term.byNumber }]
+      : []),
+  ]);
+
   // Term windows (T1–T4) for the per-term absence watchlist — only terms whose
   // date window is defined in the selected AY.
   const absenceTermWindows: TermWindowInput[] = ([1, 2, 3, 4] as const)
@@ -465,7 +497,7 @@ export default async function AttendanceInsightsPage({
     ayCode: selectedAy,
     from: rangeInput.from,
     to: rangeInput.to,
-    vacationTermId: currentTermId,
+    vacationTermId: selectedTermId,
     defaultVlAllowance: schoolConfig.defaultVlAllowancePerTerm,
   });
 
@@ -698,6 +730,14 @@ export default async function AttendanceInsightsPage({
             deltaUnit="pp"
             subtext={rateCaption}
             sparkline={rateSparkline.length > 1 ? rateSparkline : undefined}
+            drillSheet={() => (
+              <AttendanceDrillSheet
+                target="attendance-summary"
+                ayCode={selectedAy}
+                initialFrom={rangeInput.from}
+                initialTo={rangeInput.to}
+              />
+            )}
           />
           <MetricCard
             label="Days absent this period"
@@ -709,6 +749,14 @@ export default async function AttendanceInsightsPage({
                 ? 'Marked absent (reason not tracked)'
                 : 'Not yet encoded'
             }
+            drillSheet={() => (
+              <AttendanceDrillSheet
+                target="absent"
+                ayCode={selectedAy}
+                initialFrom={rangeInput.from}
+                initialTo={rangeInput.to}
+              />
+            )}
           />
           <MetricCard
             label="Late incidents this period"
@@ -716,6 +764,14 @@ export default async function AttendanceInsightsPage({
             format="number"
             icon={Clock}
             subtext={hasCurrentPeriodData ? 'This period' : 'Not yet encoded'}
+            drillSheet={() => (
+              <AttendanceDrillSheet
+                target="lates"
+                ayCode={selectedAy}
+                initialFrom={rangeInput.from}
+                initialTo={rangeInput.to}
+              />
+            )}
           />
           {/* Its own boundary, not the section's — a number in the KPI row
               should not wait on the cards further down the page. */}
@@ -724,7 +780,11 @@ export default async function AttendanceInsightsPage({
               <Skeleton className="h-full min-h-32 w-full rounded-xl" />
             }
           >
-            <LeaveQuotaMetric rowSetsPromise={rowSetsPromise} />
+            <LeaveQuotaMetric
+              rowSetsPromise={rowSetsPromise}
+              ayCode={selectedAy}
+              termId={selectedTermId}
+            />
           </Suspense>
         </section>
 
@@ -738,9 +798,12 @@ export default async function AttendanceInsightsPage({
               <EmptyChartState message="No attendance encoded yet — the mix appears once this period has marks." />
             ) : (
               <>
-                <LabeledPieChart
+                <AttendanceMixPieDrill
                   data={attendanceMixPieData}
                   colors={attendanceMixColors}
+                  ayCode={selectedAy}
+                  from={rangeInput.from}
+                  to={rangeInput.to}
                 />
                 <p className="mt-4 font-mono text-[10.5px] text-muted-foreground">
                   {kpis.current.encodedDays.toLocaleString('en-SG')} days marked
@@ -766,13 +829,12 @@ export default async function AttendanceInsightsPage({
                     delta={rateTrendDelta}
                   />
                 )}
-                <GroupedBarChart
+                <TermRateBarsDrill
                   series={rateTrendSeries}
                   data={rateTrend.data}
-                  yFormat="percent"
                   yDomain={[80, 100]}
-                  showValueLabels
                   highlightX={rateTrendSummary.periodLabel ?? undefined}
+                  termWindows={termWindows}
                 />
               </div>
             )}
@@ -787,11 +849,12 @@ export default async function AttendanceInsightsPage({
           {mixByTerm.length === 0 ? (
             <EmptyChartState message="No attendance data encoded yet — the composition appears once terms have marks." />
           ) : (
-            <GroupedBarChart
+            <CompositionBarsDrill
               series={ATTENDANCE_MIX_SERIES}
               data={compositionData}
-              yFormat="percent"
               height={260}
+              ayCode={selectedAy}
+              termWindows={termWindows}
             />
           )}
         </InsightChartCard>
@@ -818,47 +881,62 @@ export default async function AttendanceInsightsPage({
           </InsightChartCard>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {termsWithAbsences.map((t) => (
-              <InsightChartCard
-                key={t.termNumber}
-                cap="Top 5 · ranked by days absent"
-                title={`Term ${t.termNumber}`}
-                icon={CalendarX}
-              >
-                {t.rows.map((r) => (
-                  <div key={r.studentSectionId}>
-                    <RosterRow
-                      icon={User}
-                      iconGradient="indigo"
-                      name={
-                        <IdentifierLink
-                          href={`/attendance/students/${r.studentNumber}`}
-                        >
-                          {r.studentName}
-                        </IdentifierLink>
-                      }
-                      subtitle={r.sectionName}
-                      value={`${r.absences} absent`}
-                    />
-                    <div className="-mt-1.5 mb-2 flex gap-2 pl-[46px] font-mono text-[10px] tabular-nums text-muted-foreground">
-                      <span>{r.attendancePct}% attendance</span>
-                      {r.excused > 0 && (
-                        <>
-                          <span>·</span>
-                          <span>{r.excused} excused leave</span>
-                        </>
-                      )}
-                      {r.lates > 0 && (
-                        <>
-                          <span>·</span>
-                          <span>{r.lates} late</span>
-                        </>
-                      )}
+            {termsWithAbsences.map((t) => {
+              const termWindow = absenceTermWindows.find(
+                (w) => w.termNumber === t.termNumber
+              );
+              return (
+                <InsightChartCard
+                  key={t.termNumber}
+                  cap="Top 5 · ranked by days absent"
+                  title={`Term ${t.termNumber}`}
+                  icon={CalendarX}
+                  action={
+                    termWindow ? (
+                      <SeeAllDrillButton
+                        target="top-absent"
+                        ayCode={selectedAy}
+                        from={termWindow.from}
+                        to={termWindow.to}
+                      />
+                    ) : undefined
+                  }
+                >
+                  {t.rows.map((r) => (
+                    <div key={r.studentSectionId}>
+                      <RosterRow
+                        icon={User}
+                        iconGradient="indigo"
+                        name={
+                          <IdentifierLink
+                            href={`/attendance/students/${r.studentNumber}`}
+                          >
+                            {r.studentName}
+                          </IdentifierLink>
+                        }
+                        subtitle={r.sectionName}
+                        value={`${r.absences} absent`}
+                      />
+                      <div className="-mt-1.5 mb-2 flex gap-2 pl-[46px] font-mono text-[10px] tabular-nums text-muted-foreground">
+                        <span>{r.attendancePct}% attendance</span>
+                        {r.excused > 0 && (
+                          <>
+                            <span>·</span>
+                            <span>{r.excused} excused leave</span>
+                          </>
+                        )}
+                        {r.lates > 0 && (
+                          <>
+                            <span>·</span>
+                            <span>{r.lates} late</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </InsightChartCard>
-            ))}
+                  ))}
+                </InsightChartCard>
+              );
+            })}
           </div>
         )}
       </div>
@@ -880,7 +958,11 @@ export default async function AttendanceInsightsPage({
             </div>
           }
         >
-          <LeaveQuotaSection rowSetsPromise={rowSetsPromise} />
+          <LeaveQuotaSection
+            rowSetsPromise={rowSetsPromise}
+            ayCode={selectedAy}
+            termId={selectedTermId}
+          />
         </Suspense>
       </div>
       {/* ═══ end Causes & limits ═══ */}
@@ -901,8 +983,12 @@ export default async function AttendanceInsightsPage({
 /** The leave-quota cards — the bulk of what the deferred scan feeds. */
 async function LeaveQuotaSection({
   rowSetsPromise,
+  ayCode,
+  termId,
 }: {
   rowSetsPromise: ReturnType<typeof buildAllRowSets>;
+  ayCode: string;
+  termId: string | null;
 }) {
   const {
     compassionateOver,
@@ -929,6 +1015,14 @@ async function LeaveQuotaSection({
               cap="Compassionate leave · per year"
               title="Over quota"
               icon={HeartHandshake}
+              action={
+                <SeeAllDrillButton
+                  target="over-leave-quota"
+                  segment="compassionate"
+                  ayCode={ayCode}
+                  termId={termId ?? undefined}
+                />
+              }
             >
               {compassionateOver.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
@@ -968,6 +1062,15 @@ async function LeaveQuotaSection({
                   : 'Over quota'
               }
               icon={Umbrella}
+              action={
+                termId ? (
+                  <SeeAllDrillButton
+                    target="vacation-leave-quota"
+                    ayCode={ayCode}
+                    termId={termId}
+                  />
+                ) : undefined
+              }
             >
               {vacationOver.length === 0 && vacationApproaching.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
