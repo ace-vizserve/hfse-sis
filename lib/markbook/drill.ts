@@ -740,17 +740,21 @@ async function loadChangeRequestRowsUncached(
   const termById = new Map<string, TermLite>();
   for (const t of ctx.terms) termById.set(t.id, t);
 
-  const { data: sheetsData } = await service
-    .from('grading_sheets')
-    .select('id, term_id, section_id, subject_id')
-    .in('term_id', ctx.termIds);
   type SheetLite = {
     id: string;
     term_id: string;
     section_id: string;
     subject_id: string;
   };
-  const sheets = (sheetsData ?? []) as SheetLite[];
+  // Paged — one year holds ~1,116 sheets, and an unpaged read stopped at
+  // 1,000, so requests on the rest never reached the list.
+  const sheets = await fetchAllPages<SheetLite>((from, to) =>
+    service
+      .from('grading_sheets')
+      .select('id, term_id, section_id, subject_id')
+      .in('term_id', ctx.termIds)
+      .range(from, to)
+  );
   const sheetById = new Map<string, SheetLite>();
   for (const s of sheets) sheetById.set(s.id, s);
   const sheetIds = sheets.map((s) => s.id);

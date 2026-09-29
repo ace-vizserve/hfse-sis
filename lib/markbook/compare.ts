@@ -3,6 +3,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 
 import { type CompareCellResult } from '@/lib/dashboard/compare';
+import { countsTowardInsightsAverage } from '@/lib/markbook/insights-drill';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -54,16 +55,25 @@ async function loadSubjectPerformanceTrendUncached(
       | { name: string; is_examinable: boolean }[]
       | null;
   };
-  const { data: sheets, error: sheetsErr } = await service
-    .from('grading_sheets')
-    .select('id, term_id, subject:subjects!inner(name, is_examinable)')
-    .in('term_id', termIds)
-    .eq('subjects.is_examinable', true);
-
-  if (sheetsErr || !sheets || sheets.length === 0) return [];
+  // Paged: with a comparison year the examinable sheets for two years pass
+  // PostgREST's 1,000-row cap, which cut this read short with no error.
+  let sheets: SheetRow[];
+  try {
+    sheets = await fetchAllPages<SheetRow>((from, to) =>
+      service
+        .from('grading_sheets')
+        .select('id, term_id, subject:subjects!inner(name, is_examinable)')
+        .in('term_id', termIds)
+        .eq('subjects.is_examinable', true)
+        .range(from, to)
+    );
+  } catch {
+    return [];
+  }
+  if (sheets.length === 0) return [];
 
   const sheetMeta = new Map<string, { termId: string; subjectName: string }>();
-  for (const s of sheets as SheetRow[]) {
+  for (const s of sheets) {
     const subject = Array.isArray(s.subject) ? s.subject[0] : s.subject;
     if (!subject?.is_examinable) continue;
     sheetMeta.set(s.id, { termId: s.term_id, subjectName: subject.name });
@@ -100,15 +110,14 @@ async function loadSubjectPerformanceTrendUncached(
   // Step C: sum per (termId, subjectName).
   const sums = new Map<string, { sum: number; count: number }>();
   for (const entry of entries) {
-    // Skip N.A. rows — is_na=true means the student was not enrolled for this
-    // term; the quarterly_grade is a placeholder, not a real grade (KD #148).
-    if (entry.is_na === true) continue;
-    if (entry.quarterly_grade === null) continue;
+    // Shared with the Insights drills (KD #229): non-N.A. with a grade.
+    if (!countsTowardInsightsAverage(entry.is_na, entry.quarterly_grade))
+      continue;
     const meta = sheetMeta.get(entry.grading_sheet_id);
     if (!meta) continue;
     const key = `${meta.termId}\x00${meta.subjectName}`;
     const slot = sums.get(key) ?? { sum: 0, count: 0 };
-    slot.sum += entry.quarterly_grade;
+    slot.sum += entry.quarterly_grade as number;
     slot.count += 1;
     sums.set(key, slot);
   }
@@ -197,20 +206,28 @@ async function loadSubjectLevelTrendUncached(
       | { level: { code: string } | { code: string }[] | null }[]
       | null;
   };
-  const { data: sheets, error: sheetsErr } = await service
-    .from('grading_sheets')
-    .select(
-      'id, term_id, subject:subjects!inner(name, is_examinable), section:sections!inner(level:levels!inner(code))'
-    )
-    .in('term_id', termIds)
-    .eq('subjects.is_examinable', true);
-
-  if (sheetsErr || !sheets || sheets.length === 0) return [];
+  // Paged, as in loadSubjectPerformanceTrendUncached above.
+  let sheets: LevelSheetRow[];
+  try {
+    sheets = await fetchAllPages<LevelSheetRow>((from, to) =>
+      service
+        .from('grading_sheets')
+        .select(
+          'id, term_id, subject:subjects!inner(name, is_examinable), section:sections!inner(level:levels!inner(code))'
+        )
+        .in('term_id', termIds)
+        .eq('subjects.is_examinable', true)
+        .range(from, to)
+    );
+  } catch {
+    return [];
+  }
+  if (sheets.length === 0) return [];
 
   // Build sheet-level metadata map: sheetId → { termId, subjectName, levelCode }
   type SheetMeta = { termId: string; subjectName: string; levelCode: string };
   const sheetMeta = new Map<string, SheetMeta>();
-  for (const s of sheets as LevelSheetRow[]) {
+  for (const s of sheets) {
     const subject = Array.isArray(s.subject) ? s.subject[0] : s.subject;
     if (!subject?.is_examinable) continue;
     const section = Array.isArray(s.section) ? s.section[0] : s.section;
@@ -256,17 +273,18 @@ async function loadSubjectLevelTrendUncached(
     { sum: number; count: number; failingCount: number }
   >();
   for (const entry of entries) {
-    if (entry.is_na === true) continue;
-    if (entry.quarterly_grade === null) continue;
+    // Shared with the Insights drills (KD #229): non-N.A. with a grade.
+    if (!countsTowardInsightsAverage(entry.is_na, entry.quarterly_grade))
+      continue;
     const meta = sheetMeta.get(entry.grading_sheet_id);
     if (!meta) continue;
     const key = `${meta.termId}\x00${meta.subjectName}\x00${meta.levelCode}`;
     const slot = sums.get(key) ?? { sum: 0, count: 0, failingCount: 0 };
-    slot.sum += entry.quarterly_grade;
+    slot.sum += entry.quarterly_grade as number;
     slot.count += 1;
     if (
-      entry.quarterly_grade >= FAILING_LO &&
-      entry.quarterly_grade <= FAILING_HI
+      (entry.quarterly_grade as number) >= FAILING_LO &&
+      (entry.quarterly_grade as number) <= FAILING_HI
     ) {
       slot.failingCount += 1;
     }

@@ -16,6 +16,14 @@ import type { VelocityPoint } from '@/lib/dashboard/velocity';
 import { GRADE_BANDS, type GradeBand } from '@/lib/markbook/drill-filter';
 import { termIdsForRange } from '@/lib/markbook/term-range';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
+import {
+  averageDecisionHours,
+  changeRequestWindowStart,
+  countsTowardInsightsAverage,
+  pickGradeDistributionTerm,
+  tallySheetLocksByTerm,
+  type DistributionTermCandidate,
+} from '@/lib/markbook/insights-drill';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -79,38 +87,18 @@ async function loadGradeDistributionUncached(
   // without per-term date windows.
   let effectiveTermId = termId;
   if (!effectiveTermId) {
-    const today = sgToday();
+    // The rule lives in pickGradeDistributionTerm so the Insights top-band
+    // drill opens the SAME term this histogram counts (KD #229).
     const { data: termRows } = await service
       .from('terms')
       .select('id, term_number, is_current, start_date, end_date')
       .eq('academic_year_id', academicYearId)
       .order('term_number', { ascending: true });
-    type TermRow = {
-      id: string;
-      term_number: number;
-      is_current: boolean | null;
-      start_date: string | null;
-      end_date: string | null;
-    };
-    const terms = (termRows ?? []) as TermRow[];
-    const current = terms.find((t) => t.is_current === true);
-    const containingToday = terms.find(
-      (t) =>
-        t.start_date &&
-        t.end_date &&
-        t.start_date <= today &&
-        t.end_date >= today
-    );
-    const lastFinished = [...terms]
-      .filter((t) => t.end_date && t.end_date < today)
-      .sort((a, b) => (a.end_date! < b.end_date! ? 1 : -1))[0];
-    const fallback = terms[terms.length - 1];
     effectiveTermId =
-      current?.id ??
-      containingToday?.id ??
-      lastFinished?.id ??
-      fallback?.id ??
-      null;
+      pickGradeDistributionTerm(
+        (termRows ?? []) as DistributionTermCandidate[],
+        sgToday()
+      )?.id ?? null;
   }
 
   if (!effectiveTermId) return emptyGradeBuckets();
@@ -198,9 +186,8 @@ async function loadGradeDistributionUncached(
   for (const row of entryRows ?? []) {
     // Skip N.A. rows — is_na=true means the student was not enrolled for this
     // term; the quarterly_grade is a placeholder, not a real grade.
-    if (row.is_na === true) continue;
-    const g = row.quarterly_grade as number | null;
-    if (g == null) continue;
+    if (!countsTowardInsightsAverage(row.is_na, row.quarterly_grade)) continue;
+    const g = row.quarterly_grade as number;
     const idx = GRADE_BANDS.findIndex((b) => g >= b.lo && g <= b.hi);
     if (idx >= 0) buckets[idx].count += 1;
   }
@@ -240,48 +227,44 @@ async function loadSheetLockProgressByTermUncached(
 ): Promise<TermLockProgress[]> {
   const service = createServiceClient();
 
-  const [termsRes, sheetsRes] = await Promise.all([
-    service
-      .from('terms')
-      .select('id, term_number')
-      .eq('academic_year_id', academicYearId)
-      .order('term_number', { ascending: true }),
-    service.from('grading_sheets').select('term_id, is_locked'),
-  ]);
-
-  if (termsRes.error || sheetsRes.error) {
+  const termsRes = await service
+    .from('terms')
+    .select('id, term_number')
+    .eq('academic_year_id', academicYearId)
+    .order('term_number', { ascending: true });
+  if (termsRes.error) {
     console.error(
       '[markbook] getSheetLockProgressByTerm fetch failed:',
-      termsRes.error?.message ?? sheetsRes.error?.message
+      termsRes.error.message
     );
     return [];
   }
-
   type TermRow = { id: string; term_number: number };
-  type SheetRow = { term_id: string; is_locked: boolean };
   const terms = (termsRes.data ?? []) as TermRow[];
-  const sheets = (sheetsRes.data ?? []) as SheetRow[];
+  if (terms.length === 0) return [];
 
-  const termIds = new Set(terms.map((t) => t.id));
-  const counts = new Map<string, { locked: number; open: number }>();
-  for (const t of terms) counts.set(t.id, { locked: 0, open: 0 });
-
-  for (const s of sheets) {
-    if (!termIds.has(s.term_id)) continue;
-    const bucket = counts.get(s.term_id)!;
-    if (s.is_locked) bucket.locked += 1;
-    else bucket.open += 1;
+  // This year's sheets only, paged. The old read took every grading_sheets
+  // row in the database in ONE request; PostgREST stops at 1,000 rows with no
+  // error, and one year alone holds ~1,116 sheets, so the bars counted an
+  // arbitrary subset.
+  type SheetRow = { term_id: string; is_locked: boolean };
+  let sheets: SheetRow[];
+  try {
+    sheets = await fetchAllPages<SheetRow>((from, to) =>
+      service
+        .from('grading_sheets')
+        .select('term_id, is_locked')
+        .in(
+          'term_id',
+          terms.map((t) => t.id)
+        )
+        .range(from, to)
+    );
+  } catch (err) {
+    console.error('[markbook] getSheetLockProgressByTerm fetch failed:', err);
+    return [];
   }
-
-  return terms.map((t) => {
-    const c = counts.get(t.id)!;
-    return {
-      termNumber: t.term_number,
-      termLabel: `Term ${t.term_number}`,
-      locked: c.locked,
-      open: c.open,
-    };
-  });
+  return tallySheetLocksByTerm(terms, sheets);
 }
 
 export function getSheetLockProgressByTerm(
@@ -322,9 +305,8 @@ async function loadChangeRequestSummaryUncached(
 ): Promise<ChangeRequestSummary> {
   const service = createServiceClient();
 
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceIso = since.toISOString();
+  // Shared with the Insights change-request drill (KD #229).
+  const sinceIso = changeRequestWindowStart(days);
 
   const byStatus: Record<ChangeRequestStatus, number> = {
     pending: 0,
@@ -366,32 +348,18 @@ async function loadChangeRequestSummaryUncached(
   };
   const rows = (data ?? []) as Row[];
 
-  let total = 0;
-  let decidedCount = 0;
-  let totalDecisionMs = 0;
   for (const r of rows) {
-    total += 1;
     if (r.status in byStatus) byStatus[r.status] += 1;
-    if (
-      r.reviewed_at &&
-      (r.status === 'approved' ||
-        r.status === 'rejected' ||
-        r.status === 'applied')
-    ) {
-      const req = Date.parse(r.requested_at);
-      const rev = Date.parse(r.reviewed_at);
-      if (!Number.isNaN(req) && !Number.isNaN(rev) && rev >= req) {
-        totalDecisionMs += rev - req;
-        decidedCount += 1;
-      }
-    }
   }
-
-  const avgDecisionHours =
-    decidedCount > 0
-      ? Math.round((totalDecisionMs / decidedCount / (1000 * 60 * 60)) * 10) /
-        10
-      : null;
+  const total = rows.length;
+  // Shared with the drill's windowed 'decided' segment (KD #229).
+  const avgDecisionHours = averageDecisionHours(
+    rows.map((r) => ({
+      status: r.status,
+      requestedAt: r.requested_at,
+      reviewedAt: r.reviewed_at,
+    }))
+  );
 
   return { byStatus, total, avgDecisionHours, windowDays: days };
 }
