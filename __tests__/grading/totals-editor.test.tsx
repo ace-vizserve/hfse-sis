@@ -15,7 +15,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TotalsEditor } from '@/components/grading/totals-editor';
+import {
+  TotalsEditor,
+  TotalsEditorForm,
+} from '@/components/grading/totals-editor';
 import { renderWithClient } from '../_utils/render-with-client';
 import { jsonResponse, stubFetch } from '../_utils/mock-fetch';
 
@@ -34,6 +37,26 @@ vi.mock('sonner', async () => ({
     success: toastSuccess,
     error: toastError,
   },
+}));
+
+// TipTap doesn't type in jsdom; a textarea carries the same value/onChange
+// contract, which is all the correction step reads.
+vi.mock('@/components/ui/rich-text-editor', () => ({
+  RichTextEditor: ({
+    id,
+    value,
+    onChange,
+  }: {
+    id?: string;
+    value: string;
+    onChange: (v: string) => void;
+  }) => (
+    <textarea
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
 }));
 
 afterEach(() => {
@@ -103,6 +126,50 @@ describe('TotalsEditor (mutation pilot)', () => {
     // the last thing to happen, after the refresh transition commits.
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('inline layout: a locked sheet asks for the correction in the form, then sends it', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = stubFetch(() =>
+      Promise.resolve(jsonResponse({ ok: true }))
+    );
+    const onSaved = vi.fn();
+    renderWithClient(
+      <TotalsEditorForm
+        layout="inline"
+        sheetId="s1"
+        wwTotals={[10, 10]}
+        ptTotals={[10, 10, 10]}
+        qaTotal={30}
+        wwMaxSlots={5}
+        ptMaxSlots={5}
+        isLocked
+        weights={{ ww: 40, pt: 40, qa: 20 }}
+        subjectWeights={{ ww: 40, pt: 40, qa: 20 }}
+        weightsOverridden={false}
+        onSaved={onSaved}
+      />
+    );
+
+    // No dialog anywhere — the correction is part of the form.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const save = screen.getByRole('button', { name: /save totals/i });
+    expect(save).toBeDisabled();
+
+    await user.type(
+      screen.getByLabelText(/justification/i),
+      'Term 3 exam was marked out of 40, not 30.'
+    );
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0][1] as RequestInit).body as string
+    );
+    expect(body.correction_reason).toBe('formula_fix');
+    expect(body.correction_justification).toContain('marked out of 40');
   });
 
   it('preserves the route-specific error message and does not refresh', async () => {

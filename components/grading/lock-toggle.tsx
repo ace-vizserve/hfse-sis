@@ -24,6 +24,7 @@ export function LockToggle({
   sheetId,
   isLocked,
   onDone,
+  unlockVariant = 'default',
 }: {
   sheetId: string;
   isLocked: boolean;
@@ -36,6 +37,11 @@ export function LockToggle({
    * cannot see that cache (`components/sis/section-term-sheets-dialog.tsx`).
    */
   onDone?: () => void;
+  /**
+   * `outline` for "Unlock sheet" where the view already has its one primary
+   * button (the term drawer's Save totals). Lock stays destructive either way.
+   */
+  unlockVariant?: 'default' | 'outline';
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Surfaced after the server returns 409 because pending CRs exist; the
@@ -120,7 +126,7 @@ export function LockToggle({
         loading={busy}
         loadingText={isLocked ? 'Unlocking…' : 'Locking…'}
         size="sm"
-        variant={isLocked ? 'default' : 'destructive'}
+        variant={isLocked ? unlockVariant : 'destructive'}
       >
         {!busy &&
           (isLocked ? (
