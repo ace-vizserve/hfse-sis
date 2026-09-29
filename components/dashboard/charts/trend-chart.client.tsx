@@ -25,9 +25,11 @@ import {
   LINE_WIDTH,
   MUTED_SERIES,
   VALUE_LABEL,
+  type SegmentClickHandler,
   type YFormat,
 } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
+import { clickableActiveDot } from './clickable-active-dot';
 
 export type TrendPoint = { x: string; y: number };
 
@@ -84,6 +86,13 @@ export type TrendChartProps = {
    * the line does not read as a real rise or fall.
    */
   lastPointProvisional?: boolean;
+  /**
+   * Makes the point under the pointer clickable. Reports `(x, 'current')`
+   * for this period's line (its provisional last point included) and
+   * `(x, 'comparison')` for the dashed prior-period line — the caller maps
+   * each to its year.
+   */
+  onSegmentClick?: SegmentClickHandler;
 };
 
 function TrendChartImpl({
@@ -99,6 +108,7 @@ function TrendChartImpl({
   ticks,
   showValues = false,
   lastPointProvisional = false,
+  onSegmentClick,
 }: TrendChartProps) {
   const compact = variant === 'compact';
   const yFormatter = formatterFor(yFormat);
@@ -239,7 +249,16 @@ function TrendChartImpl({
                     )
                 : false
           }
-          activeDot={{ ...ACTIVE_DOT, fill: mark }}
+          activeDot={
+            onSegmentClick
+              ? clickableActiveDot({
+                  fill: mark,
+                  categoryKey: 'x',
+                  series: 'current',
+                  onSegmentClick,
+                })
+              : { ...ACTIVE_DOT, fill: mark }
+          }
           isAnimationActive={false}
         >
           {markLatest && (
@@ -303,7 +322,16 @@ function TrendChartImpl({
               stroke: MUTED_SERIES,
               fill: 'var(--color-background)',
             }}
-            activeDot={{ ...ACTIVE_DOT, fill: MUTED_SERIES }}
+            activeDot={
+              onSegmentClick
+                ? clickableActiveDot({
+                    fill: MUTED_SERIES,
+                    categoryKey: 'x',
+                    series: 'current',
+                    onSegmentClick,
+                  })
+                : { ...ACTIVE_DOT, fill: MUTED_SERIES }
+            }
             legendType="none"
             isAnimationActive={false}
           >
@@ -334,6 +362,16 @@ function TrendChartImpl({
             strokeWidth={LINE_WIDTH}
             fill="transparent"
             dot={false}
+            activeDot={
+              onSegmentClick
+                ? clickableActiveDot({
+                    fill: MUTED_SERIES,
+                    categoryKey: 'x',
+                    series: 'comparison',
+                    onSegmentClick,
+                  })
+                : undefined
+            }
             isAnimationActive={false}
           />
         )}

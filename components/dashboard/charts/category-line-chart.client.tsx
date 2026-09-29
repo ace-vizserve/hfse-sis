@@ -24,9 +24,11 @@ import {
   LINE_WIDTH,
   SERIES_COLORS,
   VALUE_LABEL,
+  type SegmentClickHandler,
   type YFormat,
 } from './chart-primitives';
 import { chartTooltipContent } from './chart-tooltip';
+import { clickableActiveDot } from './clickable-active-dot';
 
 /**
  * A single line tracing one value across an ORDERED sequence of categories
@@ -55,6 +57,11 @@ export type CategoryLineChartProps = {
    * the raw `y` data key.
    */
   seriesLabel?: string;
+  /**
+   * Makes the point under the pointer clickable. Reports `(x)` — one series,
+   * so no second argument.
+   */
+  onSegmentClick?: SegmentClickHandler;
 };
 
 function CategoryLineChartImpl({
@@ -66,6 +73,7 @@ function CategoryLineChartImpl({
   referenceLabel,
   color = SERIES_COLORS[0],
   seriesLabel = 'Value',
+  onSegmentClick,
 }: CategoryLineChartProps) {
   const yFormatter = formatterFor(yFormat);
   const domain: [number, number] =
@@ -124,7 +132,15 @@ function CategoryLineChartImpl({
           stroke={color}
           strokeWidth={LINE_WIDTH}
           dot={{ r: 3.5, fill: color }}
-          activeDot={{ ...ACTIVE_DOT, fill: color }}
+          activeDot={
+            onSegmentClick
+              ? clickableActiveDot({
+                  fill: color,
+                  categoryKey: 'x',
+                  onSegmentClick,
+                })
+              : { ...ACTIVE_DOT, fill: color }
+          }
           isAnimationActive={false}
         >
           <LabelList
