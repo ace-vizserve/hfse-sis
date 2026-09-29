@@ -15,21 +15,24 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 
-import {
-  CategoryLineChart,
-  type CategoryLinePoint,
-} from '@/components/dashboard/charts/category-line-chart';
-import {
-  ComparisonBarChart,
-  type ComparisonBarPoint,
-} from '@/components/dashboard/charts/comparison-bar-chart';
-import { GroupedBarChart } from '@/components/dashboard/charts/grouped-bar-chart';
+import type { CategoryLinePoint } from '@/components/dashboard/charts/category-line-chart';
+import type { ComparisonBarPoint } from '@/components/dashboard/charts/comparison-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
+import {
+  LevelAverageDrillChart,
+  SheetLockDrillChart,
+  SubjectTrendDrillChart,
+  SubjectsToWatchDrillChart,
+  TermMovementDrillChart,
+  TopBandBadgeDrill,
+  type TopBandYear,
+} from '@/components/markbook/drills/insights-drill-cards';
+import { MarkbookDrillSheet } from '@/components/markbook/drills/markbook-drill-sheet';
 import {
   Card,
   CardAction,
@@ -41,6 +44,7 @@ import {
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { sgToday } from '@/lib/dates';
 import { buildCompareCells } from '@/lib/dashboard/compare';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
 import { meetsThreshold } from '@/lib/dashboard/narrative';
@@ -71,6 +75,15 @@ import {
   selectTopRegressionMovers,
   type SubjectLevelTrendPoint,
 } from '@/lib/markbook/insights-level';
+import {
+  isTopBand,
+  levelAveragesForPeriod,
+  pickGradeDistributionTerm,
+  subjectLevelSegment,
+  termNumberFromLabel,
+  windowedCrSegment,
+  type DistributionTermCandidate,
+} from '@/lib/markbook/insights-drill';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -79,11 +92,6 @@ const ALLOWED_ROLES = new Set([
   'school_admin',
   'superadmin',
 ]);
-
-// The two top bands ("very satisfactory" 85–89 + "outstanding" 90–100) are the
-// "top performing" share we headline. Keyed off GRADE_BANDS so it tracks any
-// future band re-definition.
-const TOP_BAND_KEYS = new Set(['vs', 'o']);
 
 const REGRESSION_MIN_PTS = 3;
 const PENDING_CR_MIN = 3;
@@ -231,6 +239,7 @@ export default async function MarkbookInsightsPage({
     changeRequests,
     lockProgress,
     rawLevelPoints,
+    distTermsRes,
   ] = await Promise.all([
     ayId ? getGradeDistribution(ayId, selectedAy) : Promise.resolve(null),
     compareAy && compareAyId
@@ -240,12 +249,22 @@ export default async function MarkbookInsightsPage({
     getChangeRequestSummary(selectedAy, 30),
     ayId ? getSheetLockProgressByTerm(ayId, selectedAy) : Promise.resolve([]),
     getSubjectLevelTrend(levelTrendCellResults),
+    // The term each year's grade histogram reads — the top-band drill opens
+    // that same term (KD #229).
+    ayId
+      ? service
+          .from('terms')
+          .select(
+            'id, term_number, is_current, start_date, end_date, academic_year_id'
+          )
+          .in('academic_year_id', compareAyId ? [ayId, compareAyId] : [ayId])
+      : Promise.resolve({ data: [] }),
   ]);
 
   // Headline: total graded + share in the top band(s).
   const totalGraded = (gradeDist ?? []).reduce((s, b) => s + b.count, 0);
   const topBandCount = (gradeDist ?? [])
-    .filter((b) => TOP_BAND_KEYS.has(b.key))
+    .filter((b) => isTopBand(b.key))
     .reduce((s, b) => s + b.count, 0);
   const topBandPct =
     totalGraded > 0 ? Math.round((topBandCount / totalGraded) * 100) : null;
@@ -255,13 +274,52 @@ export default async function MarkbookInsightsPage({
     const total = dist.reduce((s, b) => s + b.count, 0);
     if (total === 0) return null;
     const topCount = dist
-      .filter((b) => TOP_BAND_KEYS.has(b.key))
+      .filter((b) => isTopBand(b.key))
       .reduce((s, b) => s + b.count, 0);
     return Math.round((topCount / total) * 100);
   }
 
   const compareTopBandPct = computeTopBandPct(compareGradeDist);
   const growthBadge = topBandBadge(topBandPct, compareTopBandPct, compareAy);
+
+  type DistTermRow = DistributionTermCandidate & { academic_year_id: string };
+  const distTerms = ((distTermsRes as { data: DistTermRow[] | null }).data ??
+    []) as DistTermRow[];
+  const today = sgToday();
+  const distTermNumber = (id: string | null): number | null =>
+    id
+      ? (pickGradeDistributionTerm(
+          distTerms.filter((t) => t.academic_year_id === id),
+          today
+        )?.term_number ?? null)
+      : null;
+  const countTop = (dist: typeof gradeDist) => ({
+    topCount: (dist ?? [])
+      .filter((b) => isTopBand(b.key))
+      .reduce((s, b) => s + b.count, 0),
+    total: (dist ?? []).reduce((s, b) => s + b.count, 0),
+  });
+  const topBandYears: TopBandYear[] = [];
+  const selectedDistTerm = distTermNumber(ayId);
+  if (selectedDistTerm !== null && totalGraded > 0) {
+    topBandYears.push({
+      ayCode: selectedAy,
+      termNumber: selectedDistTerm,
+      ...countTop(gradeDist),
+    });
+  }
+  const compareDistTerm = distTermNumber(compareAyId);
+  if (
+    compareAy &&
+    compareDistTerm !== null &&
+    countTop(compareGradeDist).total > 0
+  ) {
+    topBandYears.push({
+      ayCode: compareAy,
+      termNumber: compareDistTerm,
+      ...countTop(compareGradeDist),
+    });
+  }
 
   // Term periods across whichever AYs are in scope — shared x-axis.
   const periods = [
@@ -330,23 +388,12 @@ export default async function MarkbookInsightsPage({
   // Per-level average across its subjects in the latest period (unweighted
   // mean of subject averages — a diagnostic level signal, not an exact GA),
   // plus the mean across levels as the "school average" baseline.
-  const levelAvgByLevel = (() => {
-    if (!latestPeriodWithData)
-      return [] as { levelCode: string; avg: number }[];
-    const byLevel = new Map<string, number[]>();
-    for (const p of levelPoints) {
-      if (p.periodLabel !== latestPeriodWithData || p.avgGrade === null)
-        continue;
-      const arr = byLevel.get(p.levelCode) ?? [];
-      arr.push(p.avgGrade);
-      byLevel.set(p.levelCode, arr);
-    }
-    return [...byLevel.entries()].map(([levelCode, avgs]) => ({
-      levelCode,
-      avg:
-        Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 10) / 10,
-    }));
-  })();
+  const levelAvgByLevel = latestPeriodWithData
+    ? levelAveragesForPeriod(levelPoints, latestPeriodWithData)
+    : [];
+  const latestTermNumber = latestPeriodWithData
+    ? termNumberFromLabel(latestPeriodWithData)
+    : null;
   const schoolAvgAcrossLevels =
     levelAvgByLevel.length > 0
       ? Math.round(
@@ -431,6 +478,12 @@ export default async function MarkbookInsightsPage({
       current: Math.round(d.lastAvg * 10) / 10,
       comparison: Math.round(d.firstAvg * 10) / 10,
     }));
+  const regressionSegments: Record<string, string> = Object.fromEntries(
+    regressionMovers.map((d) => [
+      `${d.subjectName} · ${d.levelCode}`,
+      subjectLevelSegment(d.subjectName, d.levelCode),
+    ])
+  );
 
   // Sheets locked · per term — lock % per term as a single-series grouped bar,
   // with the term to highlight (KD-style: the earliest term still with open
@@ -484,9 +537,13 @@ export default async function MarkbookInsightsPage({
             label: isCurrentAy ? 'Current' : 'Historical',
             tone: isCurrentAy ? 'mint' : 'muted',
           },
-          growthBadge,
         ]}
-        actions={<ExportCsvButton data={exportData} />}
+        actions={
+          <>
+            <TopBandBadgeDrill badge={growthBadge} years={topBandYears} />
+            <ExportCsvButton data={exportData} />
+          </>
+        }
       />
 
       <div className="flex justify-end">
@@ -522,7 +579,7 @@ export default async function MarkbookInsightsPage({
                 className="mb-4"
               />
             )}
-            <GroupedBarChart
+            <SubjectTrendDrillChart
               series={trendBarSeries}
               data={trendBarData}
               yFormat="number"
@@ -547,12 +604,16 @@ export default async function MarkbookInsightsPage({
             <EmptyChartState message="Not enough graded subjects yet to rank — this fills in as grades are entered." />
           ) : (
             <>
-              <ComparisonBarChart
-                data={watchBarData}
-                orientation="horizontal"
-                yFormat="number"
-                height={Math.max(200, watchBarData.length * 42 + 40)}
-              />
+              {latestTermNumber !== null ? (
+                <SubjectsToWatchDrillChart
+                  data={watchBarData}
+                  orientation="horizontal"
+                  yFormat="number"
+                  height={Math.max(200, watchBarData.length * 42 + 40)}
+                  ayCode={selectedAy}
+                  termNumber={latestTermNumber}
+                />
+              ) : null}
               {showWorstWatch ? (
                 <RecommendationCallout tone="watch" className="mt-5">
                   {worstWatchRow!.subjectName} averaged{' '}
@@ -573,14 +634,18 @@ export default async function MarkbookInsightsPage({
             title="Which levels are struggling?"
             icon={GraduationCap}
           >
-            <CategoryLineChart
-              data={levelLineData}
-              seriesLabel="Average grade"
-              yFormat="number"
-              referenceValue={schoolAvgAcrossLevels}
-              referenceLabel={`School avg ${schoolAvgAcrossLevels}`}
-              height={280}
-            />
+            {latestTermNumber !== null ? (
+              <LevelAverageDrillChart
+                data={levelLineData}
+                seriesLabel="Average grade"
+                yFormat="number"
+                referenceValue={schoolAvgAcrossLevels}
+                referenceLabel={`School avg ${schoolAvgAcrossLevels}`}
+                height={280}
+                ayCode={selectedAy}
+                termNumber={latestTermNumber}
+              />
+            ) : null}
           </InsightChartCard>
         ) : null}
 
@@ -596,11 +661,13 @@ export default async function MarkbookInsightsPage({
             }
             icon={TrendingDown}
           >
-            <ComparisonBarChart
+            <TermMovementDrillChart
               data={regressionPairData}
               orientation="horizontal"
               yFormat="number"
               height={Math.max(220, regressionPairData.length * 48 + 48)}
+              ayCode={selectedAy}
+              segmentByCategory={regressionSegments}
             />
             {regressionCalloutText ? (
               <RecommendationCallout tone="watch" className="mt-5">
@@ -626,6 +693,14 @@ export default async function MarkbookInsightsPage({
               format="number"
               icon={GitPullRequestArrow}
               subtext="Post-lock edits filed"
+              drillSheet={() => (
+                <MarkbookDrillSheet
+                  target="change-requests"
+                  segment={windowedCrSegment(crs.windowDays)}
+                  ayCode={selectedAy}
+                  showInsightsSummary
+                />
+              )}
             />
             <MetricCard
               label="Pending decisions"
@@ -633,6 +708,14 @@ export default async function MarkbookInsightsPage({
               format="number"
               icon={ClipboardCheck}
               subtext="Awaiting an approver"
+              drillSheet={() => (
+                <MarkbookDrillSheet
+                  target="change-requests"
+                  segment={windowedCrSegment(crs.windowDays, 'pending')}
+                  ayCode={selectedAy}
+                  showInsightsSummary
+                />
+              )}
             />
             <MetricCard
               label="Avg decision time"
@@ -646,6 +729,14 @@ export default async function MarkbookInsightsPage({
                   ? 'No decisions in the window'
                   : 'Request to decision'
               }
+              drillSheet={() => (
+                <MarkbookDrillSheet
+                  target="change-requests"
+                  segment={windowedCrSegment(crs.windowDays, 'decided')}
+                  ayCode={selectedAy}
+                  showInsightsSummary
+                />
+              )}
             />
           </section>
         ) : null}
@@ -660,7 +751,7 @@ export default async function MarkbookInsightsPage({
             <EmptyChartState message="No grading sheets created yet for this year." />
           ) : (
             <>
-              <GroupedBarChart
+              <SheetLockDrillChart
                 series={LOCK_SERIES}
                 data={lockBarData}
                 yFormat="percent"
@@ -668,6 +759,7 @@ export default async function MarkbookInsightsPage({
                 showValueLabels
                 height={220}
                 highlightX={highlightTermLabel}
+                ayCode={selectedAy}
               />
               {showCrBottleneck ? (
                 <RecommendationCallout tone="act" className="mt-4">
