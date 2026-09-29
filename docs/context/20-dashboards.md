@@ -170,6 +170,8 @@ Oversight roles always keep the analytical surface (KPIs, charts, drill cards) �
 
 Every module dashboard (`/attendance`, `/markbook`, `/admissions`, `/records`, `/p-files`, `/evaluation`) and every Insights page (`/attendance/insights`, `/markbook/insights`, `/admissions/insights`, `/records/insights`) has an **Export CSV** button. Clicking it downloads one file with everything that page is showing that viewer, in the same order the page shows it — nothing more, nothing less. (Out of scope: the teacher-facing views of Markbook/Evaluation/Attendance, `/sis` and its sub-pages, and the "focused" filtered views like `/admissions?status=…` — those already have their own DataTable CSV.)
 
+Every KPI and chart on those four Insights pages also opens the rows behind it — the same drill-down system the module dashboards use (KD #229). They were read-only before that.
+
 ### What's in the file
 
 - A few **scope lines** at the top — the page name, the academic year, the date range (dashboards) or the compared-against academic year (Insights), and `Exported`: the moment the download button was clicked (Singapore time), not when the page was generated.
