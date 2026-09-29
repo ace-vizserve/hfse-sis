@@ -12,17 +12,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 //   - a WW / PT slot with a value — 0 included (Hard Rule #3: blank ≠ zero;
 //     a zero is a mark the child got)
 //   - an exam score, any derived figure (PS, initial, quarterly), a letter
-//   - `is_na` (the row was marked not applicable)
-//   - an excused slot (migration 179)
+//   - an excused slot (migration 179) — never set automatically: the column
+//     defaults to '{}' and only the audited registrar route writes it
 // and on the sheet's HISTORY: a mark typed then cleared leaves a row blank but
 // its audit trail behind, and removing the sheet would orphan that trail. So
 // any `grade_audit_log` row, any `audit_log` row against one of its entries,
 // or any change request refuses it too. A locked sheet is refused outright.
 //
-// ⚠ `is_na` IS SEEDED TRUE FOR A LATE ENROLLEE when a sheet is created with
-// rows (POST /api/grading-sheets). Such a sheet reads as "has entries" here.
-// That is the conservative side of the rule and it is deliberate: the flag
-// is a value on a grade entry, whoever set it.
+// ⚠ `is_na` ALONE IS NOT "ENTERED" (fix, 2026-09-29). Creating a sheet with
+// rows seeds `is_na = true` for every late enrollee (POST /api/grading-sheets),
+// so counting it made such a sheet unremovable forever. A person setting N/A
+// is a write that leaves history — `grade_audit_log` after lock, an
+// `audit_log` `entry.update` row before it (migration 152/165 trigger) — and
+// the history check above refuses that sheet. The flag itself is ignored here.
 
 export type GradeEntryValues = {
   ww_scores?: (number | string | null)[] | null;
@@ -41,7 +43,7 @@ export type GradeEntryValues = {
 
 /** The columns `entryHasEnteredData` reads — select exactly these. */
 export const ENTRY_VALUE_COLUMNS =
-  'ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, letter_grade, is_na, ww_excused, pt_excused';
+  'ww_scores, pt_scores, qa_score, ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade, letter_grade, ww_excused, pt_excused';
 
 const present = (v: unknown) => v !== null && v !== undefined;
 
@@ -60,7 +62,7 @@ export function entryHasEnteredData(e: GradeEntryValues): boolean {
     return true;
   if (typeof e.letter_grade === 'string' && e.letter_grade.trim() !== '')
     return true;
-  if (e.is_na === true) return true;
+  // `is_na` deliberately not read — see the header.
   if ((e.ww_excused ?? []).length > 0) return true;
   if ((e.pt_excused ?? []).length > 0) return true;
   return false;

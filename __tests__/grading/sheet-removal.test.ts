@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import {
   decideSheetRemoval,
   entryHasEnteredData,
+  loadSheetRemovability,
   sheetHasEnteredData,
   SHEET_REMOVAL_REASONS,
   type GradeEntryValues,
@@ -64,8 +67,8 @@ describe('sheetHasEnteredData', () => {
     expect(entryHasEnteredData(blank({ letter_grade: '  ' }))).toBe(false);
   });
 
-  it('is_na → entered', () => {
-    expect(sheetHasEnteredData([blank({ is_na: true })])).toBe(true);
+  it('is_na alone → NOT entered (seeded true for late enrollees)', () => {
+    expect(sheetHasEnteredData([blank({ is_na: true })])).toBe(false);
   });
 
   it('an excused slot → entered', () => {
@@ -121,5 +124,66 @@ describe('decideSheetRemoval', () => {
     });
     expect(v.removable).toBe(false);
     expect(v.reason).toBe(SHEET_REMOVAL_REASONS.history);
+  });
+});
+
+// A minimal stand-in for the four reads `loadSheetRemovability` makes. Every
+// chained filter is accepted; the table name alone decides the rows.
+function fakeService(tables: Record<string, unknown[]>): SupabaseClient {
+  const builder = (rows: unknown[]) => {
+    const b: Record<string, unknown> = {};
+    for (const m of ['select', 'in', 'eq', 'limit']) b[m] = () => b;
+    b.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+      resolve({ data: rows, error: null });
+    return b;
+  };
+  return {
+    from: (table: string) => builder(tables[table] ?? []),
+  } as unknown as SupabaseClient;
+}
+
+describe('loadSheetRemovability — the automatic N/A', () => {
+  const lateEnrolleeRow = {
+    id: 'e1',
+    grading_sheet_id: 's1',
+    ...blank({ is_na: true }),
+  };
+
+  it('is_na true with no audit history → removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [
+          lateEnrolleeRow,
+          { id: 'e2', grading_sheet_id: 's1', ...blank() },
+        ],
+      }),
+      [{ id: 's1', is_locked: false }]
+    );
+    expect(out.get('s1')).toMatchObject({ removable: true, entryCount: 2 });
+  });
+
+  it('is_na true WITH a grade_audit_log row → not removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [lateEnrolleeRow],
+        grade_audit_log: [{ grading_sheet_id: 's1' }],
+      }),
+      [{ id: 's1', is_locked: false }]
+    );
+    expect(out.get('s1')).toMatchObject({
+      removable: false,
+      reason: SHEET_REMOVAL_REASONS.history,
+    });
+  });
+
+  it('is_na true WITH an audit_log row on the entry → not removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [lateEnrolleeRow],
+        audit_log: [{ entity_id: 'e1' }],
+      }),
+      [{ id: 's1', is_locked: false }]
+    );
+    expect(out.get('s1')?.removable).toBe(false);
   });
 });

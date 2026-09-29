@@ -201,6 +201,8 @@ export async function DELETE(
 
   // Blank rows only — belt and braces over the check above. A row that gained
   // a score since is left in place, and its FK then refuses the sheet delete.
+  // `is_na` is NOT filtered: it is seeded true for late enrollees, and a
+  // person's N/A leaves history the check above already refused on.
   const { data: removedRows, error: entErr } = await service
     .from('grade_entries')
     .delete()
@@ -211,7 +213,6 @@ export async function DELETE(
     .is('initial_grade', null)
     .is('quarterly_grade', null)
     .is('letter_grade', null)
-    .eq('is_na', false)
     .select('id');
   if (entErr)
     return NextResponse.json({ error: entErr.message }, { status: 500 });
