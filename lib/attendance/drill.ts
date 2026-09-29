@@ -1182,6 +1182,43 @@ export function selectOverLeaveQuota(
     );
 }
 
+export type LeaveQuotaSummary = {
+  compassionateOver: CompassionateUsageRow[];
+  vacationOver: VacationLeaveUsageRow[];
+  vacationApproaching: VacationLeaveUsageRow[];
+  overLeaveQuotaCount: number;
+  haveQuotaRisk: boolean;
+};
+
+/**
+ * Everything the Attendance Insights leave-quota KPI and lists show, built
+ * from the same selectors their drills filter with — so "Over their leave
+ * quota" = the `over-leave-quota` rows, the compassionate list = segment
+ * `compassionate`, and the vacation list (over + at the limit) = the
+ * `vacation-leave-quota` rows.
+ */
+export function summariseLeaveQuota(
+  compassionate: CompassionateUsageRow[],
+  vacation: VacationLeaveUsageRow[]
+): LeaveQuotaSummary {
+  const compassionateOver = compassionate.filter((r) => r.isOverQuota);
+  const vacationAtRisk = selectAtRiskVacationLeave(vacation);
+  const vacationOver = vacationAtRisk.filter((r) => r.isOverTermQuota);
+  const vacationApproaching = vacationAtRisk.filter((r) => !r.isOverTermQuota);
+  return {
+    compassionateOver,
+    vacationOver,
+    vacationApproaching,
+    overLeaveQuotaCount: selectOverLeaveQuota(
+      toLeaveQuotaRows(compassionate, vacation)
+    ).length,
+    haveQuotaRisk:
+      compassionateOver.length > 0 ||
+      vacationOver.length > 0 ||
+      vacationApproaching.length > 0,
+  };
+}
+
 // ─── Public builders ────────────────────────────────────────────────────────
 
 export type BuildDrillRowsInput = DrillRangeInput & {

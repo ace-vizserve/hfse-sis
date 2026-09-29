@@ -24,7 +24,9 @@ import {
   applyTargetFilter,
   defaultColumnsForTarget,
   rowKindForTarget,
+  selectAtRiskVacationLeave,
   selectOverLeaveQuota,
+  summariseLeaveQuota,
   toLeaveQuotaRows,
   type AttendanceDrillRow,
   type CompassionateUsageRow,
@@ -171,5 +173,49 @@ describe('over-leave-quota drill', () => {
       'allowance',
       'used',
     ]);
+  });
+});
+
+describe('summariseLeaveQuota — the Insights quota lists', () => {
+  const summary = summariseLeaveQuota(compassionateRows, vacationRows);
+
+  it('KPI = over-leave-quota drill rows', () => {
+    expect(summary.overLeaveQuotaCount).toBe(drill(null).length);
+    expect(summary.overLeaveQuotaCount).toBe(
+      summary.compassionateOver.length + summary.vacationOver.length
+    );
+  });
+
+  it('compassionate list = the compassionate "See all" rows', () => {
+    const ids = (rows: Array<{ studentSectionId: string }>) =>
+      rows.map((r) => r.studentSectionId).sort();
+    expect(ids(summary.compassionateOver)).toEqual(ids(drill('compassionate')));
+  });
+
+  it('vacation list (over + approaching) = the vacation-leave-quota drill rows', () => {
+    const drillRows = applyTargetFilter(
+      vacationRows as AttendanceDrillRow[],
+      'vacation-leave-quota',
+      null
+    );
+    expect(
+      summary.vacationOver.length + summary.vacationApproaching.length
+    ).toBe(drillRows.length);
+    expect([...summary.vacationOver, ...summary.vacationApproaching]).toEqual(
+      selectAtRiskVacationLeave(vacationRows)
+    );
+  });
+
+  it('does not call a zero allowance with no trips "approaching"', () => {
+    const s = summariseLeaveQuota([], [vacation('Zed', 0, 0)]);
+    expect(s.vacationApproaching).toEqual([]);
+    expect(s.haveQuotaRisk).toBe(false);
+  });
+
+  it('flags risk when anyone is over or at the vacation limit', () => {
+    expect(summary.haveQuotaRisk).toBe(true);
+    expect(summariseLeaveQuota([], [vacation('Cleo', 1)]).haveQuotaRisk).toBe(
+      true
+    );
   });
 });
