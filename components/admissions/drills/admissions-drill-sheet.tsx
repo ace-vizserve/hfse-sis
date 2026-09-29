@@ -59,6 +59,11 @@ export type AdmissionsDrillSheetProps = {
    *  a network call. Used by the page (Server Component) to avoid loading
    *  spinners on first open. Subsequent scope changes still hit the API. */
   initialRows?: DrillRow[];
+  /** Replaces the date-anchor line under the title. Insights passes
+   *  "Whole academic year" (its drills take no range). */
+  scopeLabel?: string;
+  /** Opening grouping. Conversion rate on Insights opens grouped by status. */
+  initialGroupBy?: DrillDownGroupBy;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -674,12 +679,14 @@ export function AdmissionsDrillSheet({
   initialFrom,
   initialTo,
   initialRows,
+  scopeLabel,
+  initialGroupBy,
 }: AdmissionsDrillSheetProps) {
   // ── State ────────────────────────────────────────────────────────────────
   const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
   const [selectedLevels, setSelectedLevels] = React.useState<string[]>([]);
-  const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>(() =>
-    target === 'conversion' ? 'status' : 'none'
+  const [groupBy, setGroupBy] = React.useState<DrillDownGroupBy>(
+    () => initialGroupBy ?? (target === 'conversion' ? 'status' : 'none')
   );
   const [density, setDensity] = React.useState<DrillDownDensity>('comfortable');
   const [visibleColumnKeys, setVisibleColumnKeys] = React.useState<
@@ -908,7 +915,7 @@ export function AdmissionsDrillSheet({
     <DrillDownSheet<DrillRow>
       title={heading.title}
       eyebrow={heading.eyebrow}
-      description={dateAnchorLabel}
+      description={scopeLabel ?? dateAnchorLabel}
       count={preFiltered.length}
       csvHref={csvHref}
       columns={columns}
