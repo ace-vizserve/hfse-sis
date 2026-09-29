@@ -18,9 +18,10 @@ import {
 import { NewSubjectForm } from '@/components/sis/new-subject-form';
 import { SectionTermSheetsDialog } from '@/components/sis/section-term-sheets-dialog';
 import {
+  SubjectCatalogMenu,
   SubjectRenameInline,
-  UnusedSubjectMenu,
 } from '@/components/sis/unused-subject-actions';
+import type { SubjectSetupSummary } from '@/lib/sis/subjects/setup-summary';
 import {
   SubjectConfigForm,
   type SubjectConfigFormDraft,
@@ -208,11 +209,15 @@ export function SubjectCatalogCard({
   defaultSectionLevelType,
   sheetImpactByConfigId,
   unusedSubjectIds = [],
+  deletableSubjects = {},
 }: {
   catalog: CatalogSubjectRow[];
   /** Subjects nothing uses yet, in any year (lib/sis/subjects/usage.ts) —
-   * the only ones offered Rename and Delete. */
+   * the only ones offered Rename. */
   unusedSubjectIds?: string[];
+  /** Subjects no class uses, each with what a Delete takes with it — the
+   * only ones offered Delete. */
+  deletableSubjects?: Record<string, SubjectSetupSummary>;
   levelLabel: string;
   ayCode: string;
   ayId: string;
@@ -484,14 +489,19 @@ export function SubjectCatalogCard({
                                 <Pencil className="size-3" />
                               </Button>
                             </HoverHint>
-                            {/* Rename + Delete — only for a subject nothing
-                                uses yet (see unused-subject-actions.tsx). */}
-                            {unusedIds.has(subject.id) && (
-                              <UnusedSubjectMenu
-                                subject={subject}
-                                onRename={() => setRenamingId(subject.id)}
-                              />
-                            )}
+                            {/* Rename — only a subject nothing uses yet;
+                                Delete — any subject no class uses (see
+                                unused-subject-actions.tsx). Renders nothing
+                                when neither applies. */}
+                            <SubjectCatalogMenu
+                              subject={subject}
+                              onRename={
+                                unusedIds.has(subject.id)
+                                  ? () => setRenamingId(subject.id)
+                                  : undefined
+                              }
+                              deleteSetup={deletableSubjects[subject.id]}
+                            />
                           </span>
                         </TableCell>
                       </TableRow>

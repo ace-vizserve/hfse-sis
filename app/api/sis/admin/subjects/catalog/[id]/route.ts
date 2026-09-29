@@ -6,8 +6,12 @@ import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectCatalogUpdateSchema } from '@/lib/schemas/subject';
 import {
+  findSectionUse,
   findSubjectUsage,
+  loadSubjectSetup,
+  sectionUseMessage,
   subjectInUseMessage,
+  type SubjectSetup,
 } from '@/lib/sis/subjects/usage';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -23,7 +27,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 // It also renames — `code` and/or `name` — but ONLY an unused subject
 // (lib/sis/subjects/usage.ts). A subject in use keeps its code (every
 // code-keyed list matches on it) and is renamed per year through
-// subject_configs.display_name instead. DELETE below has the same rule.
+// subject_configs.display_name instead. DELETE below is looser (2026-09-29):
+// it only refuses a subject a CLASS uses, and takes the rest of the setup
+// with it.
 //
 // The dynamic segment is named `[id]` (not `[subjectId]`) purely to match
 // this folder's existing sibling `app/api/sis/admin/subjects/catalog/[id]/
@@ -203,11 +209,24 @@ export async function PATCH(
 
 // DELETE /api/sis/admin/subjects/catalog/[id]
 //
-// Removes an UNUSED subject from the catalog — one added by mistake, or with
-// the wrong code. Refused (409) the moment anything points at it, because
-// several of those references cascade and would be deleted with it. Its
-// self-mapped `subject_report_map` row is removed first (every subject is
-// seeded with one; the FK would cascade it anyway).
+// Removes a subject NO CLASS uses (2026-09-29, Mr Ace: "in use means a
+// section is using it"). Refused (409) when a class holds anything on it —
+// grading sheets, teacher assignments, evaluation comments, checklist topics
+// or a section_subjects row (lib/sis/subjects/usage.ts::findSectionUse) —
+// because those are per-class / per-student records (Hard Rule #6).
+//
+// Otherwise its SETUP goes with it: weights (subject_configs, every year),
+// level offerings, and its subject_report_map rows. A subject reporting under
+// it is re-pointed to report as itself, never deleted.
+//
+// No transactions in supabase-js, so the order is what keeps a failure safe:
+//   1. snapshot every row about to go into ONE `subject.delete` audit row;
+//   2. re-point other subjects reporting under it (each keeps a mapping);
+//   3. delete subject_level_offerings;
+//   4. delete subject_configs (ON DELETE RESTRICT — must go before 6);
+//   5. delete its own subject_report_map rows;
+//   6. delete the subject itself — LAST, so any failure above leaves it
+//      in the catalog and the request can simply be retried.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -230,32 +249,21 @@ export async function DELETE(
   const subject = row as SubjectRecord;
 
   let usage: string[];
+  let setup: SubjectSetup;
   try {
-    usage = await findSubjectUsage(service, subjectId);
+    usage = await findSectionUse(service, subjectId);
+    if (usage.length > 0) {
+      return NextResponse.json(
+        { error: sectionUseMessage(usage), usage },
+        { status: 409 }
+      );
+    }
+    setup = await loadSubjectSetup(service, subjectId);
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
-  if (usage.length > 0) {
-    return NextResponse.json(
-      { error: subjectInUseMessage(usage, 'deleted'), usage },
-      { status: 409 }
-    );
-  }
 
-  const { error: mapErr } = await service
-    .from('subject_report_map')
-    .delete()
-    .eq('subject_id', subjectId);
-  if (mapErr)
-    return NextResponse.json({ error: mapErr.message }, { status: 500 });
-
-  const { error: deleteErr } = await service
-    .from('subjects')
-    .delete()
-    .eq('id', subjectId);
-  if (deleteErr)
-    return NextResponse.json({ error: deleteErr.message }, { status: 500 });
-
+  // 1. Snapshot first — the one audit row that says what went.
   await logAction({
     service,
     actor: {
@@ -272,8 +280,60 @@ export async function DELETE(
       name: subject.name,
       is_examinable: subject.is_examinable,
       grading_method: subject.grading_method,
+      removed: {
+        subject_configs: setup.configs.map((c) => ({
+          ...c,
+          ay_code: setup.ayCodes[c.academic_year_id] ?? null,
+        })),
+        subject_level_offerings: setup.offerings,
+        subject_report_map: setup.ownMaps,
+      },
+      repointed_to_self: setup.reportedUnder,
     },
   });
+
+  const fail = (step: string, message: string) =>
+    NextResponse.json(
+      {
+        error: `Couldn't finish deleting ${subject.name} (${step}): ${message}. The subject is still in the catalog — try again.`,
+      },
+      { status: 500 }
+    );
+
+  // 2. Re-point each subject reporting under this one to report as itself.
+  //    If it already has its self-map, the row pointing here just goes.
+  for (const other of setup.reportedUnder) {
+    const { count, error: selfErr } = await service
+      .from('subject_report_map')
+      .select('subject_id', { count: 'exact', head: true })
+      .eq('subject_id', other.subject_id)
+      .eq('report_subject_id', other.subject_id);
+    if (selfErr) return fail('report card mapping', selfErr.message);
+    const target = service.from('subject_report_map');
+    const { error } =
+      (count ?? 0) > 0
+        ? await target
+            .delete()
+            .eq('subject_id', other.subject_id)
+            .eq('report_subject_id', subjectId)
+        : await target
+            .update({ report_subject_id: other.subject_id })
+            .eq('subject_id', other.subject_id)
+            .eq('report_subject_id', subjectId);
+    if (error) return fail('report card mapping', error.message);
+  }
+
+  // 3–5. The setup rows, then 6. the subject.
+  const steps: Array<[string, string, string]> = [
+    ['levels', 'subject_level_offerings', 'subject_id'],
+    ['weights', 'subject_configs', 'subject_id'],
+    ['report card mapping', 'subject_report_map', 'subject_id'],
+    ['subject', 'subjects', 'id'],
+  ];
+  for (const [step, table, column] of steps) {
+    const { error } = await service.from(table).delete().eq(column, subjectId);
+    if (error) return fail(step, error.message);
+  }
 
   invalidateDrillTags('markbook', await requireCurrentAyCode(service));
 

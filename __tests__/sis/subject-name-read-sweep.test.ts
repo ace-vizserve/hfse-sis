@@ -166,6 +166,11 @@ const RAW_SUBJECT_NAME_IS_CORRECT: Record<string, string> = {
     'Edits the catalogue row (is_examinable, grading_method, report_label). ' +
     'Same as its sibling above: global fields, no year, and resolving here ' +
     'would show an admin a name their edit is not editing.',
+  'lib/sis/subjects/usage.ts':
+    'Names the subjects that report under one being deleted from the ' +
+    'catalogue, for its confirm and its audit row. subject_report_map has no ' +
+    'year and the confirm sits on catalogue rows that show subjects.name, so ' +
+    'the catalogue name is the one that matches the screen.',
   'app/api/sis/admin/subjects/[configId]/report-map/route.ts':
     'Selects the name but uses only `code` — the audit row records ' +
     'subject_code and report_subject_code. Nothing here reaches a screen.',

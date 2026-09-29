@@ -194,6 +194,104 @@ describe('findSubjectUsage / listUnusedSubjectIds', () => {
   });
 });
 
+describe('sectionUseLabels — class use blocks Delete, setup never does', () => {
+  it('setup tables alone do not block', async () => {
+    const { sectionUseLabels } = await import('@/lib/sis/subjects/usage');
+    expect(
+      sectionUseLabels({
+        subject_configs: 3,
+        subject_level_offerings: 5,
+        subject_report_map: 2,
+      })
+    ).toEqual([]);
+  });
+
+  it('names each kind of class use, in order', async () => {
+    const { sectionUseLabels } = await import('@/lib/sis/subjects/usage');
+    expect(
+      sectionUseLabels({
+        grading_sheets: 1,
+        teacher_assignments: 0,
+        evaluation_subject_comments: 4,
+        evaluation_checklist_items: 2,
+        section_subjects: 1,
+      })
+    ).toEqual([
+      'grading sheets',
+      'evaluation comments',
+      'evaluation checklist items',
+      'classes that list it',
+    ]);
+  });
+});
+
+describe('listDeletableSubjects', () => {
+  it('offers Delete on a configured subject no class uses, with its summary', async () => {
+    db.subject_configs = [
+      { id: 'cfg-1', subject_id: SUBJ, academic_year_id: 'ay-1' },
+    ];
+    db.subject_level_offerings = [
+      { id: 'o-1', subject_id: SUBJ, level_id: 'P1', academic_year_id: 'ay-1' },
+    ];
+    db.grading_sheets = [{ subject_id: OTHER }];
+    const { listDeletableSubjects } = await import('@/lib/sis/subjects/usage');
+    expect(
+      await listDeletableSubjects({ from } as never, [SUBJ, OTHER])
+    ).toEqual({
+      [SUBJ]: { weightYears: ['AY2026'], levelCount: 1, reportedUnder: [] },
+    });
+  });
+});
+
+describe('describeSubjectSetup — the confirm wording', () => {
+  it('lists years, levels and who stops reporting under it', async () => {
+    const { describeSubjectSetup } =
+      await import('@/lib/sis/subjects/setup-summary');
+    expect(
+      describeSubjectSetup({
+        weightYears: ['AY2025', 'AY2026'],
+        levelCount: 3,
+        reportedUnder: ['Filipino'],
+      })
+    ).toEqual({
+      removed: [
+        'Its weights for AY2025 and AY2026',
+        'The 3 levels it’s offered at',
+      ],
+      repointed:
+        'Filipino reports under it on the report card today — it will report as itself instead.',
+    });
+  });
+
+  it('singular level, several subjects under it, no weights', async () => {
+    const { describeSubjectSetup } =
+      await import('@/lib/sis/subjects/setup-summary');
+    expect(
+      describeSubjectSetup({
+        weightYears: [],
+        levelCount: 1,
+        reportedUnder: ['Filipino', 'Mandarin'],
+      })
+    ).toEqual({
+      removed: ['The level it’s offered at'],
+      repointed:
+        'Filipino and Mandarin report under it on the report card today — each will report as itself instead.',
+    });
+  });
+
+  it('nothing set up says nothing', async () => {
+    const { describeSubjectSetup } =
+      await import('@/lib/sis/subjects/setup-summary');
+    expect(
+      describeSubjectSetup({
+        weightYears: [],
+        levelCount: 0,
+        reportedUnder: [],
+      })
+    ).toEqual({ removed: [], repointed: null });
+  });
+});
+
 describe('DELETE', () => {
   it('deletes an unused subject with its self-map, and logs it', async () => {
     const res = await del();
@@ -208,16 +306,103 @@ describe('DELETE', () => {
     });
   });
 
-  it('refuses a subject in use with 409 and plain words', async () => {
-    db.subject_configs = [{ subject_id: SUBJ }];
+  it('refuses a subject a class uses with 409 and plain words', async () => {
+    db.grading_sheets = [{ subject_id: SUBJ }];
+    db.teacher_assignments = [{ subject_id: SUBJ }];
+    db.subject_configs = [
+      { id: 'cfg-1', subject_id: SUBJ, academic_year_id: 'ay-1' },
+    ];
     const res = await del();
     expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.error).toMatch(
-      /^This subject is already in use — it has weights set for a school year\./
+    expect(body.error).toBe(
+      'A class uses this subject — it has grading sheets and teachers assigned to it. A subject a class uses stays in the catalog.'
     );
     expect(db.subjects).toHaveLength(2);
+    expect(db.subject_configs).toHaveLength(1);
     expect(logAction).not.toHaveBeenCalled();
+  });
+
+  it('refuses when a class lists it through its weights (section_subjects)', async () => {
+    db.subject_configs = [
+      { id: 'cfg-1', subject_id: SUBJ, academic_year_id: 'ay-1' },
+    ];
+    db.section_subjects = [{ id: 'ss-1', subject_config_id: 'cfg-1' }];
+    const res = await del();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/classes that list it/);
+    expect(db.subject_configs).toHaveLength(1);
+  });
+
+  it('refuses when a class has checklist topics for it', async () => {
+    db.evaluation_checklist_items = [{ subject_id: SUBJ, section_id: 's-1' }];
+    expect((await del()).status).toBe(409);
+  });
+
+  it('deletes a subject with setup only — weights, levels, mapping — and snapshots it first', async () => {
+    const THIRD = 'subj-3';
+    const FOURTH = 'subj-4';
+    db.subjects.push(
+      { id: THIRD, code: 'FIL', name: 'Filipino' },
+      { id: FOURTH, code: 'MAN', name: 'Mandarin' }
+    );
+    db.academic_years.push({ id: 'ay-0', ay_code: 'AY2025' });
+    db.subject_configs = [
+      { id: 'cfg-1', subject_id: SUBJ, academic_year_id: 'ay-1' },
+      { id: 'cfg-0', subject_id: SUBJ, academic_year_id: 'ay-0' },
+      { id: 'cfg-x', subject_id: OTHER, academic_year_id: 'ay-1' },
+    ];
+    db.subject_level_offerings = [
+      { id: 'o-1', subject_id: SUBJ, level_id: 'P1', academic_year_id: 'ay-1' },
+      { id: 'o-2', subject_id: SUBJ, level_id: 'P2', academic_year_id: 'ay-1' },
+      { id: 'o-3', subject_id: SUBJ, level_id: 'P1', academic_year_id: 'ay-0' },
+      {
+        id: 'o-x',
+        subject_id: OTHER,
+        level_id: 'P1',
+        academic_year_id: 'ay-1',
+      },
+    ];
+    // Filipino reports under it (no self-map left); Mandarin does too but
+    // still has its own self-map.
+    db.subject_report_map.push(
+      { subject_id: THIRD, report_subject_id: SUBJ },
+      { subject_id: FOURTH, report_subject_id: SUBJ },
+      { subject_id: FOURTH, report_subject_id: FOURTH }
+    );
+
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(db.subjects.map((s) => s.id)).toEqual([OTHER, THIRD, FOURTH]);
+    expect(db.subject_configs.map((c) => c.id)).toEqual(['cfg-x']);
+    expect(db.subject_level_offerings.map((o) => o.id)).toEqual(['o-x']);
+    expect(
+      db.subject_report_map.map((r) => `${r.subject_id}>${r.report_subject_id}`)
+    ).toEqual([
+      `${OTHER}>${OTHER}`,
+      `${THIRD}>${THIRD}`,
+      `${FOURTH}>${FOURTH}`,
+    ]);
+
+    expect(logAction).toHaveBeenCalledTimes(1);
+    const ctx = logAction.mock.calls[0][0].context as {
+      removed: {
+        subject_configs: Array<{ id: string; ay_code: string }>;
+        subject_level_offerings: unknown[];
+        subject_report_map: unknown[];
+      };
+      repointed_to_self: Array<{ code: string }>;
+    };
+    expect(ctx.removed.subject_configs.map((c) => c.ay_code).sort()).toEqual([
+      'AY2025',
+      'AY2026',
+    ]);
+    expect(ctx.removed.subject_level_offerings).toHaveLength(3);
+    expect(ctx.removed.subject_report_map).toHaveLength(1);
+    expect(ctx.repointed_to_self.map((r) => r.code).sort()).toEqual([
+      'FIL',
+      'MAN',
+    ]);
   });
 
   it('404s an unknown subject', async () => {

@@ -14,7 +14,10 @@ import {
   listSubjectLevelOfferings,
 } from '@/lib/sis/subjects/queries';
 import { getSheetImpactByConfig } from '@/lib/sis/subjects/sheet-impact';
-import { listUnusedSubjectIds } from '@/lib/sis/subjects/usage';
+import {
+  listDeletableSubjects,
+  listUnusedSubjectIds,
+} from '@/lib/sis/subjects/usage';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type LevelType = 'primary' | 'secondary';
@@ -94,12 +97,13 @@ export async function SubjectSetupView({
     ? Object.fromEntries(await getSheetImpactByConfig(service, currentAy.id))
     : {};
 
-  // Subjects nothing uses yet, in any year — the only ones the catalog offers
-  // Rename and Delete on (lib/sis/subjects/usage.ts).
-  const unusedSubjectIds = await listUnusedSubjectIds(
-    service,
-    catalogForLevel.map((c) => c.id)
-  );
+  // Rename: subjects nothing uses yet, in any year. Delete: subjects no class
+  // uses, with what a Delete takes along (lib/sis/subjects/usage.ts).
+  const catalogIds = catalogForLevel.map((c) => c.id);
+  const [unusedSubjectIds, deletableSubjects] = await Promise.all([
+    listUnusedSubjectIds(service, catalogIds),
+    listDeletableSubjects(service, catalogIds),
+  ]);
 
   // Every level is core and always relevant (migration 086 removed the
   // volatile-level / per-AY-offering concept, KD #153).
@@ -216,6 +220,7 @@ export async function SubjectSetupView({
           levelLabel={levelLabel}
           sheetImpactByConfigId={sheetImpactByConfigId}
           unusedSubjectIds={unusedSubjectIds}
+          deletableSubjects={deletableSubjects}
           ayCode={currentAy.ay_code}
           ayId={currentAy.id}
           sections={allSections}
