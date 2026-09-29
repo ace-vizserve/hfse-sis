@@ -52,6 +52,16 @@ export type ComparisonBarChartProps = {
    * label buys nothing and can render the glyph oddly at an angle.
    */
   rotateLabels?: boolean;
+  /**
+   * The bars' fill as a CSS colour — for an identity colour such as a
+   * house's (`var(--color-house-2)`). Defaults to the first series colour.
+   * The value labels stay in ink whatever the fill.
+   */
+  color?: string;
+  /** What the bar measures, as the tooltip names it. Defaults to "Current". */
+  seriesLabel?: string;
+  /** Room for the category labels on a horizontal chart. Defaults to 150. */
+  categoryWidth?: number;
 };
 
 function ComparisonBarChartImpl({
@@ -61,6 +71,9 @@ function ComparisonBarChartImpl({
   yFormat,
   onSegmentClick,
   rotateLabels = true,
+  color = 'var(--color-series-1)',
+  seriesLabel = 'Current',
+  categoryWidth = 150,
 }: ComparisonBarChartProps) {
   const yFormatter = formatterFor(yFormat);
   const showCmp = data.some((d) => typeof d.comparison === 'number');
@@ -102,7 +115,7 @@ function ComparisonBarChartImpl({
               dataKey="category"
               tick={CATEGORY_TICK}
               {...CHART_AXIS}
-              width={150}
+              width={categoryWidth}
             />
           </>
         ) : (
@@ -149,8 +162,8 @@ function ComparisonBarChartImpl({
         )}
         <Bar
           dataKey="current"
-          name="Current"
-          fill="var(--color-series-1)"
+          name={seriesLabel}
+          fill={color}
           radius={isHorizontal ? BAR_RADIUS_END : BAR_RADIUS_TOP}
           maxBarSize={isHorizontal ? 14 : 32}
           // A faint track behind each horizontal bar, so a short bar still

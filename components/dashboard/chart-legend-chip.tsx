@@ -18,7 +18,11 @@ export type ChartLegendChipColor =
   | 'series-4'
   | 'series-5'
   | 'series-1-mid'
-  | 'series-1-soft';
+  | 'series-1-soft'
+  | 'house-1'
+  | 'house-2'
+  | 'house-3'
+  | 'house-4';
 
 // Each chip renders as a fully-filled gradient pill (same craft as the default
 // Badge: mono uppercase tracked label, white text, inset-highlight shadow).
@@ -45,6 +49,12 @@ const chipGradientByColor: Record<ChartLegendChipColor, string> = {
   'series-5': 'from-series-5 to-series-5/80',
   'series-1-mid': 'from-series-1-mid to-series-1',
   'series-1-soft': 'from-series-1-soft to-series-1-soft/80 text-ink',
+  // House identity colours (lib/sis/houses.ts) — the same bright → deep
+  // gradient as the house tile, so a chart's house key matches its tile.
+  'house-1': 'from-house-1 to-house-1-deep',
+  'house-2': 'from-house-2 to-house-2-deep',
+  'house-3': 'from-house-3 to-house-3-deep',
+  'house-4': 'from-house-4 to-house-4-deep',
 };
 
 export type ChartLegendChipProps = {

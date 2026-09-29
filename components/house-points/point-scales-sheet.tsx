@@ -27,7 +27,6 @@ import {
 } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { EventType } from '@/lib/house-points/compute';
-import { ordinal } from '@/lib/house-points/defaults';
 import type { Scale } from '@/lib/house-points/queries';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -45,8 +44,12 @@ import {
 //
 // One type at a time (tabs), each with its own Save — the save replaces that
 // type's scale and nothing else (PUT /api/house-points/scales). Only labels
-// and points are editable: the places themselves (how many, their ranks) are
+// and points are editable: the awards themselves (how many, their order) are
 // the shape every event of that type is built from.
+//
+// No "Place" column: an award's rank is hidden everywhere (KD #228) — it only
+// colours the medal badges. Each row still saves its rank unchanged, so those
+// colours survive a save.
 
 export function PointScalesSheet({ scales }: { scales: Scale[] }) {
   const [open, setOpen] = useState(false);
@@ -196,21 +199,16 @@ function ScaleForm({
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-border">
-              <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-                <span>Place</span>
-                <span>Label</span>
+              <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+                <span>Award</span>
                 <span className="text-right">Points</span>
               </div>
               <ul className="divide-y divide-border">
                 {fields.map((row, index) => (
                   <li
                     key={row.id}
-                    className="grid grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-start gap-2 px-3 py-2"
+                    className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-start gap-2 px-3 py-2"
                   >
-                    {/* Read-only: the ladder's shape is fixed here. */}
-                    <span className="flex h-9 items-center text-sm tabular-nums text-muted-foreground">
-                      {row.rank === null ? 'Everyone else' : ordinal(row.rank)}
-                    </span>
                     <FormField
                       control={form.control}
                       name={`rows.${index}.label`}

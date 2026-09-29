@@ -139,6 +139,9 @@ export default async function HousePointsPage({
                 total={s.total}
                 footerTitle={`${ordinal(s.place)} place`}
                 footerDetail={anyPoints ? s.gapLabel : 'No points yet'}
+                href={`/records/house-points/houses/${encodeURIComponent(
+                  s.house.code.toLowerCase()
+                )}?ay=${encodeURIComponent(selectedAy)}`}
               />
             ))}
           </div>

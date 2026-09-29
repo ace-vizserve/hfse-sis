@@ -41,6 +41,12 @@ export type GroupedBarSeries = {
   /** Explicit CSS colour (e.g. `var(--color-chart-3)`) — overrides the auto-cycled palette. */
   color?: string;
   /**
+   * The legend chip for a caller-supplied `color` — e.g. a house's own
+   * colour, whose key must match its bars. Without it the chip cycles the
+   * series palette (below).
+   */
+  legendColor?: ChartLegendChipColor;
+  /**
    * Muted series (typically a prior-year comparison overlay) render in neutral
    * grey so it reads unmistakably as "not this year" — never another shade of
    * the accent blue.
@@ -83,6 +89,11 @@ function resolvePalette(series: GroupedBarSeries[]) {
     if (s.muted) {
       fill.push(MUTED_COLOR_VAR);
       legend.push(MUTED_LEGEND_COLOR);
+      continue;
+    }
+    if (s.color && s.legendColor) {
+      fill.push(s.color);
+      legend.push(s.legendColor);
       continue;
     }
     if (s.color) {

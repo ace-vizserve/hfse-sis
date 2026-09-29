@@ -38,6 +38,11 @@ import {
   type Place,
 } from '@/lib/house-points/compute';
 import { toSheetEntries } from '@/lib/house-points/sheet-entries';
+import {
+  buildHouseBreakdown,
+  type BreakdownEventInput,
+  type HouseBreakdown,
+} from '@/lib/house-points/house-breakdown';
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -463,16 +468,15 @@ function groupByTeamId(members: TeamMemberRowDb[]): Map<string, string[]> {
 // ─────────────────────────────────────────────────────────────────────────
 // loadAyEvents — one totals pass per event, no per-event queries.
 
+type AyEventRows = BreakdownEventInput & { entrantKind: EntrantKind };
+
 /**
- * Every event run in `ayId`, with each event's per-house totals already
- * computed. Fetches places/entries/teams/members for the WHOLE year's event
- * ids in a handful of `.in('event_id', ids)` queries, then totals
- * each event in memory — never one query per event.
+ * Every event run in `ayId` with its rubric and resolved rows — the one
+ * batched year read behind `loadAyEvents` and `loadHouseBreakdown`. Fetches
+ * places/entries/teams/members for the WHOLE year's event ids in a handful
+ * of `.in('event_id', ids)` queries — never one query per event.
  */
-export async function loadAyEvents(
-  ayId: string,
-  houses: HouseRow[]
-): Promise<EventSummary[]> {
+async function loadAyEventRows(ayId: string): Promise<AyEventRows[]> {
   const service = createServiceClient();
   const { data: eventRows, error: eventsError } = await service
     .from('house_point_events')
@@ -481,13 +485,12 @@ export async function loadAyEvents(
     .order('held_on', { ascending: false })
     .order('name', { ascending: true });
   if (eventsError) {
-    throw new Error(`loadAyEvents: ${eventsError.message}`);
+    throw new Error(`loadAyEventRows: ${eventsError.message}`);
   }
   const events = (eventRows ?? []) as EventRowDb[];
   if (events.length === 0) return [];
 
   const eventIds = events.map((e) => e.id);
-  const houseIds = houses.map((h) => h.id);
 
   const [places, entries, teams] = await Promise.all([
     fetchAllPages<PlaceRowDb>((from, to) =>
@@ -540,28 +543,70 @@ export async function loadAyEvents(
   }
   const teamsById = new Map(teams.map((t) => [t.id, t]));
 
-  return events.map((event) => {
-    const entriesForEvent = entriesByEvent.get(event.id) ?? [];
-    const rows = buildEventRows(
+  return events.map((event) => ({
+    id: event.id,
+    name: event.name,
+    heldOn: event.held_on,
+    eventType: event.event_type,
+    entrantKind: event.entrant_kind,
+    places: (placesByEvent.get(event.id) ?? [])
+      .map(toPlace)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    rows: buildEventRows(
       event.entrant_kind,
-      entriesForEvent,
+      entriesByEvent.get(event.id) ?? [],
       teamsById,
       memberIdsByTeamId,
       rosterMap
-    );
-    const eventPlaces = (placesByEvent.get(event.id) ?? []).map(toPlace);
-    const resolved = resolveEntries(toSheetEntries({ rows }), eventPlaces);
-    const totals = houseTotals(resolved, houseIds);
+    ),
+  }));
+}
+
+/**
+ * Every event run in `ayId`, with each event's per-house totals already
+ * computed. Fetches places/entries/teams/members for the WHOLE year's event
+ * ids in a handful of `.in('event_id', ids)` queries, then totals
+ * each event in memory — never one query per event.
+ */
+export async function loadAyEvents(
+  ayId: string,
+  houses: HouseRow[]
+): Promise<EventSummary[]> {
+  const houseIds = houses.map((h) => h.id);
+  const events = await loadAyEventRows(ayId);
+  return events.map((event) => {
+    const resolved = resolveEntries(toSheetEntries(event), event.places);
     return {
       id: event.id,
       name: event.name,
-      heldOn: event.held_on,
-      eventType: event.event_type,
-      entrantKind: event.entrant_kind,
-      entrantCount: rows.length,
-      totals,
+      heldOn: event.heldOn,
+      eventType: event.eventType,
+      entrantKind: event.entrantKind,
+      entrantCount: event.rows.length,
+      totals: houseTotals(resolved, houseIds),
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// loadHouseBreakdown — one house's year: by event, by student, by award.
+
+/**
+ * The same batched year read as `loadAyEvents`, handed to the pure
+ * `buildHouseBreakdown` (lib/house-points/house-breakdown.ts) — so the
+ * house's total is the standings figure by construction.
+ */
+export async function loadHouseBreakdown(
+  ayId: string,
+  houseId: string,
+  houses: HouseRow[]
+): Promise<HouseBreakdown> {
+  const events = await loadAyEventRows(ayId);
+  return buildHouseBreakdown(
+    events,
+    houseId,
+    houses.map((h) => h.id)
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────

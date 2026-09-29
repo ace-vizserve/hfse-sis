@@ -251,6 +251,8 @@ SIS Admin IA & navigation redesign (sub-project 2 of the umbrella, 2026-07-11; n
 - **A student who changed class mid-year has two `section_students` rows**, so they could be added to the same event twice (once per row) — the picker does not collapse a student's rows across the year.
 - **"Participation" is an award like any other, picked per row** — nothing falls into it automatically.
 
+**Each house has its own page** (2026-09-29), `/records/house-points/houses/[code]` (H1–H4, opened from a house's card), built as a dashboard: its place and figures, charts of its points by event, against the other houses, by award label and by top student, then drill-down tables by event, by student and of its enrolled members, all from `loadHouseBreakdown` → the pure `lib/house-points/house-breakdown.ts` over the same batched year read as the standings, so the house total always equals the standings figure — a team result is listed under each of the house's members but counted once in that total.
+
 **Who can edit.** `HOUSE_POINTS_WRITERS` = academic_coordinator, school_admin, superadmin (`lib/auth/student-record.ts`). The admissions role, which can open Records, gets view only.
 
 **Migration 181.** Adds `house_point_scales`, `house_point_events`, `house_point_places`, `house_point_entries`, `house_point_teams`, `house_point_team_members` (172 stays reserved). ⏳ **NOT yet applied to production and NOT browser-verified** — Mr Ace applies it; probe afterwards with `scripts/probe-migration-181.ts` (tables exist, scales seeded).
