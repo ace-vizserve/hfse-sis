@@ -1,5 +1,5 @@
 /**
- * Rename (any subject's name; an unused one's code) + delete for a catalog subject
+ * Rename (any subject's name; a code never changes) + delete for a catalog subject
  * (PATCH/DELETE /api/sis/admin/subjects/catalog/[id], lib/sis/subjects/usage.ts),
  * and the create path saving the year description (never a per-year name) with the weights
  * (POST /api/sis/admin/subjects).
@@ -411,18 +411,26 @@ describe('DELETE', () => {
 });
 
 describe('PATCH rename', () => {
-  it('renames code + name of an unused subject and logs subject.rename', async () => {
-    const res = await patch({ code: 'ICT', name: 'Computing' });
+  it('renames an unused subject and logs subject.rename', async () => {
+    const res = await patch({ name: 'Computing' });
     expect(res.status).toBe(200);
-    expect(db.subjects[0]).toMatchObject({ code: 'ICT', name: 'Computing' });
+    expect(db.subjects[0]).toMatchObject({ code: 'TYPO', name: 'Computing' });
     expect(logAction).toHaveBeenCalledTimes(1);
     expect(logAction.mock.calls[0][0]).toMatchObject({
       action: 'subject.rename',
       context: {
         before: { code: 'TYPO', name: 'Tpyo' },
-        after: { code: 'ICT', name: 'Computing' },
+        after: { code: 'TYPO', name: 'Computing' },
       },
     });
+  });
+
+  it('refuses any code change — codes never change (2026-09-29)', async () => {
+    const res = await patch({ code: 'ICT', name: 'Computing' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/code can't be changed/);
+    expect(db.subjects[0]).toMatchObject({ code: 'TYPO', name: 'Tpyo' });
+    expect(logAction).not.toHaveBeenCalled();
   });
 
   it('renames a subject in use (name only), audited before/after', async () => {
@@ -441,28 +449,10 @@ describe('PATCH rename', () => {
     });
   });
 
-  it('refuses to change the code of a subject in use', async () => {
-    db.subject_level_offerings = [{ subject_id: SUBJ }];
-    const res = await patch({ code: 'TYPO2', name: 'Typo' });
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(
-      /already in use.*given a new code\.$/
-    );
-    expect(db.subjects[0]).toMatchObject({ code: 'TYPO', name: 'Tpyo' });
-    expect(logAction).not.toHaveBeenCalled();
-  });
-
   it('writes nothing and logs nothing when the name is unchanged', async () => {
     const res = await patch({ name: 'Tpyo' });
     expect(res.status).toBe(200);
     expect(logAction).not.toHaveBeenCalled();
-  });
-
-  it('refuses a code another subject already has', async () => {
-    const res = await patch({ code: 'MATH' });
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(/already uses the code MATH/);
-    expect(db.subjects[0].code).toBe('TYPO');
   });
 
   it('still changes grade type on a subject in use', async () => {
@@ -514,5 +504,43 @@ describe('POST /api/sis/admin/subjects saves the year description only', () => {
     // One subject name (2026-09-29): the per-year columns are never written.
     expect(inserts[0].values).not.toHaveProperty('display_name');
     expect(inserts[0].values).not.toHaveProperty('report_label');
+  });
+});
+
+describe('POST /api/sis/admin/subjects/catalog generates the code', () => {
+  async function create(body: unknown): Promise<Response> {
+    const { POST } = await import('@/app/api/sis/admin/subjects/catalog/route');
+    const res = await POST(
+      new Request('http://x', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }) as never
+    );
+    if (!res) throw new Error('route returned no response');
+    return res;
+  }
+
+  it('derives the code from the name and ignores a code in the body', async () => {
+    const res = await create({
+      name: 'Global Perspectives',
+      code: 'IGNORED',
+      is_examinable: true,
+      grading_method: 'standard_sheet',
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).code).toBe('GP');
+    expect(inserts[0].values).toMatchObject({
+      code: 'GP',
+      name: 'Global Perspectives',
+    });
+  });
+
+  it('appends a number when the code is taken', async () => {
+    const res = await create({
+      name: 'Mathematics',
+      is_examinable: true,
+      grading_method: 'standard_sheet',
+    });
+    expect((await res.json()).code).toBe('MATH2');
   });
 });

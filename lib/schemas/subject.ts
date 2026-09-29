@@ -5,10 +5,10 @@ import { z } from 'zod';
 // rare — once-per-AY-rollover at most — but doing it via SQL was a
 // bottleneck for the AY-rollover workflow.
 //
-// Code is uppercase + length-bounded + restricted to A-Z 0-9 _ - so the
-// existing seed convention (MATH, ENG, FIL, RIZAL, etc.) holds. The route
-// uppercases inbound code defensively (the regex passes only uppercase
-// already, but a safety net trims user-typed lowercase).
+// Code is NOT part of any payload (2026-09-29, Mr Ace: "the code is like a
+// student number"). The create route derives it from the name
+// (lib/sis/subjects/subject-code.ts) and nothing changes it afterwards; the
+// PATCH route refuses a `code` field outright.
 
 // `grading_method` (migration 082) — a flag on `subjects` distinguishing
 // "has a normal WW/PT/QA grading sheet" from "recorded some other way,
@@ -24,15 +24,6 @@ export const GRADING_METHOD_LABELS: Record<GradingMethod, string> = {
   no_sheet: 'No sheet — recorded elsewhere',
 };
 
-const SubjectCodeField = z
-  .string()
-  .trim()
-  .min(1, 'Code required')
-  .max(32, 'Keep code under 32 chars')
-  .regex(
-    /^[A-Z0-9_-]+$/,
-    'Code must be uppercase letters, digits, underscore, or hyphen'
-  );
 const SubjectNameField = z
   .string()
   .trim()
@@ -40,7 +31,7 @@ const SubjectNameField = z
   .max(128, 'Keep name under 128 chars');
 
 export const SubjectCreateSchema = z.object({
-  code: SubjectCodeField,
+  // No `code` — the server generates it from the name.
   name: SubjectNameField,
   is_examinable: z.boolean(),
   grading_method: z.enum(GRADING_METHOD_VALUES),
@@ -77,20 +68,17 @@ export const SubjectCatalogUpdateSchema = z
     //
     // Name — any subject, in use or not, audited as `subject.rename`
     // (2026-09-29, Mr Ace: one name per subject, edited in its drawer).
-    // Code — ONLY an unused subject (lib/sis/subjects/usage.ts): code is the
-    // identity every code-keyed list matches on.
-    code: SubjectCodeField.optional(),
+    // No `code`: it is generated at creation and never changes (2026-09-29).
     name: SubjectNameField.optional(),
   })
   .refine(
     (v) =>
       v.is_examinable !== undefined ||
       v.grading_method !== undefined ||
-      v.code !== undefined ||
       v.name !== undefined,
     {
       message:
-        'At least one field (is_examinable, grading_method, code, name) is required',
+        'At least one field (is_examinable, grading_method, name) is required',
     }
   );
 export type SubjectCatalogUpdateInput = z.infer<

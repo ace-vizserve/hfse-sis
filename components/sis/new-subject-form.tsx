@@ -67,7 +67,6 @@ export function NewSubjectForm({
   const form = useForm<SubjectCreateFormInput, unknown, SubjectCreateInput>({
     resolver: zodResolver(SubjectCreateSchema),
     defaultValues: {
-      code: '',
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
@@ -76,7 +75,6 @@ export function NewSubjectForm({
 
   useEffect(() => {
     form.reset({
-      code: '',
       name: '',
       is_examinable: true,
       grading_method: 'standard_sheet',
@@ -104,8 +102,8 @@ export function NewSubjectForm({
   // would render the server twice for one save.
   async function onSubmit(values: SubjectCreateInput) {
     await run(() => createMutation.mutateAsync(values), {
-      pending: `Adding ${values.code}…`,
-      success: `Added ${values.code} — ${values.name}`,
+      pending: `Adding ${values.name}…`,
+      success: (result) => `Added ${result.name} (${result.code})`,
       error: (e) => {
         if (e instanceof ApiError) {
           const bodyError = (e.body as { error?: string } | null)?.error;
@@ -129,42 +127,22 @@ export function NewSubjectForm({
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
-          <FormField
-            control={form.control}
-            name="code"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Code</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    autoFocus
-                    placeholder="MATH, ENG, FIL…"
-                    onChange={(e) =>
-                      field.onChange(e.target.value.toUpperCase())
-                    }
-                    className="font-mono uppercase"
-                  />
-                </FormControl>
-                <FormDescription>
-                  Uppercase letters, digits, underscore, or hyphen. Max 32
-                  characters. Permanent after creation.
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {/* No code field (2026-09-29): the server gives the subject an ID
+              from its name, like a student number (lib/sis/subjects/
+              subject-code.ts). */}
           <FormField
             control={form.control}
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Display name</FormLabel>
+                <FormLabel>Subject name</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="Mathematics" />
+                  <Input {...field} autoFocus placeholder="Mathematics" />
                 </FormControl>
                 <FormDescription>
-                  Shown on grading sheets, report cards, and dropdowns.
+                  Shown on grading sheets, report cards, and dropdowns. The
+                  subject gets a short ID from its name (Economics → ECON) that
+                  never changes.
                 </FormDescription>
                 <FormMessage />
               </FormItem>

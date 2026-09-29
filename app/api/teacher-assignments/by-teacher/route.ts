@@ -86,7 +86,8 @@ export async function GET(request: NextRequest) {
   const { data: subjectRows } = await service
     .from('subjects')
     .select('id, code, name')
-    .order('code');
+    // By name — the picker reads by name; the code is an ID (2026-09-29).
+    .order('name');
   const allSubjects = (subjectRows ?? []) as Array<{
     id: string;
     code: string;

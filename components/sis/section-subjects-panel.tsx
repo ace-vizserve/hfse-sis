@@ -204,8 +204,10 @@ export function SectionSubjectsPanel({
               <SelectContent>
                 {otherOptions.map((s) => (
                   <SelectItem key={s.subjectConfigId} value={s.subjectConfigId}>
-                    <span className="font-mono text-xs">{s.code}</span>
-                    <span className="ml-2 text-muted-foreground">{s.name}</span>
+                    <span>{s.name}</span>
+                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                      {s.code}
+                    </span>
                   </SelectItem>
                 ))}
                 {motherTongueOptions.length > 0 && (
@@ -308,10 +310,10 @@ export function SectionSubjectsPanel({
               key={s.subjectConfigId}
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card py-1 pl-2 pr-1 text-xs font-medium text-foreground"
             >
+              {s.name}
               <span className="font-mono text-[10px] text-muted-foreground">
                 {s.code}
               </span>
-              {s.name}
               {isMotherTongueCode(s.code) && (
                 <Badge variant="outline" className="h-4 px-1 text-[9px]">
                   Mother Tongue

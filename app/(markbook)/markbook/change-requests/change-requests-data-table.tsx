@@ -599,19 +599,22 @@ export function ChangeRequestsDataTable({
         },
       },
       {
-        accessorKey: 'subjectCode',
+        // Id kept as `subjectCode` (the facet binds to it); the value is the
+        // NAME — the code is an ID shown beneath it (2026-09-29).
+        id: 'subjectCode',
+        accessorFn: (r) => r.subjectName ?? r.subjectCode ?? null,
         header: ({ column }) => (
           <SortableHeader column={column}>Subject</SortableHeader>
         ),
         meta: { label: 'Subject' },
         cell: ({ row }) => (
-          <div>
-            <span className="font-mono text-xs text-foreground">
-              {row.original.subjectCode ?? '—'}
-            </span>
-            {row.original.subjectName && (
-              <div className="text-[11px] text-muted-foreground">
-                {row.original.subjectName}
+          <div className="leading-tight">
+            <div className="text-sm text-foreground">
+              {row.original.subjectName ?? row.original.subjectCode ?? '—'}
+            </div>
+            {row.original.subjectName && row.original.subjectCode && (
+              <div className="font-mono text-[10px] text-muted-foreground">
+                {row.original.subjectCode}
               </div>
             )}
           </div>

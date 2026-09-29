@@ -96,6 +96,8 @@ export type GradeEntryRow = {
   sectionId: string;
   sectionName: string;
   subjectCode: string;
+  /** The label people read; the code is an ID shown beside it (2026-09-29). */
+  subjectName: string;
   termNumber: number;
   termId: string;
   wwScores: (number | null)[]; // per-slot WW scores (length matches sheet's ww_totals)
@@ -149,6 +151,7 @@ export type ChangeRequestRow = {
   sectionId: string;
   sectionName: string;
   subjectCode: string;
+  subjectName: string;
   termNumber: number;
   termId: string;
   fieldChanged: string;
@@ -497,6 +500,7 @@ async function loadEntryRowsUncached(
     if (!section) continue;
     const levelCode = ctx.levels.get(section.level_id) ?? null;
     const subjectCode = ctx.subjects.get(sheet.subject_id) ?? sheet.subject_id;
+    const subjectName = ctx.subjectNames.get(sheet.subject_id) ?? subjectCode;
     const teacherUserId =
       teacherBySectionSubject.get(
         teacherKey(sheet.section_id, sheet.subject_id)
@@ -518,6 +522,7 @@ async function loadEntryRowsUncached(
       sectionId: sheet.section_id,
       sectionName: section.name,
       subjectCode,
+      subjectName,
       termNumber: term.term_number,
       termId: term.id,
       wwScores: e.ww_scores ?? [],
@@ -793,6 +798,7 @@ async function loadChangeRequestRowsUncached(
       sectionId: sheet.section_id,
       sectionName: section.name,
       subjectCode,
+      subjectName: ctx.subjectNames.get(sheet.subject_id) ?? subjectCode,
       termNumber: term.term_number,
       termId: term.id,
       fieldChanged: r.field_changed,

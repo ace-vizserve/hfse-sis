@@ -7,10 +7,8 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectCatalogUpdateSchema } from '@/lib/schemas/subject';
 import {
   findSectionUse,
-  findSubjectUsage,
   loadSubjectSetup,
   sectionUseMessage,
-  subjectInUseMessage,
   type SubjectSetup,
 } from '@/lib/sis/subjects/usage';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -26,9 +24,9 @@ import { createServiceClient } from '@/lib/supabase/service';
 //
 // It also renames. The NAME of any subject, in use or not (2026-09-29 — a
 // subject has one name, edited in its drawer; every change is a
-// `subject.rename` audit row with before/after). The CODE only for an unused
-// subject (lib/sis/subjects/usage.ts) — every code-keyed list matches on it.
-// Nothing writes subject_configs.display_name any more (KD #203 update).
+// `subject.rename` audit row with before/after). The CODE never — it is
+// generated at creation like a student number, and a body carrying `code` is
+// refused with a 400. Nothing writes subject_configs.display_name any more (KD #203 update).
 // DELETE below is looser (2026-09-29):
 // it only refuses a subject a CLASS uses, and takes the rest of the setup
 // with it.
@@ -65,6 +63,14 @@ export async function PATCH(
 
   const { id: subjectId } = await params;
   const body = await request.json().catch(() => null);
+  // A code is generated at creation and never changes (2026-09-29) — refuse
+  // it loudly rather than let the schema strip it and report success.
+  if (body && typeof body === 'object' && 'code' in body) {
+    return NextResponse.json(
+      { error: "A subject's code can't be changed." },
+      { status: 400 }
+    );
+  }
   const parsed = SubjectCatalogUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -86,56 +92,18 @@ export async function PATCH(
     return NextResponse.json({ error: 'subject not found' }, { status: 404 });
   const subject = before as SubjectRecord;
 
-  const changingCode =
-    parsed.data.code !== undefined && parsed.data.code !== subject.code;
-  const changingName =
-    parsed.data.name !== undefined && parsed.data.name !== subject.name;
-  const renaming = changingCode || changingName;
-
   // The NAME changes for any subject, in use or not — it is audited below
   // (2026-09-29, Mr Ace: "you dont have to be hard on rules bro, as long as
-  // all is audit logged"). The CODE is identity, so only an unused subject's
-  // may change.
-  if (changingCode) {
-    let usage: string[];
-    try {
-      usage = await findSubjectUsage(service, subjectId);
-    } catch (e) {
-      return NextResponse.json(
-        { error: (e as Error).message },
-        { status: 500 }
-      );
-    }
-    if (usage.length > 0) {
-      return NextResponse.json(
-        { error: subjectInUseMessage(usage, 'given a new code'), usage },
-        { status: 409 }
-      );
-    }
-    {
-      const { data: clash } = await service
-        .from('subjects')
-        .select('id')
-        .eq('code', parsed.data.code)
-        .maybeSingle();
-      if (clash) {
-        return NextResponse.json(
-          {
-            error: `Another subject already uses the code ${parsed.data.code}. Pick a different code.`,
-          },
-          { status: 409 }
-        );
-      }
-    }
-  }
+  // all is audit logged"). The CODE never changes (refused above).
+  const renaming =
+    parsed.data.name !== undefined && parsed.data.name !== subject.name;
 
   const patch: Record<string, unknown> = {};
   if (parsed.data.is_examinable !== undefined)
     patch.is_examinable = parsed.data.is_examinable;
   if (parsed.data.grading_method !== undefined)
     patch.grading_method = parsed.data.grading_method;
-  if (changingCode) patch.code = parsed.data.code;
-  if (changingName) patch.name = parsed.data.name;
+  if (renaming) patch.name = parsed.data.name;
   // The report label used to be normalised here too. It moved to
   // `subject_configs` in migration 138 (per academic year).
 
@@ -189,10 +157,7 @@ export async function PATCH(
       context: {
         subject_id: subjectId,
         before: { code: subject.code, name: subject.name },
-        after: {
-          code: parsed.data.code ?? subject.code,
-          name: parsed.data.name ?? subject.name,
-        },
+        after: { code: subject.code, name: parsed.data.name ?? subject.name },
       },
     });
   }
@@ -206,7 +171,7 @@ export async function PATCH(
   return NextResponse.json({
     ok: true,
     id: subjectId,
-    code: renaming ? (parsed.data.code ?? subject.code) : subject.code,
+    code: subject.code,
     name: renaming ? (parsed.data.name ?? subject.name) : subject.name,
     is_examinable: parsed.data.is_examinable ?? subject.is_examinable,
     grading_method: parsed.data.grading_method ?? subject.grading_method,

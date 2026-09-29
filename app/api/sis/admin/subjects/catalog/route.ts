@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { SubjectCreateSchema } from '@/lib/schemas/subject';
+import { generateSubjectCode } from '@/lib/sis/subjects/subject-code';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sis/admin/subjects/catalog
@@ -15,9 +16,12 @@ import { createServiceClient } from '@/lib/supabase/service';
 // is global, not AY-scoped — every AY's subject_configs references it via
 // subject_id.
 //
-// Code is normalized to uppercase + restricted to A-Z 0-9 _ - via the
-// Zod schema. Duplicate code → 409 with the existing id so the UI can
-// jump to it instead of silently failing.
+// The CODE is generated here from the name (lib/sis/subjects/subject-code.ts
+// — Economics → ECON, Global Perspectives → GP, a clash gets 2, 3, …) and is
+// never typed or changed (2026-09-29, Mr Ace: "the code is like a student
+// number"). Any `code` in the body is ignored. The DB's UNIQUE(code) is the
+// backstop for two creates racing: on a unique violation the codes are
+// re-read and the next free one tried.
 export async function POST(request: NextRequest) {
   const auth = await requireCapability('subjects.create');
   if ('error' in auth) return auth.error;
@@ -30,32 +34,32 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { code, name, is_examinable, grading_method } = parsed.data;
+  const { name, is_examinable, grading_method } = parsed.data;
 
   const service = createServiceClient();
 
-  // Duplicate-code pre-check. The DB has UNIQUE(code) as a backstop; this
-  // pre-check just gives us a nicer error + lets us return the existing id.
-  const { data: existing } = await service
-    .from('subjects')
-    .select('id')
-    .eq('code', code)
-    .maybeSingle();
-  if (existing) {
-    return NextResponse.json(
-      {
-        error: `Subject with code ${code} already exists`,
-        existingId: (existing as { id: string }).id,
-      },
-      { status: 409 }
+  let inserted: unknown = null;
+  let insertErr: { code?: string; message: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: codeRows, error: codesErr } = await service
+      .from('subjects')
+      .select('code');
+    if (codesErr)
+      return NextResponse.json({ error: codesErr.message }, { status: 500 });
+    const code = generateSubjectCode(
+      name,
+      ((codeRows ?? []) as Array<{ code: string }>).map((r) => r.code)
     );
+    const res = await service
+      .from('subjects')
+      .insert({ code, name, is_examinable, grading_method })
+      .select('id, code, name, is_examinable, grading_method')
+      .single();
+    inserted = res.data;
+    insertErr = res.error;
+    // 23505 = unique violation: another create took this code in between.
+    if (!insertErr || insertErr.code !== '23505') break;
   }
-
-  const { data: inserted, error: insertErr } = await service
-    .from('subjects')
-    .insert({ code, name, is_examinable, grading_method })
-    .select('id, code, name, is_examinable, grading_method')
-    .single();
   if (insertErr || !inserted) {
     return NextResponse.json(
       { error: insertErr?.message ?? 'insert failed' },

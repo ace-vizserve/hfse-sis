@@ -573,7 +573,10 @@ export function StaffAssignmentSheet({
                     className="flex items-center justify-between gap-2 rounded-lg border border-hairline px-3 py-2"
                   >
                     <span className="text-sm">
-                      <span className="font-mono text-xs font-semibold text-brand-indigo-deep">
+                      <span className="font-semibold text-foreground">
+                        {a.subjectName || a.subjectCode}
+                      </span>
+                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
                         {a.subjectCode}
                       </span>
                       <span className="mx-1.5 text-muted-foreground">·</span>
@@ -588,7 +591,7 @@ export function StaffAssignmentSheet({
                       type="button"
                       disabled={mutating}
                       onClick={() => void handleRemoveSubject(a.id)}
-                      aria-label={`Remove ${a.subjectCode} in ${a.sectionName}`}
+                      aria-label={`Remove ${a.subjectName || a.subjectCode} in ${a.sectionName}`}
                       className="text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
                     >
                       <X className="size-3.5" />
@@ -610,7 +613,10 @@ export function StaffAssignmentSheet({
                   <SelectContent>
                     {data.allSubjects.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.code} — {s.name}
+                        {s.name}
+                        <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
+                          {s.code}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

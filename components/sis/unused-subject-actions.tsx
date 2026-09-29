@@ -1,6 +1,6 @@
 'use client';
 
-import { PencilLine, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -13,7 +13,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
@@ -21,34 +20,27 @@ import {
   type SubjectSetupSummary,
 } from '@/lib/sis/subjects/setup-summary';
 
-// Change code and Delete for a catalog subject (lib/sis/subjects/usage.ts has
-// both rules; the route enforces them again).
-//
-// Change code — only a subject NOTHING uses yet (no weights in any year, no
-// class, no teacher): a typo being corrected. The NAME is not changed here
-// any more (2026-09-29): any subject's one name is edited in its drawer
-// ("Subject name", via Edit), so this row action is the code only.
+// Delete for a catalog subject (lib/sis/subjects/usage.ts has the rule; the
+// route enforces it again).
 //
 // Delete — any subject no CLASS uses (2026-09-29). Its weights, level
 // offerings and report-card mapping go with it, and the confirm says so in
 // plain words; any subject reporting under it goes back to reporting as
 // itself. The whole setup is snapshotted into the audit log first. A subject
-// a class uses shows no Delete.
+// a class uses shows no Delete. It cannot be undone, so it asks first in a
+// small confirm.
 //
-// Change code is one field, so it happens in the row (inline); Delete cannot be
-// undone, so it asks first in a small confirm. Both are plain icon buttons
-// in the row (pencil, trash) — no menu, so nothing is nested.
+// There is no Change code any more (2026-09-29, Mr Ace: "the code is like a
+// student number"): the server generates it at creation and it never
+// changes. The name is edited in the subject's drawer (Edit).
 
 type Subject = { id: string; code: string; name: string };
 
 export function SubjectCatalogMenu({
   subject,
-  onRename,
   deleteSetup,
 }: {
   subject: Subject;
-  /** Present only when the subject's code may be changed. */
-  onRename?: () => void;
   /** Present only when the subject may be deleted — what goes with it. */
   deleteSetup?: SubjectSetupSummary;
 }) {
@@ -75,62 +67,41 @@ export function SubjectCatalogMenu({
     setBusy(false);
   }
 
-  if (!onRename && !described) return null;
+  if (!described) return null;
 
   return (
     <>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {onRename && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            aria-label={`Change the code of ${subject.name}`}
-            onClick={onRename}
-          >
-            <PencilLine className="size-3.5" />
-            Change code
-          </Button>
-        )}
-        {described && (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            aria-label={`Delete ${subject.name}`}
-            onClick={() => setConfirmOpen(true)}
-          >
-            <Trash2 className="size-3.5" />
-            Delete
-          </Button>
-        )}
-      </div>
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        className="h-7 shrink-0 px-2.5 text-xs"
+        aria-label={`Delete ${subject.name}`}
+        onClick={() => setConfirmOpen(true)}
+      >
+        <Trash2 className="size-3.5" />
+        Delete
+      </Button>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {subject.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              No class uses{' '}
-              <span className="font-mono font-semibold text-foreground">
-                {subject.code}
-              </span>
-              . Deleting it removes it from the catalog for good
-              {described && described.removed.length > 0
-                ? ', along with:'
-                : '.'}
+              No class uses {subject.name}{' '}
+              <span className="font-mono text-[11px]">({subject.code})</span>.
+              Deleting it removes it from the catalog for good
+              {described.removed.length > 0 ? ', along with:' : '.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {described && described.removed.length > 0 && (
+          {described.removed.length > 0 && (
             <ul className="space-y-1 border-l-2 border-destructive/40 pl-3 text-sm text-foreground">
               {described.removed.map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
           )}
-          {described?.repointed && (
+          {described.repointed && (
             <p className="text-sm text-muted-foreground">
               {described.repointed}
             </p>
@@ -150,88 +121,5 @@ export function SubjectCatalogMenu({
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-/** The Subject cell while changing the code. The name stays as it is. */
-export function SubjectRenameInline({
-  subject,
-  onDone,
-}: {
-  subject: Subject;
-  onDone: () => void;
-}) {
-  const [code, setCode] = useState(subject.code);
-  const [busy, setBusy] = useState(false);
-  const run = useWriteAction();
-
-  const nextCode = code.trim().toUpperCase();
-  const codeOk = /^[A-Z0-9_-]{1,32}$/.test(nextCode);
-  const changed = nextCode !== subject.code;
-  const canSave = codeOk && changed && !busy;
-
-  async function save() {
-    if (!canSave) return;
-    setBusy(true);
-    await run(
-      () =>
-        apiFetch(
-          `/api/sis/admin/subjects/catalog/${subject.id}`,
-          jsonInit('PATCH', { code: nextCode })
-        ),
-      {
-        pending: `Changing the code of ${subject.name}…`,
-        success: `${subject.name} now has the code ${nextCode}`,
-        onResolved: onDone,
-      }
-    );
-    setBusy(false);
-  }
-
-  return (
-    <form
-      className="flex flex-wrap items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void save();
-      }}
-    >
-      <Input
-        value={code}
-        onChange={(e) => setCode(e.target.value.toUpperCase())}
-        maxLength={32}
-        aria-label="Subject code"
-        aria-invalid={!codeOk}
-        className="h-8 w-28 font-mono text-[12px] uppercase"
-        autoFocus
-      />
-      <span className="font-serif text-[14px] font-semibold text-foreground">
-        {subject.name}
-      </span>
-      <Button
-        type="submit"
-        size="sm"
-        variant="outline"
-        disabled={!canSave}
-        loading={busy}
-        loadingText="Saving…"
-      >
-        Save
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={onDone}
-      >
-        Cancel
-      </Button>
-      {!codeOk && (
-        <p className="basis-full text-[11px] text-destructive">
-          Codes use capital letters, numbers, - or _ only.
-        </p>
-      )}
-    </form>
   );
 }

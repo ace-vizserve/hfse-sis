@@ -42,11 +42,12 @@ function levelsOf(r: StaffRow): string[] {
   ].filter(Boolean);
 }
 
-/** Every subject they teach, by code. Advisory carries no subject. */
+/** Every subject they teach, by name (the code is only an ID, 2026-09-29).
+ * Advisory carries no subject. */
 function subjectsOf(r: StaffRow): string[] {
-  return [...new Set(r.subjectAssignments.map((s) => s.subjectCode))].filter(
-    Boolean
-  );
+  return [
+    ...new Set(r.subjectAssignments.map((s) => s.subjectName || s.subjectCode)),
+  ].filter(Boolean);
 }
 
 /**

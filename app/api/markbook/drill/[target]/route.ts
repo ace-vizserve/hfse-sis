@@ -161,6 +161,8 @@ function csvResponse(
   });
 }
 
+// The "Subject" column carries the subject's NAME — the code is only an ID
+// (2026-09-29). The column key stays `subjectCode` so saved column choices hold.
 function csvCell(
   row: MarkbookDrillRow,
   key: DrillColumnKey,
@@ -178,7 +180,7 @@ function csvCell(
       case 'sectionName':
         return r.sectionName;
       case 'subjectCode':
-        return r.subjectCode;
+        return r.subjectName;
       case 'termNumber':
         return `T${r.termNumber}`;
       case 'rawScore':
@@ -205,11 +207,11 @@ function csvCell(
       case 'level':
         return r.level ?? '';
       case 'subjectCode':
-        return r.subjectCode;
+        return r.subjectName;
       case 'termNumber':
         return `T${r.termNumber}`;
       case 'sheetSubjectTerm':
-        return `${r.subjectCode} · T${r.termNumber}`;
+        return `${r.subjectName} · T${r.termNumber}`;
       case 'isLocked':
         return r.isLocked ? 'Locked' : 'Open';
       case 'lockedAt':
@@ -230,7 +232,7 @@ function csvCell(
     case 'sectionName':
       return r.sectionName;
     case 'subjectCode':
-      return r.subjectCode;
+      return r.subjectName;
     case 'termNumber':
       return `T${r.termNumber}`;
     case 'status':

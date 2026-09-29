@@ -17,10 +17,7 @@ import {
 } from '@/components/sis/attach-to-section-modal';
 import { NewSubjectForm } from '@/components/sis/new-subject-form';
 import { SectionTermSheetsDialog } from '@/components/sis/section-term-sheets-dialog';
-import {
-  SubjectCatalogMenu,
-  SubjectRenameInline,
-} from '@/components/sis/unused-subject-actions';
+import { SubjectCatalogMenu } from '@/components/sis/unused-subject-actions';
 import type { SubjectSetupSummary } from '@/lib/sis/subjects/setup-summary';
 import {
   SubjectConfigForm,
@@ -206,13 +203,9 @@ export function SubjectCatalogCard({
   sections,
   defaultSectionLevelType,
   sheetImpactByConfigId,
-  unusedSubjectIds = [],
   deletableSubjects = {},
 }: {
   catalog: CatalogSubjectRow[];
-  /** Subjects nothing uses yet, in any year (lib/sis/subjects/usage.ts) —
-   * the only ones offered Change code. */
-  unusedSubjectIds?: string[];
   /** Subjects no class uses, each with what a Delete takes with it — the
    * only ones offered Delete. */
   deletableSubjects?: Record<string, SubjectSetupSummary>;
@@ -249,8 +242,6 @@ export function SubjectCatalogCard({
   const [addOpen, setAddOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const unusedIds = new Set(unusedSubjectIds);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
   // The class chip that was clicked. Carries ONE of that class's sheets for
   // this subject; the dialog finds its sibling terms, which is the whole point
   // — a chip has only ever pointed at one of the four.
@@ -437,21 +428,16 @@ export function SubjectCatalogCard({
                           </HoverHint>
                         </TableCell>
                         <TableCell>
-                          {renamingId === subject.id ? (
-                            <SubjectRenameInline
-                              subject={subject}
-                              onDone={() => setRenamingId(null)}
-                            />
-                          ) : (
-                            <div className="flex flex-col gap-1 leading-tight">
-                              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                {subject.code}
-                              </span>
-                              <span className="font-serif text-[14px] font-semibold text-foreground">
-                                {subject.name}
-                              </span>
-                            </div>
-                          )}
+                          {/* The name is the label; the code is its ID, read
+                              like a student number under a name. */}
+                          <div className="flex flex-col gap-0.5 leading-tight">
+                            <span className="font-serif text-[14px] font-semibold text-foreground">
+                              {subject.name}
+                            </span>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              {subject.code}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <UsedByCell
@@ -487,17 +473,11 @@ export function SubjectCatalogCard({
                                 Edit
                               </Button>
                             </HoverHint>
-                            {/* Change code — only a subject nothing uses yet;
-                                Delete — any subject no class uses (see
+                            {/* Delete — any subject no class uses (see
                                 unused-subject-actions.tsx). Renders nothing
-                                when neither applies. */}
+                                otherwise. */}
                             <SubjectCatalogMenu
                               subject={subject}
-                              onRename={
-                                unusedIds.has(subject.id)
-                                  ? () => setRenamingId(subject.id)
-                                  : undefined
-                              }
                               deleteSetup={deletableSubjects[subject.id]}
                             />
                           </span>

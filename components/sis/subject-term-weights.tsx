@@ -63,10 +63,10 @@ type Component = GradeComponent;
 
 export function SubjectTermWeights({
   configId,
-  subjectCode,
+  subjectName,
 }: {
   configId: string;
-  subjectCode: string;
+  subjectName: string;
 }) {
   const queryClient = useQueryClient();
   const run = useWriteAction();
@@ -250,7 +250,7 @@ export function SubjectTermWeights({
       })}
 
       <p className="pt-1 text-[11px] leading-snug text-muted-foreground">
-        Untick a component a term doesn&rsquo;t use — {subjectCode} is then
+        Untick a component a term doesn&rsquo;t use — {subjectName} is then
         graded only on what is left, and the share moves across so the grade is
         still out of 100.
       </p>

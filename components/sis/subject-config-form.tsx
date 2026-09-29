@@ -271,11 +271,11 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     }
     setSavingWeights(true);
     await run(() => saveWeightsMutation.mutateAsync(parsed.data), {
-      pending: `Saving weights for ${subjectCode}…`,
+      pending: `Saving weights for ${lastSavedNameRef.current}…`,
       success:
         mode === 'edit'
           ? `${lastSavedNameRef.current}: ${wwN}·${ptN}·${qaN} · QA/${Number(qaMax)}`
-          : `Set weights for ${subjectCode}`,
+          : `Set weights for ${lastSavedNameRef.current}`,
       error: (e: unknown) => (e instanceof Error ? e.message : 'Save failed'),
       onResolved: () => onSaved?.(),
     });
@@ -309,8 +309,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       pending: false,
       success:
         next === subjectId
-          ? `${subjectCode} now reports as itself`
-          : `${subjectCode} now reports as ${target?.code ?? 'another subject'}`,
+          ? `${lastSavedNameRef.current} now reports as itself`
+          : `${lastSavedNameRef.current} now reports as ${target?.name ?? 'another subject'}`,
       error: (e: unknown) =>
         e instanceof Error ? e.message : 'Could not update mapping',
     });
@@ -346,7 +346,7 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
     const result = await run(() => catalogMutation.mutateAsync(patch), {
       // Each control already displays the value the user just chose.
       pending: false,
-      success: `${subjectCode} ${what} updated`,
+      success: `${lastSavedNameRef.current} ${what} updated`,
       error: (e: unknown) =>
         e instanceof Error ? e.message : 'Could not update',
     });
@@ -482,8 +482,8 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
       setDescription,
       (next) =>
         next
-          ? `Saved what ${subjectCode} stands for in ${ayCode}`
-          : `Removed the ${subjectCode} description for ${ayCode}`
+          ? `Saved what ${lastSavedNameRef.current} stands for in ${ayCode}`
+          : `Removed the ${lastSavedNameRef.current} description for ${ayCode}`
     );
   }
 
@@ -524,11 +524,9 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               />
               <p className="text-[11px] leading-snug text-muted-foreground">
                 The name on every screen and on report cards, past years
-                included. The code stays{' '}
-                <span className="font-mono font-semibold text-foreground">
-                  {subjectCode}
-                </span>
-                , so marks and weights are untouched.
+                included. Its ID,{' '}
+                <span className="font-mono text-foreground">{subjectCode}</span>
+                , never changes, so marks and weights are untouched.
               </p>
             </div>
 
@@ -597,7 +595,7 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
                 onChange={(e) => setDescription(e.target.value)}
                 onBlur={onDescriptionBlur}
                 maxLength={200}
-                aria-label={`Description for ${subjectCode} in ${ayCode}`}
+                aria-label={`Description for ${name} in ${ayCode}`}
               />
               <p className="text-[11px] leading-snug text-muted-foreground">
                 Shown under the heading on the grading sheet, so a teacher
@@ -662,7 +660,7 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
               <FieldRow eyebrow="Terms">
                 <SubjectTermWeights
                   configId={props.draft.configId}
-                  subjectCode={subjectCode}
+                  subjectName={name}
                 />
               </FieldRow>
             )}
@@ -780,10 +778,12 @@ export function SubjectConfigForm(props: SubjectConfigFormProps) {
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      <span className="font-mono text-xs">{s.code}</span>
-                      <span className="ml-2 text-muted-foreground">
+                      <span>
                         {s.name}
                         {s.id === subjectId ? ' (itself)' : ''}
+                      </span>
+                      <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                        {s.code}
                       </span>
                     </SelectItem>
                   ))}

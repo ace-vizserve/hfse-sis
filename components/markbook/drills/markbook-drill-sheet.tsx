@@ -163,6 +163,21 @@ function CompletenessCell({ row }: { row: SheetRow }) {
   );
 }
 
+// A subject reads by its NAME; the code is its ID, shown small beneath like a
+// student number under a name (2026-09-29, Mr Ace).
+function SubjectCell({ name, code }: { name: string; code: string }) {
+  return (
+    <div className="leading-tight">
+      <div className="text-sm text-foreground">{name}</div>
+      {code !== name && (
+        <div className="font-mono text-[10px] text-muted-foreground">
+          {code}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function buildEntryColumns(
   visible: DrillColumnKey[]
 ): ColumnDef<GradeEntryRow, unknown>[] {
@@ -233,12 +248,13 @@ function buildEntryColumns(
       case 'subjectCode':
         cols.push({
           id: 'subjectCode',
-          accessorKey: 'subjectCode',
+          accessorFn: (r) => r.subjectName,
           header: DRILL_COLUMN_LABELS.subjectCode,
           cell: ({ row }) => (
-            <span className="font-mono text-xs">
-              {row.original.subjectCode}
-            </span>
+            <SubjectCell
+              name={row.original.subjectName}
+              code={row.original.subjectCode}
+            />
           ),
         });
         break;
@@ -381,12 +397,13 @@ function buildSheetColumns(
         cols.push({
           id: 'sheetSubjectTerm',
           header: DRILL_COLUMN_LABELS.sheetSubjectTerm,
-          accessorFn: (r) => `${r.subjectCode} · T${r.termNumber}`,
+          accessorFn: (r) => `${r.subjectName} · T${r.termNumber}`,
           cell: ({ row }) => (
             <div className="space-y-0.5">
-              <div className="font-mono text-xs">
-                {row.original.subjectCode}
-              </div>
+              <SubjectCell
+                name={row.original.subjectName}
+                code={row.original.subjectCode}
+              />
               <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 Term {row.original.termNumber}
               </div>
@@ -440,12 +457,13 @@ function buildSheetColumns(
       case 'subjectCode':
         cols.push({
           id: 'subjectCode',
-          accessorKey: 'subjectCode',
+          accessorFn: (r) => r.subjectName,
           header: DRILL_COLUMN_LABELS.subjectCode,
           cell: ({ row }) => (
-            <span className="font-mono text-xs">
-              {row.original.subjectCode}
-            </span>
+            <SubjectCell
+              name={row.original.subjectName}
+              code={row.original.subjectCode}
+            />
           ),
         });
         break;
@@ -545,12 +563,13 @@ function buildChangeRequestColumns(
       case 'subjectCode':
         cols.push({
           id: 'subjectCode',
-          accessorKey: 'subjectCode',
+          accessorFn: (r) => r.subjectName,
           header: DRILL_COLUMN_LABELS.subjectCode,
           cell: ({ row }) => (
-            <span className="font-mono text-xs">
-              {row.original.subjectCode}
-            </span>
+            <SubjectCell
+              name={row.original.subjectName}
+              code={row.original.subjectCode}
+            />
           ),
         });
         break;

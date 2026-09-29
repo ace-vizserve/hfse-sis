@@ -36,6 +36,8 @@ export type AssignmentChipAdviser = {
 export type AssignmentChipSubject = {
   assignmentId: string;
   subjectCode: string;
+  /** The label (2026-09-29): the code is an ID, shown only in the hint. */
+  subjectName: string;
   sectionId: string;
   sectionName: string;
   levelCode: string;
@@ -82,7 +84,9 @@ export function assignmentSummaryText(
   }
   for (const s of subjectAssignments) {
     const prefix = s.role === 'co_teacher' ? 'Co-teacher ' : '';
-    parts.push(`${prefix}${s.subjectCode}: ${s.levelCode} ${s.sectionName}`);
+    parts.push(
+      `${prefix}${s.subjectName || s.subjectCode}: ${s.levelCode} ${s.sectionName}`
+    );
   }
   return parts.join('; ');
 }
@@ -149,22 +153,25 @@ export function AssignmentChips({
       {visible.map((a) => (
         <HoverHint
           key={a.assignmentId}
-          hint={`${ASSIGNMENT_ROLE_LABELS[a.role]} — ${a.subjectCode} ${a.levelCode} ${a.sectionName}`}
+          hint={`${ASSIGNMENT_ROLE_LABELS[a.role]} — ${a.subjectName || a.subjectCode} (${a.subjectCode}) · ${a.levelCode} ${a.sectionName}`}
           focusable={false}
         >
           {/* Section identity, not level — two sections of the same level
               (HFSE runs 2-3 per level) otherwise render byte-identical chips
-              for a teacher taking the same subject in each (e.g. two "ENG P3"
-              chips with no way to tell them apart). The section name is the
-              virtue name (short, e.g. "Obedience"), matching the pre-makeover
-              cell's "ENG · Obedience" format. */}
+              for a teacher taking the same subject in each. The section name
+              is the virtue name (short, e.g. "Obedience").
+
+              The subject reads by NAME (2026-09-29, Mr Ace: "subject name as
+              main and the code is like a student number"); a long one
+              truncates and the hint carries it in full, with the code. */}
           <Link
             href={`/sis/sections/${a.sectionId}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center rounded-md border border-hairline bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-opacity hover:opacity-80"
+            className="inline-flex max-w-[16rem] items-center rounded-md border border-hairline bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-opacity hover:opacity-80"
           >
             <CoPrefix role={a.role} />
-            {a.subjectCode}&thinsp;·&thinsp;{a.sectionName}
+            <span className="truncate">{a.subjectName || a.subjectCode}</span>
+            <span className="shrink-0">&thinsp;·&thinsp;{a.sectionName}</span>
           </Link>
         </HoverHint>
       ))}

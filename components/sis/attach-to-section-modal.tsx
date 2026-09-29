@@ -255,9 +255,10 @@ export function AttachToSectionModal({
               {subjects.map((s) => (
                 <span
                   key={s.subjectConfigId}
-                  className="rounded-full bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-foreground"
+                  title={s.code}
+                  className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground"
                 >
-                  {s.code} {s.name}
+                  {s.name}
                 </span>
               ))}
             </div>

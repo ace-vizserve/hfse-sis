@@ -342,11 +342,11 @@ export function GenerateSheetsDialog({
                         key={s.subjectConfigId}
                         className="flex items-center gap-2 px-3 py-1.5 text-xs"
                       >
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {s.code}
-                        </span>
                         <span className="min-w-0 flex-1 truncate">
                           {s.name}
+                          <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
+                            {s.code}
+                          </span>
                         </span>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
                           WW {s.wwSlots}×/{formatPct(s.wwWeight)} · PT{' '}
