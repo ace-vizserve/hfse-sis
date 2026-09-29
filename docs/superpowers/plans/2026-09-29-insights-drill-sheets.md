@@ -56,7 +56,8 @@ Phases 2–5 depend on Phase 1 only; they do not depend on each other.
 - **New targets beyond the spec:** `intake-month` (Admissions), `movement-month` (Records — the bars count audit events, not roster rows). `funnel-stage` (no callers) is aligned in place.
 - **Markbook:** subjects keyed by catalogue name; the level line is an average of subject averages (parity via the shared helper, not a row mean); no Markbook chart plots the comparison year, so the hero badge's sheet offers the other year.
 - **Records retention** needs `compareAy` on the drill request; late/withdrawal lists are one row per event.
-- **Attendance:** the vacation "approaching" list switches to the drill's rule (drops a 0-allowance student with no trips); the CSV link's missing `termId` is fixed.
+- **Attendance:** the vacation "approaching" list switches to the drill's rule (drops a 0-allowance student with no trips) — **confirmed by Mr Ace 2026-09-29: drop them**; the CSV link's missing `termId` is fixed.
+- **Attendance composition bars** open that status's marks for the term (a count, not the bar's %) — **confirmed by Mr Ace 2026-09-29**, not the all-marks alternative.
 
 ## Phase 6 — Docs
 
