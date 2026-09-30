@@ -32,7 +32,7 @@ vi.mock('@/lib/supabase/service', () => ({
 import {
   applyTargetFilter,
   selectAtRiskCompassionate,
-  selectAtRiskVacationLeave,
+  selectOverVacationLeave,
   sortTopActive,
   TOP_ATTENDANCE_LIST_LIMIT,
   type AttendanceDrillRow,
@@ -141,16 +141,20 @@ describe('compassionate-quota drill', () => {
 });
 
 describe('vacation-leave-quota drill', () => {
-  it('returns exactly the card at-risk set', () => {
+  it('returns exactly the card set — over quota only', () => {
     const rows = [
       vacation('Ana', 0),
-      vacation('Ben', 1), // at the 1-per-term limit
+      vacation('Ben', 1), // took their one trip — not listed
       vacation('Cleo', 2), // over
     ];
     expect(drill(rows, 'vacation-leave-quota')).toEqual(
-      selectAtRiskVacationLeave(rows)
+      selectOverVacationLeave(rows)
     );
-    expect(drill(rows, 'vacation-leave-quota')).toHaveLength(2);
+    expect(
+      (drill(rows, 'vacation-leave-quota') as VacationLeaveUsageRow[]).map(
+        (r) => r.studentName
+      )
+    ).toEqual(['Cleo']);
   });
 
   it('returns nothing when nobody took vacation leave', () => {

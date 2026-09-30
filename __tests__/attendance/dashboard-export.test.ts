@@ -346,7 +346,9 @@ describe('buildAttendanceDashboardExport', () => {
       'Remaining',
       'Over quota?',
     ]);
-    expect(vl.rows).toEqual([['Alice Tan', 'P1-A', 1, 1, 0, 'No']]);
+    // Alice took her one allowed trip (1/1) — that is normal use, not over
+    // quota, so the over-quota list leaves her out.
+    expect(vl.rows).toEqual([]);
   });
 
   it('builds top-absent and top-active tabs from the same row set', () => {

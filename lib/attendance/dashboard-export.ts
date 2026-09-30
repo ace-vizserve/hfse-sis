@@ -13,7 +13,7 @@ import type {
 import {
   AT_RISK_LEAVE_LIMIT,
   selectAtRiskCompassionate,
-  selectAtRiskVacationLeave,
+  selectOverVacationLeave,
   sortTopActive,
   TOP_ATTENDANCE_LIST_LIMIT,
   type AllRowSets,
@@ -195,7 +195,7 @@ export function buildAttendanceDashboardExport(
   // (`vacationTermId && currentTermLabel`), exactly like the page's own
   // conditional around <VacationLeaveQuotaCard>.
   if (vacationTermId && currentTermLabel) {
-    const atRiskVl = selectAtRiskVacationLeave(rowSets.vacationLeave).slice(
+    const atRiskVl = selectOverVacationLeave(rowSets.vacationLeave).slice(
       0,
       AT_RISK_LEAVE_LIMIT
     );

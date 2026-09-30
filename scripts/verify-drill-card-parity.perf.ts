@@ -30,7 +30,7 @@ describe('attendance quota + ranking cards vs their drills', () => {
       buildAllRowSets,
       buildAttendanceDrillRows,
       selectAtRiskCompassionate,
-      selectAtRiskVacationLeave,
+      selectOverVacationLeave,
       sortTopActive,
       TOP_ATTENDANCE_LIST_LIMIT,
     } = await import('@/lib/attendance/drill');
@@ -62,7 +62,7 @@ describe('attendance quota + ranking cards vs their drills', () => {
       defaultVlAllowance: 1,
     });
     const compCard = selectAtRiskCompassionate(rowSets.compassionate);
-    const vlCard = selectAtRiskVacationLeave(rowSets.vacationLeave);
+    const vlCard = selectOverVacationLeave(rowSets.vacationLeave);
     const absentCard = rowSets.topAbsent
       .filter((r) => r.absences > 0)
       .slice(0, TOP_ATTENDANCE_LIST_LIMIT);

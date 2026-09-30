@@ -1107,22 +1107,16 @@ export function selectAtRiskCompassionate(
     });
 }
 
-// Same shape as selectAtRiskCompassionate, for the per-term vacation-leave
-// quota (KD #94). With the default 1-per-term allowance this collapses to
-// "anyone who took VL this term" — exactly what the registrar wants to see.
-export function selectAtRiskVacationLeave(
+// Students over their per-term vacation-leave quota (KD #94), most trips
+// first. Over only: there is no "at the limit" tier, because with the usual
+// allowance of 1 trip a term it listed every student who had taken their
+// one trip — normal use, not risk (Mr Ace, 2026-09-30).
+export function selectOverVacationLeave(
   rows: VacationLeaveUsageRow[]
 ): VacationLeaveUsageRow[] {
   return rows
-    .filter(
-      (r) =>
-        r.usedThisTerm > 0 && (r.isOverTermQuota || r.remainingThisTerm <= 0)
-    )
-    .sort((a, b) => {
-      if (a.isOverTermQuota !== b.isOverTermQuota)
-        return a.isOverTermQuota ? -1 : 1;
-      return b.usedThisTerm - a.usedThisTerm;
-    });
+    .filter((r) => r.isOverTermQuota)
+    .sort((a, b) => b.usedThisTerm - a.usedThisTerm);
 }
 
 /** Both leave roll-ups as one list, one row per student per leave type. */
@@ -1205,9 +1199,7 @@ export function summariseLeaveQuota(
   vacation: VacationLeaveUsageRow[]
 ): LeaveQuotaSummary {
   const compassionateOver = compassionate.filter((r) => r.isOverQuota);
-  const vacationOver = selectAtRiskVacationLeave(vacation).filter(
-    (r) => r.isOverTermQuota
-  );
+  const vacationOver = selectOverVacationLeave(vacation);
   return {
     compassionateOver,
     vacationOver,
@@ -1520,7 +1512,7 @@ export function applyTargetFilter(
     // READING 0 OPENED A SHEET OF 398 ROWS.
     //
     // Each of these four cards computes its figure by filtering the rollup in
-    // the COMPONENT (selectAtRiskCompassionate / selectAtRiskVacationLeave /
+    // the COMPONENT (selectAtRiskCompassionate / selectOverVacationLeave /
     // the TOP_ATTENDANCE_LIST_LIMIT preview), and the drill used to hand back
     // the raw rollup — every non-withdrawn student in the year, zero-usage
     // rows included. Measured on AY2026 (2026-09-15): the compassionate card
@@ -1553,7 +1545,7 @@ export function applyTargetFilter(
         rows as CompassionateUsageRow[]
       ) as AttendanceDrillRow[];
     case 'vacation-leave-quota':
-      return selectAtRiskVacationLeave(
+      return selectOverVacationLeave(
         rows as VacationLeaveUsageRow[]
       ) as AttendanceDrillRow[];
     case 'over-leave-quota':
@@ -1786,7 +1778,7 @@ export function drillHeaderForTarget(
         eyebrow: 'Attendance',
         title: segment
           ? `Vacation-leave quota — ${segment}`
-          : 'Students at or over their vacation-leave quota this term',
+          : 'Students over their vacation-leave quota this term',
       };
     case 'over-leave-quota':
       return {
