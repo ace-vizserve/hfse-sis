@@ -132,7 +132,8 @@ describe('decideSheetRemoval', () => {
 function fakeService(tables: Record<string, unknown[]>): SupabaseClient {
   const builder = (rows: unknown[]) => {
     const b: Record<string, unknown> = {};
-    for (const m of ['select', 'in', 'eq', 'limit']) b[m] = () => b;
+    for (const m of ['select', 'in', 'eq', 'limit', 'range', 'order'])
+      b[m] = () => b;
     b.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
       resolve({ data: rows, error: null });
     return b;

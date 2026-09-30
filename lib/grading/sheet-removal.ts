@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { fetchAllPages } from '@/lib/supabase/paginate';
+
 // Can this grading sheet be removed? (KD #131 update, 2026-09-29.)
 //
 // Mr Ace, 2026-09-29: "theres no way to un-attach a grading sheet to a
@@ -117,15 +119,20 @@ export async function loadSheetRemovability(
   if (sheets.length === 0) return out;
   const ids = sheets.map((s) => s.id);
 
-  const { data: entries, error: entErr } = await service
-    .from('grade_entries')
-    .select(`id, grading_sheet_id, ${ENTRY_VALUE_COLUMNS}`)
-    .in('grading_sheet_id', ids);
-  if (entErr) throw new Error(entErr.message);
-
+  // Paged: many sheets at once (a section-term) can pass the server's
+  // 1,000-row cap, and a missing row would make a sheet with marks look
+  // empty. fetchAllPages throws on a query error, as this function must.
   type Row = GradeEntryValues & { id: string; grading_sheet_id: string };
+  const entries = await fetchAllPages<Row>((from, to) =>
+    service
+      .from('grade_entries')
+      .select(`id, grading_sheet_id, ${ENTRY_VALUE_COLUMNS}`)
+      .in('grading_sheet_id', ids)
+      .range(from, to)
+  );
+
   const bySheet = new Map<string, Row[]>();
-  for (const row of (entries ?? []) as Row[]) {
+  for (const row of entries) {
     const list = bySheet.get(row.grading_sheet_id) ?? [];
     list.push(row);
     bySheet.set(row.grading_sheet_id, list);
