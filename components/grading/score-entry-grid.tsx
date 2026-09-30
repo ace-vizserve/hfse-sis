@@ -2167,7 +2167,13 @@ function ComputedCell({
     <TableCell
       className={`px-2 text-right font-mono tabular-nums text-xs text-muted-foreground${groupEnd ? ' border-r-2 border-border/60' : ''}`}
     >
-      {value != null ? value.toFixed(dp) : '—'}
+      {value == null
+        ? '—'
+        : dp === 0
+          ? // A raw-score total: whole numbers stay whole, a decimal score's
+            // total keeps its decimals (14.5, not a rounded 15).
+            String(Math.round(value * 100) / 100)
+          : value.toFixed(dp)}
     </TableCell>
   );
 }
