@@ -164,6 +164,9 @@ describe('TotalsEditor (mutation pilot)', () => {
     await user.click(save);
 
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    // onSaved fires before the success toast, which only lands after the
+    // refresh commits — wait for it, or it lands in the next test.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     expect(screen.queryByRole('dialog')).toBeNull();
     const body = JSON.parse(
       (fetchSpy.mock.calls[0][1] as RequestInit).body as string
