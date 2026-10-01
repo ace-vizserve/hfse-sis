@@ -240,3 +240,23 @@ handouts/
 # scripts/backfill/gen-withdrawal-dates-from-remarks.ts — regenerate and read
 # it rather than versioning it, the same rule as every other *-apply file here.
 scripts/backfill/withdrawal-dates-from-remarks-apply.sql
+
+# ── Non-production files (added 2026-10-01) ──────────────────────────────────
+# Backfill SQL and audit/import reports: generated or one-off, never deployed,
+# and most of them carry real student PII (names, student numbers, scores).
+# These wildcards replace adding one rule per import batch — the T3 grading
+# import slipped through because its batch had no rule of its own.
+scripts/backfill/**/*.sql
+scripts/**/*-report.txt
+
+# Python helpers for Gantt charts, timelines and docx export — local tooling.
+scripts/*.py
+
+# Supabase CLI local cache + project link.
+/supabase/.temp/
+
+# Reference documents and images dropped at the repo root (templates, the
+# printed calendar, the walkthrough). Local reference only.
+/*.docx
+/*.png
+/sis-walkthrough.md
