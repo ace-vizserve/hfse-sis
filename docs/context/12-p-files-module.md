@@ -51,7 +51,7 @@ The academic coordinator's exclusion is deliberate and predates this change: mig
 
 ⚠ **Form 12 moved to School Forms on 2026-09-16.** The parent portal stopped offering it — Mr Ace: _"yes form 12 is not being collected on the parent portal thats correct"_ — and AY2025 holds 515 while AY2026 and AY2027 hold zero. Left here it stayed chaseable, giving ~1,300 students a permanent "Remind parent about Form 12" row nobody could clear.
 
-### Non-expiring documents — school forms (9 slots: migration 135's eight, plus Form 12)
+### Non-expiring documents — school forms (13 slots: migration 135's eight, Form 12, and migration 182's four — all four New only, confirmed by Miss Apol 2026-10-01)
 
 ⚠ **`group: 'school'` is load-bearing, not cosmetic.** The parent portal offers none of these — Mr Ace: _"these files are not gonna be uploaded in the parent portal, this will be uploaded in p-files module"_. Filed under `student` they would show up in the parent-chase Action Queue offering to "Remind parent" about a form no parent can produce. See `isChaseableGroup`.
 
@@ -63,6 +63,10 @@ The academic coordinator's exclusion is deliberate and predates this change: mig
 | New Student Checksheet                  | `newStudentChecksheet`     | `newStudentChecksheetStatus`     | ✅ New only                                       |
 | Student P-Files Checklist               | `pfilesChecklist`          | `pfilesChecklistStatus`          | ✅ New only                                       |
 | Pre-Counselling Acknowledgement Form    | `preCounsellingAck`        | `preCounsellingAckStatus`        | ✅ New only                                       |
+| Letter of Offer                         | `letterOfOffer`            | `letterOfOfferStatus`            | ✅ New only (migration 182)                       |
+| Student Media Consent and Release Form  | `mediaConsent`             | `mediaConsentStatus`             | ✅ New only (migration 182)                       |
+| WhatsApp                                | `whatsappConsent`          | `whatsappConsentStatus`          | ✅ New only (migration 182)                       |
+| Orientation Checklist                   | `orientationChecklist`     | `orientationChecklistStatus`     | ✅ New only (migration 182)                       |
 | Form 12                                 | `form12`                   | `form12Status`                   | —                                                 |
 | Conditional Enrolment                   | `conditionalEnrolment`     | `conditionalEnrolmentStatus`     | ✅ `applicationStatus = 'Enrolled (Conditional)'` |
 | Late Enrolment Form                     | `lateEnrolmentForm`        | `lateEnrolmentFormStatus`        | ✅ late enrollee                                  |

@@ -290,6 +290,15 @@ create table public.ay2026_enrolment_documents (
   "conditionalEnrolmentStatus" character varying null,
   "lateEnrolmentForm" text null,
   "lateEnrolmentFormStatus" character varying null,
+  -- Added by migration 182. Four more P-Files school forms, same shape.
+  "letterOfOffer" text null,
+  "letterOfOfferStatus" character varying null,
+  "mediaConsent" text null,
+  "mediaConsentStatus" character varying null,
+  "whatsappConsent" text null,
+  "whatsappConsentStatus" character varying null,
+  "orientationChecklist" text null,
+  "orientationChecklistStatus" character varying null,
   constraint ay2026_enrolment_documents_pkey primary key (id)
 ) TABLESPACE pg_default;
 
@@ -311,7 +320,8 @@ after update OF
   "icaPhoto", "financialSupportDocs", "vaccinationInformation",
   "lastSchoolRecommendation", "assessmentResult", "signedContract",
   "newStudentChecksheet", "pfilesChecklist", "preCounsellingAck",
-  "conditionalEnrolment", "lateEnrolmentForm"
+  "conditionalEnrolment", "lateEnrolmentForm",
+  "letterOfOffer", "mediaConsent", "whatsappConsent", "orientationChecklist"
 on ay2026_enrolment_documents
 for each row execute function capture_doc_revision();
 ```

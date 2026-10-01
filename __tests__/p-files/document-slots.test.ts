@@ -42,6 +42,11 @@ const SCHOOL_FORM_KEYS = [
   'preCounsellingAck',
   'conditionalEnrolment',
   'lateEnrolmentForm',
+  // Migration 182, 2026-10-01.
+  'letterOfOffer',
+  'mediaConsent',
+  'whatsappConsent',
+  'orientationChecklist',
 ] as const;
 
 describe('the two slot lists agree', () => {
@@ -195,6 +200,10 @@ describe('the enrolee-category gate', () => {
     'newStudentChecksheet',
     'pfilesChecklist',
     'preCounsellingAck',
+    'letterOfOffer',
+    'mediaConsent',
+    'whatsappConsent',
+    'orientationChecklist',
   ] as const;
 
   /** On BOTH of the school's lists, so they must stay ungated by category. */
@@ -218,7 +227,7 @@ describe('the enrolee-category gate', () => {
     }
   });
 
-  it('shows the five New-only forms to New, and hides them from Current', () => {
+  it('shows the nine New-only forms to New, and hides them from Current', () => {
     for (const key of NEW_ONLY_KEYS) {
       const slot = slotFor(key);
       for (const cat of NEW_CATEGORIES) {

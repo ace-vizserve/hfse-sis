@@ -869,6 +869,30 @@ export const DOCUMENT_SLOTS: Array<{
     urlCol: 'preCounsellingAck',
   },
   {
+    key: 'letterOfOffer',
+    label: 'Letter of Offer',
+    statusCol: 'letterOfOfferStatus',
+    urlCol: 'letterOfOffer',
+  },
+  {
+    key: 'mediaConsent',
+    label: 'Student Media Consent and Release Form',
+    statusCol: 'mediaConsentStatus',
+    urlCol: 'mediaConsent',
+  },
+  {
+    key: 'whatsappConsent',
+    label: 'WhatsApp',
+    statusCol: 'whatsappConsentStatus',
+    urlCol: 'whatsappConsent',
+  },
+  {
+    key: 'orientationChecklist',
+    label: 'Orientation Checklist',
+    statusCol: 'orientationChecklistStatus',
+    urlCol: 'orientationChecklist',
+  },
+  {
     key: 'conditionalEnrolment',
     label: 'Conditional Enrolment',
     statusCol: 'conditionalEnrolmentStatus',
@@ -993,6 +1017,11 @@ export const OPTIONAL_DOCUMENT_SLOT_KEYS = [
   'preCounsellingAck',
   'conditionalEnrolment',
   'lateEnrolmentForm',
+  // Migration 182 — same reasoning.
+  'letterOfOffer',
+  'mediaConsent',
+  'whatsappConsent',
+  'orientationChecklist',
 ] as const;
 
 const DOCUMENT_COLUMNS = [

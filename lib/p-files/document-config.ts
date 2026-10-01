@@ -342,6 +342,41 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     conditional: { kind: 'category', values: NEW_CATEGORIES },
     meta: null,
   },
+  // Migration 182. Mr Ace, 2026-10-01, from the school's new-student list:
+  // "add the 4 missing ones as school forms". New-only, like the rest of that
+  // list — the Current-student list still holds only Form 12 and the contract.
+  {
+    key: 'letterOfOffer',
+    label: 'Letter of Offer',
+    expires: false,
+    group: 'school',
+    conditional: { kind: 'category', values: NEW_CATEGORIES },
+    meta: null,
+  },
+  {
+    key: 'mediaConsent',
+    label: 'Student Media Consent and Release Form',
+    expires: false,
+    group: 'school',
+    conditional: { kind: 'category', values: NEW_CATEGORIES },
+    meta: null,
+  },
+  {
+    key: 'whatsappConsent',
+    label: 'WhatsApp',
+    expires: false,
+    group: 'school',
+    conditional: { kind: 'category', values: NEW_CATEGORIES },
+    meta: null,
+  },
+  {
+    key: 'orientationChecklist',
+    label: 'Orientation Checklist',
+    expires: false,
+    group: 'school',
+    conditional: { kind: 'category', values: NEW_CATEGORIES },
+    meta: null,
+  },
   // The last two only show for the students they actually apply to.
   {
     key: 'conditionalEnrolment',
