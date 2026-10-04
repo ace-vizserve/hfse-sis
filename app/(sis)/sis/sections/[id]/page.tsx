@@ -530,7 +530,9 @@ export default async function SisSectionDetailPage({
         }
       />
 
-      <Tabs defaultValue={initialTab}>
+      {/* Keyed: this page stays mounted across navigations (cacheComponents),
+          so a link with a different ?tab= must remount the uncontrolled Tabs. */}
+      <Tabs key={initialTab} defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="overview">
             <Users className="h-3.5 w-3.5" />

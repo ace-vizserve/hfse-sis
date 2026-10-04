@@ -52,6 +52,15 @@ export function CopySectionsButton({
   const run = useWriteAction();
   const [open, setOpen] = useState(false);
   const [fromAy, setFromAy] = useState(sources[0]?.ayCode ?? '');
+  // `sources` depends on the page's `?ay=` and the page stays mounted across
+  // navigations (cacheComponents): a picked year that left the list falls
+  // back to the first one rather than leaving no source at all.
+  if (
+    fromAy !== (sources[0]?.ayCode ?? '') &&
+    !sources.some((s) => s.ayCode === fromAy)
+  ) {
+    setFromAy(sources[0]?.ayCode ?? '');
+  }
   const source = sources.find((s) => s.ayCode === fromAy);
   const [picked, setPicked] = useState<Set<string>>(new Set());
 

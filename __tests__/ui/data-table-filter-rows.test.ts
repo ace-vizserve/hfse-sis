@@ -116,3 +116,30 @@ describe('filterRows', () => {
     expect(out).toEqual(rows);
   });
 });
+
+describe('filterRows — a column with its own filterFn', () => {
+  type Ev = { id: string; wonBy: string };
+  const evs: Ev[] = [
+    { id: '1', wonBy: 'Orange' },
+    { id: '2', wonBy: 'Orange, Blue' },
+    { id: '3', wonBy: 'Green' },
+  ];
+  const evColumns: ColumnDef<Ev>[] = [
+    {
+      accessorKey: 'wonBy',
+      // A tie lists several houses; picking one must match the tie too.
+      filterFn: (row, id, value) =>
+        (value as string[]).some((v) =>
+          String(row.getValue(id)).split(', ').includes(v)
+        ),
+    },
+  ];
+
+  it('uses it, so counts and the export match the rows on screen', () => {
+    const out = filterRows(evs, {
+      columns: evColumns,
+      facets: [{ id: 'wonBy', values: ['Orange'] }],
+    });
+    expect(out.map((r) => r.id)).toEqual(['1', '2']);
+  });
+});

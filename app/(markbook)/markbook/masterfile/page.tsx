@@ -20,6 +20,9 @@ export default async function MasterfileRedirectPage({
       params.set(key, value);
     }
   }
+  // This URL always meant the masterfile; the new page shows its overview
+  // unless asked for the masterfile view.
+  params.set('view', 'masterfile');
   const query = params.toString();
-  redirect(`/records/academic-summary${query ? `?${query}` : ''}`);
+  redirect(`/records/academic-summary?${query}`);
 }

@@ -42,7 +42,7 @@ function formatShortDate(iso: string): string {
 export default async function SisCalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ audience?: string }>;
+  searchParams: Promise<{ audience?: string; term_id?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -257,6 +257,7 @@ export default async function SisCalendarPage({
             // doesn't map cleanly onto the AY-wide surface. Passed null for now —
             // to be re-wired as a follow-up once the target-term picker lands.
             copyFromPriorAyProps={null}
+            initialTermId={sp.term_id}
           />
         </>
       )}

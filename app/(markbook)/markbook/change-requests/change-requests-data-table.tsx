@@ -403,6 +403,14 @@ export function ChangeRequestsDataTable({
   const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
     initialSheetIdFilter ?? null
   );
+  // `cacheComponents` keeps this page mounted across navigations, so a later
+  // link carrying a different `?sheet_id=` must re-seed the filter here.
+  const [seenSheetIdParam, setSeenSheetIdParam] =
+    React.useState(initialSheetIdFilter);
+  if (initialSheetIdFilter !== seenSheetIdParam) {
+    setSeenSheetIdParam(initialSheetIdFilter);
+    setSheetIdFilter(initialSheetIdFilter ?? null);
+  }
 
   const router = useRouter();
   const pathname = usePathname();
@@ -494,8 +502,10 @@ export function ChangeRequestsDataTable({
       [row.id]: { action: initialAction, nonce: `${row.id}:${Date.now()}` },
     }));
     clearReqParams();
+    // Keyed on the params, not mount-only: the page stays mounted across
+    // navigations, so a second `?req=` link must open its own request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialRequestId, initialAction]);
 
   function clearReqParams() {
     const next = new URLSearchParams(searchParams?.toString() ?? '');

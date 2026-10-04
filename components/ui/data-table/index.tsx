@@ -110,6 +110,18 @@ function DataTableExportSheet<TRow>(props: DataTableExportSheetProps<TRow>) {
   );
 }
 
+/** Default filter for a facet column: the cell equals one of the picks. */
+function facetInListFilter(
+  row: { getValue: (id: string) => unknown },
+  id: string,
+  value: unknown
+): boolean {
+  if (!Array.isArray(value) || value.length === 0) return true;
+  const cell = row.getValue(id);
+  if (cell === null || cell === undefined) return false;
+  return value.map(String).includes(String(cell));
+}
+
 export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const {
     data,
@@ -237,9 +249,33 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     searchKeys,
   ]);
 
+  // Every facet hands its column an ARRAY of picked values (from the dropdown
+  // and from the URL alike). A facet column without its own filterFn would
+  // fall back to TanStack's auto `includesString`, which stringifies the
+  // array: one pick became a loose substring match ("Student Pass" matched
+  // "Student Passport"), two picks matched nothing. Such columns get the
+  // exact "cell is one of the picks" test the facets mean.
+  // Keyed on the ids, not the arrays — callers often build `facets` inline,
+  // and a new columns array every render would rebuild every row model.
+  const facetIdKey = [...facets, ...facetGroups.flatMap((g) => g.facets)]
+    .map((f) => f.columnId)
+    .join('\u0000');
+  const tableColumns = useMemo(() => {
+    const facetIds = new Set(facetIdKey.split('\u0000'));
+    return columns.map((c) => {
+      const id =
+        c.id ??
+        ('accessorKey' in c && typeof c.accessorKey === 'string'
+          ? c.accessorKey
+          : undefined);
+      if (!id || !facetIds.has(id) || c.filterFn) return c;
+      return { ...c, filterFn: facetInListFilter } as typeof c;
+    });
+  }, [columns, facetIdKey]);
+
   const table = useReactTable<TRow>({
     data: tabFilteredData,
-    columns,
+    columns: tableColumns,
     getRowId,
     state: {
       sorting,
@@ -290,20 +326,57 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
 
+  // Re-seed from the URL when it changed from outside the table — a link into
+  // this page carrying different filters. The useState initialisers above run
+  // once per mount, and `cacheComponents` keeps a visited page mounted (React
+  // <Activity>) across navigations, so without this the table kept the first
+  // visit's filters: /markbook/sections → a section → "All sheets" stayed on
+  // whichever section was opened first. Done during render (React's "adjust
+  // state when a prop changes" pattern) so the write effects below never run
+  // with the stale state and push it back into the URL.
+  const [seenUrlSignature, setSeenUrlSignature] = useState(urlState.signature);
+  const skipPageResetRef = useRef(false);
+  if (url.enabled && urlState.signature !== seenUrlSignature) {
+    setSeenUrlSignature(urlState.signature);
+    if (urlState.isExternal) {
+      const next = urlState.read();
+      setStatusTab(next.status ?? defaultStatus);
+      setMineActive(Boolean(next.mine && meScopeEnabled));
+      setSearch(next.search ?? '');
+      setColumnFilters(
+        Object.entries(next.facets).map(([id, value]) => ({ id, value }))
+      );
+      setRowSelection({});
+      skipPageResetRef.current = true;
+      table.setPageSize(next.pageSize ?? pageSize);
+      table.setPageIndex(next.page && next.page > 1 ? next.page - 1 : 0);
+    }
+  }
+
   // Reset to page 1 when the FILTER inputs change (search / status tab /
   // me-scope / facets) so the user isn't stranded on a now-empty page. This is
   // the deliberate counterpart to autoResetPageIndex:false above — data-identity
   // re-renders (a url-state navigation) no longer reset the page, but a genuine
-  // filter change does. Skips the initial mount so a deep-linked ?page= survives.
+  // filter change does. Skips the initial mount so a deep-linked ?page= survives,
+  // and a URL re-seed (above) for the same reason.
   const didMountRef = useRef(false);
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
       return;
     }
+    if (skipPageResetRef.current) {
+      skipPageResetRef.current = false;
+      return;
+    }
     table.setPageIndex(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusTab, mineActive, columnFilters]);
+  // A re-seed that changed none of those deps never reaches the effect above;
+  // clear the flag after every commit so it can't swallow a later reset.
+  useEffect(() => {
+    skipPageResetRef.current = false;
+  });
 
   useEffect(() => {
     if (!url.enabled) return;

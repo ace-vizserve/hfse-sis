@@ -28,7 +28,8 @@ export function RecentActivityCard({
   viewAllHref,
 }: {
   rows: ActivityRow[];
-  viewAllHref: string;
+  /** Omitted for a role with no audit log to open. */
+  viewAllHref: string | null;
 }) {
   return (
     <Card>
@@ -72,13 +73,15 @@ export function RecentActivityCard({
             ))}
           </ul>
         )}
-        <Link
-          href={viewAllHref}
-          className="flex items-center justify-center gap-1.5 border-t border-border px-6 py-3 text-sm font-semibold text-brand-indigo transition-colors hover:bg-muted/50"
-        >
-          View all activity
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+        {viewAllHref && (
+          <Link
+            href={viewAllHref}
+            className="flex items-center justify-center gap-1.5 border-t border-border px-6 py-3 text-sm font-semibold text-brand-indigo transition-colors hover:bg-muted/50"
+          >
+            View all activity
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        )}
       </CardContent>
     </Card>
   );

@@ -66,7 +66,9 @@ function rolesOf(r: StaffRow): string[] {
   ];
 }
 
-const COVER_COVERED = 'Away, covered by someone';
+// No comma: facet values travel comma-joined in the URL, so a comma inside one
+// splits it in two on reload or a shared link.
+const COVER_COVERED = 'Away — covered by someone';
 const COVER_COVERING = 'Standing in for someone';
 
 /**

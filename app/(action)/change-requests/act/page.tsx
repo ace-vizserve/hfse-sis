@@ -315,6 +315,7 @@ export default async function ChangeRequestActPage({
     if (state.kind === 'can_act') {
       return (
         <ActConfirm
+          key={token}
           token={token}
           action={payload.action}
           fields={fields}
@@ -380,6 +381,7 @@ export default async function ChangeRequestActPage({
   if (!isTerminal && !alreadyActed) {
     return (
       <ActConfirm
+        key={token}
         token={token}
         action={payload.action}
         fields={fields}

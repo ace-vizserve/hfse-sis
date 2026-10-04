@@ -461,7 +461,9 @@ export default async function SisStudentDetailPage({
         </div>
       </section>
 
-      <Tabs defaultValue={tab} className="space-y-6">
+      {/* Keyed: this page stays mounted across navigations (cacheComponents),
+          so a link with a different ?tab= must remount the uncontrolled Tabs. */}
+      <Tabs key={tab} defaultValue={tab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="family">Family</TabsTrigger>

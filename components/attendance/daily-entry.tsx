@@ -159,9 +159,12 @@ export function DailyEntry({
   events,
   initialDaily,
   today,
+  initialDate,
   filingsByCell = {},
   noteMemory = {},
 }: {
+  /** The day a link asked for (`?date=`); defaults to today. */
+  initialDate?: string;
   /** Each mark's own latest note per day — switching back restores it. */
   noteMemory?: NoteMemory;
   sectionId: string;
@@ -190,7 +193,7 @@ export function DailyEntry({
   // School (encodable) days in this term, ascending — used by the stepper.
   const dates = useMemo(() => encodableDates(calendar), [calendar]);
   // The view opens on the real calendar date; the stepper moves across school days.
-  const [date, setDate] = useState<string>(today);
+  const [date, setDate] = useState<string>(initialDate ?? today);
 
   // Roster shown for marking: active + late-enrollees (withdrawn excluded).
   const roster = useMemo(

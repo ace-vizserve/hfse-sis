@@ -135,6 +135,7 @@ export function OverviewSubjectTable({ rows }: { rows: OverviewSubjectRow[] }) {
       columns={columns}
       getRowId={(r) => r.subjectId}
       searchKeys={['subjectName']}
+      url={{ enabled: true, namespace: 'ovsubject' }}
       searchPlaceholder="Search subjects…"
       hidePagination
       emptyState={{

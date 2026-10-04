@@ -1020,7 +1020,10 @@ function buildPreCourseColumns(
     },
     {
       id: 'preCourseStatus',
-      accessorFn: (r) => (r.preCourseStatus === 'complete' ? 1 : 0),
+      // The badge's own words, so the PCC status facet has options to offer
+      // (the shell lists string values only — a 1/0 here left it empty).
+      accessorFn: (r) =>
+        r.preCourseStatus === 'complete' ? 'Counselled' : 'Not yet counselled',
       header: 'Status',
       cell: ({ row }) => (
         <PreCourseStatusBadge status={row.original.preCourseStatus} />

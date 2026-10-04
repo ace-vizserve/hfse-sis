@@ -130,6 +130,7 @@ export function AwardsLevelTable({ rows }: { rows: AwardsLevelTableRow[] }) {
       columns={columns}
       getRowId={(r) => r.levelId}
       searchKeys={['levelLabel']}
+      url={{ enabled: true, namespace: 'awlevels' }}
       searchPlaceholder="Search grade levels…"
       hidePagination
       emptyState={{

@@ -106,7 +106,11 @@ export function AwardsStudentTable({
       ),
     },
     {
-      accessorKey: 'standing',
+      // Settled, the cell shows the official award — so the facet and the
+      // sort must read it too, not the computed standing the cell no longer
+      // shows.
+      id: 'standing',
+      accessorFn: (r) => (settled ? r.official : r.standing),
       header: ({ column }) => (
         <SortableHeader column={column}>
           {settled ? 'Award' : 'Standing'}
@@ -163,6 +167,7 @@ export function AwardsStudentTable({
       columns={columns}
       getRowId={(r) => r.studentId}
       searchKeys={['fullName', 'studentNumber', 'sectionName', 'levelLabel']}
+      url={{ enabled: true, namespace: 'awstudents' }}
       searchPlaceholder="Search students…"
       facets={[
         {

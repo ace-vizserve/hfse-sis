@@ -198,6 +198,7 @@ export function OverviewLevelTable({
       columns={columns}
       getRowId={(r) => r.levelId}
       searchKeys={['levelLabel', 'levelCode']}
+      url={{ enabled: true, namespace: 'ovlevel' }}
       searchPlaceholder="Search grade levels…"
       hidePagination
       emptyState={{

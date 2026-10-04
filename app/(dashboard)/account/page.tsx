@@ -165,9 +165,7 @@ export default async function AccountPage() {
 
       <RecentActivityCard
         rows={activity}
-        viewAllHref={
-          role ? viewAllActivityHref(role, email) : '/markbook/audit-log'
-        }
+        viewAllHref={role ? viewAllActivityHref(role, email) : null}
       />
 
       {/* §7.7 mono trust strip. This page is where someone checks what their

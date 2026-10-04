@@ -69,11 +69,19 @@ export default async function SectionAttendancePage({
   searchParams,
 }: {
   params: Promise<{ sectionId: string }>;
-  searchParams: Promise<{ term_id?: string; view?: string }>;
+  searchParams: Promise<{ term_id?: string; view?: string; date?: string }>;
 }) {
   const { sectionId } = await params;
   const sp = await searchParams;
-  const view: 'sheet' | 'daily' = sp.view === 'daily' ? 'daily' : 'sheet';
+  // `?date=` is how every "Mark attendance" / "Backfill" / audit link names the
+  // day it means, so it opens the daily view on that day. It used to be read by
+  // nothing — those links all landed on the current term's sheet instead.
+  const linkedDate =
+    sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : null;
+  const view: 'sheet' | 'daily' =
+    sp.view === 'daily' || (linkedDate && sp.view !== 'sheet')
+      ? 'daily'
+      : 'sheet';
 
   const viewer = await getSessionUser();
   if (!viewer) redirect('/login');
@@ -159,7 +167,7 @@ export default async function SectionAttendancePage({
   // ?term_id default (falling back to the same resolver).
   const selectedTermId =
     view === 'daily'
-      ? resolveCurrentTermId(terms, todayIso)
+      ? resolveCurrentTermId(terms, linkedDate ?? todayIso)
       : ((sp.term_id && terms.find((t) => t.id === sp.term_id)?.id) ??
         resolveCurrentTermId(terms, todayIso));
   const selectedTerm = terms.find((t) => t.id === selectedTermId) ?? null;
@@ -506,7 +514,7 @@ export default async function SectionAttendancePage({
           date columns render with empty cells even though data exists. */}
       {view === 'daily' ? (
         <DailyEntry
-          key={`daily:${sectionId}:${selectedTermId}`}
+          key={`daily:${sectionId}:${selectedTermId}:${linkedDate ?? ''}`}
           sectionId={sectionId}
           termId={selectedTermId}
           enrolments={enrolments}
@@ -515,6 +523,7 @@ export default async function SectionAttendancePage({
           initialDaily={daily}
           noteMemory={noteMemory}
           today={todayIso}
+          initialDate={linkedDate ?? undefined}
           // The daily view is the FASTER of the two marking paths and the one
           // a form adviser opens every morning, so it needs the filings at
           // least as much as the term sheet does — it went without them until

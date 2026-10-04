@@ -696,10 +696,12 @@ export function PublishWindowPanel({
 
   // Canonical deep-links (KD #81). Grading filters by the exact section name
   // via the namespaced `grading.section` facet (KD #84); Masterfile needs the
-  // level (it falls back to the first level otherwise).
+  // level (it falls back to the first level otherwise) and `view=masterfile` —
+  // without it the page shows the school-wide overview, not the masterfile
+  // where final grades are confirmed.
   const gradingHref = `/markbook/grading?grading.section=${encodeURIComponent(sectionName)}`;
   const masterfileHref = levelId
-    ? `/records/academic-summary?level=${levelId}&class=${sectionId}`
+    ? `/records/academic-summary?level=${levelId}&class=${sectionId}&view=masterfile`
     : '/records/academic-summary';
 
   return (

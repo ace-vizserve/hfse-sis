@@ -105,6 +105,10 @@ export default async function GradingListPage({
     // Section deep-links now drive the client-side `grading.section` facet
     // (KD #84) rather than a server-side scope, so there's no `?section=` here.
     'grading.q'?: string;
+    // The year to list. The Markbook dashboard and its drills link here with
+    // the year they are showing; without this a past year's term filter
+    // matched no current-year row and the table came up empty.
+    ay?: string;
   }>;
 }) {
   const supabase = await createClient();
@@ -135,6 +139,19 @@ export default async function GradingListPage({
     .maybeSingle();
   const view = role;
   const currentAy = (ayData as { id: string; ay_code: string } | null) ?? null;
+  // The listed year: `?ay=` when it names a real year, else the current one.
+  // Looked up by exact code, so an unknown value simply falls back.
+  const { data: linkedAyData } =
+    sp?.ay && sp.ay !== currentAy?.ay_code
+      ? await supabase
+          .from('academic_years')
+          .select('id, ay_code')
+          .eq('ay_code', sp.ay)
+          .maybeSingle()
+      : { data: null };
+  const listedAy =
+    (linkedAyData as { id: string; ay_code: string } | null) ?? currentAy;
+  const isPastOrOtherAy = !!listedAy && listedAy.id !== currentAy?.id;
 
   // `canCreate` draws the two oversight controls on this page — "New grading
   // sheet" and the multi-select "Lock selected". Both routes behind them gate
@@ -178,12 +195,12 @@ export default async function GradingListPage({
     coveredSlots.filter((a) => isAdviserRole(a.role)).map((a) => a.section_id)
   );
 
-  // Sheets are scoped to the current AY via `section.academic_year_id`
+  // Sheets are scoped to the listed AY (current unless `?ay=`) via `section.academic_year_id`
   // (the sections table FKs the AY by UUID, not `ay_code`). The `!inner`
   // modifier is required for PostgREST to honour the nested filter —
   // otherwise the join is LEFT and the filter is silently dropped.
   // Without this filter the table renders sheets across every AY.
-  const sheetsPromise = currentAy
+  const sheetsPromise = listedAy
     ? supabase
         .from('grading_sheets')
         .select(
@@ -193,14 +210,14 @@ export default async function GradingListPage({
            subject_config:subject_configs(display_name),
            section:sections!inner(id, name, academic_year_id, level:levels(id, code, label, level_type))`
         )
-        .eq('section.academic_year_id', currentAy.id)
+        .eq('section.academic_year_id', listedAy.id)
     : Promise.resolve({ data: [] as Array<{ id: string }> });
 
-  const termLocksPromise = currentAy
+  const termLocksPromise = listedAy
     ? supabase
         .from('terms')
         .select('id, term_number, label, grading_lock_date, is_current')
-        .eq('academic_year_id', currentAy.id)
+        .eq('academic_year_id', listedAy.id)
         .order('term_number')
     : Promise.resolve({ data: [] });
 
@@ -515,7 +532,7 @@ export default async function GradingListPage({
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="space-y-4">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Grading
+            Grading{isPastOrOtherAy && listedAy ? ` · ${listedAy.ay_code}` : ''}
           </p>
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
             Grading sheets.
@@ -592,7 +609,7 @@ export default async function GradingListPage({
             value={totalCount}
             icon={Layers}
             footerTitle={`${distinctLevels} ${distinctLevels === 1 ? 'level' : 'levels'}`}
-            footerDetail="Across every term in the current AY"
+            footerDetail={`Across every term in ${isPastOrOtherAy && listedAy ? listedAy.ay_code : 'the current AY'}`}
           />
           <StatCard
             description="Open"

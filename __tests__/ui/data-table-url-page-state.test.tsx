@@ -71,15 +71,13 @@ describe('DataTable url-state — pagination params vs the debounced search writ
       />
     );
 
-    // The immediate (non-debounced) write on mount carries the page.
-    await waitFor(() => expect(h.replaceCalls.length).toBeGreaterThan(0));
-    expect(lastReplace()).toContain('t.page=2');
-
     // Wait past the 300ms debounce so the mount-scheduled debounced write
     // (the [search] effect) has fired — it previously omitted page/pageSize
-    // and so DELETED them from the URL.
+    // and so DELETED them from the URL. A write that would leave the URL
+    // unchanged is skipped, so either nothing was written or the last write
+    // kept the page.
     await new Promise((r) => setTimeout(r, 500));
-    expect(lastReplace()).toContain('t.page=2');
+    expect(h.replaceCalls.every((u) => u.includes('t.page=2'))).toBe(true);
   });
 
   it('a search keystroke keeps a non-default ?ns.pageSize= while resetting the page', async () => {

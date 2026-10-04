@@ -3,11 +3,12 @@ import { redirect } from 'next/navigation';
 
 import { ValidationQueue } from '@/components/admissions/document-validation/validation-queue';
 import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { loadPendingDocValidation } from '@/lib/admissions/document-validation';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // /admissions/document-validation — triage queue for un-enrolled applicants'
 // uploaded documents. Per KD #70, this is the "awaiting validation" half of
@@ -28,7 +29,11 @@ import { getSessionUser } from '@/lib/supabase/server';
 // `validate` for the buttons. The answer moves when a superadmin edits the
 // grants at /sis/admin/roles, not when someone edits a comment.
 
-export default async function DocumentValidationPage() {
+export default async function DocumentValidationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
 
@@ -48,7 +53,15 @@ export default async function DocumentValidationPage() {
     );
   }
 
-  const rows = await loadPendingDocValidation(currentAy.ay_code);
+  // The admissions dashboard links here with its selected year (`?ay=`), e.g.
+  // the AY2027 intake. Checked against the real years, never a regex — the
+  // code becomes a table prefix.
+  const { ay: ayParam } = await searchParams;
+  const ayCodes = ayParam ? await listAyCodes(createServiceClient()) : [];
+  const ayCode =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
+
+  const rows = await loadPendingDocValidation(ayCode);
   const applicantCount = new Set(rows.map((r) => r.enroleeNumber)).size;
 
   return (
@@ -67,15 +80,11 @@ export default async function DocumentValidationPage() {
         </p>
       </header>
 
-      <ValidationQueue
-        rows={rows}
-        ayCode={currentAy.ay_code}
-        canValidate={canValidate}
-      />
+      <ValidationQueue rows={rows} ayCode={ayCode} canValidate={canValidate} />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <FileCheck className="size-3" strokeWidth={2.25} />
-        <span>{currentAy.ay_code}</span>
+        <span>{ayCode}</span>
         <span className="text-border">·</span>
         <span>Un-enrolled applicants only</span>
         <span className="text-border">·</span>

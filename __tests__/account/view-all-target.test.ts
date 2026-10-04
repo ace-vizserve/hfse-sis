@@ -3,9 +3,6 @@ import { viewAllActivityHref } from '@/lib/account/view-all-target';
 
 describe('viewAllActivityHref', () => {
   it('maps each role to its primary module audit-log page, with the email URL-encoded', () => {
-    expect(viewAllActivityHref('teacher', 'maria.t@hfse.edu.sg')).toBe(
-      '/markbook/audit-log?actor=maria.t%40hfse.edu.sg'
-    );
     expect(
       viewAllActivityHref('academic_coordinator', 'joann@hfse.edu.sg')
     ).toBe('/markbook/audit-log?actor=joann%40hfse.edu.sg');
@@ -18,5 +15,9 @@ describe('viewAllActivityHref', () => {
     expect(viewAllActivityHref('admissions', 'admissions@hfse.edu.sg')).toBe(
       '/admissions/audit-log?actor=admissions%40hfse.edu.sg'
     );
+  });
+
+  it('gives a teacher no link — every audit-log page turns a teacher away', () => {
+    expect(viewAllActivityHref('teacher', 'maria.t@hfse.edu.sg')).toBeNull();
   });
 });

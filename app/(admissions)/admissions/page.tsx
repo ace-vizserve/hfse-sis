@@ -441,6 +441,7 @@ export default async function AdmissionsDashboard({
     chaseUploaded: chaseSummary.withUploaded,
     chaseExpired: chaseSummary.withExpired,
     totalApplicants: chaseSummary.totalApplicants,
+    ayCode: selectedAy,
   });
 
   const comparisonLabel = kpisResult.comparisonRange

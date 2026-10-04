@@ -188,6 +188,7 @@ function SubjectCell({ name, code }: { name: string; code: string }) {
 }
 
 function buildEntryColumns(
+  ayCode: string,
   visible: DrillColumnKey[]
 ): ColumnDef<GradeEntryRow, unknown>[] {
   const cols: ColumnDef<GradeEntryRow, unknown>[] = [];
@@ -246,7 +247,7 @@ function buildEntryColumns(
           header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => (
             <Link
-              href={`/markbook/grading?grading.section=${encodeURIComponent(row.original.sectionName)}`}
+              href={`/markbook/grading?ay=${encodeURIComponent(ayCode)}&grading.section=${encodeURIComponent(row.original.sectionName)}`}
               className="text-sm text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
             >
               {row.original.sectionName}
@@ -397,6 +398,7 @@ function buildEntryColumns(
 }
 
 function buildSheetColumns(
+  ayCode: string,
   visible: DrillColumnKey[]
 ): ColumnDef<SheetRow, unknown>[] {
   const cols: ColumnDef<SheetRow, unknown>[] = [];
@@ -431,6 +433,7 @@ function buildSheetColumns(
             // an exact-match facet; `grading.subject`/`grading.term` values
             // mirror the table's cell values (subject name + term.label).
             const p: Record<string, string> = {
+              ay: ayCode,
               'grading.section': row.original.sectionName,
               'grading.status': row.original.isLocked ? 'locked' : 'open',
             };
@@ -549,6 +552,7 @@ function buildSheetColumns(
 }
 
 function buildChangeRequestColumns(
+  ayCode: string,
   visible: DrillColumnKey[]
 ): ColumnDef<ChangeRequestRow, unknown>[] {
   const cols: ColumnDef<ChangeRequestRow, unknown>[] = [];
@@ -561,7 +565,7 @@ function buildChangeRequestColumns(
           header: DRILL_COLUMN_LABELS.sectionName,
           cell: ({ row }) => (
             <Link
-              href={`/markbook/grading?grading.section=${encodeURIComponent(row.original.sectionName)}`}
+              href={`/markbook/grading?ay=${encodeURIComponent(ayCode)}&grading.section=${encodeURIComponent(row.original.sectionName)}`}
               className="text-sm text-foreground transition-colors hover:text-primary hover:underline underline-offset-4"
             >
               {row.original.sectionName}
@@ -822,20 +826,20 @@ export function MarkbookDrillSheet(props: MarkbookDrillSheetProps) {
   // Build columns based on row kind.
   const columns = React.useMemo(() => {
     if (kind === 'entry')
-      return buildEntryColumns(visibleColumnKeys) as ColumnDef<
+      return buildEntryColumns(ayCode, visibleColumnKeys) as ColumnDef<
         MarkbookDrillRow,
         unknown
       >[];
     if (kind === 'sheet')
-      return buildSheetColumns(visibleColumnKeys) as ColumnDef<
+      return buildSheetColumns(ayCode, visibleColumnKeys) as ColumnDef<
         MarkbookDrillRow,
         unknown
       >[];
-    return buildChangeRequestColumns(visibleColumnKeys) as ColumnDef<
+    return buildChangeRequestColumns(ayCode, visibleColumnKeys) as ColumnDef<
       MarkbookDrillRow,
       unknown
     >[];
-  }, [kind, visibleColumnKeys]);
+  }, [ayCode, kind, visibleColumnKeys]);
 
   const columnOptions = React.useMemo(
     () =>

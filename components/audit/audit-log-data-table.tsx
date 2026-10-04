@@ -289,6 +289,14 @@ export function AuditLogDataTable({
   const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
     initialSheetIdFilter ?? null
   );
+  // `cacheComponents` keeps this page mounted across navigations, so a later
+  // link carrying a different `?sheet_id=` must re-seed the filter here.
+  const [seenSheetIdParam, setSeenSheetIdParam] =
+    React.useState(initialSheetIdFilter);
+  if (initialSheetIdFilter !== seenSheetIdParam) {
+    setSeenSheetIdParam(initialSheetIdFilter);
+    setSheetIdFilter(initialSheetIdFilter ?? null);
+  }
   // ⚠ THE DATE WINDOW COMES FROM THE URL, NOT FROM LOCAL STATE.
   //
   // It used to be `useState` + a `.filter()` over `rows` — a client facet on a

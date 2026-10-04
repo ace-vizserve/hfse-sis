@@ -166,12 +166,19 @@ export type AdmissionsChaseInsightInput = {
   chaseUploaded: number;
   chaseExpired: number;
   totalApplicants: number;
+  /** The dashboard's selected year. The CTAs are relative query strings, so
+   *  without it they dropped `?ay=` and opened the current year instead. */
+  ayCode?: string;
 };
 
 export function admissionsChaseInsights(
   input: AdmissionsChaseInsightInput
 ): Insight[] {
   const out: Insight[] = [];
+  const chaseHref = (status: string) =>
+    input.ayCode
+      ? `?ay=${encodeURIComponent(input.ayCode)}&status=${status}`
+      : `?status=${status}`;
 
   if (input.chaseRejected >= 1) {
     out.push({
@@ -179,7 +186,7 @@ export function admissionsChaseInsights(
       title: `${pluralize(input.chaseRejected, 'applicant', 'applicants')} need re-uploads`,
       detail:
         'Documents rejected by registrar — re-notify parents to re-upload before the funnel stalls',
-      cta: { label: 'View rejected', href: '?status=rejected' },
+      cta: { label: 'View rejected', href: chaseHref('rejected') },
     });
   }
 
@@ -189,7 +196,7 @@ export function admissionsChaseInsights(
       title: `${pluralize(input.chaseExpired, 'applicant has', 'applicants have')} expired documents`,
       detail:
         'Passport / pass / guardian docs lapsed mid-pipeline — chase parents before enrollment can finish',
-      cta: { label: 'View expired', href: '?status=expired' },
+      cta: { label: 'View expired', href: chaseHref('expired') },
     });
   }
 
@@ -199,7 +206,7 @@ export function admissionsChaseInsights(
       title: `${pluralize(input.chaseToFollow, 'applicant', 'applicants')} marked 'To follow'`,
       detail:
         'Parents committed to upload — chase up before the promise goes stale',
-      cta: { label: 'View To follow', href: '?status=to-follow' },
+      cta: { label: 'View To follow', href: chaseHref('to-follow') },
     });
   }
 
@@ -208,7 +215,7 @@ export function admissionsChaseInsights(
       severity: input.chaseUploaded >= 30 ? 'warn' : 'info',
       title: `${pluralize(input.chaseUploaded, 'document', 'documents')} awaiting registrar review`,
       detail: 'Parents uploaded — the validation backlog is growing',
-      cta: { label: 'View pending review', href: '?status=uploaded' },
+      cta: { label: 'View pending review', href: chaseHref('uploaded') },
     });
   }
 

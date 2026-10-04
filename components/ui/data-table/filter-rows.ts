@@ -40,6 +40,38 @@ function getColumnAccessor<TRow>(
   return (row) => (row as unknown as Record<string, unknown>)[key];
 }
 
+type RowLike<TRow> = {
+  original: TRow;
+  index: number;
+  getValue: (id: string) => unknown;
+};
+type ColumnFilterFn<TRow> = (
+  row: RowLike<TRow>,
+  columnId: string,
+  filterValue: unknown,
+  addMeta: (meta: unknown) => void
+) => boolean;
+
+/**
+ * A column's own `filterFn`, when it is a function. Named built-ins
+ * ('arrIncludesSome', …) return null — the exact comparison stands in for
+ * them, as it always has.
+ */
+function getColumnFilterFn<TRow>(
+  columns: ColumnDef<TRow>[],
+  columnId: string
+): ColumnFilterFn<TRow> | null {
+  const col = columns.find(
+    (c) =>
+      c.id === columnId ||
+      ('accessorKey' in c &&
+        (c as { accessorKey?: string }).accessorKey === columnId)
+  ) as { filterFn?: unknown } | undefined;
+  return typeof col?.filterFn === 'function'
+    ? (col.filterFn as ColumnFilterFn<TRow>)
+    : null;
+}
+
 /**
  * Resolve a column's value for a given row via its `accessorFn` OR
  * `accessorKey` — never a raw `row[id]` lookup, which is `undefined` for
@@ -112,6 +144,29 @@ export function filterRows<TRow>(
     if (!f.values || f.values.length === 0) continue;
     const valueSet = new Set(f.values.map((v) => String(v)));
     const accessor = getColumnAccessor(columns, f.id);
+    // A column with its own filterFn decides for itself — a multi-value cell
+    // ("Orange, Blue" on a tie, a teacher's several subjects) matches a pick
+    // the exact comparison below would miss, and then the tab counts and the
+    // export disagreed with the rows on screen.
+    const ownFilter = getColumnFilterFn(columns, f.id);
+    if (ownFilter) {
+      out = out.filter((r, i) =>
+        ownFilter(
+          {
+            original: r,
+            index: i,
+            getValue: (id: string) =>
+              id === f.id
+                ? accessor(r, i)
+                : getColumnAccessor(columns, id)(r, i),
+          },
+          f.id,
+          f.values,
+          () => {}
+        )
+      );
+      continue;
+    }
     out = out.filter((r, i) => {
       const raw = accessor(r, i);
       const cell = raw == null || raw === '' ? '(unassigned)' : String(raw);

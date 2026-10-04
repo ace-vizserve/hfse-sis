@@ -97,6 +97,13 @@ export function DeclarationsQueueTable({
   const [openRow, setOpenRow] = useState<DeclarationQueueRow | null>(
     () => rows.find((r) => r.requestId === openRequestId) ?? null
   );
+  // The page stays mounted across navigations (cacheComponents), so a second
+  // bell link with a different `?req=` must open its own filing.
+  const [seenOpenRequestId, setSeenOpenRequestId] = useState(openRequestId);
+  if (openRequestId !== seenOpenRequestId) {
+    setSeenOpenRequestId(openRequestId);
+    setOpenRow(rows.find((r) => r.requestId === openRequestId) ?? null);
+  }
 
   const columns: ColumnDef<DeclarationQueueRow>[] = [
     {

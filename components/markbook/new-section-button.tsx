@@ -84,14 +84,19 @@ export function NewSectionButton({
   const router = useRouter();
   const run = useWriteAction();
   const isControlled = controlledOpen !== undefined;
-  // Auto-opens on first render when an initialLevelId arrives while
-  // uncontrolled — e.g. a caller deep-links here via ?addSectionLevel=<id>,
-  // and the page resolves that into initialLevelId server-side. Only
-  // affects the very first mount (a later initialLevelId change while
-  // already open/closed doesn't reopen it).
+  // Auto-opens when an initialLevelId arrives while uncontrolled — e.g. a
+  // caller deep-links here via ?addSectionLevel=<id>, and the page resolves
+  // that into initialLevelId server-side. On first mount, and again whenever
+  // the param changes: the page stays mounted across navigations
+  // (cacheComponents), so a second deep-link must reopen the dialog.
   const [uncontrolledOpen, setUncontrolledOpen] = useState(
     () => !isControlled && Boolean(initialLevelId)
   );
+  const [seenInitialLevelId, setSeenInitialLevelId] = useState(initialLevelId);
+  if (initialLevelId !== seenInitialLevelId) {
+    setSeenInitialLevelId(initialLevelId);
+    if (!isControlled && initialLevelId) setUncontrolledOpen(true);
+  }
   const open = isControlled ? controlledOpen : uncontrolledOpen;
   const setOpen = isControlled
     ? (controlledOnOpenChange ?? (() => {}))

@@ -84,6 +84,9 @@ export type CalendarAdminClientProps = {
   events: CalendarEventRow[];
   /** Optional carry-forward props for the prior-AY copy dialog. */
   copyFromPriorAyProps?: CopyFromPriorAyProps | null;
+  /** The term a link asked for (`?term_id=`, e.g. the attendance sheet's
+   *  "Configure calendar"); ignored when it isn't one of `terms`. */
+  initialTermId?: string;
 };
 
 const EMPTY_SET: Set<string> = new Set();
@@ -116,11 +119,18 @@ export function CalendarAdminClient({
   calendar,
   events,
   copyFromPriorAyProps,
+  initialTermId,
 }: CalendarAdminClientProps) {
   // ── Selected term ─────────────────────────────────────────────────────────────
-  // Default to the current active term (date-resolved, with the layered fallback
-  // in resolveCurrentTermId), else the first term.
+  // The linked term when there is one; otherwise the current active term
+  // (date-resolved, with the layered fallback in resolveCurrentTermId), else
+  // the first term.
+  const linkedTermId =
+    initialTermId && terms.some((t) => t.id === initialTermId)
+      ? initialTermId
+      : undefined;
   const [selectedTermId, setSelectedTermId] = useState<string>(() => {
+    if (linkedTermId) return linkedTermId;
     const resolved = resolveCurrentTermId(
       terms.map((t) => ({
         id: t.id,
@@ -136,6 +146,14 @@ export function CalendarAdminClient({
     if (resolved && terms.some((t) => t.id === resolved)) return resolved;
     return terms[0]?.id ?? '';
   });
+
+  // The page stays mounted across navigations (cacheComponents), so a later
+  // link naming a different term must move the selection too.
+  const [seenLinkedTermId, setSeenLinkedTermId] = useState(linkedTermId);
+  if (linkedTermId !== seenLinkedTermId) {
+    setSeenLinkedTermId(linkedTermId);
+    if (linkedTermId) setSelectedTermId(linkedTermId);
+  }
 
   const selectedTerm = useMemo(
     () => terms.find((t) => t.id === selectedTermId) ?? terms[0],
