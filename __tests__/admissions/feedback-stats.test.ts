@@ -26,6 +26,7 @@ function row(over: Partial<FeedbackRow> = {}): FeedbackRow {
     enroleeFullName: 'Test Child',
     studentNumber: null,
     levelApplied: 'Primary One',
+    level: 'Primary One',
     applicationStatus: 'Submitted',
     feedbackRating: null,
     feedbackComments: null,

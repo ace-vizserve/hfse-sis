@@ -8,6 +8,7 @@ import {
   describePlacementBlocker,
   type PlacementLookup,
 } from '@/lib/sis/placement-blocker';
+import { loadLevelLabelResolver, resolveChildLevel } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -62,7 +63,13 @@ export type UnsyncedStudentRow = {
   middleName: string | null;
   lastName: string | null;
   enroleeFullName: string | null;
+  /** The parent-facing level name on the application, exactly as entered.
+   *  Keys the section-options map (the picker resolves it itself). */
   levelApplied: string | null;
+  /** The SIS level the child counts as — `classLevel` once set, else
+   *  `levelApplied` resolved through `level_aliases`. The queue's Level
+   *  column, facet and sort read this one. */
+  level: string | null;
   /** What the parent picked on the form — feeds the section picker's
    *  "Matches their application" hint. Null when blank or unreadable. */
   classType: string | null;
@@ -94,7 +101,7 @@ async function loadUnsyncedUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  const [appsRes, statusRes, prefsRes, levelsRes, sectionsRes] =
+  const [appsRes, statusRes, prefsRes, levelsRes, sectionsRes, resolveLevel] =
     await Promise.all([
       admissions
         .from(`${prefix}_enrolment_applications`)
@@ -123,6 +130,7 @@ async function loadUnsyncedUncached(
           'id, level_id, name, academic_year:academic_years!inner(ay_code)'
         )
         .eq('academic_year.ay_code', ayCode),
+      loadLevelLabelResolver(service),
     ]);
 
   if (appsRes.error) {
@@ -310,6 +318,11 @@ async function loadUnsyncedUncached(
       lastName: app.lastName ?? null,
       enroleeFullName: app.enroleeFullName ?? null,
       levelApplied: app.levelApplied ?? null,
+      level: resolveChildLevel(
+        resolveLevel,
+        status.classLevel,
+        app.levelApplied
+      ),
       classType: prefsByEnrolee.get(enroleeNumber)?.classType ?? null,
       preferredSchedule:
         prefsByEnrolee.get(enroleeNumber)?.preferredSchedule ?? null,
@@ -369,7 +382,8 @@ export async function loadUnsyncedEnrolledStudents(
 ): Promise<UnsyncedStudentRow[]> {
   return unstable_cache(
     () => loadUnsyncedUncached(ayCode),
-    ['sis-unsynced-students', ayCode],
+    // v2: rows gained the resolved `level`.
+    ['sis-unsynced-students', 'v2', ayCode],
     { tags: [`sis:${ayCode}`], revalidate: CACHE_TTL_SECONDS }
   )();
 }

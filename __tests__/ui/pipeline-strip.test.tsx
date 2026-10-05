@@ -16,6 +16,7 @@ const row: StudentListRow = {
   enroleeFullName: 'Ada Lovelace',
   category: 'New',
   levelApplied: 'P1',
+  level: 'P1',
   nationality: null,
   classLevel: 'P1',
   classSection: null,

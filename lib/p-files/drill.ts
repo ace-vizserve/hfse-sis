@@ -8,6 +8,10 @@ import {
   resolveStatus,
   type DocumentStatus,
 } from '@/lib/p-files/document-config';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -194,7 +198,7 @@ async function loadPFilesRowsUncached(
     enroleeType: string | null;
   };
 
-  const [apps, docs, statuses, revisions] = await Promise.all([
+  const [apps, docs, statuses, revisions, resolveLevel] = await Promise.all([
     fetchAllPages<AppLite>(
       (from, to) =>
         admissions
@@ -235,6 +239,8 @@ async function loadPFilesRowsUncached(
           .order('id', { ascending: true })
           .range(from, to) as unknown as P<RevisionLite>
     ),
+    // Never throws — degrades to the names as stored.
+    loadAdmissionsLevelResolver(),
   ]);
 
   const appByEnrolee = new Map<string, AppLite>();
@@ -309,8 +315,14 @@ async function loadPFilesRowsUncached(
     // intent explicit at the iteration site too.
     if (!enrolledEnrolees.has(app.enroleeNumber)) continue;
     const docRow = docByEnrolee.get(app.enroleeNumber);
-    const level =
-      classLevelByEnrolee.get(app.enroleeNumber) ?? app.levelApplied ?? null;
+    // classLevel when set, else the applied-for name resolved to the SIS
+    // level it counts as — the completion-by-level chart's own rule
+    // (lib/p-files/dashboard.ts), so a bar's click lands on its rows.
+    const level = resolveChildLevel(
+      resolveLevel,
+      classLevelByEnrolee.get(app.enroleeNumber),
+      app.levelApplied
+    );
 
     for (const slot of DOCUMENT_SLOTS) {
       const statusCol = `${slot.key}Status`;
@@ -479,7 +491,8 @@ export async function buildPFilesDrillRows(input: {
   // views regardless of the user's selected range.
   const cached = await unstable_cache(
     async () => toCached(await loadPFilesRowsUncached(input.ayCode)),
-    ['p-files-drill', 'rows', input.ayCode],
+    // v2: level resolved through level_aliases.
+    ['p-files-drill', 'rows', 'v2', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
   return expand(cached);

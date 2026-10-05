@@ -57,6 +57,12 @@ export type DerivedClassType = {
 export type DerivedLevel = {
   levelLabel: string;
   classTypes: DerivedClassType[];
+  /**
+   * The SIS level this name counts as, when it is not already the SIS's own
+   * word for it. Set only by `loadProfileAdmissionOptions` for the Edit
+   * profile dropdown; `deriveOptions` (the portal's shape) never sets it.
+   */
+  countsAs?: string | null;
 };
 
 /**

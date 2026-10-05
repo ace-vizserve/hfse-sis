@@ -49,6 +49,7 @@ const ROW: ValidationQueueRow = {
   fullName: 'Ada Lovelace',
   applicationStatus: 'Submitted',
   levelApplied: 'P1',
+  level: 'Primary One',
   slotKey: 'birthCert',
   slotLabel: 'Birth certificate',
   fileUrl: 'https://example.test/file.pdf',

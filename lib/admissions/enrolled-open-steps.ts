@@ -82,7 +82,11 @@ export type EnrolledOpenStepsRow = {
   enroleeNumber: string;
   studentNumber: string | null;
   studentName: string;
+  /** The level name as the application stored it ("Year 9"). */
   levelApplied: string | null;
+  /** The child's level: classLevel when set, else `levelApplied` resolved to
+   *  the SIS level it counts as. What the queue shows and filters by. */
+  level: string | null;
   /** `classLevel classSection` when a class is set on the row, else null. */
   classLabel: string | null;
   /** Plain stage labels, in pipeline order — "Documents", "Fees". */

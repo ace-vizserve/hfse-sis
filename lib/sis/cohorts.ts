@@ -2,6 +2,11 @@ import { unstable_cache } from 'next/cache';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import {
+  loadLevelLabelResolver,
+  resolveChildLevel,
+  type LevelLabelResolver,
+} from '@/lib/sis/levels';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cohort views — Wave 1 shared infrastructure (2026-04-27).
@@ -72,7 +77,14 @@ export type CohortStudentRow = {
   enroleeNumber: string;
   studentNumber: string | null;
   enroleeFullName: string | null;
+  /** The parent-facing level name on the application, exactly as entered. */
   levelApplied: string | null;
+  /**
+   * The SIS level the child counts as — `classLevel` once set, else
+   * `levelApplied` resolved through `level_aliases`. The Level column, facet,
+   * sort and CSV all read this one.
+   */
+  level: string | null;
   applicationStatus: string | null;
 
   // STP-specific (migration 050 — replaced 3-doc-slot model with a single
@@ -128,6 +140,7 @@ type AppRow = Record<string, unknown> & { enroleeNumber: string | null };
 type StatusRow = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
+  classLevel: string | null;
 };
 type DocRow = {
   enroleeNumber: string | null;
@@ -140,6 +153,9 @@ type Snapshot = {
   apps: AppRow[];
   statusByEnrolee: Map<string, StatusRow>;
   docsByEnrolee: Map<string, DocRow>;
+  /** Raw level name → SIS level label (built here, inside the uncached
+   *  loader, so the cached rows carry the resolved string). */
+  resolveLevel: LevelLabelResolver;
 };
 
 async function loadSnapshot(
@@ -162,7 +178,7 @@ async function loadSnapshot(
   // fetchAllPages walks past the PostgREST 1000-row cap (L5). AYs with
   // > 1000 enrolled applicants silently truncated without this.
   // Cast required: Supabase can't infer row shapes for dynamic table names.
-  const [apps, statuses, docs] = await Promise.all([
+  const [apps, statuses, docs, resolveLevel] = await Promise.all([
     fetchAllPages<AppRow>(
       (from, to) =>
         supabase
@@ -174,7 +190,7 @@ async function loadSnapshot(
       (from, to) =>
         supabase
           .from(`${prefix}_enrolment_status`)
-          .select('enroleeNumber, applicationStatus')
+          .select('enroleeNumber, applicationStatus, classLevel')
           .range(from, to) as unknown as PageResult<StatusRow>
     ),
     withDocs
@@ -188,6 +204,7 @@ async function loadSnapshot(
               .range(from, to) as unknown as PageResult<DocRow>
         )
       : Promise.resolve([] as DocRow[]),
+    loadLevelLabelResolver(supabase),
   ]);
 
   const statusByEnrolee = new Map<string, StatusRow>();
@@ -199,24 +216,28 @@ async function loadSnapshot(
     if (d.enroleeNumber) docsByEnrolee.set(d.enroleeNumber, d);
   }
 
-  return { apps, statusByEnrolee, docsByEnrolee };
+  return { apps, statusByEnrolee, docsByEnrolee, resolveLevel };
 }
 
 function commonFields(
   app: AppRow,
-  status: StatusRow | undefined
+  status: StatusRow | undefined,
+  resolveLevel: LevelLabelResolver
 ): {
   enroleeNumber: string;
   studentNumber: string | null;
   enroleeFullName: string | null;
   levelApplied: string | null;
+  level: string | null;
   applicationStatus: string | null;
 } {
+  const levelApplied = (app.levelApplied as string | null) ?? null;
   return {
     enroleeNumber: (app.enroleeNumber as string | null) ?? '',
     studentNumber: (app.studentNumber as string | null) ?? null,
     enroleeFullName: (app.enroleeFullName as string | null) ?? null,
-    levelApplied: (app.levelApplied as string | null) ?? null,
+    levelApplied,
+    level: resolveChildLevel(resolveLevel, status?.classLevel, levelApplied),
     applicationStatus: status?.applicationStatus ?? null,
   };
 }
@@ -272,7 +293,7 @@ async function loadStpCohortUncached(
     const stpComplete = stpStatus === 'Approved' && residenceFilled;
 
     rows.push({
-      ...commonFields(app, status),
+      ...commonFields(app, status, snapshot.resolveLevel),
       stpApplicationType: stpType,
       stpApplicationStatus: stpStatus,
       residenceHistoryFilled: residenceFilled,
@@ -296,7 +317,8 @@ export async function getStpCohort(
 ): Promise<CohortStudentRow[]> {
   return unstable_cache(
     () => loadStpCohortUncached(ayCode, scope),
-    ['sis', 'cohort', 'stp', ayCode, scope],
+    // v2: rows gained the resolved `level`.
+    ['sis', 'cohort', 'stp', 'v2', ayCode, scope],
     {
       tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
@@ -361,7 +383,7 @@ async function loadMedicalCohortUncached(
     if (flags.length === 0) continue; // not in cohort
 
     rows.push({
-      ...commonFields(app, status),
+      ...commonFields(app, status, snapshot.resolveLevel),
       medicalFlags: flags,
       allergyDetails: (app.allergyDetails as string | null) ?? null,
       foodAllergyDetails: (app.foodAllergyDetails as string | null) ?? null,
@@ -388,7 +410,8 @@ export async function getMedicalCohort(
 ): Promise<CohortStudentRow[]> {
   return unstable_cache(
     () => loadMedicalCohortUncached(ayCode, scope),
-    ['sis', 'cohort', 'medical', ayCode, scope],
+    // v2: rows gained the resolved `level`.
+    ['sis', 'cohort', 'medical', 'v2', ayCode, scope],
     {
       tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
@@ -495,7 +518,7 @@ async function loadPassExpiryCohortUncached(
     const days = Math.floor((earliest.ms - todayMs) / MS_PER_DAY);
 
     rows.push({
-      ...commonFields(app, status),
+      ...commonFields(app, status, snapshot.resolveLevel),
       studentPassExpiry: studentEarliest?.iso ?? null,
       studentPassExpiryKind: studentEarliest?.kind ?? null,
       parentPassExpiries: parentExpiries.map((p) => ({
@@ -521,7 +544,8 @@ export async function getPassExpiryCohort(
 ): Promise<CohortStudentRow[]> {
   return unstable_cache(
     () => loadPassExpiryCohortUncached(ayCode, scope),
-    ['sis', 'cohort', 'pass-expiry', ayCode, scope],
+    // v2: rows gained the resolved `level`.
+    ['sis', 'cohort', 'pass-expiry', 'v2', ayCode, scope],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )();
 }
@@ -565,6 +589,10 @@ async function loadPromisedCohortUncached(
     ayCode,
     enroleeNumbers
   );
+
+  // Resolving an already-resolved label returns it unchanged, so this holds
+  // whether the completeness loader hands back the raw name or the SIS level.
+  const resolveLevel = await loadLevelLabelResolver(createServiceClient());
 
   const todayMs = Date.now();
   const rows: CohortStudentRow[] = [];
@@ -615,6 +643,7 @@ async function loadPromisedCohortUncached(
       studentNumber: s.studentNumber,
       enroleeFullName: s.fullName,
       levelApplied: s.level,
+      level: resolveLevel(s.level),
       applicationStatus: s.applicationStatus,
       toFollowSlots,
       toFollowCount: toFollowSlots.length,
@@ -649,7 +678,8 @@ export async function getPromisedCohort(
 ): Promise<CohortStudentRow[]> {
   return unstable_cache(
     () => loadPromisedCohortUncached(ayCode, scope),
-    ['sis', 'cohort', 'promised', ayCode, scope],
+    // v2: rows gained the resolved `level`.
+    ['sis', 'cohort', 'promised', 'v2', ayCode, scope],
     {
       tags: tag(ayCode),
       revalidate: CACHE_TTL_SECONDS,
@@ -719,7 +749,7 @@ async function loadPreCourseCohortUncached(
       answer === 'Yes' ? 'complete' : 'not-yet';
 
     rows.push({
-      ...commonFields(app, status),
+      ...commonFields(app, status, snapshot.resolveLevel),
       preCourseAnswer: answer,
       preCourseDate: date,
       preCourseAcknowledgedAt: acknowledgedAt,
@@ -746,7 +776,8 @@ export async function getPreCourseCohort(
 ): Promise<CohortStudentRow[]> {
   return unstable_cache(
     () => loadPreCourseCohortUncached(ayCode, scope),
-    ['sis', 'cohort', 'pre-course', ayCode, scope],
+    // v2: rows gained the resolved `level`.
+    ['sis', 'cohort', 'pre-course', 'v2', ayCode, scope],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )();
 }

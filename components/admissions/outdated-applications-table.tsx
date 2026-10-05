@@ -93,7 +93,7 @@ const STATUS_TABS = [
 // ─── Facets ───────────────────────────────────────────────────────────────────
 
 const FACETS: FacetConfig[] = [
-  { columnId: 'levelApplied', label: 'Level' },
+  { columnId: 'level', label: 'Level' },
   { columnId: 'app_status', label: 'Application status' },
 ];
 
@@ -132,11 +132,15 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
       enableHiding: true,
     },
     {
-      accessorKey: 'levelApplied',
+      // The SIS level the child counts as (resolved server-side), so a
+      // "Year 9" applicant filters under Secondary Three.
+      id: 'level',
+      accessorFn: (row) => row.level,
       header: 'Level',
+      meta: { label: 'Level' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
+          {row.original.level ?? '—'}
         </span>
       ),
       filterFn: (row, id, value) => {
@@ -343,7 +347,13 @@ export function OutdatedApplicationsTable({
         data={rows}
         columns={columns}
         getRowId={(row) => row.enroleeNumber}
-        searchKeys={['fullName', 'enroleeNumber', 'levelApplied', 'status']}
+        searchKeys={[
+          'fullName',
+          'enroleeNumber',
+          'level',
+          'levelApplied',
+          'status',
+        ]}
         searchPlaceholder="Search applicant, enrolee #, level, status…"
         facets={FACETS}
         statusTabs={STATUS_TABS}

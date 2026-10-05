@@ -8,6 +8,10 @@ import {
   compareEnrolledOpenSteps,
   type EnrolledOpenStepsRow,
 } from '@/lib/admissions/enrolled-open-steps';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
@@ -53,7 +57,7 @@ async function loadUncached(ayCode: string): Promise<EnrolledOpenStepsRow[]> {
   // list reads as "nobody to chase", which is the one wrong answer that
   // looks like a right one. `fetchAllPages` throws on a query error, and
   // `unstable_cache` does not store a throw.
-  const [statusRows, appRows] = await Promise.all([
+  const [statusRows, appRows, resolveLevel] = await Promise.all([
     // Filtered to plain Enrolled at the DB — Conditional is left out of this
     // queue on purpose (see enrolled-open-steps.ts). Exact, as the classifier
     // is: the two must agree on which rows are plain Enrolled.
@@ -72,6 +76,8 @@ async function loadUncached(ayCode: string): Promise<EnrolledOpenStepsRow[]> {
         )
         .range(from, to)
     ),
+    // Never throws — degrades to the names as stored.
+    loadAdmissionsLevelResolver(),
   ]);
 
   const appByEnrolee = new Map<string, AppsRow>();
@@ -101,6 +107,7 @@ async function loadUncached(ayCode: string): Promise<EnrolledOpenStepsRow[]> {
       studentNumber: app?.studentNumber?.trim() || null,
       studentName: nameOf(app, enroleeNumber),
       levelApplied: app?.levelApplied?.trim() || null,
+      level: resolveChildLevel(resolveLevel, classLevel, app?.levelApplied),
       classLabel: classSection
         ? [classLevel, classSection].filter(Boolean).join(' ')
         : null,
@@ -124,7 +131,8 @@ export async function loadEnrolledOpenSteps(
 ): Promise<EnrolledOpenStepsRow[]> {
   return unstable_cache(
     () => loadUncached(ayCode),
-    ['admissions-enrolled-open-steps', ayCode],
+    // v2: rows gained the resolved `level`.
+    ['admissions-enrolled-open-steps-v2', ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: [`sis:${ayCode}`] }
   )();
 }

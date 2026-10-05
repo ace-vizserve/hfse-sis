@@ -33,6 +33,32 @@ vi.mock('@/lib/supabase/admissions', () => ({
   }),
 }));
 
+// The enrolment form options' level mapping: "Year 9" counts as Secondary
+// Three. Every chart and its drill must resolve through it the same way.
+vi.mock('@/lib/admissions/level-resolver', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/admissions/level-resolver')>();
+  const { makeLevelLabelResolver } = await import('@/lib/sis/levels');
+  const resolver = makeLevelLabelResolver(
+    [
+      {
+        id: 'lv-s3',
+        code: 'S3',
+        label: 'Secondary Three',
+        levelType: 'secondary',
+        sortOrder: 30,
+        nextLevelId: null,
+        isCore: true,
+      },
+    ],
+    [{ raw_label: 'Year 9', level_id: 'lv-s3' }]
+  );
+  return {
+    ...actual,
+    loadAdmissionsLevelResolver: () => Promise.resolve(resolver),
+  };
+});
+
 import {
   getAverageTimeToEnrollment,
   getConversionByAssessment,
@@ -79,6 +105,10 @@ const LEVELS = [
   'YoungStarter Little Star',
   '',
   null,
+  // A parent-facing name mapped to Secondary Three, and the SIS label itself
+  // — one bucket between them, never a "Year 9" bucket of its own.
+  'Year 9',
+  'Secondary Three',
 ];
 const SOURCES = [
   'Facebook',
@@ -279,6 +309,34 @@ describe('Withdrawn by level', () => {
     expect(applyTargetFilter(rows, 'withdrawn-by-level')).toHaveLength(
       byLevel.reduce((s, r) => s + r.count, 0)
     );
+  });
+});
+
+describe('Level names resolve through the enrolment form mapping', () => {
+  it('a "Year 9" applicant counts under Secondary Three, on the chart and in its list', async () => {
+    const [withdrawn, nat, terminal, rows] = await Promise.all([
+      getWithdrawnByLevel('AY2026'),
+      getApplicantNationalityByLevel('AY2026'),
+      getAdmissionsTerminalReasons('AY2026'),
+      buildDrillRows({ ayCode: 'AY2026' }),
+    ]);
+    const levels = [
+      ...withdrawn.map((r) => r.level),
+      ...nat.rows.map((r) => r.level),
+      ...terminal.byLevel.map((r) => r.level),
+      ...rows.map((r) => r.level),
+      ...rows.map((r) => r.levelAsApplied),
+    ];
+    expect(levels).not.toContain('Year 9');
+    expect(levels).toContain('Secondary Three');
+    // Both spellings land in one Secondary Three bucket, and its list is the
+    // same size.
+    const s3 = withdrawn.find((r) => r.level === 'Secondary Three');
+    if (s3) {
+      expect(
+        applyTargetFilter(rows, 'withdrawn-by-level', 'Secondary Three')
+      ).toHaveLength(s3.count);
+    }
   });
 });
 

@@ -72,9 +72,13 @@ export function EnrolledOpenStepsQueue({
         ),
       },
       {
-        accessorKey: 'levelApplied',
+        // The SIS level the child counts as (resolved server-side), so a
+        // "Year 9" child filters under Secondary Three.
+        id: 'level',
+        accessorFn: (r) => r.level,
         header: 'Level',
-        cell: ({ row }) => row.original.levelApplied ?? '—',
+        meta: { label: 'Level' },
+        cell: ({ row }) => row.original.level ?? '—',
         filterFn: (row, id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0))
             return true;
@@ -175,11 +179,12 @@ export function EnrolledOpenStepsQueue({
         (r) => r.studentName,
         (r) => r.enroleeNumber,
         (r) => r.studentNumber ?? '',
+        (r) => r.level ?? '',
         (r) => r.levelApplied ?? '',
       ]}
       searchPlaceholder="Search by name, enrolee number, or level…"
       statusTabs={STATUS_TABS}
-      facets={[{ columnId: 'levelApplied', label: 'Level' }]}
+      facets={[{ columnId: 'level', label: 'Level' }]}
       url={{ enabled: true, namespace: 'enrolled-open' }}
       emptyState={{
         icon: ListChecks,

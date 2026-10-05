@@ -25,6 +25,10 @@ import { unstable_cache } from 'next/cache';
 
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
 
 export type ValidationQueueCategory = 'general' | 'stp';
 
@@ -35,7 +39,12 @@ export type ValidationQueueRow = {
   studentNumber: string | null;
   fullName: string;
   applicationStatus: string;
+  /** The level name as the application stored it ("Year 9"). */
   levelApplied: string | null;
+  /** The applicant's level: classLevel when set, else `levelApplied`
+   *  resolved to the SIS level it counts as. What the queue shows, filters
+   *  and sorts by. */
+  level: string | null;
   slotKey: string;
   slotLabel: string;
   /** Empty string when nothing has been uploaded for this slot. */
@@ -85,13 +94,15 @@ async function loadPendingDocValidationUncached(
   // Fetch all three tables in parallel. Admissions tables have no FK between
   // them so we join in JS by enroleeNumber, mirroring the rest of
   // lib/admissions/dashboard.ts.
-  const [appsRes, statusRes, docsRes] = await Promise.all([
+  const [appsRes, statusRes, docsRes, resolveLevel] = await Promise.all([
     admissions
       .from(appsTable)
       .select(
         'enroleeNumber, studentNumber, firstName, lastName, middleName, enroleeFullName, levelApplied, stpApplicationType'
       ),
-    admissions.from(statusTable).select('enroleeNumber, applicationStatus'),
+    admissions
+      .from(statusTable)
+      .select('enroleeNumber, applicationStatus, classLevel'),
     // Build the docs SELECT from DOCUMENT_SLOTS so we always read every
     // statusCol + urlCol column. urlCol is required on every slot; no fallback.
     admissions.from(docsTable).select(
@@ -105,6 +116,7 @@ async function loadPendingDocValidationUncached(
         ),
       ].join(', ')
     ),
+    loadAdmissionsLevelResolver(),
   ]);
 
   if (appsRes.error || statusRes.error || docsRes.error) {
@@ -129,6 +141,7 @@ async function loadPendingDocValidationUncached(
   type StatusRow = {
     enroleeNumber: string | null;
     applicationStatus: string | null;
+    classLevel: string | null;
   };
   type DocsRow = Record<string, string | null> & {
     enroleeNumber: string | null;
@@ -141,9 +154,12 @@ async function loadPendingDocValidationUncached(
   const docs = (docsRes.data ?? []) as unknown as DocsRow[];
 
   const statusByEnrolee = new Map<string, string | null>();
+  const classLevelByEnrolee = new Map<string, string | null>();
   for (const s of statuses) {
-    if (s.enroleeNumber)
+    if (s.enroleeNumber) {
       statusByEnrolee.set(s.enroleeNumber, s.applicationStatus);
+      classLevelByEnrolee.set(s.enroleeNumber, s.classLevel ?? null);
+    }
   }
   const appByEnrolee = new Map<string, AppRow>();
   for (const a of apps) {
@@ -171,6 +187,11 @@ async function loadPendingDocValidationUncached(
     if (!PENDING_APP_STATUSES.includes(appStatus as PendingAppStatus)) continue;
 
     const docRow = docsByEnrolee.get(enroleeNumber) ?? ({} as DocsRow);
+    const level = resolveChildLevel(
+      resolveLevel,
+      classLevelByEnrolee.get(enroleeNumber),
+      app.levelApplied
+    );
 
     for (const slot of DOCUMENT_SLOTS) {
       const status = docRow[slot.statusCol] ?? null;
@@ -194,6 +215,7 @@ async function loadPendingDocValidationUncached(
         fullName,
         applicationStatus: appStatus,
         levelApplied: app.levelApplied,
+        level,
         slotKey: slot.key,
         slotLabel: slot.label,
         fileUrl,
@@ -222,7 +244,8 @@ export async function loadPendingDocValidation(
 ): Promise<ValidationQueueRow[]> {
   return unstable_cache(
     () => loadPendingDocValidationUncached(ayCode),
-    ['admissions', 'doc-validation', ayCode],
+    // v2: rows gained the resolved `level`.
+    ['admissions', 'doc-validation-v2', ayCode],
     { tags: [`sis:${ayCode}`], revalidate: 60 }
   )();
 }

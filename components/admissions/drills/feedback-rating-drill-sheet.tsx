@@ -12,6 +12,7 @@ import { DrillSheetSkeleton } from '@/components/dashboard/drill-sheet-skeleton'
 import { Button } from '@/components/ui/button';
 import { SheetContent, SheetTitle } from '@/components/ui/sheet';
 import type { FeedbackRow } from '@/lib/admissions/feedback';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
@@ -80,15 +81,18 @@ const COLUMNS: ColumnDef<FeedbackRow, unknown>[] = [
     enableSorting: true,
   },
   {
-    id: 'levelApplied',
-    accessorFn: (r) => r.levelApplied ?? '',
-    header: 'Level applied for',
-    meta: { label: 'Level applied for' },
+    // The SIS level the child counts as (resolved server-side); the CSV
+    // also carries the name the family applied with.
+    id: 'level',
+    accessorFn: (r) => r.level ?? '',
+    header: 'Level',
+    meta: { label: 'Level' },
     cell: ({ row }) => (
       <span className="text-sm text-muted-foreground">
-        {row.original.levelApplied?.trim() || '—'}
+        {row.original.level || '—'}
       </span>
     ),
+    sortingFn: (a, b) => compareLevelLabels(a.original.level, b.original.level),
     enableSorting: true,
   },
   {

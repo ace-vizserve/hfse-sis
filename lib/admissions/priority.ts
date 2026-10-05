@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 import { prefixFor } from '@/lib/admissions/_shared';
+import { loadAdmissionsLevelResolver } from '@/lib/admissions/level-resolver';
 
 // Admissions PriorityPanel payload — top-of-fold "what should I act on right
 // now?" answer for the Admissions module. Surfaces students who have just
@@ -79,13 +80,16 @@ async function loadNewApplicationsPriorityUncached(
     return emptyPayload();
   }
 
-  const { data: appsData, error: appsErr } = await supabase
-    .from(`${prefix}_enrolment_applications`)
-    .select(
-      'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
-    )
-    .in('enroleeNumber', submittedEnroleeNumbers)
-    .order('created_at', { ascending: false });
+  const [{ data: appsData, error: appsErr }, resolveLevel] = await Promise.all([
+    supabase
+      .from(`${prefix}_enrolment_applications`)
+      .select(
+        'enroleeNumber, enroleeFullName, firstName, lastName, levelApplied, created_at'
+      )
+      .in('enroleeNumber', submittedEnroleeNumbers)
+      .order('created_at', { ascending: false }),
+    loadAdmissionsLevelResolver(),
+  ]);
 
   if (appsErr) {
     console.error(
@@ -106,7 +110,9 @@ async function loadNewApplicationsPriorityUncached(
     .filter((a) => a.enroleeNumber)
     .map((a) => {
       const name = displayName(a);
-      const level = a.levelApplied?.trim();
+      // The SIS level the applied-for name counts as ("Year 9" → Secondary
+      // Three); an unmapped name shows as stored.
+      const level = resolveLevel(a.levelApplied);
       return {
         label: level ? `${name} · ${level}` : name,
         // Days waiting since the application was submitted. Falls back to 0

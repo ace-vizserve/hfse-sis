@@ -7,12 +7,11 @@ import {
   ensureLevelAliasForOption,
   findAcademicYear,
 } from '@/lib/admissions/options-write';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
-import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 import { AdmissionOptionCreateSchema } from '@/lib/schemas/admission-options';
+import { invalidateAfterLevelAliasChange } from '@/lib/sis/level-alias-invalidation';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/sis/admission-options
@@ -148,10 +147,10 @@ export async function POST(request: Request) {
 
   revalidateTag(admissionOptionsTag(ayCode), 'max');
   if (alias.created) {
-    // A new alias moves what /records/level-mismatches counts — same bust the
+    // A new alias moves what /records/level-mismatches counts and the level
+    // every screen groups this name under, in every year — same bust the
     // level-aliases route does after saving one.
-    const current = await getCurrentAcademicYear();
-    if (current) await invalidateAllOperationalDrills(current.ay_code);
+    await invalidateAfterLevelAliasChange(service);
   }
 
   return NextResponse.json({ ok: true, ids });

@@ -57,6 +57,7 @@ import { loadApplicationFit } from '@/lib/admissions/options-loader';
 import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadLevelLabelResolver } from '@/lib/sis/levels';
 import { cn } from '@/lib/utils';
 
 // KD #59: SIS-side application stage vocabulary (not the legacy parent-portal values).
@@ -215,34 +216,50 @@ export default async function SisStudentDetailPage({
     ENROLLED_STATES.includes((storedStatus?.applicationStatus ?? '').trim());
 
   // All depend on the batch above — sequential to it, parallel to each other.
-  const [lifecycleHistory, siblingSections, admissionOptions, classChoiceData] =
-    await Promise.all([
-      lifecycleSnapshot.studentNumber
-        ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
-        : Promise.resolve([]),
-      currentSection && canPlaceStudent
-        ? getSiblingSections(currentSection.id)
-        : Promise.resolve([]),
-      loadProfileAdmissionOptions(selectedAy),
-      needsClassChoice
-        ? Promise.all([
-            // A class already named on this child's admissions row must not
-            // count against them.
-            listAssignableSections(
-              service,
-              selectedAy,
-              application.levelApplied,
-              { excludeEnroleeNumber: application.enroleeNumber }
-            ),
-            // What the parent asked for — marks matching classes in the picker.
-            loadApplicationFit(service, selectedAy, {
-              levelApplied: application.levelApplied,
-              classType: application.classType,
-              preferredSchedule: application.preferredSchedule,
-            }),
-          ])
-        : Promise.resolve(null),
-    ]);
+  const [
+    lifecycleHistory,
+    siblingSections,
+    admissionOptions,
+    classChoiceData,
+    resolveLevelLabel,
+  ] = await Promise.all([
+    lifecycleSnapshot.studentNumber
+      ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
+      : Promise.resolve([]),
+    currentSection && canPlaceStudent
+      ? getSiblingSections(currentSection.id)
+      : Promise.resolve([]),
+    loadProfileAdmissionOptions(selectedAy),
+    needsClassChoice
+      ? Promise.all([
+          // A class already named on this child's admissions row must not
+          // count against them.
+          listAssignableSections(
+            service,
+            selectedAy,
+            application.levelApplied,
+            { excludeEnroleeNumber: application.enroleeNumber }
+          ),
+          // What the parent asked for — marks matching classes in the picker.
+          loadApplicationFit(service, selectedAy, {
+            levelApplied: application.levelApplied,
+            classType: application.classType,
+            preferredSchedule: application.preferredSchedule,
+          }),
+        ])
+      : Promise.resolve(null),
+    // Level names → the SIS level each counts as (never throws).
+    loadLevelLabelResolver(service),
+  ]);
+
+  // The child's level at a glance: the class's level when placed, else the
+  // name the family applied with resolved to the SIS level it counts as
+  // ("Year 9" → Secondary Three). The raw name stays on the profile tab and,
+  // when it differs, in this card's footnote.
+  const levelAppliedRaw = application.levelApplied?.trim() || null;
+  const childLevel =
+    (status?.classLevel?.trim() ? status.classLevel.trim() : null) ??
+    resolveLevelLabel(levelAppliedRaw);
 
   const fullName =
     application.enroleeFullName ??
@@ -418,14 +435,19 @@ export default async function SisStudentDetailPage({
             }
           />
           <StatCard
-            label="Level applied"
-            value={application.levelApplied ?? status?.classLevel ?? '—'}
+            label="Level"
+            value={childLevel ?? '—'}
             icon={GraduationCap}
-            footnote={
+            footnote={[
+              levelAppliedRaw && levelAppliedRaw !== childLevel
+                ? `Applied as ${levelAppliedRaw}`
+                : null,
               status?.classSection
                 ? `Section ${status.classSection}`
-                : (application.classType ?? 'No section assigned')
-            }
+                : (application.classType ?? 'No section assigned'),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           />
           <StatCard
             label="Documents"
@@ -479,6 +501,7 @@ export default async function SisStudentDetailPage({
             enroleeNumber={application.enroleeNumber}
             canEdit={canEditRecord}
             admissionOptions={admissionOptions}
+            levelCountsAs={resolveLevelLabel(levelAppliedRaw)}
             levelLocked={isLevelLocked({
               applicationStatus: storedStatus?.applicationStatus,
               inClass: currentSection !== null,

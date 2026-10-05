@@ -27,7 +27,11 @@ import type {
   PromisedSlot,
   ParentPassExpiry,
 } from '@/lib/sis/cohorts';
-import type { StatusTabConfig } from '@/components/ui/data-table/types';
+import type {
+  FacetConfig,
+  StatusTabConfig,
+} from '@/components/ui/data-table/types';
+import { compareLevelLabels } from '@/lib/sis/levels';
 
 // ─── Re-export the STP row type for consumer convenience ────────────────────
 
@@ -70,6 +74,46 @@ function formatDate(iso: string | null | undefined): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+// Level column, shared by every cohort. Shows, sorts and facets on the
+// RESOLVED level the loader computed (`level` — a "Year 9" child shows as
+// Secondary Three), never the raw application name. The id stays
+// 'levelApplied' so filters already saved in the URL keep working.
+function buildLevelColumn(): ColumnDef<CohortStudentRow> {
+  return {
+    id: 'levelApplied',
+    accessorFn: (r) => r.level ?? '',
+    header: 'Level',
+    cell: ({ row }) => {
+      const raw = row.original.levelApplied?.trim();
+      const level = row.original.level;
+      return (
+        <span
+          className="text-sm text-muted-foreground"
+          title={raw && raw !== level ? `Applied as ${raw}` : undefined}
+        >
+          {level ?? '—'}
+        </span>
+      );
+    },
+    enableSorting: true,
+    sortingFn: (a, b) => compareLevelLabels(a.original.level, b.original.level),
+  };
+}
+
+// The Level facet lists levels in school order (Youngstarters, P1…S4, then
+// any unmapped name), not alphabetically.
+function withLevelOrder(
+  facets: FacetConfig[],
+  rows: CohortStudentRow[]
+): FacetConfig[] {
+  const levels = Array.from(
+    new Set(rows.map((r) => r.level).filter((v): v is string => !!v))
+  ).sort(compareLevelLabels);
+  return facets.map((f) =>
+    f.columnId === 'levelApplied' ? { ...f, valueOptions: levels } : f
+  );
 }
 
 // ─── STP detail href resolver ─────────────────────────────────────────────────
@@ -119,17 +163,7 @@ function buildStpColumns(
       ),
       enableSorting: true,
     },
-    {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
-      header: 'Level',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
-        </span>
-      ),
-      enableSorting: true,
-    },
+    buildLevelColumn(),
     {
       id: 'stpType',
       accessorKey: 'stpApplicationType',
@@ -312,17 +346,7 @@ function buildPromisedColumns(
       ),
       enableSorting: true,
     },
-    {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
-      header: 'Level',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
-        </span>
-      ),
-      enableSorting: true,
-    },
+    buildLevelColumn(),
     {
       id: 'applicationStatus',
       accessorKey: 'applicationStatus',
@@ -566,17 +590,7 @@ function buildPassExpiryColumns(
       ),
       enableSorting: true,
     },
-    {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
-      header: 'Level',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
-        </span>
-      ),
-      enableSorting: true,
-    },
+    buildLevelColumn(),
     {
       id: 'earliestKind',
       accessorFn: (r) => r.studentPassExpiryKind ?? '',
@@ -796,17 +810,7 @@ function buildMedicalColumns(
       ),
       enableSorting: true,
     },
-    {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
-      header: 'Level',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
-        </span>
-      ),
-      enableSorting: true,
-    },
+    buildLevelColumn(),
     {
       id: 'medicalFlags',
       accessorFn: (r) => r.medicalFlags?.length ?? 0,
@@ -998,17 +1002,7 @@ function buildPreCourseColumns(
       ),
       enableSorting: true,
     },
-    {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
-      header: 'Level',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.levelApplied ?? '—'}
-        </span>
-      ),
-      enableSorting: true,
-    },
+    buildLevelColumn(),
     {
       id: 'applicationStatus',
       accessorKey: 'applicationStatus',
@@ -1200,7 +1194,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
         getRowId={(r) => r.enroleeNumber}
         searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
         searchPlaceholder="Search students…"
-        facets={STP_FACETS}
+        facets={withLevelOrder(STP_FACETS, stpRows)}
         statusTabs={STP_STATUS_TABS}
         pageSize={25}
         csv={{ filename: `stp-cohort-${ayCode}.csv` }}
@@ -1221,7 +1215,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
           getRowId={(r) => r.enroleeNumber}
           searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
           searchPlaceholder="Search students…"
-          facets={PROMISED_FACETS}
+          facets={withLevelOrder(PROMISED_FACETS, promisedRows)}
           statusTabs={PROMISED_STATUS_TABS}
           pageSize={25}
           csv={{ filename: `promised-cohort-${ayCode}.csv` }}
@@ -1261,7 +1255,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
         getRowId={(r) => r.enroleeNumber}
         searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
         searchPlaceholder="Search students…"
-        facets={PASS_EXPIRY_FACETS}
+        facets={withLevelOrder(PASS_EXPIRY_FACETS, passRows)}
         statusTabs={PASS_EXPIRY_STATUS_TABS}
         pageSize={25}
         csv={{ filename: `pass-expiry-cohort-${ayCode}.csv` }}
@@ -1282,7 +1276,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
         getRowId={(r) => r.enroleeNumber}
         searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
         searchPlaceholder="Search students…"
-        facets={PRE_COURSE_FACETS}
+        facets={withLevelOrder(PRE_COURSE_FACETS, preCourseRows)}
         statusTabs={PRE_COURSE_STATUS_TABS}
         pageSize={25}
         csv={{ filename: `pre-course-cohort-${ayCode}.csv` }}
@@ -1302,7 +1296,7 @@ export function CohortTable<K extends CohortKind>(props: CohortTableProps<K>) {
       getRowId={(r) => r.enroleeNumber}
       searchKeys={['enroleeFullName', 'enroleeNumber', 'studentNumber']}
       searchPlaceholder="Search students…"
-      facets={MEDICAL_FACETS}
+      facets={withLevelOrder(MEDICAL_FACETS, medicalRows)}
       statusTabs={MEDICAL_STATUS_TABS}
       pageSize={25}
       csv={{ filename: `medical-cohort-${ayCode}.csv` }}

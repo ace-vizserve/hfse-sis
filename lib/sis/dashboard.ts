@@ -26,7 +26,11 @@ import {
   type DocumentGroup,
   type BacklogBucket,
 } from '@/lib/p-files/document-config';
-import { compareLevelLabels } from '@/lib/sis/levels';
+import {
+  compareLevelLabels,
+  loadLevelLabelResolver,
+  resolveChildLevel,
+} from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -411,7 +415,8 @@ export type LevelCount = {
 // to applicationStatus IN ('Enrolled', 'Enrolled (Conditional)') so the
 // donut shows enrolled cohort breakdown, not pre-enrolment funnel volume.
 // Prefers `classLevel` (post-enrollment assignment); falls back to
-// `levelApplied` if the registrar hasn't assigned a class yet.
+// `levelApplied`, resolved through `level_aliases`, if the registrar hasn't
+// assigned a class yet.
 async function loadLevelDistributionUncached(
   ayCode: string
 ): Promise<LevelCount[]> {
@@ -462,13 +467,19 @@ async function loadLevelDistributionUncached(
     return [];
   }
 
+  // The raw application name ("Year 9") counts under the SIS level the
+  // enrolment form options map it to, not as a bucket of its own.
+  const resolveLevel = await loadLevelLabelResolver(createServiceClient());
+
   type AppLite = { enroleeNumber: string | null; levelApplied: string | null };
   const counts = new Map<string, number>();
   for (const a of (appsRows ?? []) as AppLite[]) {
     const level =
-      (a.enroleeNumber && classLevelByEnrolee.get(a.enroleeNumber)) ||
-      a.levelApplied?.trim() ||
-      'Unknown';
+      resolveChildLevel(
+        resolveLevel,
+        a.enroleeNumber ? classLevelByEnrolee.get(a.enroleeNumber) : null,
+        a.levelApplied
+      ) || 'Unknown';
     counts.set(level, (counts.get(level) ?? 0) + 1);
   }
 
@@ -482,7 +493,8 @@ async function loadLevelDistributionUncached(
 export function getLevelDistribution(ayCode: string): Promise<LevelCount[]> {
   return unstable_cache(
     loadLevelDistributionUncached,
-    ['sis', 'level-distribution', ayCode],
+    // v2: levels resolved through level_aliases.
+    ['sis', 'level-distribution', 'v2', ayCode],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )(ayCode);
 }
@@ -1247,6 +1259,8 @@ async function loadClassAssignmentReadinessUncached(
     if (s.enroleeNumber) statusByEnrolee.set(s.enroleeNumber, s);
   }
 
+  const resolveLevel = await loadLevelLabelResolver(service);
+
   const today = Date.now();
   const out: ClassAssignmentReadinessRow[] = [];
   for (const enroleeNumber of unassignedEnrolees) {
@@ -1262,7 +1276,12 @@ async function loadClassAssignmentReadinessUncached(
     out.push({
       enroleeNumber,
       fullName,
-      level: status?.classLevel ?? app?.levelApplied ?? null,
+      level:
+        resolveChildLevel(
+          resolveLevel,
+          status?.classLevel,
+          app?.levelApplied
+        ) || null,
       enrollmentDate,
       daysSinceEnrollment: !Number.isNaN(enrolledMs)
         ? Math.floor((today - enrolledMs) / 86_400_000)
@@ -1280,7 +1299,8 @@ export function getClassAssignmentReadiness(
 ): Promise<ClassAssignmentReadinessRow[]> {
   return unstable_cache(
     () => loadClassAssignmentReadinessUncached(ayCode),
-    ['sis-dashboard', 'class-assignment-readiness', ayCode],
+    // v2: level resolved through level_aliases.
+    ['sis-dashboard', 'class-assignment-readiness', 'v2', ayCode],
     { revalidate: 60, tags: tag(ayCode) }
   )();
 }

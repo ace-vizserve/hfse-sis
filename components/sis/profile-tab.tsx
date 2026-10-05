@@ -47,6 +47,12 @@ type Props = {
   admissionOptions?: DerivedLevel[];
   /** Enrolled or in a class — the Edit sheet won't change the level. */
   levelLocked?: boolean;
+  /**
+   * The SIS level the parent's level name counts as, per the enrolment form
+   * options (`makeLevelLabelResolver`). Resolved by the page — this tab is a
+   * client component and never reads `level_aliases` itself.
+   */
+  levelCountsAs?: string | null;
 };
 
 export function ProfileTab({
@@ -56,7 +62,13 @@ export function ProfileTab({
   canEdit = false,
   admissionOptions,
   levelLocked = false,
+  levelCountsAs = null,
 }: Props) {
+  // Only worth saying when it differs from the name the parent picked.
+  const countsAs =
+    levelCountsAs && levelCountsAs !== app.levelApplied?.trim()
+      ? levelCountsAs
+      : null;
   const initial: Partial<ProfileUpdateInput> = {
     firstName: app.firstName,
     middleName: app.middleName,
@@ -166,7 +178,13 @@ export function ProfileTab({
     { label: 'Parent marital status', value: app.parentMaritalStatus },
   ];
   const preferencesFields: Field[] = [
-    { label: 'Level applied', value: app.levelApplied },
+    {
+      label: 'Level applied',
+      value:
+        app.levelApplied && countsAs
+          ? `${app.levelApplied} (counts as ${countsAs})`
+          : app.levelApplied,
+    },
     { label: 'Preferred schedule', value: app.preferredSchedule },
     { label: 'Class type', value: app.classType },
     { label: 'Payment option', value: app.paymentOption },
@@ -279,7 +297,9 @@ export function ProfileTab({
   // empty states don't clutter the strip.
   const heroChips: Array<{ label: string }> = [];
   if (app.category) heroChips.push({ label: app.category });
-  if (app.levelApplied) heroChips.push({ label: app.levelApplied });
+  // The SIS level, as every list and count reads it — the parent's own name
+  // stays on the Level applied field below.
+  if (app.levelApplied) heroChips.push({ label: countsAs ?? app.levelApplied });
   if (app.nationality) heroChips.push({ label: app.nationality });
   if (app.pass) heroChips.push({ label: app.pass });
 

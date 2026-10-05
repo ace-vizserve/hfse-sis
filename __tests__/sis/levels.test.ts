@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   compareLevelLabels,
   levelTypeForAudienceLookup,
+  makeLevelLabelResolver,
+  resolveChildLevel,
   resolveLevelIdFromCatalog,
   type LevelRow,
 } from '@/lib/sis/levels';
@@ -29,6 +31,62 @@ const LEVELS: LevelRow[] = [
 const ALIASES = [
   { raw_label: 'HFSE Global Education Programme – Year 9', level_id: 's2' },
 ];
+
+describe('makeLevelLabelResolver', () => {
+  const resolve = makeLevelLabelResolver(LEVELS, ALIASES);
+
+  it('reads a parent-facing name as the SIS level the options say it counts as', () => {
+    expect(resolve('HFSE Global Education Programme – Year 9')).toBe(
+      'Secondary Two'
+    );
+  });
+
+  it('passes an SIS label through and words a legacy digit label', () => {
+    expect(resolve('Primary One')).toBe('Primary One');
+    expect(resolve('Primary 1')).toBe('Primary One');
+  });
+
+  it('keeps an unmapped name as itself, never null — the mismatch queue maps it', () => {
+    expect(resolve('  K2 ')).toBe('K2');
+  });
+
+  it('answers null only for a blank', () => {
+    expect(resolve(null)).toBeNull();
+    expect(resolve('   ')).toBeNull();
+  });
+});
+
+describe('resolveChildLevel — the one rule Records, Admissions and P-Files share', () => {
+  const resolve = makeLevelLabelResolver(LEVELS, ALIASES);
+  const YEAR_9 = 'HFSE Global Education Programme – Year 9';
+
+  it('takes classLevel when set, over the applied-for name', () => {
+    expect(resolveChildLevel(resolve, 'Primary One', YEAR_9)).toBe(
+      'Primary One'
+    );
+  });
+
+  it('canonicalises classLevel the same way it does the applied-for name', () => {
+    expect(resolveChildLevel(resolve, ' Primary 1 ', null)).toBe('Primary One');
+    expect(resolveChildLevel(resolve, YEAR_9, null)).toBe('Secondary Two');
+  });
+
+  it('falls back to the applied-for name, resolved, when classLevel is blank', () => {
+    expect(resolveChildLevel(resolve, null, YEAR_9)).toBe('Secondary Two');
+    expect(resolveChildLevel(resolve, '   ', YEAR_9)).toBe('Secondary Two');
+    expect(resolveChildLevel(resolve, undefined, 'K2')).toBe('K2');
+  });
+
+  it('answers null when both are blank, so each caller keeps its own fallback', () => {
+    expect(resolveChildLevel(resolve, null, null)).toBeNull();
+    expect(resolveChildLevel(resolve, '', '  ')).toBeNull();
+  });
+
+  it('is the same function the admissions resolver module re-exports', async () => {
+    const admissions = await import('@/lib/admissions/level-resolver');
+    expect(admissions.resolveChildLevel).toBe(resolveChildLevel);
+  });
+});
 
 describe('resolveLevelIdFromCatalog', () => {
   it('resolves an exact canonical label match', () => {

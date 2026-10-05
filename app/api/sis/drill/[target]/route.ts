@@ -125,7 +125,8 @@ function csvCell(
     case 'enroleeFullName':
       return row.enroleeFullName ?? '';
     case 'levelApplied':
-      return row.levelApplied ?? '';
+      // The resolved SIS level, as the sheet's Level column shows it.
+      return row.level ?? row.levelApplied ?? '';
     case 'applicationStatus':
       return row.applicationStatus ?? '';
     case 'applicationUpdatedDate':

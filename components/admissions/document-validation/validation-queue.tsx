@@ -26,6 +26,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
+import { compareLevelLabels } from '@/lib/sis/levels';
 
 import { RejectDialog } from './reject-dialog';
 import { TriagePane } from './triage-pane';
@@ -103,7 +104,7 @@ function ValidationGroupHeader({
         </span>
       </div>
       <span className="whitespace-nowrap text-xs text-muted-foreground">
-        {first.levelApplied ?? '—'}
+        {first.level ?? '—'}
       </span>
       <Badge variant="outline">{first.applicationStatus}</Badge>
       <Badge variant="secondary" className="font-mono text-[10px] tabular-nums">
@@ -242,16 +243,21 @@ export function ValidationQueue({
         ),
       },
       {
-        accessorKey: 'levelApplied',
+        // The SIS level the applicant counts as (resolved server-side), so a
+        // "Year 9" applicant filters and sorts under Secondary Three.
+        id: 'level',
+        accessorFn: (row) => row.level,
         header: ({ column }) => (
           <SortableHeader column={column}>Level</SortableHeader>
         ),
         meta: { label: 'Level' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {row.original.levelApplied ?? '—'}
+            {row.original.level ?? '—'}
           </span>
         ),
+        sortingFn: (a, b) =>
+          compareLevelLabels(a.original.level, b.original.level),
         filterFn: 'arrIncludesSome',
       },
       {
@@ -379,7 +385,7 @@ export function ValidationQueue({
       { columnId: 'slotLabel', label: 'Document' },
       { columnId: 'status', label: 'Status' },
       { columnId: 'owner', label: 'Owner' },
-      { columnId: 'levelApplied', label: 'Level' },
+      { columnId: 'level', label: 'Level' },
       { columnId: 'applicationStatus', label: 'App status' },
     ],
     []
@@ -454,7 +460,15 @@ export function ValidationQueue({
         getRowId={rowKey}
         // Student number included so every applicant on the page can be found
         // by any of the three things anyone actually knows them by.
-        searchKeys={['fullName', 'studentNumber', 'enroleeNumber', 'slotLabel']}
+        // Level matches both the SIS level and the name as applied.
+        searchKeys={[
+          'fullName',
+          'studentNumber',
+          'enroleeNumber',
+          'slotLabel',
+          'level',
+          'levelApplied',
+        ]}
         searchPlaceholder="Search student or document…"
         facets={facets}
         toolbarTrailing={modeToggle}
@@ -464,7 +478,7 @@ export function ValidationQueue({
         // Level + status render once in the group header (keyed by enroleeNumber); hide the redundant per-row
         // cells while keeping both columns filterable via their facets.
         initialColumnVisibility={{
-          levelApplied: false,
+          level: false,
           applicationStatus: false,
         }}
         expandable={{

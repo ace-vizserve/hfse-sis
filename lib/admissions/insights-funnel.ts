@@ -6,7 +6,12 @@ import { prefixFor } from '@/lib/admissions/_shared';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { ENROLEE_CATEGORIES } from '@/lib/schemas/sis';
-import { compareLevelLabels } from '@/lib/sis/levels';
+import {
+  compareLevelLabels,
+  LEVEL_LABELS,
+  type LevelLabelResolver,
+} from '@/lib/sis/levels';
+import { loadAdmissionsLevelResolver } from '@/lib/admissions/level-resolver';
 import {
   canonicaliseLevelApplied,
   canonicaliseNationality,
@@ -63,6 +68,10 @@ export type JoinedFunnelRow = {
   enroleeNumber: string;
   applicationStatus: string | null;
   levelApplied: string | null;
+  /** `levelApplied` resolved to the SIS level it counts as ("Year 9" →
+   *  "Secondary Three"; unmapped names stay as stored). Every by-level chart
+   *  groups by this — the drill's `levelAsApplied` holds the same value. */
+  level: string | null;
   howDidYouKnowAboutHFSEIS: string | null;
   category: string | null;
   nationality: string | null;
@@ -74,11 +83,13 @@ export type JoinedFunnelRow = {
  * with an applicant number, its LAST status row, nothing for a status row
  * with no application. Until KD #229 this loader iterated status rows, so an
  * orphan status row was counted and a duplicated one counted twice — numbers
- * no drill could list. Pure — exported for unit tests.
+ * no drill could list. `resolveLevel` is the level_aliases resolver the loader
+ * builds (default keeps the name as stored). Pure — exported for unit tests.
  */
 export function joinFunnelRows(
   statusRows: StatusFunnelRow[],
-  appRows: AppFunnelRow[]
+  appRows: AppFunnelRow[],
+  resolveLevel: LevelLabelResolver = (raw) => raw ?? null
 ): JoinedFunnelRow[] {
   const statusByEnrolee = new Map<string, StatusFunnelRow>();
   for (const s of statusRows) {
@@ -92,6 +103,7 @@ export function joinFunnelRows(
       enroleeNumber: a.enroleeNumber,
       applicationStatus: s?.applicationStatus ?? null,
       levelApplied: a.levelApplied ?? null,
+      level: resolveLevel(a.levelApplied ?? null),
       howDidYouKnowAboutHFSEIS: a.howDidYouKnowAboutHFSEIS ?? null,
       category: a.category ?? null,
       nationality: a.nationality ?? null,
@@ -117,9 +129,10 @@ async function loadFunnelRowsUncached(
 
   let statusRows: StatusFunnelRow[];
   let appRows: AppFunnelRow[];
+  let resolveLevel: LevelLabelResolver;
 
   try {
-    [statusRows, appRows] = await Promise.all([
+    [statusRows, appRows, resolveLevel] = await Promise.all([
       fetchAllPages<StatusFunnelRow>(
         (from, to) =>
           supabase
@@ -136,13 +149,14 @@ async function loadFunnelRowsUncached(
             )
             .range(from, to) as unknown as P<AppFunnelRow>
       ),
+      loadAdmissionsLevelResolver(),
     ]);
   } catch (err) {
     console.error('[admissions-funnel] fetch failed:', err);
     return [];
   }
 
-  return joinFunnelRows(statusRows, appRows);
+  return joinFunnelRows(statusRows, appRows, resolveLevel);
 }
 
 function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
@@ -155,7 +169,8 @@ function loadFunnelRows(ayCode: string): Promise<JoinedFunnelRow[]> {
     // correct. Bump this whenever JoinedFunnelRow gains or loses a field.
     // (v2: added `nationality`, 2026-08-17.)
     // (v3: application-first join, KD #229, 2026-09-29.)
-    ['admissions-funnel-v3', ayCode],
+    // (v4: added the resolved `level`, 2026-10-05.)
+    ['admissions-funnel-v4', ayCode],
     {
       revalidate: CACHE_TTL_SECONDS,
       tags: ['admissions-dashboard', `admissions-dashboard:${ayCode}`],
@@ -187,32 +202,17 @@ type SimpleRow = {
   applicationStatus: string | null;
 };
 
-const CANONICAL_LEVELS = [
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'S1',
-  'S2',
-  'S3',
-  'S4',
-] as const;
-const CANONICAL_LEVEL_INDEX: Record<string, number> = Object.fromEntries(
-  CANONICAL_LEVELS.map((l, i) => [l, i])
-);
-
+// Known levels in school order → other → Unknown (last). The grouped values
+// are level LABELS ("Primary One"); this used to index a code list (P1..S4)
+// that no label matched, so real levels fell through to alphabetical order. A
+// bare code is still accepted (mapped to its label) so either form sorts.
 function compareLevels(a: string, b: string): number {
   if (a === 'Unknown' && b === 'Unknown') return 0;
   if (a === 'Unknown') return 1;
   if (b === 'Unknown') return -1;
-  const ai = CANONICAL_LEVEL_INDEX[a];
-  const bi = CANONICAL_LEVEL_INDEX[b];
-  if (ai !== undefined && bi !== undefined) return ai - bi;
-  if (ai !== undefined) return -1;
-  if (bi !== undefined) return 1;
-  return a.localeCompare(b);
+  const labelOf = (v: string) =>
+    (LEVEL_LABELS as Record<string, string>)[v] ?? v;
+  return compareLevelLabels(labelOf(a), labelOf(b));
 }
 
 /** Count applications and enrolments by level, excluding terminal statuses. */
@@ -604,7 +604,8 @@ export async function getConversionByLevel(
   const rows = await loadFunnelRows(ayCode);
   return computeConversionByLevel(
     rows.map((r) => ({
-      levelApplied: r.levelApplied,
+      // Resolved to the SIS level it counts as (JoinedFunnelRow.level).
+      levelApplied: r.level,
       statusLevel: null, // not available in this loader; levelApplied is the best we have
       applicationStatus: r.applicationStatus,
     }))
@@ -617,7 +618,8 @@ export async function getWithdrawnByLevel(
   const rows = await loadFunnelRows(ayCode);
   return computeWithdrawnByLevel(
     rows.map((r) => ({
-      levelApplied: r.levelApplied,
+      // Resolved — the drill's `levelAsApplied` holds the same value.
+      levelApplied: r.level,
       applicationStatus: r.applicationStatus,
     }))
   );
@@ -652,7 +654,7 @@ export async function getApplicantNationalityByLevel(
   const rows = await loadFunnelRows(ayCode);
   return computeNationalityByLevel(
     rows.map((r) => ({
-      level: canonicaliseLevelApplied(r.levelApplied),
+      level: canonicaliseLevelApplied(r.level),
       nationality: r.nationality,
     }))
   );

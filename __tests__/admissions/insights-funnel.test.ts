@@ -64,6 +64,28 @@ describe('computeConversionByLevel', () => {
     expect(result.map((r) => r.level)).toEqual(['P1', 'P3', 'S1', 'Unknown']);
   });
 
+  it('sorts level LABELS in school order, unmapped names after, Unknown last', () => {
+    // The real grouped values are labels; the old code-indexed sort sent
+    // every one of them to alphabetical order (Primary Two before Primary
+    // Three before Secondary One... but "Primary Three" < "Primary Two").
+    const rows = [
+      { levelApplied: 'Secondary One', applicationStatus: 'Enrolled' },
+      { levelApplied: 'Primary Two', applicationStatus: 'Enrolled' },
+      { levelApplied: 'Year 9', applicationStatus: 'Enrolled' },
+      { levelApplied: null, applicationStatus: 'Enrolled' },
+      { levelApplied: 'Primary Three', applicationStatus: 'Enrolled' },
+      { levelApplied: 'Youngstarters', applicationStatus: 'Enrolled' },
+    ];
+    expect(computeConversionByLevel(rows).map((r) => r.level)).toEqual([
+      'Youngstarters',
+      'Primary Two',
+      'Primary Three',
+      'Secondary One',
+      'Year 9',
+      'Unknown',
+    ]);
+  });
+
   it('computes conversionPct correctly', () => {
     const rows = [
       { levelApplied: 'P2', applicationStatus: 'Enrolled' },

@@ -43,6 +43,7 @@ export const FEEDBACK_DRILL_CSV_HEADERS = [
   'Applicant',
   'Applicant Number',
   'Student ID',
+  'Level',
   'Level applied for',
   'Status',
   'Rating',
@@ -56,6 +57,8 @@ export function feedbackDrillCsvRow(r: FeedbackRow): (string | number)[] {
     r.enroleeFullName ?? '',
     r.enroleeNumber,
     r.studentNumber ?? '',
+    // The SIS level it counts as, then the name the family applied with.
+    r.level ?? '',
     r.levelApplied ?? '',
     (r.applicationStatus ?? '').trim() || 'No status',
     r.feedbackRating ?? '',

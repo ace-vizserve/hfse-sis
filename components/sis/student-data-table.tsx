@@ -16,6 +16,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { EnrollmentStatus } from '@/components/ui/enrollment-status-badge';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { StudentListRow } from '@/lib/sis/queries';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import {
   STALENESS_ORDER,
   daysSinceUpdate,
@@ -245,19 +246,33 @@ export function StudentDataTable({
         ),
       },
       {
-        accessorFn: (row) => row.classLevel ?? row.levelApplied ?? '',
+        // `level` is resolved server-side (lib/sis/queries.ts): classLevel,
+        // else the application's level name mapped through the enrolment
+        // form options — so "Year 9" shows, filters and sorts as Secondary
+        // Three. The raw name stays searchable (searchKeys below).
+        accessorFn: (row) => row.level ?? '',
         id: 'level',
         header: 'Level',
         cell: ({ row }) => {
-          const lvl = row.original.classLevel ?? row.original.levelApplied;
+          const lvl = row.original.level;
+          const raw = row.original.levelApplied?.trim();
           return lvl ? (
-            <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+            <span
+              className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground"
+              title={
+                raw && raw !== lvl && !row.original.classLevel
+                  ? `Applied as ${raw}`
+                  : undefined
+              }
+            >
               {lvl}
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           );
         },
+        sortingFn: (a, b) =>
+          compareLevelLabels(a.original.level, b.original.level),
         filterFn: (row, id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0))
             return true;
@@ -602,6 +617,14 @@ export function StudentDataTable({
     ]
   );
 
+  const levelOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Set(data.map((r) => r.level).filter((v): v is string => !!v))
+      ).sort(compareLevelLabels),
+    [data]
+  );
+
   const statusTabs = React.useMemo(
     () =>
       statusBuckets.map((def) => ({
@@ -639,12 +662,13 @@ export function StudentDataTable({
         'studentNumber',
         'enroleeNumber',
         'classSection',
-        'classLevel',
+        'level',
         'levelApplied',
       ]}
       searchPlaceholder="Search name, student #, enrolee #, section…"
       facets={[
-        { columnId: 'level', label: 'Level' },
+        // School order (Youngstarters, P1…S4, then unmapped names), not A–Z.
+        { columnId: 'level', label: 'Level', valueOptions: levelOptions },
         { columnId: 'section', label: 'Section' },
         // No valueOptions — the DataTable derives the chips from the rows, so
         // a year holding 'VizSchool Current' offers it and one that does not

@@ -775,7 +775,21 @@ function withAdmissionOptions(
     return {
       ...cfg,
       kind: 'select',
-      options: asOptions(levels.map((l) => l.levelLabel)),
+      // The value stays the parent-facing name (it is what the form stores);
+      // the label also says which SIS level it puts the child under.
+      options: [
+        ...new Map(
+          levels.map((l) => [
+            l.levelLabel,
+            {
+              label: l.countsAs
+                ? `${l.levelLabel} (counts as ${l.countsAs})`
+                : l.levelLabel,
+              value: l.levelLabel,
+            },
+          ])
+        ).values(),
+      ],
     };
   }
   if (cfg.name === 'classType') {

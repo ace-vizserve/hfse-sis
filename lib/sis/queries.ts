@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
+import { loadLevelLabelResolver, resolveChildLevel } from '@/lib/sis/levels';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
@@ -41,7 +42,15 @@ export type StudentListRow = {
   middleName: string | null;
   lastName: string | null;
   enroleeFullName: string | null;
+  /** The parent-facing level name on the application, exactly as entered. */
   levelApplied: string | null;
+  /**
+   * The SIS level the child counts as — `classLevel` once set, else
+   * `levelApplied` resolved through `level_aliases` ("Year 9" → Secondary
+   * Three). Null only when both are blank. Level columns, facets and sorts
+   * read this, never the raw name.
+   */
+  level: string | null;
   /** Country name as supplied on the application. Hidden column by default —
    *  shown/exported via the Columns menu (training action item #10). */
   nationality: string | null;
@@ -136,10 +145,12 @@ export async function listStudents(
     async () => {
       const prefix = prefixFor(ayCode);
       const supabase = createAdmissionsClient();
+      // For the level resolver (`levels` + `level_aliases`).
+      const service = createServiceClient();
 
       // fetchAllPages walks past the PostgREST 1000-row cap (M2). AYs with
       // > 1000 enrolled applicants silently truncated without this.
-      const [appsData, statusData] = await Promise.all([
+      const [appsData, statusData, resolveLevel] = await Promise.all([
         fetchAllPages((from, to) => {
           const q = supabase
             .from(`${prefix}_enrolment_applications`)
@@ -160,6 +171,7 @@ export async function listStudents(
             .select(LIST_STATUS_COLUMNS)
             .range(from, to)
         ),
+        loadLevelLabelResolver(service),
       ]);
 
       // Map to named Result shape to satisfy the downstream type checks
@@ -240,6 +252,7 @@ export async function listStudents(
           lastName: a.lastName,
           enroleeFullName: a.enroleeFullName,
           levelApplied: a.levelApplied,
+          level: resolveChildLevel(resolveLevel, s?.classLevel, a.levelApplied),
           nationality: a.nationality,
           category: a.category,
           classLevel: s?.classLevel ?? null,
@@ -273,7 +286,9 @@ export async function listStudents(
       }
       return out;
     },
-    ['sis', 'list-students', ayCode, orderBy],
+    // v2: rows gained the resolved `level` — a v1 entry would serve rows
+    // without it.
+    ['sis', 'list-students', 'v2', ayCode, orderBy],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )();
 }

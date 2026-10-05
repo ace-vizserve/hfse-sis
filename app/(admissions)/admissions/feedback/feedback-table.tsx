@@ -12,6 +12,7 @@ import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
 import type { FeedbackRow } from '@/lib/admissions/feedback';
+import { compareLevelLabels } from '@/lib/sis/levels';
 
 // ─── Rating helpers ───────────────────────────────────────────────────────────
 
@@ -100,12 +101,29 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
       },
     },
     {
-      id: 'levelApplied',
-      accessorKey: 'levelApplied',
+      // The SIS level the child counts as (resolved server-side), so a
+      // "Year 9" applicant sorts and filters under Secondary Three.
+      id: 'level',
+      accessorFn: (r) => r.level ?? '',
       header: ({ column }) => (
         <SortableHeader column={column}>Level</SortableHeader>
       ),
       meta: { label: 'Level' },
+      sortingFn: (a, b) =>
+        compareLevelLabels(a.original.level, b.original.level),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.level ?? '—'}
+        </span>
+      ),
+    },
+    {
+      // The name the family picked on the form — hidden by default, kept for
+      // the Columns menu and the CSV.
+      id: 'levelApplied',
+      accessorFn: (r) => r.levelApplied ?? '',
+      header: 'Level applied for',
+      meta: { label: 'Level applied for' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.levelApplied ?? '—'}
@@ -286,7 +304,7 @@ const STATUS_TABS: StatusTabConfig<FeedbackRow>[] = [
 ];
 
 const FACETS = [
-  { columnId: 'levelApplied', label: 'Level' },
+  { columnId: 'level', label: 'Level' },
   { columnId: 'applicationStatus', label: 'App status' },
   // Consent is covered by the "May contact" status tab; a facet on the numeric
   // accessor renders no options, so it's intentionally omitted.
@@ -306,13 +324,23 @@ export function FeedbackTable({
       data={rows}
       columns={buildColumns(ayCode)}
       getRowId={(r) => r.enroleeNumber}
-      searchKeys={['enroleeFullName', 'enroleeNumber', 'feedbackComments']}
+      searchKeys={[
+        'enroleeFullName',
+        'enroleeNumber',
+        'feedbackComments',
+        'level',
+        'levelApplied',
+      ]}
       searchPlaceholder="Search applicants or comments…"
       facets={FACETS}
       statusTabs={STATUS_TABS}
       pageSize={25}
       initialSort={[{ id: 'feedbackSubmittedAt', desc: true }]}
-      initialColumnVisibility={{ motherEmail: false, fatherEmail: false }}
+      initialColumnVisibility={{
+        motherEmail: false,
+        fatherEmail: false,
+        levelApplied: false,
+      }}
       csv={{ filename: `feedback-${ayCode}.csv` }}
       url={{ enabled: true, namespace: 'feedback' }}
       emptyState={{

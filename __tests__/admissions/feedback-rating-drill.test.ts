@@ -3,6 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 const fx = vi.hoisted(() => ({
   apps: [] as Array<Record<string, unknown>>,
   statuses: [] as Array<Record<string, unknown>>,
+  // The level catalog + one enrolment-form alias, so the loader's resolver
+  // has something to map ("Year 9" counts as Secondary Three).
+  levels: [
+    {
+      id: 'lv-s3',
+      code: 'S3',
+      label: 'Secondary Three',
+      level_type: 'secondary',
+      sort_order: 30,
+      next_level_id: null,
+      is_core: true,
+    },
+  ],
+  aliases: [{ raw_label: 'Year 9', level_id: 'lv-s3' }],
 }));
 
 vi.mock('next/cache', () => ({
@@ -14,15 +28,27 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
-      select: () => ({
-        range: () =>
-          Promise.resolve({
-            data: table.endsWith('_enrolment_applications')
-              ? fx.apps
-              : fx.statuses,
-            error: null,
-          }),
-      }),
+      select: () => {
+        if (table === 'levels') {
+          return {
+            order: () => ({
+              order: () => Promise.resolve({ data: fx.levels, error: null }),
+            }),
+          };
+        }
+        if (table === 'level_aliases') {
+          return Promise.resolve({ data: fx.aliases, error: null });
+        }
+        return {
+          range: () =>
+            Promise.resolve({
+              data: table.endsWith('_enrolment_applications')
+                ? fx.apps
+                : fx.statuses,
+              error: null,
+            }),
+        };
+      },
     }),
   }),
 }));
@@ -40,7 +66,7 @@ fx.apps = RATINGS.map((feedbackRating, i) => ({
   enroleeNumber: `E${i}`,
   studentNumber: null,
   enroleeFullName: `Child ${i}`,
-  levelApplied: 'P1',
+  levelApplied: i === 0 ? 'Year 9' : 'P1',
   feedbackRating,
   feedbackComments: i === 0 ? '  Easy form  ' : null,
   feedbackConsent: i === 0 ? true : null,
@@ -84,6 +110,15 @@ describe('feedback-rating drill', () => {
     }
   });
 
+  it('resolves the applied-for name to the SIS level it counts as', async () => {
+    const { rows } = await getAdmissionsFeedback('AY2026');
+    const e0 = rows.find((r) => r.enroleeNumber === 'E0')!;
+    expect(e0.levelApplied).toBe('Year 9');
+    expect(e0.level).toBe('Secondary Three');
+    // An unmapped name stays as stored.
+    expect(rows.find((r) => r.enroleeNumber === 'E1')!.level).toBe('P1');
+  });
+
   it('writes one CSV cell per header', async () => {
     const { rows } = await getAdmissionsFeedback('AY2026');
     const row = rows.find((r) => r.enroleeNumber === 'E0')!;
@@ -93,7 +128,8 @@ describe('feedback-rating drill', () => {
       'Child 0',
       'E0',
       '',
-      'P1',
+      'Secondary Three',
+      'Year 9',
       'Enrolled',
       5,
       'Easy form',

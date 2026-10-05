@@ -51,6 +51,21 @@ describe('joinFunnelRows — application-first, as the drill joins', () => {
   it('drops an application with no applicant number', () => {
     expect(joinFunnelRows([], [app(null), app('')])).toEqual([]);
   });
+
+  it('carries the raw name and the level it resolves to', () => {
+    const resolve = (raw: string | null | undefined) =>
+      raw === 'Year 9' ? 'Secondary Three' : (raw ?? null);
+    const out = joinFunnelRows(
+      [],
+      [app('E1', 'Year 9'), app('E2', 'Primary One'), app('E3', null)],
+      resolve
+    );
+    expect(out.map((r) => [r.levelApplied, r.level])).toEqual([
+      ['Year 9', 'Secondary Three'],
+      ['Primary One', 'Primary One'],
+      [null, null],
+    ]);
+  });
 });
 
 describe('joinTerminalReasonRows', () => {
@@ -78,6 +93,29 @@ describe('joinTerminalReasonRows', () => {
     const rollup = rollupTerminalReasons(out);
     expect(rollup.total).toBe(2);
     expect(rollup.byLevel.map((l) => l.level)).toEqual(['P1', 'Unknown']);
+  });
+
+  it('groups by the level a name resolves to, not the name as stored', () => {
+    const resolve = (raw: string | null | undefined) =>
+      raw === 'Year 9' ? 'Secondary Three' : (raw ?? null);
+    const out = joinTerminalReasonRows(
+      [
+        { enroleeNumber: 'E1', applicationTerminalReason: 'financial' },
+        { enroleeNumber: 'E2', applicationTerminalReason: 'financial' },
+      ],
+      [
+        { enroleeNumber: 'E1', levelApplied: 'Year 9' },
+        { enroleeNumber: 'E2', levelApplied: 'Secondary Three' },
+      ],
+      resolve
+    );
+    expect(rollupTerminalReasons(out).byLevel).toEqual([
+      {
+        level: 'Secondary Three',
+        count: 2,
+        reasons: [{ reason: 'financial', count: 2 }],
+      },
+    ]);
   });
 });
 

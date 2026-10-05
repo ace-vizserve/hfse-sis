@@ -112,6 +112,7 @@ describe('compareEnrolledOpenSteps', () => {
     studentNumber: null,
     studentName: 'X',
     levelApplied: null,
+    level: null,
     classLabel: null,
     openSteps: ['Fees'],
     enrolledOn: null,

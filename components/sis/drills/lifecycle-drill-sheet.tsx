@@ -32,6 +32,7 @@ import {
   type LifecycleDrillRow,
   type LifecycleDrillTarget,
 } from '@/lib/sis/drill';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
@@ -157,40 +158,22 @@ function formatDate(iso: string | null | undefined): string {
 
 // ─── Level sort ─────────────────────────────────────────────────────────────
 
-const CANONICAL_LEVELS = [
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'S1',
-  'S2',
-  'S3',
-  'S4',
-] as const;
-const CANONICAL_LEVEL_INDEX: Record<string, number> = CANONICAL_LEVELS.reduce(
-  (acc, lvl, i) => {
-    acc[lvl] = i;
-    return acc;
-  },
-  {} as Record<string, number>
-);
-
+// Rows carry level LABELS ("Secondary Three"), so they sort by the shared
+// label order. The sheet used to compare them against level CODES ("S3"),
+// which no label ever matched — every level fell through to alphabetical.
+// 'Unknown' still sinks below every unmapped name.
 function compareLevels(a: string, b: string): number {
   const aIsUnknown = a === 'Unknown';
   const bIsUnknown = b === 'Unknown';
   if (aIsUnknown && bIsUnknown) return 0;
   if (aIsUnknown) return 1;
   if (bIsUnknown) return -1;
-  const aIdx = CANONICAL_LEVEL_INDEX[a];
-  const bIdx = CANONICAL_LEVEL_INDEX[b];
-  const aIsCanon = aIdx !== undefined;
-  const bIsCanon = bIdx !== undefined;
-  if (aIsCanon && bIsCanon) return aIdx - bIdx;
-  if (aIsCanon) return -1;
-  if (bIsCanon) return 1;
-  return a.localeCompare(b);
+  return compareLevelLabels(a, b);
+}
+
+/** The level a row shows, sorts, filters and groups on. */
+function levelOf(row: LifecycleDrillRow): string {
+  return row.level ?? row.levelApplied ?? 'Unknown';
 }
 
 // ─── Column factory ─────────────────────────────────────────────────────────
@@ -265,20 +248,26 @@ function buildColumnDef(
       };
     case 'levelApplied':
       return {
+        // Key stays `levelApplied` (saved column lists + the CSV `columns`
+        // param name it); the value is the resolved SIS level.
         id: 'levelApplied',
-        accessorKey: 'levelApplied',
+        accessorFn: (row) => row.level ?? row.levelApplied ?? '',
         header,
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {row.original.levelApplied ?? '—'}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const level = row.original.level ?? row.original.levelApplied;
+          const raw = row.original.levelApplied?.trim();
+          return (
+            <span
+              className="text-sm text-muted-foreground"
+              title={raw && raw !== level ? `Applied as ${raw}` : undefined}
+            >
+              {level ?? '—'}
+            </span>
+          );
+        },
         enableSorting: true,
         sortingFn: (a, b) =>
-          compareLevels(
-            a.original.levelApplied ?? 'Unknown',
-            b.original.levelApplied ?? 'Unknown'
-          ),
+          compareLevels(levelOf(a.original), levelOf(b.original)),
       };
     case 'applicationStatus':
       return {
@@ -548,10 +537,7 @@ export function LifecycleDrillSheet({
     const levelSet = new Set(selectedLevels);
     const statusSet = new Set(selectedStatuses);
     return rows.filter((r) => {
-      if (
-        selectedLevels.length > 0 &&
-        !levelSet.has(r.levelApplied ?? 'Unknown')
-      ) {
+      if (selectedLevels.length > 0 && !levelSet.has(levelOf(r))) {
         return false;
       }
       if (
@@ -566,7 +552,7 @@ export function LifecycleDrillSheet({
 
   const levelOptions = React.useMemo<string[]>(() => {
     const set = new Set<string>();
-    for (const r of rows) set.add(r.levelApplied ?? 'Unknown');
+    for (const r of rows) set.add(levelOf(r));
     return Array.from(set).sort(compareLevels);
   }, [rows]);
 

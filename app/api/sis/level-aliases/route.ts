@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 
+import { invalidateAfterLevelAliasChange } from '@/lib/sis/level-alias-invalidation';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
 import { LevelRemapSchema } from '@/lib/schemas/level';
 import { createServiceClient } from '@/lib/supabase/service';
-import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
 
 // POST /api/sis/level-aliases
 // Body: { fromLabel: string, toLevelId: uuid }
@@ -76,7 +75,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
-  const current = await getCurrentAcademicYear();
   if (!unchanged) {
     const toLevel = levelRow as { code: string | null; label: string };
     const priorLevelId =
@@ -126,9 +124,9 @@ export async function POST(request: Request) {
     });
   }
 
-  if (current) {
-    await invalidateAllOperationalDrills(current.ay_code);
-  }
+  // The alias changes the level every screen groups this name under
+  // (makeLevelLabelResolver), not only the mismatch queue — in every year.
+  await invalidateAfterLevelAliasChange(service);
 
   return NextResponse.json({ ok: true });
 }

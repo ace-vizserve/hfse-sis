@@ -90,6 +90,7 @@ import {
 import type { ProfileUpdateInput } from '@/lib/schemas/sis';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import { isLevelLocked } from '@/lib/sis/level-lock';
+import { loadLevelLabelResolver } from '@/lib/sis/levels';
 import {
   getEnrollmentHistory,
   getSiblingSections,
@@ -1746,7 +1747,18 @@ async function StudentProfileCard({
   /** Current `enrollment_status` from the active `section_students` row. */
   enrollmentStatus: PlacementRow['enrollmentStatus'] | null;
 }) {
-  const admissionOptions = await loadProfileAdmissionOptions(ayCode);
+  const [admissionOptions, resolveLevel] = await Promise.all([
+    loadProfileAdmissionOptions(ayCode),
+    loadLevelLabelResolver(createServiceClient()),
+  ]);
+  // The enrolment form options say what the parent's level name counts as.
+  // Shown only when it says something the name itself doesn't ("Year 9" →
+  // Secondary Three), so an SIS-worded application isn't printed twice.
+  const resolvedLevel = resolveLevel(app.levelApplied);
+  const countsAs =
+    resolvedLevel && resolvedLevel !== app.levelApplied?.trim()
+      ? resolvedLevel
+      : null;
   const hasIdDocs = app.nric || app.passportNumber || app.pass;
   const hasLearningNeeds =
     app.additionalLearningNeeds || app.otherLearningNeeds;
@@ -1835,6 +1847,7 @@ async function StudentProfileCard({
           </p>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
             <FieldItem label="Level applied" value={app.levelApplied} />
+            <FieldItem label="Counts as" value={countsAs} />
             {assignedClass && (
               <FieldItem label="Assigned class" value={assignedClass} />
             )}

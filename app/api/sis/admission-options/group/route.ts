@@ -8,12 +8,11 @@ import {
   findAcademicYear,
   recountLevelNameForOption,
 } from '@/lib/admissions/options-write';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
-import { invalidateAllOperationalDrills } from '@/lib/cache/invalidate-drill-tags';
 import { AdmissionOptionGroupEditSchema } from '@/lib/schemas/admission-options';
+import { invalidateAfterLevelAliasChange } from '@/lib/sis/level-alias-invalidation';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // PATCH /api/sis/admission-options/group
@@ -213,9 +212,11 @@ export async function PATCH(request: Request) {
       }
     }
   }
-  if (alias.created) {
-    const current = await getCurrentAcademicYear();
-    if (current) await invalidateAllOperationalDrills(current.ay_code);
+  // A new or re-pointed alias changes the level every screen groups this name
+  // under (makeLevelLabelResolver) — in every year that carries it, so every
+  // year's dashboards and drills are busted.
+  if (alias.created || recounted?.ok) {
+    await invalidateAfterLevelAliasChange(service);
   }
 
   return NextResponse.json({ ok: true, changed: true });

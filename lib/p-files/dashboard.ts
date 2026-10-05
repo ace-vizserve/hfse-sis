@@ -19,6 +19,10 @@ import type { VelocityPoint } from '@/lib/dashboard/velocity';
 import { sgToday } from '@/lib/dates';
 import { getExpiringDocuments } from '@/lib/sis/dashboard';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
 import type { PriorityPayload } from '@/lib/dashboard/priority';
 
 // P-Files dashboard aggregators — document-repository lens.
@@ -79,7 +83,7 @@ async function loadCompletionByLevelUncached(
     .filter((v): v is string => v !== null);
   if (enrolledNumbers.length === 0) return [];
 
-  const [appsRes, docsRes] = await Promise.all([
+  const [appsRes, docsRes, resolveLevel] = await Promise.all([
     supabase
       .from(`${prefix}_enrolment_applications`)
       .select(
@@ -99,6 +103,8 @@ async function loadCompletionByLevelUncached(
         ].join(', ')
       )
       .in('enroleeNumber', enrolledNumbers),
+    // Never throws — degrades to the names as stored.
+    loadAdmissionsLevelResolver(),
   ]);
 
   // Re-shape statusRows into the same Promise.all-style result for the
@@ -159,10 +165,15 @@ async function loadCompletionByLevelUncached(
   >();
   for (const a of (appsRes.data ?? []) as AppRow[]) {
     if (!a.enroleeNumber) continue;
+    // classLevel when set, else the applied-for name resolved to the SIS
+    // level it counts as ("Year 9" → Secondary Three). Same rule as the
+    // drill (lib/p-files/drill.ts) so a bar's click lands on its rows.
     const level =
-      statusByEnrolee.get(a.enroleeNumber) ||
-      a.levelApplied?.trim() ||
-      'Unknown';
+      resolveChildLevel(
+        resolveLevel,
+        statusByEnrolee.get(a.enroleeNumber),
+        a.levelApplied
+      ) ?? 'Unknown';
     byEnrolee.set(a.enroleeNumber, {
       level,
       gate: {
@@ -240,7 +251,8 @@ export function getCompletionByLevel(
 ): Promise<LevelCompletionRow[]> {
   return unstable_cache(
     loadCompletionByLevelUncached,
-    ['p-files', 'completion-by-level', ayCode],
+    // v2: levels resolved through level_aliases.
+    ['p-files', 'completion-by-level', 'v2', ayCode],
     { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS }
   )(ayCode);
 }

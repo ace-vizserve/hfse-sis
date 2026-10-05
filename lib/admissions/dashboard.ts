@@ -26,6 +26,11 @@ import {
   FUNNEL_STAGES,
   hasReachedFunnelStage,
 } from '@/lib/admissions/insights-predicates';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
+import { compareLevelLabels, LEVEL_LABELS } from '@/lib/sis/levels';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -97,6 +102,10 @@ type JoinedRow = AppLite & {
    *  confirmed enrolment timestamp suitable for time-to-enrol arithmetic. */
   enrolledAt: string | null;
   statusLevel: string | null;
+  /** The child's level: classLevel when set, else the level name resolved to
+   *  the SIS level it counts as (lib/admissions/level-resolver.ts). Null when
+   *  every source is blank. Charts group by this. */
+  level: string | null;
   assessmentGradeMath: string | number | null;
   assessmentGradeEnglish: string | number | null;
 };
@@ -115,6 +124,7 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
 
   let apps: AppLite[];
   let statuses: StatusLite[];
+  const resolverPromise = loadAdmissionsLevelResolver();
   try {
     [apps, statuses] = await Promise.all([
       fetchAllPages<AppLite>(
@@ -140,6 +150,7 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
     console.error('[admissions-dashboard] fetch failed:', err);
     return [];
   }
+  const resolveLabel = await resolverPromise;
 
   const statusByEnrolee = new Map<string, StatusLite>();
   for (const s of statuses) {
@@ -166,6 +177,11 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
       // substituted `applicationUpdatedDate` (which would produce 0-day counts).
       enrolledAt: s?.enrolledAt ?? null,
       statusLevel: s?.classLevel ?? s?.levelApplied ?? null,
+      level: resolveChildLevel(
+        resolveLabel,
+        s?.classLevel,
+        s?.levelApplied ?? a.levelApplied
+      ),
       assessmentGradeMath: s?.assessmentGradeMath ?? null,
       assessmentGradeEnglish: s?.assessmentGradeEnglish ?? null,
     });
@@ -176,7 +192,9 @@ async function loadJoinedRowsUncached(ayCode: string): Promise<JoinedRow[]> {
 function loadJoinedRows(ayCode: string): Promise<JoinedRow[]> {
   return unstable_cache(
     () => loadJoinedRowsUncached(ayCode),
-    ['admissions-joined', ayCode],
+    // v2: JoinedRow gained the resolved `level` — a v1 entry would serve
+    // rows without it.
+    ['admissions-joined-v2', ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
   )();
 }
@@ -291,7 +309,11 @@ export type OutdatedRow = {
   motherEmail: string | null;
   fatherEmail: string | null;
   status: string;
+  /** The level name as the application stored it ("Year 9"). */
   levelApplied: string | null;
+  /** The child's resolved SIS level ("Secondary Three") — what the table
+   *  shows, groups and sorts by. */
+  level: string | null;
   lastUpdated: string | null; // ISO date
   daysSinceUpdate: number | null;
   daysInPipeline: number;
@@ -345,6 +367,7 @@ export async function getOutdatedApplications(
       fatherEmail: r.fatherEmail ?? null,
       status,
       levelApplied: r.levelApplied ?? r.statusLevel,
+      level: r.level,
       lastUpdated: r.applicationUpdatedDate,
       daysSinceUpdate,
       daysInPipeline,
@@ -803,52 +826,31 @@ export function getTimeToEnrollHistogram(
 // applications-by-level and doc-completion-by-level aggregators below.
 // ──────────────────────────────────────────────────────────────────────────
 
-const CANONICAL_LEVELS = [
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'S1',
-  'S2',
-  'S3',
-  'S4',
-] as const;
-
-const CANONICAL_LEVEL_INDEX: Record<string, number> = CANONICAL_LEVELS.reduce(
-  (acc, lvl, i) => {
-    acc[lvl] = i;
-    return acc;
-  },
-  {} as Record<string, number>
-);
-
-function compareLevels(a: string, b: string): number {
-  // Three-tier ordering: canonical (P1..S4) → other → Unknown (last).
+/**
+ * Three-tier ordering: known levels in school order → other → Unknown (last).
+ * The grouped values are level LABELS ("Primary One"); this used to index a
+ * code list (P1..S4), which no label ever matched, so every real level fell
+ * through to alphabetical order. A bare code is still accepted (mapped to its
+ * label) so either form sorts. Exported for unit tests.
+ */
+export function compareLevels(a: string, b: string): number {
   const aIsUnknown = a === 'Unknown';
   const bIsUnknown = b === 'Unknown';
   if (aIsUnknown && bIsUnknown) return 0;
   if (aIsUnknown) return 1;
   if (bIsUnknown) return -1;
-
-  const aIdx = CANONICAL_LEVEL_INDEX[a];
-  const bIdx = CANONICAL_LEVEL_INDEX[b];
-  const aIsCanon = aIdx !== undefined;
-  const bIsCanon = bIdx !== undefined;
-  if (aIsCanon && bIsCanon) return aIdx - bIdx;
-  if (aIsCanon) return -1;
-  if (bIsCanon) return 1;
-  return a.localeCompare(b);
+  const labelOf = (v: string) =>
+    (LEVEL_LABELS as Record<string, string>)[v] ?? v;
+  return compareLevelLabels(labelOf(a), labelOf(b));
 }
 
 function resolveLevel(row: JoinedRow): string {
-  // statusLevel takes precedence (registrar-stamped classLevel/levelApplied)
-  // because admissions occasionally promotes/demotes between application and
-  // class assignment. Falls back to the application-time levelApplied, then
-  // 'Unknown' for blank/whitespace.
-  const raw = (row.statusLevel ?? row.levelApplied ?? '').trim();
-  return raw || 'Unknown';
+  // classLevel takes precedence (registrar-stamped) because admissions
+  // occasionally promotes/demotes between application and class assignment;
+  // otherwise the level name the family applied with, resolved to the SIS
+  // level it counts as (so "Year 9" counts under Secondary Three). 'Unknown'
+  // for blank/whitespace.
+  return row.level ?? 'Unknown';
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1101,7 +1103,9 @@ export function getDocumentCompletionByLevel(
 ): Promise<DocCompletionResult> {
   return unstable_cache(
     () => loadDocumentCompletionByLevelUncached(ayCode),
-    ['admissions', 'doc-completion-by-level', ayCode],
+    // v2: grouped by the resolved SIS level since level_aliases became the
+    // source of truth.
+    ['admissions', 'doc-completion-by-level', 'v2', ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
   )();
 }
@@ -1198,16 +1202,16 @@ async function loadAdmissionsCompletenessForChaseUncached(
   const prefix = prefixFor(ayCode);
   const supabase = createAdmissionsClient();
 
-  const [appsRes, statusRes, docsRes] = await Promise.all([
+  const [appsRes, statusRes, docsRes, resolveLabel] = await Promise.all([
     supabase
       .from(`${prefix}_enrolment_applications`)
       .select(
-        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail", "stpApplicationType", "category", "created_at"'
+        '"enroleeNumber", "studentNumber", "firstName", "lastName", "fatherEmail", "guardianEmail", "stpApplicationType", "category", "created_at", "levelApplied"'
       ),
     supabase
       .from(`${prefix}_enrolment_status`)
       .select(
-        '"enroleeNumber", "applicationStatus", "classLevel", "classSection", "enroleeType"'
+        '"enroleeNumber", "applicationStatus", "classLevel", "levelApplied", "classSection", "enroleeType"'
       ),
     supabase.from(`${prefix}_enrolment_documents`).select(
       PFILES_SLOTS.flatMap((s) => {
@@ -1218,6 +1222,7 @@ async function loadAdmissionsCompletenessForChaseUncached(
         .filter((c, i, a) => a.indexOf(c) === i)
         .join(', ')
     ),
+    loadAdmissionsLevelResolver(),
   ]);
 
   if (appsRes.error || statusRes.error || docsRes.error) {
@@ -1272,7 +1277,15 @@ async function loadAdmissionsCompletenessForChaseUncached(
     const firstName = (a.firstName as string | null) ?? '';
     const lastName = (a.lastName as string | null) ?? '';
     const fullName = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '');
-    const level = (statusRow?.classLevel as string | null) ?? null;
+    // Same rule as the joined rows every admissions chart groups by:
+    // classLevel when set, else the level name resolved to the SIS level it
+    // counts as (so "Year 9" sits under Secondary Three).
+    const level = resolveChildLevel(
+      resolveLabel,
+      statusRow?.classLevel as string | null | undefined,
+      (statusRow?.levelApplied as string | null | undefined) ??
+        (a.levelApplied as string | null | undefined)
+    );
     const section = (statusRow?.classSection as string | null) ?? null;
     const studentNumber = (a.studentNumber as string | null) ?? null;
     const submittedDate = (a.created_at as string | null) ?? null;
@@ -1393,7 +1406,9 @@ export function getAdmissionsCompletenessForChase(
 }> {
   return unstable_cache(
     () => loadAdmissionsCompletenessForChaseUncached(ayCode, statusFilter),
-    ['admissions', 'completeness-chase', ayCode, statusFilter],
+    // v2: `level` is now the resolved SIS level (classLevel ?? resolved
+    // levelApplied) — a v1 entry holds classLevel only.
+    ['admissions', 'completeness-chase', 'v2', ayCode, statusFilter],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) }
   )();
 }

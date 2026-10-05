@@ -15,6 +15,8 @@ import {
   type ReasonCount,
 } from '@/lib/admissions/insights-predicates';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { loadAdmissionsLevelResolver } from '@/lib/admissions/level-resolver';
+import type { LevelLabelResolver } from '@/lib/sis/levels';
 
 export { reasonLabel, TOP_REASON_COUNT, type ReasonCount };
 
@@ -26,6 +28,9 @@ export type TerminalReasonRollup = {
 
 type TerminalRow = {
   applicationTerminalReason: string | null;
+  /** The applied-for level, already resolved to the SIS level it counts as
+   *  by joinTerminalReasonRows — the same value the drill's `levelAsApplied`
+   *  holds. */
   levelApplied: string | null;
 };
 
@@ -65,6 +70,8 @@ export function rollupTerminalReasons(
  * Application-first join — the drill row set's join: one row per application
  * with an applicant number whose LAST status row carries a reason (blank
  * counts, as 'Unspecified'). A status row with no application is not counted.
+ * `resolveLevel` maps the stored level name to the SIS level it counts as
+ * (the loader passes the level_aliases resolver; default keeps it as stored).
  * Pure — exported for unit tests.
  */
 export function joinTerminalReasonRows(
@@ -72,7 +79,8 @@ export function joinTerminalReasonRows(
     enroleeNumber: string | null;
     applicationTerminalReason: string | null;
   }[],
-  appRows: { enroleeNumber: string | null; levelApplied: string | null }[]
+  appRows: { enroleeNumber: string | null; levelApplied: string | null }[],
+  resolveLevel: LevelLabelResolver = (raw) => raw ?? null
 ): TerminalRow[] {
   const reasonByEnrolee = new Map<string, string | null>();
   for (const s of statusRows) {
@@ -87,7 +95,7 @@ export function joinTerminalReasonRows(
     if (terminalReasonKey(reason) === null) continue;
     out.push({
       applicationTerminalReason: reason,
-      levelApplied: a.levelApplied ?? null,
+      levelApplied: resolveLevel(a.levelApplied ?? null),
     });
   }
   return out;
@@ -158,7 +166,7 @@ async function loadTerminalReasonsUncached(
   // double-quoted in the select, mirroring LIST_STATUS_COLUMNS in
   // lib/sis/queries.ts.
   try {
-    const [statusRows, appRows] = await Promise.all([
+    const [statusRows, appRows, resolveLevel] = await Promise.all([
       fetchAllPages<StatusRow>(
         (from, to) =>
           supabase
@@ -173,8 +181,11 @@ async function loadTerminalReasonsUncached(
             .select('enroleeNumber, levelApplied')
             .range(from, to) as unknown as P<AppRow>
       ),
+      loadAdmissionsLevelResolver(),
     ]);
-    return rollupTerminalReasons(joinTerminalReasonRows(statusRows, appRows));
+    return rollupTerminalReasons(
+      joinTerminalReasonRows(statusRows, appRows, resolveLevel)
+    );
   } catch (err) {
     console.error('[admissions-insights] terminal reasons fetch failed:', err);
     return { overall: [], byLevel: [], total: 0 };
@@ -186,7 +197,8 @@ export function getAdmissionsTerminalReasons(
 ): Promise<TerminalReasonRollup> {
   return unstable_cache(
     () => loadTerminalReasonsUncached(ayCode),
-    ['admissions-insights', 'terminal-reasons-v2', ayCode],
+    // v3: levels resolved through level_aliases.
+    ['admissions-insights', 'terminal-reasons-v3', ayCode],
     {
       revalidate: CACHE_TTL_SECONDS,
       tags: ['admissions-dashboard', `admissions-dashboard:${ayCode}`],

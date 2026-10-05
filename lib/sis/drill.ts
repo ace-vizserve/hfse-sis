@@ -9,7 +9,12 @@ import {
   parseInsightsSegment,
   type ControllabilityBucket,
 } from '@/lib/sis/insights-shared';
-import { LEVEL_LABELS } from '@/lib/sis/levels';
+import {
+  LEVEL_LABELS,
+  loadLevelLabelResolver,
+  resolveChildLevel,
+  type LevelLabelResolver,
+} from '@/lib/sis/levels';
 
 import {
   STAGE_COLUMN_MAP,
@@ -454,6 +459,11 @@ async function loadRecordsRowsUncached(
     }
   }
 
+  // A raw application level name ("Year 9") resolves to the SIS level it
+  // counts as, through the enrolment form options' `level_aliases` — the same
+  // resolver the "Students by level" donut uses, so the buckets still match.
+  const resolveLevel = await loadLevelLabelResolver(service);
+
   const today = Date.now();
   const out: RecordsDrillRow[] = [];
   for (const enrol of ss) {
@@ -489,7 +499,7 @@ async function loadRecordsRowsUncached(
     // Level resolver MUST mirror the chart's `loadLevelDistributionUncached`
     // resolver in lib/sis/dashboard.ts so segment clicks on the donut land
     // on rows whose `level` field matches the bucket label exactly. Chart
-    // priority: `status.classLevel` → `app.levelApplied` → 'Unknown'.
+    // priority: `status.classLevel` → resolved `app.levelApplied` → 'Unknown'.
     // The previous version preferred `levels.get(section.level_id)` (the
     // level CODE like "P1") and fell through to classLevel (the LABEL like
     // "Primary 1"); donut buckets keyed on labels then matched zero rows
@@ -497,7 +507,8 @@ async function loadRecordsRowsUncached(
     // pattern — when a chart and drill diverge on row counts, check
     // shared scope anchor + segment-key vocabulary.
     const level =
-      (status?.classLevel ?? app?.levelApplied ?? '').trim() || 'Unknown';
+      resolveChildLevel(resolveLevel, status?.classLevel, app?.levelApplied) ||
+      'Unknown';
 
     out.push({
       enroleeNumber: enroleeNumber || student.student_number,
@@ -838,6 +849,10 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     if (a.enroleeNumber) appsByEnrolee.set(a.enroleeNumber, a);
   }
 
+  // Same level rule as loadClassAssignmentReadinessUncached, so a drill row
+  // sits under the level the card listed it at.
+  const resolveLevel = await loadLevelLabelResolver(service);
+
   const today = Date.now();
   const out: RecordsDrillRow[] = [];
 
@@ -851,7 +866,8 @@ async function loadUnsyncedReadinessDrillRowsUncached(
     const fullName =
       (app?.enroleeFullName ?? nameParts.join(' ')) || status.enroleeNumber;
     const level =
-      (status.classLevel ?? app?.levelApplied ?? '').trim() || 'Unknown';
+      resolveChildLevel(resolveLevel, status.classLevel, app?.levelApplied) ||
+      'Unknown';
     const applicationStatus = (status.applicationStatus ?? '').trim();
     const updated = status.applicationUpdatedDate ?? app?.created_at ?? null;
     const updatedMs = updated ? Date.parse(updated) : NaN;
@@ -890,7 +906,8 @@ export async function buildUnsyncedReadinessDrillRows(
 ): Promise<RecordsDrillRow[]> {
   return unstable_cache(
     () => loadUnsyncedReadinessDrillRowsUncached(ayCode),
-    ['records-unsynced-readiness-drill', ayCode],
+    // v2: level resolved through level_aliases.
+    ['records-unsynced-readiness-drill', 'v2', ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(ayCode) }
   )();
 }
@@ -904,7 +921,8 @@ export async function buildRecordsDrillRows(
   // AY-scoped cache; scope/range filtering applied post-cache (per KD #56).
   const cached = await unstable_cache(
     () => loadRecordsRowsUncached(input.ayCode),
-    ['records-drill', 'rows', input.ayCode],
+    // v2: level resolved through level_aliases.
+    ['records-drill', 'rows', 'v2', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
   let rows = cached;
@@ -1840,7 +1858,14 @@ export type LifecycleDrillRow = {
   enroleeNumber: string;
   studentNumber: string | null;
   enroleeFullName: string | null;
+  /** The parent-facing level name on the application, exactly as entered. */
   levelApplied: string | null;
+  /**
+   * The SIS level the child counts as: `classLevel` once set, else
+   * `levelApplied` resolved through `level_aliases` ("Year 9" → Secondary
+   * Three). The Level column shows, sorts, filters and exports this one.
+   */
+  level: string | null;
   applicationStatus: string | null;
   applicationUpdatedDate: string | null;
   daysSinceUpdate: number | null;
@@ -1909,6 +1934,7 @@ async function loadLifecycleSnapshotUncached(
     'assessmentSchedule',
     'contractStatus',
     'classSection',
+    'classLevel',
     'enroleeType',
     ...ENROLLED_PREREQ_STAGES.map((s) => STAGE_COLUMN_MAP[s].statusCol),
   ];
@@ -1990,7 +2016,8 @@ async function getLifecycleSnapshot(
         docs: Array.from(snap.docs.values()),
       };
     },
-    ['sis', 'lifecycle-drill', 'snapshot', ayCode],
+    // v2: status rows gained `classLevel` (the resolved Level column).
+    ['sis', 'lifecycle-drill', 'snapshot', 'v2', ayCode],
     {
       tags: [...tags(ayCode), 'sis', `sis:${ayCode}`],
       revalidate: CACHE_TTL_SECONDS,
@@ -2026,7 +2053,8 @@ function daysSince(iso: string | null | undefined): number | null {
 function baseRow(
   enroleeNumber: string,
   app: LifecycleAppLite | undefined,
-  status: LifecycleStatusRow
+  status: LifecycleStatusRow,
+  resolveLevel: LevelLabelResolver
 ): LifecycleDrillRow {
   const updated = status.applicationUpdatedDate ?? null;
   return {
@@ -2034,6 +2062,11 @@ function baseRow(
     studentNumber: app?.studentNumber ?? null,
     enroleeFullName: nameOf(app),
     levelApplied: app?.levelApplied ?? null,
+    level: resolveChildLevel(
+      resolveLevel,
+      status.classLevel == null ? null : String(status.classLevel),
+      app?.levelApplied
+    ),
     applicationStatus: status.applicationStatus ?? null,
     applicationUpdatedDate: updated,
     daysSinceUpdate: daysSince(updated),
@@ -2059,7 +2092,11 @@ export async function buildLifecycleDrillRows(
   target: LifecycleDrillTarget,
   lens?: ChaseDrillLens
 ): Promise<LifecycleDrillRow[]> {
+  // The resolver carries its own cache; resolving here rather than inside
+  // the snapshot keeps an alias change visible without waiting on the
+  // snapshot's TTL.
   const snap = await getLifecycleSnapshot(ayCode);
+  const resolveLevel = await loadLevelLabelResolver(createServiceClient());
   const out: LifecycleDrillRow[] = [];
 
   for (const [enroleeNumber, status] of snap.status) {
@@ -2074,7 +2111,7 @@ export async function buildLifecycleDrillRows(
       case 'awaiting-fee-payment': {
         if (status.feeStatus !== 'Paid' && ACTIVE_FUNNEL.has(appStatus)) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             feeStatus: status.feeStatus ?? null,
             feeInvoice: status.feeInvoice ?? null,
             feePaymentDate: status.feePaymentDate ?? null,
@@ -2093,7 +2130,7 @@ export async function buildLifecycleDrillRows(
         }
         if (rejectedSlots.length > 0 || expiredSlots.length > 0) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             documentStatus: status.documentStatus ?? null,
             rejectedSlots,
             expiredSlots,
@@ -2110,7 +2147,7 @@ export async function buildLifecycleDrillRows(
         }
         if (uploadedSlots.length > 0) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             documentStatus: status.documentStatus ?? null,
             uploadedSlots,
           });
@@ -2126,7 +2163,7 @@ export async function buildLifecycleDrillRows(
         }
         if (promisedSlots.length > 0) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             documentStatus: status.documentStatus ?? null,
             promisedSlots,
           });
@@ -2154,7 +2191,7 @@ export async function buildLifecycleDrillRows(
         }
         if (expiringSlots.length > 0) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             documentStatus: status.documentStatus ?? null,
             expiringSlots,
             daysLeft: soonestDays,
@@ -2168,7 +2205,7 @@ export async function buildLifecycleDrillRows(
           !status.assessmentSchedule
         ) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             assessmentStatus: status.assessmentStatus ?? null,
             assessmentSchedule: status.assessmentSchedule ?? null,
           });
@@ -2181,7 +2218,7 @@ export async function buildLifecycleDrillRows(
           status.contractStatus === 'Sent'
         ) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             contractStatus: status.contractStatus ?? null,
           });
         }
@@ -2195,7 +2232,7 @@ export async function buildLifecycleDrillRows(
           cls.length === 0
         ) {
           out.push({
-            ...baseRow(enroleeNumber, app, status),
+            ...baseRow(enroleeNumber, app, status, resolveLevel),
             classSection: status.classSection ?? null,
           });
         }
@@ -2222,13 +2259,13 @@ export async function buildLifecycleDrillRows(
           appStatus !== 'Cancelled' &&
           appStatus !== 'Withdrawn'
         ) {
-          out.push(baseRow(enroleeNumber, app, status));
+          out.push(baseRow(enroleeNumber, app, status, resolveLevel));
         }
         break;
       }
       case 'new-applications': {
         if (appStatus === 'Submitted') {
-          out.push(baseRow(enroleeNumber, app, status));
+          out.push(baseRow(enroleeNumber, app, status, resolveLevel));
         }
         break;
       }

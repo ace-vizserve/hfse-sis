@@ -21,6 +21,7 @@ import type {
   AssignableSection,
 } from '@/lib/sis/class-assignment';
 import type { ApplicationFit } from '@/lib/admissions/options';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import { applicantMapKey, sectionMapKey } from '@/lib/sis/section-map-key';
 import type {
   UnsyncedGapReason,
@@ -150,9 +151,25 @@ export function UnsyncedStudentsQueue({
         ),
       },
       {
-        accessorKey: 'levelApplied',
+        // Shows, facets and sorts on the RESOLVED level (`level`, computed by
+        // the loader — "Year 9" reads as Secondary Three). The id stays
+        // 'levelApplied' so a Level filter already in the URL keeps working.
+        id: 'levelApplied',
+        accessorFn: (r) => r.level ?? '',
         header: 'Level',
-        cell: ({ row }) => row.original.levelApplied ?? '—',
+        cell: ({ row }) => {
+          const raw = row.original.levelApplied?.trim();
+          const level = row.original.level;
+          return (
+            <span
+              title={raw && raw !== level ? `Applied as ${raw}` : undefined}
+            >
+              {level ?? '—'}
+            </span>
+          );
+        },
+        sortingFn: (a, b) =>
+          compareLevelLabels(a.original.level, b.original.level),
         filterFn: (row, id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0))
             return true;
@@ -250,6 +267,14 @@ export function UnsyncedStudentsQueue({
     []
   );
 
+  const levelOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((r) => r.level).filter((v): v is string => !!v))
+      ).sort(compareLevelLabels),
+    [rows]
+  );
+
   return (
     <>
       <DataTable
@@ -260,11 +285,20 @@ export function UnsyncedStudentsQueue({
           (r) => fullNameOf(r),
           (r) => r.enroleeNumber,
           (r) => r.studentNumber ?? '',
+          // Both: the SIS level and the name the parent picked.
+          (r) => r.level ?? '',
           (r) => r.levelApplied ?? '',
         ]}
         searchPlaceholder="Search by name, student number, or level…"
         statusTabs={STATUS_TABS}
-        facets={[{ columnId: 'levelApplied', label: 'Level' }]}
+        facets={[
+          // School order (Youngstarters, P1…S4, then unmapped names), not A–Z.
+          {
+            columnId: 'levelApplied',
+            label: 'Level',
+            valueOptions: levelOptions,
+          },
+        ]}
         url={{ enabled: true, namespace: 'unsynced' }}
         initialSort={[{ id: 'enroleeFullName', desc: false }]}
         emptyState={{

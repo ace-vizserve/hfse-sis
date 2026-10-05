@@ -39,6 +39,7 @@ import {
   type DrillTarget,
 } from '@/lib/admissions/drill';
 import { reasonLabel } from '@/lib/admissions/insights-predicates';
+import { compareLevelLabels } from '@/lib/sis/levels';
 import { apiFetch } from '@/lib/query/fetcher';
 import { queryKeys } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
@@ -298,40 +299,16 @@ function formatDate(iso: string | null): string {
   });
 }
 
-const CANONICAL_LEVELS = [
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'S1',
-  'S2',
-  'S3',
-  'S4',
-] as const;
-const CANONICAL_LEVEL_INDEX: Record<string, number> = CANONICAL_LEVELS.reduce(
-  (acc, lvl, i) => {
-    acc[lvl] = i;
-    return acc;
-  },
-  {} as Record<string, number>
-);
-
+// Known levels in school order → other → Unknown (last). Rows carry level
+// LABELS ("Primary One", resolved server-side); this used to index a code
+// list (P1..S4) no label matched, so the level column sorted alphabetically.
 function compareLevels(a: string, b: string): number {
   const aIsUnknown = a === 'Unknown';
   const bIsUnknown = b === 'Unknown';
   if (aIsUnknown && bIsUnknown) return 0;
   if (aIsUnknown) return 1;
   if (bIsUnknown) return -1;
-  const aIdx = CANONICAL_LEVEL_INDEX[a];
-  const bIdx = CANONICAL_LEVEL_INDEX[b];
-  const aIsCanon = aIdx !== undefined;
-  const bIsCanon = bIdx !== undefined;
-  if (aIsCanon && bIsCanon) return aIdx - bIdx;
-  if (aIsCanon) return -1;
-  if (bIsCanon) return 1;
-  return a.localeCompare(b);
+  return compareLevelLabels(a, b);
 }
 
 function buildDrillUrl(
@@ -621,6 +598,11 @@ function buildColumnDef(
             {row.original.levelAsApplied?.trim() || '—'}
           </span>
         ),
+        sortingFn: (a, b) =>
+          compareLevels(
+            a.original.levelAsApplied ?? 'Unknown',
+            b.original.levelAsApplied ?? 'Unknown'
+          ),
         enableSorting: true,
       };
     case 'terminalReason':

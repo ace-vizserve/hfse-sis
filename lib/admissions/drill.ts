@@ -19,6 +19,10 @@ import {
 } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import {
+  loadAdmissionsLevelResolver,
+  resolveChildLevel,
+} from '@/lib/admissions/level-resolver';
 
 import {
   AY_MONTH_LABELS,
@@ -121,9 +125,11 @@ export type DrillRow = {
   hasMissingDocs: boolean;
   documentsComplete: number; // count of present core docs
   documentsTotal: number; // count of core doc slots tracked
-  /** The application's own `levelApplied`, raw. The Insights withdrawn,
-   *  cancellation-reason and nationality charts group by this — NOT `level`,
-   *  which prefers the status table's classLevel. */
+  /** The application's own `levelApplied`, resolved to the SIS level it
+   *  counts as ("Year 9" → "Secondary Three"; an unmapped name stays as
+   *  stored). The Insights withdrawn, cancellation-reason and nationality
+   *  charts group by this — NOT `level`, which prefers the status table's
+   *  classLevel. */
   levelAsApplied: string | null;
   /** `terminalReasonKey(applicationTerminalReason)`: null = none recorded,
    *  'Unspecified' = recorded blank. */
@@ -251,6 +257,7 @@ async function loadDrillRowsUncached(input: {
 
   let apps: AppLite[];
   let statuses: StatusLite[];
+  const resolverPromise = loadAdmissionsLevelResolver();
   try {
     [apps, statuses] = await Promise.all([
       fetchAllPages<AppLite>(
@@ -276,6 +283,7 @@ async function loadDrillRowsUncached(input: {
     console.error('[admissions-drill] fetch failed:', err);
     return [];
   }
+  const resolveLabel = await resolverPromise;
 
   // Pipeline stage label = the applicant's `applicationStatus` — the same
   // column `loadPipelineStageBreakdown` now buckets by (the deep `*UpdatedDate`
@@ -356,15 +364,18 @@ async function loadDrillRowsUncached(input: {
         a.enroleeNumber,
       status: status || 'No status',
       // Level resolver mirrors the chart's `bucketByLevel` (see
-      // dashboard.ts → resolveLevel): prefer status.classLevel, then
-      // status.levelApplied, then apps.levelApplied; blank → 'Unknown'
-      // (NOT null). Without the same precedence + Unknown fallback the
-      // chart and drill key on different values and segment-clicks miss
-      // every row whose source columns disagree (Investigation #1).
+      // dashboard.ts → JoinedRow.level): prefer status.classLevel, then
+      // status.levelApplied, then apps.levelApplied — a level NAME resolved
+      // to the SIS level it counts as; blank → 'Unknown' (NOT null). Without
+      // the same precedence + Unknown fallback the chart and drill key on
+      // different values and segment-clicks miss every row whose source
+      // columns disagree (Investigation #1).
       level:
-        (
-          (s?.classLevel ?? s?.levelApplied ?? a.levelApplied ?? '') as string
-        ).trim() || 'Unknown',
+        resolveChildLevel(
+          resolveLabel,
+          s?.classLevel,
+          s?.levelApplied ?? a.levelApplied
+        ) ?? 'Unknown',
       stage: deriveStage(status),
       pipelineStage: derivePipelineStage(s),
       referralSource: (a.howDidYouKnowAboutHFSEIS ?? '').trim() || null,
@@ -392,7 +403,7 @@ async function loadDrillRowsUncached(input: {
       hasMissingDocs: true,
       documentsComplete: 0,
       documentsTotal,
-      levelAsApplied: a.levelApplied ?? null,
+      levelAsApplied: resolveLabel(a.levelApplied),
       terminalReason: terminalReasonKey(s?.applicationTerminalReason),
       category: (a.category ?? '').trim() || null,
       nationality: canonicaliseNationality(a.nationality ?? null),
@@ -500,7 +511,8 @@ export async function buildDrillRows(
     () => loadDrillRowsUncached({ ayCode: input.ayCode }),
     // v2: DrillRow gained levelAsApplied / terminalReason / category /
     // nationality (KD #229) — a stale v1 entry would serve rows without them.
-    ['admissions-drill', 'rows-v2', input.ayCode],
+    // v3: `level` / `levelAsApplied` resolve level names to SIS levels.
+    ['admissions-drill', 'rows-v3', input.ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tags(input.ayCode) }
   )();
   const scoped = applyScopeFilter(cached, input, options?.target);
@@ -1010,6 +1022,9 @@ export const DRILL_COLUMN_LABELS: Record<DrillColumnKey, string> = {
   daysSinceUpdate: 'Days since update',
   daysInPipeline: 'Days in pipeline',
   documentsComplete: 'Documents',
+  // The level the family applied for, worded as the SIS level it counts as.
+  // Not "Level": that is the `level` column (the class's level once placed),
+  // and the Columns menu can show both side by side.
   levelAsApplied: 'Level applied for',
   terminalReason: 'Reason',
   category: 'Category',

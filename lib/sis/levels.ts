@@ -254,6 +254,109 @@ export async function resolveLevelId(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// ONE ANSWER TO "WHAT LEVEL IS THIS CHILD IN?"
+//
+// An application carries the parent-facing level name the enrolment form
+// offered ("Year 9", "K2"). The enrolment form options say what each name
+// counts as, and that mapping is stored as `level_aliases` rows. Deciding
+// surfaces (the class picker, the level check on a class save) always read it;
+// this resolver is how every surface that SHOWS, GROUPS, FILTERS, SORTS or
+// COUNTS a level reads it too — so a "Year 9" child sits under Secondary Three
+// on every screen, not in a bucket of its own.
+//
+// An unmapped name comes back as itself (canonicalised), never as null: it is
+// still the truest thing known about the child, and /records/level-mismatches
+// is where it gets mapped.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A raw level name → the SIS level label it counts as (or itself, unmapped). */
+export type LevelLabelResolver = (
+  rawLabel: string | null | undefined
+) => string | null;
+
+/** Pure — build a resolver from an already-loaded catalog and alias table. */
+export function makeLevelLabelResolver(
+  knownLevels: LevelRow[],
+  aliases: LevelAliasRow[]
+): LevelLabelResolver {
+  const labelById = new Map(knownLevels.map((l) => [l.id, l.label]));
+  return (rawLabel) => {
+    const id = resolveLevelIdFromCatalog(rawLabel, knownLevels, aliases);
+    const label = id ? labelById.get(id) : undefined;
+    return label ?? canonicalizeLevelLabel(rawLabel);
+  };
+}
+
+/**
+ * The one rule, shared by Records, Admissions and P-Files: `classLevel` when
+ * set, else the application's level name — each resolved to the SIS level it
+ * counts as. Null when both are blank; callers keep whatever blank fallback
+ * ('Unknown', '', null) they already use. Pure.
+ */
+export function resolveChildLevel(
+  resolve: LevelLabelResolver,
+  classLevel: string | null | undefined,
+  levelApplied: string | null | undefined
+): string | null {
+  if (classLevel && classLevel.trim()) return resolve(classLevel);
+  return resolve(levelApplied);
+}
+
+/**
+ * Cache tag for `level_aliases`. Every write that adds or re-points an alias
+ * (/records/level-mismatches, the enrolment form options' "Counts as") must
+ * revalidate it, and bust the operational dashboards that grouped by level.
+ */
+export const LEVEL_ALIASES_TAG = 'level-aliases';
+
+async function getLevelAliasRowsUncached(
+  service: SupabaseClient
+): Promise<LevelAliasRow[]> {
+  const { data, error } = await service
+    .from('level_aliases')
+    .select('raw_label, level_id');
+  if (error) throw error;
+  return (data ?? []) as LevelAliasRow[];
+}
+
+export function getLevelAliasRows(
+  service: SupabaseClient
+): Promise<LevelAliasRow[]> {
+  return unstable_cache(
+    () => getLevelAliasRowsUncached(service),
+    ['sis-level-aliases-rows'],
+    { revalidate: 60, tags: [LEVEL_ALIASES_TAG] }
+  )();
+}
+
+/**
+ * DB-backed resolver. A failed read degrades to a resolver without aliases
+ * (exact and legacy-digit labels still resolve) rather than failing the page —
+ * a level column is never worth a broken dashboard.
+ */
+export async function loadLevelLabelResolver(
+  service: SupabaseClient
+): Promise<LevelLabelResolver> {
+  const [levels, aliases] = await Promise.all([
+    getLevelRows(service).catch((err: unknown) => {
+      console.warn(
+        '[sis/levels] levels fetch failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+      return [] as LevelRow[];
+    }),
+    getLevelAliasRows(service).catch((err: unknown) => {
+      console.warn(
+        '[sis/levels] level_aliases fetch failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+      return [] as LevelAliasRow[];
+    }),
+  ]);
+  return makeLevelLabelResolver(levels, aliases);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // DB-backed level rows. `levels` is a small, fixed, AY-agnostic managed
 // table: `sort_order` drives display order. Migration 086 removed the
 // volatile-level / per-AY-offering concept (KD #153) — every CORE level

@@ -200,8 +200,11 @@ function writeRoutes(): string[] {
     );
 }
 
+// `invalidateAfterLevelAliasChange` (lib/sis/level-alias-invalidation.ts)
+// revalidates LEVEL_ALIASES_TAG and calls invalidateAllOperationalDrills for
+// every academic year — the alias writers bust through it.
 const INVALIDATES =
-  /revalidateTag|revalidatePath|invalidateDrillTags|invalidateAllOperationalDrills/;
+  /revalidateTag|revalidatePath|invalidateDrillTags|invalidateAllOperationalDrills|invalidateAfterLevelAliasChange/;
 
 describe('write routes keep their surfaces fresh', () => {
   const routes = writeRoutes();

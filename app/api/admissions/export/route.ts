@@ -28,6 +28,8 @@ export async function GET(req: Request) {
       'enroleeNumber',
       'fullName',
       'status',
+      // The SIS level the child counts as, then the name as applied.
+      'level',
       'levelApplied',
       'lastUpdated',
       'daysSinceUpdate',
@@ -37,6 +39,7 @@ export async function GET(req: Request) {
       r.enroleeNumber,
       r.fullName,
       r.status,
+      r.level,
       r.levelApplied,
       r.lastUpdated,
       r.daysSinceUpdate,

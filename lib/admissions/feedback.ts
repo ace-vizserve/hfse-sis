@@ -2,6 +2,8 @@ import { unstable_cache } from 'next/cache';
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+import { resolveChildLevel } from '@/lib/admissions/level-resolver';
+import { loadLevelLabelResolver } from '@/lib/sis/levels';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Application experience feedback.
@@ -25,7 +27,11 @@ export type FeedbackRow = {
   enroleeNumber: string;
   enroleeFullName: string | null;
   studentNumber: string | null;
+  /** The level name as the application stored it ("Year 9"). */
   levelApplied: string | null;
+  /** The child's level: classLevel when set, else `levelApplied` resolved to
+   *  the SIS level it counts as. What the tables show, filter and sort by. */
+  level: string | null;
   applicationStatus: string | null;
   feedbackRating: number | null;
   feedbackComments: string | null;
@@ -149,13 +155,15 @@ type AppRow = Record<string, unknown> & { enroleeNumber: string | null };
 type StatusRow = {
   enroleeNumber: string | null;
   applicationStatus: string | null;
+  /** Selected by the feedback loader only. */
+  classLevel?: string | null;
 };
 
 async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
   const prefix = prefixFor(ayCode);
   const supabase = createServiceClient();
 
-  const [apps, statuses] = await Promise.all([
+  const [apps, statuses, resolveLevel] = await Promise.all([
     fetchAllPages<AppRow>(
       (from, to) =>
         supabase
@@ -170,18 +178,19 @@ async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
       (from, to) =>
         supabase
           .from(`${prefix}_enrolment_status`)
-          .select('enroleeNumber, applicationStatus')
+          .select('enroleeNumber, applicationStatus, classLevel')
           .range(from, to) as unknown as PromiseLike<{
           data: StatusRow[] | null;
           error: { message: string } | null;
         }>
     ),
+    // Level names → the SIS level each counts as (never throws).
+    loadLevelLabelResolver(supabase),
   ]);
 
-  const statusByEnrolee = new Map<string, string | null>();
+  const statusByEnrolee = new Map<string, StatusRow>();
   for (const s of statuses) {
-    if (s.enroleeNumber)
-      statusByEnrolee.set(s.enroleeNumber, s.applicationStatus);
+    if (s.enroleeNumber) statusByEnrolee.set(s.enroleeNumber, s);
   }
 
   const rows: FeedbackRow[] = [];
@@ -196,12 +205,15 @@ async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
     // Only rows where at least one feedback field is set
     if (rating === null && !submittedAt) continue;
 
+    const status = statusByEnrolee.get(app.enroleeNumber);
+    const levelApplied = (app.levelApplied as string | null) ?? null;
     rows.push({
       enroleeNumber: app.enroleeNumber as string,
       enroleeFullName: (app.enroleeFullName as string | null) ?? null,
       studentNumber: (app.studentNumber as string | null) ?? null,
-      levelApplied: (app.levelApplied as string | null) ?? null,
-      applicationStatus: statusByEnrolee.get(app.enroleeNumber) ?? null,
+      levelApplied,
+      level: resolveChildLevel(resolveLevel, status?.classLevel, levelApplied),
+      applicationStatus: status?.applicationStatus ?? null,
       feedbackRating: rating,
       feedbackComments: (app.feedbackComments as string | null)?.trim() || null,
       feedbackConsent: (app.feedbackConsent as boolean | null) ?? null,
@@ -228,7 +240,8 @@ async function loadFeedbackUncached(ayCode: string): Promise<FeedbackResult> {
 export function getAdmissionsFeedback(ayCode: string): Promise<FeedbackResult> {
   return unstable_cache(
     () => loadFeedbackUncached(ayCode),
-    ['sis', 'admissions', 'feedback', ayCode],
+    // v2: FeedbackRow gained the resolved `level`.
+    ['sis', 'admissions', 'feedback-v2', ayCode],
     { tags: tag(ayCode), revalidate: 60 }
   )();
 }
