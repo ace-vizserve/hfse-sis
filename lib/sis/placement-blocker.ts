@@ -1,11 +1,16 @@
-import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
+import {
+  findClassLevel,
+  normalizeLevelLabel,
+} from '@/lib/sync/level-normalizer';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Why a class filled in OUTSIDE the SIS cannot be placed.
 //
 // Directus and the old enrolment link let admissions type any class they like
-// — "Year 8", "Discipline-1", a class nobody set up for that year. The SIS
+// — "Discipline-1", a class nobody set up for that year. ("Year 8" is NOT one
+// of these: it is the programme's name for Secondary One, and the level
+// mapping places it — Year 9 is Secondary Two, Year 10 Secondary Three.) The SIS
 // never saw those values until the nightly auto-sync tried to place the child,
 // and then the sync refused and the only trace was an `errors` string inside
 // an audit row nobody reads. The queue kept saying "Not yet synced to
@@ -27,6 +32,8 @@ import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 export type PlacementLookup = {
   levels: ReadonlyArray<{ id: string; label: string }>;
   sections: ReadonlyArray<{ level_id: string; name: string }>;
+  /** `level_aliases` — "Year 8" counts as Secondary One, as the sync reads it. */
+  levelAliases: ReadonlyArray<{ raw_label: string; level_id: string }>;
 };
 
 export function describePlacementBlocker(
@@ -42,7 +49,11 @@ export function describePlacementBlocker(
     return 'No level was filled in with the class, so they cannot be placed. Use Assign section to pick their class.';
   }
 
-  const level = lookup.levels.find((l) => l.label === levelLabel);
+  const level = findClassLevel(
+    row.classLevel,
+    lookup.levels,
+    lookup.levelAliases
+  );
   if (!level) {
     return `"${row.classLevel?.trim()}" is not a level the school uses, so they cannot be placed. Use Assign section to pick their class.`;
   }

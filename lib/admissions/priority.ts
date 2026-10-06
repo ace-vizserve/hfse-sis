@@ -110,7 +110,7 @@ async function loadNewApplicationsPriorityUncached(
     .filter((a) => a.enroleeNumber)
     .map((a) => {
       const name = displayName(a);
-      // The SIS level the applied-for name counts as ("Year 9" → Secondary
+      // The SIS level the applied-for name counts as ("Year 10" → Secondary
       // Three); an unmapped name shows as stored.
       const level = resolveLevel(a.levelApplied);
       return {

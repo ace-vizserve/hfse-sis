@@ -31,8 +31,10 @@ export async function loadGradingSnapshot(
   // exist, on both callers — `app/api/students/sync/stats` (which would report
   // the wrong number of new students) and `app/api/students/sync` (which acts
   // on that answer). Paging is a few hundred bytes of code against that.
-  const [levelsRes, sectionsRes, students] = await Promise.all([
+  const [levelsRes, aliasRes, sectionsRes, students] = await Promise.all([
     supabase.from('levels').select('id, label'),
+    // The enrolment form options' level names ("Year 8" → Secondary One).
+    supabase.from('level_aliases').select('raw_label, level_id'),
     supabase
       .from('sections')
       .select('id, level_id, name')
@@ -50,6 +52,7 @@ export async function loadGradingSnapshot(
   ]);
 
   if (levelsRes.error) throw new Error(levelsRes.error.message);
+  if (aliasRes.error) throw new Error(aliasRes.error.message);
   if (sectionsRes.error) throw new Error(sectionsRes.error.message);
 
   // NOT PAGED, and measured rather than assumed: this is bounded by one year's
@@ -71,6 +74,7 @@ export async function loadGradingSnapshot(
 
   return {
     levels: levelsRes.data ?? [],
+    levelAliases: aliasRes.data ?? [],
     sections: (sectionsRes.data ?? []) as GradingSnapshot['sections'],
     students,
     enrollments,

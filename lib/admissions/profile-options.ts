@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 // level no longer open to new applications. A failed read returns [] and the
 // sheet falls back to its old fields — it never blocks editing a profile.
 //
-// Each level name carries what it counts as ("Year 9" → Secondary Three), so
+// Each level name carries what it counts as ("Year 10" → Secondary Three), so
 // the dropdown says which SIS level a choice puts the child under.
 export async function loadProfileAdmissionOptions(
   ayCode: string

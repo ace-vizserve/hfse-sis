@@ -33,7 +33,7 @@ vi.mock('@/lib/supabase/admissions', () => ({
   }),
 }));
 
-// The enrolment form options' level mapping: "Year 9" counts as Secondary
+// The enrolment form options' level mapping: "Year 10" counts as Secondary
 // Three. Every chart and its drill must resolve through it the same way.
 vi.mock('@/lib/admissions/level-resolver', async (importOriginal) => {
   const actual =
@@ -51,7 +51,7 @@ vi.mock('@/lib/admissions/level-resolver', async (importOriginal) => {
         isCore: true,
       },
     ],
-    [{ raw_label: 'Year 9', level_id: 'lv-s3' }]
+    [{ raw_label: 'Year 10', level_id: 'lv-s3' }]
   );
   return {
     ...actual,
@@ -106,8 +106,8 @@ const LEVELS = [
   '',
   null,
   // A parent-facing name mapped to Secondary Three, and the SIS label itself
-  // — one bucket between them, never a "Year 9" bucket of its own.
-  'Year 9',
+  // — one bucket between them, never a "Year 10" bucket of its own.
+  'Year 10',
   'Secondary Three',
 ];
 const SOURCES = [
@@ -313,7 +313,7 @@ describe('Withdrawn by level', () => {
 });
 
 describe('Level names resolve through the enrolment form mapping', () => {
-  it('a "Year 9" applicant counts under Secondary Three, on the chart and in its list', async () => {
+  it('a "Year 10" applicant counts under Secondary Three, on the chart and in its list', async () => {
     const [withdrawn, nat, terminal, rows] = await Promise.all([
       getWithdrawnByLevel('AY2026'),
       getApplicantNationalityByLevel('AY2026'),
@@ -327,7 +327,7 @@ describe('Level names resolve through the enrolment form mapping', () => {
       ...rows.map((r) => r.level),
       ...rows.map((r) => r.levelAsApplied),
     ];
-    expect(levels).not.toContain('Year 9');
+    expect(levels).not.toContain('Year 10');
     expect(levels).toContain('Secondary Three');
     // Both spellings land in one Secondary Three bucket, and its list is the
     // same size.

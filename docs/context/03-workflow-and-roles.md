@@ -101,6 +101,6 @@
 | Secondary Three | Consistency                |
 | Secondary Four  | Excellence                 |
 
-> **Other levels in `levels` (no Markbook surface yet):** Youngstarters Little / Junior / Senior Stars (preschool tier, deferred until the YS report-card template is designed) and Cambridge Secondary One (Year 8) + Two (Year 9). Sections per AY for these levels are seeded by SIS Admin → AY Setup as they come online.
+> **Other level in `levels` (no Markbook surface yet):** Youngstarters (preschool, deferred until the YS report-card template is designed). The programme's "Year 8 / 9 / 10" are not separate levels — they are Secondary One / Two / Three under another name.
 
 > Note: "DO NOT USE" sheets in the Excel files indicate deprecated section tabs. Only the non-prefixed sheets are active.

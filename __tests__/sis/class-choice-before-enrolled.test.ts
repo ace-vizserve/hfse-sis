@@ -239,8 +239,12 @@ function resolverFor(w: World): Resolver {
         : { data: { id: SECTION.id } };
     }
     if (q.table === 'levels') {
-      return { data: { id: 'lvl-p1', label: 'Primary One' } };
+      // resolveChosenSection reads the whole catalog; other reads take one row.
+      return q.filters.length === 0
+        ? { data: [{ id: 'lvl-p1', label: 'Primary One' }] }
+        : { data: { id: 'lvl-p1', label: 'Primary One' } };
     }
+    if (q.table === 'level_aliases') return { data: [] };
     if (q.table === 'section_students') {
       if (has('student:students')) {
         return {
@@ -345,6 +349,18 @@ describe('countChosenSeats', () => {
     // Only the Enrolled-but-not-on-the-list child holds a seat.
     expect(counts.get('s1')).toBe(1);
     expect(counts.get('s2')).toBeUndefined();
+  });
+
+  it('counts a class filed under one of the level\'s form names ("Year 8" → Secondary One)', () => {
+    const counts = countChosenSeats(
+      [row({ enroleeNumber: 'a', classLevel: 'Year 8' })],
+      'Secondary One',
+      sections,
+      new Map(),
+      null,
+      new Set(['Year 8'])
+    );
+    expect(counts.get('s1')).toBe(1);
   });
 
   it('does not count a child already on that class list, or the excluded child', () => {

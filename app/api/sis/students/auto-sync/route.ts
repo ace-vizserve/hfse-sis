@@ -201,14 +201,21 @@ async function runAutoSyncForAy({
     name: string;
     academic_year: { ay_code: string } | { ay_code: string }[] | null;
   };
-  const [levelsRes, sectionsRes] = await Promise.all([
+  const [levelsRes, sectionsRes, aliasRes] = await Promise.all([
     service.from('levels').select('id, label'),
     service
       .from('sections')
       .select('id, level_id, name, academic_year:academic_years!inner(ay_code)')
       .eq('academic_year.ay_code', ayCode),
+    service.from('level_aliases').select('raw_label, level_id'),
   ]);
+  // Without the level mapping every "Year 8" class would fail as an unknown
+  // level tonight, so a failed read stops the year's run instead.
+  if (aliasRes.error) {
+    throw new Error(`level_aliases read failed: ${aliasRes.error.message}`);
+  }
   const preloaded: PreloadedSyncSnapshot = {
+    levelAliases: aliasRes.data ?? [],
     levels: (levelsRes.data ?? []) as Array<{ id: string; label: string }>,
     sections: ((sectionsRes.data ?? []) as SectionJoin[]).map((s) => ({
       id: s.id,

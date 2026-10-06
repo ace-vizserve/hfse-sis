@@ -15,10 +15,10 @@ export { resolveChildLevel } from '@/lib/sis/levels';
 // sort and count it.
 //
 // An application stores the parent-facing name the enrolment form offered
-// ("Year 9", "K2"); the enrolment form options map each name to the SIS level
+// ("Year 10", "K2"); the enrolment form options map each name to the SIS level
 // it counts as (`level_aliases`). Every admissions/P-Files loader resolves
 // through that mapping SERVER-SIDE and hands the client the resolved label —
-// so a "Year 9" child sits under Secondary Three, not in a bucket of its own.
+// so a "Year 10" child sits under Secondary Three, not in a bucket of its own.
 // Client components never fetch aliases.
 // ─────────────────────────────────────────────────────────────────────────
 

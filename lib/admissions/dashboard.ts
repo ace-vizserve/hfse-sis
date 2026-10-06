@@ -309,7 +309,7 @@ export type OutdatedRow = {
   motherEmail: string | null;
   fatherEmail: string | null;
   status: string;
-  /** The level name as the application stored it ("Year 9"). */
+  /** The level name as the application stored it ("Year 10"). */
   levelApplied: string | null;
   /** The child's resolved SIS level ("Secondary Three") — what the table
    *  shows, groups and sorts by. */
@@ -848,7 +848,7 @@ function resolveLevel(row: JoinedRow): string {
   // classLevel takes precedence (registrar-stamped) because admissions
   // occasionally promotes/demotes between application and class assignment;
   // otherwise the level name the family applied with, resolved to the SIS
-  // level it counts as (so "Year 9" counts under Secondary Three). 'Unknown'
+  // level it counts as (so "Year 10" counts under Secondary Three). 'Unknown'
   // for blank/whitespace.
   return row.level ?? 'Unknown';
 }
@@ -1279,7 +1279,7 @@ async function loadAdmissionsCompletenessForChaseUncached(
     const fullName = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '');
     // Same rule as the joined rows every admissions chart groups by:
     // classLevel when set, else the level name resolved to the SIS level it
-    // counts as (so "Year 9" sits under Secondary Three).
+    // counts as (so "Year 10" sits under Secondary Three).
     const level = resolveChildLevel(
       resolveLabel,
       statusRow?.classLevel as string | null | undefined,

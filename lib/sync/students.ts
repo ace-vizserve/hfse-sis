@@ -9,7 +9,11 @@ import type { AdmissionsRow } from '@/lib/supabase/admissions';
 import { sgToday } from '@/lib/dates';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
-import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
+import type { LevelAliasRow } from '@/lib/sis/levels';
+import {
+  findClassLevel,
+  normalizeLevelLabel,
+} from '@/lib/sync/level-normalizer';
 
 // ──────────────────────────────────────────────────────────────────────────
 // A class can be SET on the admissions row at any application status (Directus
@@ -81,6 +85,12 @@ export type GradingSnapshot = {
    * undefined; the ceiling is then derived from it as before.
    */
   maxIndexBySection?: Record<string, number>;
+  /**
+   * The enrolment form options' level names → SIS level (`level_aliases`), so
+   * a class filed under "Year 8" places in Secondary One. Optional only so a
+   * fixture can leave it out; every production caller passes it.
+   */
+  levelAliases?: LevelAliasRow[];
 };
 
 export type StudentUpsert = {
@@ -139,7 +149,6 @@ export function buildSyncPlan(
   rows: AdmissionsRow[],
   snapshot: GradingSnapshot
 ): SyncPlan {
-  const levelByLabel = new Map(snapshot.levels.map((l) => [l.label, l]));
   const sectionByLevelAndName = new Map<string, SectionRow>();
   for (const s of snapshot.sections) {
     sectionByLevelAndName.set(`${s.level_id}::${s.name}`, s);
@@ -276,7 +285,11 @@ export function buildSyncPlan(
       });
       return;
     }
-    const level = levelByLabel.get(levelLabel);
+    const level = findClassLevel(
+      row.class_level,
+      snapshot.levels,
+      snapshot.levelAliases
+    );
     if (!level) {
       plan.errors.push({
         row_index: i,
@@ -564,6 +577,7 @@ export type SyncOneResult = {
 export type PreloadedSyncSnapshot = {
   levels: LevelRow[];
   sections: SectionRow[]; // only sections for the target academic year
+  levelAliases: LevelAliasRow[];
 };
 
 export async function syncOneStudent(
@@ -717,14 +731,16 @@ export async function syncOneStudent(
 
     let levels: LevelRow[];
     let sections: SectionRow[];
+    let levelAliases: LevelAliasRow[];
     let studentRes: Awaited<typeof studentQuery>;
 
     if (preloaded) {
       levels = preloaded.levels;
       sections = preloaded.sections;
+      levelAliases = preloaded.levelAliases;
       studentRes = await studentQuery;
     } else {
-      const [levelsRes, sRes, sectionsRes] = await Promise.all([
+      const [levelsRes, sRes, sectionsRes, aliasRes] = await Promise.all([
         service.from('levels').select('id, label'),
         studentQuery,
         service
@@ -733,7 +749,12 @@ export async function syncOneStudent(
             'id, level_id, name, academic_year:academic_years!inner(ay_code)'
           )
           .eq('academic_year.ay_code', ayCode),
+        service.from('level_aliases').select('raw_label, level_id'),
       ]);
+      // Without the mapping a "Year 8" class reads as an unknown level, so
+      // a failed read stops here rather than reporting the wrong reason.
+      if (aliasRes.error) throw new Error(aliasRes.error.message);
+      levelAliases = (aliasRes.data ?? []) as LevelAliasRow[];
       studentRes = sRes;
       sections = ((sectionsRes.data ?? []) as SectionJoin[]).map((s) => ({
         id: s.id,
@@ -802,6 +823,7 @@ export async function syncOneStudent(
       students: studentRow ? [studentRow] : [],
       enrollments,
       maxIndexBySection,
+      levelAliases,
     };
 
     const plan = buildSyncPlan([admissionsRow], snapshot);

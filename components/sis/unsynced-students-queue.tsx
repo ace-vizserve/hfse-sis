@@ -152,7 +152,7 @@ export function UnsyncedStudentsQueue({
       },
       {
         // Shows, facets and sorts on the RESOLVED level (`level`, computed by
-        // the loader — "Year 9" reads as Secondary Three). The id stays
+        // the loader — "Year 10" reads as Secondary Three). The id stays
         // 'levelApplied' so a Level filter already in the URL keeps working.
         id: 'levelApplied',
         accessorFn: (r) => r.level ?? '',

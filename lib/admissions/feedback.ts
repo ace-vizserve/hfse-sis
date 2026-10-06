@@ -27,7 +27,7 @@ export type FeedbackRow = {
   enroleeNumber: string;
   enroleeFullName: string | null;
   studentNumber: string | null;
-  /** The level name as the application stored it ("Year 9"). */
+  /** The level name as the application stored it ("Year 10"). */
   levelApplied: string | null;
   /** The child's level: classLevel when set, else `levelApplied` resolved to
    *  the SIS level it counts as. What the tables show, filter and sort by. */

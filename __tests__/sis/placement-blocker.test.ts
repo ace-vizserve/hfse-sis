@@ -11,13 +11,14 @@ import { buildSyncPlan } from '@/lib/sync/students';
 const LEVELS = [
   { id: 'lvl-s1', label: 'Secondary One' },
   { id: 'lvl-p1', label: 'Primary One' },
-  { id: 'lvl-c8', label: 'Cambridge Secondary One (Year 8)' },
 ];
 const SECTIONS = [
   { id: 'sec-d1', level_id: 'lvl-s1', name: 'Discipline 1' },
   { id: 'sec-cou', level_id: 'lvl-p1', name: 'Courageous' },
 ];
-const LOOKUP = { levels: LEVELS, sections: SECTIONS };
+// The enrolment form options' names: Year 8 is Secondary One.
+const ALIASES = [{ raw_label: 'Year 8', level_id: 'lvl-s1' }];
+const LOOKUP = { levels: LEVELS, sections: SECTIONS, levelAliases: ALIASES };
 
 function blocker(classLevel: string | null, classSection: string | null) {
   return describePlacementBlocker(
@@ -43,6 +44,7 @@ function syncPlaces(classLevel: string | null, classSection: string | null) {
     {
       levels: LEVELS,
       sections: SECTIONS,
+      levelAliases: ALIASES,
       students: [],
       enrollments: [],
     } as unknown as Parameters<typeof buildSyncPlan>[1]
@@ -61,9 +63,14 @@ describe('describePlacementBlocker', () => {
     expect(blocker('Primary 1', 'Courageos')).toBeNull();
   });
 
-  it('names a level the SIS does not have ("Year 8")', () => {
-    const b = blocker('Year 8', 'Discipline 1');
-    expect(b).toContain('"Year 8" is not a level the school uses');
+  it('places "Year 8" in Secondary One, as the enrolment form options map it', () => {
+    expect(blocker('Year 8', 'Discipline 1')).toBeNull();
+    expect(blocker('Year 8', 'Integrity-2')).toContain('in Secondary One');
+  });
+
+  it('names a level name nothing maps ("Year 7")', () => {
+    const b = blocker('Year 7', 'Discipline 1');
+    expect(b).toContain('"Year 7" is not a level the school uses');
     expect(b).toContain('Assign section');
   });
 
@@ -92,6 +99,7 @@ describe('describePlacementBlocker', () => {
       ['Secondary 1', 'Discipline_1'],
       ['Primary 1', 'Courageos'],
       ['Year 8', 'Discipline 1'],
+      ['Year 7', 'Discipline 1'],
       [null, 'Discipline 1'],
       ['Secondary One', 'Integrity-2'],
       ['Primary One', 'Discipline 1'],

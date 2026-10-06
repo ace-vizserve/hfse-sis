@@ -4,7 +4,10 @@ import { resolveLevelId } from '@/lib/sis/levels';
 import { ENROLLED_STATUSES } from '@/lib/schemas/enrolment';
 import { APPLICATION_TERMINAL_STATUSES } from '@/lib/schemas/sis';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
-import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
+import {
+  findClassLevel,
+  normalizeLevelLabel,
+} from '@/lib/sync/level-normalizer';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 
 // Section-assignment support — level/section lookups shared by every place
@@ -71,16 +74,25 @@ function isTerminalApplicationStatus(status: string | null): boolean {
   );
 }
 
+function isAtLevel(
+  classLevel: string | null,
+  levelLabel: string,
+  aliasLabels: ReadonlySet<string>
+): boolean {
+  const label = normalizeLevelLabel(classLevel);
+  return label === levelLabel || (!!label && aliasLabels.has(label));
+}
+
 /**
  * Seats held by a class named on an admissions row, per section — pure, so it is tested without a
  * database.
  *
  * A row holds a seat in a section when its class resolves to that section the
  * way the sync resolves it (`buildSyncPlan` in lib/sync/students.ts: the same
- * two normalizers, then an EXACT match on `levels.label` and section name), so
- * "Discipline-1" holds a seat in "Discipline 1" exactly when the sync would
- * put the child there, and "Year 8" holds none because the sync would place
- * them nowhere.
+ * two normalizers, then an EXACT match on `levels.label` or one of
+ * `aliasLabels` — the enrolment form options' names for this level — and on
+ * the section name), so "Discipline-1" holds a seat in "Discipline 1" and
+ * "Year 8" in Secondary One exactly when the sync would put the child there.
  *
  * Not counted:
  *  - Cancelled / Withdrawn applications — they are not coming.
@@ -93,7 +105,8 @@ export function countChosenSeats(
   levelLabel: string,
   sections: ReadonlyArray<{ id: string; name: string }>,
   rosterStudentNumbersBySection: ReadonlyMap<string, ReadonlySet<string>>,
-  excludeEnroleeNumber?: string | null
+  excludeEnroleeNumber?: string | null,
+  aliasLabels: ReadonlySet<string> = new Set()
 ): Map<string, number> {
   const sectionIdByName = new Map(sections.map((s) => [s.name, s.id]));
   const counts = new Map<string, number>();
@@ -102,7 +115,7 @@ export function countChosenSeats(
       continue;
     }
     if (isTerminalApplicationStatus(row.applicationStatus)) continue;
-    if (normalizeLevelLabel(row.classLevel) !== levelLabel) continue;
+    if (!isAtLevel(row.classLevel, levelLabel, aliasLabels)) continue;
     const name = normalizeSectionName(row.classSection);
     if (!name) continue;
     const sectionId = sectionIdByName.get(name);
@@ -134,10 +147,25 @@ function admissionsPrefix(ayCode: string): string {
 async function loadChosenClassRows(
   client: SupabaseClient,
   ayCode: string,
-  levelLabel: string
-): Promise<{ rows: ChosenClassRow[] } | { error: string }> {
+  level: { id: string; label: string }
+): Promise<
+  { rows: ChosenClassRow[]; aliasLabels: Set<string> } | { error: string }
+> {
   const prefix = admissionsPrefix(ayCode);
   try {
+    // The enrolment form options' names for this level ("Year 8" for
+    // Secondary One) — a class filed under one holds a seat here too.
+    const { data: aliasRows, error: aliasErr } = await client
+      .from('level_aliases')
+      .select('raw_label')
+      .eq('level_id', level.id);
+    if (aliasErr) throw new Error(aliasErr.message);
+    const aliasLabels = new Set(
+      ((aliasRows ?? []) as Array<{ raw_label: string }>).map(
+        (a) => a.raw_label
+      )
+    );
+    const levelLabel = level.label;
     const statusRows = await fetchAllPages<{
       enroleeNumber: string;
       classLevel: string | null;
@@ -156,10 +184,10 @@ async function loadChosenClassRows(
     const atLevel = statusRows.filter(
       (r) =>
         !isTerminalApplicationStatus(r.applicationStatus) &&
-        normalizeLevelLabel(r.classLevel) === levelLabel &&
+        isAtLevel(r.classLevel, levelLabel, aliasLabels) &&
         normalizeSectionName(r.classSection) !== null
     );
-    if (atLevel.length === 0) return { rows: [] };
+    if (atLevel.length === 0) return { rows: [], aliasLabels };
 
     const apps = await fetchInChunks(
       atLevel.map((r) => r.enroleeNumber),
@@ -212,6 +240,7 @@ async function loadChosenClassRows(
     );
 
     return {
+      aliasLabels,
       rows: atLevel
         .map((r) => ({
           ...r,
@@ -305,7 +334,7 @@ export async function listAssignableSections(
       .select('section_id, student:students(student_number)')
       .in('enrollment_status', ENROLLED_STATUSES)
       .in('section_id', sectionIds),
-    loadChosenClassRows(service, ayCode, level.label),
+    loadChosenClassRows(service, ayCode, level),
   ]);
   const activeCountById = new Map<string, number>();
   const rosterNumbersById = new Map<string, Set<string>>();
@@ -335,7 +364,8 @@ export async function listAssignableSections(
           level.label,
           sections,
           rosterNumbersById,
-          options.excludeEnroleeNumber
+          options.excludeEnroleeNumber,
+          chosen.aliasLabels
         );
 
   return {
@@ -450,7 +480,10 @@ export async function validateSectionChoice(
       .select('section_id, student:students(student_number)')
       .eq('section_id', sectionId)
       .in('enrollment_status', ENROLLED_STATUSES),
-    loadChosenClassRows(service, ayCode, levelLabel),
+    loadChosenClassRows(service, ayCode, {
+      id: row.level_id,
+      label: levelLabel,
+    }),
   ]);
   if (rosterErr)
     return { error: `Capacity check failed: ${rosterErr.message}` };
@@ -472,7 +505,8 @@ export async function validateSectionChoice(
       levelLabel,
       [{ id: row.id, name: row.name }],
       new Map([[row.id, rosterNumbers]]),
-      exclude.enroleeNumber
+      exclude.enroleeNumber,
+      chosen.aliasLabels
     ).get(row.id) ?? 0;
 
   if (onList + chosenSeats >= MAX_ACTIVE_PER_SECTION) {
@@ -522,18 +556,24 @@ export async function resolveChosenSection(
     return { reason: 'No class has been set for this child.' };
   }
 
-  const { data: levelRow, error: levelErr } = await service
-    .from('levels')
-    .select('id, label')
-    .eq('label', levelLabel)
-    .maybeSingle();
-  if (levelErr) return { reason: `Level lookup failed: ${levelErr.message}` };
-  if (!levelRow) {
+  // Same lookup as the sync: the SIS name, else the enrolment form options'
+  // name for it ("Year 8" → Secondary One).
+  const [levelsRes, aliasRes] = await Promise.all([
+    service.from('levels').select('id, label'),
+    service.from('level_aliases').select('raw_label, level_id'),
+  ]);
+  const lookupErr = levelsRes.error ?? aliasRes.error;
+  if (lookupErr) return { reason: `Level lookup failed: ${lookupErr.message}` };
+  const level = findClassLevel(
+    classLevel,
+    (levelsRes.data ?? []) as Array<{ id: string; label: string }>,
+    (aliasRes.data ?? []) as Array<{ raw_label: string; level_id: string }>
+  );
+  if (!level) {
     return {
       reason: `The class set for this child is ${shown}, but "${classLevel?.trim()}" is not a level the school uses.`,
     };
   }
-  const level = levelRow as { id: string; label: string };
 
   const { data: sectionRow, error: sectionErr } = await service
     .from('sections')

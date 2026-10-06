@@ -46,7 +46,7 @@ Key fields:
 | `applicationStatus` | varchar | See values below |
 | `classStatus` | varchar | See values below |
 | `classAY` | varchar | Academic year (e.g., "AY2026") |
-| `classLevel` | varchar | Word form (post-migration 029), e.g., "Primary One", "Secondary Two", "Cambridge Secondary One (Year 8)", "Youngstarters \| Little Stars". Legacy digit form ("Primary 1") still tolerated by `lib/sync/level-normalizer.ts` as a defensive fallback. |
+| `classLevel` | varchar | Word form (post-migration 029), e.g., "Primary One", "Secondary Two", "Youngstarters". The programme's year names ("Year 8") are mapped through `level_aliases` (Year 8 = Secondary One). Legacy digit form ("Primary 1") still tolerated by `lib/sync/level-normalizer.ts` as a defensive fallback. |
 | `classSection` | varchar | e.g., "Patience", "Discipline 2" |
 
 ### `ay{YY}_enrolment_documents`

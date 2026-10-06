@@ -133,7 +133,7 @@ function buildColumns(ayCode?: string): ColumnDef<OutdatedRow>[] {
     },
     {
       // The SIS level the child counts as (resolved server-side), so a
-      // "Year 9" applicant filters under Secondary Three.
+      // "Year 10" applicant filters under Secondary Three.
       id: 'level',
       accessorFn: (row) => row.level,
       header: 'Level',

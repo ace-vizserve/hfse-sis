@@ -102,7 +102,7 @@ function buildColumns(ayCode: string): ColumnDef<FeedbackRow>[] {
     },
     {
       // The SIS level the child counts as (resolved server-side), so a
-      // "Year 9" applicant sorts and filters under Secondary Three.
+      // "Year 10" applicant sorts and filters under Secondary Three.
       id: 'level',
       accessorFn: (r) => r.level ?? '',
       header: ({ column }) => (

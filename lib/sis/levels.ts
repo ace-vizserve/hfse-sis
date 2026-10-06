@@ -257,11 +257,11 @@ export async function resolveLevelId(
 // ONE ANSWER TO "WHAT LEVEL IS THIS CHILD IN?"
 //
 // An application carries the parent-facing level name the enrolment form
-// offered ("Year 9", "K2"). The enrolment form options say what each name
+// offered ("Year 10", "K2"). The enrolment form options say what each name
 // counts as, and that mapping is stored as `level_aliases` rows. Deciding
 // surfaces (the class picker, the level check on a class save) always read it;
 // this resolver is how every surface that SHOWS, GROUPS, FILTERS, SORTS or
-// COUNTS a level reads it too — so a "Year 9" child sits under Secondary Three
+// COUNTS a level reads it too — so a "Year 10" child sits under Secondary Three
 // on every screen, not in a bucket of its own.
 //
 // An unmapped name comes back as itself (canonicalised), never as null: it is

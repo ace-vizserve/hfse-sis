@@ -166,7 +166,7 @@ async function loadCompletionByLevelUncached(
   for (const a of (appsRes.data ?? []) as AppRow[]) {
     if (!a.enroleeNumber) continue;
     // classLevel when set, else the applied-for name resolved to the SIS
-    // level it counts as ("Year 9" → Secondary Three). Same rule as the
+    // level it counts as ("Year 10" → Secondary Three). Same rule as the
     // drill (lib/p-files/drill.ts) so a bar's click lands on its rows.
     const level =
       resolveChildLevel(

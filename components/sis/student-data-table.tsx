@@ -248,7 +248,7 @@ export function StudentDataTable({
       {
         // `level` is resolved server-side (lib/sis/queries.ts): classLevel,
         // else the application's level name mapped through the enrolment
-        // form options — so "Year 9" shows, filters and sorts as Secondary
+        // form options — so "Year 10" shows, filters and sorts as Secondary
         // Three. The raw name stays searchable (searchKeys below).
         accessorFn: (row) => row.level ?? '',
         id: 'level',

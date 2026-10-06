@@ -244,7 +244,7 @@ export function ValidationQueue({
       },
       {
         // The SIS level the applicant counts as (resolved server-side), so a
-        // "Year 9" applicant filters and sorts under Secondary Three.
+        // "Year 10" applicant filters and sorts under Secondary Three.
         id: 'level',
         accessorFn: (row) => row.level,
         header: ({ column }) => (

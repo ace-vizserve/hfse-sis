@@ -4,7 +4,7 @@ const fx = vi.hoisted(() => ({
   apps: [] as Array<Record<string, unknown>>,
   statuses: [] as Array<Record<string, unknown>>,
   // The level catalog + one enrolment-form alias, so the loader's resolver
-  // has something to map ("Year 9" counts as Secondary Three).
+  // has something to map ("Year 10" counts as Secondary Three).
   levels: [
     {
       id: 'lv-s3',
@@ -16,7 +16,7 @@ const fx = vi.hoisted(() => ({
       is_core: true,
     },
   ],
-  aliases: [{ raw_label: 'Year 9', level_id: 'lv-s3' }],
+  aliases: [{ raw_label: 'Year 10', level_id: 'lv-s3' }],
 }));
 
 vi.mock('next/cache', () => ({
@@ -66,7 +66,7 @@ fx.apps = RATINGS.map((feedbackRating, i) => ({
   enroleeNumber: `E${i}`,
   studentNumber: null,
   enroleeFullName: `Child ${i}`,
-  levelApplied: i === 0 ? 'Year 9' : 'P1',
+  levelApplied: i === 0 ? 'Year 10' : 'P1',
   feedbackRating,
   feedbackComments: i === 0 ? '  Easy form  ' : null,
   feedbackConsent: i === 0 ? true : null,
@@ -113,7 +113,7 @@ describe('feedback-rating drill', () => {
   it('resolves the applied-for name to the SIS level it counts as', async () => {
     const { rows } = await getAdmissionsFeedback('AY2026');
     const e0 = rows.find((r) => r.enroleeNumber === 'E0')!;
-    expect(e0.levelApplied).toBe('Year 9');
+    expect(e0.levelApplied).toBe('Year 10');
     expect(e0.level).toBe('Secondary Three');
     // An unmapped name stays as stored.
     expect(rows.find((r) => r.enroleeNumber === 'E1')!.level).toBe('P1');
@@ -129,7 +129,7 @@ describe('feedback-rating drill', () => {
       'E0',
       '',
       'Secondary Three',
-      'Year 9',
+      'Year 10',
       'Enrolled',
       5,
       'Easy form',

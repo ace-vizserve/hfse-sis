@@ -60,14 +60,16 @@ CREATE TABLE terms (
 ```sql
 CREATE TABLE levels (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code TEXT UNIQUE NOT NULL,                 -- e.g., "YS-L", "P1", "S1", "CS1"
-  label TEXT NOT NULL,                       -- word form, e.g., "Primary One", "Secondary Three", "Cambridge Secondary One (Year 8)"
+  code TEXT UNIQUE NOT NULL,                 -- e.g., "YS", "P1", "S1"
+  label TEXT NOT NULL,                       -- word form, e.g., "Youngstarters", "Primary One", "Secondary Three"
   level_type TEXT NOT NULL                   -- "primary", "secondary", or "preschool"
     CHECK (level_type IN ('primary', 'secondary', 'preschool'))
 );
 ```
 
-**Canonical 15-row seed (migration 029, word form):** 3 Youngstarters preschool tiers (`YS-L` Little Stars, `YS-J` Junior Stars, `YS-S` Senior Stars) + 6 Primary (`P1`–`P6`, "Primary One" through "Primary Six") + 4 Secondary (`S1`–`S4`, "Secondary One" through "Secondary Four") + 2 Cambridge Secondary tracks (`CS1` "Cambridge Secondary One (Year 8)", `CS2` "Cambridge Secondary Two (Year 9)").
+**The catalog is 11 rows, word form:** `YS` "Youngstarters" (migration 173) + 6 Primary (`P1`–`P6`, "Primary One" through "Primary Six") + 4 Secondary (`S1`–`S4`, "Secondary One" through "Secondary Four"). Migration 029's 15-row seed also had three Youngstarters tiers (`YS-L`/`YS-J`/`YS-S`) and two Cambridge Secondary levels (`CS1`/`CS2`); migration 086 deleted all five (KD #153). Cambridge/Global is a class type on a section, not a level.
+
+**The programme's year names are mapped, not levels.** The enrolment form offers "HFSE Global (now International) Education Programme – Year N" names; `level_aliases` maps each to its SIS level — Year 1 → Youngstarters (K2), Year 2 → Primary One, **Year 8 → Secondary One, Year 9 → Secondary Two, Year 10 → Secondary Three**. Every read of a child's level goes through that mapping (`lib/sis/levels.ts` for display, `findClassLevel` in `lib/sync/level-normalizer.ts` for placing a class).
 
 > **Youngstarters today:** preschool levels exist in `levels` but do **not** receive `subject_configs`, grading sheets, or report cards yet — that's deferred until the YS report-card template is designed. Admissions / Records / Attendance accept YS rows; Markbook + Evaluation skip them by `level_type <> 'preschool'`.
 

@@ -1752,7 +1752,7 @@ async function StudentProfileCard({
     loadLevelLabelResolver(createServiceClient()),
   ]);
   // The enrolment form options say what the parent's level name counts as.
-  // Shown only when it says something the name itself doesn't ("Year 9" →
+  // Shown only when it says something the name itself doesn't ("Year 10" →
   // Secondary Three), so an SIS-worded application isn't printed twice.
   const resolvedLevel = resolveLevel(app.levelApplied);
   const countsAs =

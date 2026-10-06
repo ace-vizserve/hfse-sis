@@ -467,7 +467,7 @@ async function loadLevelDistributionUncached(
     return [];
   }
 
-  // The raw application name ("Year 9") counts under the SIS level the
+  // The raw application name ("Year 10") counts under the SIS level the
   // enrolment form options map it to, not as a bucket of its own.
   const resolveLevel = await loadLevelLabelResolver(createServiceClient());
 

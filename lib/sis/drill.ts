@@ -459,7 +459,7 @@ async function loadRecordsRowsUncached(
     }
   }
 
-  // A raw application level name ("Year 9") resolves to the SIS level it
+  // A raw application level name ("Year 10") resolves to the SIS level it
   // counts as, through the enrolment form options' `level_aliases` — the same
   // resolver the "Students by level" donut uses, so the buckets still match.
   const resolveLevel = await loadLevelLabelResolver(service);
@@ -1862,7 +1862,7 @@ export type LifecycleDrillRow = {
   levelApplied: string | null;
   /**
    * The SIS level the child counts as: `classLevel` once set, else
-   * `levelApplied` resolved through `level_aliases` ("Year 9" → Secondary
+   * `levelApplied` resolved through `level_aliases` ("Year 10" → Secondary
    * Three). The Level column shows, sorts, filters and exports this one.
    */
   level: string | null;

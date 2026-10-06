@@ -126,7 +126,7 @@ export type DrillRow = {
   documentsComplete: number; // count of present core docs
   documentsTotal: number; // count of core doc slots tracked
   /** The application's own `levelApplied`, resolved to the SIS level it
-   *  counts as ("Year 9" → "Secondary Three"; an unmapped name stays as
+   *  counts as ("Year 10" → "Secondary Three"; an unmapped name stays as
    *  stored). The Insights withdrawn, cancellation-reason and nationality
    *  charts group by this — NOT `level`, which prefers the status table's
    *  classLevel. */

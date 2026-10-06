@@ -101,37 +101,43 @@ async function loadUnsyncedUncached(
   const admissions = createAdmissionsClient();
   const service = createServiceClient();
 
-  const [appsRes, statusRes, prefsRes, levelsRes, sectionsRes, resolveLevel] =
-    await Promise.all([
-      admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select(
-          'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied'
-        ),
-      admissions
-        .from(`${prefix}_enrolment_status`)
-        .select('enroleeNumber, classLevel, classSection, applicationStatus')
-        .in('applicationStatus', [...ENROLLED_STATUSES]),
-      // Read apart from the main select, and allowed to fail: `classType` was
-      // added to the portal later than the identity columns (see
-      // MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a missing column must
-      // cost only the section picker's hint, never the queue.
-      admissions
-        .from(`${prefix}_enrolment_applications`)
-        .select('enroleeNumber, classType, preferredSchedule'),
-      // The SIS's levels and this year's classes, read ONCE and used twice: the
-      // section ids scope the "already has a class" check below, and level +
-      // name let `describePlacementBlocker` say why a `not_synced` row's class
-      // cannot be placed. Same selects the sync itself runs.
-      service.from('levels').select('id, label'),
-      service
-        .from('sections')
-        .select(
-          'id, level_id, name, academic_year:academic_years!inner(ay_code)'
-        )
-        .eq('academic_year.ay_code', ayCode),
-      loadLevelLabelResolver(service),
-    ]);
+  const [
+    appsRes,
+    statusRes,
+    prefsRes,
+    levelsRes,
+    sectionsRes,
+    resolveLevel,
+    aliasRes,
+  ] = await Promise.all([
+    admissions
+      .from(`${prefix}_enrolment_applications`)
+      .select(
+        'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied'
+      ),
+    admissions
+      .from(`${prefix}_enrolment_status`)
+      .select('enroleeNumber, classLevel, classSection, applicationStatus')
+      .in('applicationStatus', [...ENROLLED_STATUSES]),
+    // Read apart from the main select, and allowed to fail: `classType` was
+    // added to the portal later than the identity columns (see
+    // MINIMAL_APP_COLUMNS in lib/sis/queries.ts), and a missing column must
+    // cost only the section picker's hint, never the queue.
+    admissions
+      .from(`${prefix}_enrolment_applications`)
+      .select('enroleeNumber, classType, preferredSchedule'),
+    // The SIS's levels and this year's classes, read ONCE and used twice: the
+    // section ids scope the "already has a class" check below, and level +
+    // name let `describePlacementBlocker` say why a `not_synced` row's class
+    // cannot be placed. Same selects the sync itself runs.
+    service.from('levels').select('id, label'),
+    service
+      .from('sections')
+      .select('id, level_id, name, academic_year:academic_years!inner(ay_code)')
+      .eq('academic_year.ay_code', ayCode),
+    loadLevelLabelResolver(service),
+    service.from('level_aliases').select('raw_label, level_id'),
+  ]);
 
   if (appsRes.error) {
     console.warn(
@@ -288,14 +294,17 @@ async function loadUnsyncedUncached(
   // queue full of false "no such class" rows is worse than the old silence —
   // so on a failed read the rows simply carry no blocker, as before.
   let placementLookup: PlacementLookup | null = null;
-  if (levelsRes.error || sectionsRes.error) {
+  if (levelsRes.error || sectionsRes.error || aliasRes.error) {
     console.warn(
       '[sis/unsynced-students] levels / sections read failed (blockers off):',
-      levelsRes.error?.message ?? sectionsRes.error?.message
+      levelsRes.error?.message ??
+        sectionsRes.error?.message ??
+        aliasRes.error?.message
     );
   } else {
     placementLookup = {
       levels: (levelsRes.data ?? []) as Array<{ id: string; label: string }>,
+      levelAliases: aliasRes.data ?? [],
       sections: (sectionsRes.data ?? []) as Array<{
         level_id: string;
         name: string;

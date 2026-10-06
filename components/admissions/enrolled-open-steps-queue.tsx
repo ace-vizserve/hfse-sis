@@ -73,7 +73,7 @@ export function EnrolledOpenStepsQueue({
       },
       {
         // The SIS level the child counts as (resolved server-side), so a
-        // "Year 9" child filters under Secondary Three.
+        // "Year 10" child filters under Secondary Three.
         id: 'level',
         accessorFn: (r) => r.level,
         header: 'Level',

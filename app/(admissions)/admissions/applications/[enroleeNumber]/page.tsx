@@ -254,7 +254,7 @@ export default async function SisStudentDetailPage({
 
   // The child's level at a glance: the class's level when placed, else the
   // name the family applied with resolved to the SIS level it counts as
-  // ("Year 9" → Secondary Three). The raw name stays on the profile tab and,
+  // ("Year 10" → Secondary Three). The raw name stays on the profile tab and,
   // when it differs, in this card's footnote.
   const levelAppliedRaw = application.levelApplied?.trim() || null;
   const childLevel =

@@ -77,7 +77,7 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 // Level column, shared by every cohort. Shows, sorts and facets on the
-// RESOLVED level the loader computed (`level` — a "Year 9" child shows as
+// RESOLVED level the loader computed (`level` — a "Year 10" child shows as
 // Secondary Three), never the raw application name. The id stays
 // 'levelApplied' so filters already saved in the URL keep working.
 function buildLevelColumn(): ColumnDef<CohortStudentRow> {

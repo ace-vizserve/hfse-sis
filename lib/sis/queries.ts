@@ -46,7 +46,7 @@ export type StudentListRow = {
   levelApplied: string | null;
   /**
    * The SIS level the child counts as — `classLevel` once set, else
-   * `levelApplied` resolved through `level_aliases` ("Year 9" → Secondary
+   * `levelApplied` resolved through `level_aliases` ("Year 10" → Secondary
    * Three). Null only when both are blank. Level columns, facets and sorts
    * read this, never the raw name.
    */

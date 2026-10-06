@@ -68,7 +68,7 @@ export type JoinedFunnelRow = {
   enroleeNumber: string;
   applicationStatus: string | null;
   levelApplied: string | null;
-  /** `levelApplied` resolved to the SIS level it counts as ("Year 9" →
+  /** `levelApplied` resolved to the SIS level it counts as ("Year 10" →
    *  "Secondary Three"; unmapped names stay as stored). Every by-level chart
    *  groups by this — the drill's `levelAsApplied` holds the same value. */
   level: string | null;
