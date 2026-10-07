@@ -78,7 +78,8 @@ export async function GET(
     service
       .from('grading_sheets')
       .select('id, term_id, is_locked, ww_weight, pt_weight, qa_weight')
-      .eq('subject_id', config.subject_id),
+      .eq('subject_id', config.subject_id)
+      .eq('sheet_type', 'standard'),
   ]);
   if (termsRes.error)
     return NextResponse.json(
@@ -256,7 +257,8 @@ export async function PATCH(
       'id, is_locked, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight, section:sections(name)'
     )
     .eq('term_id', input.term_id)
-    .eq('subject_id', config.subject_id);
+    .eq('subject_id', config.subject_id)
+    .eq('sheet_type', 'standard');
   if (sheetErr)
     return NextResponse.json({ error: sheetErr.message }, { status: 500 });
 

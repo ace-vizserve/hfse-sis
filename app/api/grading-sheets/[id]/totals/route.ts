@@ -30,6 +30,7 @@ import {
 } from '@/lib/schemas/change-request';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { isTerm4Framework } from '@/lib/grading/term4-framework';
 
 // PATCH /api/grading-sheets/[id]/totals — registrar+ only.
 // Updates WW/PT/QA max totals on a sheet. After updating totals we MUST
@@ -89,7 +90,7 @@ export async function PATCH(
   const { data: sheet, error: sheetErr } = await service
     .from('grading_sheets')
     .select(
-      `id, ww_totals, pt_totals, qa_total, is_locked,
+      `id, ww_totals, pt_totals, qa_total, is_locked, sheet_type,
        ww_weight, pt_weight, qa_weight,
        subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
@@ -97,6 +98,12 @@ export async function PATCH(
     .single();
   if (sheetErr || !sheet) {
     return NextResponse.json({ error: 'sheet not found' }, { status: 404 });
+  }
+  if (isTerm4Framework(sheet.sheet_type)) {
+    return NextResponse.json(
+      { error: 'A Term 4 framework sheet has a fixed structure and weights.' },
+      { status: 400 }
+    );
   }
   const config = Array.isArray(sheet.subject_config)
     ? sheet.subject_config[0]

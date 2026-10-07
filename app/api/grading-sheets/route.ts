@@ -11,6 +11,11 @@ import {
 import { logAction } from '@/lib/audit/log-action';
 import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
+import {
+  TERM4_FRAMEWORK_SHAPE,
+  isTerm4Framework,
+  parseSheetType,
+} from '@/lib/grading/term4-framework';
 
 // GET /api/grading-sheets?term_id=...
 // Lists grading sheets for the current AY (or a specific term).
@@ -128,6 +133,12 @@ export async function POST(request: NextRequest) {
         ? rawTeacherName.trim().slice(0, 150) || null
         : null;
 
+  const sheet_type = parseSheetType(body.sheet_type);
+  if (!sheet_type) {
+    return NextResponse.json({ error: 'Unknown sheet type' }, { status: 400 });
+  }
+  const t4f = isTerm4Framework(sheet_type);
+
   const ww_totals = Array.isArray(body.ww_totals)
     ? (body.ww_totals as unknown[])
     : [];
@@ -138,23 +149,25 @@ export async function POST(request: NextRequest) {
   const qa_total =
     rawQa == null ? null : typeof rawQa === 'number' ? rawQa : null;
 
-  if (ww_totals.some((v) => typeof v !== 'number' || v <= 0)) {
-    return NextResponse.json(
-      { error: 'ww_totals must be positive numbers' },
-      { status: 400 }
-    );
-  }
-  if (pt_totals.some((v) => typeof v !== 'number' || v <= 0)) {
-    return NextResponse.json(
-      { error: 'pt_totals must be positive numbers' },
-      { status: 400 }
-    );
-  }
-  if (qa_total !== null && (typeof qa_total !== 'number' || qa_total <= 0)) {
-    return NextResponse.json(
-      { error: 'qa_total must be a positive number' },
-      { status: 400 }
-    );
+  if (!t4f) {
+    if (ww_totals.some((v) => typeof v !== 'number' || v <= 0)) {
+      return NextResponse.json(
+        { error: 'ww_totals must be positive numbers' },
+        { status: 400 }
+      );
+    }
+    if (pt_totals.some((v) => typeof v !== 'number' || v <= 0)) {
+      return NextResponse.json(
+        { error: 'pt_totals must be positive numbers' },
+        { status: 400 }
+      );
+    }
+    if (qa_total !== null && (typeof qa_total !== 'number' || qa_total <= 0)) {
+      return NextResponse.json(
+        { error: 'qa_total must be a positive number' },
+        { status: 400 }
+      );
+    }
   }
 
   const service = createServiceClient();
@@ -190,17 +203,36 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (ww_totals.length > config.ww_max_slots) {
-    return NextResponse.json(
-      { error: `too many WW slots (max ${config.ww_max_slots})` },
-      { status: 400 }
-    );
+  if (!t4f) {
+    if (ww_totals.length > config.ww_max_slots) {
+      return NextResponse.json(
+        { error: `too many WW slots (max ${config.ww_max_slots})` },
+        { status: 400 }
+      );
+    }
+    if (pt_totals.length > config.pt_max_slots) {
+      return NextResponse.json(
+        { error: `too many PT slots (max ${config.pt_max_slots})` },
+        { status: 400 }
+      );
+    }
   }
-  if (pt_totals.length > config.pt_max_slots) {
-    return NextResponse.json(
-      { error: `too many PT slots (max ${config.pt_max_slots})` },
-      { status: 400 }
-    );
+
+  if (t4f) {
+    const { data: subj } = await service
+      .from('subjects')
+      .select('is_examinable')
+      .eq('id', subject_id)
+      .maybeSingle();
+    if (!subj?.is_examinable) {
+      return NextResponse.json(
+        {
+          error:
+            'A Term 4 framework sheet is only for subjects with a number grade.',
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // Insert the sheet.
@@ -212,9 +244,17 @@ export async function POST(request: NextRequest) {
       subject_id,
       subject_config_id: config.id,
       teacher_name,
-      ww_totals,
-      pt_totals,
-      qa_total,
+      sheet_type,
+      ...(t4f
+        ? {
+            ww_totals: [...TERM4_FRAMEWORK_SHAPE.ww_totals],
+            pt_totals: [...TERM4_FRAMEWORK_SHAPE.pt_totals],
+            qa_total: TERM4_FRAMEWORK_SHAPE.qa_total,
+            ww_weight: TERM4_FRAMEWORK_SHAPE.ww_weight,
+            pt_weight: TERM4_FRAMEWORK_SHAPE.pt_weight,
+            qa_weight: TERM4_FRAMEWORK_SHAPE.qa_weight,
+          }
+        : { ww_totals, pt_totals, qa_total }),
     })
     .select('id')
     .single();
@@ -269,6 +309,7 @@ export async function POST(request: NextRequest) {
       section_id,
       subject_id,
       teacher_name,
+      sheet_type,
       ww_totals,
       pt_totals,
       qa_total,

@@ -15,6 +15,7 @@ import {
 } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { isTerm4Framework } from '@/lib/grading/term4-framework';
 
 // PATCH /api/grading-sheets/[id]/excused — which WW/PT slots count for one
 // student (proration, migration 179).
@@ -72,7 +73,7 @@ export async function PATCH(
   const [sheetRes, enrolmentRes, entryRes] = await Promise.all([
     service
       .from('grading_sheets')
-      .select('id, section_id, ww_totals, pt_totals, is_locked')
+      .select('id, section_id, ww_totals, pt_totals, is_locked, sheet_type')
       .eq('id', sheetId)
       .single(),
     service
@@ -105,7 +106,14 @@ export async function PATCH(
     ww_totals: number[] | null;
     pt_totals: number[] | null;
     is_locked: boolean;
+    sheet_type: string | null;
   };
+  if (isTerm4Framework(sheet.sheet_type)) {
+    return NextResponse.json(
+      { error: 'Assessments cannot be excused on a Term 4 framework sheet.' },
+      { status: 400 }
+    );
+  }
   if (enrolmentRes.data.section_id !== sheet.section_id) {
     return NextResponse.json(
       { error: 'student is not in this class' },

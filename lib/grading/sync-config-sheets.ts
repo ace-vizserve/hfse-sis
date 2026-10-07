@@ -195,6 +195,7 @@ async function resolveSyncedSheetIds(
     .from('grading_sheets')
     .select('id')
     .eq('subject_config_id', configId)
+    .eq('sheet_type', 'standard')
     .eq('is_locked', false);
   if (error) throw new Error(`could not list synced sheets: ${error.message}`);
   return ((data ?? []) as { id: string }[]).map((r) => r.id);
@@ -267,7 +268,8 @@ export async function recomputeSyncedSheets(
       .select(
         'id, is_locked, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
       )
-      .in('id', sheetIds);
+      .in('id', sheetIds)
+      .eq('sheet_type', 'standard');
     if (sheetErr) throw new Error(sheetErr.message);
 
     const sheets = (sheetData ?? []) as SheetRow[];
