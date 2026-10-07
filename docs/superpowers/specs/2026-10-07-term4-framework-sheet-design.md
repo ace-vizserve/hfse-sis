@@ -58,16 +58,16 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 - Single create (`app/(markbook)/markbook/grading/new/new-sheet-form.tsx` → `POST app/api/grading-sheets`): a **Sheet type** choice, Standard / Term 4 framework. Choosing Term 4 framework hides the slot/max/weight inputs and sends the fixed shape; the server sets it regardless of what the client sends.
 - Bulk create is unchanged — it only makes Standard sheets. Term 4 framework sheets are created one at a time for the sections that use them.
 - On create, the best term average is filled for every seeded entry immediately.
-- `isSubjectTermSplit` (`lib/grading/resolve-sheet-weights.ts`) only allows switching components off; it gets an explicit exemption for `term4_framework`, whose weights are fixed and not editable. The totals editor is hidden on this type.
+- The totals/weights route refuses a `term4_framework` sheet before it reaches `isSubjectTermSplit`, so that gate needs no exemption. The totals editor is hidden on this type; the per-subject term-weights route and the config sync skip these sheets.
 
 ### 3. Best term average
 
 - **SQL:** `public.student_best_term_average(p_student_id, p_academic_year_id) returns (best numeric, term_number int)` — per term T1–T3, mean of examinable `quarterly_grade` over non-N/A entries the student has; returns the highest, ties to the later term (value is identical either way; the term shown is the only difference). Rounded like the General Average (1 decimal, `computeGeneralAverage`).
-- **TS mirror** in `lib/compute/` for display and tests, with a self-test that matches the SQL on the worked example.
+- **SQL only — no TS copy.** The grid reads the value and its source term through `public.best_term_averages_for_sheet(p_sheet_id)`; one copy of the rule cannot drift from another.
 
 ### 4. Keeping it live
 
-- Trigger on `grade_entries` AFTER INSERT/UPDATE OF `quarterly_grade, is_na` for T1–T3 entries: recompute that student's best term average and write it into the WW slot of each of their `term4_framework` entries in the same AY. `grade_entries_derive()` then re-derives the T4 grade as usual.
+- Trigger on `grade_entries` AFTER INSERT/UPDATE (not `UPDATE OF` — `quarterly_grade` is set by the BEFORE derive trigger, never in the caller's SET list, so a column-filtered trigger would never fire), acting only when `quarterly_grade` or `is_na` actually changed on a T1–T3 entry: recompute that student's best term average and write it into the WW slot of each of their `term4_framework` entries in the same AY. `grade_entries_derive()` then re-derives the T4 grade as usual.
 - **Locked T4 sheets update too.** A locked T1–T3 grade only changes through an approved change request, so T4 follows it (Mr Ace: "of course update if approved"). Each cascaded change writes a `grade_audit_log` row naming the source change; no new `approval_reference` is asked for — the source edit carried it.
 - Recursion guard: the trigger fires only for T1–T3 rows and only writes T4 rows.
 
@@ -75,7 +75,7 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 
 - `components/grading/score-entry-grid.tsx` takes the sheet type. Headers on `term4_framework`: **Best term average (50%) · Teacher's recommendation (20%) · Revision task / Mock exam (30%)** — never WW/PT/QA, desktop and mobile.
 - The best-term-average cell is read-only and shows which term it came from ("T2 average · 86.4").
-- A student with **no T1–T3 grades at all** (joined in T4): the cell stays blank, the row is flagged for the registrar ("No earlier term grades"). Not scored as zero — the WW component stays null.
+- A student with **no T1–T3 grades at all** (joined in T4): the cell stays blank and reads "No earlier grades". The row never counts as fully graded (the slot is blank, `lib/grading/row-complete.ts`), so it is not judged; any interim grade shown lacks the 50% and is for the registrar to resolve.
 - Report card and Masterfile show T4 as one number, as today. No change.
 
 ## Error handling
@@ -87,7 +87,7 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 ## Testing
 
 - Hard Rule #1: 93 test unchanged (both copies).
-- Worked example: best 86, rec 24/30, task 70/100 → initial 80 → quarterly **87** (TS and SQL).
+- Worked example: best 86, rec 24/30, task 70/100 → initial 80 → quarterly **87** (the existing TS and SQL formulas, fed the fixed shape).
 - Term average: examinable only; N/A and missing subjects skipped; late enrollee with no T1 picks from T2/T3; no grades → null and flagged.
 - Cascade: change a student's T2 grade → their T4 grade moves in every subject, locked sheets included, with audit rows.
 - Guards: teacher write to the best-term cell refused; shape/weight edit refused; excusing refused.
