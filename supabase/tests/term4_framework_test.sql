@@ -226,6 +226,32 @@ begin
   raise notice 'T4F OK: recommendation save after a cascade keeps the new best term average';
 end $$;
 
+-- A signed-in teacher's T1-T3 save cascades into the T4 sheet; the system-owned
+-- ww_scores slot must NOT be audited as that teacher.
+select set_config('request.jwt.claims',
+  '{"sub":"fe5362fd-2e8f-460e-a488-8c7f4d1dc5cb","role":"authenticated"}', true);
+update grade_entries ge set ww_scores = '{50}', pt_scores = '{50}', qa_score = 50
+  from grading_sheets gs
+ where gs.id = ge.grading_sheet_id and gs.term_id = (select v from fx where k='t3')
+   and gs.subject_id = (select v from fx where k='b')
+   and ge.section_student_id = '00000000-0000-4000-8000-0000000000b1';
+select set_config('request.jwt.claims', '', true);
+do $$
+declare r record;
+begin
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.ww_scores is not distinct from '{93.5}'::numeric[] then
+    raise exception 'audit test: cascade did not move the T4 value'; end if;
+  if exists (select 1 from audit_log where entity_id = r.id::text
+              and context->>'field' = 'ww_scores[0]') then
+    raise exception 'audit_log blamed a user for the system-owned T4 ww slot'; end if;
+  if not exists (select 1 from audit_log
+                  where actor_id = 'fe5362fd-2e8f-460e-a488-8c7f4d1dc5cb'
+                    and context->>'field' = 'ww_scores[0]') then
+    raise exception 'audit test invalid: the teacher''s own T3 write was not audited'; end if;
+  raise notice 'T4F OK: cascade does not write audit_log rows for the system-owned slot';
+end $$;
+
 -- Bulk create skips an existing Term 4 framework sheet.
 -- create_grading_sheets_for_section(p_section_id uuid) (migration 083) covers
 -- every subject x every term of the section's AY, so it is called once.
