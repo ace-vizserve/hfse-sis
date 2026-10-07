@@ -201,6 +201,7 @@ export function NewSheetForm({
   const selectedSection = sections.find((s) => s.id === sectionId);
   const selectedSubject = subjects.find((s) => s.id === subjectId);
   const selectedTerm = terms.find((t) => t.id === termId);
+  const isTerm4 = selectedTerm?.term_number === 4;
   const selectedLevel = first(selectedSection?.level ?? null);
 
   const wwTotal = (wwSlots || 0) * (wwEach || 0);
@@ -282,7 +283,16 @@ export function NewSheetForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Term</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={(v) => {
+                        field.onChange(v);
+                        // The Term 4 framework is offered on Term 4 only.
+                        if (terms.find((t) => t.id === v)?.term_number !== 4) {
+                          form.setValue('sheet_type', 'standard');
+                        }
+                      }}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="— pick a term —" />
@@ -408,18 +418,20 @@ export function NewSheetForm({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="standard">Standard</SelectItem>
-                        <SelectItem
-                          value="term4_framework"
-                          disabled={selectedSubject?.is_examinable === false}
-                        >
-                          Term 4 framework
-                        </SelectItem>
+                        {isTerm4 && (
+                          <SelectItem
+                            value="term4_framework"
+                            disabled={selectedSubject?.is_examinable === false}
+                          >
+                            Term 4 framework
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormDescription>
                       Term 4 framework: 50% best term average, 20%
                       teacher&apos;s recommendation, 30% revision task or mock
-                      exam. Only for subjects with a number grade.
+                      exam. Term 4 only, for subjects with a number grade.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

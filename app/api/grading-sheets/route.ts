@@ -10,6 +10,7 @@ import {
 } from '@/lib/auth/teacher-assignments';
 import { logAction } from '@/lib/audit/log-action';
 import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
+import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import {
   TERM4_FRAMEWORK_SHAPE,
@@ -233,6 +234,161 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Term 4 only (KD #230).
+    const { data: term, error: termErr } = await service
+      .from('terms')
+      .select('term_number')
+      .eq('id', term_id)
+      .maybeSingle();
+    if (termErr)
+      return NextResponse.json({ error: termErr.message }, { status: 500 });
+    if (!term || term.term_number !== 4) {
+      return NextResponse.json(
+        { error: 'A Term 4 framework sheet is only for Term 4.' },
+        { status: 400 }
+      );
+    }
+  }
+
+  // The shape the sheet is created with — for a framework sheet the fixed one,
+  // whatever the client sent. This is also what the audit row records.
+  const shape = t4f
+    ? {
+        ww_totals: [...TERM4_FRAMEWORK_SHAPE.ww_totals],
+        pt_totals: [...TERM4_FRAMEWORK_SHAPE.pt_totals],
+        qa_total: TERM4_FRAMEWORK_SHAPE.qa_total,
+        ww_weight: TERM4_FRAMEWORK_SHAPE.ww_weight,
+        pt_weight: TERM4_FRAMEWORK_SHAPE.pt_weight,
+        qa_weight: TERM4_FRAMEWORK_SHAPE.qa_weight,
+      }
+    : { ww_totals, pt_totals, qa_total };
+
+  const actor = {
+    id: auth.user.id,
+    email: auth.user.email ?? null,
+    role: auth.role,
+  };
+
+  // A class's Term 4 sheets usually exist already: creating a section makes a
+  // standard sheet for every subject × term (create_grading_sheets_for_section).
+  // A framework sheet takes that sheet's place when nothing was ever entered
+  // on it — the same test as removing a sheet (lib/grading/sheet-removal.ts).
+  if (t4f) {
+    const { data: existing, error: exErr } = await service
+      .from('grading_sheets')
+      .select(
+        'id, sheet_type, is_locked, teacher_name, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight, slot_labels'
+      )
+      .eq('term_id', term_id)
+      .eq('section_id', section_id)
+      .eq('subject_id', subject_id)
+      .maybeSingle();
+    if (exErr)
+      return NextResponse.json({ error: exErr.message }, { status: 500 });
+    if (existing) {
+      if (isTerm4Framework(existing.sheet_type)) {
+        return NextResponse.json(
+          {
+            error:
+              'This class already has a Term 4 framework sheet for this subject.',
+          },
+          { status: 400 }
+        );
+      }
+      let verdict;
+      try {
+        verdict = (
+          await loadSheetRemovability(service, [
+            {
+              id: existing.id,
+              is_locked: existing.is_locked,
+              sheet_type: existing.sheet_type,
+            },
+          ])
+        ).get(existing.id);
+      } catch (e) {
+        return NextResponse.json(
+          {
+            error: e instanceof Error ? e.message : 'could not check the sheet',
+          },
+          { status: 500 }
+        );
+      }
+      if (!verdict?.removable) {
+        return NextResponse.json(
+          {
+            error:
+              'This class already has a Term 4 sheet for this subject with scores in it, so it can’t become a Term 4 framework sheet. Clear or remove that sheet first.',
+          },
+          { status: 400 }
+        );
+      }
+
+      // Convert in place: one UPDATE, so the shape check sees the whole shape.
+      const { error: convErr } = await service
+        .from('grading_sheets')
+        .update({
+          sheet_type,
+          ...shape,
+          slot_labels: null,
+          ...(teacher_name ? { teacher_name } : {}),
+        })
+        .eq('id', existing.id)
+        .eq('sheet_type', 'standard');
+      if (convErr)
+        return NextResponse.json({ error: convErr.message }, { status: 500 });
+
+      // Back to blank rows (the column defaults), so the fill trigger writes
+      // the best term average and the derive trigger the grade. `is_na` and
+      // the enrolment are left as they are.
+      const { data: resetRows, error: resetErr } = await service
+        .from('grade_entries')
+        .update({ ww_scores: [], pt_scores: [], qa_score: null })
+        .eq('grading_sheet_id', existing.id)
+        .select('id');
+
+      await logAction({
+        service,
+        actor,
+        action: 'sheet.create',
+        entityType: 'grading_sheet',
+        entityId: existing.id,
+        context: {
+          ...(await loadOneSheetAuditLabels(service, existing.id)),
+          term_id,
+          section_id,
+          subject_id,
+          teacher_name: teacher_name ?? existing.teacher_name ?? null,
+          sheet_type,
+          ...shape,
+          converted_from: 'standard',
+          previous: {
+            teacher_name: existing.teacher_name,
+            ww_totals: existing.ww_totals,
+            pt_totals: existing.pt_totals,
+            qa_total: existing.qa_total,
+            ww_weight: existing.ww_weight,
+            pt_weight: existing.pt_weight,
+            qa_weight: existing.qa_weight,
+            slot_labels: existing.slot_labels,
+          },
+          entries_reset: (resetRows ?? []).length,
+          ...(resetErr
+            ? {
+                partial: true,
+                failed_step: 'reset_entries',
+                error: resetErr.message,
+              }
+            : {}),
+        },
+      });
+      if (resetErr)
+        return NextResponse.json({ error: resetErr.message }, { status: 500 });
+
+      await invalidateForSection(service, section.academic_year_id);
+      return NextResponse.json({ id: existing.id });
+    }
   }
 
   // Insert the sheet.
@@ -245,21 +401,21 @@ export async function POST(request: NextRequest) {
       subject_config_id: config.id,
       teacher_name,
       sheet_type,
-      ...(t4f
-        ? {
-            ww_totals: [...TERM4_FRAMEWORK_SHAPE.ww_totals],
-            pt_totals: [...TERM4_FRAMEWORK_SHAPE.pt_totals],
-            qa_total: TERM4_FRAMEWORK_SHAPE.qa_total,
-            ww_weight: TERM4_FRAMEWORK_SHAPE.ww_weight,
-            pt_weight: TERM4_FRAMEWORK_SHAPE.pt_weight,
-            qa_weight: TERM4_FRAMEWORK_SHAPE.qa_weight,
-          }
-        : { ww_totals, pt_totals, qa_total }),
+      ...shape,
     })
     .select('id')
     .single();
   if (sheetErr || !sheet) {
-    // Unique(term_id, section_id, subject_id) likely hit.
+    // Unique(term_id, section_id, subject_id).
+    if (sheetErr?.code === '23505') {
+      return NextResponse.json(
+        {
+          error:
+            'This class already has a sheet for this subject in this term.',
+        },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
       { error: sheetErr?.message ?? 'failed to create sheet' },
       { status: 400 }
@@ -295,11 +451,7 @@ export async function POST(request: NextRequest) {
 
   await logAction({
     service,
-    actor: {
-      id: auth.user.id,
-      email: auth.user.email ?? null,
-      role: auth.role,
-    },
+    actor,
     action: 'sheet.create',
     entityType: 'grading_sheet',
     entityId: sheet.id,
@@ -310,9 +462,8 @@ export async function POST(request: NextRequest) {
       subject_id,
       teacher_name,
       sheet_type,
-      ww_totals,
-      pt_totals,
-      qa_total,
+      // What was inserted, not what the client sent.
+      ...shape,
       entries_seeded: entriesSeeded,
       ...(seedError
         ? { partial: true, failed_step: 'seed_entries', error: seedError }
@@ -324,14 +475,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: seedError }, { status: 500 });
   }
 
-  // Resolve ayCode from the section's academic year for drill cache invalidation.
+  await invalidateForSection(service, section.academic_year_id);
+
+  return NextResponse.json({ id: sheet.id });
+}
+
+// Resolve ayCode from the section's academic year for drill cache invalidation.
+async function invalidateForSection(
+  service: ReturnType<typeof createServiceClient>,
+  academicYearId: string
+) {
   const { data: ayRow } = await service
     .from('academic_years')
     .select('ay_code')
-    .eq('id', section.academic_year_id)
+    .eq('id', academicYearId)
     .maybeSingle();
   const ayCode = (ayRow as { ay_code: string } | null)?.ay_code ?? null;
   if (ayCode) invalidateDrillTags('markbook', ayCode);
-
-  return NextResponse.json({ id: sheet.id });
 }

@@ -306,6 +306,41 @@ begin
   raise notice 'T4F OK: bulk create leaves Term 4 framework sheets alone';
 end $$;
 
+-- Converting an empty standard Term 4 sheet in place, as POST /api/grading-sheets
+-- does: one sheet UPDATE (the shape check sees the whole shape), then the rows
+-- back to blank so the fill trigger writes the best term average.
+do $$
+declare sh uuid; r record; b record;
+begin
+  select id into sh from grading_sheets
+   where term_id = (select v from fx where k='t4') and section_id = (select v from fx where k='sec')
+     and subject_id = (select v from fx where k='d');
+  if sh is null then
+    insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, ww_totals, pt_totals, qa_total)
+    values ((select v from fx where k='t4'),(select v from fx where k='sec'),(select v from fx where k='d'),
+            (select v from fx where k='cd'),'{10,10}','{10}',30)
+    returning id into sh;
+  end if;
+  insert into grade_entries (grading_sheet_id, section_student_id, ww_scores, pt_scores)
+  values (sh, '00000000-0000-4000-8000-0000000000b1', '{null,null}', '{null}')
+  on conflict (grading_sheet_id, section_student_id) do nothing;
+
+  update grading_sheets
+     set sheet_type = 'term4_framework', ww_totals = '{100}', pt_totals = '{30}', qa_total = 100,
+         ww_weight = 0.50, pt_weight = 0.20, qa_weight = 0.30, slot_labels = null
+   where id = sh and sheet_type = 'standard';
+  update grade_entries set ww_scores = '{}', pt_scores = '{}', qa_score = null
+   where grading_sheet_id = sh;
+
+  select * into b from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
+  select * into r from grade_entries
+   where grading_sheet_id = sh and section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  -- (the derive trigger may pad pt_scores to the slot count: {NULL} is blank)
+  if r.ww_scores is distinct from array[b.best] or r.pt_scores[1] is not null or r.qa_score is not null then
+    raise exception 'conversion: expected {%}/{}/null, got %/%/%', b.best, r.ww_scores, r.pt_scores, r.qa_score; end if;
+  raise notice 'T4F OK: an empty standard Term 4 sheet converts in place and refills';
+end $$;
+
 -- Config sync leaves a Term 4 framework sheet alone. LAST on purpose: it pads
 -- the fixture's standard sheets for subject A to the config's max slots,
 -- which changes their grades.
