@@ -68,12 +68,15 @@ export type SlotMeta = {
  *                     so it arrives as a separate fact, not a column read.
  *  - `category`     — the student's enrolee category is one of `values`.
  *                     See `resolveCategory` for which column that reads.
+ *  - `all`          — every one of `conditions` holds, e.g. "late enrollee
+ *                     AND a new student".
  */
 export type SlotCondition =
   | { kind: 'filled'; column: string }
   | { kind: 'equals'; column: string; value: string }
   | { kind: 'lateEnrollee' }
-  | { kind: 'category'; values: readonly string[] };
+  | { kind: 'category'; values: readonly string[] }
+  | { kind: 'all'; conditions: readonly SlotCondition[] };
 
 /**
  * The enrolee categories that mean "this child is new to the school", and
@@ -199,6 +202,10 @@ export function isSlotApplicable(
       if (!category) return false;
       return condition.values.includes(category);
     }
+    case 'all':
+      return condition.conditions.every((c) =>
+        isSlotApplicable({ conditional: c }, facts)
+      );
   }
 }
 
@@ -377,7 +384,10 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     conditional: { kind: 'category', values: NEW_CATEGORIES },
     meta: null,
   },
-  // The last two only show for the students they actually apply to.
+  // The last two only show for the students they actually apply to — and,
+  // like the forms above, for NEW students only: the school's list names them
+  // under "New Students" and not under "Current Student" (Mr Ace, 2026-10-08;
+  // they had kept only their status rule when the category gate came in).
   {
     key: 'conditionalEnrolment',
     label: 'Conditional Enrolment',
@@ -387,9 +397,15 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     // applications row — callers merge it into the facts bag. A caller that
     // doesn't have it reads '' and the slot stays hidden.
     conditional: {
-      kind: 'equals',
-      column: 'applicationStatus',
-      value: 'Enrolled (Conditional)',
+      kind: 'all',
+      conditions: [
+        {
+          kind: 'equals',
+          column: 'applicationStatus',
+          value: 'Enrolled (Conditional)',
+        },
+        { kind: 'category', values: NEW_CATEGORIES },
+      ],
     },
     meta: null,
   },
@@ -398,7 +414,13 @@ export const DOCUMENT_SLOTS: DocumentSlot[] = [
     label: 'Late Enrolment Form',
     expires: false,
     group: 'school',
-    conditional: { kind: 'lateEnrollee' },
+    conditional: {
+      kind: 'all',
+      conditions: [
+        { kind: 'lateEnrollee' },
+        { kind: 'category', values: NEW_CATEGORIES },
+      ],
+    },
     meta: null,
   },
   // Expiring (student)

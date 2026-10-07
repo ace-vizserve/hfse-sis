@@ -243,6 +243,56 @@ describe('the enrolee-category gate', () => {
     }
   });
 
+  // Both are "(if applicable)" lines on the New Students list only (Mr Ace,
+  // 2026-10-08): a current student who is conditional or late gets neither.
+  it('shows Conditional Enrolment and the Late Enrolment Form to New students only', () => {
+    const conditional = slotFor('conditionalEnrolment');
+    const late = slotFor('lateEnrolmentForm');
+    for (const cat of NEW_CATEGORIES) {
+      expect(
+        isSlotApplicable(conditional, {
+          app: {
+            enroleeType: cat,
+            applicationStatus: 'Enrolled (Conditional)',
+          },
+        })
+      ).toBe(true);
+      expect(
+        isSlotApplicable(conditional, {
+          app: { enroleeType: cat, applicationStatus: 'Enrolled' },
+        })
+      ).toBe(false);
+      expect(
+        isSlotApplicable(late, {
+          app: { enroleeType: cat },
+          isLateEnrollee: true,
+        })
+      ).toBe(true);
+      expect(
+        isSlotApplicable(late, {
+          app: { enroleeType: cat },
+          isLateEnrollee: false,
+        })
+      ).toBe(false);
+    }
+    for (const cat of CURRENT_CATEGORIES) {
+      expect(
+        isSlotApplicable(conditional, {
+          app: {
+            enroleeType: cat,
+            applicationStatus: 'Enrolled (Conditional)',
+          },
+        })
+      ).toBe(false);
+      expect(
+        isSlotApplicable(late, {
+          app: { enroleeType: cat },
+          isLateEnrollee: true,
+        })
+      ).toBe(false);
+    }
+  });
+
   it('keeps Form 12 and the Signed Contract for everyone', () => {
     for (const key of BOTH_LISTS_KEYS) {
       for (const cat of [...NEW_CATEGORIES, ...CURRENT_CATEGORIES]) {
