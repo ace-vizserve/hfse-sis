@@ -137,7 +137,109 @@ insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, 
 values ((select v from fx where k='t4'),(select v from fx where k='sec'),(select v from fx where k='a'),
         (select v from fx where k='ca'),'term4_framework','{100}','{30}',100,0.50,0.20,0.30);
 
--- @@TASK2@@ (Task 2 appends its checks here)
+-- ── Task 2 checks ─────────────────────────────────────────────────────────
+-- Seed the T4 framework sheet (sheet for subject A was inserted above) the way
+-- the create route does: bare rows.
+insert into grade_entries (grading_sheet_id, section_student_id)
+select gs.id, ss.id from grading_sheets gs, section_students ss
+ where gs.sheet_type = 'term4_framework' and gs.section_id = (select v from fx where k='sec')
+   and ss.section_id = gs.section_id;
+
+create temp view t4 as
+  select ge.* from grade_entries ge join grading_sheets gs on gs.id = ge.grading_sheet_id
+   where gs.sheet_type = 'term4_framework' and gs.section_id = (select v from fx where k='sec');
+
+do $$
+declare r record;
+begin
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.ww_scores is distinct from '{87.5}'::numeric[] then
+    raise exception 'fill on insert: expected {87.5}, got %', r.ww_scores; end if;
+  raise notice 'T4F OK: best term average filled on create';
+
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b3';
+  if r.ww_scores[1] is not null then raise exception 'no earlier grades: expected null'; end if;
+  raise notice 'T4F OK: no earlier grades -> blank';
+end $$;
+
+-- Teacher enters rec 24/30 and task 70/100 => 43.75 + 16 + 21 = 80.75 -> 87
+update grade_entries set pt_scores = '{24}', qa_score = 70
+ where id = (select id from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1');
+do $$
+declare r record;
+begin
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.quarterly_grade <> 87 then raise exception 'worked example: expected 87, got %', r.quarterly_grade; end if;
+  raise notice 'T4F OK: 50/20/30 through the usual conversion';
+end $$;
+
+-- Nobody types the best term average
+do $$
+begin
+  begin
+    update grade_entries set ww_scores = '{50}'
+     where id = (select id from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1');
+    raise exception 'typed best term average was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: typed best term average refused';
+  end;
+  begin
+    update grade_entries set pt_excused = '{1}'
+     where id = (select id from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1');
+    raise exception 'excusal was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: excusing refused';
+  end;
+end $$;
+
+-- Lock the T4 sheet, then change s1's T3 B grade 80 -> 100 (quarterly 100)
+update grading_sheets set is_locked = true where sheet_type = 'term4_framework'
+   and section_id = (select v from fx where k='sec');
+update grade_entries ge set ww_scores = '{100}', pt_scores = '{100}', qa_score = 100
+  from grading_sheets gs
+ where gs.id = ge.grading_sheet_id and gs.term_id = (select v from fx where k='t3')
+   and gs.subject_id = (select v from fx where k='b')
+   and ge.section_student_id = '00000000-0000-4000-8000-0000000000b1';
+do $$
+declare r record;
+begin
+  -- T3 avg now (87 + 100)/2 = 93.5 -> 46.75 + 16 + 21 = 83.75 -> 89
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.ww_scores is distinct from '{93.5}'::numeric[] or r.quarterly_grade <> 89 then
+    raise exception 'cascade: expected {93.5}/89, got %/%', r.ww_scores, r.quarterly_grade; end if;
+  if not exists (select 1 from grade_audit_log where grade_entry_id = r.id
+                  and field_changed = 'ww_scores[0]' and old_value = '87.5' and new_value = '93.5') then
+    raise exception 'cascade: no grade_audit_log row'; end if;
+  raise notice 'T4F OK: T1-T3 change flows into a locked T4 sheet, audited';
+end $$;
+
+-- After the cascade moved it, a recommendation save (PT only, as the grid
+-- sends it) succeeds and leaves the new best term average in place
+update grading_sheets set is_locked = false where sheet_type = 'term4_framework'
+   and section_id = (select v from fx where k='sec');
+update grade_entries set pt_scores = '{27}'
+ where id = (select id from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1');
+do $$
+declare r record;
+begin
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.ww_scores is distinct from '{93.5}'::numeric[] or r.pt_scores is distinct from '{27}'::numeric[] then
+    raise exception 'save after cascade: expected {93.5}/{27}, got %/%', r.ww_scores, r.pt_scores; end if;
+  raise notice 'T4F OK: recommendation save after a cascade keeps the new best term average';
+end $$;
+
+-- Bulk create skips an existing Term 4 framework sheet.
+-- create_grading_sheets_for_section(p_section_id uuid) (migration 083) covers
+-- every subject x every term of the section's AY, so it is called once.
+select create_grading_sheets_for_section((select v from fx where k='sec'));
+do $$
+begin
+  if (select count(*) from grading_sheets where section_id = (select v from fx where k='sec')
+        and term_id = (select v from fx where k='t4') and subject_id = (select v from fx where k='a')) <> 1
+     or not exists (select 1 from grading_sheets where section_id = (select v from fx where k='sec')
+        and term_id = (select v from fx where k='t4') and subject_id = (select v from fx where k='a')
+        and sheet_type = 'term4_framework' and ww_totals = '{100}' and pt_totals = '{30}') then
+    raise exception 'bulk create disturbed the Term 4 framework sheet'; end if;
+  raise notice 'T4F OK: bulk create leaves Term 4 framework sheets alone';
+end $$;
 
 -- Config sync leaves a Term 4 framework sheet alone. LAST on purpose: it pads
 -- the fixture's standard sheets for subject A to the config's max slots,
