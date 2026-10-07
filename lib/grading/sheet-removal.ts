@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { isTerm4Framework } from '@/lib/grading/term4-framework';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
 // Can this grading sheet be removed? (KD #131 update, 2026-09-29.)
@@ -28,22 +27,6 @@ import { fetchAllPages } from '@/lib/supabase/paginate';
 // is a write that leaves history — `grade_audit_log` after lock, an
 // `audit_log` `entry.update` row before it (migration 152/165 trigger) — and
 // the history check above refuses that sheet. The flag itself is ignored here.
-//
-// ⚠ TERM 4 FRAMEWORK SHEETS (KD #230). Their WW slot is the best term average
-// and the database fills it on every row (migration 184), and the derived
-// figures follow from it — so on those sheets the WW slot and the derived
-// figures are not "entered"; only the recommendation (PT), the exam, a letter,
-// an excusal and person-written history count. The fill trigger's own
-// `grade_audit_log` rows (`changed_by = 'system: best term average'`) are not
-// history, on any sheet.
-
-/** `grade_audit_log.changed_by` of the rows the best-term fill writes (migration 184). */
-export const BEST_TERM_SYSTEM_ACTOR = 'system: best term average';
-
-export type EnteredDataOptions = {
-  /** A Term 4 framework sheet: the system-filled WW slot and derived figures are ignored. */
-  framework?: boolean;
-};
 
 export type GradeEntryValues = {
   ww_scores?: (number | string | null)[] | null;
@@ -67,21 +50,16 @@ export const ENTRY_VALUE_COLUMNS =
 const present = (v: unknown) => v !== null && v !== undefined;
 
 /** True when this one row holds anything at all. A 0 counts. */
-export function entryHasEnteredData(
-  e: GradeEntryValues,
-  opts: EnteredDataOptions = {}
-): boolean {
-  const framework = opts.framework === true;
-  if (!framework && (e.ww_scores ?? []).some(present)) return true;
+export function entryHasEnteredData(e: GradeEntryValues): boolean {
+  if ((e.ww_scores ?? []).some(present)) return true;
   if ((e.pt_scores ?? []).some(present)) return true;
-  if (present(e.qa_score)) return true;
   if (
-    !framework &&
-    (present(e.ww_ps) ||
-      present(e.pt_ps) ||
-      present(e.qa_ps) ||
-      present(e.initial_grade) ||
-      present(e.quarterly_grade))
+    present(e.qa_score) ||
+    present(e.ww_ps) ||
+    present(e.pt_ps) ||
+    present(e.qa_ps) ||
+    present(e.initial_grade) ||
+    present(e.quarterly_grade)
   )
     return true;
   if (typeof e.letter_grade === 'string' && e.letter_grade.trim() !== '')
@@ -93,11 +71,8 @@ export function entryHasEnteredData(
 }
 
 /** True when any row on the sheet holds anything. No rows = nothing entered. */
-export function sheetHasEnteredData(
-  entries: GradeEntryValues[],
-  opts: EnteredDataOptions = {}
-): boolean {
-  return entries.some((e) => entryHasEnteredData(e, opts));
+export function sheetHasEnteredData(entries: GradeEntryValues[]): boolean {
+  return entries.some(entryHasEnteredData);
 }
 
 export type SheetRemovalBlock = 'locked' | 'entered' | 'history';
@@ -138,18 +113,11 @@ const CHUNK = 150;
  */
 export async function loadSheetRemovability(
   service: SupabaseClient,
-  sheets: Array<{
-    id: string;
-    is_locked: boolean;
-    sheet_type?: string | null;
-  }>
+  sheets: Array<{ id: string; is_locked: boolean }>
 ): Promise<Map<string, SheetRemovability & { entryCount: number }>> {
   const out = new Map<string, SheetRemovability & { entryCount: number }>();
   if (sheets.length === 0) return out;
   const ids = sheets.map((s) => s.id);
-  const optsFor = (s: { sheet_type?: string | null }): EnteredDataOptions => ({
-    framework: isTerm4Framework(s.sheet_type),
-  });
 
   // Paged: many sheets at once (a section-term) can pass the server's
   // 1,000-row cap, and a missing row would make a sheet with marks look
@@ -172,8 +140,7 @@ export async function loadSheetRemovability(
 
   // History is only worth asking about for a sheet that passed the cheap checks.
   const candidates = sheets.filter(
-    (s) =>
-      !s.is_locked && !sheetHasEnteredData(bySheet.get(s.id) ?? [], optsFor(s))
+    (s) => !s.is_locked && !sheetHasEnteredData(bySheet.get(s.id) ?? [])
   );
   const withHistory = new Set<string>();
   if (candidates.length > 0) {
@@ -185,10 +152,8 @@ export async function loadSheetRemovability(
     const [gal, crs] = await Promise.all([
       service
         .from('grade_audit_log')
-        .select('grading_sheet_id, changed_by')
+        .select('grading_sheet_id')
         .in('grading_sheet_id', candidateIds)
-        // The best-term fill's own rows are not history (KD #230).
-        .neq('changed_by', BEST_TERM_SYSTEM_ACTOR)
         .limit(1000),
       service
         .from('grade_change_requests')
@@ -198,12 +163,8 @@ export async function loadSheetRemovability(
     ]);
     if (gal.error) throw new Error(gal.error.message);
     if (crs.error) throw new Error(crs.error.message);
-    for (const r of (gal.data ?? []) as {
-      grading_sheet_id: string;
-      changed_by?: string | null;
-    }[])
-      if (r.changed_by !== BEST_TERM_SYSTEM_ACTOR)
-        withHistory.add(r.grading_sheet_id);
+    for (const r of (gal.data ?? []) as { grading_sheet_id: string }[])
+      withHistory.add(r.grading_sheet_id);
     for (const r of (crs.data ?? []) as { grading_sheet_id: string }[])
       withHistory.add(r.grading_sheet_id);
 
@@ -230,7 +191,7 @@ export async function loadSheetRemovability(
     out.set(s.id, {
       ...decideSheetRemoval({
         isLocked: s.is_locked,
-        hasEnteredData: sheetHasEnteredData(rows, optsFor(s)),
+        hasEnteredData: sheetHasEnteredData(rows),
         hasHistory: withHistory.has(s.id),
       }),
       entryCount: rows.length,

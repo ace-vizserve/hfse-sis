@@ -59,10 +59,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  TERM4_FRAMEWORK_LABELS,
-  TERM4_FRAMEWORK_SHAPE,
-} from '@/lib/grading/term4-framework';
 import { NewSheetSchema, type NewSheetInput } from '@/lib/schemas/new-sheet';
 import { cn } from '@/lib/utils';
 
@@ -137,7 +133,6 @@ export function NewSheetForm({
       term_id: defaultTermId,
       section_id: '',
       subject_id: '',
-      sheet_type: 'standard',
       ww_slots: 3,
       ww_each: 10,
       pt_slots: 3,
@@ -150,8 +145,6 @@ export function NewSheetForm({
   const termId = form.watch('term_id');
   const sectionId = form.watch('section_id');
   const subjectId = form.watch('subject_id');
-  const sheetType = form.watch('sheet_type');
-  const isFramework = sheetType === 'term4_framework';
   const wwSlots = form.watch('ww_slots');
   const wwEach = form.watch('ww_each');
   const ptSlots = form.watch('pt_slots');
@@ -201,7 +194,6 @@ export function NewSheetForm({
   const selectedSection = sections.find((s) => s.id === sectionId);
   const selectedSubject = subjects.find((s) => s.id === subjectId);
   const selectedTerm = terms.find((t) => t.id === termId);
-  const isTerm4 = selectedTerm?.term_number === 4;
   const selectedLevel = first(selectedSection?.level ?? null);
 
   const wwTotal = (wwSlots || 0) * (wwEach || 0);
@@ -219,18 +211,9 @@ export function NewSheetForm({
           term_id: values.term_id,
           section_id: values.section_id,
           subject_id: values.subject_id,
-          sheet_type: values.sheet_type,
-          ...(values.sheet_type === 'term4_framework'
-            ? {
-                ww_totals: TERM4_FRAMEWORK_SHAPE.ww_totals,
-                pt_totals: TERM4_FRAMEWORK_SHAPE.pt_totals,
-                qa_total: TERM4_FRAMEWORK_SHAPE.qa_total,
-              }
-            : {
-                ww_totals: Array(values.ww_slots).fill(values.ww_each),
-                pt_totals: Array(values.pt_slots).fill(values.pt_each),
-                qa_total: values.qa_total,
-              }),
+          ww_totals: Array(values.ww_slots).fill(values.ww_each),
+          pt_totals: Array(values.pt_slots).fill(values.pt_each),
+          qa_total: values.qa_total,
           teacher_name: values.teacher_name?.trim() || null,
         })
       ),
@@ -283,16 +266,7 @@ export function NewSheetForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Term</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={(v) => {
-                        field.onChange(v);
-                        // The Term 4 framework is offered on Term 4 only.
-                        if (terms.find((t) => t.id === v)?.term_number !== 4) {
-                          form.setValue('sheet_type', 'standard');
-                        }
-                      }}
-                    >
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="— pick a term —" />
@@ -364,13 +338,7 @@ export function NewSheetForm({
                     <FormLabel>Subject</FormLabel>
                     <Select
                       value={field.value}
-                      onValueChange={(v) => {
-                        field.onChange(v);
-                        const picked = subjects.find((s) => s.id === v);
-                        if (picked && !picked.is_examinable) {
-                          form.setValue('sheet_type', 'standard');
-                        }
-                      }}
+                      onValueChange={field.onChange}
                       disabled={!sectionId}
                     >
                       <FormControl>
@@ -403,40 +371,6 @@ export function NewSheetForm({
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name="sheet_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sheet type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="standard">Standard</SelectItem>
-                        {isTerm4 && (
-                          <SelectItem
-                            value="term4_framework"
-                            disabled={selectedSubject?.is_examinable === false}
-                          >
-                            Term 4 framework
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Term 4 framework: 50% best term average, 20%
-                      teacher&apos;s recommendation, 30% revision task or mock
-                      exam. Term 4 only, for subjects with a number grade.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </CardContent>
           </Card>
 
@@ -453,81 +387,48 @@ export function NewSheetForm({
               </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
-              {isFramework ? (
-                <dl className="divide-y divide-border rounded-lg border border-border">
-                  {[
-                    [
-                      TERM4_FRAMEWORK_LABELS.ww,
-                      'Filled in from the best of Terms 1–3',
-                      '50%',
-                    ],
-                    [TERM4_FRAMEWORK_LABELS.pt, 'Out of 30', '20%'],
-                    [TERM4_FRAMEWORK_LABELS.qa, 'Out of 100', '30%'],
-                  ].map(([name, detail, weight]) => (
-                    <div
-                      key={name}
-                      className="flex items-baseline justify-between gap-4 px-4 py-3"
-                    >
-                      <div>
-                        <dt className="text-sm font-medium text-foreground">
-                          {name}
-                        </dt>
-                        <dd className="text-xs text-muted-foreground">
-                          {detail}
-                        </dd>
-                      </div>
-                      <dd className="font-mono text-sm tabular-nums text-foreground">
-                        {weight}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <>
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <NumberField
-                      control={form.control}
-                      name="ww_slots"
-                      label="Written Works · slots"
-                      description="Max 5 per project rules."
-                      min={0}
-                      max={5}
-                    />
-                    <NumberField
-                      control={form.control}
-                      name="ww_each"
-                      label="Written Works · max each"
-                      description="Highest score a student can earn per slot."
-                      min={1}
-                    />
-                    <NumberField
-                      control={form.control}
-                      name="pt_slots"
-                      label="Performance Tasks · slots"
-                      description="Max 5 per project rules."
-                      min={0}
-                      max={5}
-                    />
-                    <NumberField
-                      control={form.control}
-                      name="pt_each"
-                      label="Performance Tasks · max each"
-                      description="Highest score a student can earn per slot."
-                      min={1}
-                    />
-                  </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <NumberField
+                  control={form.control}
+                  name="ww_slots"
+                  label="Written Works · slots"
+                  description="Max 5 per project rules."
+                  min={0}
+                  max={5}
+                />
+                <NumberField
+                  control={form.control}
+                  name="ww_each"
+                  label="Written Works · max each"
+                  description="Highest score a student can earn per slot."
+                  min={1}
+                />
+                <NumberField
+                  control={form.control}
+                  name="pt_slots"
+                  label="Performance Tasks · slots"
+                  description="Max 5 per project rules."
+                  min={0}
+                  max={5}
+                />
+                <NumberField
+                  control={form.control}
+                  name="pt_each"
+                  label="Performance Tasks · max each"
+                  description="Highest score a student can earn per slot."
+                  min={1}
+                />
+              </div>
 
-                  <div className="h-px bg-border" />
+              <div className="h-px bg-border" />
 
-                  <NumberField
-                    control={form.control}
-                    name="qa_total"
-                    label="Quarterly Assessment · max"
-                    description="The single QA exam is one score out of this max."
-                    min={1}
-                  />
-                </>
-              )}
+              <NumberField
+                control={form.control}
+                name="qa_total"
+                label="Quarterly Assessment · max"
+                description="The single QA exam is one score out of this max."
+                min={1}
+              />
             </CardContent>
           </Card>
 
@@ -721,39 +622,17 @@ export function NewSheetForm({
                 <div className="h-px bg-border" />
 
                 <div className="grid grid-cols-3 gap-3">
-                  {isFramework ? (
-                    <>
-                      <Metric
-                        label="Best term average"
-                        value="50%"
-                        sub="best of Terms 1–3"
-                      />
-                      <Metric
-                        label="Recommendation"
-                        value="20%"
-                        sub="out of 30"
-                      />
-                      <Metric
-                        label="Revision task"
-                        value="30%"
-                        sub="out of 100"
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <Metric
-                        label="WW"
-                        value={`${wwSlots}×${wwEach}`}
-                        sub={`= ${wwTotal}`}
-                      />
-                      <Metric
-                        label="PT"
-                        value={`${ptSlots}×${ptEach}`}
-                        sub={`= ${ptTotal}`}
-                      />
-                      <Metric label="QA" value={`${qaTotal}`} sub="max" />
-                    </>
-                  )}
+                  <Metric
+                    label="WW"
+                    value={`${wwSlots}×${wwEach}`}
+                    sub={`= ${wwTotal}`}
+                  />
+                  <Metric
+                    label="PT"
+                    value={`${ptSlots}×${ptEach}`}
+                    sub={`= ${ptTotal}`}
+                  />
+                  <Metric label="QA" value={`${qaTotal}`} sub="max" />
                 </div>
 
                 <Button

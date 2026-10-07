@@ -3,7 +3,6 @@ import { computeQuarterly } from '@/lib/compute/quarterly';
 import {
   TERM4_FRAMEWORK_SHAPE,
   isTerm4Framework,
-  parseSheetType,
 } from '@/lib/grading/term4-framework';
 
 describe('Term 4 framework', () => {
@@ -22,14 +21,6 @@ describe('Term 4 framework', () => {
     });
     expect(out.initial_grade).toBeCloseTo(80, 6);
     expect(out.quarterly_grade).toBe(87);
-  });
-
-  it('parses the sheet type', () => {
-    expect(parseSheetType(undefined)).toBe('standard');
-    expect(parseSheetType(null)).toBe('standard');
-    expect(parseSheetType('term4_framework')).toBe('term4_framework');
-    expect(parseSheetType('holistic')).toBeNull();
-    expect(parseSheetType(4)).toBeNull();
   });
 
   it('recognises the type', () => {

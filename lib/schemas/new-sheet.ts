@@ -4,7 +4,6 @@ export const NewSheetSchema = z.object({
   term_id: z.string().uuid('Pick a term'),
   section_id: z.string().uuid('Pick a section'),
   subject_id: z.string().uuid('Pick a subject'),
-  sheet_type: z.enum(['standard', 'term4_framework']),
   ww_slots: z
     .number()
     .int('Must be a whole number')

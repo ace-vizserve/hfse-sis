@@ -29,13 +29,6 @@ export const TERM4_FRAMEWORK_LABELS = {
   qa: 'Revision task / Mock exam',
 } as const;
 
-export function parseSheetType(v: unknown): SheetType | null {
-  if (v == null) return 'standard';
-  return typeof v === 'string' && (SHEET_TYPES as readonly string[]).includes(v)
-    ? (v as SheetType)
-    : null;
-}
-
 export function isTerm4Framework(t: string | null | undefined): boolean {
   return t === 'term4_framework';
 }
