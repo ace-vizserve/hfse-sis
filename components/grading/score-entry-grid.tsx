@@ -91,6 +91,11 @@ import {
 import { FirstScoreLabelDialog } from './first-score-label-dialog';
 import { ExcusedSlotsDialog } from './excused-slots-dialog';
 import { isRowComplete, missingScoreCount } from '@/lib/grading/row-complete';
+import {
+  isTerm4Framework,
+  TERM4_FRAMEWORK_LABELS,
+  type SheetType,
+} from '@/lib/grading/term4-framework';
 
 export type GradeRow = {
   entry_id: string;
@@ -128,6 +133,13 @@ type Props = {
   requireApproval?: boolean;
   /** Registrar and above: the student name opens "Counted assessments". */
   canExcuse?: boolean;
+  /** 'term4_framework': the WW column is the best Term 1-3 average, filled by the database. */
+  sheetType?: SheetType;
+  /** Framework sheets: which term each best average came from, by section_student_id. */
+  bestTermSource?: Record<
+    string,
+    { best: number | null; termNumber: number | null }
+  >;
   sheetLocked?: boolean;
   /** Teacher-authored activity metadata per column. */
   slotLabels?: SlotLabels;
@@ -193,7 +205,9 @@ export function ScoreEntryGrid({
   rows: initialRows,
   readOnly = false,
   requireApproval = false,
-  canExcuse = false,
+  canExcuse: canExcuseProp = false,
+  sheetType = 'standard',
+  bestTermSource,
   sheetLocked = false,
   slotLabels,
   wwWeight,
@@ -207,6 +221,12 @@ export function ScoreEntryGrid({
   currentTermLabel = 'Term',
   fullScreenTitle,
 }: Props) {
+  const t4f = isTerm4Framework(sheetType);
+  // A framework row has nothing to excuse: its WW slot is filled by the database.
+  const canExcuse = canExcuseProp && !t4f;
+  const wwHeader = t4f ? TERM4_FRAMEWORK_LABELS.ww : 'Written Works';
+  const ptHeader = t4f ? TERM4_FRAMEWORK_LABELS.pt : 'Performance Tasks';
+  const qaHeader = t4f ? TERM4_FRAMEWORK_LABELS.qa : 'Quarterly Assessment';
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -993,6 +1013,7 @@ export function ScoreEntryGrid({
           qaPct={qaPct}
           wwScored={wwScored}
           ptScored={ptScored}
+          sheetType={sheetType}
           canEditLabels={canEditLabels}
           saving={savingLabels}
           onSlotChange={onSlotChange}
@@ -1071,7 +1092,7 @@ export function ScoreEntryGrid({
                     colSpan={wwLen + 3}
                     className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                   >
-                    Written Works ({wwPct}%)
+                    {wwHeader} ({wwPct}%)
                   </TableHead>
                 )}
                 {ptLen > 0 && (
@@ -1079,14 +1100,14 @@ export function ScoreEntryGrid({
                     colSpan={ptLen + 3}
                     className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                   >
-                    Performance Tasks ({ptPct}%)
+                    {ptHeader} ({ptPct}%)
                   </TableHead>
                 )}
                 <TableHead
                   colSpan={3}
                   className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                 >
-                  Quarterly Assessment ({qaPct}%)
+                  {qaHeader} ({qaPct}%)
                 </TableHead>
                 <TableHead
                   rowSpan={3}
@@ -1119,7 +1140,7 @@ export function ScoreEntryGrid({
                     key={`ww-lbl-${i}`}
                     className="text-center font-mono text-xs font-semibold text-foreground"
                   >
-                    W{i + 1}
+                    {t4f ? 'Avg' : `W${i + 1}`}
                   </TableHead>
                 ))}
                 <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
@@ -1138,7 +1159,7 @@ export function ScoreEntryGrid({
                         key={`pt-lbl-${i}`}
                         className="text-center font-mono text-xs font-semibold text-foreground"
                       >
-                        PT{i + 1}
+                        {t4f ? 'Rec' : `PT${i + 1}`}
                       </TableHead>
                     ))}
                     <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
@@ -1294,7 +1315,15 @@ export function ScoreEntryGrid({
                     {/* WW inputs */}
                     {wwTotals.map((max, i) => (
                       <TableCell key={`ww-${i}`} className="px-1 py-1">
-                        {r.ww_excused?.includes(i + 1) ? (
+                        {t4f ? (
+                          <BestTermCell
+                            value={r.ww_scores[0] ?? null}
+                            termNumber={
+                              bestTermSource?.[r.section_student_id]
+                                ?.termNumber ?? null
+                            }
+                          />
+                        ) : r.ww_excused?.includes(i + 1) ? (
                           <ExcusedCell />
                         ) : (
                           <ScoreInput
@@ -1333,7 +1362,7 @@ export function ScoreEntryGrid({
                         )}
                       </TableCell>
                     ))}
-                    <ComputedCell value={wwTotal} dp={0} />
+                    <ComputedCell value={wwTotal} dp={t4f ? 1 : 0} />
                     <ComputedCell value={r.ww_ps} />
                     <ComputedCell value={wwWs} groupEnd />
 
@@ -1707,12 +1736,14 @@ function ScoringGuide({
   qaPct,
   wwScored,
   ptScored,
+  sheetType = 'standard',
   canEditLabels = false,
   saving = false,
   onSlotChange,
   onQaChange,
   commit,
 }: {
+  sheetType?: SheetType;
   wwTotals: number[];
   ptTotals: number[];
   qaTotal: number | null;
@@ -1740,6 +1771,10 @@ function ScoringGuide({
   // fixed-height row regardless of roster size or slot count (KD-pending:
   // Activity labels drawer redesign).
   const [open, setOpen] = useState(false);
+  const t4f = isTerm4Framework(sheetType);
+  const wwHeader = t4f ? TERM4_FRAMEWORK_LABELS.ww : 'Written Works';
+  const ptHeader = t4f ? TERM4_FRAMEWORK_LABELS.pt : 'Performance Tasks';
+  const qaHeader = t4f ? TERM4_FRAMEWORK_LABELS.qa : 'Quarterly Assessment';
 
   const effectiveWw = (i: number): SlotMeta | null => {
     return labels.ww[i] ?? null;
@@ -1830,13 +1865,13 @@ function ScoringGuide({
           {wwTotals.length > 0 && (
             <div className="px-4 py-4">
               <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Written Works ({wwPct}%)
+                {wwHeader} ({wwPct}%)
               </p>
               <div className="space-y-1.5">
                 {wwTotals.map((max, i) => (
                   <ActivityRow
                     key={i}
-                    code={`W${i + 1}`}
+                    code={t4f ? 'Avg' : `W${i + 1}`}
                     max={max}
                     meta={effectiveWw(i)}
                     needsLabel={needsLabelWw(i)}
@@ -1852,13 +1887,13 @@ function ScoringGuide({
           {ptTotals.length > 0 && (
             <div className="px-4 py-4">
               <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Performance Tasks ({ptPct}%)
+                {ptHeader} ({ptPct}%)
               </p>
               <div className="space-y-1.5">
                 {ptTotals.map((max, i) => (
                   <ActivityRow
                     key={i}
-                    code={`PT${i + 1}`}
+                    code={t4f ? 'Rec' : `PT${i + 1}`}
                     max={max}
                     meta={effectivePt(i)}
                     needsLabel={needsLabelPt(i)}
@@ -1873,7 +1908,7 @@ function ScoringGuide({
           )}
           <div className="px-4 py-4">
             <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Quarterly Assessment ({qaPct}%)
+              {qaHeader} ({qaPct}%)
             </p>
             <ActivityRow
               code="QA"
@@ -2149,6 +2184,35 @@ function ExcusedCell() {
     <HoverHint hint="Excused for this student. It doesn't count toward their score or total.">
       <span className="flex h-8 items-center justify-center rounded-md bg-muted text-[11px] font-medium text-muted-foreground">
         N/A
+      </span>
+    </HoverHint>
+  );
+}
+
+// The Term 4 framework sheet's WW slot: the student's best Term 1-3 average,
+// filled by the database. Read-only, so no edit can send ww_scores.
+function BestTermCell({
+  value,
+  termNumber,
+}: {
+  value: number | null;
+  termNumber: number | null;
+}) {
+  if (value == null) {
+    return (
+      <HoverHint hint="This student has no Term 1–3 grades yet, so there is no best term average.">
+        <span className="flex h-8 items-center justify-center rounded-md bg-muted px-2 text-[11px] font-medium text-muted-foreground">
+          No earlier grades
+        </span>
+      </HoverHint>
+    );
+  }
+  return (
+    <HoverHint
+      hint={`Term ${termNumber} average, the best of Terms 1–3. Filled in automatically.`}
+    >
+      <span className="flex h-8 items-center justify-end rounded-md bg-muted/60 px-2 font-mono text-xs tabular-nums text-foreground">
+        {value.toFixed(1)}
       </span>
     </HoverHint>
   );

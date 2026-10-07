@@ -54,6 +54,10 @@ import {
 } from '@/lib/change-requests/filing-route';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { isRowComplete } from '@/lib/grading/row-complete';
+import {
+  isTerm4Framework,
+  type SheetType,
+} from '@/lib/grading/term4-framework';
 import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { RequestEditButton } from './request-edit-button';
 import { RemoveSheetButton } from './remove-sheet-button';
@@ -166,7 +170,7 @@ export default async function GradingSheetPage({
   const { data: sheet } = await supabase
     .from('grading_sheets')
     .select(
-      `id, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
+      `id, sheet_type, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
        ww_weight, pt_weight, qa_weight,
        term:terms(id, term_number, label),
        subject:subjects(id, code, name, is_examinable),
@@ -573,6 +577,34 @@ export default async function GradingSheetPage({
   const ptW = Math.round(weights.pt_weight * 100);
   const qaW = Math.round(weights.qa_weight * 100);
 
+  // Term 4 framework sheet: which term each student's best average came from.
+  // The RPC is service-role only; every auth check above has already passed.
+  const isFramework = isTerm4Framework(sheet.sheet_type);
+  let bestTermSource:
+    | Record<string, { best: number | null; termNumber: number | null }>
+    | undefined;
+  if (isFramework) {
+    const { data } = await createServiceClient().rpc(
+      'best_term_averages_for_sheet',
+      { p_sheet_id: sheet.id }
+    );
+    bestTermSource = Object.fromEntries(
+      (data ?? []).map(
+        (r: {
+          section_student_id: string;
+          best: number | null;
+          term_number: number | null;
+        }) => [
+          r.section_student_id,
+          {
+            best: r.best == null ? null : Number(r.best),
+            termNumber: r.term_number,
+          },
+        ]
+      )
+    );
+  }
+
   return (
     <PageShell>
       <Link
@@ -657,7 +689,7 @@ export default async function GradingSheetPage({
               }))}
             />
           )}
-          {canManage && (
+          {canManage && !isFramework && (
             <TotalsEditor
               sheetId={sheet.id}
               wwTotals={(sheet.ww_totals ?? []) as number[]}
@@ -926,7 +958,9 @@ export default async function GradingSheetPage({
         rows={rows}
         readOnly={readOnly}
         requireApproval={requireApproval}
-        canExcuse={canManage && isExaminable}
+        canExcuse={canManage && isExaminable && !isFramework}
+        sheetType={sheet.sheet_type as SheetType}
+        bestTermSource={bestTermSource}
         sheetLocked={sheet.is_locked}
         slotLabels={
           (sheet.slot_labels as {
