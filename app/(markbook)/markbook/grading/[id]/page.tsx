@@ -61,6 +61,7 @@ import {
 import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { RequestEditButton } from './request-edit-button';
 import { RemoveSheetButton } from './remove-sheet-button';
+import { SwitchSheetTypeButton } from './switch-sheet-type-button';
 
 /**
  * Human label for a change-request target field, e.g. WW1 / PT2 / QA /
@@ -580,6 +581,26 @@ export default async function GradingSheetPage({
   // Term 4 framework sheet: which term each student's best average came from.
   // The RPC is service-role only; every auth check above has already passed.
   const isFramework = isTerm4Framework(sheet.sheet_type);
+
+  // "Switch sheet type" (KD #230 update, 2026-10-08): offered to an oversight
+  // viewer on an unlocked sheet — to Term 4 framework only on an examinable
+  // Term 4 sheet. The confirm names how many students' entered scores the
+  // switch clears; on a framework sheet the best term average is the
+  // system's, so only the recommendation and the exam count.
+  const switchTo: SheetType | null =
+    !canManage || sheet.is_locked
+      ? null
+      : isFramework
+        ? 'standard'
+        : isExaminable && term?.term_number === 4
+          ? 'term4_framework'
+          : null;
+  const studentsWithScores = rows.filter(
+    (r) =>
+      (!isFramework && r.ww_scores.some((v) => v != null)) ||
+      r.pt_scores.some((v) => v != null) ||
+      r.qa_score != null
+  ).length;
   let bestTermSource:
     | Record<string, { best: number | null; termNumber: number | null }>
     | undefined;
@@ -718,6 +739,13 @@ export default async function GradingSheetPage({
           )}
           {canManage && (
             <LockToggle sheetId={sheet.id} isLocked={sheet.is_locked} />
+          )}
+          {switchTo && (
+            <SwitchSheetTypeButton
+              sheetId={sheet.id}
+              to={switchTo}
+              studentsWithScores={studentsWithScores}
+            />
           )}
           {canManage && removable && (
             <RemoveSheetButton
