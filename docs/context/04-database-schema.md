@@ -167,6 +167,10 @@ CREATE TABLE grading_sheets (
 );
 ```
 
+**`sheet_type` (migration 183, KD #230, not yet applied to production):** `TEXT NOT NULL DEFAULT 'standard'`, `'standard'` | `'term4_framework'`. A CHECK pins the framework shape (`ww_totals {100}`, `pt_totals {30}`, `qa_total 100`, weights .50 / .20 / .30). Functions added in 183 (service_role only): `student_best_term_average(student, ay)` — the best of the student's T1–T3 term averages (examinable subjects, N/A skipped, ties to the later term, one row per subject per term, non-withdrawn enrolment wins) — and `best_term_averages_for_sheet(sheet)`. `sync_grading_sheets_from_config` skips framework sheets.
+
+**Triggers on `grade_entries` (migration 184):** BEFORE `grade_entries_best_term_fill_trg` (sorts before the derive trigger) fills `ww_scores[1]` on framework sheets, refuses a typed value or an excusal (SQLSTATE `HFT4F`), and writes a `grade_audit_log` row (`system: best term average`, `ww_scores[0]`) when the value moves. AFTER `grade_entries_best_term_cascade_trg` (no column filter) touches the student's framework entries when a T1–T3 `quarterly_grade` / `is_na` changes; skips framework source sheets and null-grade inserts. `grade_entries_audit()` is redefined to skip the system-owned WW slot on framework sheets. Gap: the derived `quarterly_grade` change on a locked T4 row is not itself logged to `grade_audit_log`.
+
 ### `grade_entries`
 
 One row per student per grading sheet. Stores raw scores as arrays.

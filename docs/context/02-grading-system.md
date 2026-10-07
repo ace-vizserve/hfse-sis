@@ -223,3 +223,26 @@ These subjects do not use the WW/PT/QA formula and have no Subject Overall, Subj
 ## Term-over-Term Comparison
 
 The grading sheets show the previous term's grade alongside the current term. If the difference exceeds a configurable threshold (positive or negative), the cell is highlighted for teacher deliberation. The system should support this comparison view.
+
+## Term 4 framework sheets (KD #230)
+
+A Secondary 4 Term 4 sheet can be created as a **Term 4 framework** sheet (create form → "Sheet type"), following the school's "Term 4 Grading Framework for Secondary 4 Students" ahead of O-Level study leave. It reuses the fixed WW / PT / QA shape; the grade formula itself is unchanged.
+
+| Slot | Meaning                   | Out of | Weight | Entered by                         |
+| ---- | ------------------------- | ------ | ------ | ---------------------------------- |
+| WW   | Best term average         | 100    | 50%    | The system (read-only on the grid) |
+| PT   | Teacher's recommendation  | 30     | 20%    | Teacher                            |
+| QA   | Revision task / mock exam | 100    | 30%    | Teacher                            |
+
+**Best term average** = the highest of the student's T1, T2 and T3 term averages. A term average is the mean of that term's quarterly grades over examinable subjects only (the General Average set), to 1 decimal. A term where the student is N/A is skipped (late enrollees); ties go to the later term; a student who moved class counts a subject once per term (the non-withdrawn enrolment's row wins). The value is the same in every subject for that student, and updates by itself — locked sheets included — when an earlier-term grade changes. A student with no T1–T3 grades shows "No earlier grades" and does not count as graded.
+
+**Worked example.** Best term average 86, recommendation 24/30, revision task 70/100:
+
+```
+WW  86/100 × 50  = 43
+PT  24/30  × 20  = 16
+QA  70/100 × 30  = 21
+Initial grade    = 80  → DepEd transmutation → 87
+```
+
+Final Grade (T1 20 / T2 20 / T3 20 / T4 40) and the General Average are unchanged. Non-examinable subjects are not affected.
