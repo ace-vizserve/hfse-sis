@@ -19,7 +19,7 @@
 -- new row holds a score, it keeps the old derived figures even if the UPDATE
 -- nulls them. So a row whose scores were already empty but which still
 -- carried a grade (an imported grade, say) would keep it. Step 5 handles
--- exactly those rows with a two-step write: a 0 exam score (the row now holds
+-- exactly those rows: the reset gives them a 0 exam score (the row now holds
 -- a score, so the grade is computed), then back to blank (the old row held a
 -- score, so the grade is recomputed from nothing → NULL).
 
@@ -73,13 +73,18 @@ begin
     end if;
   end if;
 
-  -- 2. What is about to be cleared.
+  -- 2. What is about to be cleared — every row the switch changes: a score,
+  -- a derived figure (an imported or stale grade the reset will null), or an
+  -- excusal. Nothing goes without a record.
   select coalesce(jsonb_agg(jsonb_build_object(
            'entry_id',           ge.id,
            'section_student_id', ge.section_student_id,
            'ww_scores',          ge.ww_scores,
            'pt_scores',          ge.pt_scores,
            'qa_score',           ge.qa_score,
+           'ww_excused',         ge.ww_excused,
+           'pt_excused',         ge.pt_excused,
+           'initial_grade',      ge.initial_grade,
            'quarterly_grade',    ge.quarterly_grade,
            'letter_grade',       ge.letter_grade
          ) order by ge.section_student_id), '[]'::jsonb),
@@ -89,7 +94,10 @@ begin
    where ge.grading_sheet_id = p_sheet_id
      and (   ge.qa_score is not null
           or exists (select 1 from unnest(coalesce(ge.ww_scores, '{}')) v where v is not null)
-          or exists (select 1 from unnest(coalesce(ge.pt_scores, '{}')) v where v is not null));
+          or exists (select 1 from unnest(coalesce(ge.pt_scores, '{}')) v where v is not null)
+          or ge.ww_ps is not null or ge.pt_ps is not null or ge.qa_ps is not null
+          or ge.initial_grade is not null or ge.quarterly_grade is not null
+          or coalesce(ge.ww_excused, '{}') <> '{}' or coalesce(ge.pt_excused, '{}') <> '{}');
 
   -- 3. The new shape, in one statement. Slot labels described the assessments
   -- being cleared, so they go too (kept in the audit row by the route).
@@ -131,18 +139,18 @@ begin
      and (   ge.ww_ps is not null or ge.pt_ps is not null or ge.qa_ps is not null
           or ge.initial_grade is not null or ge.quarterly_grade is not null);
 
-  -- 4. Every entry back to blank. is_na and letter_grade stay.
+  -- 4. Every entry back to blank. is_na and letter_grade stay. The stuck rows
+  -- hold an exam score of 0 for a moment (so the grade is computed) …
   update grade_entries
      set ww_scores  = '{}',
          pt_scores  = '{}',
-         qa_score   = null,
+         qa_score   = case when id = any(v_stuck) then 0 end,
          ww_excused = '{}',
          pt_excused = '{}'
    where grading_sheet_id = p_sheet_id;
 
-  -- 5. The stuck rows: hold a score for a moment, then blank again.
+  -- 5. … then blank again (the old row held a score → recomputed → NULL).
   if array_length(v_stuck, 1) > 0 then
-    update grade_entries set qa_score = 0    where id = any(v_stuck) and qa_score is null;
     update grade_entries set qa_score = null where id = any(v_stuck);
   end if;
 

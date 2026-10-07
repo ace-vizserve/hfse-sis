@@ -342,6 +342,17 @@ begin
   update grade_entries set quarterly_grade = 81 where grading_sheet_id = sh and section_student_id = s3;
   if (select quarterly_grade from grade_entries where grading_sheet_id = sh and section_student_id = s3) is distinct from 81 then
     raise exception 'fixture: s3 does not carry a stale grade'; end if;
+  -- s2: an excusal and nothing else
+  delete from grade_entries where grading_sheet_id = sh
+     and section_student_id = '00000000-0000-4000-8000-0000000000b2'
+     and not exists (select 1 from grade_audit_log g where g.grade_entry_id = grade_entries.id);
+  insert into grade_entries (grading_sheet_id, section_student_id, ww_excused)
+  values (sh, '00000000-0000-4000-8000-0000000000b2', '{1}')
+  on conflict (grading_sheet_id, section_student_id)
+  do update set ww_scores = '{}', pt_scores = '{}', qa_score = null, ww_excused = '{1}';
+  if (select ww_excused::text from grade_entries where grading_sheet_id = sh
+        and section_student_id = '00000000-0000-4000-8000-0000000000b2') is distinct from '{1}' then
+    raise exception 'fixture: s2 has no excusal'; end if;
 
   res := switch_grading_sheet_type(sh, 'term4_framework');
 
@@ -369,9 +380,20 @@ begin
      or (snap->>'qa_score')::numeric <> 20 or snap->>'quarterly_grade' is null
      or res->'slot_labels'->'ww'->>0 is distinct from 'Quiz 1' then
     raise exception 'switch to framework: snapshot wrong: %', res; end if;
-  if exists (select 1 from jsonb_array_elements(res->'cleared') e where e->>'section_student_id' = s3::text) then
-    raise exception 'switch to framework: s3 has no score yet is in the snapshot'; end if;
   raise notice 'T4F OK: switch returns the cleared scores for the audit row';
+  if not exists (select 1 from jsonb_array_elements(res->'cleared') e
+                  where e->>'section_student_id' = s3::text
+                    and (e->>'quarterly_grade')::int = 81 and (e->>'initial_grade')::numeric = 70) then
+    raise exception 'switch to framework: s3''s grade with no scores is not in the snapshot: %', res; end if;
+  raise notice 'T4F OK: a grade with no scores behind it is kept in the snapshot';
+  if not exists (select 1 from jsonb_array_elements(res->'cleared') e
+                  where e->>'section_student_id' = '00000000-0000-4000-8000-0000000000b2'
+                    and e->'ww_excused' = '[1]'::jsonb) then
+    raise exception 'switch to framework: the excusal-only row is not in the snapshot: %', res; end if;
+  if exists (select 1 from grade_entries where grading_sheet_id = sh
+              and section_student_id = '00000000-0000-4000-8000-0000000000b2' and ww_excused <> '{}') then
+    raise exception 'switch to framework: the excusal was not cleared'; end if;
+  raise notice 'T4F OK: an excusal-only row is captured, then cleared';
 end $$;
 
 -- Refusals, each HFT4F.
