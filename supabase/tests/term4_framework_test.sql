@@ -9,6 +9,7 @@ declare
   v_ay uuid; v_sec uuid; v_sec2 uuid;
   v_t1 uuid; v_t2 uuid; v_t3 uuid; v_t4 uuid;
   v_a uuid; v_b uuid; v_c uuid; v_ca uuid; v_cb uuid; v_cc uuid;
+  v_d uuid; v_cd uuid;
 begin
   select id into v_ay from academic_years where is_current limit 1;
   select id into v_t1 from terms where academic_year_id = v_ay and term_number = 1;
@@ -26,6 +27,9 @@ begin
    where sc.academic_year_id = v_ay and su.is_examinable and su.id <> v_a order by su.code limit 1;
   select sc.subject_id, sc.id into v_c, v_cc from subject_configs sc join subjects su on su.id = sc.subject_id
    where sc.academic_year_id = v_ay and not su.is_examinable order by su.code limit 1;
+  -- a third examinable subject, for a (mis-placed) framework sheet on Term 2
+  select sc.subject_id, sc.id into v_d, v_cd from subject_configs sc join subjects su on su.id = sc.subject_id
+   where sc.academic_year_id = v_ay and su.is_examinable and su.id not in (v_a, v_b) order by su.code limit 1;
   -- Fixture adaptation: the local stack has only ONE section without sheets, so
   -- the second ("old class") section is any other section with no T1 sheet for A.
   select s.id into v_sec2 from sections s
@@ -33,11 +37,11 @@ begin
      and not exists (select 1 from grading_sheets g
                       where g.section_id = s.id and g.term_id = v_t1 and g.subject_id = v_a)
    order by s.id limit 1;
-  if v_sec2 is null or v_c is null or v_t4 is null then
-    raise exception 'fixture: local stack lacks an empty section pair / non-examinable subject / T4 term';
+  if v_sec2 is null or v_c is null or v_d is null or v_t4 is null then
+    raise exception 'fixture: local stack lacks an empty section pair / non-examinable subject / third examinable subject / T4 term';
   end if;
   insert into fx values ('ay',v_ay),('sec',v_sec),('sec2',v_sec2),('t1',v_t1),('t2',v_t2),('t3',v_t3),('t4',v_t4),
-    ('a',v_a),('b',v_b),('c',v_c),('ca',v_ca),('cb',v_cb),('cc',v_cc);
+    ('a',v_a),('b',v_b),('c',v_c),('ca',v_ca),('cb',v_cb),('cc',v_cc),('d',v_d),('cd',v_cd);
 end $$;
 
 -- Students: s1 normal; s2 N/A in T2; s3 no earlier grades; s4 moved class.
@@ -89,6 +93,35 @@ begin
   sh := pg_temp.mk_sheet('t3','sec','a','ca'); perform pg_temp.put(sh,s1,80); perform pg_temp.put(sh,s2,70); perform pg_temp.put(sh,s4,60);
   sh := pg_temp.mk_sheet('t3','sec','b','cb'); perform pg_temp.put(sh,s1,80); perform pg_temp.put(sh,s2,70); perform pg_temp.put(sh,s4,60);
   sh := pg_temp.mk_sheet('t3','sec','c','cc'); perform pg_temp.put(sh,s1,100);
+end $$;
+
+-- A framework sheet on TERM 2 (the app refuses this; the DB does not). Its
+-- grade must never be a source of the best term average, and the cascade
+-- must never touch it. s1: best 87.5 fills WW, rec 30/30, task 100 => ~96,
+-- which would lift T2's average to ~90 if it counted.
+insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, sheet_type,
+                            ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight)
+values ((select v from fx where k='t2'),(select v from fx where k='sec'),(select v from fx where k='d'),
+        (select v from fx where k='cd'),'term4_framework','{100}','{30}',100,0.50,0.20,0.30);
+insert into grade_entries (grading_sheet_id, section_student_id, pt_scores, qa_score)
+select gs.id, '00000000-0000-4000-8000-0000000000b1', '{30}', 100
+  from grading_sheets gs
+ where gs.sheet_type = 'term4_framework' and gs.term_id = (select v from fx where k='t2')
+   and gs.section_id = (select v from fx where k='sec');
+create temp view t4wrong as
+  select ge.* from grade_entries ge join grading_sheets gs on gs.id = ge.grading_sheet_id
+   where gs.sheet_type = 'term4_framework' and gs.term_id = (select v from fx where k='t2')
+     and gs.section_id = (select v from fx where k='sec');
+do $$
+declare r record;
+begin
+  select * into r from t4wrong;
+  if r.quarterly_grade is null then
+    raise exception 'fixture: the Term 2 framework entry has no grade'; end if;
+  select * into r from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
+  if r.best is distinct from 87.5 or r.term_number <> 2 then
+    raise exception 'framework sheet counted as a source: expected 87.5 / T2, got % / %', r.best, r.term_number; end if;
+  raise notice 'T4F OK: a framework sheet is never a source of the best term average';
 end $$;
 
 -- ── Task 1 checks ─────────────────────────────────────────────────────────
@@ -143,11 +176,13 @@ values ((select v from fx where k='t4'),(select v from fx where k='sec'),(select
 insert into grade_entries (grading_sheet_id, section_student_id)
 select gs.id, ss.id from grading_sheets gs, section_students ss
  where gs.sheet_type = 'term4_framework' and gs.section_id = (select v from fx where k='sec')
+   and gs.term_id = (select v from fx where k='t4')
    and ss.section_id = gs.section_id;
 
 create temp view t4 as
   select ge.* from grade_entries ge join grading_sheets gs on gs.id = ge.grading_sheet_id
-   where gs.sheet_type = 'term4_framework' and gs.section_id = (select v from fx where k='sec');
+   where gs.sheet_type = 'term4_framework' and gs.section_id = (select v from fx where k='sec')
+     and gs.term_id = (select v from fx where k='t4');
 
 do $$
 declare r record;
@@ -209,6 +244,10 @@ begin
                   and field_changed = 'ww_scores[0]' and old_value = '87.5' and new_value = '93.5') then
     raise exception 'cascade: no grade_audit_log row'; end if;
   raise notice 'T4F OK: T1-T3 change flows into a locked T4 sheet, audited';
+  select * into r from t4wrong;
+  if r.ww_scores is distinct from '{87.5}'::numeric[] then
+    raise exception 'cascade wrote a framework sheet outside Term 4: got %', r.ww_scores; end if;
+  raise notice 'T4F OK: cascade only writes Term 4 rows';
 end $$;
 
 -- After the cascade moved it, a recommendation save (PT only, as the grid

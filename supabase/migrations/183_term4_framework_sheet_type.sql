@@ -67,6 +67,8 @@ as $$
        and t.academic_year_id = p_academic_year_id
        and t.term_number between 1 and 3
        and s.is_examinable
+       -- a framework sheet is never a source, whatever term it sits on
+       and gs.sheet_type = 'standard'
        and not ge.is_na
        and ge.quarterly_grade is not null
      order by t.term_number, gs.subject_id,

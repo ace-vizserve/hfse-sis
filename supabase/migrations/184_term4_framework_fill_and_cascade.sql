@@ -236,6 +236,7 @@ begin
    where ge.grading_sheet_id = gs.id
      and gs.term_id = t.id
      and gs.sheet_type = 'term4_framework'
+     and t.term_number = 4
      and t.academic_year_id = v_ay
      and ss.id = ge.section_student_id
      and ss.student_id = v_student;
