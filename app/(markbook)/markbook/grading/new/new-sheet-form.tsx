@@ -711,9 +711,21 @@ export function NewSheetForm({
                 <div className="grid grid-cols-3 gap-3">
                   {isFramework ? (
                     <>
-                      <Metric label="WW" value="50%" sub="best avg" />
-                      <Metric label="PT" value="20%" sub="out of 30" />
-                      <Metric label="QA" value="30%" sub="out of 100" />
+                      <Metric
+                        label="Best term average"
+                        value="50%"
+                        sub="best of Terms 1–3"
+                      />
+                      <Metric
+                        label="Recommendation"
+                        value="20%"
+                        sub="out of 30"
+                      />
+                      <Metric
+                        label="Revision task"
+                        value="30%"
+                        sub="out of 100"
+                      />
                     </>
                   ) : (
                     <>
