@@ -226,7 +226,7 @@ The grading sheets show the previous term's grade alongside the current term. If
 
 ## Term 4 framework sheets (KD #230)
 
-A Secondary 4 Term 4 sheet can be created as a **Term 4 framework** sheet (create form → "Sheet type"), following the school's "Term 4 Grading Framework for Secondary 4 Students" ahead of O-Level study leave. It reuses the fixed WW / PT / QA shape; the grade formula itself is unchanged.
+A Secondary 4 Term 4 sheet can be created as a **Term 4 framework** sheet (create form → "Sheet type", offered on Term 4 only), following the school's "Term 4 Grading Framework for Secondary 4 Students" ahead of O-Level study leave. It reuses the fixed WW / PT / QA shape; the grade formula itself is unchanged. If the class already has a standard Term 4 sheet for the subject with nothing entered on it, creating the framework sheet converts that sheet; one with scores is refused. A framework sheet can be removed while no teacher has entered anything on it.
 
 | Slot | Meaning                   | Out of | Weight | Entered by                         |
 | ---- | ------------------------- | ------ | ------ | ---------------------------------- |
