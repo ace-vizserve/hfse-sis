@@ -454,31 +454,13 @@ export function SubjectCatalogCard({
                           />
                         </TableCell>
                         <TableCell>
-                          <span className="flex items-center justify-end gap-1.5">
-                            <HoverHint
-                              hint={`Edit ${subject.name}`}
-                              focusable={false}
-                            >
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                // Labelled buttons, not faint icons — Mr Ace
-                                // (2026-09-29).
-                                className="h-7 shrink-0 px-2.5 text-xs"
-                                onClick={() => setEditSubject(subject)}
-                                aria-label={`Edit ${subject.name}`}
-                              >
-                                <Pencil className="size-3.5" />
-                                Edit
-                              </Button>
-                            </HoverHint>
-                            {/* Delete — any subject no class uses (see
-                                unused-subject-actions.tsx). Renders nothing
-                                otherwise. */}
+                          <span className="flex items-center justify-end">
+                            {/* ⋯ menu: Edit, and Delete for a subject no
+                                class uses (unused-subject-actions.tsx). */}
                             <SubjectCatalogMenu
                               subject={subject}
                               deleteSetup={deletableSubjects[subject.id]}
+                              onEdit={() => setEditSubject(subject)}
                             />
                           </span>
                         </TableCell>

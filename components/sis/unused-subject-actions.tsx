@@ -1,6 +1,6 @@
 'use client';
 
-import { Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -13,6 +13,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { RowActionsMenu } from '@/components/ui/data-table';
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
@@ -20,8 +25,9 @@ import {
   type SubjectSetupSummary,
 } from '@/lib/sis/subjects/setup-summary';
 
-// Delete for a catalog subject (lib/sis/subjects/usage.ts has the rule; the
-// route enforces it again).
+// The row's ⋯ menu in the subject catalog: Edit, and Delete for a subject no
+// class uses (lib/sis/subjects/usage.ts has the rule; the route enforces it
+// again). Mr Ace, 2026-10-08: actions go in a three-dot menu, not as buttons.
 //
 // Delete — any subject no CLASS uses (2026-09-29). Its weights, level
 // offerings and report-card mapping go with it, and the confirm says so in
@@ -39,10 +45,13 @@ type Subject = { id: string; code: string; name: string };
 export function SubjectCatalogMenu({
   subject,
   deleteSetup,
+  onEdit,
 }: {
   subject: Subject;
   /** Present only when the subject may be deleted — what goes with it. */
   deleteSetup?: SubjectSetupSummary;
+  /** Opens the subject's drawer. */
+  onEdit: () => void;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -67,59 +76,66 @@ export function SubjectCatalogMenu({
     setBusy(false);
   }
 
-  if (!described) return null;
-
   return (
     <>
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        className="h-7 shrink-0 px-2.5 text-xs"
-        aria-label={`Delete ${subject.name}`}
-        onClick={() => setConfirmOpen(true)}
-      >
-        <Trash2 className="size-3.5" />
-        Delete
-      </Button>
-
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {subject.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              No class uses {subject.name}{' '}
-              <span className="font-mono text-[11px]">({subject.code})</span>.
-              Deleting it removes it from the catalog for good
-              {described.removed.length > 0 ? ', along with:' : '.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {described.removed.length > 0 && (
-            <ul className="space-y-1 border-l-2 border-destructive/40 pl-3 text-sm text-foreground">
-              {described.removed.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          )}
-          {described.repointed && (
-            <p className="text-sm text-muted-foreground">
-              {described.repointed}
-            </p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Keep it</AlertDialogCancel>
-            <Button
-              type="button"
+      <RowActionsMenu>
+        <DropdownMenuItem onSelect={onEdit}>
+          <Pencil className="size-3.5" />
+          Edit
+        </DropdownMenuItem>
+        {described && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
               variant="destructive"
-              loading={busy}
-              loadingText="Deleting…"
-              onClick={() => void onDelete()}
+              onSelect={() => setConfirmOpen(true)}
             >
-              Delete subject
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Trash2 className="size-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </RowActionsMenu>
+
+      {described && (
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {subject.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                No class uses {subject.name}{' '}
+                <span className="font-mono text-[11px]">({subject.code})</span>.
+                Deleting it removes it from the catalog for good
+                {described.removed.length > 0 ? ', along with:' : '.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {described.removed.length > 0 && (
+              <ul className="space-y-1 border-l-2 border-destructive/40 pl-3 text-sm text-foreground">
+                {described.removed.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+            {described.repointed && (
+              <p className="text-sm text-muted-foreground">
+                {described.repointed}
+              </p>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Keep it</AlertDialogCancel>
+              <Button
+                type="button"
+                variant="destructive"
+                loading={busy}
+                loadingText="Deleting…"
+                onClick={() => void onDelete()}
+              >
+                Delete subject
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }
