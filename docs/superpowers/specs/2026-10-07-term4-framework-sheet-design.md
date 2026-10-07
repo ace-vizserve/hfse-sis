@@ -56,7 +56,7 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 ### 2. Creating the sheet
 
 - Single create (`app/(markbook)/markbook/grading/new/new-sheet-form.tsx` → `POST app/api/grading-sheets`): a **Sheet type** choice, Standard / Term 4 framework. Choosing Term 4 framework hides the slot/max/weight inputs and sends the fixed shape; the server sets it regardless of what the client sends.
-- Bulk create (`create_grading_sheets_for_*`, `bulk-create` routes and button): accepts a sheet type, so the registrar can create every Sec 4 T4 sheet in one go.
+- Bulk create is unchanged — it only makes Standard sheets. Term 4 framework sheets are created one at a time for the sections that use them.
 - On create, the best term average is filled for every seeded entry immediately.
 - `isSubjectTermSplit` (`lib/grading/resolve-sheet-weights.ts`) only allows switching components off; it gets an explicit exemption for `term4_framework`, whose weights are fixed and not editable. The totals editor is hidden on this type.
 
@@ -91,7 +91,7 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 - Term average: examinable only; N/A and missing subjects skipped; late enrollee with no T1 picks from T2/T3; no grades → null and flagged.
 - Cascade: change a student's T2 grade → their T4 grade moves in every subject, locked sheets included, with audit rows.
 - Guards: teacher write to the best-term cell refused; shape/weight edit refused; excusing refused.
-- Create: single and bulk produce the fixed shape whatever the client sends.
+- Create: a Term 4 framework sheet gets the fixed shape whatever the client sends.
 - DataTable column labels (KD #161) for any new column.
 
 ## Out of scope
