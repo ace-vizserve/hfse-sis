@@ -306,11 +306,15 @@ begin
   raise notice 'T4F OK: bulk create leaves Term 4 framework sheets alone';
 end $$;
 
--- Converting an empty standard Term 4 sheet in place, as POST /api/grading-sheets
--- does: one sheet UPDATE (the shape check sees the whole shape), then the rows
--- back to blank so the fill trigger writes the best term average.
+-- ── Switch sheet type (migration 185) ─────────────────────────────────────
+-- A standard Term 4 sheet for subject D with s1's scores entered, plus s3 on
+-- a row with no scores that still carries a grade (an imported grade, say —
+-- the derive trigger's "never erases" branch would keep it).
+create temp table sw (k text primary key, v uuid) on commit drop;
 do $$
-declare sh uuid; r record; b record;
+declare sh uuid; b record; res jsonb; r record; snap jsonb;
+  s1 uuid := '00000000-0000-4000-8000-0000000000b1';
+  s3 uuid := '00000000-0000-4000-8000-0000000000b3';
 begin
   select id into sh from grading_sheets
    where term_id = (select v from fx where k='t4') and section_id = (select v from fx where k='sec')
@@ -321,24 +325,130 @@ begin
             (select v from fx where k='cd'),'{10,10}','{10}',30)
     returning id into sh;
   end if;
-  insert into grade_entries (grading_sheet_id, section_student_id, ww_scores, pt_scores)
-  values (sh, '00000000-0000-4000-8000-0000000000b1', '{null,null}', '{null}')
+  update grading_sheets set ww_totals = '{10,10}', pt_totals = '{10}', qa_total = 30,
+                            slot_labels = '{"ww":["Quiz 1","Quiz 2"]}'::jsonb
+   where id = sh;
+  insert into sw values ('d4', sh);
+  delete from grade_entries where grading_sheet_id = sh
+     and section_student_id in (s1, s3)
+     and not exists (select 1 from grade_audit_log g where g.grade_entry_id = grade_entries.id);
+  insert into grade_entries (grading_sheet_id, section_student_id, ww_scores, pt_scores, qa_score)
+  values (sh, s1, '{8,9}', '{7}', 20)
+  on conflict (grading_sheet_id, section_student_id)
+  do update set ww_scores = excluded.ww_scores, pt_scores = excluded.pt_scores, qa_score = excluded.qa_score;
+  insert into grade_entries (grading_sheet_id, section_student_id, initial_grade, quarterly_grade)
+  values (sh, s3, 70, 81)
   on conflict (grading_sheet_id, section_student_id) do nothing;
+  update grade_entries set quarterly_grade = 81 where grading_sheet_id = sh and section_student_id = s3;
+  if (select quarterly_grade from grade_entries where grading_sheet_id = sh and section_student_id = s3) is distinct from 81 then
+    raise exception 'fixture: s3 does not carry a stale grade'; end if;
 
-  update grading_sheets
-     set sheet_type = 'term4_framework', ww_totals = '{100}', pt_totals = '{30}', qa_total = 100,
-         ww_weight = 0.50, pt_weight = 0.20, qa_weight = 0.30, slot_labels = null
-   where id = sh and sheet_type = 'standard';
-  update grade_entries set ww_scores = '{}', pt_scores = '{}', qa_score = null
-   where grading_sheet_id = sh;
+  res := switch_grading_sheet_type(sh, 'term4_framework');
+
+  if not exists (select 1 from grading_sheets where id = sh and sheet_type = 'term4_framework'
+                   and ww_totals = '{100}' and pt_totals = '{30}' and qa_total = 100
+                   and ww_weight = 0.50 and pt_weight = 0.20 and qa_weight = 0.30 and slot_labels is null) then
+    raise exception 'switch to framework: wrong shape'; end if;
+  raise notice 'T4F OK: switch to framework reshapes the sheet';
 
   select * into b from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
-  select * into r from grade_entries
-   where grading_sheet_id = sh and section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  -- (the derive trigger may pad pt_scores to the slot count: {NULL} is blank)
+  select * into r from grade_entries where grading_sheet_id = sh and section_student_id = s1;
   if r.ww_scores is distinct from array[b.best] or r.pt_scores[1] is not null or r.qa_score is not null then
-    raise exception 'conversion: expected {%}/{}/null, got %/%/%', b.best, r.ww_scores, r.pt_scores, r.qa_score; end if;
-  raise notice 'T4F OK: an empty standard Term 4 sheet converts in place and refills';
+    raise exception 'switch to framework: expected {%}/blank/null, got %/%/%', b.best, r.ww_scores, r.pt_scores, r.qa_score; end if;
+  raise notice 'T4F OK: switch to framework clears scores and refills the best term average';
+
+  select * into r from grade_entries where grading_sheet_id = sh and section_student_id = s3;
+  if r.ww_scores[1] is not null or r.quarterly_grade is not null or r.initial_grade is not null then
+    raise exception 'switch to framework: s3 kept %/% with no scores', r.initial_grade, r.quarterly_grade; end if;
+  raise notice 'T4F OK: a grade with no scores behind it does not survive a switch';
+
+  select e into snap from jsonb_array_elements(res->'cleared') e where e->>'section_student_id' = s1::text;
+  if res->>'from' <> 'standard' or res->>'to' <> 'term4_framework'
+     or (res->>'cleared_count')::int < 1
+     or snap->'ww_scores' <> '[8, 9]'::jsonb or snap->'pt_scores' <> '[7]'::jsonb
+     or (snap->>'qa_score')::numeric <> 20 or snap->>'quarterly_grade' is null
+     or res->'slot_labels'->'ww'->>0 is distinct from 'Quiz 1' then
+    raise exception 'switch to framework: snapshot wrong: %', res; end if;
+  if exists (select 1 from jsonb_array_elements(res->'cleared') e where e->>'section_student_id' = s3::text) then
+    raise exception 'switch to framework: s3 has no score yet is in the snapshot'; end if;
+  raise notice 'T4F OK: switch returns the cleared scores for the audit row';
+end $$;
+
+-- Refusals, each HFT4F.
+do $$
+declare sh uuid;
+begin
+  begin
+    perform switch_grading_sheet_type((select v from sw where k='d4'), 'term4_framework');
+    raise exception 'same type was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: switch to the same type refused';
+  end;
+
+  update grading_sheets set is_locked = true where id = (select v from sw where k='d4');
+  begin
+    perform switch_grading_sheet_type((select v from sw where k='d4'), 'standard');
+    raise exception 'locked switch was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: switching a locked sheet refused';
+  end;
+  update grading_sheets set is_locked = false where id = (select v from sw where k='d4');
+
+  select id into sh from grading_sheets where term_id = (select v from fx where k='t1')
+     and section_id = (select v from fx where k='sec') and subject_id = (select v from fx where k='a');
+  begin
+    perform switch_grading_sheet_type(sh, 'term4_framework');
+    raise exception 'non-T4 switch was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: framework outside Term 4 refused';
+  end;
+
+  insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, ww_totals, pt_totals, qa_total)
+  values ((select v from fx where k='t4'),(select v from fx where k='sec'),(select v from fx where k='c'),
+          (select v from fx where k='cc'),'{10}','{10}',30)
+  on conflict (term_id, section_id, subject_id) do nothing;
+  select id into sh from grading_sheets where term_id = (select v from fx where k='t4')
+     and section_id = (select v from fx where k='sec') and subject_id = (select v from fx where k='c');
+  begin
+    perform switch_grading_sheet_type(sh, 'term4_framework');
+    raise exception 'non-examinable switch was accepted';
+  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: framework for a non-examinable subject refused';
+  end;
+end $$;
+
+-- Switch back: standard shape, scores empty, derived figures null.
+do $$
+declare sh uuid := (select v from sw where k='d4'); res jsonb; r record; v_qa numeric;
+  s1 uuid := '00000000-0000-4000-8000-0000000000b1';
+  s3 uuid := '00000000-0000-4000-8000-0000000000b3';
+begin
+  update grade_entries set pt_scores = '{25}', qa_score = 80 where grading_sheet_id = sh and section_student_id = s1;
+  -- s3 picks up a stale grade again (no scores; the derive trigger keeps it)
+  update grade_entries set quarterly_grade = 81 where grading_sheet_id = sh and section_student_id = s3;
+  if (select quarterly_grade from grade_entries where grading_sheet_id = sh and section_student_id = s3) is distinct from 81 then
+    raise exception 'fixture: s3 does not carry a stale grade before switching back'; end if;
+
+  res := switch_grading_sheet_type(sh, 'standard');
+
+  select coalesce(sc.qa_max, 30) into v_qa from subject_configs sc where sc.id = (select v from fx where k='cd');
+  if not exists (select 1 from grading_sheets where id = sh and sheet_type = 'standard'
+                   and ww_totals = '{10,10,10}' and pt_totals = '{10,10,10}' and qa_total = v_qa
+                   and ww_weight is null and pt_weight is null and qa_weight is null) then
+    raise exception 'switch to standard: wrong shape'; end if;
+  raise notice 'T4F OK: switch to standard reshapes the sheet';
+
+  for r in select * from grade_entries where grading_sheet_id = sh and section_student_id in (s1, s3) loop
+    if exists (select 1 from unnest(r.ww_scores) v where v is not null)
+       or exists (select 1 from unnest(r.pt_scores) v where v is not null) or r.qa_score is not null
+       or r.ww_ps is not null or r.pt_ps is not null or r.qa_ps is not null
+       or r.initial_grade is not null or r.quarterly_grade is not null then
+      raise exception 'switch to standard: row % not blank: %', r.section_student_id, row_to_json(r); end if;
+  end loop;
+  raise notice 'T4F OK: switch to standard clears scores and derived figures';
+
+  if res->>'from' <> 'term4_framework' or res->>'to' <> 'standard'
+     or not exists (select 1 from jsonb_array_elements(res->'cleared') e
+                     where e->>'section_student_id' = s1::text
+                       and e->'pt_scores' = '[25]'::jsonb and (e->>'qa_score')::numeric = 80) then
+    raise exception 'switch to standard: snapshot wrong: %', res; end if;
+  raise notice 'T4F OK: switch back returns the cleared scores';
 end $$;
 
 -- Config sync leaves a Term 4 framework sheet alone. LAST on purpose: it pads
