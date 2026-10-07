@@ -58,3 +58,12 @@ Exhaustive, not sampled: every `.from('grading_sheets')`, every embed/join of `g
 ## Task 5 — Docs
 
 KD #231 in `docs/key-decisions/markbook-grading.md` (the three actions, rulings above, Hard Rule #6 wording pending Mr Ace), `docs/context/04-database-schema.md`, `docs/context/15-markbook-module.md` if it describes removal, CLAUDE.md session-context entry per `docs/rules/workflow.md`. Supersede the KD #131 2026-09-29 "Remove sheet" note. Don't edit `.claude/rules/`; put the proposed Hard Rule #6 text and the key-decisions index line in the report.
+
+## Task 6 — Subjects get the same archive (Mr Ace, 2026-10-08: "on the sis/admin/subjects page only actions are edit and archive")
+
+- `subjects.archived_at timestamptz`, `archived_by uuid` (migration 186, appended section).
+- Subject catalog ⋯ menu (`components/sis/unused-subject-actions.tsx`, `SubjectCatalogMenu`): **Edit** and **Archive** only — no Delete. Archive works on any subject; the confirm says it leaves the catalog and every subject picker (new grading sheet, class subjects, AY setup), while classes and grades that already use it are untouched.
+- Archived subjects drop out of the catalog and every subject picker/list that offers a subject for NEW use (exhaustive grep of `from('subjects')` in app/ + lib/; exempt: anything showing existing grades/report cards, which must keep showing past subjects). Same guard-test idea as Task 2 if practical.
+- The catalog gets an **Archived** view (same one-group-at-a-time pattern) with selectable rows and **Restore selected** / **Delete selected**; per-row ⋯: Restore, Delete.
+- Bulk routes `POST /api/sis/admin/subjects/archived/restore` and `.../archived/delete`, body `{ subject_ids }`, per-item results, one `logAction` per subject. Delete reuses the existing subject delete (`/api/sis/admin/subjects/catalog/[id]` DELETE and `lib/sis/subjects/usage.ts`): a subject any class or grade still references is refused for that item with the reason (controller ruling — deleting it would erase every class's grades in that subject across years); others are deleted with today's snapshot-into-audit behaviour.
+- Audit actions `subject.archive` / `subject.restore` in log-action + humanize.
