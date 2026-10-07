@@ -588,10 +588,17 @@ export default async function GradingSheetPage({
     | Record<string, { best: number | null; termNumber: number | null }>
     | undefined;
   if (isFramework) {
-    const { data } = await createServiceClient().rpc(
+    const { data, error: bestErr } = await createServiceClient().rpc(
       'best_term_averages_for_sheet',
       { p_sheet_id: sheet.id }
     );
+    if (bestErr) {
+      // The cells still show the stored value; only the source term is lost.
+      console.error(
+        '[grading sheet] best term averages could not be loaded',
+        bestErr.message
+      );
+    }
     bestTermSource = Object.fromEntries(
       (data ?? []).map(
         (r: {

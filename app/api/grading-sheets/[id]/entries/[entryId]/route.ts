@@ -27,6 +27,7 @@ import {
   type SlotKind,
 } from '@/lib/grading/first-score-gate';
 import { mergeSlotLabel } from '@/lib/grading/slot-label-sanitize';
+import { isTerm4Framework } from '@/lib/grading/term4-framework';
 import {
   loadEntryStudentLabels,
   loadOneSheetAuditLabels,
@@ -110,7 +111,7 @@ export async function PATCH(
       .from('grading_sheets')
       .select(
         `id, section_id, subject_id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
-         ww_weight, pt_weight, qa_weight,
+         ww_weight, pt_weight, qa_weight, sheet_type,
          subject:subjects(is_examinable),
          subject_config:subject_configs(ww_weight, pt_weight, qa_weight)`
       )
@@ -140,6 +141,7 @@ export async function PATCH(
     qa_total: number | null;
     is_locked: boolean;
     slot_labels: SlotLabels | null;
+    sheet_type: string | null;
     // Migration 159 — this term's own weights, or null to inherit the config's.
     ww_weight: number | string | null;
     pt_weight: number | string | null;
@@ -507,7 +509,8 @@ export async function PATCH(
 
   // ----- First-score label gate (unlocked/direct path only; Hard Rule #5's
   // locked change-request/correction paths are never touched by this) -----
-  if (!sheet.is_locked) {
+  // A Term 4 framework sheet's slots are fixed and already named (KD #230).
+  if (!sheet.is_locked && !isTerm4Framework(sheet.sheet_type)) {
     const { data: rosterRaw } = await service
       .from('grade_entries')
       .select('id, ww_scores, pt_scores, qa_score')

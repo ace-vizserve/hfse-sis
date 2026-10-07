@@ -304,6 +304,27 @@ describe('entries route — first-score label gate', () => {
     expect(calls.sheetLabelUpdatePatches).toHaveLength(0);
   });
 
+  it('Term 4 framework sheet: fixed, named slots -> first scores need no label (KD #230)', async () => {
+    const { service, calls } = buildService({
+      sheet: baseSheet({
+        sheet_type: 'term4_framework',
+        ww_totals: [100],
+        pt_totals: [30],
+        qa_total: 100,
+        ww_weight: 0.5,
+        pt_weight: 0.2,
+        qa_weight: 0.3,
+      }),
+      entry: baseEntry({ ww_scores: [87.5], pt_scores: [] }),
+      roster: [],
+    });
+    currentService = service;
+
+    const res = await callPatch({ pt_scores: [24], qa_score: 70 });
+    expect(res.status).toBe(200);
+    expect(calls.sheetLabelUpdatePatches).toHaveLength(0);
+  });
+
   it('QA slot: needs only a label, no date required', async () => {
     const { service, calls } = buildService({
       sheet: baseSheet(),

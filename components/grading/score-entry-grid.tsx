@@ -852,7 +852,10 @@ export function ScoreEntryGrid({
       body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score'>>,
       value: number | null
     ) => {
+      // A Term 4 framework sheet's slots are fixed and named (KD #230): no
+      // label is asked for.
       const gated =
+        !t4f &&
         !readOnly &&
         !requireApproval &&
         value != null &&
@@ -884,7 +887,7 @@ export function ScoreEntryGrid({
       }
       patchEntry(rowId, target, body);
     },
-    [readOnly, requireApproval, slotAlreadyScored, patchEntry]
+    [t4f, readOnly, requireApproval, slotAlreadyScored, patchEntry]
   );
 
   // Dialog confirm — persist the label locally (optimistic, mirrors the
@@ -1318,6 +1321,7 @@ export function ScoreEntryGrid({
                         {t4f ? (
                           <BestTermCell
                             value={r.ww_scores[0] ?? null}
+                            hasEntry={!!r.entry_id}
                             termNumber={
                               bestTermSource?.[r.section_student_id]
                                 ?.termNumber ?? null
@@ -1783,25 +1787,34 @@ function ScoringGuide({
     return labels.pt[i] ?? null;
   };
 
-  // A slot "needs a label" when it has scores but no description set.
+  // A slot "needs a label" when it has scores but no description set. A Term
+  // 4 framework sheet's slots are fixed and named (KD #230), so never.
   const needsLabelWw = (i: number): boolean =>
-    !!wwScored[i] && !effectiveWw(i)?.label;
+    !t4f && !!wwScored[i] && !effectiveWw(i)?.label;
   const needsLabelPt = (i: number): boolean =>
-    !!ptScored[i] && !effectivePt(i)?.label;
+    !t4f && !!ptScored[i] && !effectivePt(i)?.label;
 
   const flaggedCount =
     wwTotals.reduce((acc, _, i) => acc + (needsLabelWw(i) ? 1 : 0), 0) +
     ptTotals.reduce((acc, _, i) => acc + (needsLabelPt(i) ? 1 : 0), 0);
 
-  const summaryParts = [
-    wwTotals.length > 0
-      ? `${wwTotals.length} Written Work${wwTotals.length !== 1 ? 's' : ''}`
-      : null,
-    ptTotals.length > 0
-      ? `${ptTotals.length} Performance Task${ptTotals.length !== 1 ? 's' : ''}`
-      : null,
-    'QA',
-  ].filter(Boolean);
+  const summaryParts = t4f
+    ? [
+        TERM4_FRAMEWORK_LABELS.ww,
+        TERM4_FRAMEWORK_LABELS.pt,
+        TERM4_FRAMEWORK_LABELS.qa,
+      ]
+    : [
+        wwTotals.length > 0
+          ? `${wwTotals.length} Written Work${wwTotals.length !== 1 ? 's' : ''}`
+          : null,
+        ptTotals.length > 0
+          ? `${ptTotals.length} Performance Task${ptTotals.length !== 1 ? 's' : ''}`
+          : null,
+        'QA',
+      ].filter(Boolean);
+  // The framework's WW and PT slots carry a fixed name: shown, never edited.
+  const slotsEditable = canEditLabels && !t4f;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -1874,8 +1887,9 @@ function ScoringGuide({
                     code={t4f ? 'Avg' : `W${i + 1}`}
                     max={max}
                     meta={effectiveWw(i)}
+                    fixedLabel={t4f ? TERM4_FRAMEWORK_LABELS.ww : undefined}
                     needsLabel={needsLabelWw(i)}
-                    editable={canEditLabels}
+                    editable={slotsEditable}
                     placeholder="e.g. Worksheet 2: Multiplication Tables"
                     onMetaChange={(patch) => onSlotChange?.('ww', i, patch)}
                     onCommit={commit}
@@ -1896,8 +1910,9 @@ function ScoringGuide({
                     code={t4f ? 'Rec' : `PT${i + 1}`}
                     max={max}
                     meta={effectivePt(i)}
+                    fixedLabel={t4f ? TERM4_FRAMEWORK_LABELS.pt : undefined}
                     needsLabel={needsLabelPt(i)}
-                    editable={canEditLabels}
+                    editable={slotsEditable}
                     placeholder="e.g. Quiz 1"
                     onMetaChange={(patch) => onSlotChange?.('pt', i, patch)}
                     onCommit={commit}
@@ -2194,10 +2209,22 @@ function ExcusedCell() {
 function BestTermCell({
   value,
   termNumber,
+  hasEntry,
 }: {
   value: number | null;
   termNumber: number | null;
+  /** False for a student with no grade row yet (added after the sheet was made). */
+  hasEntry: boolean;
 }) {
+  if (value == null && !hasEntry) {
+    return (
+      <HoverHint hint="Filled in when this student's row is first saved.">
+        <span className="flex h-8 items-center justify-center rounded-md bg-muted px-2 text-[11px] font-medium text-muted-foreground">
+          Not filled yet
+        </span>
+      </HoverHint>
+    );
+  }
   if (value == null) {
     return (
       <HoverHint hint="This student has no Term 1–3 grades yet, so there is no best term average.">
@@ -2209,7 +2236,11 @@ function BestTermCell({
   }
   return (
     <HoverHint
-      hint={`Term ${termNumber} average, the best of Terms 1–3. Filled in automatically.`}
+      hint={
+        termNumber != null
+          ? `Term ${termNumber} average, the best of Terms 1–3. Filled in automatically.`
+          : 'The best of Terms 1–3. Filled in automatically.'
+      }
     >
       <span className="flex h-8 items-center justify-end rounded-md bg-muted/60 px-2 font-mono text-xs tabular-nums text-foreground">
         {value.toFixed(1)}
