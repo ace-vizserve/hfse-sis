@@ -132,7 +132,7 @@ describe('decideSheetRemoval', () => {
 function fakeService(tables: Record<string, unknown[]>): SupabaseClient {
   const builder = (rows: unknown[]) => {
     const b: Record<string, unknown> = {};
-    for (const m of ['select', 'in', 'eq', 'limit', 'range', 'order'])
+    for (const m of ['select', 'in', 'eq', 'neq', 'limit', 'range', 'order'])
       b[m] = () => b;
     b.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
       resolve({ data: rows, error: null });
@@ -184,6 +184,79 @@ describe('loadSheetRemovability — the automatic N/A', () => {
         audit_log: [{ entity_id: 'e1' }],
       }),
       [{ id: 's1', is_locked: false }]
+    );
+    expect(out.get('s1')?.removable).toBe(false);
+  });
+});
+
+// KD #230: on a Term 4 framework sheet the WW slot (the best term average) and
+// every derived figure are written by the database, never by a person.
+describe('Term 4 framework sheets', () => {
+  const t4f = { framework: true };
+  const systemFilled = blank({
+    ww_scores: [87.5],
+    pt_scores: [],
+    ww_ps: 87.5,
+    initial_grade: 43.75,
+    quarterly_grade: 70,
+  });
+
+  it('a system-filled best term average and its derived figures → NOT entered', () => {
+    expect(entryHasEnteredData(systemFilled, t4f)).toBe(false);
+    expect(sheetHasEnteredData([systemFilled], t4f)).toBe(false);
+  });
+
+  it('the same row on a standard sheet → entered', () => {
+    expect(entryHasEnteredData(systemFilled)).toBe(true);
+  });
+
+  it('a recommendation, an exam score, a letter → entered', () => {
+    expect(entryHasEnteredData({ ...systemFilled, pt_scores: [0] }, t4f)).toBe(
+      true
+    );
+    expect(entryHasEnteredData({ ...systemFilled, qa_score: 50 }, t4f)).toBe(
+      true
+    );
+    expect(
+      entryHasEnteredData({ ...systemFilled, letter_grade: 'A' }, t4f)
+    ).toBe(true);
+  });
+
+  it('loadSheetRemovability: system-filled rows + system audit rows → removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [{ id: 'e1', grading_sheet_id: 's1', ...systemFilled }],
+        grade_audit_log: [
+          { grading_sheet_id: 's1', changed_by: 'system: best term average' },
+        ],
+      }),
+      [{ id: 's1', is_locked: false, sheet_type: 'term4_framework' }]
+    );
+    expect(out.get('s1')).toMatchObject({ removable: true });
+  });
+
+  it('loadSheetRemovability: a person-written audit row → not removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [{ id: 'e1', grading_sheet_id: 's1', ...systemFilled }],
+        grade_audit_log: [
+          { grading_sheet_id: 's1', changed_by: 'teacher@hfse.edu.sg' },
+        ],
+      }),
+      [{ id: 's1', is_locked: false, sheet_type: 'term4_framework' }]
+    );
+    expect(out.get('s1')).toMatchObject({
+      removable: false,
+      reason: SHEET_REMOVAL_REASONS.history,
+    });
+  });
+
+  it('loadSheetRemovability: the same filled row on a standard sheet → not removable', async () => {
+    const out = await loadSheetRemovability(
+      fakeService({
+        grade_entries: [{ id: 'e1', grading_sheet_id: 's1', ...systemFilled }],
+      }),
+      [{ id: 's1', is_locked: false, sheet_type: 'standard' }]
     );
     expect(out.get('s1')?.removable).toBe(false);
   });

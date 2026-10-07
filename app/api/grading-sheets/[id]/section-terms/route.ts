@@ -95,7 +95,7 @@ export async function GET(
     service
       .from('grading_sheets')
       .select(
-        'id, term_id, is_locked, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
+        'id, term_id, is_locked, sheet_type, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
       )
       .eq('section_id', anchor.section_id)
       .eq('subject_id', anchor.subject_id),
@@ -115,6 +115,7 @@ export async function GET(
     id: string;
     term_id: string;
     is_locked: boolean;
+    sheet_type: string | null;
     ww_totals: (number | string)[] | null;
     pt_totals: (number | string)[] | null;
     qa_total: number | string | null;

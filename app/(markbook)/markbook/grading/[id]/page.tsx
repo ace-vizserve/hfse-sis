@@ -462,7 +462,11 @@ export default async function GradingSheetPage({
     try {
       const verdict = (
         await loadSheetRemovability(createServiceClient(), [
-          { id: sheet.id, is_locked: sheet.is_locked },
+          {
+            id: sheet.id,
+            is_locked: sheet.is_locked,
+            sheet_type: sheet.sheet_type,
+          },
         ])
       ).get(sheet.id);
       removable = verdict?.removable ?? false;

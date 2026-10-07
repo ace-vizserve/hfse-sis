@@ -6,7 +6,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { logAction } from '@/lib/audit/log-action';
 import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
-import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
+import {
+  BEST_TERM_SYSTEM_ACTOR,
+  loadSheetRemovability,
+} from '@/lib/grading/sheet-removal';
+import { isTerm4Framework } from '@/lib/grading/term4-framework';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // GET /api/grading-sheets/[id]
@@ -132,7 +136,7 @@ export async function DELETE(
   const { data: sheet, error: sheetErr } = await service
     .from('grading_sheets')
     .select(
-      'id, is_locked, term_id, section_id, subject_id, section:sections(academic_year_id)'
+      'id, is_locked, sheet_type, term_id, section_id, subject_id, section:sections(academic_year_id)'
     )
     .eq('id', sheetId)
     .maybeSingle();
@@ -145,7 +149,11 @@ export async function DELETE(
   try {
     verdict = (
       await loadSheetRemovability(service, [
-        { id: sheet.id, is_locked: sheet.is_locked },
+        {
+          id: sheet.id,
+          is_locked: sheet.is_locked,
+          sheet_type: sheet.sheet_type,
+        },
       ])
     ).get(sheet.id);
   } catch (e) {
@@ -199,23 +207,67 @@ export async function DELETE(
     entries_removed: 0,
   };
 
+  // A Term 4 framework sheet (KD #230): the database fills the WW slot (the
+  // best term average) and so the derived figures, and records each change
+  // to that slot in `grade_audit_log` as 'system: best term average'. Those
+  // rows hold the sheet and its entries by FK, so they go first — their
+  // content is kept in the `sheet.delete` audit row below.
+  const framework = isTerm4Framework(sheet.sheet_type);
+  let systemRowsRemoved: unknown[] = [];
+  if (framework) {
+    const { data: sysRows, error: sysErr } = await service
+      .from('grade_audit_log')
+      .delete()
+      .eq('grading_sheet_id', sheet.id)
+      .eq('changed_by', BEST_TERM_SYSTEM_ACTOR)
+      .select(
+        'grade_entry_id, field_changed, old_value, new_value, approval_reference, changed_at'
+      );
+    if (sysErr)
+      return NextResponse.json({ error: sysErr.message }, { status: 500 });
+    systemRowsRemoved = sysRows ?? [];
+  }
+  const systemContext = framework
+    ? { system_audit_rows_removed: systemRowsRemoved }
+    : {};
+
   // Blank rows only — belt and braces over the check above. A row that gained
   // a score since is left in place, and its FK then refuses the sheet delete.
   // `is_na` is NOT filtered: it is seeded true for late enrollees, and a
   // person's N/A leaves history the check above already refused on.
-  const { data: removedRows, error: entErr } = await service
+  // On a framework sheet only what a person writes is filtered: the
+  // recommendation (pt_ps follows it), the exam and a letter.
+  let entryDelete = service
     .from('grade_entries')
     .delete()
     .eq('grading_sheet_id', sheet.id)
-    .is('ww_ps', null)
     .is('pt_ps', null)
     .is('qa_score', null)
-    .is('initial_grade', null)
-    .is('quarterly_grade', null)
-    .is('letter_grade', null)
-    .select('id');
-  if (entErr)
+    .is('letter_grade', null);
+  if (!framework)
+    entryDelete = entryDelete
+      .is('ww_ps', null)
+      .is('initial_grade', null)
+      .is('quarterly_grade', null);
+  const { data: removedRows, error: entErr } = await entryDelete.select('id');
+  if (entErr) {
+    if (systemRowsRemoved.length > 0)
+      await logAction({
+        service,
+        actor,
+        action: 'sheet.delete',
+        entityType: 'grading_sheet',
+        entityId: sheet.id,
+        context: {
+          ...baseContext,
+          ...systemContext,
+          partial: true,
+          failed_step: 'delete_entries',
+          error: entErr.message,
+        },
+      });
     return NextResponse.json({ error: entErr.message }, { status: 500 });
+  }
   const entriesRemoved = (removedRows ?? []).length;
 
   const { error: delErr } = await service
@@ -225,7 +277,7 @@ export async function DELETE(
   if (delErr) {
     // Something now references the sheet — most likely a score typed in the
     // last second. The sheet stays; say what was taken off it.
-    if (entriesRemoved > 0) {
+    if (entriesRemoved > 0 || systemRowsRemoved.length > 0) {
       await logAction({
         service,
         actor,
@@ -234,6 +286,7 @@ export async function DELETE(
         entityId: sheet.id,
         context: {
           ...baseContext,
+          ...systemContext,
           entries_removed: entriesRemoved,
           partial: true,
           failed_step: 'delete_sheet',
@@ -258,7 +311,11 @@ export async function DELETE(
     action: 'sheet.delete',
     entityType: 'grading_sheet',
     entityId: sheet.id,
-    context: { ...baseContext, entries_removed: entriesRemoved },
+    context: {
+      ...baseContext,
+      ...systemContext,
+      entries_removed: entriesRemoved,
+    },
   });
 
   // What creating one busts (POST /api/grading-sheets + bulk-create): the
