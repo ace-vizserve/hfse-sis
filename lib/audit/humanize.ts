@@ -82,6 +82,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sheet.create': 'Sheet created',
   'sheet.bulk_create': 'Sheets created',
   'sheet.delete': 'Sheet removed',
+  'sheet.switch_type': 'Sheet type switched',
   'sheet.lock': 'Sheet locked',
   'sheet.unlock': 'Sheet unlocked',
   'sheet.unlock_force_with_pending_crs':
@@ -2367,6 +2368,7 @@ function templateSummary(
     case 'sheet.create':
     case 'sheet.bulk_create':
     case 'sheet.delete':
+    case 'sheet.switch_type':
     case 'sheet.lock':
     case 'sheet.unlock':
     case 'sheet.unlock_force_with_pending_crs':
@@ -2403,6 +2405,26 @@ function templateSummary(
         if (boolish(ctx.partial) === true)
           parts.push('not removed — scores were entered at the same moment');
         else parts.push('nothing had been entered');
+      }
+      if (action === 'sheet.switch_type') {
+        const typeLabel = (t: string) =>
+          t === 'term4_framework'
+            ? 'Term 4 framework'
+            : t === 'standard'
+              ? 'Standard'
+              : t;
+        const from = str(ctx.from);
+        const to = str(ctx.to);
+        if (from && to)
+          parts.push(`switched from ${typeLabel(from)} to ${typeLabel(to)}`);
+        else if (to) parts.push(`switched to ${typeLabel(to)}`);
+        const cleared = numish(ctx.cleared_count);
+        if (cleared !== null)
+          parts.push(
+            cleared === 0
+              ? 'no scores to clear'
+              : `scores cleared for ${plural(cleared, 'student')}`
+          );
       }
       if (str(ctx.via) === 'bulk')
         parts.push('locked together with other sheets');

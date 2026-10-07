@@ -1611,3 +1611,22 @@ describe('classroom', () => {
     );
   });
 });
+
+describe('sheet.switch_type (KD #230 update)', () => {
+  it('says what it switched between and how many students lost scores', () => {
+    expect(
+      line('sheet.switch_type', {
+        subject_name: 'Mathematics',
+        section_name: 'Diligence',
+        level_label: 'Secondary 4',
+        term_label: 'Term 4',
+        from: 'standard',
+        to: 'term4_framework',
+        cleared_count: 3,
+        cleared: [{ entry_id: 'e1' }],
+      })
+    ).toBe(
+      'Mathematics · Diligence (Secondary 4) · Term 4 · switched from Standard to Term 4 framework · scores cleared for 3 students'
+    );
+  });
+});

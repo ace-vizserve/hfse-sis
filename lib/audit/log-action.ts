@@ -16,6 +16,10 @@ export const ALL_AUDIT_ACTIONS = [
   // 2026-09-29). The context carries what it was — class, subject, term, AY
   // and how many blank rows went with it.
   'sheet.delete',
+  // A grading sheet switched between Standard and Term 4 framework (KD #230
+  // update, 2026-10-08). The context carries from / to and every score the
+  // switch cleared (`cleared`, `cleared_count`) — nothing is lost.
+  'sheet.switch_type',
   'sheet.lock',
   'sheet.unlock',
   'sheet.unlock_force_with_pending_crs',
