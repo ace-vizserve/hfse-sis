@@ -55,6 +55,8 @@ Rejected: a new formula branch carrying the best-term rule inside the computatio
 
 ### 2. Creating the sheet
 
+> **Superseded 2026-10-08: sheets are switched, not created.** Mr Ace: a sheet becomes a Term 4 framework sheet by switching an existing sheet ("Switch sheet type", migration 185); new sheets are always Standard. See KD #230's update.
+
 - Single create (`app/(markbook)/markbook/grading/new/new-sheet-form.tsx` → `POST app/api/grading-sheets`): a **Sheet type** choice, Standard / Term 4 framework. Choosing Term 4 framework hides the slot/max/weight inputs and sends the fixed shape; the server sets it regardless of what the client sends.
 - Bulk create is unchanged — it only makes Standard sheets. Term 4 framework sheets are created one at a time for the sections that use them.
 - On create, the best term average is filled for every seeded entry immediately.

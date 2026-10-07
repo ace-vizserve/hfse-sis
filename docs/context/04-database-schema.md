@@ -171,6 +171,8 @@ CREATE TABLE grading_sheets (
 
 **Triggers on `grade_entries` (migration 184):** BEFORE `grade_entries_best_term_fill_trg` (sorts before the derive trigger) fills `ww_scores[1]` on framework sheets, refuses a typed value or an excusal (SQLSTATE `HFT4F`), and writes a `grade_audit_log` row (`system: best term average`, `ww_scores[0]`) when the value moves. AFTER `grade_entries_best_term_cascade_trg` (no column filter) touches the student's framework entries when a T1–T3 `quarterly_grade` / `is_na` changes; skips framework source sheets and null-grade inserts. `grade_entries_audit()` is redefined to skip the system-owned WW slot on framework sheets. Gap: the derived `quarterly_grade` change on a locked T4 row is not itself logged to `grade_audit_log`.
 
+**`switch_grading_sheet_type(sheet, type)` (migration 185, KD #230 update, service_role only, local only so far):** the only way a sheet changes type. One transaction: locks the sheet, refuses (`HFT4F`) not found / same type / locked / framework outside Term 4 / framework for a non-examinable subject; returns `{cleared, cleared_count, slot_labels, from, to}` (every entry with a score, for the `sheet.switch_type` audit row); reshapes the sheet in one UPDATE (framework shape, or standard WW `{10,10,10}` / PT `{10,10,10}` / `qa_total` = config `qa_max` or 30 / weights NULL; `slot_labels` NULL either way); blanks every entry's `ww_scores`, `pt_scores`, `qa_score`, excusals (`is_na`, `letter_grade` kept). Rows with a grade but no score get an exam-0-then-blank write so `grade_entries_derive`'s never-erases branch cannot keep it. Deletes nothing. Called by `PATCH /api/grading-sheets/[id]/sheet-type`.
+
 ### `grade_entries`
 
 One row per student per grading sheet. Stores raw scores as arrays.
