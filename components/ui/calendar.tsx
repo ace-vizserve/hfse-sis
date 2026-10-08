@@ -39,6 +39,11 @@ function Calendar({
         className
       )}
       captionLayout={captionLayout}
+      // react-day-picker v9's year dropdown otherwise stops at THIS year, so
+      // next year's term dates or deadlines can't be picked. 100 years back
+      // (birthdates), 10 ahead. A caller's own startMonth/endMonth wins.
+      startMonth={new Date(new Date().getFullYear() - 100, 0)}
+      endMonth={new Date(new Date().getFullYear() + 10, 11)}
       formatters={{
         formatMonthDropdown: (date) =>
           date.toLocaleString('default', { month: 'short' }),
