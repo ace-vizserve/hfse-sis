@@ -31,6 +31,7 @@ export function DateTimePicker({
   id,
   disabled,
   className,
+  defaultTime = '09:00',
 }: {
   value: string;
   onChange: (iso: string) => void;
@@ -38,6 +39,8 @@ export function DateTimePicker({
   id?: string;
   disabled?: boolean;
   className?: string;
+  /** 'HH:mm' used when a date is picked on an empty field. */
+  defaultTime?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const parsed = value ? new Date(value) : null;
@@ -47,7 +50,7 @@ export function DateTimePicker({
     parsed ?? undefined
   );
   const [draftTime, setDraftTime] = React.useState<string>(
-    parsed ? toLocalTime(parsed) : '09:00'
+    parsed ? toLocalTime(parsed) : defaultTime
   );
 
   // Sync draft state when the controlled value changes externally.

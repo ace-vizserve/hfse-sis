@@ -27,7 +27,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 import type { TermRow } from '@/lib/sis/ay-setup/queries';
 import {
   DEFAULT_LOCK_TIME,
@@ -386,32 +386,25 @@ function TermCard({
               : 'Singapore time. No deadline set.'
           }
         >
-          <div className="flex gap-2">
-            <div className="min-w-0 flex-1">
-              <DatePicker
-                id={`lock-${draft.id}`}
-                value={draft.grading_lock_date}
-                onChange={(v) =>
-                  onChange({
-                    grading_lock_date: v,
-                    // A date on its own means the whole day; clearing the
-                    // date clears the time with it.
-                    grading_lock_time: v
-                      ? draft.grading_lock_time || DEFAULT_LOCK_TIME
-                      : '',
-                  })
-                }
-              />
-            </div>
-            <Input
-              type="time"
-              aria-label={`${draft.label} grading lock time`}
-              value={draft.grading_lock_time}
-              disabled={!draft.grading_lock_date}
-              onChange={(e) => onChange({ grading_lock_time: e.target.value })}
-              className="h-10 w-32 shrink-0 font-mono tabular-nums"
-            />
-          </div>
+          <DateTimePicker
+            id={`lock-${draft.id}`}
+            defaultTime={DEFAULT_LOCK_TIME}
+            value={
+              draft.grading_lock_date
+                ? (isoFromSgtParts(
+                    draft.grading_lock_date,
+                    draft.grading_lock_time || DEFAULT_LOCK_TIME
+                  ) ?? '')
+                : ''
+            }
+            onChange={(iso) => {
+              const parts = sgtPartsFromIso(iso || null);
+              onChange({
+                grading_lock_date: parts.date,
+                grading_lock_time: parts.time,
+              });
+            }}
+          />
         </Field>
       </div>
     </div>
