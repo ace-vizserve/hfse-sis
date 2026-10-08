@@ -79,6 +79,11 @@ const ALLOWED: Record<string, { rows: number; measured: string; why: string }> =
     // above them, and the estimates were roughly right.
 
     // ── one grading sheet / one student's sections ─────────────────────────
+    'app/api/grading-sheets/[id]/section-terms/route.ts': {
+      rows: 36,
+      measured: '2026-10-08',
+      why: 'grade_entries of ONE sheet (worst sheet 36 of 21,301 total) to count students with scores for the Switch confirm — at most one sheet per term, only on switchable Sec 4 sheets',
+    },
     'lib/change-requests/approval-route.ts': {
       rows: 36,
       measured: '2026-09-11',
