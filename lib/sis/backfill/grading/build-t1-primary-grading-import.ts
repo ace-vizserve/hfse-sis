@@ -361,9 +361,7 @@ function buildApplySql(
   lines.push(
     'join subject_configs sc on sc.academic_year_id = ay.id and sc.subject_id = sub.id'
   );
-  lines.push(
-    'on conflict (term_id, section_id, subject_id) where archived_at is null do nothing;'
-  );
+  lines.push('on conflict (term_id, section_id, subject_id) do nothing;');
   lines.push('');
 
   // --- 3) grade_entries ---

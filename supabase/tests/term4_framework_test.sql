@@ -425,7 +425,7 @@ begin
   insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, ww_totals, pt_totals, qa_total)
   values ((select v from fx where k='t4'),(select v from fx where k='sec'),(select v from fx where k='c'),
           (select v from fx where k='cc'),'{10}','{10}',30)
-  on conflict (term_id, section_id, subject_id) where archived_at is null do nothing;
+  on conflict (term_id, section_id, subject_id) do nothing;
   select id into sh from grading_sheets where term_id = (select v from fx where k='t4')
      and section_id = (select v from fx where k='sec') and subject_id = (select v from fx where k='c');
   begin
