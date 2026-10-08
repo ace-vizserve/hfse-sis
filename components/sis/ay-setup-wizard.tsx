@@ -1,12 +1,9 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, ArrowRight, CheckCircle2, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
-import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
@@ -21,115 +18,70 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { CreateAySchema, type CreateAyInput } from '@/lib/schemas/ay-setup';
-
-type Preview = {
-  ay_already_exists: boolean;
-  terms_to_insert: number;
-  will_seed_defaults: boolean;
-};
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { ayIdentityForYear } from '@/lib/schemas/ay-setup';
 
 type Props = {
-  preview: Preview;
+  /** `ay_code`s that already exist — those years are not offered. */
+  existingAyCodes: string[];
   children: ReactNode;
 };
 
 type Step = 'identity' | 'review' | 'follow-up';
 
-const BLANK: CreateAyInput = {
-  ay_code: '',
-  label: '',
-};
+type CreateAyResponse = { ok?: boolean };
 
-function AySetupWizard({ preview, children }: Props) {
+/** Years that can still be created: last year through five years ahead. */
+function availableYears(existingAyCodes: string[], now = new Date()): number[] {
+  const thisYear = now.getFullYear();
+  const taken = new Set(existingAyCodes);
+  const years: number[] = [];
+  for (let y = thisYear - 1; y <= thisYear + 5; y++) {
+    if (!taken.has(ayIdentityForYear(y).ay_code)) years.push(y);
+  }
+  return years;
+}
+
+function AySetupWizard({ existingAyCodes, children }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('identity');
+  const [year, setYear] = useState<number | null>(null);
   const [createdAyCode, setCreatedAyCode] = useState<string | null>(null);
 
-  const form = useForm<CreateAyInput>({
-    resolver: zodResolver(CreateAySchema),
-    defaultValues: BLANK,
-  });
-
-  type CreateAyResponse = {
-    alreadyExisted?: boolean;
-    summary?: {
-      ay_existed?: boolean;
-      sections_seeded?: number;
-      subject_configs_seeded?: number;
-    };
-  };
+  const years = availableYears(existingAyCodes);
 
   const createMutation = useMutation({
-    mutationFn: (values: CreateAyInput) =>
-      apiFetch<CreateAyResponse>('/api/sis/ay-setup', jsonInit('POST', values)),
+    mutationFn: (y: number) =>
+      apiFetch<CreateAyResponse>(
+        '/api/sis/ay-setup',
+        jsonInit('POST', { year: y })
+      ),
   });
 
   const run = useWriteAction();
   const [submitting, setSubmitting] = useState(false);
 
-  function describeSuccess(
-    body: CreateAyResponse,
-    values: CreateAyInput
-  ): string | null {
-    if (body.alreadyExisted) {
-      // Nothing was created — a notice, not work done.
-      toast.info(`${values.ay_code} is already fully set up — nothing to do.`);
-      return null;
-    }
-    // The RPC is idempotent (migration 030). When `summary.ay_existed`
-    // is true here it means we filled in missing terms / sections /
-    // subject_configs against an already-existing AY row — phrase it
-    // as "completed" rather than "created" so the user understands
-    // their existing admissions data wasn't disturbed.
-    const ayExisted = body.summary?.ay_existed === true;
-    const sectionsSeeded: number = body.summary?.sections_seeded ?? 0;
-    const configsSeeded: number = body.summary?.subject_configs_seeded ?? 0;
-    // Migration 090 always seeds the static default catalog for a
-    // genuinely new AY — reaching here (past the alreadyExisted
-    // early-return above) with sectionsSeeded===0 && configsSeeded===0
-    // means the AY row already had its full sections/subjects catalog
-    // and only the missing term rows were topped up. Not a bootstrap
-    // gap anymore (that case no longer exists).
-    if (sectionsSeeded === 0 && configsSeeded === 0) {
-      toast.info(
-        `${values.ay_code} already had its sections and subjects configured — only the missing term dates were added.`
-      );
-    }
-    return ayExisted
-      ? `${values.ay_code} setup completed`
-      : `${values.ay_code} created`;
-  }
-
   function resetAll() {
-    form.reset(BLANK);
+    setYear(null);
     setStep('identity');
     setCreatedAyCode(null);
     createMutation.reset();
   }
 
-  async function onStep1Submit(_values: CreateAyInput) {
-    // Step 1 only validates — the actual commit happens on step 2.
-    setStep('review');
-  }
-
   async function onCommit() {
-    const values = form.getValues();
+    if (year === null) return;
+    const { ay_code: code } = ayIdentityForYear(year);
     setSubmitting(true);
-    await run(() => createMutation.mutateAsync(values), {
-      pending: `Setting up ${values.ay_code}…`,
-      success: (body: CreateAyResponse) => describeSuccess(body, values),
-      // Preserve the original fallback: `body.error ?? 'Failed to create AY'`.
+    await run(() => createMutation.mutateAsync(year), {
+      pending: `Setting up ${code}…`,
+      success: () => `${code} created`,
       error: (e: unknown) => {
         const serverError =
           e instanceof ApiError && e.body && typeof e.body === 'object'
@@ -137,12 +89,8 @@ function AySetupWizard({ preview, children }: Props) {
             : undefined;
         return serverError ?? 'Failed to create AY';
       },
-      onResolved: (body: CreateAyResponse) => {
-        if (body.alreadyExisted) {
-          handleOpenChange(false);
-          return;
-        }
-        setCreatedAyCode(values.ay_code);
+      onResolved: () => {
+        setCreatedAyCode(code);
         setStep('follow-up');
       },
     });
@@ -154,10 +102,9 @@ function AySetupWizard({ preview, children }: Props) {
     if (!next) resetAll();
   }
 
-  const ayCode = form.watch('ay_code')?.trim().toUpperCase() || '';
-  const aySlug = /^AY\d{4}$/.test(ayCode)
-    ? `ay${ayCode.slice(2).toLowerCase()}`
-    : 'ay____';
+  const identity = year === null ? null : ayIdentityForYear(year);
+  const ayCode = identity?.ay_code ?? '';
+  const aySlug = `ay${year ?? '____'}`;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -168,70 +115,56 @@ function AySetupWizard({ preview, children }: Props) {
             <DialogHeader>
               <DialogTitle>Create a new academic year</DialogTitle>
               <DialogDescription>
-                Step 1 of 2 — identify the new AY. HFSE&apos;s standard starting
-                catalog is seeded automatically on commit.
+                Step 1 of 2 — pick the year. HFSE&apos;s standard starting
+                catalog is set up automatically.
               </DialogDescription>
             </DialogHeader>
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onStep1Submit)}
-                className="space-y-4"
-              >
-                <FormField
-                  control={form.control}
-                  name="ay_code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>AY code</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="AY2027"
-                          autoComplete="off"
-                          autoCapitalize="characters"
-                          {...field}
-                          onChange={(e) =>
-                            field.onChange(e.target.value.toUpperCase())
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Format{' '}
-                        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-                          AY
-                        </code>{' '}
-                        followed by four digits. Must be unique.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="label"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Display label</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Academic Year 2027" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleOpenChange(false)}
+            <div className="space-y-4">
+              {years.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Every year from last year to five years ahead already has an
+                  academic year, so there is nothing new to create.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="new-ay-year">Year</Label>
+                  <Select
+                    value={year === null ? '' : String(year)}
+                    onValueChange={(v) => setYear(Number(v))}
                   >
-                    Cancel
-                  </Button>
-                  <Button type="submit">
-                    Next <ArrowRight className="ml-1 size-4" />
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
+                    <SelectTrigger id="new-ay-year" className="w-full">
+                      <SelectValue placeholder="Choose a year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Only years that do not already exist are listed.
+                  </p>
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={year === null}
+                  onClick={() => setStep('review')}
+                >
+                  Next <ArrowRight className="ml-1 size-4" />
+                </Button>
+              </DialogFooter>
+            </div>
           </>
         )}
 
@@ -244,39 +177,16 @@ function AySetupWizard({ preview, children }: Props) {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2 text-sm">
-              <ReviewRow
-                label="AY row"
-                value={
-                  preview.ay_already_exists
-                    ? `${ayCode} — already exists, will be reused`
-                    : `${ayCode} — ${form.getValues('label')}`
-                }
-              />
-              <ReviewRow
-                label="Terms"
-                value={
-                  preview.terms_to_insert === 4
-                    ? '4 terms (T1–T4, dates unset)'
-                    : preview.terms_to_insert === 0
-                      ? '4 already exist — none added'
-                      : `${preview.terms_to_insert} added (existing terms preserved)`
-                }
-              />
+              <ReviewRow label="Code" value={ayCode} />
+              <ReviewRow label="Name" value={identity?.label ?? ''} />
+              <ReviewRow label="Terms" value="4 terms (T1–T4, dates unset)" />
               <ReviewRow
                 label="Sections & subjects"
-                value={
-                  preview.will_seed_defaults
-                    ? "HFSE's standard starting catalog will be created — sections, subjects, and weights, ready to edit"
-                    : 'Already configured — nothing will be added'
-                }
+                value="HFSE's standard starting catalog will be created — sections, subjects, and weights, ready to edit"
               />
               <ReviewRow
                 label="Admissions tables"
-                value={
-                  preview.ay_already_exists
-                    ? `${aySlug}_enrolment_applications, _status, _documents, _discount_codes — created if missing, existing rows preserved`
-                    : `4 created: ${aySlug}_enrolment_applications, _status, _documents, ${aySlug}_discount_codes`
-                }
+                value={`4 created: ${aySlug}_enrolment_applications, _status, _documents, ${aySlug}_discount_codes`}
               />
             </div>
             <DialogFooter>
@@ -360,10 +270,10 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 }
 
 export function NewAyButton({
-  preview,
+  existingAyCodes,
   variant = 'default',
 }: {
-  preview: Preview;
+  existingAyCodes: string[];
   /**
    * Design system §9.2/§9.5 — exactly one `default` (primary) button per
    * page. On `/sis/ay-setup`, the Year Setup checklist's own next-step CTA
@@ -375,7 +285,7 @@ export function NewAyButton({
   variant?: 'default' | 'outline';
 }) {
   return (
-    <AySetupWizard preview={preview}>
+    <AySetupWizard existingAyCodes={existingAyCodes}>
       <Button variant={variant}>
         <Plus className="mr-1 size-4" /> New AY
       </Button>

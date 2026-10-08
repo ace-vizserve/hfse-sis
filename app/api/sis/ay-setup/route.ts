@@ -5,6 +5,7 @@ import { PARENT_ACADEMIC_YEARS_TAG } from '@/lib/admissions/parent-academic-year
 import { logAction } from '@/lib/audit/log-action';
 import { requireCapability } from '@/lib/auth/require-capability';
 import {
+  ayIdentityForYear,
   CreateAySchema,
   DeleteAySchema,
   SwitchActiveAySchema,
@@ -33,14 +34,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const { ay_code: ayCode, label } = parsed.data;
+  const { ay_code: ayCode, label } = ayIdentityForYear(parsed.data.year);
   const supabase = createServiceClient();
 
-  // The RPC is fully idempotent (migration 030): if the AY row exists it
-  // is reused, terms/sections/subject_configs only get filled in if
-  // missing, admissions tables use CREATE IF NOT EXISTS. So we always
-  // call it â€” it correctly handles brand-new, partial, and fully-set-up
-  // states, and on a re-run nothing is duplicated or destroyed.
+  // Creating is for new years only: refuse a code that already exists. (The
+  // RPC itself stays idempotent, migration 030, but the screen no longer
+  // offers a year that exists.)
+  const { data: existing, error: existingErr } = await supabase
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  if (existingErr) {
+    console.error(
+      '[ay-setup POST] existence check failed:',
+      existingErr.message
+    );
+    return NextResponse.json({ error: existingErr.message }, { status: 500 });
+  }
+  if (existing) {
+    return NextResponse.json(
+      { error: `${ayCode} already exists.` },
+      { status: 409 }
+    );
+  }
+
   const { data: result, error: rpcErr } = await supabase.rpc(
     'create_academic_year',
     {

@@ -14,18 +14,25 @@ const AyCode = z
 
 // POST /api/sis/ay-setup — create AY
 //
-// The RPC derives the slug and seeds the static default catalog
-// server-side (migration 090); the client only supplies identity + label.
+// The client only picks a year. The code (`AY{year}`) and label
+// (`Academic Year {year}`) are derived server-side by `ayIdentityForYear`; the
+// RPC derives the slug and seeds the static default catalog (migration 090).
 export const CreateAySchema = z.object({
-  ay_code: AyCode,
-  label: z
-    .string()
-    .trim()
-    .min(1, 'Label required')
-    .max(120, 'Label too long (120 char max)'),
+  year: z
+    .number()
+    .int('Pick a year')
+    .min(2000, 'Pick a valid year')
+    .max(2100, 'Pick a valid year'),
 });
 
 export type CreateAyInput = z.infer<typeof CreateAySchema>;
+
+export function ayIdentityForYear(year: number): {
+  ay_code: string;
+  label: string;
+} {
+  return { ay_code: `AY${year}`, label: `Academic Year ${year}` };
+}
 
 // PATCH /api/sis/ay-setup/accepting-applications — toggle the early-bird
 // gate post-creation (KD #77). Lets the registrar open / close the

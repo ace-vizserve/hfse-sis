@@ -4,10 +4,7 @@ import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import { PageTabNav } from '@/components/sis/page-tab-nav';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { Badge } from '@/components/ui/badge';
-import {
-  getAySetupPreview,
-  listAcademicYears,
-} from '@/lib/sis/ay-setup/queries';
+import { listAcademicYears } from '@/lib/sis/ay-setup/queries';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { resolveSelectedAyCode } from '@/lib/sis/year-setup';
 
@@ -27,9 +24,8 @@ export async function AySetupHeader({ ay }: { ay: string | undefined }) {
     ? await getAyReadiness(selectedAyCode)
     : null;
 
-  // Preview for the "New AY" wizard. The throwaway code makes the query pull
-  // the most-recent existing AY.
-  const preview = await getAySetupPreview('__NEW__');
+  // The "New AY" wizard offers only years that do not exist yet.
+  const existingAyCodes = ays.map((a) => a.ay_code);
 
   const ayQuery = ay ? `?ay=${encodeURIComponent(ay)}` : '';
 
@@ -66,7 +62,9 @@ export async function AySetupHeader({ ay }: { ay: string | undefined }) {
             </>
           )
         }
-        actions={<NewAyButton preview={preview} variant="outline" />}
+        actions={
+          <NewAyButton existingAyCodes={existingAyCodes} variant="outline" />
+        }
       />
 
       <PageTabNav
