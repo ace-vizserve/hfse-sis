@@ -30,22 +30,22 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                                               | Where                                                                           |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                               | KD #177, migration 109                                                          |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                      | KD #178, migrations 110 / 111                                                   |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                               | Records → Academic tab                                                          |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                               | KD #179 (subject) + #182 (adviser)                                              |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                               | KD #181 — Classroom drawer                                                      |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ✅ **DONE 2026-08-31 — end to end, both sides**      | Parent files it + approval ladder + register write; staff can upload too        |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24**  | Five screens. Migrations 120–122. Outcome still nowhere                         |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**         | Principal's List is an ACADEMIC honour, not a competition                       |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                           | Same table as #8 — scoring sheet                                                |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                              | "Teachers cannot choose the approvers"                                          |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                         |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                     |
-| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⚠ **NEW — reopens SOW, removed twice**               | Nothing scoped. **T12** + _Answers received_. Relief half answered by KD #191   |
+| #   | Ask                                                   | Who                                                  | Status                                               | Where                                                                            |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                               | KD #177, migration 109                                                           |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                      | KD #178, migrations 110 / 111                                                    |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                               | Records → Academic tab                                                           |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                               | KD #179 (subject) + #182 (adviser)                                               |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                               | KD #181 — Classroom drawer                                                       |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ✅ **DONE 2026-08-31 — end to end, both sides**      | Parent files it + approval ladder + register write; staff can upload too         |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24**  | Five screens. Migrations 120–122. Outcome still nowhere                          |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**         | Principal's List is an ACADEMIC honour, not a competition                        |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                           | Same table as #8 — scoring sheet                                                 |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                              | "Teachers cannot choose the approvers"                                           |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open  |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                          |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                      |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⏸ **ON HOLD 2026-10-07** — pending 23 Oct vendor mtg | Designed + mocked up (T12); build paused for Flourish / Exponential Learning Lab |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -604,6 +604,18 @@ discipline` made the student name a link, and teachers cannot open Records, so
   staff across the four houses. Nothing in the system models this, nobody asked
   for it, and it is recorded here only so it is not discovered late. Do not
   build it.
+
+- ⏸ **T12 ON HOLD (Mr Ace, 2026-10-07).** Exponential Learning Lab (product
+  "Flourish") pitched Miss Tin three platforms — CCA/ECA tracking, a **teacher's
+  portal for planning**, and parent communication. Miss Tin invited Mr Amier and
+  Mr Ace to a Zoom with their team on **23 Oct 2026, 10 AM**. Their planning
+  portal overlaps this SOW work directly, so the build waits for that meeting.
+  Kept, not built: the design agreed 2026-10-05/06 (SOW per subject × level ×
+  term; teachers prepare their level's section; subject head/monitor → OIC
+  (Primary or Secondary) → Asst P (Ms Chandana) vet, AEB approves; weekly check
+  per class, note required unless "as planned"; relief view of this week;
+  oversight in Classroom; no grading sheet config without an approved SOW) and
+  the mockup `https://claude.ai/artifact/D9HuZFBVC842AUk5SCYDMH`.
 
 - **T12 — the teachers' dashboard (lesson planning + SOW). New 2026-08-21,
   raised by Christina unprompted, and nothing about it is scoped.** Her words
@@ -2706,6 +2718,65 @@ monitoring without being prompted — that is the academic head corroborating th
 ⚠ **Scope note.** "Lesson planning, scheme of work and teaching and delivery
 matters" is a **module**, not a feature. Nothing here is scoped, costed or
 approved. Do not re-derive a SOW model from this message.
+
+### Christina — the SOW process, and a sample · 2026-10-05
+
+Mr Ace asked for one SOW and one lesson plan plus the process. Her reply,
+verbatim:
+
+> Hi Mr Ace - I sent you samples of the SOW via email.
+> As for the questions:
+> who prepares and approves the SOW - prepared by the teacher, vetted by the
+> subject head/ monitor, OIC and Asst P. Approved by the AEB
+> how/when teachers prepare their lesson plans - lesson plans are incorporated
+> in the SOW
+> how the SOW relates to the grading sheets/assessments - the SOW contains
+> lesson timetable, objectives, assessment plan and learning outcomes. Hence,
+> its contents become the basis for the grading
+> how a relief teacher knows what lesson to teach when the assigned teacher is
+> absent - the SOW shows the lessons to teach per week. If a relief teacher
+> comes, he will check the current week's learning objectives and learning
+> strategies
+> whether the relief teacher needs to record anything after the lesson - yes,
+> from next year, relief teacher needs to record what was covered in class
+> during the relief teaching session
+
+**The sample:** `AY2026 Term 2 Science SOW Secondary.xlsx` (repo root, not
+committed). One workbook per subject × term, one tab per level (Secondary 1–4),
+all on one template titled "Module Syllabus":
+
+- **Header** — module title, syllabus, level, term dates, teaching hours,
+  teaching methods, assessment weights (WW 40 / PT 40 / QA 20), pass
+  requirement, textbook, references, remarks.
+- **"Scheme of Work / Lesson Plan"** — one block per **week** (10 for T2):
+  week + dates + that week's school events, topic / established goals,
+  learning outcomes, textbook pages, teaching activities / assessment (e.g.
+  "Worksheet 1", "Quiz 1", "Assessment 1A"), remarks.
+- **"Monitoring Module Delivery"** — per week, two teacher columns, each with
+  five ticks (followed as planned / minor adjustments / delays / additional
+  activities / others) plus initials & date, and a supervisor's remarks &
+  date column.
+
+What it settles:
+
+1. **There is no separate lesson plan.** The SOW's weekly rows ARE the lesson
+   plan, so it is one document, not two.
+2. **The week is the unit.** A relief teacher reads the current week's row,
+   which is exactly what the "You're covering" panel (KD #191) can point at.
+3. **The approval chain is the five-station one** — teacher → subject
+   head/monitor → OIC → Asst Principal → AEB — the same stations as the
+   pre-issuance grade-change chain this file marks as resting on one
+   unverified message (#11). **This is a second, independent source for it.**
+4. **Assessments are named loosely** ("Worksheet 1", "Quiz 1"), not as WW1 /
+   PT1 slots, so any grading-sheet link is by label, not by structure.
+5. **New requirement from next year:** the relief teacher records what was
+   covered. The template's monitoring block is the nearest existing place for
+   it; whether "Teacher (2)" is meant for the relief teacher is not stated.
+6. Each week's school events (holidays, exams, field trips) are typed by hand
+   and duplicate the SIS school calendar.
+
+Not yet decided: whether the SIS stores the SOW's contents or the file, and
+who does the data entry. The adoption trap above (T12) still applies.
 
 ### The P-Files document list · 2026-08-25
 

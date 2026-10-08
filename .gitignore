@@ -255,6 +255,15 @@ scripts/*.py
 # Supabase CLI local cache + project link.
 /supabase/.temp/
 
+# Local-dev schema dump of production (structure only, regenerated on demand)
+# and the fake local seed. Never committed: the dump can drift from prod the
+# moment a migration lands, and it is rebuilt with `supabase db dump`.
+/supabase/prod-schema.sql
+/supabase/prod-schema.migrations.txt
+/supabase/prod-roles.sql
+/supabase/prod-config.sql
+/supabase/local-seed.sql
+
 # Reference documents and images dropped at the repo root (templates, the
 # printed calendar, the walkthrough). Local reference only.
 /*.docx
