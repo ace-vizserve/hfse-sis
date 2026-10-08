@@ -107,18 +107,21 @@ function buildService() {
           }),
           select: () => ({
             // `.in('id', ids)` — the re-read that catches a mid-flight lock.
+            // Chainable: the route adds `.eq('sheet_type', 'standard')`
+            // (Term 4 framework sheets are never resized, KD #230).
             in: (_col: string, ids: string[]) =>
-              Promise.resolve({
+              awaitableEq({
                 data: ids.map((id) => sheetsById[id]).filter(Boolean),
                 error: null,
               }),
             // `.eq('subject_config_id', ...).eq('is_locked', false)` — used by
             // the sheet-id fallback, the truncation scan, and the prior-qa
-            // snapshot. Carries qa_total so the snapshot is meaningful.
+            // snapshot, some with a further `.eq('sheet_type', …)`. Carries
+            // qa_total so the snapshot is meaningful.
             eq: () => ({
               eq: () => {
                 sheetEqQueries += 1;
-                return Promise.resolve({
+                return awaitableEq({
                   data: fallbackSheetIds.map((id) => ({
                     id,
                     qa_total:
@@ -179,6 +182,14 @@ function buildService() {
       throw new Error(`unexpected table: ${table}`);
     },
   };
+}
+
+// A resolved query that also accepts more `.eq(...)` filters, like a real
+// supabase-js builder (each extra filter is a no-op for this fixture).
+function awaitableEq<T>(result: T): Promise<T> & { eq: () => unknown } {
+  return Object.assign(Promise.resolve(result), {
+    eq: () => awaitableEq(result),
+  });
 }
 
 vi.mock('@/lib/supabase/service', () => ({
