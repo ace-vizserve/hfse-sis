@@ -202,6 +202,16 @@ export type ExpandableConfig<TRow> = {
   }) => import('react').ReactNode;
 };
 
+/**
+ * A full-width panel rendered directly beneath a row (a "show more" drawer for
+ * ONE row). Unlike `expandable`, which groups several rows under a header row,
+ * this keeps the row's own cells and adds a panel after it. Open/closed state
+ * is the caller's: return null from `render` for a closed (or detail-less) row.
+ */
+export type RowDetailConfig<TRow> = {
+  render: (row: TRow) => ReactNode | null;
+};
+
 export type DataTableProps<TRow> = {
   data: TRow[];
   columns: ColumnDef<TRow>[];
@@ -247,6 +257,7 @@ export type DataTableProps<TRow> = {
    *  row selection. Use after a bulk action completes to drop the footer. */
   selectionResetSignal?: number;
   expandable?: ExpandableConfig<TRow>;
+  rowDetail?: RowDetailConfig<TRow>;
   csv?: CsvConfig<TRow>;
   url?: UrlStateConfig;
 

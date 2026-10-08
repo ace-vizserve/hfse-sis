@@ -146,6 +146,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     selection,
     selectionResetSignal,
     expandable,
+    rowDetail,
     csv,
     url = { enabled: false },
     emptyState,
@@ -903,19 +904,36 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                   );
                 })
               ) : (
-                table.getRowModel().rows.map((r) => (
-                  <TableRow
-                    key={r.id}
-                    className="group"
-                    data-state={r.getIsSelected() && 'selected'}
-                  >
-                    {r.getVisibleCells().map((c) => (
-                      <TableCell key={c.id}>
-                        {flexRender(c.column.columnDef.cell, c.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
+                table.getRowModel().rows.map((r) => {
+                  const detail = rowDetail?.render(r.original) ?? null;
+                  return (
+                    <Fragment key={r.id}>
+                      <TableRow
+                        className="group"
+                        data-state={r.getIsSelected() && 'selected'}
+                      >
+                        {r.getVisibleCells().map((c) => (
+                          <TableCell key={c.id}>
+                            {flexRender(
+                              c.column.columnDef.cell,
+                              c.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {detail ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell
+                            colSpan={r.getVisibleCells().length}
+                            className="border-t-0 bg-muted/30 p-0"
+                          >
+                            {detail}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </Fragment>
+                  );
+                })
               )}
             </TableBody>
           </Table>

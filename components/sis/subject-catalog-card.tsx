@@ -1,5 +1,6 @@
 'use client';
 
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -9,7 +10,7 @@ import {
   Pencil,
   Plus,
 } from 'lucide-react';
-import { Fragment, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   AttachToSectionModal,
@@ -33,6 +34,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DataTable } from '@/components/ui/data-table';
+import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import type { FacetConfig } from '@/components/ui/data-table/types';
 import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Sheet,
@@ -41,14 +45,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { formatLevelSpan } from '@/lib/sis/subjects/level-span';
 import type { CatalogSubjectRow } from '@/lib/sis/subjects/queries';
 import { cn } from '@/lib/utils';
@@ -60,6 +56,10 @@ import { cn } from '@/lib/utils';
 // sheet"). One table: checkbox, subject, weights. Check a few rows, a bar
 // appears, click it, pick section(s) in a confirm modal (creates the
 // grading sheets), done.
+//
+// The table is the app's DataTable, so it carries the shared search box and
+// facet filters (Grading / Weights / Classes). The three facets read hidden
+// columns — they exist only to be filtered on.
 //
 // Dropped on purpose, all per explicit live feedback: the per-row "Needs
 // attention" badge (a subject with no weights just reads "Not set" and
@@ -108,6 +108,34 @@ type UsedByImpact = {
     sections: UsedBySectionChip[];
   }>;
 };
+
+// Facet vocabularies. The same strings feed the hidden columns' accessors and
+// the facets' option lists, so a rename cannot desync them.
+const GRADING_NUMBER = 'Number grade';
+const GRADING_LETTER = 'Letter grade';
+const WEIGHTS_SET = 'Set';
+const WEIGHTS_NOT_SET = 'Not set';
+const WEIGHTS_NO_SHEET = 'No sheet';
+const CLASSES_ATTACHED = 'Attached';
+const CLASSES_NOT_ATTACHED = 'Not attached';
+
+const FACETS: FacetConfig[] = [
+  {
+    columnId: 'grading',
+    label: 'Grading',
+    valueOptions: [GRADING_NUMBER, GRADING_LETTER],
+  },
+  {
+    columnId: 'weights',
+    label: 'Weights',
+    valueOptions: [WEIGHTS_SET, WEIGHTS_NOT_SET, WEIGHTS_NO_SHEET],
+  },
+  {
+    columnId: 'classes',
+    label: 'Classes',
+    valueOptions: [CLASSES_ATTACHED, CLASSES_NOT_ATTACHED],
+  },
+];
 
 /**
  * Which classes already teach this subject.
@@ -235,7 +263,13 @@ export function SubjectCatalogCard({
    * active catalog tab. */
   defaultSectionLevelType: 'primary' | 'secondary';
 }) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // What the "Attach to section" modal was opened with. Captured when the bulk
+  // action fires, because the table owns the live selection.
+  const [attachSubjects, setAttachSubjects] = useState<
+    Array<{ subjectConfigId: string; code: string; name: string }>
+  >([]);
+  // Bumped after a successful attach so the table drops its selection.
+  const [selectionResetSignal, setSelectionResetSignal] = useState(0);
   const [editSubject, setEditSubject] = useState<CatalogSubjectRow | null>(
     null
   );
@@ -265,15 +299,8 @@ export function SubjectCatalogCard({
     name: c.name,
   }));
 
-  function toggleSelected(subject: CatalogSubjectRow, checked: boolean) {
-    if (!subject.hasConfig || !subject.config) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(subject.id);
-      else next.delete(subject.id);
-      return next;
-    });
-  }
+  const attachedCount = (c: CatalogSubjectRow) =>
+    c.config ? (sheetImpactByConfigId?.[c.config.id]?.totalSections ?? 0) : 0;
 
   // The summary strip's counts. Every one is a state the table's own rows
   // show, so the strip is a tally of the column below it, not a new metric.
@@ -287,11 +314,7 @@ export function SubjectCatalogCard({
           Math.round(c.config.qa_weight * 100)
         );
   const summary = {
-    attached: catalog.filter((c) =>
-      c.config
-        ? (sheetImpactByConfigId?.[c.config.id]?.totalSections ?? 0) > 0
-        : false
-    ).length,
+    attached: catalog.filter((c) => attachedCount(c) > 0).length,
     notSet: catalog.filter((c) => !c.config && c.grading_method !== 'no_sheet')
       .length,
     custom: catalog.filter((c) => profileOf(c) === 'custom').length,
@@ -299,13 +322,158 @@ export function SubjectCatalogCard({
     noSheet: catalog.filter((c) => c.grading_method === 'no_sheet').length,
   };
 
-  const selectedSubjects = catalog
-    .filter((c) => selectedIds.has(c.id) && c.hasConfig && c.config)
-    .map((c) => ({
-      subjectConfigId: c.config!.id,
-      code: c.code,
-      name: c.name,
-    }));
+  const columns = useMemo<ColumnDef<CatalogSubjectRow>[]>(
+    () => [
+      {
+        id: 'select',
+        header: ({ table }) => {
+          const selectable = table
+            .getRowModel()
+            .rows.filter((r) => r.getCanSelect());
+          const selectedCount = selectable.filter((r) =>
+            r.getIsSelected()
+          ).length;
+          const all =
+            selectable.length > 0 && selectedCount === selectable.length;
+          const some = selectedCount > 0 && !all;
+          return (
+            <Checkbox
+              checked={all ? true : some ? 'indeterminate' : false}
+              onCheckedChange={(v) => {
+                for (const r of selectable) r.toggleSelected(!!v);
+              }}
+              disabled={selectable.length === 0}
+              aria-label="Select all attachable subjects"
+            />
+          );
+        },
+        meta: { label: 'Select' },
+        cell: ({ row }) => {
+          const subject = row.original;
+          const attachable = subject.hasConfig && !!subject.config;
+          const checked = row.getIsSelected();
+          // The hint exists only when the Checkbox is disabled, and a
+          // disabled checkbox is a disabled <button> — it fires no hover and
+          // takes no focus. `wrap` puts the trigger on a span around it.
+          return (
+            <HoverHint
+              hint={
+                attachable
+                  ? undefined
+                  : 'Not attachable yet — set its weights first'
+              }
+              wrap
+            >
+              <Checkbox
+                checked={checked}
+                disabled={!attachable}
+                onCheckedChange={(v) => row.toggleSelected(v === true)}
+                aria-label={`${subject.name} — ${checked ? 'selected' : 'not selected'}`}
+              />
+            </HoverHint>
+          );
+        },
+        enableSorting: false,
+        enableHiding: false,
+      },
+      {
+        id: 'name',
+        accessorKey: 'name',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Subject</SortableHeader>
+        ),
+        meta: { label: 'Subject' },
+        cell: ({ row }) => (
+          // The name is the label; the code is its ID, read like a student
+          // number under a name.
+          <div className="flex flex-col gap-0.5 leading-tight">
+            <span className="font-serif text-[14px] font-semibold text-foreground">
+              {row.original.name}
+            </span>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {row.original.code}
+            </span>
+          </div>
+        ),
+        enableHiding: false,
+      },
+      {
+        id: 'usedBy',
+        header: 'Used by',
+        cell: ({ row }) => {
+          const subject = row.original;
+          return (
+            <UsedByCell
+              impact={
+                subject.config
+                  ? sheetImpactByConfigId?.[subject.config.id]
+                  : undefined
+              }
+              isOpen={expandedIds.has(subject.id)}
+              subjectName={subject.name}
+              onToggle={() => toggleExpanded(subject.id)}
+            />
+          );
+        },
+      },
+      {
+        id: 'weightsBar',
+        header: 'Weights (WW · PT · QA)',
+        cell: ({ row }) => (
+          <WeightsCell
+            subject={row.original}
+            onFix={() => setEditSubject(row.original)}
+          />
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { label: 'Actions', excludeFromExport: true },
+        cell: ({ row }) => (
+          <span className="flex items-center justify-end">
+            {/* ⋯ menu: Edit, and Delete for a subject no class uses
+                (unused-subject-actions.tsx). */}
+            <SubjectCatalogMenu
+              subject={row.original}
+              deleteSetup={deletableSubjects[row.original.id]}
+              onEdit={() => setEditSubject(row.original)}
+            />
+          </span>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+      // Filter-only columns: hidden (see initialColumnVisibility), read by the
+      // three facets above.
+      {
+        id: 'grading',
+        accessorFn: (c) => (c.is_examinable ? GRADING_NUMBER : GRADING_LETTER),
+        header: 'Grading',
+        enableHiding: false,
+      },
+      {
+        id: 'weights',
+        accessorFn: (c) =>
+          c.grading_method === 'no_sheet'
+            ? WEIGHTS_NO_SHEET
+            : c.config
+              ? WEIGHTS_SET
+              : WEIGHTS_NOT_SET,
+        header: 'Weights',
+        enableHiding: false,
+      },
+      {
+        id: 'classes',
+        accessorFn: (c) =>
+          attachedCount(c) > 0 ? CLASSES_ATTACHED : CLASSES_NOT_ATTACHED,
+        header: 'Classes',
+        enableHiding: false,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expandedIds, sheetImpactByConfigId, deletableSubjects]
+  );
 
   return (
     <>
@@ -376,215 +544,83 @@ export function SubjectCatalogCard({
             <strong>Add subject</strong> above to add the first one.
           </div>
         ) : (
-          <div className="overflow-x-auto border-t border-border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-10" />
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Used by</TableHead>
-                  <TableHead>Weights (WW · PT · QA)</TableHead>
-                  <TableHead className="w-14" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {catalog.map((subject) => {
-                  const checked = selectedIds.has(subject.id);
-                  const attachable = subject.hasConfig && !!subject.config;
+          <div className="border-t border-border p-5">
+            <DataTable<CatalogSubjectRow>
+              data={catalog}
+              columns={columns}
+              getRowId={(c) => c.id}
+              searchKeys={['name', 'code']}
+              searchPlaceholder="Search subject or code…"
+              facets={FACETS}
+              initialColumnVisibility={{
+                grading: false,
+                weights: false,
+                classes: false,
+              }}
+              initialSort={[{ id: 'name', desc: false }]}
+              // The whole catalog for a level fits on one page; it was never
+              // paginated before.
+              pageSize={100}
+              hidePagination
+              selection={{
+                enabled: true,
+                // Only a subject with weights can be attached to a section.
+                enableRowSelection: (c) => c.hasConfig && !!c.config,
+                bulkActions: [
+                  {
+                    key: 'attach',
+                    label: 'Attach to section',
+                    icon: ArrowRight,
+                    onTrigger: (rows) => {
+                      setAttachSubjects(
+                        rows
+                          .filter((c) => c.hasConfig && c.config)
+                          .map((c) => ({
+                            subjectConfigId: c.config!.id,
+                            code: c.code,
+                            name: c.name,
+                          }))
+                      );
+                      setAttachOpen(true);
+                    },
+                  },
+                ],
+              }}
+              selectionResetSignal={selectionResetSignal}
+              rowDetail={{
+                // Every attached subject expands, one level or ten. The panel
+                // is not a repeat of the collapsed line: its class chips are
+                // the only way from this page into a grading sheet, and
+                // single-level subjects used to list their classes as plain
+                // text with no way to open one.
+                render: (subject) => {
                   const impact = subject.config
                     ? sheetImpactByConfigId?.[subject.config.id]
                     : undefined;
-                  // Every attached subject expands, one level or ten. The
-                  // panel is not a repeat of the collapsed line: its class
-                  // chips are the only way from this page into a grading
-                  // sheet, and single-level subjects used to list their
-                  // classes as plain text with no way to open one.
-                  const expandable = (impact?.totalSections ?? 0) > 0;
-                  const isOpen = expandedIds.has(subject.id);
+                  if (
+                    !impact ||
+                    impact.totalSections === 0 ||
+                    !expandedIds.has(subject.id)
+                  ) {
+                    return null;
+                  }
                   return (
-                    <Fragment key={subject.id}>
-                      <TableRow className={cn('group', checked && 'bg-accent')}>
-                        <TableCell>
-                          {/* The hint exists only when the Checkbox is
-                              disabled, and a disabled checkbox is a disabled
-                              <button> — it fires no hover and takes no focus.
-                              `wrap` puts the trigger on a span around it. */}
-                          <HoverHint
-                            hint={
-                              attachable
-                                ? undefined
-                                : 'Not attachable yet — set its weights first'
-                            }
-                            wrap
-                          >
-                            <Checkbox
-                              checked={checked}
-                              disabled={!attachable}
-                              onCheckedChange={(v) =>
-                                toggleSelected(subject, v === true)
-                              }
-                              aria-label={`${subject.name} — ${checked ? 'selected' : 'not selected'}`}
-                            />
-                          </HoverHint>
-                        </TableCell>
-                        <TableCell>
-                          {/* The name is the label; the code is its ID, read
-                              like a student number under a name. */}
-                          <div className="flex flex-col gap-0.5 leading-tight">
-                            <span className="font-serif text-[14px] font-semibold text-foreground">
-                              {subject.name}
-                            </span>
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              {subject.code}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <UsedByCell
-                            impact={impact}
-                            isOpen={isOpen}
-                            subjectName={subject.name}
-                            onToggle={() => toggleExpanded(subject.id)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <WeightsCell
-                            subject={subject}
-                            onFix={() => setEditSubject(subject)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <span className="flex items-center justify-end">
-                            {/* ⋯ menu: Edit, and Delete for a subject no
-                                class uses (unused-subject-actions.tsx). */}
-                            <SubjectCatalogMenu
-                              subject={subject}
-                              deleteSetup={deletableSubjects[subject.id]}
-                              onEdit={() => setEditSubject(subject)}
-                            />
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                      {expandable && isOpen && impact ? (
-                        <TableRow className="hover:bg-transparent">
-                          {/* Ten levels stacked one per row left a wall of
-                              dead space to the right and pushed the next
-                              subject off screen. Flowing the groups into
-                              columns makes the panel SHORTER as the window
-                              gets wider, which is the opposite of how it
-                              read before. */}
-                          <TableCell
-                            colSpan={5}
-                            className="border-t-0 bg-muted/30 p-0"
-                          >
-                            <div className="border-l-2 border-primary/30 px-5 py-3.5">
-                              <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                Classes taking {subject.name} — click one to
-                                open its grading sheet
-                              </p>
-                              <div className="grid gap-x-7 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                                {impact.sectionsByLevel.map((group) => (
-                                  <div
-                                    key={group.levelCode}
-                                    className="flex items-start gap-2"
-                                  >
-                                    <span className="mt-px inline-flex min-w-8 justify-center rounded-md bg-card px-1.5 py-1 font-mono text-[10px] font-bold tabular-nums text-muted-foreground ring-1 ring-border">
-                                      {group.levelCode}
-                                    </span>
-                                    <span className="flex flex-wrap gap-1">
-                                      {group.sections.map((section) => (
-                                        <HoverHint
-                                          key={section.sheetId}
-                                          hint={
-                                            section.isLocked
-                                              ? `${section.name} · Term ${section.termNumber} sheet — locked. Open it to request a change.`
-                                              : `${section.name} · Term ${section.termNumber} sheet — open for entry. Set its max scores here.`
-                                          }
-                                          focusable={false}
-                                        >
-                                          {/* Open is the normal state, so it
-                                              carries no mark — the green dot
-                                              that used to mark it read as an
-                                              "online" badge. Only a locked
-                                              sheet is marked; the arrow on
-                                              hover says the chip opens
-                                              something. */}
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              setSheetsFor({
-                                                sheetId: section.sheetId,
-                                                sectionName: section.name,
-                                              })
-                                            }
-                                            className={cn(
-                                              'group/chip inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
-                                              section.isLocked
-                                                ? 'border-dashed border-hairline-strong bg-muted text-muted-foreground hover:text-foreground'
-                                                : 'border-border bg-card text-ink-2 hover:border-primary/35 hover:bg-accent hover:text-primary'
-                                            )}
-                                          >
-                                            {section.isLocked && (
-                                              <Lock className="size-3 shrink-0 text-ink-5" />
-                                            )}
-                                            {section.name}
-                                            {!section.isLocked && (
-                                              <ArrowUpRight
-                                                className="-mr-1 size-3 shrink-0 opacity-0 transition-opacity group-hover/chip:opacity-100 motion-reduce:transition-none"
-                                                aria-hidden="true"
-                                              />
-                                            )}
-                                            <span className="sr-only">
-                                              {section.isLocked
-                                                ? ' (locked)'
-                                                : ' (open for entry)'}
-                                            </span>
-                                          </button>
-                                        </HoverHint>
-                                      ))}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : null}
-                    </Fragment>
+                    <ClassesPanel
+                      subjectName={subject.name}
+                      impact={impact}
+                      onOpenSheets={setSheetsFor}
+                    />
                   );
-                })}
-              </TableBody>
-            </Table>
+                },
+              }}
+              emptyFilteredState={{
+                title: 'No subjects match.',
+                body: 'Try clearing the search or the filters.',
+              }}
+            />
           </div>
         )}
       </Card>
-
-      {/* Sticky selection bar — appears once ≥1 attachable subject is
-          checked, hides (not unmounted, so its slide-out transition can
-          run) otherwise. Lives OUTSIDE the Card so `sticky` isn't clipped
-          by the Card's own `overflow-hidden`. */}
-      <div
-        className={cn(
-          'sticky bottom-4 z-10 mt-4 flex items-center justify-between gap-3 rounded-xl bg-brand-navy px-5 py-3 text-white shadow-lg transition-all duration-150',
-          selectedSubjects.length === 0 &&
-            'pointer-events-none translate-y-6 opacity-0'
-        )}
-      >
-        <span className="text-sm">
-          <strong>{selectedSubjects.length}</strong> subject
-          {selectedSubjects.length === 1 ? '' : 's'} selected
-        </span>
-        <Button
-          type="button"
-          size="sm"
-          className="gap-1.5"
-          disabled={selectedSubjects.length === 0}
-          onClick={() => setAttachOpen(true)}
-        >
-          Attach to section
-          <ArrowRight className="size-3.5" />
-        </Button>
-      </div>
 
       {/* Full-edit drawer — one Sheet mounted once, content swaps with
           `editSubject`. Opened either by a row's pencil, or by "Set
@@ -691,12 +727,95 @@ export function SubjectCatalogCard({
       <AttachToSectionModal
         open={attachOpen}
         onOpenChange={setAttachOpen}
-        subjects={selectedSubjects}
+        subjects={attachSubjects}
         sections={sections}
         defaultLevelType={defaultSectionLevelType}
-        onAttached={() => setSelectedIds(new Set())}
+        onAttached={() => {
+          setAttachSubjects([]);
+          setSelectionResetSignal((n) => n + 1);
+        }}
       />
     </>
+  );
+}
+
+// The expanded "Classes taking {subject}" panel under a row.
+//
+// Ten levels stacked one per row left a wall of dead space to the right and
+// pushed the next subject off screen. Flowing the groups into columns makes
+// the panel SHORTER as the window gets wider, which is the opposite of how it
+// read before.
+function ClassesPanel({
+  subjectName,
+  impact,
+  onOpenSheets,
+}: {
+  subjectName: string;
+  impact: UsedByImpact;
+  onOpenSheets: (target: { sheetId: string; sectionName: string }) => void;
+}) {
+  return (
+    <div className="border-l-2 border-primary/30 px-5 py-3.5">
+      <p className="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Classes taking {subjectName} — click one to open its grading sheet
+      </p>
+      <div className="grid gap-x-7 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        {impact.sectionsByLevel.map((group) => (
+          <div key={group.levelCode} className="flex items-start gap-2">
+            <span className="mt-px inline-flex min-w-8 justify-center rounded-md bg-card px-1.5 py-1 font-mono text-[10px] font-bold tabular-nums text-muted-foreground ring-1 ring-border">
+              {group.levelCode}
+            </span>
+            <span className="flex flex-wrap gap-1">
+              {group.sections.map((section) => (
+                <HoverHint
+                  key={section.sheetId}
+                  hint={
+                    section.isLocked
+                      ? `${section.name} · Term ${section.termNumber} sheet — locked. Open it to request a change.`
+                      : `${section.name} · Term ${section.termNumber} sheet — open for entry. Set its max scores here.`
+                  }
+                  focusable={false}
+                >
+                  {/* Open is the normal state, so it carries no mark — the
+                      green dot that used to mark it read as an "online"
+                      badge. Only a locked sheet is marked; the arrow on hover
+                      says the chip opens something. */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenSheets({
+                        sheetId: section.sheetId,
+                        sectionName: section.name,
+                      })
+                    }
+                    className={cn(
+                      'group/chip inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+                      section.isLocked
+                        ? 'border-dashed border-hairline-strong bg-muted text-muted-foreground hover:text-foreground'
+                        : 'border-border bg-card text-ink-2 hover:border-primary/35 hover:bg-accent hover:text-primary'
+                    )}
+                  >
+                    {section.isLocked && (
+                      <Lock className="size-3 shrink-0 text-ink-5" />
+                    )}
+                    {section.name}
+                    {!section.isLocked && (
+                      <ArrowUpRight
+                        className="-mr-1 size-3 shrink-0 opacity-0 transition-opacity group-hover/chip:opacity-100 motion-reduce:transition-none"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="sr-only">
+                      {section.isLocked ? ' (locked)' : ' (open for entry)'}
+                    </span>
+                  </button>
+                </HoverHint>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
