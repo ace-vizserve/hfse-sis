@@ -222,10 +222,10 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      // A subject's weights are the same in all four terms (Miss Joann,
-      // 2026-09-25); a sheet may only switch components off, never re-split
-      // them. The editor sends exactly `redistributeWeights` of the subject's
-      // weights, so this refuses nothing the screen can produce.
+      // A sheet with all three components on carries the subject's weights
+      // (Miss Joann, 2026-09-25). Once a component is switched off (0), the
+      // parts still on may be typed — whole percentages of at least 1 adding
+      // to 100 (Mr Ace, 2026-10-08). The editor pre-fills the automatic split.
       if (
         !config ||
         !isSubjectTermSplit(config, { ww: pcts[0], pt: pcts[1], qa: pcts[2] })
@@ -233,7 +233,7 @@ export async function PATCH(
         return NextResponse.json(
           {
             error:
-              "A subject's weights are the same in every term. A term can only switch written work, performance tasks or the exam off.",
+              "With written work, performance tasks and the exam all counting, the weights are the subject's own. Switch a part off to type the split of the rest — whole numbers, at least 1 each, adding up to 100.",
           },
           { status: 400 }
         );

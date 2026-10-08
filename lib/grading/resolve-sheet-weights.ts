@@ -229,6 +229,26 @@ export function redistributeWeights(
 }
 
 /**
+ * A split typed by hand for a sheet that has switched a component off: the
+ * components OFF are 0, the components still ON are whole percentages of at
+ * least 1, and together they make exactly 100.
+ */
+export function isManualWeightSplit(
+  pcts: Record<GradeComponent, number>,
+  inUse: Record<GradeComponent, boolean>
+): boolean {
+  if (!GRADE_COMPONENTS.some((c) => inUse[c])) return false;
+  let total = 0;
+  for (const c of GRADE_COMPONENTS) {
+    const v = pcts[c];
+    if (!Number.isInteger(v)) return false;
+    if (inUse[c] ? v < 1 : v !== 0) return false;
+    total += v;
+  }
+  return total === 100;
+}
+
+/**
  * Is this split one a term is allowed to carry?
  *
  * Miss Joann (relayed by Mr Ace, 2026-09-25): a subject's weights are
@@ -238,20 +258,30 @@ export function redistributeWeights(
  * their share handed on by `redistributeWeights`. Any other split (a typed
  * 25 / 55 / 20, say) is refused.
  *
- * `pcts` are integer percentages. Which components are "in use" is read off
- * the split itself (a component at 0 is off), so the one comparison covers
- * every combination of switches.
+ * UPDATE 2026-10-08 (Mr Ace): when a component is switched OFF, the registrar
+ * may TYPE the split of the parts still on — `redistributeWeights` is only the
+ * pre-filled suggestion. See `isManualWeightSplit`. A sheet with all three
+ * components on still must carry the subject's own weights.
+ *
+ * `pcts` are integer percentages. `inUse` says which components are switched on;
+ * left out, it is read off the split itself (a component at 0 is off). Pass it
+ * whenever the caller knows it, so a typed 0 on a component that is ON is
+ * refused rather than read as "off".
  */
 export function isSubjectTermSplit(
   subject: WeightColumns,
-  pcts: Record<GradeComponent, number>
+  pcts: Record<GradeComponent, number>,
+  inUseArg?: Record<GradeComponent, boolean>
 ): boolean {
-  const inUse: Record<GradeComponent, boolean> = {
+  const inUse: Record<GradeComponent, boolean> = inUseArg ?? {
     ww: pcts.ww > 0,
     pt: pcts.pt > 0,
     qa: pcts.qa > 0,
   };
   if (!inUse.ww && !inUse.pt && !inUse.qa) return false;
+  if (!(inUse.ww && inUse.pt && inUse.qa)) {
+    return isManualWeightSplit(pcts, inUse);
+  }
   const expected = redistributeWeights(
     {
       ww_weight: Number(subject.ww_weight),

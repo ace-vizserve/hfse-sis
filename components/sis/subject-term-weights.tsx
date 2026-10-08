@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -11,6 +12,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   ComponentWeightChips,
   COMPONENT_PAINT,
+  RemainingWeightInputs,
+  inUseFromWeights,
+  manualSplitIsValid,
   type GradeComponent,
 } from '@/components/grading/component-weight-chips';
 import { cn } from '@/lib/utils';
@@ -61,6 +65,61 @@ type TermWeightsPayload = {
 
 type Component = GradeComponent;
 
+/**
+ * When a term counts exactly two parts, show their percentages as number boxes
+ * (pre-filled with what is saved — the automatic split to begin with). Save
+ * split is offered only once they differ from the saved split and add to 100.
+ * Remounted by `key` whenever the saved split changes, so the draft resets.
+ */
+function TermSplitEditor({
+  term,
+  busy,
+  onSave,
+}: {
+  term: TermRow;
+  busy: boolean;
+  onSave: (weights: Record<Component, number>) => void;
+}) {
+  const saved: Record<Component, number> = {
+    ww: term.ww,
+    pt: term.pt,
+    qa: term.qa,
+  };
+  const inUse = inUseFromWeights(saved);
+  const [draft, setDraft] = useState<Record<Component, number>>(saved);
+
+  if (GRADE_KEYS.filter((c) => inUse[c]).length !== 2) return null;
+
+  const changed = GRADE_KEYS.some((c) => draft[c] !== saved[c]);
+  const valid = manualSplitIsValid(draft, inUse);
+
+  return (
+    <div className="col-span-full space-y-1.5 sm:col-span-2 sm:col-start-2">
+      <RemainingWeightInputs
+        values={draft}
+        inUse={inUse}
+        onChange={(c, v) => setDraft({ ...draft, [c]: v })}
+        disabled={busy}
+        scopeLabel={`Term ${term.termNumber}`}
+      />
+      {changed && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7"
+          disabled={!valid || busy}
+          onClick={() => onSave(draft)}
+        >
+          Save split
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const GRADE_KEYS: Component[] = ['ww', 'pt', 'qa'];
+
 export function SubjectTermWeights({
   configId,
   subjectName,
@@ -85,6 +144,7 @@ export function SubjectTermWeights({
     mutationFn: (body: {
       term_id: string;
       components: Record<Component, boolean>;
+      weights?: Record<Component, number>;
     }) =>
       apiFetch<{ sheetsUpdated: number; lockedClasses: string[] }>(
         `/api/sis/admin/subjects/${configId}/term-weights`,
@@ -127,6 +187,40 @@ export function SubjectTermWeights({
             ? `. Locked and left alone: ${locked.join(', ')}`
             : '';
           return `${head}. ${classes}${skipped}`;
+        },
+        error: (e: unknown) =>
+          e instanceof Error ? e.message : 'Could not update this term',
+      }
+    );
+    await queryClient.invalidateQueries({ queryKey: key });
+  }
+
+  async function saveSplit(term: TermRow, weights: Record<Component, number>) {
+    const inUse: Record<Component, boolean> = {
+      ww: term.ww > 0,
+      pt: term.pt > 0,
+      qa: term.qa > 0,
+    };
+    await run(
+      () =>
+        mutation.mutateAsync({
+          term_id: term.termId,
+          components: inUse,
+          weights,
+        }),
+      {
+        pending: `Updating Term ${term.termNumber}…`,
+        success: (result) => {
+          const updated = result?.sheetsUpdated ?? 0;
+          const classes =
+            updated === 1 ? '1 class updated' : `${updated} classes updated`;
+          const locked = Array.isArray(result?.lockedClasses)
+            ? result.lockedClasses
+            : [];
+          const skipped = locked.length
+            ? `. Locked and left alone: ${locked.join(', ')}`
+            : '';
+          return `Term ${term.termNumber} split saved. ${classes}${skipped}`;
         },
         error: (e: unknown) =>
           e instanceof Error ? e.message : 'Could not update this term',
@@ -233,6 +327,15 @@ export function SubjectTermWeights({
               scopeLabel={`Term ${term.termNumber}`}
             />
 
+            {!noSheets && (
+              <TermSplitEditor
+                key={`${term.termId}-${term.ww}-${term.pt}-${term.qa}`}
+                term={term}
+                busy={mutation.isPending}
+                onSave={(weights) => void saveSplit(term, weights)}
+              />
+            )}
+
             {(term.mixed || term.lockedSheets > 0 || noSheets) && (
               <p className="col-span-full flex items-start gap-1.5 pl-2 text-[11px] leading-snug text-muted-foreground sm:col-start-2">
                 <AlertCircle className="mt-0.5 size-3 shrink-0" />
@@ -252,7 +355,7 @@ export function SubjectTermWeights({
       <p className="pt-1 text-[11px] leading-snug text-muted-foreground">
         Untick a component a term doesn&rsquo;t use — {subjectName} is then
         graded only on what is left, and the share moves across so the grade is
-        still out of 100.
+        still out of 100. With two parts left you can type the split yourself.
       </p>
     </div>
   );

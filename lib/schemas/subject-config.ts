@@ -141,6 +141,16 @@ export const SubjectTermWeightsSchema = z.union([
       pt: z.boolean(),
       qa: z.boolean(),
     }),
+    // Optional typed split of the components still on (whole percentages).
+    // Absent = the automatic split. The route checks it with
+    // `isSubjectTermSplit`. (Mr Ace, 2026-10-08.)
+    weights: z
+      .object({
+        ww: z.number().int().min(0).max(100),
+        pt: z.number().int().min(0).max(100),
+        qa: z.number().int().min(0).max(100),
+      })
+      .optional(),
   }),
 ]);
 export type SubjectTermWeightsInput = z.infer<typeof SubjectTermWeightsSchema>;

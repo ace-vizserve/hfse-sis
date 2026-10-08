@@ -10,6 +10,9 @@ import { useWriteAction, type WriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   ComponentWeightChips,
+  RemainingWeightInputs,
+  inUseFromWeights,
+  manualSplitIsValid,
   redistributePercents,
   type ComponentWeights,
   type GradeComponent,
@@ -212,6 +215,16 @@ export function TotalsEditorForm({
   const [qa, setQa] = useState<number | null>(initialQa);
   const [weights, setWeights] = useState<ComponentWeights>(initialWeights);
   const [followsSubject, setFollowsSubject] = useState(!weightsOverridden);
+  // Which parts count, kept apart from the percentages: while a box is being
+  // typed in, a part that counts may briefly read 0 or empty.
+  const [inUse, setInUse] = useState<Record<GradeComponent, boolean>>(
+    inUseFromWeights(initialWeights)
+  );
+  const allOn = inUse.ww && inUse.pt && inUse.qa;
+  // Three parts on carry the subject's weights; fewer may be typed, and must
+  // add up to 100 before Save is allowed.
+  const weightsInvalid =
+    !followsSubject && !allOn && !manualSplitIsValid(weights, inUse);
   const [shrinkConfirmOpen, setShrinkConfirmOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionReason, setCorrectionReason] =
@@ -263,24 +276,30 @@ export function TotalsEditorForm({
    * neighbour rather than back where you started.
    */
   function toggleComponent(component: GradeComponent) {
-    const inUse: Record<GradeComponent, boolean> = {
-      ww: weights.ww > 0,
-      pt: weights.pt > 0,
-      qa: weights.qa > 0,
+    const nextInUse: Record<GradeComponent, boolean> = {
+      ...inUse,
+      [component]: !inUse[component],
     };
-    inUse[component] = !inUse[component];
 
-    if (!inUse.ww && !inUse.pt && !inUse.qa) {
+    if (!nextInUse.ww && !nextInUse.pt && !nextInUse.qa) {
       toast.error('A class has to be graded on at least one component.');
       return;
     }
 
-    setWeights(redistributePercents(subjectWeights, inUse));
+    setInUse(nextInUse);
+    setWeights(redistributePercents(subjectWeights, nextInUse));
+    setFollowsSubject(false);
+  }
+
+  /** The registrar types the share of a part that still counts. */
+  function typeWeight(component: GradeComponent, percent: number) {
+    setWeights({ ...weights, [component]: percent });
     setFollowsSubject(false);
   }
 
   function followSubjectAgain() {
     setWeights(subjectWeights);
+    setInUse({ ww: true, pt: true, qa: true });
     setFollowsSubject(true);
   }
 
@@ -311,6 +330,7 @@ export function TotalsEditorForm({
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (weightsInvalid) return;
     if (shrinking) {
       setShrinkConfirmOpen(true);
       return;
@@ -421,7 +441,9 @@ export function TotalsEditorForm({
       size="sm"
       loading={saving}
       loadingText="Saving…"
-      disabled={correctionMissing || (inline && shrinkConfirmOpen)}
+      disabled={
+        correctionMissing || weightsInvalid || (inline && shrinkConfirmOpen)
+      }
     >
       {!saving && <Save className="h-4 w-4" />}
       Save totals
@@ -485,7 +507,15 @@ export function TotalsEditorForm({
               <FieldLabel>Counts towards the grade</FieldLabel>
               <ComponentWeightChips
                 values={weights}
+                inUse={inUse}
                 onToggle={toggleComponent}
+                disabled={saving}
+                scopeLabel={scopeLabel}
+              />
+              <RemainingWeightInputs
+                values={weights}
+                inUse={inUse}
+                onChange={typeWeight}
                 disabled={saving}
                 scopeLabel={scopeLabel}
               />
@@ -494,7 +524,7 @@ export function TotalsEditorForm({
                   <>
                     Following the subject&rsquo;s split for this term. Untick
                     anything this class doesn&rsquo;t sit and its share moves to
-                    the rest.
+                    the rest &mdash; you can then change the split.
                   </>
                 ) : (
                   <>

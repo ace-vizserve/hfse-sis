@@ -12,6 +12,7 @@ import {
   type SheetWeights,
 } from '@/lib/grading/recompute-sheet';
 import {
+  isSubjectTermSplit,
   redistributeWeights,
   resolveSheetWeights,
   type GradeComponent,
@@ -247,7 +248,26 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    next = redistributeWeights(configWeights, inUse);
+    if (input.weights) {
+      // A typed split. All three on = the subject's own weights; otherwise the
+      // parts off are 0 and the parts on are whole numbers >= 1 adding to 100.
+      if (!isSubjectTermSplit(configWeights, input.weights, inUse)) {
+        return NextResponse.json(
+          {
+            error:
+              'The split has to be whole numbers, at least 1 for every part that counts, 0 for the rest, adding up to 100.',
+          },
+          { status: 400 }
+        );
+      }
+      next = {
+        ww_weight: input.weights.ww / 100,
+        pt_weight: input.weights.pt / 100,
+        qa_weight: input.weights.qa / 100,
+      };
+    } else {
+      next = redistributeWeights(configWeights, inUse);
+    }
   }
 
   // ---- Every sheet for this subject in this term ------------------------

@@ -20,12 +20,52 @@ describe('isSubjectTermSplit', () => {
     expect(isSubjectTermSplit(FILIPINO, { ww: 0, pt: 100, qa: 0 })).toBe(true);
   });
 
-  it('refuses a typed re-split, even one that adds to 100', () => {
+  it('refuses a typed three-part re-split, even one that adds to 100', () => {
     expect(isSubjectTermSplit(FILIPINO, { ww: 25, pt: 55, qa: 20 })).toBe(
       false
     );
-    // The other way of rounding 37.5 — not what the switches produce.
-    expect(isSubjectTermSplit(FILIPINO, { ww: 38, pt: 62, qa: 0 })).toBe(false);
+  });
+
+  it('accepts a typed split once a part is switched off', () => {
+    // 40/60 with the exam off, and the other way of rounding 37.5.
+    expect(isSubjectTermSplit(FILIPINO, { ww: 40, pt: 60, qa: 0 })).toBe(true);
+    expect(isSubjectTermSplit(FILIPINO, { ww: 38, pt: 62, qa: 0 })).toBe(true);
+    expect(isSubjectTermSplit(FILIPINO, { ww: 0, pt: 70, qa: 30 })).toBe(true);
+  });
+
+  it('refuses a typed split that does not add to 100', () => {
+    expect(isSubjectTermSplit(FILIPINO, { ww: 40, pt: 59, qa: 0 })).toBe(false);
+    expect(isSubjectTermSplit(FILIPINO, { ww: 40, pt: 61, qa: 0 })).toBe(false);
+  });
+
+  it('refuses fractions', () => {
+    expect(isSubjectTermSplit(FILIPINO, { ww: 37.5, pt: 62.5, qa: 0 })).toBe(
+      false
+    );
+  });
+
+  it('refuses a 0 on a part that is still switched on', () => {
+    const on = { ww: true, pt: true, qa: true };
+    expect(isSubjectTermSplit(FILIPINO, { ww: 0, pt: 100, qa: 0 }, on)).toBe(
+      false
+    );
+    expect(
+      isSubjectTermSplit(
+        FILIPINO,
+        { ww: 0, pt: 100, qa: 0 },
+        { ww: true, pt: true, qa: false }
+      )
+    ).toBe(false);
+  });
+
+  it('refuses a share on a part that is switched off', () => {
+    expect(
+      isSubjectTermSplit(
+        FILIPINO,
+        { ww: 40, pt: 50, qa: 10 },
+        { ww: true, pt: true, qa: false }
+      )
+    ).toBe(false);
   });
 
   it('refuses a sheet graded on nothing', () => {
@@ -48,7 +88,7 @@ describe('SubjectTermWeightsSchema', () => {
     ).toBe(true);
   });
 
-  it('no longer takes typed figures', () => {
+  it('no longer takes the old loose figures', () => {
     expect(
       SubjectTermWeightsSchema.safeParse({
         term_id,
@@ -57,5 +97,15 @@ describe('SubjectTermWeightsSchema', () => {
         qa_weight: 0,
       }).success
     ).toBe(false);
+  });
+
+  it('takes a typed split alongside the switches', () => {
+    expect(
+      SubjectTermWeightsSchema.safeParse({
+        term_id,
+        components: { ww: true, pt: true, qa: false },
+        weights: { ww: 40, pt: 60, qa: 0 },
+      }).success
+    ).toBe(true);
   });
 });
