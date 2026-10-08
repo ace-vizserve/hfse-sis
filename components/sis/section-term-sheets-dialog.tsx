@@ -103,18 +103,14 @@ export function SectionTermSheetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
             {sectionName}
           </DialogTitle>
           <DialogDescription>
             {data
-              ? `${data.subject.name} — pick a term to set its slots and max scores${
-                  data.section.levelCode === 'S4'
-                    ? ', lock it or switch its sheet type'
-                    : ' or lock it'
-                }.`
+              ? `${data.subject.name} — pick a term to set its slots and max scores.`
               : 'Pick a term to set its slots and max scores.'}
           </DialogDescription>
         </DialogHeader>
