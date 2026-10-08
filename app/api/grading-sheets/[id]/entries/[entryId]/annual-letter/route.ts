@@ -9,6 +9,7 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { notifyAnnualLetterChanged } from '@/lib/notifications/email-annual-letter';
 import { ANNUAL_LETTER_VALUES } from '@/lib/compute/letter-grade';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 
 // PATCH /api/grading-sheets/[id]/entries/[entryId]/annual-letter
 // Registrar-only: sets the freeform annual_letter_grade on a non-examinable
@@ -76,8 +77,8 @@ export async function PATCH(
       .from('grading_sheets')
       .select(
         `
-        id, is_locked,
-        term:terms(term_number, label),
+        id, is_locked, unlocked_at,
+        term:terms(term_number, label, grading_lock_at),
         subject:subjects(is_examinable, code),
         section:sections(academic_year_id, name)
       `
@@ -108,9 +109,18 @@ export async function PATCH(
   type SheetRow = {
     id: string;
     is_locked: boolean;
+    unlocked_at: string | null;
     term:
-      | { term_number: number; label: string | null }
-      | { term_number: number; label: string | null }[]
+      | {
+          term_number: number;
+          label: string | null;
+          grading_lock_at: string | null;
+        }
+      | {
+          term_number: number;
+          label: string | null;
+          grading_lock_at: string | null;
+        }[]
       | null;
     subject:
       | { is_examinable: boolean; code: string }
@@ -137,6 +147,10 @@ export async function PATCH(
   };
   const sheet = sheetRes.data as unknown as SheetRow;
   const entry = entryRes.data as unknown as EntryRow;
+  // Past the term's grading lock time (migration 186) counts as locked.
+  if (!sheet.is_locked && (await enforceGradingDeadline(service, sheet))) {
+    sheet.is_locked = true;
+  }
 
   if (entry.grading_sheet_id !== sheetId) {
     return NextResponse.json(

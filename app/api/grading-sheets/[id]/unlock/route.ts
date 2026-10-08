@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
+import { formatSgtLockTime, isPastGradingLock } from '@/lib/grading/lock-time';
 
 // POST /api/grading-sheets/[id]/unlock — registrar+ only.
 // Unlocking restores teacher edit access. The audit log is NEVER purged;
@@ -35,50 +36,58 @@ export async function POST(
   const url = new URL(request.url);
   const force = url.searchParams.get('force') === 'true';
 
-  // Grading deadline gate — if the term's grading_lock_date is in the past
-  // (Singapore local date), the unlock requires ?force=true so the override
-  // is deliberate and audit-logged.
+  // Grading deadline gate — if the term's grading_lock_at (migration 186, an
+  // exact instant) has passed, the unlock requires ?force=true so the override
+  // is deliberate and audit-logged. The 409 code keeps its old name
+  // (`grading_lock_date_passed`) because the client switches on it.
   const { data: sheetTermRow } = await service
     .from('grading_sheets')
     // `locked_at` / `locked_by` are read HERE, before the update clears them,
     // because afterwards nothing anywhere says who had locked the sheet.
     .select(
-      'is_locked, locked_at, locked_by, term:terms(grading_lock_date, label)'
+      'is_locked, locked_at, locked_by, unlocked_at, term:terms(grading_lock_at, label)'
     )
     .eq('id', id)
     .maybeSingle();
+
+  type TermMeta = { grading_lock_at: string | null; label: string } | null;
+  const termMeta = sheetTermRow
+    ? ((Array.isArray(sheetTermRow.term)
+        ? sheetTermRow.term[0]
+        : sheetTermRow.term) as TermMeta)
+    : null;
+  const lockAt = termMeta?.grading_lock_at ?? null;
 
   // No-op guard, mirroring the sibling lock route (lock/route.ts:26-43), which
   // has had one all along. Without it, every repeat unlock re-stamped
   // updated_at/locked_at and wrote another sheet.unlock (or force-unlock) audit
   // row — and a force-unlock row is exactly the kind of deliberate override a
   // reviewer would later want an accurate count of.
+  //
+  // A sheet past its term's lock time that nobody has unlocked since counts as
+  // locked even before the cron sets the flag (the grading page shows it
+  // locked), so it is NOT a no-op: the unlock below stamps `unlocked_at`, which
+  // is what reopens it.
   if (
     sheetTermRow &&
-    (sheetTermRow as { is_locked?: boolean }).is_locked === false
+    (sheetTermRow as { is_locked?: boolean }).is_locked === false &&
+    !isPastGradingLock(
+      lockAt,
+      (sheetTermRow as { unlocked_at?: string | null }).unlocked_at ?? null
+    )
   ) {
     return NextResponse.json({ ok: true, already_unlocked: true });
   }
-  type TermMeta = { grading_lock_date: string | null; label: string } | null;
-  const termMeta = sheetTermRow
-    ? ((Array.isArray(sheetTermRow.term)
-        ? sheetTermRow.term[0]
-        : sheetTermRow.term) as TermMeta)
-    : null;
-  const todaySgt = new Date().toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Singapore',
-  });
-  const deadlinePassed =
-    termMeta?.grading_lock_date != null &&
-    termMeta.grading_lock_date < todaySgt;
+  const deadlinePassed = lockAt != null && Date.parse(lockAt) <= Date.now();
 
   if (deadlinePassed && !force) {
+    const when = formatSgtLockTime(lockAt);
     return NextResponse.json(
       {
         error: 'grading_lock_date_passed',
         termLabel: termMeta?.label ?? 'this term',
-        lockDate: termMeta?.grading_lock_date,
-        message: `The grading deadline for ${termMeta?.label ?? 'this term'} has passed (${termMeta?.grading_lock_date}). Use ?force=true to override.`,
+        lockAt,
+        message: `The grading deadline for ${termMeta?.label ?? 'this term'} has passed (${when}, Singapore time). Use ?force=true to override.`,
       },
       { status: 409 }
     );
@@ -109,13 +118,17 @@ export async function POST(
     );
   }
 
+  const unlockedAt = new Date().toISOString();
   const { data, error } = await service
     .from('grading_sheets')
     .update({
       is_locked: false,
       locked_at: null,
       locked_by: null,
-      updated_at: new Date().toISOString(),
+      // Migration 186 — an unlock after the deadline overrides it, until the
+      // sheet is locked again (by hand, or by the next morning's cron).
+      unlocked_at: unlockedAt,
+      updated_at: unlockedAt,
     })
     .eq('id', id)
     .select('id, is_locked, locked_at, locked_by')
@@ -155,7 +168,7 @@ export async function POST(
         (sheetTermRow as { locked_by?: string | null } | null)?.locked_by ??
         null,
       ...(force && deadlinePassed
-        ? { lockDate: termMeta?.grading_lock_date, pendingCount: pending }
+        ? { lockAt, pendingCount: pending }
         : force && pending > 0
           ? { pendingCount: pending }
           : {}),

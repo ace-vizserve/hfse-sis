@@ -16,6 +16,7 @@ import {
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { isTerm4Framework } from '@/lib/grading/term4-framework';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 
 // PATCH /api/grading-sheets/[id]/excused — which WW/PT slots count for one
 // student (proration, migration 179).
@@ -73,7 +74,9 @@ export async function PATCH(
   const [sheetRes, enrolmentRes, entryRes] = await Promise.all([
     service
       .from('grading_sheets')
-      .select('id, section_id, ww_totals, pt_totals, is_locked, sheet_type')
+      .select(
+        'id, section_id, ww_totals, pt_totals, is_locked, sheet_type, unlocked_at, term:terms(grading_lock_at)'
+      )
       .eq('id', sheetId)
       .single(),
     service
@@ -152,6 +155,11 @@ export async function PATCH(
       },
       { status: 400 }
     );
+  }
+
+  // Past the term's grading lock time (migration 186) counts as locked.
+  if (!sheet.is_locked && (await enforceGradingDeadline(service, sheet))) {
+    sheet.is_locked = true;
   }
 
   let approval_reference = '';

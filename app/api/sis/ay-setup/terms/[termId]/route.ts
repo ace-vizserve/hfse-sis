@@ -10,7 +10,8 @@ import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/ay-setup/terms/[termId]
 //
-// Body: { startDate, endDate, virtueTheme? } — all nullable.
+// Body: { startDate, endDate, virtueTheme?, gradingLockAt? } — all nullable.
+// `gradingLockAt` is an ISO instant (migration 186).
 // Updates `terms.start_date` / `terms.end_date` / `terms.virtue_theme`.
 // Date pair validated server-side (end >= start via schema refine).
 // `virtueTheme` is optional for backward compatibility with pre-Evaluation
@@ -42,13 +43,14 @@ export async function PATCH(
     );
   }
   const { startDate, endDate } = parsed.data;
-  // `virtueTheme` and `gradingLockDate` are undefined when the client didn't
+  // `virtueTheme` and `gradingLockAt` are undefined when the client didn't
   // send them (dates-only call site — don't touch those columns). Empty
   // string / explicit null clears.
   const virtueThemeUpdated = 'virtueTheme' in parsed.data;
   const virtueTheme = parsed.data.virtueTheme ?? null;
-  const gradingLockUpdated = 'gradingLockDate' in parsed.data;
-  const gradingLockDate = parsed.data.gradingLockDate ?? null;
+  const gradingLockUpdated =
+    'gradingLockAt' in parsed.data && parsed.data.gradingLockAt !== undefined;
+  const gradingLockAt = parsed.data.gradingLockAt ?? null;
 
   const service = createServiceClient();
 
@@ -56,7 +58,7 @@ export async function PATCH(
   const { data: before, error: loadErr } = await service
     .from('terms')
     .select(
-      'id, academic_year_id, term_number, label, start_date, end_date, virtue_theme, grading_lock_date'
+      'id, academic_year_id, term_number, label, start_date, end_date, virtue_theme, grading_lock_at'
     )
     .eq('id', termId)
     .maybeSingle();
@@ -80,7 +82,8 @@ export async function PATCH(
     end_date: endDate,
   };
   if (virtueThemeUpdated) updates.virtue_theme = virtueTheme;
-  if (gradingLockUpdated) updates.grading_lock_date = gradingLockDate;
+  // grading_lock_date follows by trigger (migration 186).
+  if (gradingLockUpdated) updates.grading_lock_at = gradingLockAt;
 
   const { error: updateErr } = await service
     .from('terms')
@@ -98,7 +101,7 @@ export async function PATCH(
     virtueThemeUpdated && (before.virtue_theme ?? null) !== virtueTheme;
   const gradingLockChanged =
     gradingLockUpdated &&
-    (before.grading_lock_date ?? null) !== gradingLockDate;
+    !sameInstant(before.grading_lock_at ?? null, gradingLockAt);
 
   // The three audit rows. Written on BOTH the success path and the resync
   // failure path below — the `terms` update has already committed by the time
@@ -173,10 +176,10 @@ export async function PATCH(
         entityId: termId,
         context: {
           ...base,
-          old_grading_lock_date: before.grading_lock_date ?? null,
-          new_grading_lock_date: gradingLockDate,
-          before: { grading_lock_date: before.grading_lock_date ?? null },
-          after: { grading_lock_date: gradingLockDate },
+          old_grading_lock_at: before.grading_lock_at ?? null,
+          new_grading_lock_at: gradingLockAt,
+          before: { grading_lock_at: before.grading_lock_at ?? null },
+          after: { grading_lock_at: gradingLockAt },
           ...failureKeys,
         },
       });
@@ -238,4 +241,11 @@ export async function PATCH(
   }
 
   return NextResponse.json({ ok: true });
+}
+
+// Postgres returns timestamptz as "2026-03-20T15:59:00+00:00"; the schema
+// normalises the request to "…Z". Compare instants, not strings.
+function sameInstant(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Date.parse(a) === Date.parse(b);
 }

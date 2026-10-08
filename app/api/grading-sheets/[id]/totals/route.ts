@@ -31,6 +31,7 @@ import {
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { isTerm4Framework } from '@/lib/grading/term4-framework';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 
 // PATCH /api/grading-sheets/[id]/totals — registrar+ only.
 // Updates WW/PT/QA max totals on a sheet. After updating totals we MUST
@@ -90,7 +91,8 @@ export async function PATCH(
   const { data: sheet, error: sheetErr } = await service
     .from('grading_sheets')
     .select(
-      `id, ww_totals, pt_totals, qa_total, is_locked, sheet_type,
+      `id, ww_totals, pt_totals, qa_total, is_locked, sheet_type, unlocked_at,
+       term:terms(grading_lock_at),
        ww_weight, pt_weight, qa_weight,
        subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
     )
@@ -113,6 +115,11 @@ export async function PATCH(
       { error: 'missing subject_config' },
       { status: 500 }
     );
+  }
+
+  // Past the term's grading lock time (migration 186) counts as locked.
+  if (!sheet.is_locked && (await enforceGradingDeadline(service, sheet))) {
+    sheet.is_locked = true;
   }
 
   // Sprint 9 — Path B correction metadata for post-lock totals edits.

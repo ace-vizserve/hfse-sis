@@ -295,6 +295,17 @@ describe('term configuration', () => {
       })
     ).toBe('Term 1 · Grading lock date: 20 Mar 2026 → 27 Mar 2026');
   });
+
+  it('ay.term_grading_lock.update with an instant (migration 186)', () => {
+    const out = line('ay.term_grading_lock.update', {
+      term_number: 1,
+      label: 'Term 1',
+      old_grading_lock_at: '2026-03-20T15:59:00+00:00',
+      new_grading_lock_at: '2026-03-27T09:30:00.000Z',
+    });
+    expect(out).toMatch(/^Term 1 · Grading lock: 20 Mar 2026, 11:59\s?pm/i);
+    expect(out).toMatch(/27 Mar 2026, 5:30\s?pm$/i);
+  });
 });
 
 describe('school settings', () => {

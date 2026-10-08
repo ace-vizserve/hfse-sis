@@ -62,6 +62,7 @@ import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { RequestEditButton } from './request-edit-button';
 import { RemoveSheetButton } from './remove-sheet-button';
 import { SwitchSheetTypeButton } from '@/components/grading/switch-sheet-type-button';
+import { isPastGradingLock } from '@/lib/grading/lock-time';
 
 /**
  * Human label for a change-request target field, e.g. WW1 / PT2 / QA /
@@ -171,9 +172,9 @@ export default async function GradingSheetPage({
   const { data: sheet } = await supabase
     .from('grading_sheets')
     .select(
-      `id, sheet_type, teacher_name, is_locked, locked_at, locked_by, ww_totals, pt_totals, qa_total, slot_labels,
+      `id, sheet_type, teacher_name, is_locked, locked_at, locked_by, unlocked_at, ww_totals, pt_totals, qa_total, slot_labels,
        ww_weight, pt_weight, qa_weight,
-       term:terms(id, term_number, label),
+       term:terms(id, term_number, label, grading_lock_at),
        subject:subjects(id, code, name, is_examinable),
        section:sections(id, name, level:levels(id, code, label)),
        subject_config:subject_configs(display_name, description, ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots)`
@@ -181,6 +182,25 @@ export default async function GradingSheetPage({
     .eq('id', id)
     .single();
   if (!sheet) notFound();
+
+  // Past its term's grading lock time (migration 186) the sheet is locked,
+  // even before the next morning's cron sets the stored flag: the grid goes
+  // read-only and edits take the change-request path, as the write gate
+  // (`can_write_grade_entry`) and the score routes already do.
+  {
+    const lockTerm = first(
+      sheet.term as
+        | { grading_lock_at: string | null }
+        | { grading_lock_at: string | null }[]
+        | null
+    );
+    if (
+      !sheet.is_locked &&
+      isPastGradingLock(lockTerm?.grading_lock_at, sheet.unlocked_at)
+    ) {
+      sheet.is_locked = true;
+    }
+  }
 
   // ⚠ THE ROSTER-SYNC SEED USED TO RUN HERE, ON EVERY RENDER.
   //

@@ -44,7 +44,7 @@ function makeTerm(overrides: Partial<TermRow> = {}): TermRow {
     end_date: null,
     is_current: false,
     virtue_theme: null,
-    grading_lock_date: null,
+    grading_lock_at: null,
     ...overrides,
   };
 }

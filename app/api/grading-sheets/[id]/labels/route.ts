@@ -14,6 +14,7 @@ import {
   sanitizeMeta,
 } from '@/lib/grading/slot-label-sanitize';
 import { loadOneSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 
 // PATCH /api/grading-sheets/[id]/labels
 // Updates slot_labels on a grading sheet. Teachers are blocked when the sheet
@@ -54,7 +55,9 @@ export async function PATCH(
     const supabase = await createClient();
     const { data: sheetRaw } = await supabase
       .from('grading_sheets')
-      .select('id, is_locked, section:sections(id), subject:subjects(id)')
+      .select(
+        'id, is_locked, unlocked_at, term:terms(grading_lock_at), section:sections(id), subject:subjects(id)'
+      )
       .eq('id', id)
       .single();
     if (!sheetRaw) {
@@ -91,7 +94,11 @@ export async function PATCH(
         { status: 403 }
       );
     }
-    if (sheet.is_locked) {
+    // Past the term's grading lock time (migration 186) counts as locked.
+    if (
+      sheet.is_locked ||
+      (await enforceGradingDeadline(service, { ...sheet, id }))
+    ) {
       return NextResponse.json({ error: 'sheet is locked' }, { status: 423 });
     }
   }

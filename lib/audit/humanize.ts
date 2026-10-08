@@ -32,6 +32,7 @@
 import type { AuditAction } from '@/lib/audit/log-action';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import type { Role } from '@/lib/auth/roles';
+import { formatSgtLockTime } from '@/lib/grading/lock-time';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
 import { toPlainText } from '@/lib/rich-text';
 import {
@@ -248,7 +249,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'ay.delete': 'Academic year deleted',
   'ay.term_dates.update': 'Term dates updated',
   'ay.term_virtue.update': 'Term virtue updated',
-  'ay.term_grading_lock.update': 'Grading lock dates updated',
+  'ay.term_grading_lock.update': 'Grading lock updated',
   'ay.copy_teacher_assignments': 'Teacher assignments copied',
 
   // Evaluation
@@ -2591,11 +2592,28 @@ function templateSummary(
       if (term) parts.push(term);
       const b = isRecord(ctx.before) ? ctx.before : {};
       const a = isRecord(ctx.after) ? ctx.after : {};
-      const diff = diffText(
-        'Grading lock date',
-        fmtMaybeDate(ctx.old_grading_lock_date ?? b.grading_lock_date),
-        fmtMaybeDate(ctx.new_grading_lock_date ?? a.grading_lock_date)
-      );
+      // Migration 186 records an instant (`*_grading_lock_at`); older rows a
+      // date. An instant reads in Singapore time, with the minute.
+      const hasInstant =
+        'old_grading_lock_at' in ctx ||
+        'new_grading_lock_at' in ctx ||
+        'grading_lock_at' in b ||
+        'grading_lock_at' in a;
+      const diff = hasInstant
+        ? diffText(
+            'Grading lock',
+            formatSgtLockTime(
+              str(ctx.old_grading_lock_at ?? b.grading_lock_at) || null
+            ),
+            formatSgtLockTime(
+              str(ctx.new_grading_lock_at ?? a.grading_lock_at) || null
+            )
+          )
+        : diffText(
+            'Grading lock date',
+            fmtMaybeDate(ctx.old_grading_lock_date ?? b.grading_lock_date),
+            fmtMaybeDate(ctx.new_grading_lock_date ?? a.grading_lock_date)
+          );
       if (diff) parts.push(diff);
       return joinParts(parts);
     }

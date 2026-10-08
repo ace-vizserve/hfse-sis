@@ -208,13 +208,13 @@ vi.mock('@/lib/supabase/service', () => ({
       if (table === 'terms') {
         return {
           select: () => ({
-            lt: async () => ({
+            lte: async () => ({
               data: [
                 {
                   id: 't1',
                   label: 'Term 1',
                   academic_year_id: 'ay1',
-                  grading_lock_date: '2026-01-01',
+                  grading_lock_at: '2026-01-01T15:59:00+00:00',
                 },
               ],
               error: null,

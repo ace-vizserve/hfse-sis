@@ -40,6 +40,7 @@ import {
   type OpenApprovalRequestResult,
 } from '@/lib/approvals/materialise';
 import { loadLevelTypesBySection } from '@/lib/approvals/level-types';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 import {
   loadGradeChangeStepRecipients,
   sendGradeChangeStepEmails,
@@ -234,7 +235,9 @@ export async function POST(request: NextRequest) {
   const [sheetRes, entryRes] = await Promise.all([
     service
       .from('grading_sheets')
-      .select('id, section_id, subject_id, is_locked')
+      .select(
+        'id, section_id, subject_id, is_locked, unlocked_at, term:terms(grading_lock_at)'
+      )
       .eq('id', body.grading_sheet_id)
       .single(),
     service
@@ -272,6 +275,11 @@ export async function POST(request: NextRequest) {
       { error: 'entry does not belong to sheet' },
       { status: 400 }
     );
+  }
+  // Past the term's grading lock time (migration 186) counts as locked — the
+  // sheet is locked now, so the request can be filed and later applied.
+  if (!sheet.is_locked && (await enforceGradingDeadline(service, sheet))) {
+    sheet.is_locked = true;
   }
   if (!sheet.is_locked) {
     return NextResponse.json(

@@ -312,7 +312,7 @@ describe('YearSetupChecklist', () => {
         end_date: '2026-03-21',
         is_current: true,
         virtue_theme: null,
-        grading_lock_date: null,
+        grading_lock_at: null,
       },
     ] as never;
     renderWithClient(

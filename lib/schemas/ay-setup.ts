@@ -96,10 +96,35 @@ export const TermDatesSchema = z
       .nullable()
       .optional()
       .transform((s) => (s == null || s.length === 0 ? null : s)),
-    // Advisory grading cutoff per term. Purely informational — the actual
-    // per-sheet lock is independent. Same optional shape as virtueTheme so
-    // pre-existing callers keep working.
-    gradingLockDate: termDate.optional(),
+    // Grading deadline per term — an exact instant (migration 186). Past it, a
+    // term's sheets count as locked for score writes. ISO 8601 with an explicit
+    // offset (the editor sends Singapore wall time converted to UTC); stored
+    // normalised to UTC. Optional like virtueTheme so a dates-only caller leaves
+    // it alone; '' / null clears it.
+    // ⚠ Absent stays undefined (the route reads that as "leave it"); only an
+    // explicit null / '' clears.
+    gradingLockAt: z
+      .string()
+      .trim()
+      .nullable()
+      .optional()
+      .refine(
+        (s) =>
+          s == null ||
+          s.length === 0 ||
+          (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(
+            s
+          ) &&
+            !Number.isNaN(Date.parse(s))),
+        { message: 'Use a date and time, e.g. 2026-03-20T23:59:00+08:00' }
+      )
+      .transform((s) =>
+        s === undefined
+          ? undefined
+          : s === null || s.length === 0
+            ? null
+            : new Date(s).toISOString()
+      ),
   })
   .refine((v) => !v.startDate || !v.endDate || v.startDate <= v.endDate, {
     message: 'End date must be on or after start date',

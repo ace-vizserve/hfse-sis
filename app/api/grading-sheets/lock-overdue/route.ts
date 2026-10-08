@@ -7,9 +7,11 @@ import { loadSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
 // GET|POST /api/grading-sheets/lock-overdue — Vercel Cron only.
 //
 // Runs daily at 06:00 SGT (22:00 UTC). Locks every unlocked grading sheet
-// whose term's grading_lock_date < today (Singapore local date). Sheets are
-// therefore locked the morning AFTER the deadline day, giving teachers the
-// full deadline day to submit.
+// whose term's grading_lock_at (migration 186, an exact instant) has passed.
+// Between the deadline minute and this run the sheet already counts as locked:
+// can_write_grade_entry refuses browser writes and the write routes lock it on
+// the first server write (lib/grading/deadline-lock.ts). This run makes the
+// stored flag catch up for every sheet nobody touched.
 //
 // Auth: Vercel sets `Authorization: Bearer ${CRON_SECRET}` automatically.
 // The CRON_SECRET env var must be configured in the Vercel project settings.
@@ -42,11 +44,11 @@ async function lockOverdue(request: NextRequest) {
     timeZone: 'Asia/Singapore',
   });
 
-  // Terms whose deadline has already passed as of today SGT.
+  // Terms whose deadline has already passed.
   const { data: terms, error: termsErr } = await service
     .from('terms')
-    .select('id, label, academic_year_id, grading_lock_date')
-    .lt('grading_lock_date', todaySgt);
+    .select('id, label, academic_year_id, grading_lock_at')
+    .lte('grading_lock_at', new Date().toISOString());
   if (termsErr) {
     console.error('[lock-overdue] terms fetch failed:', termsErr.message);
     return NextResponse.json({ error: termsErr.message }, { status: 500 });
@@ -78,7 +80,7 @@ async function lockOverdue(request: NextRequest) {
   // bounded by one AY's sheet count. PostgREST serializes `.in()` into the URL
   // and fails past ~14.3KB / 396 uuids (see lib/supabase/paginate.ts). The
   // realistic way to exceed that here is a historical-AY backfill — sheets bulk
-  // created for an already-past year, so every term's grading_lock_date is
+  // created for an already-past year, so every term's grading_lock_at is
   // already behind us and the whole year lands in one batch (an AY is ~400-750
   // sheets). That is not hypothetical for this project.
   //
@@ -138,7 +140,7 @@ async function lockOverdue(request: NextRequest) {
             section_name: l?.section_name ?? null,
             level_label: l?.level_label ?? null,
             term_label: l?.term_label ?? term?.label ?? null,
-            grading_lock_date: term?.grading_lock_date ?? null,
+            grading_lock_at: term?.grading_lock_at ?? null,
           };
         }),
         ...(lockError

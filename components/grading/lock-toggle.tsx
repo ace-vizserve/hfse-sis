@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { formatSgtLockTime } from '@/lib/grading/lock-time';
 
 export function LockToggle({
   sheetId,
@@ -68,6 +69,7 @@ export function LockToggle({
   const [deadlineBlock, setDeadlineBlock] = useState<{
     termLabel: string;
     lockDate: string;
+    lockAt: string;
   } | null>(null);
 
   const action: 'lock' | 'unlock' = isLocked ? 'unlock' : 'lock';
@@ -109,12 +111,14 @@ export function LockToggle({
             error?: string;
             termLabel?: string;
             lockDate?: string;
+            lockAt?: string;
             pendingCount?: number;
           };
           if (body.error === 'grading_lock_date_passed') {
             setDeadlineBlock({
               termLabel: body.termLabel ?? 'this term',
               lockDate: body.lockDate ?? '',
+              lockAt: body.lockAt ?? '',
             });
             return null;
           }
@@ -209,16 +213,18 @@ export function LockToggle({
                     </span>{' '}
                     was{' '}
                     <span className="font-medium text-foreground">
-                      {deadlineBlock?.lockDate
-                        ? new Date(deadlineBlock.lockDate).toLocaleDateString(
-                            'en-SG',
-                            {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            }
-                          )
-                        : '—'}
+                      {deadlineBlock?.lockAt
+                        ? formatSgtLockTime(deadlineBlock.lockAt)
+                        : deadlineBlock?.lockDate
+                          ? new Date(deadlineBlock.lockDate).toLocaleDateString(
+                              'en-SG',
+                              {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              }
+                            )
+                          : '—'}
                     </span>
                     . Sheets are locked for report card publishing.
                   </span>

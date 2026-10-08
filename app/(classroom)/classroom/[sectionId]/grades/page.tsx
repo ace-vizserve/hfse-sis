@@ -10,11 +10,17 @@ import { canReadReportCard } from '@/lib/classroom/scope';
 import { resolveSelectedTermId } from '@/lib/classroom/terms';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
+import { isPastGradingLock } from '@/lib/grading/lock-time';
 
 type SubjectLite = { id: string; code: string; name: string };
 type SheetRow = {
   id: string;
   is_locked: boolean;
+  unlocked_at?: string | null;
+  term?:
+    | { grading_lock_at: string | null }
+    | { grading_lock_at: string | null }[]
+    | null;
   subject: SubjectLite | SubjectLite[] | null;
   /**
    * The sheet's own subject_configs row — per (subject, academic year), so
@@ -72,11 +78,17 @@ export default async function ClassroomGradesPage({
     const { data } = await supabase
       .from('grading_sheets')
       .select(
-        'id, is_locked, subject:subjects(id, code, name), subject_config:subject_configs(display_name)'
+        'id, is_locked, unlocked_at, term:terms(grading_lock_at), subject:subjects(id, code, name), subject_config:subject_configs(display_name)'
       )
       .eq('section_id', sectionId)
       .eq('term_id', selectedTermId);
-    sheets = (data ?? []) as unknown as SheetRow[];
+    // Past the term's grading lock time counts as locked (migration 186).
+    sheets = ((data ?? []) as unknown as SheetRow[]).map((s) => {
+      const t = Array.isArray(s.term) ? s.term[0] : s.term;
+      return isPastGradingLock(t?.grading_lock_at, s.unlocked_at)
+        ? { ...s, is_locked: true }
+        : s;
+    });
   }
 
   const subjectOf = (s: SheetRow) =>

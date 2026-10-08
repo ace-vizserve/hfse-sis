@@ -27,7 +27,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 import type { TermRow } from '@/lib/sis/ay-setup/queries';
+import {
+  DEFAULT_LOCK_TIME,
+  isoFromSgtParts,
+  sgtPartsFromIso,
+} from '@/lib/grading/lock-time';
 
 type TermDraft = {
   id: string;
@@ -35,7 +41,10 @@ type TermDraft = {
   label: string;
   start_date: string; // '' when null
   end_date: string;
-  grading_lock_date: string; // '' when null — advisory cutoff chip on /markbook/grading
+  // Grading deadline as Singapore wall time (migration 186). '' when unset;
+  // a date with no time saves as 23:59 (the whole day).
+  grading_lock_date: string;
+  grading_lock_time: string;
 };
 
 // "Term dates" dialog triggered from each AY row in /sis/ay-setup.
@@ -84,7 +93,7 @@ export function TermDatesEditor({
     return (
       (draft.start_date || '') !== (original?.start_date ?? '') ||
       (draft.end_date || '') !== (original?.end_date ?? '') ||
-      (draft.grading_lock_date || '') !== (original?.grading_lock_date ?? '')
+      !sameInstant(draftLockAt(draft), original?.grading_lock_at ?? null)
     );
   }
 
@@ -99,7 +108,7 @@ export function TermDatesEditor({
             jsonInit('PATCH', {
               startDate: d.start_date || null,
               endDate: d.end_date || null,
-              gradingLockDate: d.grading_lock_date || null,
+              gradingLockAt: draftLockAt(d),
             })
           ).catch((err) => {
             // Mirror the original `body?.error ?? 'save failed'` per-term copy.
@@ -169,6 +178,10 @@ export function TermDatesEditor({
     for (const d of dirtyDrafts) {
       if (d.start_date && d.end_date && d.start_date > d.end_date) {
         toast.error(`${d.label}: end date must be on or after start date`);
+        return;
+      }
+      if (!d.grading_lock_date && d.grading_lock_time) {
+        toast.error(`${d.label}: pick a date for the grading lock`);
         return;
       }
     }
@@ -359,14 +372,46 @@ function TermCard({
         </Field>
       </div>
 
-      {/* Secondary row: Grading lock (virtue theme moved to Evaluation → Virtue themes). */}
+      {/* Secondary row: Grading lock — date + time, Singapore time (migration
+          186). Sheets stop taking scores at that minute. Virtue theme moved
+          to Evaluation → Virtue themes. */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field htmlFor={`lock-${draft.id}`} label="Grading lock by" icon={Lock}>
-          <DatePicker
-            id={`lock-${draft.id}`}
-            value={draft.grading_lock_date}
-            onChange={(v) => onChange({ grading_lock_date: v })}
-          />
+        <Field
+          htmlFor={`lock-${draft.id}`}
+          label="Grading lock by"
+          icon={Lock}
+          hint={
+            draft.grading_lock_date
+              ? 'Singapore time. Scores stop saving at this minute.'
+              : 'Singapore time. No deadline set.'
+          }
+        >
+          <div className="flex gap-2">
+            <div className="min-w-0 flex-1">
+              <DatePicker
+                id={`lock-${draft.id}`}
+                value={draft.grading_lock_date}
+                onChange={(v) =>
+                  onChange({
+                    grading_lock_date: v,
+                    // A date on its own means the whole day; clearing the
+                    // date clears the time with it.
+                    grading_lock_time: v
+                      ? draft.grading_lock_time || DEFAULT_LOCK_TIME
+                      : '',
+                  })
+                }
+              />
+            </div>
+            <Input
+              type="time"
+              aria-label={`${draft.label} grading lock time`}
+              value={draft.grading_lock_time}
+              disabled={!draft.grading_lock_date}
+              onChange={(e) => onChange({ grading_lock_time: e.target.value })}
+              className="h-10 w-32 shrink-0 font-mono tabular-nums"
+            />
+          </div>
         </Field>
       </div>
     </div>
@@ -378,12 +423,14 @@ function Field({
   label,
   icon: Icon,
   warning,
+  hint,
   children,
 }: {
   htmlFor: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   warning?: string | null;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -396,6 +443,9 @@ function Field({
         {label}
       </label>
       {children}
+      {hint && !warning && (
+        <p className="text-[11px] text-muted-foreground">{hint}</p>
+      )}
       {warning && (
         <p className="flex items-center gap-1 font-mono text-[10px] text-destructive">
           <XCircle className="size-3" />
@@ -406,6 +456,17 @@ function Field({
   );
 }
 
+// The draft's lock as an ISO instant, or null when no date is picked.
+function draftLockAt(d: TermDraft): string | null {
+  if (!d.grading_lock_date) return null;
+  return isoFromSgtParts(d.grading_lock_date, d.grading_lock_time);
+}
+
+function sameInstant(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Date.parse(a) === Date.parse(b);
+}
+
 function toDrafts(terms: TermRow[]): TermDraft[] {
   return terms.map((t) => ({
     id: t.id,
@@ -413,6 +474,7 @@ function toDrafts(terms: TermRow[]): TermDraft[] {
     label: t.label,
     start_date: t.start_date ?? '',
     end_date: t.end_date ?? '',
-    grading_lock_date: t.grading_lock_date ?? '',
+    grading_lock_date: sgtPartsFromIso(t.grading_lock_at).date,
+    grading_lock_time: sgtPartsFromIso(t.grading_lock_at).time,
   }));
 }

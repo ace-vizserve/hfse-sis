@@ -28,6 +28,7 @@ import {
 } from '@/lib/grading/first-score-gate';
 import { mergeSlotLabel } from '@/lib/grading/slot-label-sanitize';
 import { isTerm4Framework } from '@/lib/grading/term4-framework';
+import { enforceGradingDeadline } from '@/lib/grading/deadline-lock';
 import {
   loadEntryStudentLabels,
   loadOneSheetAuditLabels,
@@ -111,6 +112,7 @@ export async function PATCH(
       .from('grading_sheets')
       .select(
         `id, section_id, subject_id, ww_totals, pt_totals, qa_total, is_locked, slot_labels,
+         unlocked_at, term:terms(grading_lock_at),
          ww_weight, pt_weight, qa_weight, sheet_type,
          subject:subjects(is_examinable),
          subject_config:subject_configs(ww_weight, pt_weight, qa_weight)`
@@ -202,6 +204,13 @@ export async function PATCH(
         { status: 403 }
       );
     }
+  }
+
+  // ----- Grading deadline (migration 186) -----
+  // Past the term's lock time, the sheet is locked now — not at the next
+  // morning's cron — so this write takes the locked path below.
+  if (!sheet.is_locked && (await enforceGradingDeadline(service, sheet))) {
+    sheet.is_locked = true;
   }
 
   // ----- Lock-gate (Sprint 9 two-path workflow) -----

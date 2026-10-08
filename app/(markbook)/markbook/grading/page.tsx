@@ -32,6 +32,11 @@ import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
 import { BulkCreateSheetsButton } from '@/components/markbook/bulk-create-sheets-button';
 import { isRowComplete } from '@/lib/grading/row-complete';
+import {
+  formatSgtLockTime,
+  isPastGradingLock,
+  sgtPartsFromIso,
+} from '@/lib/grading/lock-time';
 
 type LevelLite = {
   id: string;
@@ -62,6 +67,7 @@ type TermLite = { id: string; term_number: number; label: string };
 type SheetRow = {
   id: string;
   is_locked: boolean;
+  unlocked_at: string | null;
   ww_totals: number[] | null;
   pt_totals: number[] | null;
   qa_total: number | null;
@@ -204,7 +210,7 @@ export default async function GradingListPage({
     ? supabase
         .from('grading_sheets')
         .select(
-          `id, is_locked, teacher_name, ww_totals, pt_totals, qa_total,
+          `id, is_locked, unlocked_at, teacher_name, ww_totals, pt_totals, qa_total,
            term:terms(id, term_number, label),
            subject:subjects(id, code, name, is_examinable),
            subject_config:subject_configs(display_name),
@@ -216,7 +222,7 @@ export default async function GradingListPage({
   const termLocksPromise = listedAy
     ? supabase
         .from('terms')
-        .select('id, term_number, label, grading_lock_date, is_current')
+        .select('id, term_number, label, grading_lock_at, is_current')
         .eq('academic_year_id', listedAy.id)
         .order('term_number')
     : Promise.resolve({ data: [] });
@@ -230,11 +236,14 @@ export default async function GradingListPage({
     id: string;
     term_number: number;
     label: string;
-    grading_lock_date: string | null;
+    grading_lock_at: string | null;
     is_current: boolean;
   };
   const termLocks = ((termLocksRes.data ?? []) as TermLockRow[]).filter(
-    (t) => t.grading_lock_date
+    (t) => t.grading_lock_at
+  );
+  const lockAtByTerm = new Map(
+    termLocks.map((t) => [t.id, t.grading_lock_at as string])
   );
 
   const sheets = sheetsRes.data;
@@ -512,7 +521,14 @@ export default async function GradingListPage({
           subject?.id != null &&
           coveredSectionSubject.has(`${section.id}|${subject.id}`)) ||
         (section?.id != null && coveredAdviserSections.has(section.id)),
-      is_locked: s.is_locked,
+      // Past its term's lock time counts as locked (migration 186) — the
+      // stored flag catches up at the next morning's cron.
+      is_locked:
+        s.is_locked ||
+        isPastGradingLock(
+          term?.id ? lockAtByTerm.get(term.id) : null,
+          s.unlocked_at
+        ),
       graded_count: bucket.graded,
       total_students: bucket.total,
       graded_pct: gradedPct,
@@ -559,8 +575,8 @@ export default async function GradingListPage({
         )}
       </header>
 
-      {/* Grading lock-date advisory strip (per-term). Informational only —
-          the actual per-sheet lock is `grading_sheets.is_locked`. */}
+      {/* Grading lock strip (per-term). Each term's lock time (migration 186,
+          Singapore time); past it, that term's sheets stop taking scores. */}
       {termLocks.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-[0.14em]">
@@ -568,10 +584,12 @@ export default async function GradingListPage({
             Grading locks
           </span>
           {termLocks.map((t) => {
-            const lockIso = t.grading_lock_date as string;
+            const lockAt = t.grading_lock_at as string;
+            const lockIso = sgtPartsFromIso(lockAt).date;
             const days = daysUntilIso(lockIso);
+            const passed = isPastGradingLock(lockAt);
             const tone =
-              days < 0
+              passed || days < 0
                 ? 'bg-destructive/15 text-destructive'
                 : days <= 7
                   ? 'bg-amber-500/20 text-amber-900 dark:text-amber-100'
@@ -580,16 +598,22 @@ export default async function GradingListPage({
               <HintedText
                 key={t.id}
                 className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono font-semibold ${tone}`}
-                hint={`${t.label} lock target: ${lockIso}`}
+                hint={`${t.label} ${passed ? 'locked' : 'locks'} ${formatSgtLockTime(lockAt)}, Singapore time`}
               >
                 <span className="opacity-80">{t.label}</span>
                 <span className="tabular-nums">
-                  {new Date(lockIso).toLocaleDateString('en-SG', {
+                  {new Date(lockAt).toLocaleString('en-SG', {
+                    timeZone: 'Asia/Singapore',
                     day: '2-digit',
                     month: 'short',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
                   })}
                 </span>
-                <span className="opacity-70">· {formatRelativeDays(days)}</span>
+                <span className="opacity-70">
+                  · {passed ? 'locked' : formatRelativeDays(days)}
+                </span>
                 {t.is_current && (
                   <span className="rounded-sm bg-primary/20 px-1 text-[9px] uppercase text-primary">
                     current
