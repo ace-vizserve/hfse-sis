@@ -25,7 +25,18 @@ export function LockToggle({
   isLocked,
   onDone,
   unlockVariant = 'default',
+  confirmOpen: controlledConfirmOpen,
+  onConfirmOpenChange,
+  hideTrigger = false,
 }: {
+  /**
+   * Controlled confirm, for a host that raises it from a menu item (the term
+   * dialog's ⋯ menu). Pair with `hideTrigger`.
+   */
+  confirmOpen?: boolean;
+  onConfirmOpenChange?: (next: boolean) => void;
+  /** Render no button — the host opens the confirm itself. */
+  hideTrigger?: boolean;
   sheetId: string;
   isLocked: boolean;
   /**
@@ -43,7 +54,12 @@ export function LockToggle({
    */
   unlockVariant?: 'default' | 'outline';
 }) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [ownConfirmOpen, setOwnConfirmOpen] = useState(false);
+  const confirmOpen = controlledConfirmOpen ?? ownConfirmOpen;
+  const setConfirmOpen = (next: boolean) => {
+    setOwnConfirmOpen(next);
+    onConfirmOpenChange?.(next);
+  };
   // Surfaced after the server returns 409 because pending CRs exist; the
   // dialog this state opens is the explicit break-glass override path.
   const [pendingBlock, setPendingBlock] = useState<{
@@ -121,21 +137,23 @@ export function LockToggle({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button
-        onClick={() => setConfirmOpen(true)}
-        loading={busy}
-        loadingText={isLocked ? 'Unlocking…' : 'Locking…'}
-        size="sm"
-        variant={isLocked ? unlockVariant : 'destructive'}
-      >
-        {!busy &&
-          (isLocked ? (
-            <LockOpen className="h-4 w-4" />
-          ) : (
-            <Lock className="h-4 w-4" />
-          ))}
-        {isLocked ? 'Unlock sheet' : 'Lock sheet'}
-      </Button>
+      {!hideTrigger && (
+        <Button
+          onClick={() => setConfirmOpen(true)}
+          loading={busy}
+          loadingText={isLocked ? 'Unlocking…' : 'Locking…'}
+          size="sm"
+          variant={isLocked ? unlockVariant : 'destructive'}
+        >
+          {!busy &&
+            (isLocked ? (
+              <LockOpen className="h-4 w-4" />
+            ) : (
+              <Lock className="h-4 w-4" />
+            ))}
+          {isLocked ? 'Unlock sheet' : 'Lock sheet'}
+        </Button>
+      )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

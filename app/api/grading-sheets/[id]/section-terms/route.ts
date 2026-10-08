@@ -5,6 +5,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { resolveSheetWeights } from '@/lib/grading/resolve-sheet-weights';
 import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
+import {
+  isTerm4Framework,
+  type SheetType,
+} from '@/lib/grading/term4-framework';
 
 // GET /api/grading-sheets/[id]/section-terms
 //
@@ -44,8 +48,8 @@ export async function GET(
     .from('grading_sheets')
     .select(
       `id, section_id, subject_id,
-       section:sections(id, name, academic_year_id),
-       subject:subjects(code, name),
+       section:sections(id, name, academic_year_id, level:levels(code, label)),
+       subject:subjects(code, name, is_examinable),
        subject_config:subject_configs(ww_weight, pt_weight, qa_weight, ww_max_slots, pt_max_slots, display_name)`
     )
     .eq('id', sheetId)
@@ -58,10 +62,23 @@ export async function GET(
   const one = <T>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? (v[0] ?? null) : v;
 
+  type LevelRow = { code: string; label: string };
   const section = one(
-    anchor.section as { id: string; name: string; academic_year_id: string }[]
+    anchor.section as unknown as {
+      id: string;
+      name: string;
+      academic_year_id: string;
+      level: LevelRow | LevelRow[] | null;
+    }[]
   );
-  const subject = one(anchor.subject as { code: string; name: string }[]);
+  const level = one(section?.level ?? null);
+  const subject = one(
+    anchor.subject as unknown as {
+      code: string;
+      name: string;
+      is_examinable: boolean | null;
+    }[]
+  );
   const config = one(
     anchor.subject_config as {
       ww_weight: number | string;
@@ -95,7 +112,7 @@ export async function GET(
     service
       .from('grading_sheets')
       .select(
-        'id, term_id, is_locked, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
+        'id, term_id, is_locked, sheet_type, ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight'
       )
       .eq('section_id', anchor.section_id)
       .eq('subject_id', anchor.subject_id),
@@ -115,6 +132,7 @@ export async function GET(
     id: string;
     term_id: string;
     is_locked: boolean;
+    sheet_type: SheetType | null;
     ww_totals: (number | string)[] | null;
     pt_totals: (number | string)[] | null;
     qa_total: number | string | null;
@@ -134,6 +152,52 @@ export async function GET(
     );
   }
   const pct = (n: number) => Math.round(n * 100);
+
+  // "Switch sheet type" is a Secondary Four thing (Mr Ace, 2026-10-08). The
+  // same rule the sheet page applies: an unlocked sheet; to the Term 4
+  // framework only from Term 4 of an examinable subject; back to Standard from
+  // a framework sheet. The database re-checks all of it.
+  const isSecFour = level?.code === 'S4';
+  const isExaminable = subject?.is_examinable !== false;
+  const switchTargetFor = (
+    sheet: SheetRow | null,
+    termNumber: number
+  ): SheetType | null => {
+    if (!sheet || !isSecFour || sheet.is_locked) return null;
+    if (isTerm4Framework(sheet.sheet_type)) return 'standard';
+    return isExaminable && termNumber === 4 ? 'term4_framework' : null;
+  };
+
+  // What the switch would clear, for the confirm — only for the sheets that
+  // can switch. On a framework sheet the best term average is the system's, so
+  // only the recommendation and the exam count.
+  const studentsWithScores = new Map<string, number>();
+  for (const term of (termsRes.data ?? []) as Array<{
+    id: string;
+    term_number: number;
+  }>) {
+    const sheet = sheets.find((s) => s.term_id === term.id) ?? null;
+    if (!sheet || !switchTargetFor(sheet, term.term_number)) continue;
+    const { data: entries, error: entriesErr } = await service
+      .from('grade_entries')
+      .select('ww_scores, pt_scores, qa_score')
+      .eq('grading_sheet_id', sheet.id);
+    if (entriesErr)
+      return NextResponse.json({ error: entriesErr.message }, { status: 500 });
+    const framework = isTerm4Framework(sheet.sheet_type);
+    studentsWithScores.set(
+      sheet.id,
+      (entries ?? []).filter(
+        (r) =>
+          (!framework &&
+            ((r.ww_scores ?? []) as (number | null)[]).some(
+              (v) => v != null
+            )) ||
+          ((r.pt_scores ?? []) as (number | null)[]).some((v) => v != null) ||
+          r.qa_score != null
+      ).length
+    );
+  }
 
   // Every term of the year, including ones with no sheet. A class that joined
   // the subject mid-year has nothing for Term 1, and leaving the row out would
@@ -156,6 +220,11 @@ export async function GET(
       label: term.label,
       sheetId: sheet?.id ?? null,
       isLocked: sheet?.is_locked ?? false,
+      sheetType: (sheet?.sheet_type ?? 'standard') as SheetType,
+      // The type this term's sheet can switch TO, or null when it can't (not
+      // Secondary Four, locked, or not a Term 4 sheet of a graded subject).
+      switchTo: switchTargetFor(sheet, term.term_number),
+      studentsWithScores: sheet ? (studentsWithScores.get(sheet.id) ?? 0) : 0,
       wwTotals: (sheet?.ww_totals ?? []).map(Number),
       ptTotals: (sheet?.pt_totals ?? []).map(Number),
       qaTotal: sheet?.qa_total == null ? null : Number(sheet.qa_total),
@@ -183,9 +252,15 @@ export async function GET(
   });
 
   return NextResponse.json({
-    section: { id: section.id, name: section.name },
+    section: {
+      id: section.id,
+      name: section.name,
+      levelCode: level?.code ?? null,
+      levelLabel: level?.label ?? null,
+    },
     subject: {
       code: subject?.code ?? '',
+      isExaminable,
       // Per academic year since migration 137 (KD #203) — subject first,
       // config second; the other order returns the wrong one of the two names.
       name: subjectDisplayName(subject ?? { name: '' }, {

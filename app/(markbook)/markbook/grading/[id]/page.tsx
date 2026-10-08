@@ -61,7 +61,7 @@ import {
 import { loadSheetRemovability } from '@/lib/grading/sheet-removal';
 import { RequestEditButton } from './request-edit-button';
 import { RemoveSheetButton } from './remove-sheet-button';
-import { SwitchSheetTypeButton } from './switch-sheet-type-button';
+import { SwitchSheetTypeButton } from '@/components/grading/switch-sheet-type-button';
 
 /**
  * Human label for a change-request target field, e.g. WW1 / PT2 / QA /

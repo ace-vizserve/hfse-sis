@@ -103,8 +103,27 @@ type Props = {
   weightsOverridden: boolean;
 };
 
-export function TotalsEditor(props: Props) {
-  const [open, setOpen] = useState(false);
+export function TotalsEditor({
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+  ...props
+}: Props & {
+  /**
+   * Controlled open state, for a host that opens the editor from a menu item
+   * (the term dialog's ⋯ menu). Pair with `hideTrigger`.
+   */
+  open?: boolean;
+  onOpenChange?: (next: boolean) => void;
+  /** Render no button — the host opens the sheet itself. */
+  hideTrigger?: boolean;
+}) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   // Owned HERE, not by the form: the form unmounts the moment the sheet
   // closes on success, and a write action that unmounts mid-flight drops its
   // pending toast and stops waiting for the refresh.
@@ -115,12 +134,14 @@ export function TotalsEditor(props: Props) {
   // from an abandoned edit.
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Pencil className="h-4 w-4" />
-          Edit totals & slots
-        </Button>
-      </SheetTrigger>
+      {!hideTrigger && (
+        <SheetTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Pencil className="h-4 w-4" />
+            Edit totals & slots
+          </Button>
+        </SheetTrigger>
+      )}
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
         <SheetHeader className="shrink-0 space-y-3 border-b border-border p-6">
           <SheetTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">

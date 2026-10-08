@@ -1,11 +1,25 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, Lock } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  ArrowUpRight,
+  Lock,
+  LockOpen,
+  Pencil,
+} from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { LockToggle } from '@/components/grading/lock-toggle';
+import { SwitchSheetTypeButton } from '@/components/grading/switch-sheet-type-button';
 import { TotalsEditor } from '@/components/grading/totals-editor';
+import { RowActionsMenu } from '@/components/ui/data-table/row-actions-menu';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import {
+  SHEET_TYPE_LABEL,
+  type SheetType,
+} from '@/lib/grading/term4-framework';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +53,10 @@ type TermRow = {
   label: string;
   sheetId: string | null;
   isLocked: boolean;
+  sheetType: SheetType;
+  /** What this sheet can switch to, or null (only Secondary Four offers it). */
+  switchTo: SheetType | null;
+  studentsWithScores: number;
   wwTotals: number[];
   ptTotals: number[];
   qaTotal: number | null;
@@ -47,8 +65,13 @@ type TermRow = {
 };
 
 type Payload = {
-  section: { id: string; name: string };
-  subject: { code: string; name: string };
+  section: {
+    id: string;
+    name: string;
+    levelCode: string | null;
+    levelLabel: string | null;
+  };
+  subject: { code: string; name: string; isExaminable: boolean };
   limits: { wwMaxSlots: number; ptMaxSlots: number };
   subjectWeights: { ww: number; pt: number; qa: number };
   terms: TermRow[];
@@ -80,17 +103,18 @@ export function SectionTermSheetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Wide enough for a term label plus BOTH controls on one line — the
-          editor's trigger and the lock button are full-width words, not
-          icons, and at the default width they wrapped. */}
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
             {sectionName}
           </DialogTitle>
           <DialogDescription>
             {data
-              ? `${data.subject.name} — pick a term to set its slots and max scores.`
+              ? `${data.subject.name} — pick a term to set its slots and max scores${
+                  data.section.levelCode === 'S4'
+                    ? ', lock it or switch its sheet type'
+                    : ' or lock it'
+                }.`
               : 'Pick a term to set its slots and max scores.'}
           </DialogDescription>
         </DialogHeader>
@@ -110,71 +134,148 @@ export function SectionTermSheetsDialog({
         ) : (
           <div className="space-y-1">
             {terms.map((term) => (
-              <div
+              <TermSheetRow
                 key={term.termId}
-                className="flex items-center justify-between gap-3 rounded-lg px-2 py-2"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium text-ink-2">
-                    Term {term.termNumber}
-                  </span>
-                  {term.isLocked && (
-                    <Badge
-                      variant="outline"
-                      className="h-5 border-destructive/40 bg-destructive/10 text-destructive"
-                    >
-                      <Lock className="size-3" />
-                      Locked
-                    </Badge>
-                  )}
-                </span>
-
-                {term.sheetId == null ? (
-                  <span className="text-[12px] text-muted-foreground">
-                    No sheet yet
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    {/* Straight to the sheet in Markbook, to see the marks
-                        themselves. Ghost: it leaves the page, it changes
-                        nothing, and the lock button already carries colour. */}
-                    <Button asChild variant="ghost" size="sm">
-                      <Link href={`/markbook/grading/${term.sheetId}`}>
-                        <ArrowUpRight className="size-3.5" />
-                        View sheet
-                      </Link>
-                    </Button>
-                    <TotalsEditor
-                      sheetId={term.sheetId}
-                      wwTotals={term.wwTotals}
-                      ptTotals={term.ptTotals}
-                      qaTotal={term.qaTotal}
-                      wwMaxSlots={data.limits.wwMaxSlots}
-                      ptMaxSlots={data.limits.ptMaxSlots}
-                      isLocked={term.isLocked}
-                      weights={term.weights}
-                      subjectWeights={data.subjectWeights}
-                      weightsOverridden={term.weightsOverridden}
-                    />
-                    {/* `onDone` matters here and nowhere else: this list is
-                        TanStack Query, so the `router.refresh()` the toggle
-                        already does cannot reach it, and the row would keep
-                        saying "Locked" after being unlocked. */}
-                    <LockToggle
-                      sheetId={term.sheetId}
-                      isLocked={term.isLocked}
-                      onDone={() =>
-                        void queryClient.invalidateQueries({ queryKey })
-                      }
-                    />
-                  </span>
-                )}
-              </div>
+                term={term}
+                data={data}
+                onChanged={() =>
+                  void queryClient.invalidateQueries({ queryKey })
+                }
+              />
             ))}
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// One term. ONE visible action — View sheet — and everything that changes the
+// sheet lives in the ⋯ menu (Mr Ace, 2026-10-08: four buttons in a line was
+// too many). Each menu item only raises state; the editor, the lock confirm
+// and the switch confirm stay mounted here with their own buttons hidden, so a
+// dialog never opens from inside the closing menu.
+function TermSheetRow({
+  term,
+  data,
+  onChanged,
+}: {
+  term: TermRow;
+  data: Payload;
+  /** `onDone` matters: this list is TanStack Query, so the `router.refresh()`
+      the lock and switch already do cannot reach it, and the row would keep
+      saying "Locked" / the old sheet type. */
+  onChanged: () => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [lockOpen, setLockOpen] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
+
+  const sheetId = term.sheetId;
+  const isFramework = term.sheetType === 'term4_framework';
+  const switchTo = term.switchTo;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-2">
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-medium text-ink-2">
+          Term {term.termNumber}
+        </span>
+        {isFramework && (
+          <Badge
+            variant="outline"
+            className="h-5 border-brand-indigo/30 bg-brand-indigo/10 text-brand-indigo-deep"
+          >
+            {SHEET_TYPE_LABEL.term4_framework}
+          </Badge>
+        )}
+        {term.isLocked && (
+          <Badge
+            variant="outline"
+            className="h-5 border-destructive/40 bg-destructive/10 text-destructive"
+          >
+            <Lock className="size-3" />
+            Locked
+          </Badge>
+        )}
+      </span>
+
+      {sheetId == null ? (
+        <span className="text-[12px] text-muted-foreground">No sheet yet</span>
+      ) : (
+        <span className="flex items-center gap-1">
+          {/* Straight to the sheet in Markbook, to see the marks themselves. */}
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`/markbook/grading/${sheetId}`}>
+              <ArrowUpRight className="size-3.5" />
+              View sheet
+            </Link>
+          </Button>
+
+          <RowActionsMenu>
+            {/* A framework sheet has fixed columns, so its slots and max
+                scores are not editable (the sheet page hides the editor too). */}
+            {!isFramework && (
+              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                <Pencil className="size-4" />
+                Set slots &amp; max scores
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => setLockOpen(true)}>
+              {term.isLocked ? (
+                <LockOpen className="size-4" />
+              ) : (
+                <Lock className="size-4" />
+              )}
+              {term.isLocked ? 'Unlock sheet' : 'Lock sheet'}
+            </DropdownMenuItem>
+            {switchTo && (
+              <DropdownMenuItem onSelect={() => setSwitchOpen(true)}>
+                <ArrowLeftRight className="size-4" />
+                Switch to {SHEET_TYPE_LABEL[switchTo]}
+              </DropdownMenuItem>
+            )}
+          </RowActionsMenu>
+
+          {!isFramework && (
+            <TotalsEditor
+              hideTrigger
+              open={editOpen}
+              onOpenChange={setEditOpen}
+              sheetId={sheetId}
+              wwTotals={term.wwTotals}
+              ptTotals={term.ptTotals}
+              qaTotal={term.qaTotal}
+              wwMaxSlots={data.limits.wwMaxSlots}
+              ptMaxSlots={data.limits.ptMaxSlots}
+              isLocked={term.isLocked}
+              weights={term.weights}
+              subjectWeights={data.subjectWeights}
+              weightsOverridden={term.weightsOverridden}
+            />
+          )}
+          <LockToggle
+            hideTrigger
+            confirmOpen={lockOpen}
+            onConfirmOpenChange={setLockOpen}
+            sheetId={sheetId}
+            isLocked={term.isLocked}
+            onDone={onChanged}
+          />
+          {switchTo && (
+            <SwitchSheetTypeButton
+              hideTrigger
+              open={switchOpen}
+              onOpenChange={setSwitchOpen}
+              sheetId={sheetId}
+              to={switchTo}
+              studentsWithScores={term.studentsWithScores}
+              onDone={onChanged}
+            />
+          )}
+        </span>
+      )}
+    </div>
   );
 }
 

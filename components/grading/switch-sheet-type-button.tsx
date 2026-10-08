@@ -30,7 +30,18 @@ export function SwitchSheetTypeButton({
   sheetId,
   to,
   studentsWithScores,
+  onDone,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
+  /** Ran after the type actually changed — see `LockToggle`'s `onDone`. */
+  onDone?: () => void;
+  /** Controlled confirm, for a host that raises it from a menu item. */
+  open?: boolean;
+  onOpenChange?: (next: boolean) => void;
+  /** Render no button — the host opens the confirm itself. */
+  hideTrigger?: boolean;
   sheetId: string;
   /** The type the sheet switches TO. */
   to: SheetType;
@@ -38,7 +49,12 @@ export function SwitchSheetTypeButton({
   studentsWithScores: number;
 }) {
   const run = useWriteAction();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const [busy, setBusy] = useState(false);
 
   const action = `Switch to ${SHEET_TYPE_LABEL[to]}`;
@@ -46,7 +62,7 @@ export function SwitchSheetTypeButton({
 
   async function doSwitch() {
     setBusy(true);
-    await run(
+    const result = await run(
       () =>
         apiFetch(
           `/api/grading-sheets/${sheetId}/sheet-type`,
@@ -58,6 +74,7 @@ export function SwitchSheetTypeButton({
       }
     );
     setBusy(false);
+    if (result !== undefined) onDone?.();
   }
 
   const scoresLine =
@@ -69,17 +86,19 @@ export function SwitchSheetTypeButton({
 
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        loading={busy}
-        loadingText="Switching…"
-        onClick={() => setOpen(true)}
-      >
-        {!busy && <ArrowLeftRight className="h-4 w-4" />}
-        {action}
-      </Button>
+      {!hideTrigger && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          loading={busy}
+          loadingText="Switching…"
+          onClick={() => setOpen(true)}
+        >
+          {!busy && <ArrowLeftRight className="h-4 w-4" />}
+          {action}
+        </Button>
+      )}
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
