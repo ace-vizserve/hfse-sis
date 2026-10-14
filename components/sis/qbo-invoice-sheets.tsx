@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Field,
   FieldDescription,
@@ -532,20 +533,20 @@ export function CreateInvoiceSheet({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="qbo-txn-date">Invoice date</FieldLabel>
-          <Input
+          <DatePicker
             id="qbo-txn-date"
-            type="date"
             value={txnDate}
-            onChange={(e) => setTxnDate(e.target.value)}
+            onChange={(d) => setTxnDate(d || todayIso())}
+            allowClear={false}
           />
         </Field>
         <Field>
           <FieldLabel htmlFor="qbo-due-date">Due date</FieldLabel>
-          <Input
+          <DatePicker
             id="qbo-due-date"
-            type="date"
             value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
+            onChange={setDueDate}
+            placeholder="Usual terms"
           />
           <FieldDescription>
             Leave blank to use QuickBooks’ usual terms.
