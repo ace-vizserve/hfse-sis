@@ -30,6 +30,14 @@ const ENTITY: Record<string, ChangedEntity['entity']> = {
  */
 export function parseWebhookPayload(json: unknown): ChangedEntity[] {
   const out: ChangedEntity[] = [];
+  // A single CloudEvent may arrive as a bare object rather than an array.
+  const single =
+    !!json &&
+    typeof json === 'object' &&
+    !Array.isArray(json) &&
+    typeof (json as { type?: unknown }).type === 'string' &&
+    (json as { type: string }).type.startsWith('qbo.');
+  if (single) json = [json];
   if (Array.isArray(json)) {
     for (const ev of json as Array<Record<string, unknown>>) {
       const parts = String(ev?.type ?? '').split('.');

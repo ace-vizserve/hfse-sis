@@ -54,6 +54,15 @@ describe('parseWebhookPayload', () => {
     ]);
   });
 
+  it('reads a single CloudEvent sent as one object', () => {
+    expect(
+      parseWebhookPayload({
+        type: 'qbo.payment.created.v1',
+        intuitentityid: '201',
+      })
+    ).toEqual([{ entity: 'Payment', id: '201', operation: 'created' }]);
+  });
+
   it('returns nothing for junk', () => {
     expect(parseWebhookPayload(null)).toEqual([]);
     expect(parseWebhookPayload({ foo: 1 })).toEqual([]);
