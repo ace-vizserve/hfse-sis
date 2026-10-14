@@ -27,4 +27,4 @@ Read by `lib/qbo/env.ts`. All server-only. QuickBooks stays off until the first 
 - `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET` — the Intuit app's keys (server-only).
 - `QBO_REDIRECT_URI` — `https://sis.hfse.edu.sg/api/quickbooks/callback` in production; `http://localhost:3000/api/quickbooks/callback` locally. Must match the Intuit app's redirect list exactly.
 - `QBO_ENVIRONMENT` — `sandbox` | `production`. Anything else (or unset) means sandbox, so a missing value can never post to the live company.
-- `QBO_WEBHOOK_VERIFIER` — the verifier token from the Intuit app's Webhooks page. Optional here; the webhook route (not yet built) will need it to verify Intuit's signature. Blank is fine locally.
+- `QBO_WEBHOOK_VERIFIER` — the verifier token from the Intuit app's Webhooks page. Optional here; `POST /api/quickbooks/webhook` uses it to verify Intuit's signature, and refuses every unsigned call while it is blank. Production webhook URL: `https://sis.hfse.edu.sg/api/quickbooks/webhook`. Blank is fine locally.

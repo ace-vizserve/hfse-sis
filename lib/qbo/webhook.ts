@@ -51,7 +51,10 @@ export function parseWebhookPayload(json: unknown): ChangedEntity[] {
   }
   const notes = (json as { eventNotifications?: unknown })?.eventNotifications;
   if (!Array.isArray(notes)) return out;
-  for (const n of notes as Array<Record<string, any>>) {
+  type Note = {
+    dataChangeEvent?: { entities?: Array<Record<string, unknown>> };
+  } | null;
+  for (const n of notes as Note[]) {
     for (const e of n?.dataChangeEvent?.entities ?? []) {
       const entity = ENTITY[String(e?.name ?? '').toLowerCase()];
       if (entity && e?.id) {

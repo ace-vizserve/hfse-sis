@@ -7,6 +7,10 @@
     {
       "path": "/api/sis/students/auto-sync",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/quickbooks/cdc",
+      "schedule": "0 * * * *"
     }
   ]
 }
