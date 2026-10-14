@@ -69,6 +69,11 @@ function applyState(
   if (stage === 'fees' && status === 'Paid') {
     return { ...base, status: 'Invoiced', paymentDate: null };
   }
+  // A Fees stage held at Invoiced (no start date) keeps its payment date;
+  // once the invoice is open again that date is stale, so clear it.
+  if (!blank(current.paymentDate)) {
+    return { ...base, paymentDate: null };
+  }
   return base;
 }
 

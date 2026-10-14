@@ -158,6 +158,16 @@ describe('QuickBooks changed the current invoice', () => {
     ).toEqual({ status: 'Invoiced', paymentDate: null });
   });
 
+  it('Fees held at Invoiced with a payment date reopens → payment date cleared, status kept', () => {
+    expect(
+      stageOnInvoiceChange(
+        'fees',
+        { ...feesInvoiced, paymentDate: '2026-10-20' },
+        open()
+      )
+    ).toEqual({ paymentDate: null });
+  });
+
   it('already in step with QuickBooks → nothing to write', () => {
     expect(
       stageOnInvoiceChange(
