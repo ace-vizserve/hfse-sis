@@ -19,9 +19,11 @@ export async function POST() {
     .eq('id', 1)
     .maybeSingle();
   if (!data) return NextResponse.json({ ok: true });
-  await revokeToken(data.refresh_token).catch((e) =>
-    console.warn('[qbo disconnect] revoke failed, forgetting anyway:', e)
-  );
+  let revoked = true;
+  await revokeToken(data.refresh_token).catch((e) => {
+    revoked = false;
+    console.warn('[qbo disconnect] revoke failed, forgetting anyway:', e);
+  });
   const { error } = await service.from('qbo_connection').delete().eq('id', 1);
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -31,7 +33,11 @@ export async function POST() {
     action: 'qbo.connection.disconnect',
     entityType: 'qbo_connection',
     entityId: data.realm_id,
-    context: { company_name: data.company_name, environment: data.environment },
+    context: {
+      company_name: data.company_name,
+      environment: data.environment,
+      revoked,
+    },
   });
   return NextResponse.json({ ok: true });
 }

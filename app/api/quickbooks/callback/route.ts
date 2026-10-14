@@ -14,10 +14,24 @@ import { createServiceClient } from '@/lib/supabase/service';
 // GET /api/quickbooks/callback?code&state&realmId — Intuit sends the
 // superadmin back here after they approve.
 export async function GET(request: NextRequest) {
-  const back = (q: string) =>
-    NextResponse.redirect(new URL(`/sis/admin/quickbooks?${q}`, request.url));
+  // Every redirect out of here clears the one-time state cookie, so a
+  // cancelled, expired or failed attempt cannot leave a stale state behind.
+  const back = (q: string) => {
+    const res = NextResponse.redirect(
+      new URL(`/sis/admin/quickbooks?${q}`, request.url)
+    );
+    res.cookies.delete({ name: 'qbo_oauth_state', path: '/api/quickbooks' });
+    return res;
+  };
   const auth = await requireRole([...QBO_ADMIN_ROLES]);
   if ('error' in auth) return auth.error;
+
+  const env = qboEnv();
+  if (!env) {
+    return back(
+      `error=${encodeURIComponent("The QuickBooks app keys aren't set on this server.")}`
+    );
+  }
 
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
@@ -35,7 +49,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const env = qboEnv()!;
   const service = createServiceClient();
   try {
     const tokens = await exchangeAuthCode(code);
@@ -52,33 +65,40 @@ export async function GET(request: NextRequest) {
       connected_by_email: auth.user.email,
       connected_at: new Date().toISOString(),
       last_cdc_at: new Date().toISOString(),
+      company_name: null,
     });
     if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error('[qbo callback]', e);
+    return back(`error=${encodeURIComponent(qboErrorMessage(e))}`);
+  }
 
+  // The connection is saved from here on, so the person is never told it
+  // failed. A missing company name is cosmetic and is left null.
+  let companyName: string | null = null;
+  try {
     const info = await qboRequest<{ CompanyInfo?: { CompanyName?: string } }>(
       service,
       'GET',
       `/companyinfo/${realmId}`
     );
-    const companyName = info.CompanyInfo?.CompanyName ?? null;
-    await service
+    companyName = info.CompanyInfo?.CompanyName ?? null;
+    const { error } = await service
       .from('qbo_connection')
       .update({ company_name: companyName })
       .eq('id', 1);
-
-    await logAction({
-      service,
-      actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
-      action: 'qbo.connection.connect',
-      entityType: 'qbo_connection',
-      entityId: realmId,
-      context: { company_name: companyName, environment: env.environment },
-    });
-    const res = back('connected=1');
-    res.cookies.delete({ name: 'qbo_oauth_state', path: '/api/quickbooks' });
-    return res;
+    if (error) throw new Error(error.message);
   } catch (e) {
-    console.error('[qbo callback]', e);
-    return back(`error=${encodeURIComponent(qboErrorMessage(e))}`);
+    console.warn('[qbo callback] could not read company name:', e);
   }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
+    action: 'qbo.connection.connect',
+    entityType: 'qbo_connection',
+    entityId: realmId,
+    context: { company_name: companyName, environment: env.environment },
+  });
+  return back('connected=1');
 }
