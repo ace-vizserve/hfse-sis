@@ -217,7 +217,7 @@ So every capacity decision was a code deploy — **five schedule changes between
 - **Re-invoiced means a new invoice was sent for the stage** (Mr Ace, 2026-10-14). The old invoice is left as it is in QuickBooks; the SIS never voids it. Only the latest (current) invoice moves the stage. Cancelled is staff-only: the sync never sets it and never touches a Cancelled stage. The sync acts on QuickBooks changes only, so a staff hand edit survives until that invoice changes in QuickBooks. QuickBooks wins on money (total, balance, paid, voided).
 - **QuickBooks first, then the SIS.** Create and Link call QuickBooks first; only if it accepts does the SIS write the invoice row and the stage. If QuickBooks refuses or is down, nothing is saved.
 - **Roles.** The invoice buttons: admissions, school_admin, superadmin (no finance role for now). academic_coordinator keeps Edit stage but gets no invoice buttons. Connecting QuickBooks: superadmin only.
-- **Data.** Tables are server-only (RLS on, no policies, service role): invoices, customers, sync runs, and the connection with its rotating tokens. Tokens are NOT in `school_config`, which every signed-in role can read. The mapping is one pure function, `nextStageState`, unit-tested without QuickBooks. Sync changes carry actor `system:quickbooks-sync`.
+- **Data.** Tables are server-only (RLS on, no policies, service role): invoices, customers, sync runs, and the connection with its rotating tokens. Tokens are NOT in `school_config`, which every signed-in role can read. The mapping is two pure functions in `lib/qbo/stage-state.ts` — `stageOnNewInvoice` (staff created or linked an invoice) and `stageOnInvoiceChange` (QuickBooks changed the current one) — unit-tested without QuickBooks. Linking the very invoice already typed on the stage is not a re-invoice. Customer and invoice rows carry `realm_id` (the QuickBooks company) and are read back only against the company connected now; connecting a different company is refused while invoices from another exist. Sync changes carry actor `system:quickbooks-sync`.
 - **Sync paths.** Webhook from Intuit, an hourly change check as the safety net, and a manual Refresh on the tile. One failing invoice does not stop the batch or the hourly cursor; its problem is recorded on the run and shown on the SIS Admin QuickBooks page. The admissions application page still renders if the QuickBooks read fails.
 
 ⚠ **Known gaps and go-live steps.**
@@ -226,6 +226,8 @@ So every capacity decision was a code deploy — **five schedule changes between
 - **The start-date note points at the pencil** (Edit stage), not its own button.
 - **The invoice memo is single-line plain text** (QuickBooks' customer memo is plain text; no rich-text editor).
 - **A renumbered invoice in QuickBooks does not update the stage's number.**
+- **An invoice settled without a Payment** (a credit memo or journal entry) has no payment date, so Registration can't reach Finished by itself — staff finish it by hand.
+- **The hourly check needs Vercel Pro** (Hobby allows daily crons only) — confirm the plan before deploying, or change the schedule to daily.
 - **Webhook not live yet:** set `QBO_WEBHOOK_VERIFIER` and register `https://sis.hfse.edu.sg/api/quickbooks/webhook` in the Intuit app before go-live.
 - **GST is untested.** The sandbox is a US company; an Australian sandbox is needed.
 - **Production keys, and a one-time approval by an HFSE QuickBooks admin**, are needed before Connect works on production.

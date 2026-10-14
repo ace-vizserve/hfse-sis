@@ -57,15 +57,15 @@ Rules:
 - **Payment date** = the date of the payment that brought the balance to 0 (the latest linked QB Payment's `TxnDate`).
 - **QuickBooks wins on money.** Total, balance, paid and voided always come from QuickBooks.
 
-The mapping is one pure function, `nextStageState(stage, current, invoice)`, so it is unit-tested without QuickBooks.
+The mapping is two pure functions in `lib/qbo/stage-state.ts` — `stageOnNewInvoice(stage, current, invoice)` when staff create or link an invoice, and `stageOnInvoiceChange(stage, current, invoice)` when QuickBooks changes the current one — so it is unit-tested without QuickBooks.
 
 ## Data
 
 Migration 188. All tables have RLS on with no policies — read and written only by the server with the service role. Tokens are NOT stored in `school_config`, which every signed-in role can read.
 
 - `qbo_connection` — one row: `realm_id`, `company_name`, `refresh_token`, `access_token`, `access_token_expires_at`, `connected_by`, `connected_at`, `last_cdc_at`.
-- `qbo_customers` — `student_number` (PK), `qbo_customer_id`, `display_name`, `matched_by` (`auto` | staff email), `matched_at`.
-- `qbo_invoices` — one row per invoice: `id`, `ay_code`, `enrolee_number`, `student_number`, `stage_key` (`registration` | `fees`), `qbo_invoice_id` (unique), `doc_number`, `total`, `balance`, `state` (`open` | `paid` | `voided`), `is_current`, `payment_date`, `sync_token`, `source` (`created` | `linked`), `created_by`, `created_at`, `synced_at`. One `is_current` row per (ay, enrolee, stage), by partial unique index.
+- `qbo_customers` — `student_number` (PK), `qbo_customer_id`, `display_name`, `matched_by` (`auto` | staff email), `matched_at`, `realm_id`.
+- `qbo_invoices` — one row per invoice: `id`, `ay_code`, `enrolee_number`, `student_number`, `stage_key` (`registration` | `fees`), `qbo_invoice_id` (unique), `doc_number`, `total`, `balance`, `state` (`open` | `paid` | `voided`), `is_current`, `payment_date`, `sync_token`, `source` (`created` | `linked`), `created_by`, `created_at`, `synced_at`, `realm_id`. Customer and invoice rows carry the QuickBooks company (`realm_id`) they came from and are only read back against the company connected now; connecting a different company is refused while invoices from another exist. One `is_current` row per (ay, enrolee, stage), by partial unique index.
 - `qbo_sync_runs` — `id`, `source` (`webhook` | `hourly` | `manual`), `started_at`, `finished_at`, `invoices_updated`, `error`. Feeds the admin page's "last sync" and "last errors".
 
 The existing stage columns (`registrationInvoice`, `registrationPaymentDate`, `feeInvoice`, `feePaymentDate`, statuses) stay the source the rest of the SIS reads; the sync fills them.
@@ -80,7 +80,7 @@ The existing stage columns (`registrationInvoice`, `registrationPaymentDate`, `f
 - Hourly cron `GET /api/quickbooks/cdc` (`CRON_SECRET` Bearer, in `vercel.json`) — Change Data Capture since `last_cdc_at` for Invoice and Payment; catches anything the webhook missed.
 - "Refresh from QuickBooks" on the tile — the same refresh for one invoice.
 
-All three call one function, `refreshInvoice(qboInvoiceId)`: read the invoice and its payments, update the `qbo_invoices` row, and if it is current, apply `nextStageState` and write the stage. Invoices the SIS does not know are ignored.
+All three call one function, `refreshInvoice(qboInvoiceId)`: read the invoice and its payments, update the `qbo_invoices` row, and if it is current, apply `stageOnInvoiceChange` and write the stage. Invoices the SIS does not know are ignored.
 
 **Who did it.**
 
@@ -125,7 +125,7 @@ All three call one function, `refreshInvoice(qboInvoiceId)`: read the invoice an
 
 ## Testing
 
-- Unit: `nextStageState` covering every row of both tables plus Cancelled, older-invoice and missing-start-date cases; webhook signature check; customer-match rules.
+- Unit: `stageOnNewInvoice` / `stageOnInvoiceChange` covering every row of both tables plus Cancelled, older-invoice and missing-start-date cases; webhook signature check; customer-match rules.
 - Audit coverage tests updated for the new actions.
 - Integration: the existing throwaway scripts in `scripts/qbo/` (sandbox 21/21, SIS round-trip 9/9) are the manual check against the QuickBooks sandbox and the local Supabase stack.
 
