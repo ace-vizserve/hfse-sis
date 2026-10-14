@@ -155,8 +155,8 @@ export async function GET(
 
   // "Switch sheet type" is a Secondary Four thing (Mr Ace, 2026-10-08). The
   // same rule the sheet page applies: an unlocked sheet; to the Term 4
-  // framework only from Term 4 of an examinable subject; back to Standard from
-  // a framework sheet. The database re-checks all of it.
+  // framework only from Term 4 (letter-graded subjects included, 2026-10-14);
+  // back to Standard from a framework sheet. The database re-checks all of it.
   const isSecFour = level?.code === 'S4';
   const isExaminable = subject?.is_examinable !== false;
   const switchTargetFor = (
@@ -165,12 +165,12 @@ export async function GET(
   ): SheetType | null => {
     if (!sheet || !isSecFour || sheet.is_locked) return null;
     if (isTerm4Framework(sheet.sheet_type)) return 'standard';
-    return isExaminable && termNumber === 4 ? 'term4_framework' : null;
+    return termNumber === 4 ? 'term4_framework' : null;
   };
 
   // What the switch would clear, for the confirm — only for the sheets that
-  // can switch. On a framework sheet the best term average is the system's, so
-  // only the recommendation and the exam count.
+  // can switch. On a framework sheet the best term grade is the system's, so
+  // only Class Performance and the PETA count.
   const studentsWithScores = new Map<string, number>();
   for (const term of (termsRes.data ?? []) as Array<{
     id: string;
@@ -222,7 +222,7 @@ export async function GET(
       isLocked: sheet?.is_locked ?? false,
       sheetType: (sheet?.sheet_type ?? 'standard') as SheetType,
       // The type this term's sheet can switch TO, or null when it can't (not
-      // Secondary Four, locked, or not a Term 4 sheet of a graded subject).
+      // Secondary Four, locked, or not a Term 4 sheet).
       switchTo: switchTargetFor(sheet, term.term_number),
       studentsWithScores: sheet ? (studentsWithScores.get(sheet.id) ?? 0) : 0,
       wwTotals: (sheet?.ww_totals ?? []).map(Number),

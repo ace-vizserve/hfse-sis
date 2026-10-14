@@ -185,7 +185,7 @@ The badges render on:
 | NA   | Not Applicable                                                   | —            |
 | E    | Exempted (**Secondary only**)                                    | —            |
 
-The number ranges are display-only context for the legend. Teachers (or registrar via consolidated form per Phase 2) pick the letter directly — the system never derives a letter from a number.
+A/B/C/IP are derived from the numeric quarterly grade with these ranges (`numericToLetter`, KD #104); only UG and E are picked by hand (stored in `letter_grade`), and NA is the `is_na` flag.
 
 **Phase 2 open questions** for Joann (KD #95): who enters letters and from where, complete verified letter list (whether `INC` / `CO` are also used at HFSE), whether the SharePoint Consolidated Form integrates or gets replaced.
 
@@ -216,9 +216,7 @@ The full canonical set per migration 049 (`subjects.is_examinable=false`):
 - **Primary:** Music Education, Arts Education, Physical Education, Health Education, Christian Living
 - **Secondary:** Contemporary Art, Physical Education and Health, Pastoral Ministry and Personal Development, Co-curricular Activities (CCA)
 
-These subjects do not use the WW/PT/QA formula and have no Subject Overall, Subject Award, or General Average contribution. They render as letter cells per term + `"Passed"` Final Grade on the T4 report card.
-
-**Where letters are entered today**: this is one of the four open Phase-2 questions with Joann. Existing infrastructure (`grade_entries.letter_grade text`, `<LetterGradeGrid>` component) supports per-(student × subject × section × term) letter entry on the grading sheet, but HFSE's actual workflow uses a separate "consolidated form" workbook that VLOOKUPs into the Masterfile. Phase 2 will reconcile.
+These subjects use the same WW/PT/QA score entry and formula as examinable subjects (KD #104); the quarterly grade shows as its derived letter. They have no Subject Overall, Subject Award, or General Average contribution, and render as letter cells per term + `"Passed"` Final Grade on the T4 report card.
 
 ## Term-over-Term Comparison
 
@@ -226,23 +224,25 @@ The grading sheets show the previous term's grade alongside the current term. If
 
 ## Term 4 framework sheets (KD #230)
 
-A Secondary 4 Term 4 sheet can be **switched** to a **Term 4 framework** sheet (sheet page → "Switch to Term 4 framework", examinable subject, Term 4, unlocked; Mr Ace, 2026-10-08), following the school's "Term 4 Grading Framework for Secondary 4 Students" ahead of O-Level study leave. New sheets are always Standard. It reuses the fixed WW / PT / QA shape; the grade formula itself is unchanged. Switching (either way) clears every score on the sheet — each cleared score is kept in the `sheet.switch_type` activity-log row — and "Switch to Standard" puts it back to WW 3×10, PT 3×10, the subject's exam total and weights (migration 185). "Remove sheet" is unchanged: a framework sheet is not removable through it (its best term average counts as entered), and a sheet that was ever a framework sheet usually stays unremovable after switching back (it keeps the system's best-term `grade_audit_log` rows). Removing those waits for the planned archive / restore / force-delete feature. On a switch to framework, the system's audit row shows the old Standard WW1 score as "old"; the real previous scores are in the switch's `cleared` snapshot.
+A Secondary 4 Term 4 sheet can be **switched** to a **Term 4 framework** sheet (sheet page → "Switch to Term 4 framework", any subject — letter-graded included — Term 4, unlocked; Mr Ace, 2026-10-08 / 2026-10-14), following the school's template "Sec 4 Grading Sheets - Term 4" ahead of O-Level study leave. New sheets are always Standard. It reuses the fixed WW / PT / QA shape; the grade formula itself is unchanged. Switching (either way) clears every score on the sheet — each cleared score is kept in the `sheet.switch_type` activity-log row — and "Switch to Standard" puts it back to WW 3×10, PT 3×10, the subject's exam total and weights (migration 185). "Remove sheet" is unchanged: a framework sheet is not removable through it (its Best Overall counts as entered), and a sheet that was ever a framework sheet usually stays unremovable after switching back (it keeps the system's best-term `grade_audit_log` rows). Removing those waits for the planned archive / restore / force-delete feature. On a switch to framework, the system's audit row shows the old Standard WW1 score as "old"; the real previous scores are in the switch's `cleared` snapshot.
 
-| Slot | Meaning                   | Out of | Weight | Entered by                         |
-| ---- | ------------------------- | ------ | ------ | ---------------------------------- |
-| WW   | Best term average         | 100    | 50%    | The system (read-only on the grid) |
-| PT   | Teacher's recommendation  | 30     | 20%    | Teacher                            |
-| QA   | Revision task / mock exam | 100    | 30%    | Teacher                            |
+| Slot | Column (school's name) | Out of | Weight | Entered by                         |
+| ---- | ---------------------- | ------ | ------ | ---------------------------------- |
+| WW   | Best Overall (T1–T3)   | 100    | 50%    | The system (read-only on the grid) |
+| PT   | Class Performance      | 30     | 20%    | Teacher                            |
+| QA   | Term 4 PETA            | 100    | 30%    | Teacher                            |
 
-**Best term average** = the highest of the student's T1, T2 and T3 term averages. A term average is the mean of that term's quarterly grades over examinable subjects only (the General Average set), to 1 decimal. A term where the student is N/A is skipped (late enrollees); ties go to the later term; a student who moved class counts a subject once per term (the non-withdrawn enrolment's row wins). The value is the same in every subject for that student, and updates by itself — locked sheets included — when an earlier-term grade changes. A student with no T1–T3 grades shows "No earlier grades" and does not count as graded.
+**Best Overall** = the highest of the student's T1, T2 and T3 quarterly grades **in that subject** — the template's `MAX(T1, T2, T3)` per subject tab (migration 187, 2026-10-14; it replaced a whole-term-average reading). A term where the student is N/A is skipped (late enrollees); ties go to the later term; a student who moved class counts each term once (the non-withdrawn enrolment's row wins). It updates by itself — locked sheets included — when an earlier-term grade in that subject changes. A student with no T1–T3 grade in the subject shows "No earlier grades" and does not count as graded.
 
-**Worked example.** Best term average 86, recommendation 24/30, revision task 70/100:
+**Letter-graded subjects** (CA, PE on the template) work the same way: their T1–T3 grades are numbers, and the Term 4 letter is derived from the Term 4 grade as on any sheet (A ≥ 90, B ≥ 85, C ≥ 80, IP ≤ 79 — the template's column N).
+
+**Worked example** (template, English, row 10). T1–T3 = 79 / 87 / 85, Class Performance 25/30, PETA 78/100:
 
 ```
-WW  86/100 × 50  = 43
-PT  24/30  × 20  = 16
-QA  70/100 × 30  = 21
-Initial grade    = 80  → DepEd transmutation → 87
+WW  87/100 × 50  = 43.5
+PT  25/30  × 20  = 16.67
+QA  78/100 × 30  = 23.4
+Initial grade    = 83.57  → DepEd transmutation → 89
 ```
 
-Final Grade (T1 20 / T2 20 / T3 20 / T4 40) and the General Average are unchanged. Non-examinable subjects are not affected.
+The template rounds the 20% part to 2 decimals; the SIS does not, and it never changes a transmuted grade (all 234 template rows, 52 of them letters, give the template's grade and letter through `computeQuarterly`). The template's "Final Grade" column is this Term 4 grade. The year's Final Grade (T1 20 / T2 20 / T3 20 / T4 40) and the General Average are unchanged.

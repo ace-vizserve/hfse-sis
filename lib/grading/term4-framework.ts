@@ -1,9 +1,11 @@
 // The "Term 4 framework" grading sheet type (KD #230).
 //
-// A standard sheet with a fixed shape: the WW slot is the student's best
-// T1–T3 term average (filled by the database, migration 184), the PT slot the
-// teacher's recommendation out of 30, the exam a revision task or mock exam
-// out of 100, weighted 50/20/30. The grade formula is the usual one.
+// A standard sheet with a fixed shape, as the school's "Sec 4 Grading Sheets -
+// Term 4" template: the WW slot is the student's best T1–T3 grade in this
+// subject (filled by the database, migration 187), the PT slot Class
+// Performance out of 30, the exam the Term 4 PETA out of 100, weighted
+// 50/20/30. The grade formula is the usual one; letter-graded subjects take
+// their letter from it as on any sheet (KD #104).
 // The database enforces the same shape (grading_sheets_term4_framework_shape_check).
 
 export const SHEET_TYPES = ['standard', 'term4_framework'] as const;
@@ -24,9 +26,9 @@ export const TERM4_FRAMEWORK_SHAPE = {
 } as const;
 
 export const TERM4_FRAMEWORK_LABELS = {
-  ww: 'Best term average',
-  pt: "Teacher's recommendation",
-  qa: 'Revision task / Mock exam',
+  ww: 'Best Overall',
+  pt: 'Class Performance',
+  qa: 'Term 4 PETA',
 } as const;
 
 export function isTerm4Framework(t: string | null | undefined): boolean {

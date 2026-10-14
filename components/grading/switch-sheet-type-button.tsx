@@ -108,14 +108,14 @@ export function SwitchSheetTypeButton({
               <div className="space-y-2">
                 <p>
                   {toFramework
-                    ? 'The sheet gets the Term 4 framework columns: best term average (50%), teacher’s recommendation out of 30 (20%) and revision task or mock exam out of 100 (30%).'
+                    ? 'The sheet gets the Term 4 framework columns: Best Overall, the best Term 1–3 grade in this subject (50%), Class Performance out of 30 (20%) and Term 4 PETA out of 100 (30%).'
                     : 'The sheet goes back to standard columns: three written works and three performance tasks out of 10 each, and the exam, with the subject’s usual weights.'}
                 </p>
                 <p>{scoresLine}</p>
                 <p>
                   {toFramework
-                    ? 'Each student’s best term average fills in automatically.'
-                    : 'The best term average is taken off the sheet.'}
+                    ? 'Each student’s Best Overall fills in automatically.'
+                    : 'Best Overall is taken off the sheet.'}
                 </p>
               </div>
             </AlertDialogDescription>

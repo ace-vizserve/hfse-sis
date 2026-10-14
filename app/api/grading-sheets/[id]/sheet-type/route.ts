@@ -11,9 +11,8 @@ import { SHEET_TYPES, type SheetType } from '@/lib/grading/term4-framework';
 //
 // Switches a grading sheet between Standard and Term 4 framework (KD #230
 // update, Mr Ace 2026-10-08). The whole switch is one database transaction
-// (switch_grading_sheet_type, migration 185): it refuses a locked sheet, a
-// framework sheet outside Term 4 or for a subject without a number grade,
-// reshapes the sheet and clears every score on it. What it cleared comes back
+// (switch_grading_sheet_type, migrations 185 + 187): it refuses a locked
+// sheet or a framework sheet outside Term 4, reshapes the sheet and clears every score on it. What it cleared comes back
 // and goes into the `sheet.switch_type` audit row, so nothing is lost.
 export async function PATCH(
   request: NextRequest,

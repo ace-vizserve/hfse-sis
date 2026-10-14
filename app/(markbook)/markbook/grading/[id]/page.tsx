@@ -598,21 +598,21 @@ export default async function GradingSheetPage({
   const ptW = Math.round(weights.pt_weight * 100);
   const qaW = Math.round(weights.qa_weight * 100);
 
-  // Term 4 framework sheet: which term each student's best average came from.
+  // Term 4 framework sheet: which term each student's best grade came from.
   // The RPC is service-role only; every auth check above has already passed.
   const isFramework = isTerm4Framework(sheet.sheet_type);
 
   // "Switch sheet type" (KD #230 update, 2026-10-08): offered to an oversight
-  // viewer on an unlocked sheet — to Term 4 framework only on an examinable
-  // Term 4 sheet. The confirm names how many students' entered scores the
-  // switch clears; on a framework sheet the best term average is the
-  // system's, so only the recommendation and the exam count.
+  // viewer on an unlocked sheet — to Term 4 framework only on a Term 4 sheet,
+  // letter-graded subjects included (2026-10-14). The confirm names how many
+  // students' entered scores the switch clears; on a framework sheet the best
+  // term grade is the system's, so only Class Performance and the PETA count.
   const switchTo: SheetType | null =
     !canManage || sheet.is_locked
       ? null
       : isFramework
         ? 'standard'
-        : isExaminable && term?.term_number === 4
+        : term?.term_number === 4
           ? 'term4_framework'
           : null;
   const studentsWithScores = rows.filter(
@@ -622,17 +622,26 @@ export default async function GradingSheetPage({
       r.qa_score != null
   ).length;
   let bestTermSource:
-    | Record<string, { best: number | null; termNumber: number | null }>
+    | Record<
+        string,
+        {
+          best: number | null;
+          termNumber: number | null;
+          terms: [number | null, number | null, number | null];
+          termSheetIds: [string | null, string | null, string | null];
+        }
+      >
     | undefined;
   if (isFramework) {
     const { data, error: bestErr } = await createServiceClient().rpc(
-      'best_term_averages_for_sheet',
+      'best_subject_terms_for_sheet',
       { p_sheet_id: sheet.id }
     );
     if (bestErr) {
-      // The cells still show the stored value; only the source term is lost.
+      // The cells still show the stored value; only the source term and the
+      // T1–T3 columns are lost.
       console.error(
-        '[grading sheet] best term averages could not be loaded',
+        '[grading sheet] best term grades could not be loaded',
         bestErr.message
       );
     }
@@ -642,11 +651,21 @@ export default async function GradingSheetPage({
           section_student_id: string;
           best: number | null;
           term_number: number | null;
+          t1: number | null;
+          t2: number | null;
+          t3: number | null;
+          t1_sheet_id: string | null;
+          t2_sheet_id: string | null;
+          t3_sheet_id: string | null;
         }) => [
           r.section_student_id,
           {
             best: r.best == null ? null : Number(r.best),
             termNumber: r.term_number,
+            terms: [r.t1, r.t2, r.t3].map((g) =>
+              g == null ? null : Number(g)
+            ) as [number | null, number | null, number | null],
+            termSheetIds: [r.t1_sheet_id, r.t2_sheet_id, r.t3_sheet_id],
           },
         ]
       )

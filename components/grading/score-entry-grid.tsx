@@ -9,6 +9,7 @@ import {
   Maximize2,
   Minimize2,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -133,12 +134,18 @@ type Props = {
   requireApproval?: boolean;
   /** Registrar and above: the student name opens "Counted assessments". */
   canExcuse?: boolean;
-  /** 'term4_framework': the WW column is the best Term 1-3 average, filled by the database. */
+  /** 'term4_framework': laid out as the school's Term 4 template; the WW slot is the best Term 1-3 grade, filled by the database. */
   sheetType?: SheetType;
-  /** Framework sheets: which term each best average came from, by section_student_id. */
+  /** Framework sheets, by section_student_id: the T1–T3 grades in this subject, the best and its term. */
   bestTermSource?: Record<
     string,
-    { best: number | null; termNumber: number | null }
+    {
+      best: number | null;
+      termNumber: number | null;
+      terms: [number | null, number | null, number | null];
+      /** The sheet each T1–T3 grade came from; the cell links to it. */
+      termSheetIds: [string | null, string | null, string | null];
+    }
   >;
   sheetLocked?: boolean;
   /** Teacher-authored activity metadata per column. */
@@ -946,8 +953,13 @@ export function ScoreEntryGrid({
   // meant scrolling past every score on the sheet, and it answered for one
   // student at a time. Koh asked to "flag out students" — a list — which is
   // now the "Look up student" dialog in the toolbar above.
-  const totalCols =
-    2 + (wwLen + 3) + (ptLen > 0 ? ptLen + 3 : 0) + 3 + 1 + 1 + 1;
+  //
+  // A Term 4 framework sheet is laid out as the school's template instead:
+  // # + Student | T1 T2 T3 | Best 50% | Class Performance 20% | PETA 30% |
+  // Term 4 Overall | Final Grade | (Final Grade Equivalent) | N/A
+  const totalCols = t4f
+    ? 2 + 3 + 2 + 2 + 2 + 1 + 1 + (letterDisplay ? 1 : 0) + 1
+    : 2 + (wwLen + 3) + (ptLen > 0 ? ptLen + 3 : 0) + 3 + 1 + 1 + 1;
 
   const wwPct = Math.round(wwWeight * 100);
   const ptPct = Math.round(ptWeight * 100);
@@ -1076,93 +1088,78 @@ export function ScoreEntryGrid({
         >
           <Table noWrapper>
             <TableHeader className="sticky top-0 z-20 bg-card">
-              {/* Row 1 — group headers */}
-              <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead
-                  rowSpan={3}
-                  className="sticky left-0 z-10 bg-muted w-8 align-bottom text-right font-mono text-[10px] text-muted-foreground/60"
-                >
-                  #
-                </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/60 bg-muted align-bottom text-xs text-muted-foreground"
-                >
-                  Student
-                </TableHead>
-                {wwLen > 0 && (
-                  <TableHead
-                    colSpan={wwLen + 3}
-                    className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
-                  >
-                    {wwHeader} ({wwPct}%)
-                  </TableHead>
-                )}
-                {ptLen > 0 && (
-                  <TableHead
-                    colSpan={ptLen + 3}
-                    className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
-                  >
-                    {ptHeader} ({ptPct}%)
-                  </TableHead>
-                )}
-                <TableHead
-                  colSpan={3}
-                  className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
-                >
-                  {qaHeader} ({qaPct}%)
-                </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className="border-l-2 border-border/40 align-bottom text-right text-[10px] text-muted-foreground/70"
-                >
-                  Initial
-                  <br />
-                  Grade
-                </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className="align-bottom text-right text-xs text-muted-foreground"
-                >
-                  Quarterly
-                  <br />
-                  Grade
-                </TableHead>
-                <TableHead
-                  rowSpan={3}
-                  className="align-bottom text-center text-xs text-muted-foreground"
-                >
-                  {letterDisplay ? 'Override' : 'N/A'}
-                </TableHead>
-              </TableRow>
-
-              {/* Row 2 — column codes */}
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                {wwTotals.map((_, i) => (
-                  <TableHead
-                    key={`ww-lbl-${i}`}
-                    className="text-center font-mono text-xs font-semibold text-foreground"
-                  >
-                    {t4f ? 'Avg' : `W${i + 1}`}
-                  </TableHead>
-                ))}
-                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                  Total
-                </TableHead>
-                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                  PS
-                </TableHead>
-                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
-                  WS
-                </TableHead>
-                {ptLen > 0 && (
-                  <>
-                    {ptTotals.map((_, i) => (
+              {t4f ? (
+                <Term4FrameworkHead letterDisplay={!!letterDisplay} />
+              ) : (
+                <>
+                  {/* Row 1 — group headers */}
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableHead
+                      rowSpan={3}
+                      className="sticky left-0 z-10 bg-muted w-8 align-bottom text-right font-mono text-[10px] text-muted-foreground/60"
+                    >
+                      #
+                    </TableHead>
+                    <TableHead
+                      rowSpan={3}
+                      className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/60 bg-muted align-bottom text-xs text-muted-foreground"
+                    >
+                      Student
+                    </TableHead>
+                    {wwLen > 0 && (
                       <TableHead
-                        key={`pt-lbl-${i}`}
+                        colSpan={wwLen + 3}
+                        className="border-r-2 border-border/60 bg-brand-indigo text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                      >
+                        {wwHeader} ({wwPct}%)
+                      </TableHead>
+                    )}
+                    {ptLen > 0 && (
+                      <TableHead
+                        colSpan={ptLen + 3}
+                        className="border-r-2 border-border/60 bg-brand-indigo-deep text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                      >
+                        {ptHeader} ({ptPct}%)
+                      </TableHead>
+                    )}
+                    <TableHead
+                      colSpan={3}
+                      className="border-r-2 border-border/60 bg-brand-amber text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                    >
+                      {qaHeader} ({qaPct}%)
+                    </TableHead>
+                    <TableHead
+                      rowSpan={3}
+                      className="border-l-2 border-border/40 align-bottom text-right text-[10px] text-muted-foreground/70"
+                    >
+                      Initial
+                      <br />
+                      Grade
+                    </TableHead>
+                    <TableHead
+                      rowSpan={3}
+                      className="align-bottom text-right text-xs text-muted-foreground"
+                    >
+                      Quarterly
+                      <br />
+                      Grade
+                    </TableHead>
+                    <TableHead
+                      rowSpan={3}
+                      className="align-bottom text-center text-xs text-muted-foreground"
+                    >
+                      {letterDisplay ? 'Override' : 'N/A'}
+                    </TableHead>
+                  </TableRow>
+
+                  {/* Row 2 — column codes */}
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    {wwTotals.map((_, i) => (
+                      <TableHead
+                        key={`ww-lbl-${i}`}
                         className="text-center font-mono text-xs font-semibold text-foreground"
                       >
-                        {t4f ? 'Rec' : `PT${i + 1}`}
+                        {`W${i + 1}`}
                       </TableHead>
                     ))}
                     <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
@@ -1174,69 +1171,90 @@ export function ScoreEntryGrid({
                     <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
                       WS
                     </TableHead>
-                  </>
-                )}
-                <TableHead className="text-center font-mono text-xs font-semibold text-foreground">
-                  Exam
-                </TableHead>
-                <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
-                  PS
-                </TableHead>
-                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
-                  WS
-                </TableHead>
-              </TableRow>
+                    {ptLen > 0 && (
+                      <>
+                        {ptTotals.map((_, i) => (
+                          <TableHead
+                            key={`pt-lbl-${i}`}
+                            className="text-center font-mono text-xs font-semibold text-foreground"
+                          >
+                            {`PT${i + 1}`}
+                          </TableHead>
+                        ))}
+                        <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                          Total
+                        </TableHead>
+                        <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                          PS
+                        </TableHead>
+                        <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
+                          WS
+                        </TableHead>
+                      </>
+                    )}
+                    <TableHead className="text-center font-mono text-xs font-semibold text-foreground">
+                      Exam
+                    </TableHead>
+                    <TableHead className="text-center font-mono text-[10px] text-muted-foreground">
+                      PS
+                    </TableHead>
+                    <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground">
+                      WS
+                    </TableHead>
+                  </TableRow>
 
-              {/* Row 3 — max values reference row */}
-              <TableRow className="bg-muted/20 hover:bg-muted/20">
-                {wwTotals.map((max, i) => (
-                  <TableHead
-                    key={`ww-max-${i}`}
-                    className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
-                  >
-                    {max}
-                  </TableHead>
-                ))}
-                <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                  {wwMaxTotal}
-                </TableHead>
-                <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
-                  100%
-                </TableHead>
-                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                  {wwPct}%
-                </TableHead>
-                {ptLen > 0 && (
-                  <>
-                    {ptTotals.map((max, i) => (
+                  {/* Row 3 — max values reference row */}
+                  <TableRow className="bg-muted/20 hover:bg-muted/20">
+                    {wwTotals.map((max, i) => (
                       <TableHead
-                        key={`pt-max-${i}`}
+                        key={`ww-max-${i}`}
                         className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
                       >
                         {max}
                       </TableHead>
                     ))}
                     <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                      {ptMaxTotal}
+                      {wwMaxTotal}
                     </TableHead>
                     <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
                       100%
                     </TableHead>
                     <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                      {ptPct}%
+                      {wwPct}%
                     </TableHead>
-                  </>
-                )}
-                <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                  {qaTotal ?? '—'}
-                </TableHead>
-                <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
-                  100%
-                </TableHead>
-                <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
-                  {qaPct}%
-                </TableHead>
-              </TableRow>
+                    {ptLen > 0 && (
+                      <>
+                        {ptTotals.map((max, i) => (
+                          <TableHead
+                            key={`pt-max-${i}`}
+                            className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50"
+                          >
+                            {max}
+                          </TableHead>
+                        ))}
+                        <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                          {ptMaxTotal}
+                        </TableHead>
+                        <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
+                          100%
+                        </TableHead>
+                        <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
+                          {ptPct}%
+                        </TableHead>
+                      </>
+                    )}
+                    <TableHead className="text-center font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                      {qaTotal ?? '—'}
+                    </TableHead>
+                    <TableHead className="text-center font-mono text-[10px] text-muted-foreground/50">
+                      100%
+                    </TableHead>
+                    <TableHead className="border-r-2 border-border/60 text-center font-mono text-[10px] text-muted-foreground/50">
+                      {qaPct}%
+                    </TableHead>
+                  </TableRow>
+                </>
+              )}
             </TableHeader>
             <TableBody>
               {visibleRows.length === 0 && (
@@ -1315,10 +1333,26 @@ export function ScoreEntryGrid({
                       )}
                     </TableCell>
 
-                    {/* WW inputs */}
-                    {wwTotals.map((max, i) => (
-                      <TableCell key={`ww-${i}`} className="px-1 py-1">
-                        {t4f ? (
+                    {t4f ? (
+                      <>
+                        {/* Term 4 framework — the template's columns (KD #230) */}
+                        {[0, 1, 2].map((t) => (
+                          <TermGradeCell
+                            key={`t${t + 1}`}
+                            term={t + 1}
+                            value={
+                              bestTermSource?.[r.section_student_id]?.terms[
+                                t
+                              ] ?? null
+                            }
+                            sheetId={
+                              bestTermSource?.[r.section_student_id]
+                                ?.termSheetIds[t] ?? null
+                            }
+                            groupEnd={t === 2}
+                          />
+                        ))}
+                        <TableCell className="px-1 py-1">
                           <BestTermCell
                             value={r.ww_scores[0] ?? null}
                             hasEntry={!!r.entry_id}
@@ -1327,86 +1361,150 @@ export function ScoreEntryGrid({
                                 ?.termNumber ?? null
                             }
                           />
-                        ) : r.ww_excused?.includes(i + 1) ? (
-                          <ExcusedCell />
-                        ) : (
+                        </TableCell>
+                        <ComputedCell value={wwWs} groupEnd />
+
+                        <TableCell className="px-1 py-1">
                           <ScoreInput
-                            value={r.ww_scores[i] ?? null}
-                            max={max}
+                            value={r.pt_scores[0] ?? null}
+                            max={ptTotals[0] ?? null}
                             plaintext={locked}
                             disabled={inputsDisabled}
                             onLocalChange={(v) =>
                               updateLocal(r.section_student_id, (row) => ({
                                 ...row,
-                                ww_scores: replaceAt(
-                                  row.ww_scores,
-                                  i,
+                                pt_scores: replaceAt(
+                                  row.pt_scores,
+                                  0,
                                   v,
-                                  wwTotals.length
+                                  ptTotals.length
                                 ),
                               }))
                             }
-                            onCommit={(v) => {
-                              const next = replaceAt(
-                                r.ww_scores,
-                                i,
-                                v,
-                                wwTotals.length
-                              );
+                            onCommit={(v) =>
                               commitScore(
                                 r.section_student_id,
-                                'ww',
-                                i,
-                                { field: 'ww_scores', slotIndex: i },
-                                { ww_scores: next },
+                                'pt',
+                                0,
+                                { field: 'pt_scores', slotIndex: 0 },
+                                {
+                                  pt_scores: replaceAt(
+                                    r.pt_scores,
+                                    0,
+                                    v,
+                                    ptTotals.length
+                                  ),
+                                },
                                 v
-                              );
-                            }}
+                              )
+                            }
                           />
-                        )}
-                      </TableCell>
-                    ))}
-                    <ComputedCell value={wwTotal} dp={t4f ? 1 : 0} />
-                    <ComputedCell value={r.ww_ps} />
-                    <ComputedCell value={wwWs} groupEnd />
+                        </TableCell>
+                        <ComputedCell value={ptWs} groupEnd />
 
-                    {/* PT inputs */}
-                    {ptLen > 0 && (
+                        <TableCell className="px-1 py-1">
+                          <ScoreInput
+                            value={r.qa_score}
+                            max={qaTotal}
+                            plaintext={locked}
+                            disabled={inputsDisabled}
+                            onLocalChange={(v) =>
+                              updateLocal(r.section_student_id, (row) => ({
+                                ...row,
+                                qa_score: v,
+                              }))
+                            }
+                            onCommit={(v) =>
+                              commitScore(
+                                r.section_student_id,
+                                'qa',
+                                null,
+                                { field: 'qa_score', slotIndex: null },
+                                { qa_score: v },
+                                v
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <ComputedCell value={qaWs} groupEnd />
+
+                        {/* Term 4 Overall — the total before transmutation */}
+                        <TableCell className="px-2 text-right font-mono tabular-nums text-xs text-foreground">
+                          {r.initial_grade != null
+                            ? r.initial_grade.toFixed(2)
+                            : '—'}
+                        </TableCell>
+
+                        {/* Final Grade — the transmuted Term 4 grade */}
+                        <TableCell className="text-right tabular-nums">
+                          <QuarterlyPill
+                            value={r.quarterly_grade}
+                            muted={
+                              r.withdrawn ||
+                              r.is_na ||
+                              readOnly ||
+                              !isRowComplete(r, sheetShape)
+                            }
+                          />
+                        </TableCell>
+
+                        {/* Final Grade Equivalent — letter-graded subjects (KD #104) */}
+                        {letterDisplay && (
+                          <TableCell className="text-center">
+                            <QuarterlyPill
+                              value={r.quarterly_grade}
+                              muted={
+                                r.withdrawn ||
+                                r.is_na ||
+                                readOnly ||
+                                !isRowComplete(r, sheetShape)
+                              }
+                              letter={resolveNonExaminableLetter({
+                                isNa: r.is_na,
+                                letterOverride: r.letter_grade,
+                                quarterly: r.quarterly_grade,
+                              })}
+                            />
+                          </TableCell>
+                        )}
+                      </>
+                    ) : (
                       <>
-                        {ptTotals.map((max, i) => (
-                          <TableCell key={`pt-${i}`} className="px-1 py-1">
-                            {r.pt_excused?.includes(i + 1) ? (
+                        {/* WW inputs */}
+                        {wwTotals.map((max, i) => (
+                          <TableCell key={`ww-${i}`} className="px-1 py-1">
+                            {r.ww_excused?.includes(i + 1) ? (
                               <ExcusedCell />
                             ) : (
                               <ScoreInput
-                                value={r.pt_scores[i] ?? null}
+                                value={r.ww_scores[i] ?? null}
                                 max={max}
                                 plaintext={locked}
                                 disabled={inputsDisabled}
                                 onLocalChange={(v) =>
                                   updateLocal(r.section_student_id, (row) => ({
                                     ...row,
-                                    pt_scores: replaceAt(
-                                      row.pt_scores,
+                                    ww_scores: replaceAt(
+                                      row.ww_scores,
                                       i,
                                       v,
-                                      ptTotals.length
+                                      wwTotals.length
                                     ),
                                   }))
                                 }
                                 onCommit={(v) => {
                                   const next = replaceAt(
-                                    r.pt_scores,
+                                    r.ww_scores,
                                     i,
                                     v,
-                                    ptTotals.length
+                                    wwTotals.length
                                   );
                                   commitScore(
                                     r.section_student_id,
-                                    'pt',
+                                    'ww',
                                     i,
-                                    { field: 'pt_scores', slotIndex: i },
-                                    { pt_scores: next },
+                                    { field: 'ww_scores', slotIndex: i },
+                                    { ww_scores: next },
                                     v
                                   );
                                 }}
@@ -1414,70 +1512,123 @@ export function ScoreEntryGrid({
                             )}
                           </TableCell>
                         ))}
-                        <ComputedCell value={ptTotal} dp={0} />
-                        <ComputedCell value={r.pt_ps} />
-                        <ComputedCell value={ptWs} groupEnd />
+                        <ComputedCell value={wwTotal} dp={0} />
+                        <ComputedCell value={r.ww_ps} />
+                        <ComputedCell value={wwWs} groupEnd />
+
+                        {/* PT inputs */}
+                        {ptLen > 0 && (
+                          <>
+                            {ptTotals.map((max, i) => (
+                              <TableCell key={`pt-${i}`} className="px-1 py-1">
+                                {r.pt_excused?.includes(i + 1) ? (
+                                  <ExcusedCell />
+                                ) : (
+                                  <ScoreInput
+                                    value={r.pt_scores[i] ?? null}
+                                    max={max}
+                                    plaintext={locked}
+                                    disabled={inputsDisabled}
+                                    onLocalChange={(v) =>
+                                      updateLocal(
+                                        r.section_student_id,
+                                        (row) => ({
+                                          ...row,
+                                          pt_scores: replaceAt(
+                                            row.pt_scores,
+                                            i,
+                                            v,
+                                            ptTotals.length
+                                          ),
+                                        })
+                                      )
+                                    }
+                                    onCommit={(v) => {
+                                      const next = replaceAt(
+                                        r.pt_scores,
+                                        i,
+                                        v,
+                                        ptTotals.length
+                                      );
+                                      commitScore(
+                                        r.section_student_id,
+                                        'pt',
+                                        i,
+                                        { field: 'pt_scores', slotIndex: i },
+                                        { pt_scores: next },
+                                        v
+                                      );
+                                    }}
+                                  />
+                                )}
+                              </TableCell>
+                            ))}
+                            <ComputedCell value={ptTotal} dp={0} />
+                            <ComputedCell value={r.pt_ps} />
+                            <ComputedCell value={ptWs} groupEnd />
+                          </>
+                        )}
+
+                        {/* QA input */}
+                        <TableCell className="px-1 py-1">
+                          <ScoreInput
+                            value={r.qa_score}
+                            max={qaTotal}
+                            plaintext={locked}
+                            disabled={inputsDisabled}
+                            onLocalChange={(v) =>
+                              updateLocal(r.section_student_id, (row) => ({
+                                ...row,
+                                qa_score: v,
+                              }))
+                            }
+                            onCommit={(v) =>
+                              commitScore(
+                                r.section_student_id,
+                                'qa',
+                                null,
+                                { field: 'qa_score', slotIndex: null },
+                                { qa_score: v },
+                                v
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <ComputedCell value={r.qa_ps} />
+                        <ComputedCell value={qaWs} groupEnd />
+
+                        {/* Initial grade — de-emphasised; the quarterly is the result the teacher cares about */}
+                        <TableCell className="border-l-2 border-border/30 px-2 text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
+                          {r.initial_grade != null
+                            ? r.initial_grade.toFixed(2)
+                            : '—'}
+                        </TableCell>
+
+                        {/* Quarterly grade — derived letter for non-examinable subjects (KD #104) */}
+                        <TableCell className="text-right tabular-nums">
+                          <QuarterlyPill
+                            value={r.quarterly_grade}
+                            // No colour until every counted slot has a score — a
+                            // part-filled row's grade is not a result yet.
+                            muted={
+                              r.withdrawn ||
+                              r.is_na ||
+                              readOnly ||
+                              !isRowComplete(r, sheetShape)
+                            }
+                            letter={
+                              letterDisplay
+                                ? resolveNonExaminableLetter({
+                                    isNa: r.is_na,
+                                    letterOverride: r.letter_grade,
+                                    quarterly: r.quarterly_grade,
+                                  })
+                                : undefined
+                            }
+                          />
+                        </TableCell>
                       </>
                     )}
-
-                    {/* QA input */}
-                    <TableCell className="px-1 py-1">
-                      <ScoreInput
-                        value={r.qa_score}
-                        max={qaTotal}
-                        plaintext={locked}
-                        disabled={inputsDisabled}
-                        onLocalChange={(v) =>
-                          updateLocal(r.section_student_id, (row) => ({
-                            ...row,
-                            qa_score: v,
-                          }))
-                        }
-                        onCommit={(v) =>
-                          commitScore(
-                            r.section_student_id,
-                            'qa',
-                            null,
-                            { field: 'qa_score', slotIndex: null },
-                            { qa_score: v },
-                            v
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <ComputedCell value={r.qa_ps} />
-                    <ComputedCell value={qaWs} groupEnd />
-
-                    {/* Initial grade — de-emphasised; the quarterly is the result the teacher cares about */}
-                    <TableCell className="border-l-2 border-border/30 px-2 text-right font-mono tabular-nums text-[11px] text-muted-foreground/60">
-                      {r.initial_grade != null
-                        ? r.initial_grade.toFixed(2)
-                        : '—'}
-                    </TableCell>
-
-                    {/* Quarterly grade — derived letter for non-examinable subjects (KD #104) */}
-                    <TableCell className="text-right tabular-nums">
-                      <QuarterlyPill
-                        value={r.quarterly_grade}
-                        // No colour until every counted slot has a score — a
-                        // part-filled row's grade is not a result yet.
-                        muted={
-                          r.withdrawn ||
-                          r.is_na ||
-                          readOnly ||
-                          !isRowComplete(r, sheetShape)
-                        }
-                        letter={
-                          letterDisplay
-                            ? resolveNonExaminableLetter({
-                                isNa: r.is_na,
-                                letterOverride: r.letter_grade,
-                                quarterly: r.quarterly_grade,
-                              })
-                            : undefined
-                        }
-                      />
-                    </TableCell>
 
                     {/* N/A (examinable) — or override code —/N/A/UG/E for
                       non-examinable subjects (KD #104). */}
@@ -1884,7 +2035,7 @@ function ScoringGuide({
                 {wwTotals.map((max, i) => (
                   <ActivityRow
                     key={i}
-                    code={t4f ? 'Avg' : `W${i + 1}`}
+                    code={t4f ? 'Best' : `W${i + 1}`}
                     max={max}
                     meta={effectiveWw(i)}
                     fixedLabel={t4f ? TERM4_FRAMEWORK_LABELS.ww : undefined}
@@ -1907,7 +2058,7 @@ function ScoringGuide({
                 {ptTotals.map((max, i) => (
                   <ActivityRow
                     key={i}
-                    code={t4f ? 'Rec' : `PT${i + 1}`}
+                    code={t4f ? 'CP' : `PT${i + 1}`}
                     max={max}
                     meta={effectivePt(i)}
                     fixedLabel={t4f ? TERM4_FRAMEWORK_LABELS.pt : undefined}
@@ -2204,8 +2355,130 @@ function ExcusedCell() {
   );
 }
 
-// The Term 4 framework sheet's WW slot: the student's best Term 1-3 average,
-// filled by the database. Read-only, so no edit can send ww_scores.
+// The Term 4 framework sheet's head, column for column as the school's
+// "Sec 4 Grading Sheets - Term 4" template (KD #230): the T1–T3 grades, Best
+// Overall and its 50%, Class Performance /30 and its 20%, Term 4 PETA /100 and
+// its 30%, Term 4 Overall, Final Grade, and on letter-graded subjects the
+// Final Grade Equivalent.
+function Term4FrameworkHead({ letterDisplay }: { letterDisplay: boolean }) {
+  const group =
+    'whitespace-nowrap border-r-2 border-border/60 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white';
+  const sub =
+    'whitespace-nowrap text-center font-mono text-[10px] text-muted-foreground';
+  const subEnd = `${sub} border-r-2 border-border/60`;
+  return (
+    <>
+      <TableRow className="bg-muted/60 hover:bg-muted/60">
+        <TableHead
+          rowSpan={2}
+          className="sticky left-0 z-10 bg-muted w-8 align-bottom text-right font-mono text-[10px] text-muted-foreground/60"
+        >
+          #
+        </TableHead>
+        <TableHead
+          rowSpan={2}
+          className="sticky left-8 z-10 min-w-[160px] border-r-2 border-border/60 bg-muted align-bottom text-xs text-muted-foreground"
+        >
+          Student
+        </TableHead>
+        <TableHead colSpan={3} className={`${group} bg-brand-indigo`}>
+          Overall Grade
+        </TableHead>
+        <TableHead colSpan={2} className={`${group} bg-brand-indigo`}>
+          {TERM4_FRAMEWORK_LABELS.ww} (50%)
+        </TableHead>
+        <TableHead colSpan={2} className={`${group} bg-brand-indigo-deep`}>
+          {TERM4_FRAMEWORK_LABELS.pt} (20%)
+        </TableHead>
+        <TableHead colSpan={2} className={`${group} bg-brand-amber`}>
+          {TERM4_FRAMEWORK_LABELS.qa} (30%)
+        </TableHead>
+        <TableHead
+          rowSpan={2}
+          className="align-bottom text-right text-[10px] text-muted-foreground/70"
+        >
+          Term 4
+          <br />
+          Overall
+        </TableHead>
+        <TableHead
+          rowSpan={2}
+          className="align-bottom text-right text-xs text-muted-foreground"
+        >
+          Final
+          <br />
+          Grade
+        </TableHead>
+        {letterDisplay && (
+          <TableHead
+            rowSpan={2}
+            className="align-bottom text-center text-xs text-muted-foreground"
+          >
+            Final Grade
+            <br />
+            Equivalent
+          </TableHead>
+        )}
+        <TableHead
+          rowSpan={2}
+          className="align-bottom text-center text-xs text-muted-foreground"
+        >
+          {letterDisplay ? 'Override' : 'N/A'}
+        </TableHead>
+      </TableRow>
+      <TableRow className="bg-muted/40 hover:bg-muted/40">
+        <TableHead className={sub}>T1</TableHead>
+        <TableHead className={sub}>T2</TableHead>
+        <TableHead className={subEnd}>T3</TableHead>
+        <TableHead className={sub}>T1–T3</TableHead>
+        <TableHead className={subEnd}>50%</TableHead>
+        <TableHead className={sub}>30 marks</TableHead>
+        <TableHead className={subEnd}>20%</TableHead>
+        <TableHead className={sub}>100 marks</TableHead>
+        <TableHead className={subEnd}>30%</TableHead>
+      </TableRow>
+    </>
+  );
+}
+
+// A Term 4 framework sheet's T1 / T2 / T3 cell: the grade, linking to the
+// sheet it came from — a wrong earlier grade is fixed there, and Term 4
+// follows by itself.
+function TermGradeCell({
+  term,
+  value,
+  sheetId,
+  groupEnd,
+}: {
+  term: number;
+  value: number | null;
+  sheetId: string | null;
+  groupEnd?: boolean;
+}) {
+  return (
+    <TableCell
+      className={`px-2 text-right font-mono tabular-nums text-xs text-muted-foreground${groupEnd ? ' border-r-2 border-border/60' : ''}`}
+    >
+      {value == null ? (
+        '—'
+      ) : sheetId ? (
+        <HoverHint hint={`Open the Term ${term} sheet`}>
+          <Link
+            href={`/markbook/grading/${sheetId}`}
+            className="rounded-sm text-foreground underline decoration-border underline-offset-2 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {value}
+          </Link>
+        </HoverHint>
+      ) : (
+        value
+      )}
+    </TableCell>
+  );
+}
+
+// The Term 4 framework sheet's WW slot: the student's best Term 1-3 grade in
+// this subject, filled by the database. Read-only, so no edit can send ww_scores.
 function BestTermCell({
   value,
   termNumber,
@@ -2227,7 +2500,7 @@ function BestTermCell({
   }
   if (value == null) {
     return (
-      <HoverHint hint="This student has no Term 1–3 grades yet, so there is no best term average.">
+      <HoverHint hint="This student has no Term 1–3 grade in this subject yet.">
         <span className="flex h-8 items-center justify-center rounded-md bg-muted px-2 text-[11px] font-medium text-muted-foreground">
           No earlier grades
         </span>
@@ -2238,12 +2511,12 @@ function BestTermCell({
     <HoverHint
       hint={
         termNumber != null
-          ? `Term ${termNumber} average, the best of Terms 1–3. Filled in automatically.`
-          : 'The best of Terms 1–3. Filled in automatically.'
+          ? `Term ${termNumber} grade, the best of Terms 1–3 in this subject. Filled in automatically.`
+          : 'The best of Terms 1–3 in this subject. Filled in automatically.'
       }
     >
       <span className="flex h-8 items-center justify-end rounded-md bg-muted/60 px-2 font-mono text-xs tabular-nums text-foreground">
-        {value.toFixed(1)}
+        {value}
       </span>
     </HoverHint>
   );

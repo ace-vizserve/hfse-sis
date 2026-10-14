@@ -89,16 +89,20 @@ begin
   -- T2: A 100→100, B 60→75  => avg 87.5 ; s2 is N/A in T2
   sh := pg_temp.mk_sheet('t2','sec','a','ca'); perform pg_temp.put(sh,s1,100); perform pg_temp.put(sh,s2,100,true); perform pg_temp.put(sh,s4,60);
   sh := pg_temp.mk_sheet('t2','sec','b','cb'); perform pg_temp.put(sh,s1,60);  perform pg_temp.put(sh,s2,100,true); perform pg_temp.put(sh,s4,60);
-  -- T3: A 80→87, B 80→87 => avg 87.0 ; C (non-examinable) 100 must be ignored
+  -- T3: A 80→87, B 80→87 ; C (letter-graded) 100→100
   sh := pg_temp.mk_sheet('t3','sec','a','ca'); perform pg_temp.put(sh,s1,80); perform pg_temp.put(sh,s2,70); perform pg_temp.put(sh,s4,60);
   sh := pg_temp.mk_sheet('t3','sec','b','cb'); perform pg_temp.put(sh,s1,80); perform pg_temp.put(sh,s2,70); perform pg_temp.put(sh,s4,60);
   sh := pg_temp.mk_sheet('t3','sec','c','cc'); perform pg_temp.put(sh,s1,100);
+  -- T1: D 80→87 (the only standard D grade)
+  sh := pg_temp.mk_sheet('t1','sec','d','cd'); perform pg_temp.put(sh,s1,80);
 end $$;
+-- Per subject, s1: A = 87/100/87 → 100 (T2) ; B = 75/75/87 → 87 (T3) ;
+-- C = 100 (T3) ; D = 87 (T1).
 
--- A framework sheet on TERM 2 (the app refuses this; the DB does not). Its
--- grade must never be a source of the best term average, and the cascade
--- must never touch it. s1: best 87.5 fills WW, rec 30/30, task 100 => ~96,
--- which would lift T2's average to ~90 if it counted.
+-- A framework sheet on TERM 2 for D (the app refuses this; the DB does not).
+-- Its grade must never be a source of the best term grade, and the cascade
+-- must never touch it. s1: best 87 fills WW, rec 30/30, task 100 => ~97,
+-- which would be D's best if it counted.
 insert into grading_sheets (term_id, section_id, subject_id, subject_config_id, sheet_type,
                             ww_totals, pt_totals, qa_total, ww_weight, pt_weight, qa_weight)
 values ((select v from fx where k='t2'),(select v from fx where k='sec'),(select v from fx where k='d'),
@@ -118,36 +122,45 @@ begin
   select * into r from t4wrong;
   if r.quarterly_grade is null then
     raise exception 'fixture: the Term 2 framework entry has no grade'; end if;
-  select * into r from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
-  if r.best is distinct from 87.5 or r.term_number <> 2 then
-    raise exception 'framework sheet counted as a source: expected 87.5 / T2, got % / %', r.best, r.term_number; end if;
-  raise notice 'T4F OK: a framework sheet is never a source of the best term average';
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'),(select v from fx where k='d'));
+  if r.best is distinct from 87 or r.term_number <> 1 then
+    raise exception 'framework sheet counted as a source: expected 87 / T1, got % / %', r.best, r.term_number; end if;
+  raise notice 'T4F OK: a framework sheet is never a source of the best term grade';
 end $$;
 
 -- ── Task 1 checks ─────────────────────────────────────────────────────────
 do $$
 declare r record;
+  v_ay uuid := (select v from fx where k='ay');
 begin
-  select * into r from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
-  if r.best is distinct from 87.5 or r.term_number <> 2 then
-    raise exception 'best term s1: expected 87.5 / T2, got % / %', r.best, r.term_number; end if;
-  raise notice 'T4F OK: best term average, examinable only, best of three';
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a1',v_ay,(select v from fx where k='a'));
+  if r.best is distinct from 100 or r.term_number <> 2 then
+    raise exception 'best term s1 A: expected 100 / T2, got % / %', r.best, r.term_number; end if;
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a1',v_ay,(select v from fx where k='b'));
+  if r.best is distinct from 87 or r.term_number <> 3 then
+    raise exception 'best term s1 B: expected 87 / T3, got % / %', r.best, r.term_number; end if;
+  raise notice 'T4F OK: best term grade is per subject';
 
-  select * into r from student_best_term_average('00000000-0000-4000-8000-0000000000a2',(select v from fx where k='ay'));
-  -- s2: T1 avg 100 (both 100), T2 N/A (skipped), T3 81 => 100 / T1
-  if r.best is distinct from 100.0 or r.term_number <> 1 then
-    raise exception 'best term s2 (N/A skipped): expected 100.0 / T1, got % / %', r.best, r.term_number; end if;
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a1',v_ay,(select v from fx where k='c'));
+  if r.best is distinct from 100 or r.term_number <> 3 then
+    raise exception 'best term s1 C (letter-graded): expected 100 / T3, got % / %', r.best, r.term_number; end if;
+  raise notice 'T4F OK: letter-graded subjects have a best term grade';
+
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a2',v_ay,(select v from fx where k='a'));
+  -- s2 A: T1 100, T2 N/A (skipped, though its grade is 100), T3 81 => 100 / T1
+  if r.best is distinct from 100 or r.term_number <> 1 then
+    raise exception 'best term s2 (N/A skipped): expected 100 / T1, got % / %', r.best, r.term_number; end if;
   raise notice 'T4F OK: N/A term skipped';
 
-  if exists (select 1 from student_best_term_average('00000000-0000-4000-8000-0000000000a3',(select v from fx where k='ay'))) then
+  if exists (select 1 from student_best_subject_term('00000000-0000-4000-8000-0000000000a3',v_ay,(select v from fx where k='a'))) then
     raise exception 'best term s3: expected no row'; end if;
   raise notice 'T4F OK: no earlier grades -> no row';
 
-  select * into r from student_best_term_average('00000000-0000-4000-8000-0000000000a4',(select v from fx where k='ay'));
+  select * into r from student_best_subject_term('00000000-0000-4000-8000-0000000000a4',v_ay,(select v from fx where k='a'));
   -- s4: every term 75 in the current class; the withdrawn class's 100 must not count
-  if r.best is distinct from 75.0 then
-    raise exception 'moved class s4: expected 75.0, got %', r.best; end if;
-  raise notice 'T4F OK: moved class counts each subject once';
+  if r.best is distinct from 75 then
+    raise exception 'moved class s4: expected 75, got %', r.best; end if;
+  raise notice 'T4F OK: moved class counts each term once';
 end $$;
 
 -- Fixed shape is enforced
@@ -188,23 +201,33 @@ do $$
 declare r record;
 begin
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  if r.ww_scores is distinct from '{87.5}'::numeric[] then
-    raise exception 'fill on insert: expected {87.5}, got %', r.ww_scores; end if;
-  raise notice 'T4F OK: best term average filled on create';
+  if r.ww_scores is distinct from '{100}'::numeric[] then
+    raise exception 'fill on insert: expected {100}, got %', r.ww_scores; end if;
+  raise notice 'T4F OK: best term grade filled on create';
+
+  select * into r from best_subject_terms_for_sheet(
+    (select grading_sheet_id from t4 limit 1))
+   where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if (r.t1, r.t2, r.t3, r.best, r.term_number) is distinct from (87::numeric, 100::numeric, 87::numeric, 100::numeric, 2::smallint) then
+    raise exception 'grid read: expected 87/100/87 best 100 T2, got %/%/% best % T%', r.t1, r.t2, r.t3, r.best, r.term_number; end if;
+  if r.t2_sheet_id is distinct from (select id from grading_sheets where term_id = (select v from fx where k='t2')
+        and section_id = (select v from fx where k='sec') and subject_id = (select v from fx where k='a')) then
+    raise exception 'grid read: T2 sheet link wrong: %', r.t2_sheet_id; end if;
+  raise notice 'T4F OK: the grid read returns T1/T2/T3 and the best';
 
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b3';
   if r.ww_scores[1] is not null then raise exception 'no earlier grades: expected null'; end if;
   raise notice 'T4F OK: no earlier grades -> blank';
 end $$;
 
--- Teacher enters rec 24/30 and task 70/100 => 43.75 + 16 + 21 = 80.75 -> 87
+-- Teacher enters rec 24/30 and task 70/100 => 50 + 16 + 21 = 87 -> 91
 update grade_entries set pt_scores = '{24}', qa_score = 70
  where id = (select id from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1');
 do $$
 declare r record;
 begin
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  if r.quarterly_grade <> 87 then raise exception 'worked example: expected 87, got %', r.quarterly_grade; end if;
+  if r.quarterly_grade <> 91 then raise exception 'worked example: expected 91, got %', r.quarterly_grade; end if;
   raise notice 'T4F OK: 50/20/30 through the usual conversion';
 end $$;
 
@@ -225,7 +248,8 @@ begin
   end;
 end $$;
 
--- Lock the T4 sheet, then change s1's T3 B grade 80 -> 100 (quarterly 100)
+-- Lock the T4 sheet. Another subject's change (B T3 80 -> 100) must not move
+-- A's best; then A's T2 grade drops 100 -> 75, D's T1 rises 87 -> 100.
 update grading_sheets set is_locked = true where sheet_type = 'term4_framework'
    and section_id = (select v from fx where k='sec');
 update grade_entries ge set ww_scores = '{100}', pt_scores = '{100}', qa_score = 100
@@ -236,16 +260,34 @@ update grade_entries ge set ww_scores = '{100}', pt_scores = '{100}', qa_score =
 do $$
 declare r record;
 begin
-  -- T3 avg now (87 + 100)/2 = 93.5 -> 46.75 + 16 + 21 = 83.75 -> 89
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  if r.ww_scores is distinct from '{93.5}'::numeric[] or r.quarterly_grade <> 89 then
-    raise exception 'cascade: expected {93.5}/89, got %/%', r.ww_scores, r.quarterly_grade; end if;
+  if r.ww_scores is distinct from '{100}'::numeric[] or r.quarterly_grade <> 91 then
+    raise exception 'cascade crossed subjects: expected {100}/91, got %/%', r.ww_scores, r.quarterly_grade; end if;
+  raise notice 'T4F OK: another subject''s grade does not move this subject''s best';
+end $$;
+update grade_entries ge set ww_scores = '{60}', pt_scores = '{60}', qa_score = 60
+  from grading_sheets gs
+ where gs.id = ge.grading_sheet_id and gs.term_id = (select v from fx where k='t2')
+   and gs.subject_id = (select v from fx where k='a') and gs.sheet_type = 'standard'
+   and ge.section_student_id = '00000000-0000-4000-8000-0000000000b1';
+update grade_entries ge set ww_scores = '{100}', pt_scores = '{100}', qa_score = 100
+  from grading_sheets gs
+ where gs.id = ge.grading_sheet_id and gs.term_id = (select v from fx where k='t1')
+   and gs.subject_id = (select v from fx where k='d')
+   and ge.section_student_id = '00000000-0000-4000-8000-0000000000b1';
+do $$
+declare r record;
+begin
+  -- A: 87 / 75 / 87 => 87 (T3) -> 43.5 + 16 + 21 = 80.5 -> 87
+  select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  if r.ww_scores is distinct from '{87}'::numeric[] or r.quarterly_grade <> 87 then
+    raise exception 'cascade: expected {87}/87, got %/%', r.ww_scores, r.quarterly_grade; end if;
   if not exists (select 1 from grade_audit_log where grade_entry_id = r.id
-                  and field_changed = 'ww_scores[0]' and old_value = '87.5' and new_value = '93.5') then
+                  and field_changed = 'ww_scores[0]' and old_value = '100' and new_value = '87') then
     raise exception 'cascade: no grade_audit_log row'; end if;
   raise notice 'T4F OK: T1-T3 change flows into a locked T4 sheet, audited';
   select * into r from t4wrong;
-  if r.ww_scores is distinct from '{87.5}'::numeric[] then
+  if r.ww_scores is distinct from '{87}'::numeric[] then
     raise exception 'cascade wrote a framework sheet outside Term 4: got %', r.ww_scores; end if;
   raise notice 'T4F OK: cascade only writes Term 4 rows';
 end $$;
@@ -260,26 +302,26 @@ do $$
 declare r record;
 begin
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  if r.ww_scores is distinct from '{93.5}'::numeric[] or r.pt_scores is distinct from '{27}'::numeric[] then
-    raise exception 'save after cascade: expected {93.5}/{27}, got %/%', r.ww_scores, r.pt_scores; end if;
-  raise notice 'T4F OK: recommendation save after a cascade keeps the new best term average';
+  if r.ww_scores is distinct from '{87}'::numeric[] or r.pt_scores is distinct from '{27}'::numeric[] then
+    raise exception 'save after cascade: expected {87}/{27}, got %/%', r.ww_scores, r.pt_scores; end if;
+  raise notice 'T4F OK: recommendation save after a cascade keeps the new best term grade';
 end $$;
 
 -- A signed-in teacher's T1-T3 save cascades into the T4 sheet; the system-owned
--- ww_scores slot must NOT be audited as that teacher.
+-- ww_scores slot must NOT be audited as that teacher. (A T3 87 -> 100.)
 select set_config('request.jwt.claims',
   '{"sub":"fe5362fd-2e8f-460e-a488-8c7f4d1dc5cb","role":"authenticated"}', true);
-update grade_entries ge set ww_scores = '{50}', pt_scores = '{50}', qa_score = 50
+update grade_entries ge set ww_scores = '{100}', pt_scores = '{100}', qa_score = 100
   from grading_sheets gs
  where gs.id = ge.grading_sheet_id and gs.term_id = (select v from fx where k='t3')
-   and gs.subject_id = (select v from fx where k='b')
+   and gs.subject_id = (select v from fx where k='a')
    and ge.section_student_id = '00000000-0000-4000-8000-0000000000b1';
 select set_config('request.jwt.claims', '', true);
 do $$
 declare r record;
 begin
   select * into r from t4 where section_student_id = '00000000-0000-4000-8000-0000000000b1';
-  if r.ww_scores is not distinct from '{93.5}'::numeric[] then
+  if r.ww_scores is not distinct from '{87}'::numeric[] then
     raise exception 'audit test: cascade did not move the T4 value'; end if;
   if exists (select 1 from audit_log where entity_id = r.id::text
               and context->>'field' = 'ww_scores[0]') then
@@ -362,9 +404,10 @@ begin
     raise exception 'switch to framework: wrong shape'; end if;
   raise notice 'T4F OK: switch to framework reshapes the sheet';
 
-  select * into b from student_best_term_average('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'));
+  select * into b from student_best_subject_term('00000000-0000-4000-8000-0000000000a1',(select v from fx where k='ay'),(select v from fx where k='d'));
   select * into r from grade_entries where grading_sheet_id = sh and section_student_id = s1;
-  if r.ww_scores is distinct from array[b.best] or r.pt_scores[1] is not null or r.qa_score is not null then
+  if b.best is distinct from 100
+     or r.ww_scores is distinct from array[b.best] or r.pt_scores[1] is not null or r.qa_score is not null then
     raise exception 'switch to framework: expected {%}/blank/null, got %/%/%', b.best, r.ww_scores, r.pt_scores, r.qa_score; end if;
   raise notice 'T4F OK: switch to framework clears scores and refills the best term average';
 
@@ -428,11 +471,19 @@ begin
   on conflict (term_id, section_id, subject_id) do nothing;
   select id into sh from grading_sheets where term_id = (select v from fx where k='t4')
      and section_id = (select v from fx where k='sec') and subject_id = (select v from fx where k='c');
-  begin
-    perform switch_grading_sheet_type(sh, 'term4_framework');
-    raise exception 'non-examinable switch was accepted';
-  exception when sqlstate 'HFT4F' then raise notice 'T4F OK: framework for a non-examinable subject refused';
-  end;
+  perform switch_grading_sheet_type(sh, 'term4_framework');
+  insert into grade_entries (grading_sheet_id, section_student_id)
+  values (sh, '00000000-0000-4000-8000-0000000000b1')
+  on conflict (grading_sheet_id, section_student_id) do nothing;
+  update grade_entries set pt_scores = '{30}', qa_score = 100
+   where grading_sheet_id = sh and section_student_id = '00000000-0000-4000-8000-0000000000b1';
+  -- C: best 100 -> 50 + 20 + 30 = 100 -> 100
+  if (select ww_scores from grade_entries where grading_sheet_id = sh
+        and section_student_id = '00000000-0000-4000-8000-0000000000b1') is distinct from '{100}'::numeric[]
+     or (select quarterly_grade from grade_entries where grading_sheet_id = sh
+        and section_student_id = '00000000-0000-4000-8000-0000000000b1') is distinct from 100 then
+    raise exception 'letter-graded framework sheet: wrong best or grade'; end if;
+  raise notice 'T4F OK: a letter-graded subject switches to the framework and fills';
 end $$;
 
 -- Switch back: standard shape, scores empty, derived figures null.
