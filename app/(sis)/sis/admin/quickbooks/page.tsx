@@ -53,6 +53,23 @@ export default async function QuickBooksAdminPage({
         description="Connect the school's QuickBooks company so admissions can invoice Registration and Fees from the SIS."
       />
 
+      {params.connected === '1' && status.connected && !status.loadFailed && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-mint/60 bg-brand-mint/20 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-mint to-brand-mint/80 text-ink shadow-brand-tile">
+            <CheckCircle2 className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              QuickBooks connected
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Invoices on the Registration and Fees stages now sync with{' '}
+              {status.companyName ?? 'QuickBooks'}.
+            </p>
+          </div>
+        </div>
+      )}
+
       {params.error && (
         <div className="flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-destructive-foreground shadow-brand-tile">
@@ -75,8 +92,10 @@ export default async function QuickBooksAdminPage({
           <CardTitle className="flex flex-wrap items-center gap-2 font-serif text-lg font-semibold tracking-tight text-foreground">
             {status.connected
               ? (status.companyName ?? 'Connected')
-              : 'Not connected'}
-            {status.connected ? (
+              : status.loadFailed
+                ? 'QuickBooks'
+                : 'Not connected'}
+            {status.loadFailed ? null : status.connected ? (
               <Badge
                 variant="outline"
                 className="h-6 border-brand-mint bg-brand-mint/30 text-ink"
@@ -104,7 +123,12 @@ export default async function QuickBooksAdminPage({
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-5">
-          {!status.configured ? (
+          {status.loadFailed ? (
+            <p className="text-sm text-muted-foreground">
+              Couldn&apos;t load the QuickBooks status. Refresh the page to try
+              again.
+            </p>
+          ) : !status.configured ? (
             <p className="text-sm text-muted-foreground">
               The QuickBooks app keys aren&apos;t set on this server yet, so it
               can&apos;t be connected.
@@ -126,7 +150,7 @@ export default async function QuickBooksAdminPage({
                     <dt className="text-muted-foreground">Last sync</dt>
                     <dd className="text-foreground">
                       {status.lastRun
-                        ? `${when(status.lastRun.startedAt)} · ${SOURCE[status.lastRun.source] ?? status.lastRun.source}`
+                        ? `${when(status.lastRun.startedAt)} · ${SOURCE[status.lastRun.source] ?? status.lastRun.source}${status.lastRun.error ? ' · had a problem' : ''}`
                         : 'Not yet'}
                     </dd>
                   </div>

@@ -24,8 +24,16 @@ export async function getQboStatus() {
       .order('started_at', { ascending: false })
       .limit(5),
   ]);
+  for (const [name, r] of [
+    ['qbo_connection', conn],
+    ['qbo_sync_runs (latest)', runs],
+    ['qbo_sync_runs (errors)', errors],
+  ] as const) {
+    if (r.error) console.warn(`[qbo] status read failed: ${name}`, r.error);
+  }
   const last = runs.data?.[0];
   return {
+    loadFailed: !!conn.error,
     configured,
     connected: !!conn.data,
     companyName: conn.data?.company_name ?? null,
