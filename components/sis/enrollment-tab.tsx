@@ -26,6 +26,7 @@ import {
   SectionTransferDialog,
   type SiblingSection,
 } from '@/components/sis/section-transfer-dialog';
+import { QboInvoiceStrip } from '@/components/sis/qbo-invoice-strip';
 import { StageScrollLink } from '@/components/sis/stage-scroll-link';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -1189,6 +1190,8 @@ function StageStatusTile({
   canAssignSection,
   transfer,
   classChoice = null,
+  qbo = null,
+  canInvoice = false,
 }: {
   stage: StageCard;
   ayCode: string;
@@ -1295,6 +1298,22 @@ function StageStatusTile({
         html={stage.remarks}
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
+      {(stage.key === 'registration' || stage.key === 'fees') && qbo && (
+        <QboInvoiceStrip
+          ayCode={ayCode}
+          enroleeNumber={enroleeNumber}
+          stage={stage.key}
+          stageSnapshot={{
+            status: stage.status,
+            invoice: stage.extrasInitial.invoice ?? null,
+            paymentDate: stage.extrasInitial.paymentDate ?? null,
+            startDate: stage.extrasInitial.startDate ?? null,
+          }}
+          invoice={qbo[stage.key]}
+          connected={qbo.connected}
+          canInvoice={canInvoice}
+        />
+      )}
       {/* Both controls are placement actions, so both gate on the placement
           role, not merely on canEdit. The move opens in place rather than
           linking to /sis/sections/[id]: admissions holds the placement right
