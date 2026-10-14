@@ -170,3 +170,7 @@ SUPABASE_SERVICE_KEY=...      # server-only
 ```
 
 The original plan had separate `ADMISSIONS_SUPABASE_*` vars for a two-project setup; that was dropped once both halves converged on one project.
+
+## QuickBooks invoices
+
+Registration and Fees invoices are created or linked from the stage tiles and followed in QuickBooks Online; payments recorded there move the stage status (KD #231). Spec: `docs/superpowers/specs/2026-10-14-quickbooks-registration-fees-invoicing-design.md`. The existing stage columns (`registrationInvoice`, `feeInvoice`, the statuses and payment dates) stay the source the rest of the SIS reads; the sync fills them. Connection and last-sync health live on the SIS Admin QuickBooks page.
