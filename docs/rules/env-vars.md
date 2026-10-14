@@ -19,3 +19,12 @@ load: on-demand
 - `RESEND_API_KEY` (server-only); `RESEND_FROM_EMAIL` optional.
 - `CRON_SECRET` — server-only; Vercel sets this as `Authorization: Bearer <value>` when invoking cron jobs. Must be configured in Vercel project environment variables. Verified by `POST /api/grading-sheets/lock-overdue` (auto-lock cron).
 - `PDF_SERVICE_URL` reserved, currently unused.
+
+### QuickBooks Online
+
+Read by `lib/qbo/env.ts`. All server-only. QuickBooks stays off until the first three are set (`qboEnv()` returns null).
+
+- `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET` — the Intuit app's keys (server-only).
+- `QBO_REDIRECT_URI` — `https://sis.hfse.edu.sg/api/quickbooks/callback` in production; `http://localhost:3000/api/quickbooks/callback` locally. Must match the Intuit app's redirect list exactly.
+- `QBO_ENVIRONMENT` — `sandbox` | `production`. Anything else (or unset) means sandbox, so a missing value can never post to the live company.
+- `QBO_WEBHOOK_VERIFIER` — the verifier token from the Intuit app's Webhooks page. Optional here; the webhook route (not yet built) will need it to verify Intuit's signature. Blank is fine locally.
