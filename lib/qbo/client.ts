@@ -7,6 +7,15 @@ import { qboApiBase, qboEnv, type QboEnv } from '@/lib/qbo/env';
 // The one door to the QuickBooks API. Reads the stored connection, refreshes
 // the access token when it is about to expire, saves the refresh token Intuit
 // hands back EVERY time (it rotates), and retries a call once on a 401.
+//
+// CONCURRENT REFRESHES. Intuit rotates the refresh token on every refresh, so
+// two requests refreshing at once (say, the webhook sync and a staff click)
+// would each spend the same token. The save is a compare-and-swap: the update
+// only lands while the stored refresh token is still the one we refreshed
+// with. If it lands nothing, another request already rotated it; we adopt that
+// request's tokens instead of overwriting them. If Intuit refuses the refresh
+// with invalid_grant and the stored token has since changed, we retry once
+// with the stored one before giving up.
 
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const REVOKE_URL = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke';
@@ -52,6 +61,7 @@ async function tokenCall(params: Record<string, string>): Promise<TokenSet> {
       Accept: 'application/json',
     },
     body: new URLSearchParams(params),
+    cache: 'no-store',
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.access_token) {
@@ -74,7 +84,7 @@ export function exchangeAuthCode(code: string): Promise<TokenSet> {
 
 export async function revokeToken(refreshToken: string): Promise<void> {
   const env = requireEnv();
-  await fetch(REVOKE_URL, {
+  const res = await fetch(REVOKE_URL, {
     method: 'POST',
     headers: {
       Authorization:
@@ -84,7 +94,9 @@ export async function revokeToken(refreshToken: string): Promise<void> {
       Accept: 'application/json',
     },
     body: JSON.stringify({ token: refreshToken }),
+    cache: 'no-store',
   });
+  if (!res.ok) throw new QboError(res.status, null, 'revoke refused');
 }
 
 type ConnectionRow = {
@@ -109,32 +121,73 @@ async function loadConnection(service: SupabaseClient): Promise<ConnectionRow> {
   return data as ConnectionRow;
 }
 
+function isFresh(row: ConnectionRow): boolean {
+  const expires = row.access_token_expires_at
+    ? Date.parse(row.access_token_expires_at)
+    : 0;
+  return !!row.access_token && expires - Date.now() > 60_000;
+}
+
+function adopt(conn: ConnectionRow, from: ConnectionRow): void {
+  conn.access_token = from.access_token;
+  conn.refresh_token = from.refresh_token;
+  conn.access_token_expires_at = from.access_token_expires_at;
+}
+
 async function accessToken(
   service: SupabaseClient,
   conn: ConnectionRow,
   force: boolean
 ): Promise<string> {
-  const expires = conn.access_token_expires_at
-    ? Date.parse(conn.access_token_expires_at)
-    : 0;
-  if (!force && conn.access_token && expires - Date.now() > 60_000) {
-    return conn.access_token;
+  if (!force && isFresh(conn)) return conn.access_token as string;
+
+  let usedRefresh = conn.refresh_token;
+  let t: TokenSet;
+  try {
+    t = await tokenCall({
+      grant_type: 'refresh_token',
+      refresh_token: usedRefresh,
+    });
+  } catch (e) {
+    if (!(e instanceof QboError && e.code === 'invalid_grant')) throw e;
+    // Refused. If another request rotated the token meanwhile, our copy is
+    // simply out of date: retry once with the stored one.
+    const latest = await loadConnection(service);
+    if (latest.refresh_token === usedRefresh) throw e;
+    adopt(conn, latest);
+    usedRefresh = latest.refresh_token;
+    t = await tokenCall({
+      grant_type: 'refresh_token',
+      refresh_token: usedRefresh,
+    });
   }
-  const t = await tokenCall({
-    grant_type: 'refresh_token',
-    refresh_token: conn.refresh_token,
-  });
+
   const expiresAt = new Date(Date.now() + t.expires_in * 1000).toISOString();
-  const { error } = await service
+  const { data, error } = await service
     .from('qbo_connection')
     .update({
       access_token: t.access_token,
       refresh_token: t.refresh_token,
       access_token_expires_at: expiresAt,
     })
-    .eq('id', 1);
+    .eq('id', 1)
+    .eq('refresh_token', usedRefresh)
+    .select('id');
   if (error)
     throw new Error(`Saving the QuickBooks key failed: ${error.message}`);
+
+  if (!data || data.length === 0) {
+    // Compare-and-swap lost: another request rotated the token first. Take its
+    // result if it is usable; never write our own copy over it.
+    const latest = await loadConnection(service);
+    const stale = force && latest.access_token === conn.access_token;
+    if (isFresh(latest) && !stale) {
+      adopt(conn, latest);
+      return latest.access_token as string;
+    }
+    throw new QboError(401, null, 'QuickBooks refused the saved key');
+  }
+
   conn.access_token = t.access_token;
   conn.refresh_token = t.refresh_token;
   conn.access_token_expires_at = expiresAt;
@@ -201,6 +254,9 @@ export async function qboQuery<T>(
 export function qboErrorMessage(e: unknown): string {
   if (e instanceof QboNotConnectedError) {
     return 'QuickBooks is not connected. Ask a superadmin to connect it in SIS Admin.';
+  }
+  if (e instanceof QboError && e.code === 'invalid_grant') {
+    return 'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in SIS Admin.';
   }
   if (e instanceof QboError)
     return `QuickBooks didn't accept this: ${e.detail}`;

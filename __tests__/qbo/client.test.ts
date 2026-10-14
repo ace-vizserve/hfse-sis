@@ -19,6 +19,16 @@ describe('QuickBooks client helpers', () => {
     );
   });
 
+  it('asks for a reconnect when QuickBooks refuses the saved key', () => {
+    expect(
+      qboErrorMessage(
+        new QboError(400, 'invalid_grant', 'Incorrect or invalid refresh token')
+      )
+    ).toBe(
+      'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in SIS Admin.'
+    );
+  });
+
   it('links to the invoice in the right QuickBooks', () => {
     expect(qboInvoiceUrl('sandbox', '130')).toBe(
       'https://app.sandbox.qbo.intuit.com/app/invoice?txnId=130'
