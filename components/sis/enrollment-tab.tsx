@@ -53,6 +53,7 @@ import type {
   AssignableLevel,
   AssignableSection,
 } from '@/lib/sis/class-assignment';
+import type { QboStageData } from '@/lib/qbo/stage-invoices';
 import { classTileState } from '@/lib/sis/class-tile-state';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
@@ -86,6 +87,10 @@ type Props = {
   ayCode: string;
   enroleeNumber: string;
   statusFetchError: boolean;
+  /** QuickBooks invoice on the Registration and Fees stages (migration 188). */
+  qbo?: QboStageData | null;
+  /** admissions / school_admin / superadmin — see lib/qbo/roles.ts. */
+  canInvoice?: boolean;
   /** Current assigned section's UUID — read by the page from the
    *  section_students roster by id. Drives the "Change section"
    *  CTA on the class stage tile. Null when pre-Enrolled or section was
@@ -342,6 +347,8 @@ export function EnrollmentTab({
   canAssignSection = false,
   transfer = null,
   classChoice = null,
+  qbo = null,
+  canInvoice = false,
 }: Props) {
   const s = status ?? ({} as StatusRow);
 
@@ -563,6 +570,8 @@ export function EnrollmentTab({
         canEdit={canEdit}
         canAssignSection={canAssignSection}
         transfer={transfer}
+        qbo={qbo}
+        canInvoice={canInvoice}
       />
 
       <StatusGroupCard
@@ -576,6 +585,8 @@ export function EnrollmentTab({
         canEdit={canEdit}
         canAssignSection={canAssignSection}
         transfer={transfer}
+        qbo={qbo}
+        canInvoice={canInvoice}
       />
 
       <StatusGroupCard
@@ -1080,6 +1091,8 @@ function StatusGroupCard({
   canAssignSection,
   transfer,
   classChoice = null,
+  qbo = null,
+  canInvoice = false,
 }: {
   eyebrow: string;
   title: string;
@@ -1100,6 +1113,9 @@ function StatusGroupCard({
   transfer: SectionTransfer | null;
   /** Only meaningful for the Placement group's class tile. */
   classChoice?: ClassChoice | null;
+  /** QuickBooks invoices — passed to each tile (Registration and Fees use it). */
+  qbo?: QboStageData | null;
+  canInvoice?: boolean;
 }) {
   const counts = stageBucketCounts(stages);
 
@@ -1154,6 +1170,8 @@ function StatusGroupCard({
             canAssignSection={canAssignSection}
             transfer={transfer}
             classChoice={stage.key === 'class' ? classChoice : null}
+            qbo={qbo}
+            canInvoice={canInvoice}
           />
         ))}
       </div>
@@ -1185,6 +1203,10 @@ function StageStatusTile({
   transfer: SectionTransfer | null;
   /** Data for the in-place assign dialog. See Props. */
   classChoice?: ClassChoice | null;
+  /** QuickBooks invoices for the Registration and Fees stages. Rendered by
+   *  the invoice block (Task 3.2). */
+  qbo?: QboStageData | null;
+  canInvoice?: boolean;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
   const stripe = statusStripeClass(stage.status);

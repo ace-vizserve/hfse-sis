@@ -58,6 +58,8 @@ import { loadProfileAdmissionOptions } from '@/lib/admissions/profile-options';
 import { listAssignableSections } from '@/lib/sis/class-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadLevelLabelResolver } from '@/lib/sis/levels';
+import { canInvoiceInQbo } from '@/lib/qbo/roles';
+import { loadStageInvoices } from '@/lib/qbo/stage-invoices';
 import { cn } from '@/lib/utils';
 
 // KD #59: SIS-side application stage vocabulary (not the legacy parent-portal values).
@@ -222,6 +224,7 @@ export default async function SisStudentDetailPage({
     admissionOptions,
     classChoiceData,
     resolveLevelLabel,
+    qboStage,
   ] = await Promise.all([
     lifecycleSnapshot.studentNumber
       ? getEnrollmentHistory(lifecycleSnapshot.studentNumber)
@@ -250,6 +253,8 @@ export default async function SisStudentDetailPage({
       : Promise.resolve(null),
     // Level names → the SIS level each counts as (never throws).
     loadLevelLabelResolver(service),
+    // The QuickBooks invoice on the Registration and Fees stages.
+    loadStageInvoices(selectedAy, application.enroleeNumber),
   ]);
 
   // The child's level at a glance: the class's level when placed, else the
@@ -537,6 +542,8 @@ export default async function SisStudentDetailPage({
             canAssignSection={canPlaceStudent}
             transfer={sectionTransfer}
             classChoice={classChoice}
+            qbo={qboStage}
+            canInvoice={canInvoiceInQbo(sessionUser.role)}
           />
         </TabsContent>
 
