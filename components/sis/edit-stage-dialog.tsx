@@ -33,6 +33,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { DatePicker } from '@/components/ui/date-picker';
+import { QBO_OWNED_FIELD_KEYS, staffStatusOptions } from '@/lib/qbo/stage-lock';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -74,6 +75,7 @@ export function EditStageDialog({
   initialRemarks,
   initialExtras,
   prereqStatuses,
+  qboManaged = false,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -90,6 +92,13 @@ export function EditStageDialog({
    * unless that acknowledgement is sent.
    */
   prereqStatuses?: Partial<Record<StageKey, string | null>>;
+  /**
+   * Registration / Fees while QuickBooks is connected (KD #231): the invoice
+   * number, payment date and money statuses come from QuickBooks, so they are
+   * shown read-only and the status list is cut to what staff own. The stage
+   * route enforces the same rule (`lib/qbo/stage-lock.ts`).
+   */
+  qboManaged?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
@@ -97,7 +106,14 @@ export function EditStageDialog({
   );
 
   const cols = STAGE_COLUMN_MAP[stageKey];
-  const canonicalOptions = STAGE_STATUS_OPTIONS[stageKey];
+  const qboLocked =
+    qboManaged && (stageKey === 'registration' || stageKey === 'fees');
+  const qboOwnedKeys: ReadonlySet<string> = new Set(
+    qboLocked ? QBO_OWNED_FIELD_KEYS : []
+  );
+  const canonicalOptions: readonly string[] = qboLocked
+    ? staffStatusOptions(initialStatus)
+    : STAGE_STATUS_OPTIONS[stageKey];
 
   // Two state pieces: the dropdown choice (canonical OR sentinel) and the
   // free-text override when the user picks "Other". This avoids round-tripping
@@ -581,8 +597,12 @@ export function EditStageDialog({
   }
 
   async function onSubmit(values: StageUpdateInput) {
+    // QuickBooks-owned fields are never sent while it owns the stage.
+    const ownExtras = Object.fromEntries(
+      Object.entries(values.extras ?? {}).filter(([k]) => !qboOwnedKeys.has(k))
+    );
     const extrasPayload = {
-      ...values.extras,
+      ...ownExtras,
       ...(stageKey === 'application' &&
         isTerminalStatus && {
           terminalReason: terminalReason || undefined,
@@ -794,7 +814,9 @@ export function EditStageDialog({
                             {opt}
                           </SelectItem>
                         ))}
-                        <SelectItem value={OTHER_SENTINEL}>Other…</SelectItem>
+                        {!qboLocked && (
+                          <SelectItem value={OTHER_SENTINEL}>Other…</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                     {statusChoice === OTHER_SENTINEL && (
@@ -811,6 +833,11 @@ export function EditStageDialog({
                         <AlertTriangle className="size-3.5 shrink-0" />
                         {stageStatusMissingMessage(stageKey)}
                       </p>
+                    ) : qboLocked ? (
+                      <FormDescription>
+                        This status follows QuickBooks. You can set Cancelled
+                        here, or reopen a Cancelled stage as Pending.
+                      </FormDescription>
                     ) : (
                       <FormDescription>
                         Pick from the canonical list or enter a custom value if
@@ -876,10 +903,15 @@ export function EditStageDialog({
                                             next === '' ? null : next
                                           )
                                         }
+                                        disabled={qboOwnedKeys.has(e.fieldKey)}
+                                        allowClear={
+                                          !qboOwnedKeys.has(e.fieldKey)
+                                        }
                                       />
                                     ) : (
                                       <Input
                                         type="text"
+                                        disabled={qboOwnedKeys.has(e.fieldKey)}
                                         value={
                                           (field.value as string | null) ?? ''
                                         }
@@ -894,6 +926,11 @@ export function EditStageDialog({
                                       />
                                     )}
                                   </FormControl>
+                                  {qboOwnedKeys.has(e.fieldKey) && (
+                                    <FormDescription>
+                                      From QuickBooks
+                                    </FormDescription>
+                                  )}
                                   <FormMessage />
                                 </FormItem>
                               )}

@@ -119,8 +119,8 @@ export function QboInvoiceStrip({
 
       {startDateMissing && (
         <p className="rounded-md border border-brand-amber/40 bg-brand-amber/10 px-2 py-1.5 text-[11px] text-ink">
-          Paid in QuickBooks. Add the start date with the pencil above to mark
-          Fees as Paid.
+          Paid in QuickBooks. Add the start date with the pencil above — Fees
+          turns Paid when you save.
         </p>
       )}
 

@@ -29,6 +29,8 @@ import {
   validateSectionChoice,
 } from '@/lib/sis/class-assignment';
 import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
+import { loadQboStageLock } from '@/lib/qbo/stage-invoices';
+import { paidOnStartDate, qboLockViolation } from '@/lib/qbo/stage-lock';
 import {
   DOCUMENT_SLOTS,
   OPTIONAL_DOCUMENT_SLOT_KEYS,
@@ -116,7 +118,10 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const { status, remarks } = parsed.data;
+  const { remarks } = parsed.data;
+  // `let`: Fees can become Paid in this save when QuickBooks already says
+  // paid and the start date is what was missing (2.9 below).
+  let status = parsed.data.status;
   // `let`: the 'score' extras are normalised to `score/max` once the stored
   // row is known (1.2 below).
   let extras = parsed.data.extras;
@@ -898,6 +903,52 @@ export async function PATCH(
         },
         { status: 422 }
       );
+    }
+  }
+
+  // 2.9) QuickBooks owns Registration and Fees once it is connected (KD #231,
+  // Mr Ace 2026-10-14: "one interface"). The invoice number, payment date and
+  // money statuses change only through the tile's QuickBooks actions and the
+  // sync; a hand edit of them is refused here, not just hidden in the dialog.
+  // Staff keep the start date, remarks and Cancelled. Not connected (before
+  // go-live, or disconnected) → nothing here applies.
+  if (stageKey === 'registration' || stageKey === 'fees') {
+    const lock = await loadQboStageLock(
+      supabase,
+      ayCode,
+      enroleeNumber,
+      stageKey
+    );
+    if (lock.connected) {
+      const pre = before as unknown as Record<string, unknown>;
+      const col = (k: string) =>
+        cols.extras.find((e) => e.fieldKey === k)?.columnName ?? '';
+      const violation = qboLockViolation(
+        {
+          status: (pre[cols.statusCol] as string | null) ?? null,
+          invoice: (pre[col('invoice')] as string | null) ?? null,
+          paymentDate: (pre[col('paymentDate')] as string | null) ?? null,
+        },
+        { status, extras }
+      );
+      if (violation) {
+        return NextResponse.json(
+          { error: violation, code: 'qbo_managed' },
+          { status: 422 }
+        );
+      }
+      if (stageKey === 'fees') {
+        const after = resolveEffectiveStageValues(cols, pre, status, extras);
+        if (
+          paidOnStartDate('fees', lock.invoiceState, {
+            status: after.status,
+            startDate: after.extras.startDate ?? null,
+          })
+        ) {
+          status = 'Paid';
+          update[cols.statusCol] = 'Paid';
+        }
+      }
     }
   }
 

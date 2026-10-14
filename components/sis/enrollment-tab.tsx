@@ -1260,6 +1260,7 @@ function StageStatusTile({
             initialStatus={stage.status}
             initialRemarks={stage.remarks}
             initialExtras={stage.extrasInitial}
+            qboManaged={!!qbo?.connected}
           />
         ) : null}
       </div>

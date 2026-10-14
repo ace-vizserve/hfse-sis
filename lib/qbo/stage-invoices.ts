@@ -1,6 +1,10 @@
 import 'server-only';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import { connectedRealmId } from '@/lib/qbo/client';
 import { qboEnv, qboInvoiceUrl } from '@/lib/qbo/env';
+import type { InvoiceState, QboStageKey } from '@/lib/qbo/stage-state';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export type StageInvoiceView = {
@@ -40,6 +44,42 @@ export async function loadStageInvoices(
   } catch (e) {
     console.warn('[qbo] stage invoices unavailable:', e);
     return empty;
+  }
+}
+
+/**
+ * For the stage save route: does QuickBooks own this stage right now, and what
+ * does it say about the stage's current invoice? A failed read counts as not
+ * connected — admissions is never locked out of a stage by a lookup error.
+ */
+export async function loadQboStageLock(
+  service: SupabaseClient,
+  ayCode: string,
+  enroleeNumber: string,
+  stage: QboStageKey
+): Promise<{ connected: boolean; invoiceState: InvoiceState | null }> {
+  const none = { connected: false, invoiceState: null };
+  if (!qboEnv()) return none;
+  try {
+    const realmId = await connectedRealmId(service);
+    if (!realmId) return none;
+    const { data, error } = await service
+      .from('qbo_invoices')
+      .select('state')
+      .eq('ay_code', ayCode)
+      .eq('enrolee_number', enroleeNumber)
+      .eq('stage_key', stage)
+      .eq('realm_id', realmId)
+      .eq('is_current', true)
+      .maybeSingle();
+    if (error) console.warn('[qbo] stage lock invoice read failed:', error);
+    return {
+      connected: true,
+      invoiceState: (data?.state as InvoiceState | undefined) ?? null,
+    };
+  } catch (e) {
+    console.warn('[qbo] stage lock unavailable:', e);
+    return none;
   }
 }
 
