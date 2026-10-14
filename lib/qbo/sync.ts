@@ -15,6 +15,7 @@ import {
   readStageSnapshot,
   writeStageFromQbo,
 } from '@/lib/qbo/stage-write';
+import { handledFields } from '@/lib/qbo/sync-fields';
 import { isQboStageKey, stageOnInvoiceChange } from '@/lib/qbo/stage-state';
 
 type InvoiceRow = {
@@ -26,6 +27,8 @@ type InvoiceRow = {
   state: string;
   payment_date: string | null;
   is_current: boolean;
+  total: number;
+  balance: number;
 };
 
 /** Date of the payment that cleared it: the newest linked payment's date. */
@@ -41,7 +44,12 @@ export async function paymentDateFor(
         `/payment/${id}`
       )
         .then((r) => r.Payment?.TxnDate ?? null)
-        .catch(() => null)
+        .catch((e) => {
+          // 610 = the payment was deleted: skip it. Anything else must fail
+          // loudly so the next refresh retries.
+          if (e instanceof QboError && e.code === '610') return null;
+          throw e;
+        })
     )
   );
   return latestDate(dates);
@@ -74,13 +82,17 @@ export async function refreshInvoice(
   service: SupabaseClient,
   qboInvoiceId: string
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
-  const { data } = await service
+  const { data, error: lookupErr } = await service
     .from('qbo_invoices')
     .select(
-      'id, ay_code, enrolee_number, stage_key, doc_number, state, payment_date, is_current'
+      'id, ay_code, enrolee_number, stage_key, doc_number, state, payment_date, is_current, total, balance'
     )
     .eq('qbo_invoice_id', qboInvoiceId)
     .maybeSingle();
+  if (lookupErr)
+    throw new Error(
+      'QuickBooks invoice record lookup failed: ' + lookupErr.message
+    );
   const row = data as InvoiceRow | null;
   if (!row) return { known: false, stageChanged: false };
 
@@ -90,24 +102,48 @@ export async function refreshInvoice(
     inv && state === 'paid' ? await paymentDateFor(service, inv) : null;
   const docNumber = inv?.DocNumber ?? row.doc_number;
 
-  await service
+  // Money and housekeeping are saved straight away. A deleted invoice keeps
+  // its last known total and balance.
+  const { error: moneyErr } = await service
     .from('qbo_invoices')
     .update({
-      doc_number: docNumber,
-      total: inv ? Number(inv.TotalAmt) : 0,
-      balance: inv ? Number(inv.Balance) : 0,
-      state,
-      payment_date: paymentDate,
+      total: inv ? Number(inv.TotalAmt) : row.total,
+      balance: inv ? Number(inv.Balance) : row.balance,
       sync_token: inv?.SyncToken ?? null,
       synced_at: new Date().toISOString(),
     })
     .eq('id', row.id);
+  if (moneyErr)
+    throw new Error(
+      'QuickBooks invoice record update failed: ' + moneyErr.message
+    );
+
+  // State / payment date / number are saved only once the stage is in step, so
+  // a failed stage write shows up as a change again on the next refresh.
+  const saveHandled = async (stageInStep: boolean) => {
+    const fields = handledFields({
+      state,
+      paymentDate,
+      docNumber,
+      stageInStep,
+    });
+    if (Object.keys(fields).length === 0) return;
+    const { error } = await service
+      .from('qbo_invoices')
+      .update(fields)
+      .eq('id', row.id);
+    if (error)
+      throw new Error(
+        'QuickBooks invoice record update failed: ' + error.message
+      );
+  };
 
   const changed =
     row.state !== state ||
     (row.payment_date ?? null) !== (paymentDate ?? null) ||
     (row.doc_number ?? null) !== (docNumber ?? null);
   if (!changed || !row.is_current || !isQboStageKey(row.stage_key)) {
+    await saveHandled(true);
     return { known: true, stageChanged: false };
   }
 
@@ -118,13 +154,19 @@ export async function refreshInvoice(
     row.enrolee_number,
     stage
   );
-  if (!current) return { known: true, stageChanged: false };
+  if (!current) {
+    await saveHandled(true);
+    return { known: true, stageChanged: false };
+  }
   const patch = stageOnInvoiceChange(stage, current, {
     docNumber: docNumber ?? '',
     state,
     paymentDate,
   });
-  if (!patch) return { known: true, stageChanged: false };
+  if (!patch) {
+    await saveHandled(true);
+    return { known: true, stageChanged: false };
+  }
 
   const res = await writeStageFromQbo(service, {
     ayCode: row.ay_code,
@@ -136,6 +178,7 @@ export async function refreshInvoice(
     docNumber,
     trigger: 'sync',
   });
+  await saveHandled(res.ok);
   return res.ok
     ? { known: true, stageChanged: res.changed > 0 }
     : { known: true, stageChanged: false, stageError: res.error };
