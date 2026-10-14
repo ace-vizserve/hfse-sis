@@ -98,6 +98,13 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.discount_code.create',
   'sis.discount_code.update',
   'sis.discount_code.expire',
+  // QuickBooks invoicing (migration 188). Stage moves the sync makes are NOT
+  // new actions — they are `sis.stage.update` rows with actor
+  // `system:quickbooks-sync` and `context.source = 'quickbooks'`.
+  'qbo.invoice.create',
+  'qbo.invoice.link',
+  'qbo.connection.connect',
+  'qbo.connection.disconnect',
   // What parents may pick on the enrolment forms (migration 174). Opening and
   // closing a session are separate actions, so "when was Morning closed for
   // P2" is answerable without reading a diff.
@@ -287,6 +294,10 @@ export type AuditEntityType =
   | 'enrolment_application'
   | 'enrolment_status'
   | 'discount_code'
+  // QuickBooks (migration 188): entity_id is the QuickBooks invoice id, or
+  // the company (realm) id for a connection row.
+  | 'qbo_invoice'
+  | 'qbo_connection'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.
   | 'admission_option'

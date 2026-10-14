@@ -94,6 +94,8 @@ const SIS_AUDIT_ALLOWLIST = [
   'ay.term_grading_lock.update',
   // School config
   'school_config.update',
+  'qbo.connection.connect',
+  'qbo.connection.disconnect',
   // User provisioning (KD #87)
   'user.invite',
   'user.create',

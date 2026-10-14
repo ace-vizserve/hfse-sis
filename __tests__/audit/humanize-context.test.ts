@@ -1641,3 +1641,40 @@ describe('sheet.switch_type (KD #230 update)', () => {
     );
   });
 });
+
+describe('QuickBooks actions', () => {
+  it('labels them plainly', () => {
+    expect(auditActionLabel('qbo.invoice.create')).toBe(
+      'QuickBooks invoice created'
+    );
+    expect(auditActionLabel('qbo.invoice.link')).toBe(
+      'QuickBooks invoice linked'
+    );
+    expect(auditActionLabel('qbo.connection.connect')).toBe(
+      'QuickBooks connected'
+    );
+    expect(auditActionLabel('qbo.connection.disconnect')).toBe(
+      'QuickBooks disconnected'
+    );
+  });
+
+  it('summarises an invoice row', () => {
+    expect(
+      line('qbo.invoice.create', {
+        ay_code: 'AY2027',
+        stage: 'fees',
+        doc_number: '1042',
+        total: 2800,
+        customer: 'LIM, SOFIA ALCANTARA',
+      })
+    ).toBe('Fees · invoice 1042 · S$2,800.00 · LIM, SOFIA ALCANTARA');
+  });
+
+  it('summarises a connection row', () => {
+    expect(
+      line('qbo.connection.connect', {
+        company_name: 'HFSE International School',
+      })
+    ).toBe('HFSE International School');
+  });
+});

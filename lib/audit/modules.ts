@@ -82,6 +82,9 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       // What the enrolment forms offer (migration 174) — owned by admissions,
       // configured in SIS Admin, same as discount codes.
       'admission_option.',
+      // QuickBooks invoicing for the Registration / Fees stages (migration
+      // 188) — admissions work, connected once in SIS Admin.
+      'qbo.',
     ],
   },
   {

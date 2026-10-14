@@ -200,6 +200,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.discount_code.create': 'Discount code created',
   'sis.discount_code.update': 'Discount code updated',
   'sis.discount_code.expire': 'Discount code expired',
+  'qbo.invoice.create': 'QuickBooks invoice created',
+  'qbo.invoice.link': 'QuickBooks invoice linked',
+  'qbo.connection.connect': 'QuickBooks connected',
+  'qbo.connection.disconnect': 'QuickBooks disconnected',
   'admission_option.create': 'Enrolment form option added',
   'admission_option.update': 'Enrolment form option edited',
   'admission_option.open': 'Enrolment form session reopened',
@@ -1893,6 +1897,31 @@ function templateSummary(
       }
       return joinParts(parts);
     }
+
+    case 'qbo.invoice.create':
+    case 'qbo.invoice.link': {
+      const parts: string[] = [];
+      const stage = str(ctx.stage);
+      if (stage) parts.push(stage === 'fees' ? 'Fees' : 'Registration');
+      const doc = str(ctx.doc_number);
+      if (doc) parts.push(`invoice ${doc}`);
+      const total = Number(ctx.total);
+      if (
+        Number.isFinite(total) &&
+        ctx.total !== undefined &&
+        ctx.total !== null
+      ) {
+        parts.push(
+          `S$${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+      }
+      const customer = str(ctx.customer);
+      if (customer) parts.push(customer);
+      return joinParts(parts);
+    }
+    case 'qbo.connection.connect':
+    case 'qbo.connection.disconnect':
+      return joinParts([str(ctx.company_name)].filter(Boolean));
 
     // Context written by app/api/sis/admission-options/**.
     case 'admission_option.open':
