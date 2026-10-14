@@ -35,8 +35,11 @@ export async function POST(request: Request) {
   const service = createServiceClient();
   const runId = await startRun(service, 'webhook');
   try {
-    const n = await processChanges(service, changes);
-    await finishRun(service, runId, { invoicesUpdated: n, error: null });
+    const r = await processChanges(service, changes);
+    await finishRun(service, runId, {
+      invoicesUpdated: r.updated,
+      error: r.errors.length ? r.errors.slice(0, 5).join(' · ') : null,
+    });
   } catch (e) {
     console.error('[qbo webhook]', e);
     await finishRun(service, runId, {
