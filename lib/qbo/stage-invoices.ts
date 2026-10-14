@@ -31,6 +31,18 @@ export async function loadStageInvoices(
     fees: null,
   };
   if (!qboEnv()) return empty;
+  try {
+    return await load(ayCode, enroleeNumber);
+  } catch (e) {
+    console.warn('[qbo] stage invoices unavailable:', e);
+    return empty;
+  }
+}
+
+async function load(
+  ayCode: string,
+  enroleeNumber: string
+): Promise<QboStageData> {
   const service = createServiceClient();
   const [conn, rows] = await Promise.all([
     service
@@ -47,6 +59,8 @@ export async function loadStageInvoices(
       .eq('enrolee_number', enroleeNumber)
       .eq('is_current', true),
   ]);
+  if (conn.error) console.warn('[qbo] connection read failed:', conn.error);
+  if (rows.error) console.warn('[qbo] invoice read failed:', rows.error);
   const environment =
     (conn.data?.environment as 'sandbox' | 'production' | undefined) ?? null;
   const out: QboStageData = {
