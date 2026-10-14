@@ -111,7 +111,11 @@ export function stageOnNewInvoice(
   invoice: InvoiceSnapshot
 ): StagePatch | null {
   if (current.status === 'Cancelled') return null;
-  const hadInvoice = !blank(current.invoice);
+  // Linking the very invoice already typed on the stage is not a re-invoice.
+  const hadInvoice =
+    !blank(current.invoice) &&
+    norm(current.invoice)!.toLowerCase() !==
+      (norm(invoice.docNumber) ?? '').toLowerCase();
   const base: StagePatch = {
     status:
       stage === 'registration'

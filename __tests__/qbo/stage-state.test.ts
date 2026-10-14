@@ -57,6 +57,16 @@ describe('a new invoice on the stage', () => {
     ).toEqual({ status: 'Re-invoiced', invoice: '1050', paymentDate: null });
   });
 
+  it('linking the invoice already typed on Fees stays Invoiced, not Re-invoiced', () => {
+    expect(
+      stageOnNewInvoice(
+        'fees',
+        { ...blank, status: 'Invoiced', invoice: ' inv-1042 ' },
+        open('INV-1042')
+      )
+    ).toEqual({ status: 'Invoiced', invoice: 'INV-1042', paymentDate: null });
+  });
+
   it('linking an invoice that is already paid goes straight to Finished', () => {
     expect(stageOnNewInvoice('registration', blank, paid())).toEqual({
       status: 'Finished',
