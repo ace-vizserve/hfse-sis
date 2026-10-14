@@ -810,6 +810,11 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['school_admin', 'superadmin'],
       },
       {
+        href: '/sis/admin/quickbooks',
+        label: 'QuickBooks',
+        requiresRoles: ['superadmin'],
+      },
+      {
         href: '/sis/audit-log',
         label: 'Audit Log',
         requiresRoles: ['school_admin', 'superadmin'],
@@ -1055,6 +1060,8 @@ export const ROUTE_ACCESS: Array<{
     prefix: '/sis/admin/school-config',
     allowed: ['school_admin', 'superadmin'],
   },
+  // QuickBooks connection (migration 188) — superadmin connects it once.
+  { prefix: '/sis/admin/quickbooks', allowed: ['superadmin'] },
   // /sis/admin/users is now a redirect stub → /sis/admin/staff?view=accounts
   // (SIS Admin IA Phase 4, KD #154 — staff accounts merged into the staff
   // directory). Kept superadmin-only so the gate still fires before the

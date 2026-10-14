@@ -34,6 +34,7 @@ import {
   ListChecks,
   ListTodo,
   MessageSquare,
+  ReceiptText,
   RefreshCw,
   Scale,
   School,
@@ -453,6 +454,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/staff': ICON_STAFF,
       '/sis/admin/cover': RefreshCw,
       '/sis/admin/school-config': Building2,
+      '/sis/admin/quickbooks': ReceiptText,
       '/sis/audit-log': ICON_AUDIT_LOG,
     },
     // No quick action here — unlike other modules (where the quick action
