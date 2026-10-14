@@ -30,7 +30,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import type { QboStageKey } from '@/lib/qbo/stage-state';
@@ -80,6 +79,7 @@ const todayIso = () =>
 function useCustomerChoice(ayCode: string, enroleeNumber: string) {
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<QbCustomer | null>(null);
+  const [overridden, setOverridden] = useState(false);
   const query = useQuery({
     queryKey: ['qbo-customers', ayCode, enroleeNumber, search],
     queryFn: () =>
@@ -91,7 +91,7 @@ function useCustomerChoice(ayCode: string, enroleeNumber: string) {
   const auto =
     data?.linked ??
     (data && !search && data.exact.length === 1 ? data.exact[0] : null);
-  const customer = picked ?? auto;
+  const customer = picked ?? (overridden ? null : auto);
   const matchedBy: 'auto' | 'staff' = picked ? 'staff' : 'auto';
   const choices = data ? [...data.exact, ...data.similar] : [];
   return {
@@ -100,9 +100,13 @@ function useCustomerChoice(ayCode: string, enroleeNumber: string) {
     matchedBy,
     choices,
     setPicked,
+    change: () => {
+      setPicked(null);
+      setOverridden(true);
+    },
     search,
     setSearch,
-    remembered: !!data?.linked && !picked,
+    remembered: !!data?.linked && !picked && !overridden,
   };
 }
 
@@ -126,12 +130,7 @@ function CustomerField({ c }: { c: ReturnType<typeof useCustomerChoice> }) {
           <span className="text-sm font-medium text-foreground">
             {c.customer.displayName}
           </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => c.setPicked(null)}
-          >
+          <Button type="button" size="sm" variant="ghost" onClick={c.change}>
             Change
           </Button>
         </div>
@@ -297,10 +296,19 @@ export function CreateInvoiceSheet({
     p: Number(l.unitPrice),
   }));
   const linesValid = parsed.every(
-    (l) => l.itemId && l.q > 0 && l.unitPrice !== '' && l.p >= 0
+    (l) =>
+      l.itemId &&
+      l.qty.trim() !== '' &&
+      l.q > 0 &&
+      l.unitPrice.trim() !== '' &&
+      l.p >= 0
   );
   const total = parsed.reduce(
-    (s, l) => s + (l.q > 0 && l.p >= 0 ? Math.round(l.q * l.p * 100) / 100 : 0),
+    (s, l) =>
+      s +
+      (l.qty.trim() !== '' && l.unitPrice.trim() !== '' && l.q > 0 && l.p >= 0
+        ? Math.round(l.q * l.p * 100) / 100
+        : 0),
     0
   );
   const valid =
@@ -386,13 +394,19 @@ export function CreateInvoiceSheet({
                   value={l.itemId}
                   onValueChange={(id) => {
                     const it = items.data?.items.find((x) => x.id === id);
+                    const prev = items.data?.items.find(
+                      (x) => x.id === l.itemId
+                    );
+                    const untouched =
+                      !l.description ||
+                      l.description === (prev?.description ?? '');
                     setLine(l.key, {
                       itemId: id,
                       unitPrice:
-                        it?.unitPrice != null
-                          ? String(it.unitPrice)
-                          : l.unitPrice,
-                      description: l.description || it?.description || '',
+                        it?.unitPrice != null ? String(it.unitPrice) : '',
+                      description: untouched
+                        ? (it?.description ?? '')
+                        : l.description,
                     });
                   }}
                 >
@@ -452,9 +466,10 @@ export function CreateInvoiceSheet({
                   className="tabular-nums"
                 />
                 <span className="min-w-24 text-right text-sm tabular-nums text-foreground">
-                  {Number(l.qty) > 0 &&
+                  {l.qty.trim() !== '' &&
+                  Number(l.qty) > 0 &&
                   Number(l.unitPrice) >= 0 &&
-                  l.unitPrice !== ''
+                  l.unitPrice.trim() !== ''
                     ? formatSgd(
                         Math.round(Number(l.qty) * Number(l.unitPrice) * 100) /
                           100
@@ -526,11 +541,10 @@ export function CreateInvoiceSheet({
 
       <Field>
         <FieldLabel htmlFor="qbo-memo">Message to the parent</FieldLabel>
-        <Textarea
+        <Input
           id="qbo-memo"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
-          rows={3}
         />
         <FieldDescription>Shown on the invoice.</FieldDescription>
       </Field>
@@ -549,6 +563,13 @@ export function LinkInvoiceSheet({
   const [invoiceId, setInvoiceId] = useState('');
   const [saving, setSaving] = useState(false);
   const run = useWriteAction();
+  // Pick a different customer and the old invoice choice no longer applies.
+  const customerId = c.customer?.id ?? null;
+  const [lastCustomerId, setLastCustomerId] = useState(customerId);
+  if (lastCustomerId !== customerId) {
+    setLastCustomerId(customerId);
+    setInvoiceId('');
+  }
   const invoices = useQuery({
     queryKey: ['qbo-open-invoices', c.customer?.id],
     enabled: !!c.customer,
@@ -630,7 +651,9 @@ export function LinkInvoiceSheet({
                     </span>
                     {inv.txnDate && (
                       <span className="ml-2 text-muted-foreground">
-                        {new Date(inv.txnDate).toLocaleDateString('en-SG', {
+                        {new Date(
+                          `${inv.txnDate.slice(0, 10)}T00:00:00`
+                        ).toLocaleDateString('en-SG', {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric',

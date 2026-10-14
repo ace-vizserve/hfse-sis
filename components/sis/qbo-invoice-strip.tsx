@@ -69,6 +69,8 @@ export function QboInvoiceStrip({
     invoice?.state ?? null
   );
 
+  if (!invoice && !startDateMissing && !canInvoice) return null;
+
   return (
     <div className="ml-1 space-y-2.5 border-t border-hairline pt-2.5">
       {invoice && (
