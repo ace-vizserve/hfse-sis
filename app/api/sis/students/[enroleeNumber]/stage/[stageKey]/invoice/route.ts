@@ -6,6 +6,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import {
   QboError,
   QboNotConnectedError,
+  connectedRealmId,
   qbEscape,
   qboErrorMessage,
   qboQuery,
@@ -125,7 +126,13 @@ export async function POST(
 
   // 1) QuickBooks.
   let invoice: QbInvoice;
+  // The QuickBooks company this request goes to; every row saved below
+  // carries it.
+  let realmId: string;
   try {
+    const connected = await connectedRealmId(service);
+    if (!connected) throw new QboNotConnectedError();
+    realmId = connected;
     if (body.mode === 'link') {
       invoice = (
         await qboRequest<{ Invoice: QbInvoice }>(
@@ -209,15 +216,30 @@ export async function POST(
     } catch (e) {
       return qboErrorMessage(e);
     }
-    const { error: cErr } = await service.from('qbo_customers').upsert({
-      student_number: studentNumber,
-      qbo_customer_id: body.customerId,
-      display_name: body.customerName,
-      matched_by:
-        body.matchedBy === 'auto' ? 'auto' : (auth.user.email ?? 'staff'),
-      matched_at: new Date().toISOString(),
-    });
-    if (cErr) return cErr.message;
+    // Remember the customer — unless this same customer (same company) is
+    // already remembered, so a staff pick keeps who picked it and when.
+    const { data: stored, error: sErr } = await service
+      .from('qbo_customers')
+      .select('qbo_customer_id, realm_id')
+      .eq('student_number', studentNumber)
+      .maybeSingle();
+    if (sErr) return sErr.message;
+    const alreadyRemembered =
+      !!stored &&
+      stored.qbo_customer_id === body.customerId &&
+      stored.realm_id === realmId;
+    if (!alreadyRemembered) {
+      const { error: cErr } = await service.from('qbo_customers').upsert({
+        student_number: studentNumber,
+        qbo_customer_id: body.customerId,
+        display_name: body.customerName,
+        matched_by:
+          body.matchedBy === 'auto' ? 'auto' : (auth.user.email ?? 'staff'),
+        matched_at: new Date().toISOString(),
+        realm_id: realmId,
+      });
+      if (cErr) return cErr.message;
+    }
     const { error: oldErr } = await service
       .from('qbo_invoices')
       .update({ is_current: false })
@@ -242,6 +264,7 @@ export async function POST(
       created_by: auth.user.id,
       created_by_email: auth.user.email,
       is_current: true,
+      realm_id: realmId,
     });
     return insErr?.message ?? null;
   })();

@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
-import { qbEscape, qboErrorMessage, qboQuery } from '@/lib/qbo/client';
+import {
+  connectedRealmId,
+  qbEscape,
+  qboErrorMessage,
+  qboQuery,
+} from '@/lib/qbo/client';
 import type { QbInvoice } from '@/lib/qbo/invoice-snapshot';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -24,9 +29,11 @@ export async function GET(
       'orderby TxnDate desc maxresults 50'
     );
     if (invoices.length === 0) return NextResponse.json({ invoices: [] });
+    const realmId = await connectedRealmId(service);
     const { data: linked } = await service
       .from('qbo_invoices')
       .select('qbo_invoice_id')
+      .eq('realm_id', realmId ?? '')
       .in(
         'qbo_invoice_id',
         invoices.map((i) => i.Id)

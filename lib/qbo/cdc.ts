@@ -58,7 +58,9 @@ export async function processChanges(
   }
   for (const id of paymentIds) {
     try {
-      updated += await refreshInvoicesForPayment(service, id);
+      const r = await refreshInvoicesForPayment(service, id);
+      updated += r.updated;
+      errors.push(...r.errors);
     } catch (e) {
       errors.push(`Payment ${id}: ${qboErrorMessage(e)}`);
     }

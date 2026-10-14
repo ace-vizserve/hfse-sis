@@ -47,7 +47,8 @@ export function QboConnectionActions({ connected }: { connected: boolean }) {
           <AlertDialogTitle>Disconnect QuickBooks?</AlertDialogTitle>
           <AlertDialogDescription>
             Invoices stop syncing and the invoice buttons disappear until
-            someone connects again. Invoices already linked stay linked.
+            someone connects again. Invoices already linked stay linked if the
+            same QuickBooks company is connected again.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

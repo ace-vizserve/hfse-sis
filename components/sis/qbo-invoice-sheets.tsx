@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -72,6 +73,16 @@ const STAGE_NAME: Record<QboStageKey, string> = {
   registration: 'Registration',
   fees: 'Fees',
 };
+/**
+ * Saved in QuickBooks but the stage wasn't moved: that is a warning, not a
+ * green success. Shows it as one and tells the caller to stay quiet.
+ */
+function warnedInstead(d: SaveResponse): boolean {
+  if (!d.stageWarning) return false;
+  toast.warning(d.stageWarning);
+  return true;
+}
+
 const todayIso = () =>
   new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
 
@@ -81,10 +92,12 @@ function useCustomerChoice(ayCode: string, enroleeNumber: string) {
   const [picked, setPicked] = useState<QbCustomer | null>(null);
   const [overridden, setOverridden] = useState(false);
   const query = useQuery({
-    queryKey: ['qbo-customers', ayCode, enroleeNumber, search],
+    // Once "Change" is clicked the remembered customer is skipped, so the
+    // list shows real choices (matches by last name) instead of it again.
+    queryKey: ['qbo-customers', ayCode, enroleeNumber, search, overridden],
     queryFn: () =>
       apiFetch<CustomersResponse>(
-        `/api/quickbooks/customers?ay=${encodeURIComponent(ayCode)}&enrolee=${encodeURIComponent(enroleeNumber)}${search ? `&q=${encodeURIComponent(search)}` : ''}`
+        `/api/quickbooks/customers?ay=${encodeURIComponent(ayCode)}&enrolee=${encodeURIComponent(enroleeNumber)}${search ? `&q=${encodeURIComponent(search)}` : ''}${overridden ? '&fresh=1' : ''}`
       ),
   });
   const data = query.data;
@@ -352,10 +365,11 @@ export function CreateInvoiceSheet({
     await run(() => save.mutateAsync(), {
       pending: 'Creating the invoice in QuickBooks…',
       success: (d) =>
-        d.stageWarning ??
-        (d.docNumber
-          ? `Invoice ${d.docNumber} created in QuickBooks`
-          : 'Invoice created in QuickBooks'),
+        warnedInstead(d)
+          ? null
+          : d.docNumber
+            ? `Invoice ${d.docNumber} created in QuickBooks`
+            : 'Invoice created in QuickBooks',
       onResolved: () => onOpenChange(false),
     });
     setSaving(false);
@@ -600,8 +614,11 @@ export function LinkInvoiceSheet({
     await run(() => save.mutateAsync(), {
       pending: 'Linking the invoice…',
       success: (d) =>
-        d.stageWarning ??
-        (d.docNumber ? `Invoice ${d.docNumber} linked` : 'Invoice linked'),
+        warnedInstead(d)
+          ? null
+          : d.docNumber
+            ? `Invoice ${d.docNumber} linked`
+            : 'Invoice linked',
       onResolved: () => onOpenChange(false),
     });
     setSaving(false);

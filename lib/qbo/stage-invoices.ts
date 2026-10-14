@@ -20,17 +20,21 @@ export type QboStageData = {
   fees: StageInvoiceView | null;
 };
 
-/** The current QuickBooks invoice on each of this enrolee's two money stages. */
+/**
+ * The current QuickBooks invoice on each of this enrolee's two money stages.
+ * `null` before go-live (no QuickBooks app keys on this server): the tiles
+ * then show nothing at all about QuickBooks.
+ */
 export async function loadStageInvoices(
   ayCode: string,
   enroleeNumber: string
-): Promise<QboStageData> {
+): Promise<QboStageData | null> {
+  if (!qboEnv()) return null;
   const empty: QboStageData = {
     connected: false,
     registration: null,
     fees: null,
   };
-  if (!qboEnv()) return empty;
   try {
     return await load(ayCode, enroleeNumber);
   } catch (e) {
@@ -44,30 +48,32 @@ async function load(
   enroleeNumber: string
 ): Promise<QboStageData> {
   const service = createServiceClient();
-  const [conn, rows] = await Promise.all([
-    service
-      .from('qbo_connection')
-      .select('environment')
-      .eq('id', 1)
-      .maybeSingle(),
-    service
-      .from('qbo_invoices')
-      .select(
-        'stage_key, qbo_invoice_id, doc_number, total, balance, state, payment_date, synced_at'
-      )
-      .eq('ay_code', ayCode)
-      .eq('enrolee_number', enroleeNumber)
-      .eq('is_current', true),
-  ]);
+  const conn = await service
+    .from('qbo_connection')
+    .select('environment, realm_id')
+    .eq('id', 1)
+    .maybeSingle();
   if (conn.error) console.warn('[qbo] connection read failed:', conn.error);
-  if (rows.error) console.warn('[qbo] invoice read failed:', rows.error);
   const environment =
     (conn.data?.environment as 'sandbox' | 'production' | undefined) ?? null;
+  const realmId = (conn.data?.realm_id as string | undefined) ?? null;
   const out: QboStageData = {
     connected: !!environment,
     registration: null,
     fees: null,
   };
+  // Only invoices from the QuickBooks company connected now.
+  if (!realmId) return out;
+  const rows = await service
+    .from('qbo_invoices')
+    .select(
+      'stage_key, qbo_invoice_id, doc_number, total, balance, state, payment_date, synced_at'
+    )
+    .eq('ay_code', ayCode)
+    .eq('enrolee_number', enroleeNumber)
+    .eq('realm_id', realmId)
+    .eq('is_current', true);
+  if (rows.error) console.warn('[qbo] invoice read failed:', rows.error);
   for (const r of rows.data ?? []) {
     const view: StageInvoiceView = {
       qboInvoiceId: r.qbo_invoice_id,

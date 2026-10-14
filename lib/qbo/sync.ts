@@ -2,7 +2,12 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { QboError, qboRequest } from '@/lib/qbo/client';
+import {
+  QboError,
+  connectedRealmId,
+  qboErrorMessage,
+  qboRequest,
+} from '@/lib/qbo/client';
 import {
   invoiceState,
   latestDate,
@@ -82,12 +87,17 @@ export async function refreshInvoice(
   service: SupabaseClient,
   qboInvoiceId: string
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
+  // Only rows from the QuickBooks company connected now: an id means nothing
+  // in another company.
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return { known: false, stageChanged: false };
   const { data, error: lookupErr } = await service
     .from('qbo_invoices')
     .select(
       'id, ay_code, enrolee_number, stage_key, doc_number, state, payment_date, is_current, total, balance'
     )
     .eq('qbo_invoice_id', qboInvoiceId)
+    .eq('realm_id', realmId)
     .maybeSingle();
   if (lookupErr)
     throw new Error(
@@ -184,11 +194,14 @@ export async function refreshInvoice(
     : { known: true, stageChanged: false, stageError: res.error };
 }
 
-/** A payment changed: refresh every invoice the SIS knows that it pays. */
+/**
+ * A payment changed: refresh every invoice the SIS knows that it pays. One
+ * failing invoice is recorded in `errors` and the rest still run.
+ */
 export async function refreshInvoicesForPayment(
   service: SupabaseClient,
   paymentId: string
-): Promise<number> {
+): Promise<{ updated: number; errors: string[] }> {
   type QbPayment = {
     Line?: Array<{ LinkedTxn?: Array<{ TxnId: string; TxnType: string }> }>;
   };
@@ -204,7 +217,8 @@ export async function refreshInvoicesForPayment(
   } catch (e) {
     // A deleted payment can't be read; its invoices change too and arrive as
     // Invoice events / in the hourly check.
-    if (e instanceof QboError && e.code === '610') return 0;
+    if (e instanceof QboError && e.code === '610')
+      return { updated: 0, errors: [] };
     throw e;
   }
   const ids = new Set<string>();
@@ -212,7 +226,16 @@ export async function refreshInvoicesForPayment(
     for (const t of l.LinkedTxn ?? [])
       if (t.TxnType === 'Invoice') ids.add(t.TxnId);
   }
-  let n = 0;
-  for (const id of ids) if ((await refreshInvoice(service, id)).known) n++;
-  return n;
+  let updated = 0;
+  const errors: string[] = [];
+  for (const id of ids) {
+    try {
+      const r = await refreshInvoice(service, id);
+      if (r.known) updated++;
+      if (r.stageError) errors.push(`Invoice ${id}: ${r.stageError}`);
+    } catch (e) {
+      errors.push(`Invoice ${id}: ${qboErrorMessage(e)}`);
+    }
+  }
+  return { updated, errors };
 }

@@ -50,6 +50,24 @@ export async function GET(request: NextRequest) {
   }
 
   const service = createServiceClient();
+  // Invoice rows belong to the QuickBooks company they came from. Connecting a
+  // different company would orphan them, so it is refused (nothing saved).
+  const { data: foreign, error: foreignErr } = await service
+    .from('qbo_invoices')
+    .select('id')
+    .neq('realm_id', realmId)
+    .limit(1);
+  if (foreignErr) {
+    console.error('[qbo callback] company check failed:', foreignErr);
+    return back(
+      `error=${encodeURIComponent("The SIS couldn't check its saved invoices. Try again in a minute.")}`
+    );
+  }
+  if (foreign && foreign.length > 0) {
+    return back(
+      `error=${encodeURIComponent('This SIS already has invoices from a different QuickBooks company. Ask the developer before connecting another one.')}`
+    );
+  }
   try {
     const tokens = await exchangeAuthCode(code);
     const { error } = await service.from('qbo_connection').upsert({

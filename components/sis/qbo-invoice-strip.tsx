@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { ExternalLink, FilePlus2, Link2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   CreateInvoiceSheet,
@@ -52,6 +53,8 @@ export function QboInvoiceStrip({
   });
 
   if (!connected) {
+    // Only the people who invoice need to know; everyone else sees nothing.
+    if (!canInvoice) return null;
     return (
       <p className="ml-1 border-t border-hairline pt-2.5 text-[11px] text-muted-foreground">
         QuickBooks not connected
@@ -127,27 +130,32 @@ export function QboInvoiceStrip({
             <FilePlus2 className="size-3.5" />
             {invoice ? 'New invoice' : 'Create invoice'}
           </Button>
-          {invoice ? (
+          <Button size="sm" variant="outline" onClick={() => open('link')}>
+            <Link2 className="size-3.5" />
+            {invoice ? 'Link another' : 'Link QB invoice'}
+          </Button>
+          {invoice && (
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               loading={refresh.isPending}
               loadingText="Refreshing…"
               onClick={() =>
                 run(() => refresh.mutateAsync(), {
                   pending: 'Checking QuickBooks…',
-                  success: (d) =>
-                    d.stageWarning ?? 'Up to date with QuickBooks',
+                  success: (d) => {
+                    // A warning is not a success: say it in amber, once.
+                    if (d.stageWarning) {
+                      toast.warning(d.stageWarning);
+                      return null;
+                    }
+                    return 'Up to date with QuickBooks';
+                  },
                 })
               }
             >
               <RefreshCw className="size-3.5" />
               Refresh from QuickBooks
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => open('link')}>
-              <Link2 className="size-3.5" />
-              Link QB invoice
             </Button>
           )}
         </div>

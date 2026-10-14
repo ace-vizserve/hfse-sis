@@ -121,6 +121,24 @@ async function loadConnection(service: SupabaseClient): Promise<ConnectionRow> {
   return data as ConnectionRow;
 }
 
+/**
+ * The QuickBooks company connected now, or null when none is. Customer and
+ * invoice rows carry the company they came from, and are only read back
+ * against this one.
+ */
+export async function connectedRealmId(
+  service: SupabaseClient
+): Promise<string | null> {
+  const { data, error } = await service
+    .from('qbo_connection')
+    .select('realm_id')
+    .eq('id', 1)
+    .maybeSingle();
+  if (error)
+    throw new Error(`QuickBooks connection lookup failed: ${error.message}`);
+  return (data as { realm_id: string } | null)?.realm_id ?? null;
+}
+
 function isFresh(row: ConnectionRow): boolean {
   const expires = row.access_token_expires_at
     ? Date.parse(row.access_token_expires_at)

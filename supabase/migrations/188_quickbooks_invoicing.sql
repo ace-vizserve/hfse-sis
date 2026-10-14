@@ -13,6 +13,12 @@
 -- feeInvoice, the payment dates, the statuses) stay the source the rest of the
 -- SIS reads. These tables only remember which QuickBooks invoice belongs to
 -- which stage, and what QuickBooks last said about it.
+--
+-- realm_id on qbo_customers / qbo_invoices: the QuickBooks company (realm) the
+-- row came from. Customer and invoice ids only mean something inside one
+-- company, so rows are read back only against the company connected now, and
+-- connecting a different company is refused while invoices from another exist
+-- (/api/quickbooks/callback).
 
 create table if not exists public.qbo_connection (
   id smallint primary key default 1 check (id = 1),
@@ -33,7 +39,8 @@ create table if not exists public.qbo_customers (
   qbo_customer_id text not null,
   display_name text not null,
   matched_by text not null,
-  matched_at timestamptz not null default now()
+  matched_at timestamptz not null default now(),
+  realm_id text not null
 );
 
 create table if not exists public.qbo_invoices (
@@ -54,7 +61,8 @@ create table if not exists public.qbo_invoices (
   created_by uuid,
   created_by_email text,
   created_at timestamptz not null default now(),
-  synced_at timestamptz not null default now()
+  synced_at timestamptz not null default now(),
+  realm_id text not null
 );
 
 -- One current invoice per stage per enrolee per year.

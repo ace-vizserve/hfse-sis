@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
-import { qbEscape, qboErrorMessage, qboQuery } from '@/lib/qbo/client';
+import {
+  connectedRealmId,
+  qbEscape,
+  qboErrorMessage,
+  qboQuery,
+} from '@/lib/qbo/client';
 import {
   exactMatches,
   normalizeName,
@@ -14,10 +19,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 type QbCustomer = { Id: string; DisplayName: string };
 const view = (c: QbCustomer) => ({ id: c.Id, displayName: c.DisplayName });
 
-// GET /api/quickbooks/customers?ay&enrolee[&q]
-// The stored match first; otherwise QuickBooks customers sharing the
-// student's last name, split into exact full-name matches and the rest.
-// `q` searches by any text the person types instead.
+// GET /api/quickbooks/customers?ay&enrolee[&q][&fresh=1]
+// The stored match first (only one remembered from the QuickBooks company
+// connected now); otherwise QuickBooks customers sharing the student's last
+// name, split into exact full-name matches and the rest. `q` searches by any
+// text the person types instead; `fresh=1` skips the stored match.
 export async function GET(request: NextRequest) {
   const auth = await requireRole([...QBO_INVOICE_ROLES]);
   if ('error' in auth) return auth.error;
@@ -25,6 +31,7 @@ export async function GET(request: NextRequest) {
   const ayCode = (url.searchParams.get('ay') ?? '').trim();
   const enrolee = (url.searchParams.get('enrolee') ?? '').trim();
   const q = (url.searchParams.get('q') ?? '').trim();
+  const fresh = url.searchParams.get('fresh') === '1';
   if (!/^AY\d{4}$/i.test(ayCode) || !enrolee) {
     return NextResponse.json(
       { error: 'Missing ay or enrolee' },
@@ -52,13 +59,22 @@ export async function GET(request: NextRequest) {
   };
 
   const service = createServiceClient();
-  if (!q && a.studentNumber) {
+  // `fresh=1` — staff clicked Change on the remembered customer: skip it and
+  // show the matches by last name instead.
+  if (!q && !fresh && a.studentNumber) {
+    let realmId: string | null;
+    try {
+      realmId = await connectedRealmId(service);
+    } catch (e) {
+      return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
+    }
     const { data: stored } = await service
       .from('qbo_customers')
-      .select('qbo_customer_id, display_name')
+      .select('qbo_customer_id, display_name, realm_id')
       .eq('student_number', a.studentNumber)
       .maybeSingle();
-    if (stored) {
+    // A match remembered from a different QuickBooks company is not used.
+    if (stored && realmId && stored.realm_id === realmId) {
       return NextResponse.json({
         linked: {
           id: stored.qbo_customer_id,
