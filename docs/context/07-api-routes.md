@@ -197,6 +197,18 @@ Related reads: `GET /api/sis/today-term` (current-term resolver, KD #116), `GET 
 
 **Casing gotcha:** `stage/:stageKey` takes snake_case **`section_id`**; `assign-section` takes camelCase **`sectionId`**. Both are live and consumed by shipped clients — deliberately not unified.
 
+## QuickBooks (registration / fees invoicing)
+
+Roles: `QBO_INVOICE_ROLES` (`lib/qbo/roles.ts`). QuickBooks is written first; the SIS records the invoice only after QuickBooks accepts it. Stage keys are limited to those `isQboStageKey` accepts.
+
+| Route                                                              | Method | Description                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/quickbooks/items`                                            | GET    | Active QuickBooks items. `{ items: [{ id, name, description \| null, unitPrice \| null }] }`                                                                                                                                                                                                              |
+| `/api/quickbooks/customers?ay=AY2027&enrolee=E270011[&q=]`         | GET    | `{ linked: QbCustomer \| null, exact: QbCustomer[], similar: QbCustomer[] }`, `QbCustomer = { id, displayName }`. The stored match comes back as `linked`; otherwise customers sharing the last name (or matching `q`).                                                                                   |
+| `/api/quickbooks/customers/:customerId/invoices`                   | GET    | Open invoices of that customer not yet linked to any stage. `{ invoices: [{ id, docNumber, txnDate, total, balance }] }`                                                                                                                                                                                  |
+| `/api/sis/students/:enroleeNumber/stage/:stageKey/invoice`         | POST   | Body `{ mode: 'create', ayCode, customerId, customerName, matchedBy: 'auto' \| 'staff', lines: [{ itemId, description?, qty, unitPrice }], txnDate, dueDate?, memo? }` or `{ mode: 'link', ayCode, customerId, customerName, matchedBy, qboInvoiceId }`. Returns `{ ok: true, docNumber, stageWarning }`. |
+| `/api/sis/students/:enroleeNumber/stage/:stageKey/invoice/refresh` | POST   | Body `{ ayCode }`. Re-reads the stage's current invoice from QuickBooks. Returns `{ ok: true, stageChanged, stageWarning }`.                                                                                                                                                                              |
+
 ## SIS Admin & AY Setup
 
 | Route                                        | Method            | Role                              | Description                                                                                                                    |
