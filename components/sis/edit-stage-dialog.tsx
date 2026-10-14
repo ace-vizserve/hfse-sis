@@ -350,11 +350,13 @@ export function EditStageDialog({
     )
   );
 
+  // QuickBooks-owned fields are QuickBooks' to fill — never a reason to block
+  // this save (the stage route filters the same way).
   const completionBlockers = findStageCompletionBlockers(
     stageKey,
     effectiveStatus,
     effectiveExtras
-  );
+  ).filter((b) => !qboOwnedKeys.has(b.fieldKey));
 
   // On the application stage's Cancelled / Withdrawn path the block further
   // down is already the gate for exactly this — in more specific words, and

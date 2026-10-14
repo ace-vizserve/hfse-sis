@@ -30,7 +30,11 @@ import {
 } from '@/lib/sis/class-assignment';
 import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
 import { loadQboStageLock } from '@/lib/qbo/stage-invoices';
-import { paidOnStartDate, qboLockViolation } from '@/lib/qbo/stage-lock';
+import {
+  paidOnStartDate,
+  QBO_OWNED_FIELD_KEYS,
+  qboLockViolation,
+} from '@/lib/qbo/stage-lock';
 import {
   DOCUMENT_SLOTS,
   OPTIONAL_DOCUMENT_SLOT_KEYS,
@@ -912,6 +916,7 @@ export async function PATCH(
   // sync; a hand edit of them is refused here, not just hidden in the dialog.
   // Staff keep the start date, remarks and Cancelled. Not connected (before
   // go-live, or disconnected) → nothing here applies.
+  let qboLocked = false;
   if (stageKey === 'registration' || stageKey === 'fees') {
     const lock = await loadQboStageLock(
       supabase,
@@ -920,6 +925,7 @@ export async function PATCH(
       stageKey
     );
     if (lock.connected) {
+      qboLocked = true;
       const pre = before as unknown as Record<string, unknown>;
       const col = (k: string) =>
         cols.extras.find((e) => e.fieldKey === k)?.columnName ?? '';
@@ -939,11 +945,15 @@ export async function PATCH(
       }
       if (stageKey === 'fees') {
         const after = resolveEffectiveStageValues(cols, pre, status, extras);
+        // Only once the sync has written the invoice and payment date —
+        // otherwise the start date is saved and the status left alone.
         if (
           paidOnStartDate('fees', lock.invoiceState, {
             status: after.status,
             startDate: after.extras.startDate ?? null,
-          })
+          }) &&
+          !!after.extras.invoice &&
+          !!after.extras.paymentDate
         ) {
           status = 'Paid';
           update[cols.statusCol] = 'Paid';
@@ -1004,10 +1014,17 @@ export async function PATCH(
       );
     }
 
+    // While QuickBooks owns the stage (2.9), a blank invoice or payment date
+    // is QuickBooks' to fill (via Link QB invoice), not the person's — so it
+    // can't block their Remarks / Start date / Cancelled edit.
     const completionBlockers = findStageCompletionBlockers(
       stageKey,
       effective.status,
       effective.extras
+    ).filter(
+      (b) =>
+        !qboLocked ||
+        !(QBO_OWNED_FIELD_KEYS as readonly string[]).includes(b.fieldKey)
     );
     if (completionBlockers.length > 0) {
       return NextResponse.json(
