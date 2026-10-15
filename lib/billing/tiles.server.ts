@@ -1,0 +1,106 @@
+import 'server-only';
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import {
+  stageFromInvoices,
+  type TileInvoice,
+} from '@/lib/billing/stage-from-invoices';
+import { connectedRealmId } from '@/lib/qbo/client';
+import { QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
+import {
+  QBO_SYNC_LABEL,
+  QBO_SYSTEM_ACTOR,
+  readStageSnapshot,
+  writeStageFromQbo,
+} from '@/lib/qbo/stage-write';
+
+/**
+ * Recompute the Registration and Fees stages of one student from their stored
+ * invoices, for the given years (default: every year one of their invoices is
+ * on a tile). A year where the student has no admissions row is skipped.
+ */
+export async function syncTilesForStudent(
+  service: SupabaseClient,
+  studentNumber: string,
+  ayCodes?: string[]
+): Promise<{ changed: number; errors: string[] }> {
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return { changed: 0, errors: [] };
+  // Voided invoices are kept: a tile whose only invoice was voided must reset.
+  const { data, error } = await service
+    .from('qbo_invoices')
+    .select('doc_number, txn_date, state, payment_date, ay_code, stage_keys')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId);
+  if (error) throw new Error(`Invoice lookup failed: ${error.message}`);
+  const rows = (data ?? []) as Array<{
+    doc_number: string | null;
+    txn_date: string | null;
+    state: TileInvoice['state'];
+    payment_date: string | null;
+    ay_code: string | null;
+    stage_keys: string[] | null;
+  }>;
+  const years = ayCodes ?? [
+    ...new Set(
+      rows
+        .filter((r) => r.ay_code && r.stage_keys?.length)
+        .map((r) => r.ay_code!)
+    ),
+  ];
+
+  let changed = 0;
+  const errors: string[] = [];
+  for (const ayCode of years) {
+    const { data: app, error: appErr } = await service
+      .from(`ay${ayCode.slice(2)}_enrolment_applications`)
+      .select('"enroleeNumber"')
+      .eq('studentNumber', studentNumber)
+      .order('enroleeNumber', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (appErr) {
+      // A year with no applications table is skipped; anything else is real.
+      if (appErr.code === 'PGRST205') continue;
+      throw new Error(`Enrolee lookup failed for ${ayCode}: ${appErr.message}`);
+    }
+    const enroleeNumber = (app as { enroleeNumber: string } | null)
+      ?.enroleeNumber;
+    if (!enroleeNumber) continue;
+    for (const stage of QBO_STAGE_KEYS) {
+      const current = await readStageSnapshot(
+        service,
+        ayCode,
+        enroleeNumber,
+        stage
+      );
+      if (!current) continue;
+      const tile: TileInvoice[] = rows
+        .filter(
+          (r) => r.ay_code === ayCode && (r.stage_keys ?? []).includes(stage)
+        )
+        .map((r) => ({
+          docNumber: r.doc_number,
+          txnDate: r.txn_date,
+          state: r.state,
+          paymentDate: r.payment_date,
+        }));
+      const patch = stageFromInvoices(stage, tile, current);
+      if (!patch) continue;
+      const res = await writeStageFromQbo(service, {
+        ayCode,
+        enroleeNumber,
+        stage,
+        patch,
+        actor: QBO_SYSTEM_ACTOR,
+        updatedBy: QBO_SYNC_LABEL,
+        docNumber: patch.invoice ?? current.invoice ?? null,
+        trigger: 'sync',
+      });
+      if (res.ok) changed += res.changed > 0 ? 1 : 0;
+      else errors.push(`${ayCode} ${stage}: ${res.error}`);
+    }
+  }
+  return { changed, errors };
+}
