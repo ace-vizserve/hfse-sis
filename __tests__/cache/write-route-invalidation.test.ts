@@ -59,6 +59,21 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // ── QuickBooks (migration 188) ─────────────────────────────────────────
+  // The four routes that can move a Registration/Fees stage do it through
+  // writeStageFromQbo (lib/qbo/stage-write.ts), which expires sis:<AY> and the
+  // admissions/records tags itself. The qbo_* tables are read uncached
+  // (lib/qbo/stage-invoices.ts, the SIS Admin QuickBooks page).
+  'app/api/sis/students/[enroleeNumber]/stage/[stageKey]/invoice/route.ts':
+    'Stage moves go through writeStageFromQbo, which busts the tags; qbo_* rows are read uncached.',
+  'app/api/sis/students/[enroleeNumber]/stage/[stageKey]/invoice/refresh/route.ts':
+    'Stage moves go through writeStageFromQbo, which busts the tags; qbo_* rows are read uncached.',
+  'app/api/quickbooks/webhook/route.ts':
+    'Stage moves go through writeStageFromQbo, which busts the tags; qbo_* rows are read uncached.',
+  'app/api/quickbooks/customers/route.ts':
+    'Adds a customer in QuickBooks only — no SIS table is written.',
+  'app/api/quickbooks/disconnect/route.ts':
+    'Deletes qbo_connection, read uncached by lib/qbo/client.ts and the SIS Admin QuickBooks page.',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached

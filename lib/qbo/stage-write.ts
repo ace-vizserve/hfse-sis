@@ -4,7 +4,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { revalidateTag } from 'next/cache';
 
 import { logAction } from '@/lib/audit/log-action';
-import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import type {
   QboStageKey,
   StagePatch,
@@ -166,8 +165,17 @@ export async function writeStageFromQbo(
     },
   });
 
-  revalidateTag(`sis:${args.ayCode}`, 'max');
-  invalidateDrillTags('admissions', args.ayCode);
-  invalidateDrillTags('records', args.ayCode);
+  // Expire now, not stale-while-revalidate ('max'): the Refresh button's
+  // router.refresh() is the very next request, and under 'max' it was served
+  // the cached pre-payment page (the lifecycle panel) — complete only after a
+  // second load.
+  for (const tag of [
+    `sis:${args.ayCode}`,
+    `admissions-drill:${args.ayCode}`,
+    `admissions-dashboard:${args.ayCode}`,
+    `records-drill:${args.ayCode}`,
+  ]) {
+    revalidateTag(tag, { expire: 0 });
+  }
   return { ok: true, changed: changes.length };
 }
