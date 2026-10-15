@@ -7,6 +7,9 @@ import { qboErrorMessage } from '@/lib/qbo/client';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
+// The bulk run also loads each linked student's history, one at a time.
+export const maxDuration = 300;
+
 const Body = z.object({ dryRun: z.boolean() });
 
 // POST /api/billing/link — match every unlinked student to their QuickBooks

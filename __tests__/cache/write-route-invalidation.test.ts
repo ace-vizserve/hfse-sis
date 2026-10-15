@@ -87,6 +87,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Billing settings tables (and the stage columns on qbo_invoices); no cached page reads them.',
   'app/api/billing/students/[studentNumber]/link/route.ts':
     'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
+  'app/api/billing/students/[studentNumber]/refresh/route.ts':
+    'Stage writes go through writeStageFromQbo, which expires the tags; the billing store tables are read uncached.',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached

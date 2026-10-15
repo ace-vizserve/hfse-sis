@@ -112,6 +112,23 @@ export async function POST(
       );
     return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
   }
+  // One customer belongs to one student.
+  const { data: holders, error: holderError } = await service
+    .from('qbo_customers')
+    .select('student_number')
+    .eq('qbo_customer_id', parsed.data.customerId)
+    .eq('realm_id', realmId)
+    .neq('student_number', studentNumber)
+    .limit(1);
+  if (holderError)
+    return NextResponse.json({ error: holderError.message }, { status: 500 });
+  if (holders && holders.length > 0)
+    return NextResponse.json(
+      {
+        error: `That QuickBooks customer is already linked to student ${holders[0].student_number}.`,
+      },
+      { status: 409 }
+    );
   const { error } = await service.from('qbo_customers').upsert({
     student_number: studentNumber,
     qbo_customer_id: parsed.data.customerId,

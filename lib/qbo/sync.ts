@@ -2,7 +2,11 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { QbInvoiceFull, QbPayment } from '@/lib/billing/invoice-row';
+import {
+  latestPaymentDates,
+  type QbInvoiceFull,
+  type QbPayment,
+} from '@/lib/billing/invoice-row';
 import {
   QboError,
   connectedRealmId,
@@ -68,7 +72,6 @@ export async function refreshInvoice(
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
   const { loadBillingMaps } = await import('@/lib/billing/settings.server');
   const { studentForCustomer } = await import('@/lib/billing/history.server');
-  const { latestPaymentDates } = await import('@/lib/billing/invoice-row');
   const { upsertInvoice } = await import('@/lib/billing/store.server');
   const { syncTilesForStudent } = await import('@/lib/billing/tiles.server');
 
@@ -87,12 +90,14 @@ export async function refreshInvoice(
     );
   } else {
     // Deleted: find the student from the stored row.
-    const { data } = await service
+    const { data, error: lookupErr } = await service
       .from('qbo_invoices')
       .select('student_number')
       .eq('qbo_invoice_id', qboInvoiceId)
       .eq('realm_id', realmId)
       .maybeSingle();
+    if (lookupErr)
+      throw new Error(`Stored invoice lookup failed: ${lookupErr.message}`);
     studentNumber =
       (data as { student_number: string } | null)?.student_number ?? null;
   }
@@ -158,10 +163,13 @@ export async function refreshInvoicesForPayment(
   } catch (e) {
     if (e instanceof QboError && e.code === '610') {
       // Deleted: drop our copy; its invoices arrive as Invoice changes.
-      await service
+      const del = await service
         .from('qbo_payments')
         .delete()
-        .eq('qbo_payment_id', paymentId);
+        .eq('qbo_payment_id', paymentId)
+        .eq('realm_id', realmId);
+      if (del.error)
+        throw new Error(`Deleting stored payment failed: ${del.error.message}`);
       return { updated: 0, errors: [] };
     }
     throw e;

@@ -7,6 +7,7 @@ import {
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
 import { connectedRealmId } from '@/lib/qbo/client';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import { blank, QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
 import {
   QBO_SYNC_LABEL,
@@ -121,4 +122,41 @@ export async function syncTilesForStudent(
     }
   }
   return { changed, errors };
+}
+
+/**
+ * Recompute the tiles of every student with a stored invoice on a year, for the
+ * given years. Database only, no QuickBooks calls. Returns the first errors.
+ */
+export async function syncTilesForAllStudents(
+  service: SupabaseClient,
+  years: string[]
+): Promise<{ students: number; errors: string[] }> {
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return { students: 0, errors: [] };
+  const rows = await fetchAllPages<{ student_number: string }>(
+    (from, to) =>
+      service
+        .from('qbo_invoices')
+        .select('student_number')
+        .eq('realm_id', realmId)
+        .not('ay_code', 'is', null)
+        .range(from, to) as unknown as PromiseLike<{
+        data: Array<{ student_number: string }> | null;
+        error: { message: string } | null;
+      }>,
+    1000,
+    { tieBreak: 'id' }
+  );
+  const students = [...new Set(rows.map((r) => r.student_number))];
+  const errors: string[] = [];
+  for (const sn of students) {
+    try {
+      const r = await syncTilesForStudent(service, sn, years);
+      errors.push(...r.errors.map((e) => `${sn}: ${e}`));
+    } catch (e) {
+      errors.push(`${sn}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { students: students.length, errors };
 }

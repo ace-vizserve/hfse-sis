@@ -47,15 +47,7 @@ export async function processChanges(
   );
   let updated = 0;
   const errors: string[] = [];
-  for (const id of invoiceIds) {
-    try {
-      const r = await refreshInvoice(service, id);
-      if (r.known) updated++;
-      if (r.stageError) errors.push(`Invoice ${id}: ${r.stageError}`);
-    } catch (e) {
-      errors.push(`Invoice ${id}: ${qboErrorMessage(e)}`);
-    }
-  }
+  // Payments first: they store the payment dates the invoices then read.
   for (const id of paymentIds) {
     try {
       const r = await refreshInvoicesForPayment(service, id);
@@ -63,6 +55,15 @@ export async function processChanges(
       errors.push(...r.errors);
     } catch (e) {
       errors.push(`Payment ${id}: ${qboErrorMessage(e)}`);
+    }
+  }
+  for (const id of invoiceIds) {
+    try {
+      const r = await refreshInvoice(service, id);
+      if (r.known) updated++;
+      if (r.stageError) errors.push(`Invoice ${id}: ${r.stageError}`);
+    } catch (e) {
+      errors.push(`Invoice ${id}: ${qboErrorMessage(e)}`);
     }
   }
   return { updated, errors };

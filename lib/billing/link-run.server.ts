@@ -5,6 +5,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logAction } from '@/lib/audit/log-action';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
+  ALREADY_LINKED_REASON,
+  claimCustomer,
+  studentsNeedingHistory,
+} from '@/lib/billing/link-claims';
+import {
   buildLinkIndex,
   proposeLink,
   type LinkStudent,
@@ -23,6 +28,8 @@ export type LinkRunResult = {
   newlyLinked: string[];
   /** Problems loading a newly linked student's history; empty on a dry run. */
   historyErrors: string[];
+  /** Students whose history was loaded in this run. */
+  historyLoaded: number;
 };
 
 /** Every student with a student number, across every AY that has tables. */
@@ -124,13 +131,19 @@ export async function runLink(
     loadLinkStudents(service),
     service
       .from('qbo_customers')
-      .select('student_number')
+      .select('student_number, qbo_customer_id')
       .eq('realm_id', realmId),
   ]);
   if (stored.error)
     throw new Error(`Linked customers lookup failed: ${stored.error.message}`);
-  const already = new Set(
-    (stored.data ?? []).map((r) => r.student_number as string)
+  const storedRows = (stored.data ?? []) as Array<{
+    student_number: string;
+    qbo_customer_id: string;
+  }>;
+  const already = new Set(storedRows.map((r) => r.student_number));
+  // customer id → the student holding it (stored links, then this run's).
+  const claimed = new Map<string, string>(
+    storedRows.map((r) => [r.qbo_customer_id, r.student_number])
   );
   const index = buildLinkIndex(
     customers.map((c) => ({ id: c.Id, displayName: c.DisplayName })),
@@ -147,6 +160,7 @@ export async function runLink(
     review: 0,
     newlyLinked: [],
     historyErrors: [],
+    historyLoaded: 0,
   };
   const runStartedAt = new Date().toISOString();
   const links: Array<Record<string, unknown>> = [];
@@ -157,7 +171,25 @@ export async function runLink(
       continue;
     }
     const p = proposeLink(s, index);
-    if (p.kind === 'link') {
+    if (
+      p.kind === 'link' &&
+      !claimCustomer(claimed, p.customerId, s.studentNumber)
+    ) {
+      // One customer belongs to one student: a second claim goes to a person.
+      result.review++;
+      reviews.push({
+        student_number: s.studentNumber,
+        student_name: [s.lastName, s.firstName].filter(Boolean).join(', '),
+        candidates: [
+          {
+            customerId: p.customerId,
+            displayName: index.customers.get(p.customerId)!.displayName,
+            reason: ALREADY_LINKED_REASON,
+          },
+        ],
+        computed_at: runStartedAt,
+      });
+    } else if (p.kind === 'link') {
       result.linked[p.reason]++;
       result.newlyLinked.push(s.studentNumber);
       links.push({
@@ -215,13 +247,42 @@ export async function runLink(
     .lt('computed_at', runStartedAt);
   if (del.error)
     throw new Error(`Clearing the review list failed: ${del.error.message}`);
-  // Load each newly linked student's history, one at a time (QuickBooks allows
-  // ~500 calls a minute; two queries per student). The audit row above is
-  // already written, so failures are returned in the result, not the audit.
+  // Load the history of every linked student that has none stored yet (not
+  // just the newly linked), so a re-run after a timeout resumes where it
+  // stopped. One at a time (QuickBooks allows ~500 calls a minute; two
+  // queries per student). The audit row above is already written, so failures
+  // are returned in the result, not the audit.
   const { loadCustomerHistory } = await import('@/lib/billing/history.server');
-  for (const sn of result.newlyLinked) {
+  const { loadBillingMaps } = await import('@/lib/billing/settings.server');
+  const distinctStudents = async (table: string, tieBreak: string) =>
+    new Set(
+      (
+        await fetchAllPages<{ student_number: string }>(
+          (from, to) =>
+            service
+              .from(table)
+              .select('student_number')
+              .eq('realm_id', realmId)
+              .range(from, to) as unknown as PromiseLike<{
+              data: Array<{ student_number: string }> | null;
+              error: { message: string } | null;
+            }>,
+          1000,
+          { tieBreak }
+        )
+      ).map((r) => r.student_number)
+    );
+  const [withInvoices, withPayments] = await Promise.all([
+    distinctStudents('qbo_invoices', 'id'),
+    distinctStudents('qbo_payments', 'qbo_payment_id'),
+  ]);
+  const linkedNow = [...new Set([...claimed.values()])];
+  const todo = studentsNeedingHistory(linkedNow, withInvoices, withPayments);
+  const preloaded = { realmId, maps: await loadBillingMaps(service) };
+  for (const sn of todo) {
     try {
-      const h = await loadCustomerHistory(service, sn);
+      const h = await loadCustomerHistory(service, sn, preloaded);
+      result.historyLoaded++;
       result.historyErrors.push(...h.errors.map((e) => `${sn}: ${e}`));
     } catch (e) {
       result.historyErrors.push(

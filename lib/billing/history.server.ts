@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import type { BillingMaps } from '@/lib/billing/classify';
 import {
   latestPaymentDates,
   paymentApplied,
@@ -28,10 +29,16 @@ export async function studentForCustomer(
     .select('student_number')
     .eq('qbo_customer_id', customerId)
     .eq('realm_id', realmId)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (error) throw new Error(`Linked customer lookup failed: ${error.message}`);
-  return (data as { student_number: string } | null)?.student_number ?? null;
+  const rows = (data ?? []) as Array<{ student_number: string }>;
+  if (rows.length > 1) {
+    console.error(
+      `[billing] QuickBooks customer ${customerId} is linked to more than one student; ignoring it`
+    );
+    return null;
+  }
+  return rows[0]?.student_number ?? null;
 }
 
 /**
@@ -40,14 +47,15 @@ export async function studentForCustomer(
  */
 export async function loadCustomerHistory(
   service: SupabaseClient,
-  studentNumber: string
+  studentNumber: string,
+  preloaded?: { realmId: string; maps: BillingMaps }
 ): Promise<{
   invoices: number;
   payments: number;
   tilesChanged: number;
   errors: string[];
 }> {
-  const realmId = await connectedRealmId(service);
+  const realmId = preloaded?.realmId ?? (await connectedRealmId(service));
   if (!realmId) throw new QboNotConnectedError();
   const { data: link, error } = await service
     .from('qbo_customers')
@@ -67,7 +75,7 @@ export async function loadCustomerHistory(
   const [invoices, payments, maps] = await Promise.all([
     qboQueryAll<QbInvoiceFull>(service, 'Invoice', cust),
     qboQueryAll<QbPayment>(service, 'Payment', cust),
-    loadBillingMaps(service),
+    preloaded?.maps ?? loadBillingMaps(service),
   ]);
   for (const p of payments)
     await upsertPayment(service, { p, studentNumber, realmId });
