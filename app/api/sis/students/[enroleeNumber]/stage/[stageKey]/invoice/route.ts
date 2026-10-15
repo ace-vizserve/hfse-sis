@@ -50,6 +50,12 @@ const Body = z.discriminatedUnion('mode', [
     txnDate: Date10,
     dueDate: Date10.nullable().optional(),
     memo: z.string().max(1000).optional(),
+    // Typed by staff, e.g. HFSE062240. Blank = QuickBooks' next number.
+    docNumber: z
+      .string()
+      .trim()
+      .max(21, 'An invoice number is at most 21 characters in QuickBooks.')
+      .optional(),
   }),
   z.object({
     mode: z.literal('link'),
@@ -160,6 +166,24 @@ export async function POST(
       if (refusal)
         return NextResponse.json({ error: refusal }, { status: 409 });
     } else {
+      const docNumber = body.docNumber || null;
+      if (docNumber) {
+        // QuickBooks' API accepts a repeated number, so check first.
+        const taken = await qboQuery<{ Id: string }>(
+          service,
+          'Invoice',
+          `DocNumber = '${qbEscape(docNumber)}'`,
+          'maxresults 1'
+        );
+        if (taken.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Invoice ${docNumber} already exists in QuickBooks. Use Link QB invoice to attach it, or type a different number.`,
+            },
+            { status: 409 }
+          );
+        }
+      }
       const ids = Array.from(new Set(body.lines.map((l) => l.itemId)));
       const items = await qboQuery<{
         Id: string;
@@ -189,7 +213,7 @@ export async function POST(
             ? { CustomerMemo: { value: body.memo.trim() } }
             : {}),
           PrivateNote: `Created from SIS by ${staffName}`,
-          AutoDocNumber: true,
+          ...(docNumber ? { DocNumber: docNumber } : { AutoDocNumber: true }),
         })
       ).Invoice;
     }

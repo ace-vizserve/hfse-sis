@@ -347,6 +347,7 @@ export function CreateInvoiceSheet({
   const [txnDate, setTxnDate] = useState(todayIso);
   const [dueDate, setDueDate] = useState('');
   const [memo, setMemo] = useState('');
+  const [docNumber, setDocNumber] = useState('');
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
   const run = useWriteAction();
@@ -396,6 +397,7 @@ export function CreateInvoiceSheet({
           txnDate,
           dueDate: dueDate || null,
           ...(memo.trim() ? { memo: memo.trim() } : {}),
+          ...(docNumber.trim() ? { docNumber: docNumber.trim() } : {}),
         })
       ),
   });
@@ -429,7 +431,7 @@ export function CreateInvoiceSheet({
       onOpenChange={onOpenChange}
       stage={stage}
       title="Create invoice"
-      description="QuickBooks numbers it and the stage updates by itself. Payments recorded in QuickBooks come back here."
+      description="Saved in QuickBooks, and the stage updates by itself. Payments recorded in QuickBooks come back here."
       onSubmit={submit}
       saving={saving}
       submitLabel="Create in QuickBooks"
@@ -580,6 +582,22 @@ export function CreateInvoiceSheet({
             Each line needs an item, a quantity above 0 and a price.
           </FieldError>
         )}
+      </Field>
+
+      <Field>
+        <FieldLabel htmlFor="qbo-doc-number">Invoice no.</FieldLabel>
+        <Input
+          id="qbo-doc-number"
+          value={docNumber}
+          maxLength={21}
+          onChange={(e) => setDocNumber(e.target.value)}
+          placeholder="QuickBooks’ next number"
+          className="font-mono tabular-nums"
+        />
+        <FieldDescription>
+          Type your own, e.g. HFSE062240, or leave blank and QuickBooks numbers
+          it.
+        </FieldDescription>
       </Field>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
