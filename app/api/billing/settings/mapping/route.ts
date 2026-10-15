@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
-import { reclassifyAll } from '@/lib/billing/settings.server';
+import { firstDuplicate } from '@/lib/billing/settings-helpers';
+import { reclassifyAll, replaceRows } from '@/lib/billing/settings.server';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -30,37 +31,63 @@ export async function PUT(request: Request) {
       { error: parsed.error.issues[0]?.message ?? 'Invalid payload' },
       { status: 400 }
     );
-  const service = createServiceClient();
   const { accounts, items } = parsed.data;
-  for (const [table, key, nameCol, rows] of [
-    ['billing_account_map', 'qbo_account_id', 'account_name', accounts],
-    ['billing_item_map', 'qbo_item_id', 'item_name', items],
-  ] as const) {
-    const del = await service.from(table).delete().neq(key, '');
-    if (del.error)
-      return NextResponse.json({ error: del.error.message }, { status: 500 });
-    if (rows.length) {
-      const ins = await service
-        .from(table)
-        .insert(
-          rows.map((r) => ({ [key]: r.id, [nameCol]: r.name, stage: r.stage }))
-        );
-      if (ins.error)
-        return NextResponse.json({ error: ins.error.message }, { status: 500 });
-    }
+  const dup =
+    firstDuplicate(accounts.map((r) => r.id)) ??
+    firstDuplicate(items.map((r) => r.id));
+  if (dup) {
+    const name = [...accounts, ...items].find((r) => r.id === dup)?.name;
+    return NextResponse.json(
+      { error: `${name ?? dup} is listed twice.` },
+      { status: 400 }
+    );
   }
-  const { changed } = await reclassifyAll(service);
+  const service = createServiceClient();
+  try {
+    await replaceRows(
+      service,
+      'billing_account_map',
+      'qbo_account_id',
+      accounts.map((r) => ({
+        qbo_account_id: r.id,
+        account_name: r.name,
+        stage: r.stage,
+      }))
+    );
+    await replaceRows(
+      service,
+      'billing_item_map',
+      'qbo_item_id',
+      items.map((r) => ({
+        qbo_item_id: r.id,
+        item_name: r.name,
+        stage: r.stage,
+      }))
+    );
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Saving failed.' },
+      { status: 500 }
+    );
+  }
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
     action: 'billing.mapping.update',
     entityType: 'billing_setting',
     entityId: 'mapping',
-    context: {
-      accounts: accounts.length,
-      items: items.length,
-      students_affected: changed.length,
-    },
+    context: { accounts: accounts.length, items: items.length },
   });
-  return NextResponse.json({ ok: true, studentsAffected: changed.length });
+  try {
+    const { changed } = await reclassifyAll(service);
+    return NextResponse.json({ ok: true, studentsAffected: changed.length });
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'The settings were saved, but re-checking the invoices failed. Save again to retry.',
+      },
+      { status: 500 }
+    );
+  }
 }

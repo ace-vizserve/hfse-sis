@@ -77,6 +77,14 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // Billing link tables only (qbo_customers, billing_link_review); no cached page reads them
   'app/api/billing/link/route.ts':
     'Writes qbo_customers and deletes billing_link_review — no cached module reads either table.',
+  'app/api/billing/settings/deposit-accounts/route.ts':
+    'Billing settings tables; no cached page reads them.',
+  'app/api/billing/settings/items/refresh/route.ts':
+    'Billing settings tables; no cached page reads them.',
+  'app/api/billing/settings/mapping/route.ts':
+    'Billing settings tables (and the stage columns on qbo_invoices); no cached page reads them.',
+  'app/api/billing/settings/years/route.ts':
+    'Billing settings tables (and the stage columns on qbo_invoices); no cached page reads them.',
   'app/api/billing/students/[studentNumber]/link/route.ts':
     'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
   // ── writes no database row at all ──────────────────────────────────────

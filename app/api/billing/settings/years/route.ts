@@ -4,11 +4,15 @@ import { z } from 'zod';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { overlapMessage } from '@/lib/billing/classify';
-import { reclassifyAll } from '@/lib/billing/settings.server';
+import { firstDuplicate, isRealDate } from '@/lib/billing/settings-helpers';
+import { reclassifyAll, replaceRows } from '@/lib/billing/settings.server';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
-const Date10 = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const Date10 = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isRealDate, 'That is not a real date.');
 const Body = z.object({
   ranges: z
     .array(
@@ -35,32 +39,48 @@ export async function PUT(request: Request) {
   const { ranges } = parsed.data;
   const overlap = overlapMessage(ranges);
   if (overlap) return NextResponse.json({ error: overlap }, { status: 400 });
+  const dup = firstDuplicate(ranges.map((r) => r.ayCode));
+  if (dup)
+    return NextResponse.json(
+      { error: `${dup} is listed twice.` },
+      { status: 400 }
+    );
   const service = createServiceClient();
-  const del = await service
-    .from('billing_year_ranges')
-    .delete()
-    .neq('ay_code', '');
-  if (del.error)
-    return NextResponse.json({ error: del.error.message }, { status: 500 });
-  if (ranges.length) {
-    const ins = await service.from('billing_year_ranges').insert(
+  try {
+    await replaceRows(
+      service,
+      'billing_year_ranges',
+      'ay_code',
       ranges.map((r) => ({
         ay_code: r.ayCode,
         starts_on: r.startsOn,
         ends_on: r.endsOn,
       }))
     );
-    if (ins.error)
-      return NextResponse.json({ error: ins.error.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Saving failed.' },
+      { status: 500 }
+    );
   }
-  const { changed } = await reclassifyAll(service);
   await logAction({
     service,
     actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
     action: 'billing.years.update',
     entityType: 'billing_setting',
     entityId: 'years',
-    context: { ranges, students_affected: changed.length },
+    context: { ranges },
   });
-  return NextResponse.json({ ok: true, studentsAffected: changed.length });
+  try {
+    const { changed } = await reclassifyAll(service);
+    return NextResponse.json({ ok: true, studentsAffected: changed.length });
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'The settings were saved, but re-checking the invoices failed. Save again to retry.',
+      },
+      { status: 500 }
+    );
+  }
 }

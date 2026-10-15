@@ -11,8 +11,13 @@ import {
 import {
   connectedRealmId,
   qboQueryAll,
+  qboErrorMessage,
   QboNotConnectedError,
 } from '@/lib/qbo/client';
+import {
+  groupChanges,
+  type InvoiceChange,
+} from '@/lib/billing/settings-helpers';
 
 export type BillingSettings = {
   accounts: Array<{
@@ -30,6 +35,7 @@ export type BillingSettings = {
   }>;
   ranges: Array<{ ayCode: string; startsOn: string; endsOn: string }>;
   depositChoices: Array<{ id: string; name: string }>;
+  depositChoicesError: string | null;
   depositAccounts: Array<{ id: string; label: string; sort: number }>;
 };
 
@@ -39,6 +45,41 @@ function must<T>(
 ): T {
   if (r.error) throw new Error(`${what} failed: ${r.error.message}`);
   return (r.data ?? ([] as unknown)) as T;
+}
+
+/**
+ * Replace a settings table's contents without ever leaving it empty on
+ * failure: upsert the new rows first, then delete the keys no longer listed.
+ * A failed upsert leaves the old settings untouched.
+ */
+export async function replaceRows(
+  service: SupabaseClient,
+  table: string,
+  key: string,
+  rows: Array<Record<string, unknown>>
+): Promise<void> {
+  if (rows.length) {
+    const up = await service.from(table).upsert(rows, { onConflict: key });
+    if (up.error) throw new Error(up.error.message);
+  }
+  if (!rows.length) {
+    const del = await service.from(table).delete().neq(key, '');
+    if (del.error) throw new Error(del.error.message);
+    return;
+  }
+  const keep = new Set(rows.map((r) => String(r[key])));
+  const existing = await service.from(table).select(key);
+  if (existing.error) throw new Error(existing.error.message);
+  const stale = (existing.data as unknown as Array<Record<string, string>>)
+    .map((r) => r[key])
+    .filter((k) => !keep.has(k));
+  for (let i = 0; i < stale.length; i += 200) {
+    const del = await service
+      .from(table)
+      .delete()
+      .in(key, stale.slice(i, i + 200));
+    if (del.error) throw new Error(del.error.message);
+  }
 }
 
 export async function loadBillingMaps(
@@ -159,6 +200,7 @@ export async function loadSettings(
     });
   }
   let depositChoices: Array<{ id: string; name: string }> = [];
+  let depositChoicesError: string | null = null;
   try {
     const banks = await qboQueryAll<{ Id: string; Name: string }>(
       service,
@@ -166,8 +208,11 @@ export async function loadSettings(
       "AccountType IN ('Bank', 'Other Current Asset', 'Credit Card')"
     );
     depositChoices = banks.map((b) => ({ id: b.Id, name: b.Name }));
-  } catch {
-    // Not connected: the page shows the saved list only.
+  } catch (e) {
+    // Not connected: the page shows the saved list only. Anything else is
+    // reported so the page can say why the choices are missing.
+    if (!(e instanceof QboNotConnectedError))
+      depositChoicesError = qboErrorMessage(e);
   }
   return {
     accounts: [...accounts.values()].sort((x, z) =>
@@ -188,6 +233,7 @@ export async function loadSettings(
       })
     ),
     depositChoices,
+    depositChoicesError,
     depositAccounts: must(dep, 'Payment accounts lookup').map(
       (r: { qbo_account_id: string; label: string; sort: number }) => ({
         id: r.qbo_account_id,
@@ -213,6 +259,7 @@ export async function reclassifyAll(
       .order('id')
       .range(from, from + 999);
     if (error) throw new Error(`Invoice lookup failed: ${error.message}`);
+    const pending: InvoiceChange[] = [];
     for (const r of (data ?? []) as Array<{
       id: string;
       student_number: string;
@@ -227,13 +274,16 @@ export async function reclassifyAll(
         c.stageKeys.join(',') === (r.stage_keys ?? []).join(',')
       )
         continue;
+      pending.push({ id: r.id, ayCode: c.ayCode, stageKeys: c.stageKeys });
+      changed.add(r.student_number);
+    }
+    for (const g of groupChanges(pending)) {
       const up = await service
         .from('qbo_invoices')
-        .update({ ay_code: c.ayCode, stage_keys: c.stageKeys })
-        .eq('id', r.id);
+        .update({ ay_code: g.ayCode, stage_keys: g.stageKeys })
+        .in('id', g.ids);
       if (up.error)
         throw new Error(`Invoice update failed: ${up.error.message}`);
-      changed.add(r.student_number);
     }
     if (!data || data.length < 1000) break;
   }
