@@ -12,6 +12,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 // GET /api/quickbooks/cdc — Vercel Cron, hourly. Asks QuickBooks what changed
 // since the last check (Change Data Capture) and refreshes those invoices.
 // Auth: Vercel sends `Authorization: Bearer ${CRON_SECRET}`.
+export const maxDuration = 300;
+
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
@@ -36,15 +38,14 @@ export async function GET(request: NextRequest) {
       5 * 60 * 1000
   );
   const runId = await startRun(service, 'hourly');
-  let invoiceIds: string[];
-  let paymentIds: string[];
+  let changed: ReturnType<typeof changedIdsFromCdc>;
   try {
     const json = await qboRequest<unknown>(
       service,
       'GET',
       `/cdc?entities=Invoice,Payment&changedSince=${encodeURIComponent(new Date(sinceMs).toISOString())}`
     );
-    ({ invoiceIds, paymentIds } = changedIdsFromCdc(json));
+    changed = changedIdsFromCdc(json);
   } catch (e) {
     // QuickBooks itself is unreachable: leave the cursor where it is, so the
     // next hourly run covers this same window again.
@@ -56,18 +57,25 @@ export async function GET(request: NextRequest) {
   // The CDC fetch succeeded, so the window is covered. Per-invoice failures
   // are recorded on the run (SIS Admin shows them; staff use Refresh on the tile).
   try {
-    const r = await processChanges(service, [
-      ...invoiceIds.map((id) => ({
-        entity: 'Invoice' as const,
-        id,
-        operation: 'cdc',
-      })),
-      ...paymentIds.map((id) => ({
-        entity: 'Payment' as const,
-        id,
-        operation: 'cdc',
-      })),
-    ]);
+    const r = await processChanges(
+      service,
+      [
+        ...changed.invoiceIds.map((id) => ({
+          entity: 'Invoice' as const,
+          id,
+          operation: 'cdc',
+        })),
+        ...changed.paymentIds.map((id) => ({
+          entity: 'Payment' as const,
+          id,
+          operation: 'cdc',
+        })),
+      ],
+      {
+        invoiceCustomers: changed.invoiceCustomers,
+        paymentCustomers: changed.paymentCustomers,
+      }
+    );
     const { error: cursorErr } = await service
       .from('qbo_connection')
       .update({ last_cdc_at: startedAt.toISOString() })

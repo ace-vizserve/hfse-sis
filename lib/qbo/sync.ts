@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import type { BillingMaps } from '@/lib/billing/classify';
 import {
   latestPaymentDates,
   type QbInvoiceFull,
@@ -61,14 +62,43 @@ async function fetchInvoice(
   }
 }
 
+/** What the caller already knows, so a refresh can skip QuickBooks calls. */
+export type RefreshHint = {
+  /** The QuickBooks customer of the changed invoice / payment, when known. */
+  customerId?: string;
+  /** The mapping, loaded once per run by the caller. */
+  maps?: BillingMaps;
+};
+
+/** True when a stored row with this id exists in the given table. */
+async function storedRowExists(
+  service: SupabaseClient,
+  table: 'qbo_invoices' | 'qbo_payments',
+  idColumn: 'qbo_invoice_id' | 'qbo_payment_id',
+  id: string,
+  realmId: string
+): Promise<boolean> {
+  const { data, error } = await service
+    .from(table)
+    .select(idColumn)
+    .eq(idColumn, id)
+    .eq('realm_id', realmId)
+    .limit(1);
+  if (error) throw new Error(`Stored record lookup failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
 /**
  * Re-reads one invoice from QuickBooks into the Billing store and recomputes
  * the student's tiles for the year(s) it was and is on. Invoices of customers
- * not linked to a student are ignored (linking loads their history).
+ * not linked to a student are ignored (linking loads their history). With a
+ * customer hint for an unlinked customer whose invoice the SIS never stored,
+ * QuickBooks is not asked at all.
  */
 export async function refreshInvoice(
   service: SupabaseClient,
-  qboInvoiceId: string
+  qboInvoiceId: string,
+  hint?: RefreshHint
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
   const { loadBillingMaps } = await import('@/lib/billing/settings.server');
   const { studentForCustomer } = await import('@/lib/billing/history.server');
@@ -77,6 +107,18 @@ export async function refreshInvoice(
 
   const realmId = await connectedRealmId(service);
   if (!realmId) return { known: false, stageChanged: false };
+  if (
+    hint?.customerId &&
+    !(await studentForCustomer(service, hint.customerId, realmId)) &&
+    !(await storedRowExists(
+      service,
+      'qbo_invoices',
+      'qbo_invoice_id',
+      qboInvoiceId,
+      realmId
+    ))
+  )
+    return { known: false, stageChanged: false };
   const inv = (await fetchInvoice(
     service,
     qboInvoiceId
@@ -126,31 +168,66 @@ export async function refreshInvoice(
     qboInvoiceId,
     studentNumber,
     realmId,
-    maps: await loadBillingMaps(service),
+    maps: hint?.maps ?? (await loadBillingMaps(service)),
     paymentDates,
   });
   const years = [r.before?.ayCode, r.after.ayCode].filter(
     (y): y is string => !!y
   );
-  const tiles = await syncTilesForStudent(service, studentNumber, [
-    ...new Set(years),
-  ]);
+  const tiles = await syncTilesForStudent(
+    service,
+    studentNumber,
+    [...new Set(years)],
+    { realmId }
+  );
+  const errors = [...tiles.errors];
+  let changed = tiles.changed;
+  // The invoice moved from another student (their customer was relinked):
+  // recompute that student's tiles too, for the year it was on.
+  if (r.previousStudent && r.before?.ayCode) {
+    const prev = await syncTilesForStudent(
+      service,
+      r.previousStudent,
+      [r.before.ayCode],
+      { realmId }
+    );
+    changed += prev.changed;
+    errors.push(...prev.errors.map((e) => `${r.previousStudent}: ${e}`));
+  }
   return {
     known: true,
-    stageChanged: tiles.changed > 0,
-    ...(tiles.errors.length ? { stageError: tiles.errors.join(' · ') } : {}),
+    stageChanged: changed > 0,
+    ...(errors.length ? { stageError: errors.join(' · ') } : {}),
   };
 }
 
-/** A payment changed: store it, then refresh every invoice it pays. */
+/**
+ * A payment changed: store it, then refresh every invoice it pays.
+ * `refreshedIds` lists those invoices, so a caller can skip refreshing them
+ * again in the same run. With a customer hint for an unlinked customer whose
+ * payment the SIS never stored, QuickBooks is not asked at all.
+ */
 export async function refreshInvoicesForPayment(
   service: SupabaseClient,
-  paymentId: string
-): Promise<{ updated: number; errors: string[] }> {
+  paymentId: string,
+  hint?: RefreshHint
+): Promise<{ updated: number; errors: string[]; refreshedIds: string[] }> {
   const { studentForCustomer } = await import('@/lib/billing/history.server');
   const { upsertPayment } = await import('@/lib/billing/store.server');
   const realmId = await connectedRealmId(service);
-  if (!realmId) return { updated: 0, errors: [] };
+  if (!realmId) return { updated: 0, errors: [], refreshedIds: [] };
+  if (
+    hint?.customerId &&
+    !(await studentForCustomer(service, hint.customerId, realmId)) &&
+    !(await storedRowExists(
+      service,
+      'qbo_payments',
+      'qbo_payment_id',
+      paymentId,
+      realmId
+    ))
+  )
+    return { updated: 0, errors: [], refreshedIds: [] };
   let payment: QbPayment | null = null;
   try {
     payment = (
@@ -170,7 +247,7 @@ export async function refreshInvoicesForPayment(
         .eq('realm_id', realmId);
       if (del.error)
         throw new Error(`Deleting stored payment failed: ${del.error.message}`);
-      return { updated: 0, errors: [] };
+      return { updated: 0, errors: [], refreshedIds: [] };
     }
     throw e;
   }
@@ -179,7 +256,7 @@ export async function refreshInvoicesForPayment(
     payment.CustomerRef.value,
     realmId
   );
-  if (!studentNumber) return { updated: 0, errors: [] };
+  if (!studentNumber) return { updated: 0, errors: [], refreshedIds: [] };
   const ids = await upsertPayment(service, {
     p: payment,
     studentNumber,
@@ -187,14 +264,15 @@ export async function refreshInvoicesForPayment(
   });
   let updated = 0;
   const errors: string[] = [];
-  for (const id of new Set(ids)) {
+  const refreshedIds = [...new Set(ids)];
+  for (const id of refreshedIds) {
     try {
-      const r = await refreshInvoice(service, id);
+      const r = await refreshInvoice(service, id, { maps: hint?.maps });
       if (r.known) updated++;
       if (r.stageError) errors.push(`Invoice ${id}: ${r.stageError}`);
     } catch (e) {
       errors.push(`Invoice ${id}: ${qboErrorMessage(e)}`);
     }
   }
-  return { updated, errors };
+  return { updated, errors, refreshedIds };
 }
