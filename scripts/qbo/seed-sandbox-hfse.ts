@@ -5,7 +5,11 @@
  *
  *   npx tsx --conditions=react-server --env-file=.env.development.local scripts/qbo/seed-sandbox-hfse.ts
  *
- * Idempotent: everything is found by name / DocNumber first. Refuses to run
+ * Idempotent: accounts, items, customers and invoices are found by name /
+ * DocNumber first; a payment is skipped once the invoice has any payment
+ * applied; the typed stage numbers are simply re-written each run (same
+ * values). Invoice numbers are positional, so a changed student list throws
+ * rather than reusing a number that belongs to another customer. Refuses to run
  * unless the SIS is connected to a SANDBOX company and Supabase is localhost.
  */
 import { qbEscape, qboQuery, qboRequest } from '@/lib/qbo/client';
@@ -29,7 +33,7 @@ async function guard() {
 }
 
 async function findOrCreate<T extends { Id: string }>(
-  entity: 'Account' | 'Item' | 'Customer' | 'PaymentMethod',
+  entity: 'Account' | 'Item' | 'Customer',
   name: string,
   body: Record<string, unknown>
 ): Promise<T> {
@@ -162,7 +166,7 @@ async function localStudents(): Promise<Student[]> {
 }
 
 // HFSE's form: "SURNAME, Given M." — middle name as an initial.
-export function hfseCustomerName(
+function hfseCustomerName(
   s: Pick<Student, 'lastName' | 'firstName' | 'middleName'>
 ): string {
   const mi = s.middleName?.trim()
@@ -180,15 +184,27 @@ async function invoice(
   memo: string | null
 ) {
   const doc = `HFSE0${nextDoc++}`;
-  const found = await qboQuery<{
+  type Inv = {
     Id: string;
     DocNumber: string;
     Balance: number;
-  }>(service, 'Invoice', `DocNumber = '${doc}'`, 'maxresults 1');
-  if (found[0]) return found[0];
-  const res = await qboRequest<{
-    Invoice: { Id: string; DocNumber: string; Balance: number };
-  }>(service, 'POST', '/invoice', {
+    TotalAmt: number;
+    CustomerRef?: { value: string };
+  };
+  const found = await qboQuery<Inv>(
+    service,
+    'Invoice',
+    `DocNumber = '${doc}'`,
+    'maxresults 1'
+  );
+  if (found[0]) {
+    if (found[0].CustomerRef?.value !== customer.value)
+      throw new Error(
+        `Invoice ${doc} already exists in the sandbox for another customer (${found[0].CustomerRef?.value}, expected ${customer.value} ${customer.name ?? ''}). Seed numbers are positional; the student list changed.`
+      );
+    return found[0];
+  }
+  const res = await qboRequest<{ Invoice: Inv }>(service, 'POST', '/invoice', {
     CustomerRef: customer,
     DocNumber: doc,
     TxnDate: txnDate,
@@ -211,12 +227,13 @@ async function invoice(
 
 async function pay(
   customer: Ref,
-  inv: { Id: string; Balance: number },
+  inv: { Id: string; Balance: number; TotalAmt: number },
   amount: number,
   txnDate: string,
   deposit: Ref
 ) {
-  if (Number(inv.Balance) === 0) return;
+  // Any payment already applied (balance below total) means a previous run paid it.
+  if (Number(inv.Balance) < Number(inv.TotalAmt)) return;
   await qboRequest(service, 'POST', '/payment', {
     CustomerRef: customer,
     TotalAmt: amount,
@@ -373,31 +390,36 @@ async function main() {
       '2026-08-01',
       null
     );
-    const full = await qboRequest<{
-      Invoice: { Id: string; SyncToken: string };
-    }>(service, 'GET', `/invoice/${v.Id}`);
-    await qboRequest(service, 'POST', '/invoice?operation=void', {
-      Id: full.Invoice.Id,
-      SyncToken: full.Invoice.SyncToken,
-    }).catch(() => {});
+    if (Number(v.TotalAmt) !== 0) {
+      const full = await qboRequest<{
+        Invoice: { Id: string; SyncToken: string };
+      }>(service, 'GET', `/invoice/${v.Id}`);
+      await qboRequest(service, 'POST', '/invoice?operation=void', {
+        Id: full.Invoice.Id,
+        SyncToken: full.Invoice.SyncToken,
+      }).catch((e) => console.warn(`  ! Could not void ${v.DocNumber}:`, e));
+    }
   }
-  // Sibling case: one child's typed Fees number is the next child's invoice.
+  // Sibling case: one child's typed Registration number is the next child's invoice.
   const sib = typed.filter(
     (t) => t.ay === '2027' && t.col === 'registrationInvoice'
   );
-  if (sib.length >= 2) sib[0] = { ...sib[0], doc: sib[1].doc };
+  if (sib.length >= 2) sib[0].doc = sib[1].doc; // same objects as in `typed`
 
   console.log('Typed numbers on local stages');
+  let written = 0;
   for (const t of typed) {
-    const { error } = await service
+    const { data, error } = await service
       .from(`ay${t.ay}_enrolment_status`)
       .update({ [t.col]: t.doc })
-      .eq('enroleeNumber', t.enroleeNumber);
+      .eq('enroleeNumber', t.enroleeNumber)
+      .select('enroleeNumber');
     if (error) throw new Error(error.message);
+    if (!data?.length)
+      console.warn(`  ! No stage row for ${t.ay} ${t.enroleeNumber}`);
+    else written++;
   }
-  console.log(
-    `Done: ${students.length} students, ${typed.length} typed numbers.`
-  );
+  console.log(`Done: ${students.length} students, ${written} typed numbers.`);
 }
 
 main().catch((e) => {
