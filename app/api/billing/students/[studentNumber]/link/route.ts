@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
+import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import {
   connectedRealmId,
   QboError,
@@ -36,9 +37,10 @@ async function studentExists(
       .eq('studentNumber', studentNumber)
       .limit(1);
     if (appError) {
+      // Only "this year has no admissions table" is skipped.
       if (
-        /PGRST205|42P01|Could not find the table|does not exist/i.test(
-          appError.message
+        /PGRST205|42P01|Could not find the table/i.test(
+          `${appError.code ?? ''} ${appError.message}`
         )
       )
         continue;
@@ -129,6 +131,17 @@ export async function POST(
       },
       { status: 409 }
     );
+  const { data: prevLink, error: prevError } = await service
+    .from('qbo_customers')
+    .select('qbo_customer_id')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId)
+    .maybeSingle();
+  if (prevError)
+    return NextResponse.json({ error: prevError.message }, { status: 500 });
+  const previousCustomerId =
+    (prevLink as { qbo_customer_id: string } | null)?.qbo_customer_id ?? null;
+  // history_loaded_at is cleared: the (new) customer's history is loaded below.
   const { error } = await service.from('qbo_customers').upsert({
     student_number: studentNumber,
     qbo_customer_id: parsed.data.customerId,
@@ -136,6 +149,7 @@ export async function POST(
     matched_by: auth.user.email ?? 'staff',
     matched_at: new Date().toISOString(),
     realm_id: realmId,
+    history_loaded_at: null,
   });
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -156,14 +170,47 @@ export async function POST(
     action: 'qbo.customer.link',
     entityType: 'qbo_customer',
     entityId: studentNumber,
-    context: { display_name: displayName, customer_id: parsed.data.customerId },
+    context: {
+      display_name: displayName,
+      customer_id: parsed.data.customerId,
+      previous_customer_id: previousCustomerId,
+    },
   });
+  // Relinked to a different customer: the years the old customer's invoices
+  // were on are recomputed too (tiles only count the new customer's invoices).
+  let oldYears: string[] = [];
+  if (previousCustomerId && previousCustomerId !== parsed.data.customerId) {
+    const { data: oldRows, error: oldError } = await service
+      .from('qbo_invoices')
+      .select('ay_code')
+      .eq('student_number', studentNumber)
+      .eq('qbo_customer_id', previousCustomerId)
+      .eq('realm_id', realmId)
+      .not('ay_code', 'is', null);
+    if (oldError)
+      console.warn('[billing] could not read the old customer’s invoices', {
+        student_number: studentNumber,
+        error: oldError.message,
+      });
+    oldYears = [
+      ...new Set(
+        ((oldRows ?? []) as Array<{ ay_code: string }>).map((r) => r.ay_code)
+      ),
+    ];
+  }
   const history = await loadCustomerHistory(service, studentNumber).catch(
     (e) => ({ errors: [qboErrorMessage(e)] })
   );
+  const historyErrors = [...history.errors];
+  if (oldYears.length) {
+    const t = await syncTilesForStudent(service, studentNumber, oldYears, {
+      realmId,
+    }).catch((e) => ({ changed: 0, errors: [qboErrorMessage(e)] }));
+    historyErrors.push(...t.errors);
+  }
   return NextResponse.json({
     ok: true,
     displayName,
-    historyErrors: history.errors,
+    historyErrors,
   });
 }

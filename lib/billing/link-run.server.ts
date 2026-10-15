@@ -65,8 +65,7 @@ export async function loadLinkStudents(
     } catch (e) {
       // Only "this year has no admissions tables" (e.g. a future AY) is skipped.
       const msg = e instanceof Error ? e.message : '';
-      if (/PGRST205|42P01|Could not find the table|does not exist/i.test(msg))
-        continue;
+      if (/PGRST205|42P01|Could not find the table/i.test(msg)) continue;
       throw e;
     }
     const statusRows = await fetchAllPages<Record<string, string | null>>(
@@ -118,7 +117,7 @@ export async function runLink(
   const realmId = await connectedRealmId(service);
   if (!realmId) throw new QboNotConnectedError();
 
-  const [customers, invoices, students, stored] = await Promise.all([
+  const [customers, invoices, students, storedRows] = await Promise.all([
     qboQueryAll<{ Id: string; DisplayName: string }>(
       service,
       'Customer',
@@ -129,17 +128,34 @@ export async function runLink(
       'Invoice'
     ),
     loadLinkStudents(service),
-    service
-      .from('qbo_customers')
-      .select('student_number, qbo_customer_id')
-      .eq('realm_id', realmId),
+    // Paged: every stored link must be seen, or a staff choice past the first
+    // 1000 rows would be overwritten by an automatic one.
+    fetchAllPages<{
+      student_number: string;
+      qbo_customer_id: string;
+      history_loaded_at: string | null;
+    }>(
+      (from, to) =>
+        service
+          .from('qbo_customers')
+          .select('student_number, qbo_customer_id, history_loaded_at')
+          .eq('realm_id', realmId)
+          .range(from, to) as unknown as PromiseLike<{
+          data: Array<{
+            student_number: string;
+            qbo_customer_id: string;
+            history_loaded_at: string | null;
+          }> | null;
+          error: { message: string } | null;
+        }>,
+      1000,
+      { tieBreak: 'student_number' }
+    ).catch((e: unknown) => {
+      throw new Error(
+        `Linked customers lookup failed: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }),
   ]);
-  if (stored.error)
-    throw new Error(`Linked customers lookup failed: ${stored.error.message}`);
-  const storedRows = (stored.data ?? []) as Array<{
-    student_number: string;
-    qbo_customer_id: string;
-  }>;
   const already = new Set(storedRows.map((r) => r.student_number));
   // customer id → the student holding it (stored links, then this run's).
   const claimed = new Map<string, string>(
@@ -247,37 +263,20 @@ export async function runLink(
     .lt('computed_at', runStartedAt);
   if (del.error)
     throw new Error(`Clearing the review list failed: ${del.error.message}`);
-  // Load the history of every linked student that has none stored yet (not
-  // just the newly linked), so a re-run after a timeout resumes where it
-  // stopped. One at a time (QuickBooks allows ~500 calls a minute; two
-  // queries per student). The audit row above is already written, so failures
-  // are returned in the result, not the audit.
+  // Load the history of every linked student whose load never finished (no
+  // history_loaded_at; not just the newly linked), so a re-run after a
+  // timeout resumes where it stopped. One at a time (QuickBooks allows ~500
+  // calls a minute; two queries per student). The audit row above is already
+  // written, so failures are returned in the result, not the audit.
   const { loadCustomerHistory } = await import('@/lib/billing/history.server');
   const { loadBillingMaps } = await import('@/lib/billing/settings.server');
-  const distinctStudents = async (table: string, tieBreak: string) =>
-    new Set(
-      (
-        await fetchAllPages<{ student_number: string }>(
-          (from, to) =>
-            service
-              .from(table)
-              .select('student_number')
-              .eq('realm_id', realmId)
-              .range(from, to) as unknown as PromiseLike<{
-              data: Array<{ student_number: string }> | null;
-              error: { message: string } | null;
-            }>,
-          1000,
-          { tieBreak }
-        )
-      ).map((r) => r.student_number)
-    );
-  const [withInvoices, withPayments] = await Promise.all([
-    distinctStudents('qbo_invoices', 'id'),
-    distinctStudents('qbo_payments', 'qbo_payment_id'),
-  ]);
-  const linkedNow = [...new Set([...claimed.values()])];
-  const todo = studentsNeedingHistory(linkedNow, withInvoices, withPayments);
+  const todo = studentsNeedingHistory(
+    storedRows.map((r) => ({
+      studentNumber: r.student_number,
+      historyLoadedAt: r.history_loaded_at,
+    })),
+    result.newlyLinked
+  );
   const preloaded = { realmId, maps: await loadBillingMaps(service) };
   for (const sn of todo) {
     try {

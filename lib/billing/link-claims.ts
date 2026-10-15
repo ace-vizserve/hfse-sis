@@ -20,11 +20,18 @@ export function claimCustomer(
   return true;
 }
 
-/** Linked students that have no stored invoice and no stored payment yet. */
+/**
+ * Linked students whose history load never finished (no `history_loaded_at`),
+ * plus this run's new links. A load that timed out part-way is resumed.
+ */
 export function studentsNeedingHistory(
-  linked: string[],
-  withInvoices: Set<string>,
-  withPayments: Set<string>
+  stored: Array<{ studentNumber: string; historyLoadedAt: string | null }>,
+  newlyLinked: string[]
 ): string[] {
-  return linked.filter((s) => !withInvoices.has(s) && !withPayments.has(s));
+  return [
+    ...new Set([
+      ...stored.filter((r) => !r.historyLoadedAt).map((r) => r.studentNumber),
+      ...newlyLinked,
+    ]),
+  ];
 }

@@ -23,13 +23,23 @@ describe('claimCustomer', () => {
 });
 
 describe('studentsNeedingHistory', () => {
-  it('keeps only students with neither invoices nor payments', () => {
+  it('keeps stored links whose history never finished, plus new links', () => {
     expect(
       studentsNeedingHistory(
-        ['A', 'B', 'C', 'D'],
-        new Set(['A']),
-        new Set(['B'])
+        [
+          { studentNumber: 'A', historyLoadedAt: '2026-10-15T00:00:00Z' },
+          { studentNumber: 'B', historyLoadedAt: null },
+        ],
+        ['C', 'B']
       )
-    ).toEqual(['C', 'D']);
+    ).toEqual(['B', 'C']);
+  });
+  it('nothing to do once every marker is set', () => {
+    expect(
+      studentsNeedingHistory(
+        [{ studentNumber: 'A', historyLoadedAt: '2026-10-15T00:00:00Z' }],
+        []
+      )
+    ).toEqual([]);
   });
 });
