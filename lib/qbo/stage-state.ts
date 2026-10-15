@@ -31,7 +31,7 @@ export type StagePatch = {
   paymentDate?: string | null;
 };
 
-const blank = (v: string | null | undefined) => !v || !v.trim();
+export const blank = (v: string | null | undefined) => !v || !v.trim();
 const norm = (v: string | null | undefined) => (blank(v) ? null : v!.trim());
 const sameDate = (a: string | null | undefined, b: string | null | undefined) =>
   (norm(a)?.slice(0, 10) ?? null) === (norm(b)?.slice(0, 10) ?? null);
