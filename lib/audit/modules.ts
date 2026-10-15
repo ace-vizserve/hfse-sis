@@ -85,6 +85,8 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       // QuickBooks invoicing for the Registration / Fees stages (migration
       // 188) — admissions work, connected once in SIS Admin.
       'qbo.',
+      // Billing module settings (migration 189).
+      'billing.',
     ],
   },
   {

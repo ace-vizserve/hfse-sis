@@ -268,6 +268,25 @@ export async function qboQuery<T>(
   return json.QueryResponse?.[entity] ?? [];
 }
 
+/** Every row, paged 1000 at a time (QuickBooks' query cap). */
+export async function qboQueryAll<T>(
+  service: SupabaseClient,
+  entity: string,
+  where = ''
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let start = 1; ; start += 1000) {
+    const page = await qboQuery<T>(
+      service,
+      entity,
+      where,
+      `startposition ${start} maxresults 1000`
+    );
+    out.push(...page);
+    if (page.length < 1000) return out;
+  }
+}
+
 /** The sentence a person sees when a QuickBooks call fails. */
 export function qboErrorMessage(e: unknown): string {
   if (e instanceof QboNotConnectedError) {

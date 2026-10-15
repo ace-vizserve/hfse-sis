@@ -106,6 +106,13 @@ export const ALL_AUDIT_ACTIONS = [
   'qbo.customer.create',
   'qbo.connection.connect',
   'qbo.connection.disconnect',
+  // Billing module (migration 189).
+  'qbo.customer.link',
+  'qbo.payment.create',
+  'billing.link.run',
+  'billing.mapping.update',
+  'billing.years.update',
+  'billing.deposit_accounts.update',
   // What parents may pick on the enrolment forms (migration 174). Opening and
   // closing a session are separate actions, so "when was Morning closed for
   // P2" is answerable without reading a diff.
@@ -300,6 +307,8 @@ export type AuditEntityType =
   | 'qbo_invoice'
   | 'qbo_customer'
   | 'qbo_connection'
+  | 'qbo_payment'
+  | 'billing_setting'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.
   | 'admission_option'

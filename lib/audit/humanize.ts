@@ -205,6 +205,12 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.customer.create': 'QuickBooks customer added',
   'qbo.connection.connect': 'QuickBooks connected',
   'qbo.connection.disconnect': 'QuickBooks disconnected',
+  'qbo.customer.link': 'Student linked to QuickBooks customer',
+  'qbo.payment.create': 'Payment recorded in QuickBooks',
+  'billing.link.run': 'Students linked to QuickBooks',
+  'billing.mapping.update': 'Billing tile mapping changed',
+  'billing.years.update': 'Billing year ranges changed',
+  'billing.deposit_accounts.update': 'Payment accounts changed',
   'admission_option.create': 'Enrolment form option added',
   'admission_option.update': 'Enrolment form option edited',
   'admission_option.open': 'Enrolment form session reopened',
@@ -1925,6 +1931,38 @@ function templateSummary(
     case 'qbo.connection.connect':
     case 'qbo.connection.disconnect':
       return joinParts([str(ctx.company_name)].filter(Boolean));
+    case 'qbo.customer.link':
+      return joinParts([str(ctx.display_name)].filter(Boolean));
+    case 'qbo.payment.create': {
+      const parts: string[] = [];
+      const total = Number(ctx.total);
+      if (
+        ctx.total !== undefined &&
+        ctx.total !== null &&
+        Number.isFinite(total)
+      ) {
+        parts.push(
+          `S$${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+      }
+      const account = str(ctx.deposit_account);
+      if (account) parts.push(account);
+      return joinParts(parts);
+    }
+    case 'billing.link.run': {
+      const linked = ['invoice', 'sibling', 'name'].reduce(
+        (n, k) => n + (Number(ctx[k]) || 0),
+        0
+      );
+      return joinParts([
+        `${linked} linked`,
+        `${Number(ctx.review) || 0} to review`,
+      ]);
+    }
+    case 'billing.mapping.update':
+    case 'billing.years.update':
+    case 'billing.deposit_accounts.update':
+      return joinParts([]);
 
     // Context written by app/api/sis/admission-options/**.
     case 'admission_option.open':
