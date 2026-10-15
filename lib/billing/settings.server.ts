@@ -16,8 +16,11 @@ import {
 } from '@/lib/qbo/client';
 import {
   groupChanges,
+  tilesSweepBlocker,
+  yearAfterReclassify,
   type InvoiceChange,
 } from '@/lib/billing/settings-helpers';
+import { syncTilesForAllStudents } from '@/lib/billing/tiles.server';
 
 export type BillingSettings = {
   accounts: Array<{
@@ -244,17 +247,25 @@ export async function loadSettings(
   };
 }
 
+/**
+ * Re-applies the mapping and year ranges to every stored invoice. Returns the
+ * students whose invoices moved and every year they moved from or to.
+ */
 export async function reclassifyAll(
-  service: SupabaseClient
-): Promise<{ changed: string[] }> {
-  const realmId = await connectedRealmId(service);
-  if (!realmId) return { changed: [] };
-  const maps = await loadBillingMaps(service);
+  service: SupabaseClient,
+  preloaded?: { realmId: string; maps: BillingMaps }
+): Promise<{ changed: string[]; years: string[] }> {
+  const realmId = preloaded?.realmId ?? (await connectedRealmId(service));
+  if (!realmId) return { changed: [], years: [] };
+  const maps = preloaded?.maps ?? (await loadBillingMaps(service));
   const changed = new Set<string>();
+  const years = new Set<string>();
   for (let from = 0; ; from += 1000) {
     const { data, error } = await service
       .from('qbo_invoices')
-      .select('id, student_number, txn_date, lines, ay_code, stage_keys')
+      .select(
+        'id, student_number, txn_date, lines, ay_code, stage_keys, enrolee_number'
+      )
       .eq('realm_id', realmId)
       .order('id')
       .range(from, from + 999);
@@ -267,15 +278,20 @@ export async function reclassifyAll(
       lines: InvoiceLine[];
       ay_code: string | null;
       stage_keys: string[];
+      enrolee_number: string | null;
     }>) {
       const c = classifyInvoice(r.lines ?? [], r.txn_date, maps);
+      // A KD #231 row keeps its year; its stage keys still follow the mapping.
+      const ayCode = yearAfterReclassify(r.enrolee_number, r.ay_code, c.ayCode);
       if (
-        c.ayCode === r.ay_code &&
+        ayCode === r.ay_code &&
         c.stageKeys.join(',') === (r.stage_keys ?? []).join(',')
       )
         continue;
-      pending.push({ id: r.id, ayCode: c.ayCode, stageKeys: c.stageKeys });
+      pending.push({ id: r.id, ayCode, stageKeys: c.stageKeys });
       changed.add(r.student_number);
+      if (r.ay_code) years.add(r.ay_code);
+      if (ayCode) years.add(ayCode);
     }
     for (const g of groupChanges(pending)) {
       const up = await service
@@ -287,5 +303,36 @@ export async function reclassifyAll(
     }
     if (!data || data.length < 1000) break;
   }
-  return { changed: [...changed] };
+  return { changed: [...changed], years: [...years] };
+}
+
+/**
+ * After the mapping or the year ranges are saved: re-apply them to every
+ * stored invoice, then recompute the tiles of the students whose invoices
+ * moved plus every student with an invoice on a tile, for every year in the
+ * ranges and every year an invoice moved from. While no year range or no
+ * Registration / Fees mapping exists, the tiles are not touched.
+ */
+export async function sweepAfterSettingsSave(service: SupabaseClient): Promise<{
+  studentsAffected: number;
+  tilesSkipped?: string;
+  tileErrors: string[];
+}> {
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return { studentsAffected: 0, tileErrors: [] };
+  const maps = await loadBillingMaps(service);
+  const { changed, years } = await reclassifyAll(service, { realmId, maps });
+  const blocker = tilesSweepBlocker(maps);
+  if (blocker)
+    return {
+      studentsAffected: changed.length,
+      tilesSkipped: blocker,
+      tileErrors: [],
+    };
+  const tiles = await syncTilesForAllStudents(
+    service,
+    [...new Set([...maps.ranges.map((r) => r.ayCode), ...years])],
+    { realmId, extraStudents: changed }
+  );
+  return { studentsAffected: changed.length, tileErrors: tiles.errors };
 }

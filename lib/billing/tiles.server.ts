@@ -6,6 +6,7 @@ import {
   stageFromInvoices,
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
+import { rowsOfCustomer, voidedMatch } from '@/lib/billing/sync-helpers';
 import { connectedRealmId } from '@/lib/qbo/client';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { blank, QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
@@ -19,30 +20,48 @@ import {
 /**
  * Recompute the Registration and Fees stages of one student from their stored
  * invoices, for the given years (default: every year one of their invoices is
- * on a tile). A year where the student has no admissions row is skipped.
+ * on a tile). A year where the student has no admissions row is skipped. Only
+ * the invoices of the student's currently linked customer count.
  */
 export async function syncTilesForStudent(
   service: SupabaseClient,
   studentNumber: string,
-  ayCodes?: string[]
+  ayCodes?: string[],
+  opts?: { realmId?: string }
 ): Promise<{ changed: number; errors: string[] }> {
-  const realmId = await connectedRealmId(service);
+  const realmId = opts?.realmId ?? (await connectedRealmId(service));
   if (!realmId) return { changed: 0, errors: [] };
+  const { data: link, error: linkErr } = await service
+    .from('qbo_customers')
+    .select('qbo_customer_id')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId)
+    .maybeSingle();
+  if (linkErr)
+    throw new Error(`Linked customer lookup failed: ${linkErr.message}`);
+  // Not linked: no invoice is this student's, so nothing is changed.
+  if (!link) return { changed: 0, errors: [] };
   // Voided invoices are kept: a tile whose only invoice was voided must reset.
   const { data, error } = await service
     .from('qbo_invoices')
-    .select('doc_number, txn_date, state, payment_date, ay_code, stage_keys')
+    .select(
+      'doc_number, txn_date, state, payment_date, ay_code, stage_keys, qbo_customer_id'
+    )
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId);
   if (error) throw new Error(`Invoice lookup failed: ${error.message}`);
-  const rows = (data ?? []) as Array<{
-    doc_number: string | null;
-    txn_date: string | null;
-    state: TileInvoice['state'];
-    payment_date: string | null;
-    ay_code: string | null;
-    stage_keys: string[] | null;
-  }>;
+  const rows = rowsOfCustomer(
+    (data ?? []) as Array<{
+      doc_number: string | null;
+      txn_date: string | null;
+      state: TileInvoice['state'];
+      payment_date: string | null;
+      ay_code: string | null;
+      stage_keys: string[] | null;
+      qbo_customer_id: string | null;
+    }>,
+    (link as { qbo_customer_id: string }).qbo_customer_id
+  );
   const years = ayCodes ?? [
     ...new Set(
       rows
@@ -91,14 +110,12 @@ export async function syncTilesForStudent(
           )
           .map(toTile);
         if (tile.length === 0 && !blank(current.invoice)) {
-          // Nothing is on this tile now. If the stage still shows the number
-          // of one of this student's stored invoices (it moved off the tile or
-          // to another year), treat that invoice as voided so the stage
-          // resets. A hand-typed number matching no stored invoice is left.
-          const stale = rows.find(
-            (r) => r.doc_number?.trim() === current.invoice!.trim()
-          );
-          if (stale) tile = [{ ...toTile(stale), state: 'voided' }];
+          // Nothing is on this tile now. The stage resets only when the number
+          // it shows is a stored invoice that was actually voided (or deleted
+          // in QuickBooks). A live invoice that is just not on this tile, or a
+          // hand-typed number, is left alone.
+          const stale = voidedMatch(rows, current.invoice!);
+          if (stale) tile = [toTile(stale)];
         }
         const patch = stageFromInvoices(stage, tile, current);
         if (!patch) continue;
@@ -125,14 +142,16 @@ export async function syncTilesForStudent(
 }
 
 /**
- * Recompute the tiles of every student with a stored invoice on a year, for the
- * given years. Database only, no QuickBooks calls. Returns the first errors.
+ * Recompute the tiles of every student with a stored invoice on a year, plus
+ * `extraStudents` (e.g. those whose invoices just lost their year), for the
+ * given years. Database only, no QuickBooks calls.
  */
 export async function syncTilesForAllStudents(
   service: SupabaseClient,
-  years: string[]
+  years: string[],
+  opts?: { realmId?: string; extraStudents?: string[] }
 ): Promise<{ students: number; errors: string[] }> {
-  const realmId = await connectedRealmId(service);
+  const realmId = opts?.realmId ?? (await connectedRealmId(service));
   if (!realmId) return { students: 0, errors: [] };
   const rows = await fetchAllPages<{ student_number: string }>(
     (from, to) =>
@@ -148,11 +167,16 @@ export async function syncTilesForAllStudents(
     1000,
     { tieBreak: 'id' }
   );
-  const students = [...new Set(rows.map((r) => r.student_number))];
+  const students = [
+    ...new Set([
+      ...rows.map((r) => r.student_number),
+      ...(opts?.extraStudents ?? []),
+    ]),
+  ];
   const errors: string[] = [];
   for (const sn of students) {
     try {
-      const r = await syncTilesForStudent(service, sn, years);
+      const r = await syncTilesForStudent(service, sn, years, { realmId });
       errors.push(...r.errors.map((e) => `${sn}: ${e}`));
     } catch (e) {
       errors.push(`${sn}: ${e instanceof Error ? e.message : String(e)}`);

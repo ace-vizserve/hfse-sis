@@ -9,6 +9,7 @@ import {
   type QbInvoiceFull,
   type QbPayment,
 } from '@/lib/billing/invoice-row';
+import { yearAfterReclassify } from '@/lib/billing/settings-helpers';
 import { qboRequest } from '@/lib/qbo/client';
 import { invoiceState } from '@/lib/qbo/invoice-snapshot';
 import { paymentDateFor } from '@/lib/qbo/sync';
@@ -72,16 +73,25 @@ export async function upsertInvoice(
     /** invoice id → latest payment date, when the caller has the payments. */
     paymentDates?: Map<string, string>;
   }
-): Promise<{ before: Place | null; after: Place }> {
+): Promise<{
+  before: Place | null;
+  after: Place;
+  /** The student the invoice belonged to before, when it moved to another. */
+  previousStudent: string | null;
+}> {
   const { data: prev, error: prevErr } = await service
     .from('qbo_invoices')
-    .select('id, ay_code, stage_keys, enrolee_number')
+    .select('id, ay_code, stage_keys, enrolee_number, student_number')
     .eq('qbo_invoice_id', args.qboInvoiceId)
     .maybeSingle();
   if (prevErr) throw new Error(`Invoice lookup failed: ${prevErr.message}`);
   const before: Place | null = prev
     ? { ayCode: prev.ay_code, stageKeys: prev.stage_keys ?? [] }
     : null;
+  const previousStudent =
+    prev && prev.student_number !== args.studentNumber
+      ? (prev.student_number as string)
+      : null;
 
   if (!args.inv) {
     // Deleted in QuickBooks: keep the row, mark it voided, keep its place so
@@ -98,7 +108,11 @@ export async function upsertInvoice(
       if (up.error)
         throw new Error(`Invoice update failed: ${up.error.message}`);
     }
-    return { before, after: before ?? { ayCode: null, stageKeys: [] } };
+    return {
+      before,
+      after: before ?? { ayCode: null, stageKeys: [] },
+      previousStudent: null,
+    };
   }
 
   const inv = args.inv;
@@ -126,9 +140,12 @@ export async function upsertInvoice(
     lines,
     memo: inv.CustomerMemo?.value ?? null,
     private_note: inv.PrivateNote ?? null,
-    // A row the KD #231 tile routes made (enrolee_number set) keeps its year;
-    // Phase 5 removes those routes and this rule with them.
-    ay_code: prev?.enrolee_number ? prev.ay_code : place.ayCode,
+    // A row the KD #231 tile routes made (enrolee_number set) keeps its year.
+    ay_code: yearAfterReclassify(
+      prev?.enrolee_number,
+      prev?.ay_code ?? null,
+      place.ayCode
+    ),
     stage_keys: place.stageKeys,
     sync_token: inv.SyncToken,
     synced_at: new Date().toISOString(),
@@ -153,6 +170,7 @@ export async function upsertInvoice(
       ayCode: row.ay_code,
       stageKeys: place.stageKeys,
     },
+    previousStudent,
   };
 }
 

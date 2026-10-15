@@ -4,7 +4,51 @@ import {
   firstDuplicate,
   groupChanges,
   isRealDate,
+  TILES_SKIPPED_MESSAGE,
+  tilesSweepBlocker,
+  yearAfterReclassify,
 } from '@/lib/billing/settings-helpers';
+import type { BillingMaps, StageChoice } from '@/lib/billing/classify';
+
+const maps = (
+  accounts: Array<[string, StageChoice]>,
+  items: Array<[string, StageChoice]>,
+  ranges: BillingMaps['ranges']
+): BillingMaps => ({
+  accounts: new Map(accounts),
+  items: new Map(items),
+  ranges,
+});
+const AY = [{ ayCode: 'AY2027', startsOn: '2026-01-01', endsOn: '2026-12-31' }];
+
+describe('yearAfterReclassify', () => {
+  it('a KD #231 row (enrolee number set) keeps its stored year', () => {
+    expect(yearAfterReclassify('E1', 'AY2026', null)).toBe('AY2026');
+    expect(yearAfterReclassify('E1', 'AY2026', 'AY2027')).toBe('AY2026');
+  });
+  it('any other row takes the classified year', () => {
+    expect(yearAfterReclassify(null, 'AY2026', 'AY2027')).toBe('AY2027');
+    expect(yearAfterReclassify(undefined, 'AY2026', null)).toBeNull();
+  });
+});
+
+describe('tilesSweepBlocker', () => {
+  it('blocks with no year range', () => {
+    expect(tilesSweepBlocker(maps([['a', 'fees']], [], []))).toBe(
+      TILES_SKIPPED_MESSAGE
+    );
+  });
+  it('blocks with no Registration or Fees mapping', () => {
+    expect(tilesSweepBlocker(maps([], [], AY))).toBe(TILES_SKIPPED_MESSAGE);
+    expect(tilesSweepBlocker(maps([['a', 'none']], [['i', 'none']], AY))).toBe(
+      TILES_SKIPPED_MESSAGE
+    );
+  });
+  it('allows a range plus one account or one item mapping', () => {
+    expect(tilesSweepBlocker(maps([['a', 'registration']], [], AY))).toBeNull();
+    expect(tilesSweepBlocker(maps([], [['i', 'fees']], AY))).toBeNull();
+  });
+});
 
 describe('firstDuplicate', () => {
   it('finds the repeated key', () => {
