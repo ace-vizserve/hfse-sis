@@ -74,6 +74,9 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Adds a customer in QuickBooks only — no SIS table is written.',
   'app/api/quickbooks/disconnect/route.ts':
     'Deletes qbo_connection, read uncached by lib/qbo/client.ts and the SIS Admin QuickBooks page.',
+  // Billing link tables only (qbo_customers, billing_link_review); no cached page reads them
+  'app/api/billing/link/route.ts':
+    'Writes qbo_customers and deletes billing_link_review — no cached module reads either table.',
   'app/api/billing/students/[studentNumber]/link/route.ts':
     'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
   // ── writes no database row at all ──────────────────────────────────────
