@@ -78,7 +78,7 @@ function applyState(
 }
 
 /** Drop every key that already matches the stage; null when nothing is left. */
-function onlyChanges(
+export function onlyChanges(
   patch: StagePatch,
   current: StageSnapshot
 ): StagePatch | null {
