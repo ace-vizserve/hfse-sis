@@ -74,6 +74,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Adds a customer in QuickBooks only — no SIS table is written.',
   'app/api/quickbooks/disconnect/route.ts':
     'Deletes qbo_connection, read uncached by lib/qbo/client.ts and the SIS Admin QuickBooks page.',
+  'app/api/billing/students/[studentNumber]/link/route.ts':
+    'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached
