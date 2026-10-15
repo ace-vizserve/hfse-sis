@@ -23,6 +23,7 @@ import {
 } from '@/components/p-files/document-group-tabs';
 import { FamilyContactCard } from '@/components/p-files/family-contact-card';
 import { RecentActivityStrip } from '@/components/p-files/recent-activity-strip';
+import { EnrollmentHistoryChips } from '@/components/sis/enrollment-history-chips';
 import {
   Alert,
   AlertDescription,
@@ -58,6 +59,7 @@ import {
   classifyUrgency,
 } from '@/lib/p-files/urgency';
 import { freshenAyDocuments } from '@/lib/p-files/freshen-document-statuses';
+import { getEnrollmentHistory } from '@/lib/sis/queries';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -135,6 +137,12 @@ export default async function StudentDocumentDetailPage({
   }
 
   const student = await getStudentDocumentDetail(selectedAy, enroleeNumber);
+  // Each year has its own enrolee number, so switching year means following
+  // the student number to that year's folder — the same history Admissions
+  // shows above its own record.
+  const history = student?.studentNumber
+    ? await getEnrollmentHistory(student.studentNumber)
+    : [];
   if (!student) {
     return (
       <PageShell>
@@ -444,6 +452,14 @@ export default async function StudentDocumentDetailPage({
           </div>
         </div>
       </header>
+
+      {history.length > 1 && (
+        <EnrollmentHistoryChips
+          history={history}
+          currentAyCode={selectedAy}
+          basePath="/p-files"
+        />
+      )}
 
       {/* ⚠ `enrolled &&` IS THE FIX, NOT DECORATION. This alert was written
           when P-Files held enrolled students only, so "no section" could only
