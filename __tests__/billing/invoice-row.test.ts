@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { invoiceLines, paymentApplied } from '@/lib/billing/invoice-row';
+import {
+  invoiceLines,
+  latestPaymentDates,
+  paymentApplied,
+} from '@/lib/billing/invoice-row';
 
 describe('invoiceLines', () => {
   it('keeps item lines with their account, skips subtotal lines', () => {
@@ -80,6 +84,26 @@ describe('paymentApplied', () => {
     ).toEqual([
       { invoiceId: '1', amount: 500 },
       { invoiceId: '2', amount: 200 },
+    ]);
+  });
+});
+
+describe('latestPaymentDates', () => {
+  it('keeps the latest date per invoice and ignores undated payments', () => {
+    const m = latestPaymentDates([
+      { txnDate: '2026-03-01', applied: [{ invoiceId: '1', amount: 5 }] },
+      {
+        txnDate: '2026-04-02T00:00:00Z',
+        applied: [
+          { invoiceId: '1', amount: 5 },
+          { invoiceId: '2', amount: 5 },
+        ],
+      },
+      { txnDate: null, applied: [{ invoiceId: '3', amount: 5 }] },
+    ]);
+    expect([...m.entries()]).toEqual([
+      ['1', '2026-04-02'],
+      ['2', '2026-04-02'],
     ]);
   });
 });

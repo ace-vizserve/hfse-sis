@@ -7,7 +7,7 @@ import {
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
 import { connectedRealmId } from '@/lib/qbo/client';
-import { QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
+import { blank, QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
 import {
   QBO_SYNC_LABEL,
   QBO_SYSTEM_ACTOR,
@@ -63,43 +63,61 @@ export async function syncTilesForStudent(
     if (appErr) {
       // A year with no applications table is skipped; anything else is real.
       if (appErr.code === 'PGRST205') continue;
-      throw new Error(`Enrolee lookup failed for ${ayCode}: ${appErr.message}`);
+      errors.push(`${ayCode}: enrolee lookup failed: ${appErr.message}`);
+      continue;
     }
     const enroleeNumber = (app as { enroleeNumber: string } | null)
       ?.enroleeNumber;
     if (!enroleeNumber) continue;
     for (const stage of QBO_STAGE_KEYS) {
-      const current = await readStageSnapshot(
-        service,
-        ayCode,
-        enroleeNumber,
-        stage
-      );
-      if (!current) continue;
-      const tile: TileInvoice[] = rows
-        .filter(
-          (r) => r.ay_code === ayCode && (r.stage_keys ?? []).includes(stage)
-        )
-        .map((r) => ({
+      try {
+        const current = await readStageSnapshot(
+          service,
+          ayCode,
+          enroleeNumber,
+          stage
+        );
+        if (!current) continue;
+        const toTile = (r: (typeof rows)[number]): TileInvoice => ({
           docNumber: r.doc_number,
           txnDate: r.txn_date,
           state: r.state,
           paymentDate: r.payment_date,
-        }));
-      const patch = stageFromInvoices(stage, tile, current);
-      if (!patch) continue;
-      const res = await writeStageFromQbo(service, {
-        ayCode,
-        enroleeNumber,
-        stage,
-        patch,
-        actor: QBO_SYSTEM_ACTOR,
-        updatedBy: QBO_SYNC_LABEL,
-        docNumber: patch.invoice ?? current.invoice ?? null,
-        trigger: 'sync',
-      });
-      if (res.ok) changed += res.changed > 0 ? 1 : 0;
-      else errors.push(`${ayCode} ${stage}: ${res.error}`);
+        });
+        let tile: TileInvoice[] = rows
+          .filter(
+            (r) => r.ay_code === ayCode && (r.stage_keys ?? []).includes(stage)
+          )
+          .map(toTile);
+        if (tile.length === 0 && !blank(current.invoice)) {
+          // Nothing is on this tile now. If the stage still shows the number
+          // of one of this student's stored invoices (it moved off the tile or
+          // to another year), treat that invoice as voided so the stage
+          // resets. A hand-typed number matching no stored invoice is left.
+          const stale = rows.find(
+            (r) => r.doc_number?.trim() === current.invoice!.trim()
+          );
+          if (stale) tile = [{ ...toTile(stale), state: 'voided' }];
+        }
+        const patch = stageFromInvoices(stage, tile, current);
+        if (!patch) continue;
+        const res = await writeStageFromQbo(service, {
+          ayCode,
+          enroleeNumber,
+          stage,
+          patch,
+          actor: QBO_SYSTEM_ACTOR,
+          updatedBy: QBO_SYNC_LABEL,
+          docNumber: patch.invoice ?? current.invoice ?? null,
+          trigger: 'sync',
+        });
+        if (res.ok) changed += res.changed > 0 ? 1 : 0;
+        else errors.push(`${ayCode} ${stage}: ${res.error}`);
+      } catch (e) {
+        errors.push(
+          `${ayCode} ${stage}: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
     }
   }
   return { changed, errors };

@@ -57,3 +57,22 @@ export function paymentApplied(
   }
   return out;
 }
+
+/** Latest payment date (YYYY-MM-DD) per invoice id; payments with no date are ignored. */
+export function latestPaymentDates(
+  payments: Array<{
+    txnDate: string | null;
+    applied: Array<{ invoiceId: string; amount: number }>;
+  }>
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of payments) {
+    if (!p.txnDate) continue;
+    const d = p.txnDate.slice(0, 10);
+    for (const a of p.applied) {
+      const cur = out.get(a.invoiceId);
+      if (!cur || d > cur) out.set(a.invoiceId, d);
+    }
+  }
+  return out;
+}

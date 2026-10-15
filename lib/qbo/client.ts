@@ -222,6 +222,7 @@ export async function qboRequest<T>(
   const base = `${qboApiBase(conn.environment)}/v3/company/${conn.realm_id}`;
   const sep = path.includes('?') ? '&' : '?';
 
+  let throttled = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = await accessToken(service, conn, attempt > 0);
     const res = await fetch(`${base}${path}${sep}${MINOR_VERSION}`, {
@@ -235,6 +236,15 @@ export async function qboRequest<T>(
       cache: 'no-store',
     });
     if (res.status === 401 && attempt === 0) continue;
+    if (res.status === 429 && throttled < 3) {
+      // Throttled: wait Retry-After (else 2s, 4s, 8s) and try again.
+      const asked = Number(res.headers?.get?.('Retry-After'));
+      const waitMs = asked > 0 ? asked * 1000 : 2000 * 2 ** throttled;
+      throttled++;
+      await new Promise((r) => setTimeout(r, waitMs));
+      attempt--; // a throttle retry does not use up the 401 retry
+      continue;
+    }
     const json = await res.json().catch(() => null);
     const fault = json?.Fault?.Error?.[0];
     if (!res.ok || fault) {

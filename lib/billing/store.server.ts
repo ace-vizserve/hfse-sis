@@ -69,11 +69,13 @@ export async function upsertInvoice(
     maps: BillingMaps;
     source?: 'created' | 'synced';
     createdBy?: { id: string; email: string | null };
+    /** invoice id → latest payment date, when the caller has the payments. */
+    paymentDates?: Map<string, string>;
   }
 ): Promise<{ before: Place | null; after: Place }> {
   const { data: prev, error: prevErr } = await service
     .from('qbo_invoices')
-    .select('id, ay_code, stage_keys, lines, txn_date')
+    .select('id, ay_code, stage_keys, enrolee_number')
     .eq('qbo_invoice_id', args.qboInvoiceId)
     .maybeSingle();
   if (prevErr) throw new Error(`Invoice lookup failed: ${prevErr.message}`);
@@ -116,11 +118,17 @@ export async function upsertInvoice(
     total: Number(inv.TotalAmt),
     balance: Number(inv.Balance),
     state,
-    payment_date: state === 'paid' ? await paymentDateFor(service, inv) : null,
+    payment_date:
+      state !== 'paid'
+        ? null
+        : (args.paymentDates?.get(inv.Id) ??
+          (await paymentDateFor(service, inv))),
     lines,
     memo: inv.CustomerMemo?.value ?? null,
     private_note: inv.PrivateNote ?? null,
-    ay_code: place.ayCode,
+    // A row the KD #231 tile routes made (enrolee_number set) keeps its year;
+    // Phase 5 removes those routes and this rule with them.
+    ay_code: prev?.enrolee_number ? prev.ay_code : place.ayCode,
     stage_keys: place.stageKeys,
     sync_token: inv.SyncToken,
     synced_at: new Date().toISOString(),
@@ -139,7 +147,13 @@ export async function upsertInvoice(
     throw new Error(
       `Saving invoice ${inv.DocNumber ?? inv.Id} failed: ${res.error.message}`
     );
-  return { before, after: place };
+  return {
+    before,
+    after: {
+      ayCode: row.ay_code,
+      stageKeys: place.stageKeys,
+    },
+  };
 }
 
 export async function upsertPayment(

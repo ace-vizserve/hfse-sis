@@ -5,6 +5,7 @@ import {
   qbEscape,
   qboErrorMessage,
   qboQueryAll,
+  qboRequest,
 } from '@/lib/qbo/client';
 import { qboInvoiceUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
@@ -84,6 +85,62 @@ describe('QuickBooks client helpers', () => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
       expect(urls[0]).toContain('startposition%201%20');
       expect(urls[1]).toContain('startposition%201001%20');
+    });
+  });
+
+  describe('qboRequest throttling', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it('waits and retries on 429', async () => {
+      vi.useFakeTimers();
+      const farFuture = new Date(Date.now() + 3_600_000).toISOString();
+      const service = {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  realm_id: 'r1',
+                  environment: 'sandbox',
+                  refresh_token: 'rt',
+                  access_token: 'at',
+                  access_token_expires_at: farFuture,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      } as never;
+      const responses = [
+        {
+          ok: false,
+          status: 429,
+          headers: { get: () => null },
+          statusText: 'Too Many Requests',
+          json: async () => null,
+        },
+        {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({ Invoice: { Id: '1' } }),
+        },
+      ];
+      const fetchMock = vi.fn(async (..._args: unknown[]) => responses.shift());
+      vi.stubGlobal('fetch', fetchMock);
+
+      const p = qboRequest<{ Invoice: { Id: string } }>(
+        service,
+        'GET',
+        '/invoice/1'
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await p).toEqual({ Invoice: { Id: '1' } });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 
