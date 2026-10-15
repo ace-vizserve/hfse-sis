@@ -26,6 +26,94 @@ const invoices = [
 ];
 const index = buildLinkIndex(customers, invoices);
 
+describe('link rules, fix round 1', () => {
+  it('single number whose customer does not carry the student name: review', () => {
+    expect(
+      proposeLink(
+        {
+          studentNumber: 'H7',
+          lastName: 'Dela Cruz',
+          firstName: 'Juan',
+          typedNumbers: ['HFSE061003'],
+        },
+        index
+      )
+    ).toEqual({
+      kind: 'review',
+      candidates: [
+        {
+          customerId: '8',
+          displayName: 'REYES, Maximo Aurelio T.',
+          reason: 'typed invoice number',
+        },
+      ],
+    });
+  });
+  it('single number with null student names: links by the number', () => {
+    expect(
+      proposeLink(
+        {
+          studentNumber: 'H8',
+          lastName: null,
+          firstName: null,
+          typedNumbers: ['HFSE061003'],
+        },
+        index
+      )
+    ).toEqual({ kind: 'link', customerId: '8', reason: 'invoice' });
+  });
+  it('a typed number disambiguates the duplicate Obias pair', () => {
+    const withObias = buildLinkIndex(customers, [
+      ...invoices,
+      { docNumber: 'HFSE061005', customerId: '3' },
+    ]);
+    expect(
+      proposeLink(
+        {
+          studentNumber: 'H4',
+          lastName: 'Obias',
+          firstName: 'Eon Mach',
+          typedNumbers: ['HFSE061005'],
+        },
+        withObias
+      )
+    ).toEqual({ kind: 'link', customerId: '3', reason: 'invoice' });
+  });
+  it('junk typed values are ignored in favour of a good number', () => {
+    expect(
+      proposeLink(
+        {
+          studentNumber: 'H1',
+          lastName: 'Reyes',
+          firstName: 'Maximo Aurelio',
+          typedNumbers: ['None', '\t', 'INV-0042-20250101', 'HFSE061003'],
+        },
+        index
+      )
+    ).toEqual({ kind: 'link', customerId: '8', reason: 'invoice' });
+  });
+  it('a DocNumber on two customers invoices is ignored', () => {
+    const clash = buildLinkIndex(customers, [
+      ...invoices,
+      { docNumber: 'HFSE061001', customerId: '2' },
+    ]);
+    expect(
+      proposeLink(
+        {
+          studentNumber: 'H2',
+          lastName: 'Pagcaliwangan',
+          firstName: 'Nisa Yelle',
+          typedNumbers: ['HFSE061001'],
+        },
+        clash
+      )
+    ).toEqual({ kind: 'link', customerId: '1', reason: 'name' });
+  });
+  it('keys AJMAL,Muhammad Ibrahim S. without a space after the comma', () => {
+    expect(customerNameKey('AJMAL,Muhammad Ibrahim S.')).toBe('ajmal|muhammad');
+  });
+});
+
 describe('names', () => {
   it('keys a SIS name and a QuickBooks name the same way', () => {
     expect(nameKey('Baña', 'Hannah Zoey')).toBe('bana|hannah');

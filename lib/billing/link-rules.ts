@@ -45,10 +45,20 @@ export function buildLinkIndex(
     const k = customerNameKey(c.displayName);
     if (k) byNameKey.set(k, [...(byNameKey.get(k) ?? []), c.id]);
   }
+  // A number on invoices of two different customers is ambiguous: it is
+  // dropped from the index rather than letting the last invoice win.
   const byDocNumber = new Map<string, string>();
+  const conflicted = new Set<string>();
   for (const inv of invoices) {
     const doc = cleanDocNumber(inv.docNumber);
-    if (doc && map.has(inv.customerId)) byDocNumber.set(doc, inv.customerId);
+    if (!doc || !map.has(inv.customerId) || conflicted.has(doc)) continue;
+    const seen = byDocNumber.get(doc);
+    if (seen !== undefined && seen !== inv.customerId) {
+      byDocNumber.delete(doc);
+      conflicted.add(doc);
+    } else {
+      byDocNumber.set(doc, inv.customerId);
+    }
   }
   return { customers: map, byDocNumber, byNameKey };
 }
@@ -69,10 +79,12 @@ export function proposeLink(
   }
   if (fromNumbers.size === 1) {
     const [id] = fromNumbers;
-    // A single number can still be a sibling's: trust it only if the name
-    // does not point at a different customer.
+    // A single number can still be a sibling's: link it only when its name
+    // matches. With no usable student name there is nothing to compare, so
+    // the number decides. Otherwise the name decides, and when no customer
+    // carries the student's name the number is only a candidate for review.
     const named = key ? (index.byNameKey.get(key) ?? []) : [];
-    if (sameName(id) || named.length === 0)
+    if (!key || sameName(id))
       return { kind: 'link', customerId: id, reason: 'invoice' };
     if (named.length === 1)
       return { kind: 'link', customerId: named[0], reason: 'sibling' };
