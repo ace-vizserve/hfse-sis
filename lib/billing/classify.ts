@@ -42,3 +42,19 @@ export function classifyInvoice(
   if (found.size === 0 || !range) return { ayCode: null, stageKeys: [] };
   return { ayCode: range.ayCode, stageKeys: ORDER.filter((s) => found.has(s)) };
 }
+
+/** Why these year ranges can't be saved, or null. */
+export function overlapMessage(
+  ranges: Array<{ ayCode: string; startsOn: string; endsOn: string }>
+): string | null {
+  for (const r of ranges)
+    if (r.endsOn < r.startsOn) return `${r.ayCode} ends before it starts.`;
+  const sorted = [...ranges].sort((a, b) =>
+    a.startsOn.localeCompare(b.startsOn)
+  );
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].startsOn <= sorted[i - 1].endsOn)
+      return `${sorted[i - 1].ayCode} and ${sorted[i].ayCode} overlap. A date can only belong to one year.`;
+  }
+  return null;
+}
