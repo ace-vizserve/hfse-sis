@@ -6,6 +6,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { overlapMessage } from '@/lib/billing/classify';
 import { firstDuplicate, isRealDate } from '@/lib/billing/settings-helpers';
 import { reclassifyAll, replaceRows } from '@/lib/billing/settings.server';
+import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -73,6 +74,11 @@ export async function PUT(request: Request) {
   });
   try {
     const { changed } = await reclassifyAll(service);
+    const years =
+      (await service.from('billing_year_ranges').select('ay_code')).data?.map(
+        (r) => r.ay_code as string
+      ) ?? [];
+    for (const sn of changed) await syncTilesForStudent(service, sn, years);
     return NextResponse.json({ ok: true, studentsAffected: changed.length });
   } catch {
     return NextResponse.json(

@@ -21,6 +21,8 @@ export type LinkRunResult = {
   linked: { invoice: number; sibling: number; name: number };
   review: number;
   newlyLinked: string[];
+  /** Problems loading a newly linked student's history; empty on a dry run. */
+  historyErrors: string[];
 };
 
 /** Every student with a student number, across every AY that has tables. */
@@ -144,6 +146,7 @@ export async function runLink(
     linked: { invoice: 0, sibling: 0, name: 0 },
     review: 0,
     newlyLinked: [],
+    historyErrors: [],
   };
   const runStartedAt = new Date().toISOString();
   const links: Array<Record<string, unknown>> = [];
@@ -212,5 +215,19 @@ export async function runLink(
     .lt('computed_at', runStartedAt);
   if (del.error)
     throw new Error(`Clearing the review list failed: ${del.error.message}`);
+  // Load each newly linked student's history, one at a time (QuickBooks allows
+  // ~500 calls a minute; two queries per student). The audit row above is
+  // already written, so failures are returned in the result, not the audit.
+  const { loadCustomerHistory } = await import('@/lib/billing/history.server');
+  for (const sn of result.newlyLinked) {
+    try {
+      const h = await loadCustomerHistory(service, sn);
+      result.historyErrors.push(...h.errors.map((e) => `${sn}: ${e}`));
+    } catch (e) {
+      result.historyErrors.push(
+        `${sn}: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  }
   return result;
 }

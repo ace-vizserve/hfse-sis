@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import type { QbInvoiceFull, QbPayment } from '@/lib/billing/invoice-row';
 import {
   QboError,
   connectedRealmId,
@@ -9,32 +10,10 @@ import {
   qboRequest,
 } from '@/lib/qbo/client';
 import {
-  invoiceState,
   latestDate,
   linkedPaymentIds,
   type QbInvoice,
 } from '@/lib/qbo/invoice-snapshot';
-import {
-  QBO_SYNC_LABEL,
-  QBO_SYSTEM_ACTOR,
-  readStageSnapshot,
-  writeStageFromQbo,
-} from '@/lib/qbo/stage-write';
-import { handledFields } from '@/lib/qbo/sync-fields';
-import { isQboStageKey, stageOnInvoiceChange } from '@/lib/qbo/stage-state';
-
-type InvoiceRow = {
-  id: string;
-  ay_code: string;
-  enrolee_number: string;
-  stage_key: string;
-  doc_number: string | null;
-  state: string;
-  payment_date: string | null;
-  is_current: boolean;
-  total: number;
-  balance: number;
-};
 
 /** Date of the payment that cleared it: the newest linked payment's date. */
 export async function paymentDateFor(
@@ -79,132 +58,94 @@ async function fetchInvoice(
 }
 
 /**
- * Re-reads one invoice from QuickBooks, stores what it says, and — when it is
- * the stage's current invoice and its state or payment date changed — moves
- * the stage. Invoices the SIS doesn't know are ignored.
+ * Re-reads one invoice from QuickBooks into the Billing store and recomputes
+ * the student's tiles for the year(s) it was and is on. Invoices of customers
+ * not linked to a student are ignored (linking loads their history).
  */
 export async function refreshInvoice(
   service: SupabaseClient,
   qboInvoiceId: string
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
-  // Only rows from the QuickBooks company connected now: an id means nothing
-  // in another company.
+  const { loadBillingMaps } = await import('@/lib/billing/settings.server');
+  const { studentForCustomer } = await import('@/lib/billing/history.server');
+  const { latestPaymentDates } = await import('@/lib/billing/invoice-row');
+  const { upsertInvoice } = await import('@/lib/billing/store.server');
+  const { syncTilesForStudent } = await import('@/lib/billing/tiles.server');
+
   const realmId = await connectedRealmId(service);
   if (!realmId) return { known: false, stageChanged: false };
-  const { data, error: lookupErr } = await service
-    .from('qbo_invoices')
-    .select(
-      'id, ay_code, enrolee_number, stage_key, doc_number, state, payment_date, is_current, total, balance'
-    )
-    .eq('qbo_invoice_id', qboInvoiceId)
-    .eq('realm_id', realmId)
-    .maybeSingle();
-  if (lookupErr)
-    throw new Error(
-      'QuickBooks invoice record lookup failed: ' + lookupErr.message
-    );
-  const row = data as InvoiceRow | null;
-  if (!row) return { known: false, stageChanged: false };
-
-  const inv = await fetchInvoice(service, qboInvoiceId);
-  const state = invoiceState(inv);
-  const paymentDate =
-    inv && state === 'paid' ? await paymentDateFor(service, inv) : null;
-  const docNumber = inv?.DocNumber ?? row.doc_number;
-
-  // Money and housekeeping are saved straight away. A deleted invoice keeps
-  // its last known total and balance.
-  const { error: moneyErr } = await service
-    .from('qbo_invoices')
-    .update({
-      total: inv ? Number(inv.TotalAmt) : row.total,
-      balance: inv ? Number(inv.Balance) : row.balance,
-      sync_token: inv?.SyncToken ?? null,
-      synced_at: new Date().toISOString(),
-    })
-    .eq('id', row.id);
-  if (moneyErr)
-    throw new Error(
-      'QuickBooks invoice record update failed: ' + moneyErr.message
-    );
-
-  // State / payment date / number are saved only once the stage is in step, so
-  // a failed stage write shows up as a change again on the next refresh.
-  const saveHandled = async (stageInStep: boolean) => {
-    const fields = handledFields({
-      state,
-      paymentDate,
-      docNumber,
-      stageInStep,
-    });
-    if (Object.keys(fields).length === 0) return;
-    const { error } = await service
-      .from('qbo_invoices')
-      .update(fields)
-      .eq('id', row.id);
-    if (error)
-      throw new Error(
-        'QuickBooks invoice record update failed: ' + error.message
-      );
-  };
-
-  const changed =
-    row.state !== state ||
-    (row.payment_date ?? null) !== (paymentDate ?? null) ||
-    (row.doc_number ?? null) !== (docNumber ?? null);
-  if (!changed || !row.is_current || !isQboStageKey(row.stage_key)) {
-    await saveHandled(true);
-    return { known: true, stageChanged: false };
-  }
-
-  const stage = row.stage_key;
-  const current = await readStageSnapshot(
+  const inv = (await fetchInvoice(
     service,
-    row.ay_code,
-    row.enrolee_number,
-    stage
-  );
-  if (!current) {
-    await saveHandled(true);
-    return { known: true, stageChanged: false };
+    qboInvoiceId
+  )) as QbInvoiceFull | null;
+  let studentNumber: string | null = null;
+  if (inv) {
+    studentNumber = await studentForCustomer(
+      service,
+      inv.CustomerRef.value,
+      realmId
+    );
+  } else {
+    // Deleted: find the student from the stored row.
+    const { data } = await service
+      .from('qbo_invoices')
+      .select('student_number')
+      .eq('qbo_invoice_id', qboInvoiceId)
+      .eq('realm_id', realmId)
+      .maybeSingle();
+    studentNumber =
+      (data as { student_number: string } | null)?.student_number ?? null;
   }
-  const patch = stageOnInvoiceChange(stage, current, {
-    docNumber: docNumber ?? '',
-    state,
-    paymentDate,
-  });
-  if (!patch) {
-    await saveHandled(true);
-    return { known: true, stageChanged: false };
-  }
+  if (!studentNumber) return { known: false, stageChanged: false };
 
-  const res = await writeStageFromQbo(service, {
-    ayCode: row.ay_code,
-    enroleeNumber: row.enrolee_number,
-    stage,
-    patch,
-    actor: QBO_SYSTEM_ACTOR,
-    updatedBy: QBO_SYNC_LABEL,
-    docNumber,
-    trigger: 'sync',
+  // Payment dates come from the student's stored payments, so a paid invoice
+  // costs no extra QuickBooks calls.
+  const { data: paid, error: paidErr } = await service
+    .from('qbo_payments')
+    .select('txn_date, applied')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId);
+  if (paidErr)
+    throw new Error(`Stored payments lookup failed: ${paidErr.message}`);
+  const paymentDates = latestPaymentDates(
+    (
+      (paid ?? []) as Array<{
+        txn_date: string | null;
+        applied: Array<{ invoiceId: string; amount: number }> | null;
+      }>
+    ).map((p) => ({ txnDate: p.txn_date, applied: p.applied ?? [] }))
+  );
+
+  const r = await upsertInvoice(service, {
+    inv,
+    qboInvoiceId,
+    studentNumber,
+    realmId,
+    maps: await loadBillingMaps(service),
+    paymentDates,
   });
-  await saveHandled(res.ok);
-  return res.ok
-    ? { known: true, stageChanged: res.changed > 0 }
-    : { known: true, stageChanged: false, stageError: res.error };
+  const years = [r.before?.ayCode, r.after.ayCode].filter(
+    (y): y is string => !!y
+  );
+  const tiles = await syncTilesForStudent(service, studentNumber, [
+    ...new Set(years),
+  ]);
+  return {
+    known: true,
+    stageChanged: tiles.changed > 0,
+    ...(tiles.errors.length ? { stageError: tiles.errors.join(' · ') } : {}),
+  };
 }
 
-/**
- * A payment changed: refresh every invoice the SIS knows that it pays. One
- * failing invoice is recorded in `errors` and the rest still run.
- */
+/** A payment changed: store it, then refresh every invoice it pays. */
 export async function refreshInvoicesForPayment(
   service: SupabaseClient,
   paymentId: string
 ): Promise<{ updated: number; errors: string[] }> {
-  type QbPayment = {
-    Line?: Array<{ LinkedTxn?: Array<{ TxnId: string; TxnType: string }> }>;
-  };
+  const { studentForCustomer } = await import('@/lib/billing/history.server');
+  const { upsertPayment } = await import('@/lib/billing/store.server');
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return { updated: 0, errors: [] };
   let payment: QbPayment | null = null;
   try {
     payment = (
@@ -215,20 +156,30 @@ export async function refreshInvoicesForPayment(
       )
     ).Payment;
   } catch (e) {
-    // A deleted payment can't be read; its invoices change too and arrive as
-    // Invoice events / in the hourly check.
-    if (e instanceof QboError && e.code === '610')
+    if (e instanceof QboError && e.code === '610') {
+      // Deleted: drop our copy; its invoices arrive as Invoice changes.
+      await service
+        .from('qbo_payments')
+        .delete()
+        .eq('qbo_payment_id', paymentId);
       return { updated: 0, errors: [] };
+    }
     throw e;
   }
-  const ids = new Set<string>();
-  for (const l of payment?.Line ?? []) {
-    for (const t of l.LinkedTxn ?? [])
-      if (t.TxnType === 'Invoice') ids.add(t.TxnId);
-  }
+  const studentNumber = await studentForCustomer(
+    service,
+    payment.CustomerRef.value,
+    realmId
+  );
+  if (!studentNumber) return { updated: 0, errors: [] };
+  const ids = await upsertPayment(service, {
+    p: payment,
+    studentNumber,
+    realmId,
+  });
   let updated = 0;
   const errors: string[] = [];
-  for (const id of ids) {
+  for (const id of new Set(ids)) {
     try {
       const r = await refreshInvoice(service, id);
       if (r.known) updated++;

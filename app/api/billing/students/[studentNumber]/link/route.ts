@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
+import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
   connectedRealmId,
   QboError,
@@ -140,5 +141,12 @@ export async function POST(
     entityId: studentNumber,
     context: { display_name: displayName, customer_id: parsed.data.customerId },
   });
-  return NextResponse.json({ ok: true, displayName });
+  const history = await loadCustomerHistory(service, studentNumber).catch(
+    (e) => ({ errors: [qboErrorMessage(e)] })
+  );
+  return NextResponse.json({
+    ok: true,
+    displayName,
+    historyErrors: history.errors,
+  });
 }
