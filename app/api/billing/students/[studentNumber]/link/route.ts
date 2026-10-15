@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -15,6 +16,38 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 const Body = z.object({ customerId: z.string().min(1) });
 
+// True when the student number exists in any year's admissions applications.
+// Newest year first; a year with no admissions table is skipped (PGRST205).
+async function studentExists(
+  service: SupabaseClient,
+  studentNumber: string
+): Promise<boolean> {
+  const { data: years, error } = await service
+    .from('academic_years')
+    .select('ay_code')
+    .order('ay_code', { ascending: false });
+  if (error) throw new Error(`Academic years lookup failed: ${error.message}`);
+  for (const { ay_code } of (years ?? []) as Array<{ ay_code: string }>) {
+    const prefix = `ay${ay_code.slice(2)}`;
+    const { data, error: appError } = await service
+      .from(`${prefix}_enrolment_applications`)
+      .select('"studentNumber"')
+      .eq('studentNumber', studentNumber)
+      .limit(1);
+    if (appError) {
+      if (
+        /PGRST205|42P01|Could not find the table|does not exist/i.test(
+          appError.message
+        )
+      )
+        continue;
+      throw new Error(appError.message);
+    }
+    if ((data ?? []).length > 0) return true;
+  }
+  return false;
+}
+
 // POST /api/billing/students/[studentNumber]/link — staff pick the student's
 // QuickBooks customer (from To review, or when Create invoice finds none).
 export async function POST(
@@ -28,6 +61,18 @@ export async function POST(
   if (!parsed.success)
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   const service = createServiceClient();
+  try {
+    if (!(await studentExists(service, studentNumber)))
+      return NextResponse.json(
+        { error: 'There is no student with that student number.' },
+        { status: 404 }
+      );
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Student lookup failed.' },
+      { status: 500 }
+    );
+  }
   let displayName: string;
   let realmId: string;
   try {
@@ -35,14 +80,24 @@ export async function POST(
     if (!r) throw new QboNotConnectedError();
     realmId = r;
     const c = await qboRequest<{
-      Customer: { DisplayName: string; FullyQualifiedName?: string };
+      Customer: {
+        DisplayName: string;
+        FullyQualifiedName?: string;
+        Job?: boolean;
+        ParentRef?: unknown;
+      };
     }>(
       service,
       'GET',
       `/customer/${encodeURIComponent(parsed.data.customerId)}`
     );
     displayName = c.Customer.DisplayName;
-    if ((c.Customer.FullyQualifiedName ?? '').includes(':'))
+    // A sub-customer: a job under a parent (FullyQualifiedName "Parent:Job").
+    if (
+      (c.Customer.FullyQualifiedName ?? '').includes(':') ||
+      c.Customer.Job === true ||
+      c.Customer.ParentRef != null
+    )
       return NextResponse.json(
         { error: "That is not a student's customer." },
         { status: 409 }
