@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -47,6 +47,8 @@ type CustomersResponse = {
   linked: QbCustomer | null;
   exact: QbCustomer[];
   similar: QbCustomer[];
+  /** The name a new customer for this student would get. */
+  newName?: string | null;
 };
 type Item = {
   id: string;
@@ -120,12 +122,40 @@ function useCustomerChoice(ayCode: string, enroleeNumber: string) {
     },
     search,
     setSearch,
+    newName: data?.newName ?? null,
+    exactCount: data?.exact.length ?? 0,
     remembered: !!data?.linked && !picked && !overridden,
   };
 }
 
-function CustomerField({ c }: { c: ReturnType<typeof useCustomerChoice> }) {
+function CustomerField({
+  c,
+  ayCode,
+  enroleeNumber,
+  canAdd = false,
+}: {
+  c: ReturnType<typeof useCustomerChoice>;
+  ayCode: string;
+  enroleeNumber: string;
+  /** Create invoice only: offer to add the student to QuickBooks. */
+  canAdd?: boolean;
+}) {
   const [typed, setTyped] = useState('');
+  const [addedId, setAddedId] = useState<string | null>(null);
+  const offerAdd = canAdd && !!c.newName && c.exactCount === 0;
+  const add = useMutation({
+    mutationFn: () =>
+      apiFetch<{ customer: QbCustomer }>(
+        '/api/quickbooks/customers',
+        jsonInit('POST', { ayCode, enroleeNumber })
+      ),
+    onSuccess: (d) => {
+      setAddedId(d.customer.id);
+      c.setPicked(d.customer);
+      toast.success(`${d.customer.displayName} added to QuickBooks`);
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   if (c.query.isLoading) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -155,14 +185,31 @@ function CustomerField({ c }: { c: ReturnType<typeof useCustomerChoice> }) {
             ? 'Remembered from an earlier invoice.'
             : c.matchedBy === 'auto'
               ? 'Matched by the student’s full name.'
-              : 'Picked by you. The SIS will remember it for this student.'}
+              : addedId === c.customer.id
+                ? 'Just added to QuickBooks. The SIS will remember it for this student.'
+                : 'Picked by you. The SIS will remember it for this student.'}
         </FieldDescription>
       ) : (
         <>
           <FieldDescription>
-            No customer has exactly this student’s name. Pick the right one, or
-            search.
+            No customer has exactly this student’s name.{' '}
+            {offerAdd
+              ? 'Add them to QuickBooks, or pick the right one if they’re listed under another spelling.'
+              : 'Pick the right one, or search.'}
           </FieldDescription>
+          {offerAdd && (
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start"
+              loading={add.isPending}
+              loadingText="Adding to QuickBooks…"
+              onClick={() => add.mutate()}
+            >
+              <UserPlus className="size-4" />
+              Add “{c.newName}” to QuickBooks
+            </Button>
+          )}
           <div className="flex gap-2">
             <Input
               value={typed}
@@ -388,7 +435,12 @@ export function CreateInvoiceSheet({
       submitLabel="Create in QuickBooks"
       submitDisabled={saving}
     >
-      <CustomerField c={c} />
+      <CustomerField
+        c={c}
+        ayCode={ayCode}
+        enroleeNumber={enroleeNumber}
+        canAdd
+      />
       {showErrors && !c.customer && (
         <FieldError>Choose the QuickBooks customer.</FieldError>
       )}
@@ -638,7 +690,7 @@ export function LinkInvoiceSheet({
       submitLabel="Link invoice"
       submitDisabled={saving || !c.customer || !invoiceId}
     >
-      <CustomerField c={c} />
+      <CustomerField c={c} ayCode={ayCode} enroleeNumber={enroleeNumber} />
       {c.customer && (
         <Field>
           <FieldLabel>Open invoices</FieldLabel>

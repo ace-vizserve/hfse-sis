@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   exactMatches,
+  newCustomerName,
   normalizeName,
   studentNameForms,
 } from '@/lib/qbo/customer-match';
@@ -45,5 +46,28 @@ describe('customer matching', () => {
         studentNameForms(sofia)
       )
     ).toEqual([]);
+  });
+});
+
+describe('newCustomerName', () => {
+  it('uses the full name as the SIS shows it, spacing tidied', () => {
+    expect(
+      newCustomerName({ ...sofia, enroleeFullName: ' LIM,  SOFIA ALCANTARA ' })
+    ).toBe('LIM, SOFIA ALCANTARA');
+  });
+  it('falls back to LAST, FIRST MIDDLE', () => {
+    expect(newCustomerName({ ...sofia, enroleeFullName: null })).toBe(
+      'Lim, Sofia Alcantara'
+    );
+  });
+  it('null when there is no usable name', () => {
+    expect(
+      newCustomerName({
+        enroleeFullName: '',
+        firstName: 'Sofia',
+        middleName: null,
+        lastName: null,
+      })
+    ).toBeNull();
   });
 });

@@ -103,6 +103,7 @@ export const ALL_AUDIT_ACTIONS = [
   // `system:quickbooks-sync` and `context.source = 'quickbooks'`.
   'qbo.invoice.create',
   'qbo.invoice.link',
+  'qbo.customer.create',
   'qbo.connection.connect',
   'qbo.connection.disconnect',
   // What parents may pick on the enrolment forms (migration 174). Opening and
@@ -297,6 +298,7 @@ export type AuditEntityType =
   // QuickBooks (migration 188): entity_id is the QuickBooks invoice id, or
   // the company (realm) id for a connection row.
   | 'qbo_invoice'
+  | 'qbo_customer'
   | 'qbo_connection'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.

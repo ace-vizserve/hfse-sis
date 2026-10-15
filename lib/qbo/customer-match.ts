@@ -29,6 +29,25 @@ export function studentNameForms(n: {
   return Array.from(new Set(forms));
 }
 
+/**
+ * The name a new QuickBooks customer gets: the student's full name as the SIS
+ * shows it, else "LAST, FIRST MIDDLE". Null when the record has no name.
+ */
+export function newCustomerName(n: {
+  enroleeFullName: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+}): string | null {
+  const full = (n.enroleeFullName ?? '').replace(/\s+/g, ' ').trim();
+  if (full) return full;
+  const first = (n.firstName ?? '').trim();
+  const middle = (n.middleName ?? '').trim();
+  const last = (n.lastName ?? '').trim();
+  if (!last || !first) return null;
+  return `${last}, ${[first, middle].filter(Boolean).join(' ')}`;
+}
+
 export function exactMatches<T extends { DisplayName: string }>(
   customers: T[],
   forms: string[]
