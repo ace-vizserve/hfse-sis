@@ -58,6 +58,7 @@ const INCOME = [
   'Admissions & Registration',
   'Enrolment Fees - Books and Worksheets',
   'Enrolment Fees - Fee Protection Scheme',
+  'Enrolment Fees - Online Support and Lesson Plan',
   'Advance customers payment',
   'Sales of Books and Miscellaneous',
   'School Events',
@@ -103,6 +104,21 @@ const ITEMS: Array<{
     name: 'AY2027 Fee Protection Scheme',
     account: 'Enrolment Fees - Fee Protection Scheme',
     price: 200,
+  },
+  {
+    name: 'AY2026 Fee Protection Scheme',
+    account: 'Enrolment Fees - Fee Protection Scheme',
+    price: 200,
+  },
+  {
+    name: 'AY2026 Online Support, Lesson Plan & Syllabus',
+    account: 'Enrolment Fees - Online Support and Lesson Plan',
+    price: 1000,
+  },
+  {
+    name: 'AY2027 Online Support, Lesson Plan & Syllabus',
+    account: 'Enrolment Fees - Online Support and Lesson Plan',
+    price: 1000,
   },
   {
     name: 'AY2026 Student Devt Fees',
@@ -177,20 +193,39 @@ function hfseCustomerName(
 
 let nextDoc = 62300; // above production's HFSE062263, so a number is never mistaken for a real one
 
+type SeedItem = { Id: string; name: string; price: number };
+
+// `docOverride` gives an invoice its own number outside the positional run, so
+// adding extra invoices (the SDF instalments) never shifts later numbers.
 async function invoice(
   customer: Ref,
-  item: { Id: string; name: string; price: number },
+  lines: SeedItem[],
   txnDate: string,
-  memo: string | null
+  memo: string | null,
+  docOverride?: string
 ) {
-  const doc = `HFSE0${nextDoc++}`;
+  const doc = docOverride ?? `HFSE0${nextDoc++}`;
   type Inv = {
     Id: string;
     DocNumber: string;
     Balance: number;
     TotalAmt: number;
+    SyncToken: string;
     CustomerRef?: { value: string };
+    Line?: Array<{
+      DetailType?: string;
+      SalesItemLineDetail?: { ItemRef?: { value: string } };
+    }>;
   };
+  const Line = lines.map((item) => ({
+    DetailType: 'SalesItemLineDetail',
+    Amount: item.price,
+    SalesItemLineDetail: {
+      ItemRef: { value: item.Id },
+      Qty: 1,
+      UnitPrice: item.price,
+    },
+  }));
   const found = await qboQuery<Inv>(
     service,
     'Invoice',
@@ -202,23 +237,35 @@ async function invoice(
       throw new Error(
         `Invoice ${doc} already exists in the sandbox for another customer (${found[0].CustomerRef?.value}, expected ${customer.value} ${customer.name ?? ''}). Seed numbers are positional; the student list changed.`
       );
+    // An earlier run made it with other items (the old Fees invoices carried
+    // Student Devt Fees): put the intended items on it. The totals match, so
+    // payments already applied still fit. A voided invoice (total 0) is left.
+    const have = (found[0].Line ?? [])
+      .filter((l) => l.DetailType === 'SalesItemLineDetail')
+      .map((l) => l.SalesItemLineDetail?.ItemRef?.value)
+      .sort()
+      .join(',');
+    const want = lines
+      .map((l) => l.Id)
+      .sort()
+      .join(',');
+    if (have !== want && Number(found[0].TotalAmt) !== 0) {
+      const res = await qboRequest<{ Invoice: Inv }>(
+        service,
+        'POST',
+        '/invoice',
+        { Id: found[0].Id, SyncToken: found[0].SyncToken, sparse: true, Line }
+      );
+      console.log(`  ~ Invoice ${doc} lines replaced`);
+      return res.Invoice;
+    }
     return found[0];
   }
   const res = await qboRequest<{ Invoice: Inv }>(service, 'POST', '/invoice', {
     CustomerRef: customer,
     DocNumber: doc,
     TxnDate: txnDate,
-    Line: [
-      {
-        DetailType: 'SalesItemLineDetail',
-        Amount: item.price,
-        SalesItemLineDetail: {
-          ItemRef: { value: item.Id },
-          Qty: 1,
-          UnitPrice: item.price,
-        },
-      },
-    ],
+    Line,
     ...(memo ? { CustomerMemo: { value: memo } } : {}),
   });
   console.log(`  + Invoice ${doc} ${customer.name ?? customer.value}`);
@@ -278,15 +325,43 @@ async function main() {
   console.log('Customers');
   const students = await localStudents();
   const customers = new Map<string, Ref>();
-  for (const s of students) {
+  for (const [k, s] of students.entries()) {
     const name = hfseCustomerName(s);
     const company =
       [s.fatherFullName, s.motherFullName].filter(Boolean).join(' / ') ||
       undefined;
-    const c = await findOrCreate<{ Id: string }>('Customer', name, {
+    const c = await findOrCreate<{
+      Id: string;
+      SyncToken: string;
+      PrimaryEmailAddr?: { Address?: string };
+    }>('Customer', name, {
       DisplayName: name,
       ...(company ? { CompanyName: company } : {}),
     });
+    if (!c.PrimaryEmailAddr?.Address) {
+      // Made-up contact details (never a real address): the customer page's
+      // Customer details tab and Send need something to show and send to.
+      const slug = `${s.lastName}.${s.firstName}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[^a-z.]/g, '');
+      const n = String(2_000_000 + k); // 7 digits, unique per student
+      await qboRequest(service, 'POST', '/customer', {
+        Id: c.Id,
+        SyncToken: c.SyncToken,
+        sparse: true,
+        PrimaryEmailAddr: { Address: `${slug}@example.test` },
+        PrimaryPhone: { FreeFormNumber: `6${n}` },
+        Mobile: { FreeFormNumber: `9${n}` },
+        BillAddr: {
+          Line1: `${(k % 90) + 10} Example Road, #0${(k % 9) + 1}-12`,
+          City: 'Singapore',
+          PostalCode: n.slice(1),
+          Country: 'Singapore',
+        },
+      });
+      console.log(`  ~ Customer ${name} contact details`);
+    }
     customers.set(s.studentNumber, { value: c.Id, name });
   }
   // Messy cases seen in production: a duplicate customer with an email in the
@@ -330,7 +405,7 @@ async function main() {
       if (i % 5 === 4) continue; // some new children have no invoice yet (the ~14 to review)
       const reg = await invoice(
         c,
-        items.get('AY2027 Registration Fee')!,
+        [items.get('AY2027 Registration Fee')!],
         '2026-07-10',
         'AY2027 Application and Entrance Test Fee'
       );
@@ -338,7 +413,11 @@ async function main() {
         await pay(c, reg, 500, '2026-07-15', i % 2 ? uob : paynow);
       const fees = await invoice(
         c,
-        items.get('AY2027 Student Devt Fees')!,
+        [
+          items.get('AY2027 Books')!,
+          items.get('AY2027 Fee Protection Scheme')!,
+          items.get('AY2027 Online Support, Lesson Plan & Syllabus')!,
+        ],
         '2026-09-01',
         'AY2027 Enrolment Fee and SDF Option 1'
       );
@@ -346,10 +425,20 @@ async function main() {
       if (i % 4 === 2) await pay(c, fees, 700, '2026-09-20', uob); // part paid
       await invoice(
         c,
-        items.get('Tuition Fees')!,
+        [items.get('Tuition Fees')!],
         '2026-10-01',
         'Auto-generated via n8n'
       );
+      // One SDF instalment per fourth student, so the mapping has a real SDF
+      // invoice to leave alone. Own number range: the positional run is untouched.
+      if (i % 4 === 3)
+        await invoice(
+          c,
+          [items.get('AY2027 Student Devt Fees')!],
+          '2026-09-15',
+          'SDF instalment 1 of 3',
+          `HFSE0${63300 + i}`
+        );
       if (i % 2 === 0)
         typed.push({
           ay: '2027',
@@ -368,14 +457,18 @@ async function main() {
       // Returning AY2026 student: last year's Fees, paid — must NOT land on AY2027.
       const old = await invoice(
         c,
-        items.get('AY2026 Student Devt Fees')!,
+        [
+          items.get('AY2026 Books')!,
+          items.get('AY2026 Fee Protection Scheme')!,
+          items.get('AY2026 Online Support, Lesson Plan & Syllabus')!,
+        ],
         '2025-09-01',
         'AY2026 Enrolment Fees'
       );
       await pay(c, old, 1500, '2025-09-10', uob);
       await invoice(
         c,
-        items.get('Tuition Fees')!,
+        [items.get('Tuition Fees')!],
         '2026-01-05',
         'Auto-generated via n8n'
       );
@@ -386,7 +479,7 @@ async function main() {
   if (first) {
     const v = await invoice(
       customers.get(first.studentNumber)!,
-      items.get('AY2027 Books')!,
+      [items.get('AY2027 Books')!],
       '2026-08-01',
       null
     );
