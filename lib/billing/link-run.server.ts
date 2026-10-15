@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 import {
   buildLinkIndex,
   proposeLink,
@@ -28,40 +29,69 @@ export async function loadLinkStudents(
 ): Promise<LinkStudent[]> {
   const { data: years, error } = await service
     .from('academic_years')
-    .select('ay_code');
+    .select('ay_code')
+    .order('ay_code', { ascending: true });
   if (error) throw new Error(`Academic years lookup failed: ${error.message}`);
   const byNumber = new Map<string, LinkStudent>();
+  // Oldest year first, so the newest year is processed last and its non-null
+  // name wins.
   for (const { ay_code } of (years ?? []) as Array<{ ay_code: string }>) {
     const prefix = `ay${ay_code.slice(2)}`;
-    const apps = await service
-      .from(`${prefix}_enrolment_applications`)
-      .select('"enroleeNumber","studentNumber","lastName","firstName"')
-      .not('studentNumber', 'is', null);
-    if (apps.error) continue; // a year without admissions tables (e.g. a future AY)
-    const status = await service
-      .from(`${prefix}_enrolment_status`)
-      .select('"enroleeNumber","registrationInvoice","feeInvoice"');
+    type PageErr = { message: string; code?: string };
+    let appRows: Array<Record<string, string | null>>;
+    try {
+      appRows = await fetchAllPages<Record<string, string | null>>(
+        (from, to) =>
+          service
+            .from(`${prefix}_enrolment_applications`)
+            .select('"enroleeNumber","studentNumber","lastName","firstName"')
+            .not('studentNumber', 'is', null)
+            .range(from, to) as unknown as PromiseLike<{
+            data: Array<Record<string, string | null>> | null;
+            error: PageErr | null;
+          }>,
+        1000,
+        { tieBreak: 'enroleeNumber' }
+      );
+    } catch (e) {
+      // Only "this year has no admissions tables" (e.g. a future AY) is skipped.
+      const msg = e instanceof Error ? e.message : '';
+      if (/PGRST205|42P01|Could not find the table|does not exist/i.test(msg))
+        continue;
+      throw e;
+    }
+    const statusRows = await fetchAllPages<Record<string, string | null>>(
+      (from, to) =>
+        service
+          .from(`${prefix}_enrolment_status`)
+          .select('"enroleeNumber","registrationInvoice","feeInvoice"')
+          .range(from, to) as unknown as PromiseLike<{
+          data: Array<Record<string, string | null>> | null;
+          error: PageErr | null;
+        }>,
+      1000,
+      { tieBreak: 'enroleeNumber' }
+    );
     const typed = new Map<string, string[]>();
-    for (const s of (status.data ?? []) as Array<
-      Record<string, string | null>
-    >) {
+    for (const s of statusRows) {
       typed.set(
         s.enroleeNumber!,
         [s.registrationInvoice, s.feeInvoice].filter((v): v is string => !!v)
       );
     }
-    for (const a of (apps.data ?? []) as Array<Record<string, string | null>>) {
+    for (const a of appRows) {
       const sn = a.studentNumber!;
       const prev = byNumber.get(sn);
       byNumber.set(sn, {
         studentNumber: sn,
-        // The newest year's name wins (years are read oldest → newest is not
-        // guaranteed, so keep a non-empty one).
+        // Years run oldest → newest, so a later year's non-null name wins.
         lastName: a.lastName ?? prev?.lastName ?? null,
         firstName: a.firstName ?? prev?.firstName ?? null,
         typedNumbers: [
-          ...(prev?.typedNumbers ?? []),
-          ...(typed.get(a.enroleeNumber!) ?? []),
+          ...new Set([
+            ...(prev?.typedNumbers ?? []),
+            ...(typed.get(a.enroleeNumber!) ?? []),
+          ]),
         ],
       });
     }
@@ -115,6 +145,7 @@ export async function runLink(
     review: 0,
     newlyLinked: [],
   };
+  const runStartedAt = new Date().toISOString();
   const links: Array<Record<string, unknown>> = [];
   const reviews: Array<Record<string, unknown>> = [];
   for (const s of students) {
@@ -140,7 +171,7 @@ export async function runLink(
         student_number: s.studentNumber,
         student_name: [s.lastName, s.firstName].filter(Boolean).join(', '),
         candidates: p.candidates,
-        computed_at: new Date().toISOString(),
+        computed_at: runStartedAt,
       });
     }
   }
@@ -152,20 +183,7 @@ export async function runLink(
       .upsert(links.slice(i, i + 500));
     if (error) throw new Error(`Saving links failed: ${error.message}`);
   }
-  // The review list is rebuilt from scratch: whoever was linked since drops off.
-  const del = await service
-    .from('billing_link_review')
-    .delete()
-    .neq('student_number', '');
-  if (del.error)
-    throw new Error(`Clearing the review list failed: ${del.error.message}`);
-  for (let i = 0; i < reviews.length; i += 500) {
-    const { error } = await service
-      .from('billing_link_review')
-      .insert(reviews.slice(i, i + 500));
-    if (error)
-      throw new Error(`Saving the review list failed: ${error.message}`);
-  }
+  // The links are saved: audit them now, whatever happens to the review list.
   await logAction({
     service,
     actor: opts.actor,
@@ -178,5 +196,21 @@ export async function runLink(
       already_linked: result.alreadyLinked,
     },
   });
+  // The review list is replaced without ever being empty: write this run's rows
+  // first, then drop the rows left over from earlier runs (whoever was linked
+  // since). A failure part-way leaves the old list intact.
+  for (let i = 0; i < reviews.length; i += 500) {
+    const { error } = await service
+      .from('billing_link_review')
+      .upsert(reviews.slice(i, i + 500), { onConflict: 'student_number' });
+    if (error)
+      throw new Error(`Saving the review list failed: ${error.message}`);
+  }
+  const del = await service
+    .from('billing_link_review')
+    .delete()
+    .lt('computed_at', runStartedAt);
+  if (del.error)
+    throw new Error(`Clearing the review list failed: ${del.error.message}`);
   return result;
 }
