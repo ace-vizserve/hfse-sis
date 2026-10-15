@@ -1,8 +1,8 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Plus, Trash2, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { Plus, Search, Trash2, UserPlus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -102,6 +102,9 @@ function useCustomerChoice(ayCode: string, enroleeNumber: string) {
       apiFetch<CustomersResponse>(
         `/api/quickbooks/customers?ay=${encodeURIComponent(ayCode)}&enrolee=${encodeURIComponent(enroleeNumber)}${search ? `&q=${encodeURIComponent(search)}` : ''}${overridden ? '&fresh=1' : ''}`
       ),
+    // Keep the last list on screen while a new search runs, so the search box
+    // isn't swapped out (and loses focus) on every keystroke.
+    placeholderData: keepPreviousData,
   });
   const data = query.data;
   const auto =
@@ -142,6 +145,12 @@ function CustomerField({
 }) {
   const [typed, setTyped] = useState('');
   const [addedId, setAddedId] = useState<string | null>(null);
+  // Search as you type, once the typing pauses.
+  const { setSearch } = c;
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(typed.trim()), 300);
+    return () => clearTimeout(t);
+  }, [typed, setSearch]);
   const offerAdd = canAdd && !!c.newName && c.exactCount === 0;
   const add = useMutation({
     mutationFn: () =>
@@ -210,11 +219,13 @@ function CustomerField({
               Add “{c.newName}” to QuickBooks
             </Button>
           )}
-          <div className="flex gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              placeholder="Search QuickBooks customers"
+              placeholder="Search QuickBooks customers by any part of the name"
+              className="pl-8"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -222,16 +233,15 @@ function CustomerField({
                 }
               }}
             />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => c.setSearch(typed.trim())}
-            >
-              Search
-            </Button>
           </div>
-          {c.choices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No customers found.</p>
+          {c.query.isPlaceholderData ? (
+            <p className="text-sm text-muted-foreground">Searching…</p>
+          ) : c.choices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {c.search
+                ? `No QuickBooks customer has “${c.search}” in their name.`
+                : 'No QuickBooks customer shares this student’s last name. Search by any part of the name.'}
+            </p>
           ) : (
             <RadioGroup
               value=""
