@@ -155,10 +155,17 @@ export default async function BillingCustomerPage({
             </div>
           )}
 
+          {page.stageWarning && (
+            <p className="flex items-start gap-2 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-ink">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              {page.stageWarning}
+            </p>
+          )}
+
           <div className="@container/main">
             <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @3xl/main:grid-cols-4">
               <MetricCard
-                label="Open balance"
+                label="Owed on invoices"
                 value={formatSgd(b.owedOnInvoices)}
                 icon={Wallet}
                 subtext={

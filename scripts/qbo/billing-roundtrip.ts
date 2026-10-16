@@ -142,6 +142,7 @@ async function main() {
       txnDate: today,
       dueDate: null,
       send: true,
+      requestId: crypto.randomUUID(),
     },
   });
   check(
@@ -206,18 +207,32 @@ async function main() {
   );
 
   // 3) Invoice B 45, paid from the credit only.
+  const bInput = {
+    lines: [{ itemId: grad.Id, qty: 1, unitPrice: 45 }],
+    txnDate: today,
+    dueDate: null,
+    send: false,
+    requestId: crypto.randomUUID(),
+  };
   const b = await createInvoiceForStudent(service, {
     studentNumber: pick.student_number,
     actor,
-    input: {
-      lines: [{ itemId: grad.Id, qty: 1, unitPrice: 45 }],
-      txnDate: today,
-      dueDate: null,
-      send: false,
-    },
+    input: bInput,
   });
   check('create invoice B', b.ok, b.ok ? (b.docNumber ?? '') : b.error);
   if (!b.ok) return finish();
+  // The same submit again (a retry after a lost response): QuickBooks
+  // replays the first invoice instead of creating a second one.
+  const bAgain = await createInvoiceForStudent(service, {
+    studentNumber: pick.student_number,
+    actor,
+    input: bInput,
+  });
+  check(
+    'retry of B is de-duplicated',
+    bAgain.ok && bAgain.qboInvoiceId === b.qboInvoiceId,
+    bAgain.ok ? `${bAgain.qboInvoiceId} vs ${b.qboInvoiceId}` : bAgain.error
+  );
   // Every credit payment as QuickBooks holds it BEFORE the credit is used.
   const beforeCredit = new Map<string, QboPayment>();
   {
@@ -303,6 +318,7 @@ async function main() {
       txnDate: today,
       dueDate: null,
       send: false,
+      requestId: crypto.randomUUID(),
     },
   });
   if (c.ok) {

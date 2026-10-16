@@ -3,8 +3,12 @@ import { NextResponse } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { linkStudentToCustomer } from '@/lib/billing/link-student.server';
+import { SIS_READ_FAILED } from '@/lib/billing/messages';
 import { hfseCustomerName } from '@/lib/billing/review';
-import { loadStudentInfo } from '@/lib/billing/students.server';
+import {
+  loadStudentInfo,
+  type StudentInfo,
+} from '@/lib/billing/students.server';
 import {
   qbEscape,
   QboError,
@@ -26,9 +30,13 @@ export async function POST(
   if ('error' in auth) return auth.error;
   const { studentNumber } = await params;
   const service = createServiceClient();
-  const s = (await loadStudentInfo(service, [studentNumber])).get(
-    studentNumber
-  );
+  let s: StudentInfo | undefined;
+  try {
+    s = (await loadStudentInfo(service, [studentNumber])).get(studentNumber);
+  } catch (e) {
+    console.error('[billing] add to QuickBooks, student lookup:', e);
+    return NextResponse.json({ error: SIS_READ_FAILED }, { status: 500 });
+  }
   if (!s)
     return NextResponse.json(
       { error: 'There is no student with that student number.' },
@@ -102,10 +110,15 @@ export async function POST(
     customerId,
     actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
   });
-  if (!r.ok)
+  if (!r.ok) {
+    console.error('[billing] add to QuickBooks, link failed:', r.error);
     return NextResponse.json(
-      { error: `Added to QuickBooks, but not linked: ${r.error}` },
+      {
+        error:
+          "The customer was added to QuickBooks, but the SIS couldn't link it just now. Use Pick another and choose it — don't add it again.",
+      },
       { status: r.status }
     );
+  }
   return NextResponse.json({ ok: true, displayName: r.displayName });
 }

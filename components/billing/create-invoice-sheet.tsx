@@ -39,6 +39,7 @@ import {
   todaySg,
   type MapsData,
 } from '@/lib/billing/view';
+import { shouldRenewRequestId } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -101,6 +102,8 @@ export function CreateInvoiceSheet({
   const [memo, setMemo] = useState('');
   const [docNumber, setDocNumber] = useState('');
   const [send, setSend] = useState(!!customerEmail);
+  // One id per open: a retry of the same submit can't create it twice.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -151,25 +154,35 @@ export function CreateInvoiceSheet({
   }, [items.data, lines, txnDate, maps, existing]);
 
   const save = useMutation({
-    mutationFn: () =>
-      apiFetch<Result>(
-        `/api/billing/students/${encodeURIComponent(studentNumber)}/invoices`,
-        jsonInit('POST', {
-          lines: parsed.map((l) => ({
-            itemId: l.itemId,
-            ...(l.description.trim()
-              ? { description: l.description.trim() }
-              : {}),
-            qty: l.q,
-            unitPrice: l.p,
-          })),
-          txnDate,
-          dueDate: dueDate || null,
-          ...(memo.trim() ? { memo: memo.trim() } : {}),
-          ...(docNumber.trim() ? { docNumber: docNumber.trim() } : {}),
-          send,
-        })
-      ),
+    mutationFn: async () => {
+      try {
+        return await apiFetch<Result>(
+          `/api/billing/students/${encodeURIComponent(studentNumber)}/invoices`,
+          jsonInit('POST', {
+            lines: parsed.map((l) => ({
+              itemId: l.itemId,
+              ...(l.description.trim()
+                ? { description: l.description.trim() }
+                : {}),
+              qty: l.q,
+              unitPrice: l.p,
+            })),
+            txnDate,
+            dueDate: dueDate || null,
+            ...(memo.trim() ? { memo: memo.trim() } : {}),
+            ...(docNumber.trim() ? { docNumber: docNumber.trim() } : {}),
+            send,
+            requestId,
+          })
+        );
+      } catch (err) {
+        // Our route answered with its own error: nothing was created, so the
+        // next submit is a new one. Anything else (lost response, timeout)
+        // keeps the id, so a retry is de-duplicated by QuickBooks.
+        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
+        throw err;
+      }
+    },
   });
   const setLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));

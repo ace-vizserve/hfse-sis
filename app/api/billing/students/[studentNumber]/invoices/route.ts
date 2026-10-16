@@ -32,6 +32,7 @@ const Body = z.object({
     .max(21, 'An invoice number is at most 21 characters in QuickBooks.')
     .optional(),
   send: z.boolean(),
+  requestId: z.string().uuid(),
 });
 
 // POST /api/billing/students/[studentNumber]/invoices — Create invoice from

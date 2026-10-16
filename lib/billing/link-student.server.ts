@@ -4,14 +4,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
+import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import {
   connectedRealmId,
   QboError,
   qboErrorMessage,
+  qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
 } from '@/lib/qbo/client';
+
+// Linking writes nothing to QuickBooks; a failed save of the link itself.
+const LINK_NOT_SAVED = "The SIS couldn't save the link just now. Try again.";
 
 export type LinkResult =
   | { ok: true; displayName: string; historyErrors: string[] }
@@ -72,11 +77,8 @@ export async function linkStudentToCustomer(
         error: 'There is no student with that student number.',
       };
   } catch (e) {
-    return {
-      ok: false,
-      status: 500,
-      error: e instanceof Error ? e.message : 'Student lookup failed.',
-    };
+    console.error('[billing] link, student lookup:', e);
+    return { ok: false, status: 500, error: SIS_READ_FAILED };
   }
   let displayName: string;
   let realmId: string;
@@ -122,8 +124,10 @@ export async function linkStudentToCustomer(
     .eq('realm_id', realmId)
     .neq('student_number', studentNumber)
     .limit(1);
-  if (holderError)
-    return { ok: false, status: 500, error: holderError.message };
+  if (holderError) {
+    console.error('[billing] link, holder lookup:', holderError.message);
+    return { ok: false, status: 500, error: SIS_READ_FAILED };
+  }
   if (holders && holders.length > 0)
     return {
       ok: false,
@@ -136,7 +140,10 @@ export async function linkStudentToCustomer(
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId)
     .maybeSingle();
-  if (prevError) return { ok: false, status: 500, error: prevError.message };
+  if (prevError) {
+    console.error('[billing] link, previous link lookup:', prevError.message);
+    return { ok: false, status: 500, error: SIS_READ_FAILED };
+  }
   const previousCustomerId =
     (prevLink as { qbo_customer_id: string } | null)?.qbo_customer_id ?? null;
   // history_loaded_at is cleared: the (new) customer's history is loaded below.
@@ -149,7 +156,10 @@ export async function linkStudentToCustomer(
     realm_id: realmId,
     history_loaded_at: null,
   });
-  if (error) return { ok: false, status: 500, error: error.message };
+  if (error) {
+    console.error('[billing] link, saving the link:', error.message);
+    return { ok: false, status: 500, error: LINK_NOT_SAVED };
+  }
   // The link is saved either way; a review row that survives is only a stale
   // suggestion, so a failed delete is logged and the link still succeeds.
   const { error: reviewError } = await service
@@ -195,18 +205,29 @@ export async function linkStudentToCustomer(
       ),
     ];
   }
-  const history = await loadCustomerHistory(service, studentNumber).catch(
-    (e) => ({ errors: [qboErrorMessage(e)] })
-  );
-  const historyErrors = [...history.errors];
+  // The link is saved. What follows is catch-up: the raw problems go to the
+  // log, staff get fixed sentences.
+  const historyErrors: string[] = [];
+  try {
+    const history = await loadCustomerHistory(service, studentNumber);
+    if (history.tileProblem) {
+      console.error('[billing] link, tiles:', history.errors);
+      historyErrors.push(STAGE_NOT_UPDATED);
+    }
+  } catch (e) {
+    console.error('[billing] link, history load:', e);
+    historyErrors.push(
+      `Linked. The invoices and payments couldn't be read yet (${qboReasonOnly(e)}); the hourly check will load them.`
+    );
+  }
   if (oldYears.length) {
     const t = await syncTilesForStudent(service, studentNumber, oldYears, {
       realmId,
-    }).catch((e) => ({
-      changed: 0,
-      errors: [qboErrorMessage(e)],
-    }));
-    historyErrors.push(...t.errors);
+    }).catch((e: unknown) => ({ changed: 0, errors: [String(e)] }));
+    if (t.errors.length > 0) {
+      console.error('[billing] link, old years tiles:', t.errors);
+      historyErrors.push(STAGE_NOT_UPDATED);
+    }
   }
-  return { ok: true, displayName, historyErrors };
+  return { ok: true, displayName, historyErrors: [...new Set(historyErrors)] };
 }

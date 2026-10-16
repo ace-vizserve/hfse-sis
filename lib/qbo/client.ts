@@ -310,12 +310,29 @@ export async function qboQueryAll<T>(
 /** The sentence a person sees when a QuickBooks call fails. */
 export function qboErrorMessage(e: unknown): string {
   if (e instanceof QboNotConnectedError) {
-    return 'QuickBooks is not connected. Ask a superadmin to connect it in SIS Admin.';
+    return NOT_CONNECTED;
   }
   if (e instanceof QboError && e.code === 'invalid_grant') {
-    return 'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in SIS Admin.';
+    return RECONNECT;
   }
   if (e instanceof QboError)
     return `QuickBooks didn't accept this: ${e.detail}`;
   return "QuickBooks couldn't be reached. Nothing was saved — try again in a minute.";
+}
+
+const NOT_CONNECTED =
+  'QuickBooks is not connected. Ask a superadmin to connect it in Billing → Settings.';
+const RECONNECT =
+  'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → Settings.';
+
+/**
+ * Why a QuickBooks call failed, with no claim about what was saved — for use
+ * once QuickBooks has already accepted an earlier write in the same action,
+ * where "Nothing was saved" would be untrue.
+ */
+export function qboReasonOnly(e: unknown): string {
+  if (e instanceof QboNotConnectedError) return NOT_CONNECTED;
+  if (e instanceof QboError && e.code === 'invalid_grant') return RECONNECT;
+  if (e instanceof QboError) return e.detail;
+  return "QuickBooks couldn't be reached";
 }

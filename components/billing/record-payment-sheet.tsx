@@ -37,10 +37,11 @@ import {
   type CreditSource,
   type OpenInvoice,
 } from '@/lib/billing/payment-plan';
+import { shouldRenewRequestId } from '@/lib/billing/request-id';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
-import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 export function RecordPaymentSheet({
@@ -128,10 +129,11 @@ export function RecordPaymentSheet({
           })
         );
       } catch (err) {
-        // The server answered with an error status: take a fresh id so the
-        // next submit isn't replayed from the old one. Network failures and
-        // lost responses keep the same id, so a retry is de-duplicated.
-        if (err instanceof ApiError) setRequestId(crypto.randomUUID());
+        // Our route answered with its own error (JSON with `error`): take a
+        // fresh id so the next submit isn't replayed from the old one. Network
+        // failures, lost responses and platform timeouts keep the same id, so
+        // a retry is de-duplicated.
+        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
         throw err;
       }
     },

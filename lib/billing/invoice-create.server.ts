@@ -5,7 +5,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logAction } from '@/lib/audit/log-action';
 import type { QbInvoiceFull } from '@/lib/billing/invoice-row';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
+import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/settings.server';
+import { staffDisplayName } from '@/lib/billing/staff-name.server';
 import { upsertInvoice } from '@/lib/billing/store.server';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import {
@@ -14,6 +16,7 @@ import {
   QboError,
   qboErrorMessage,
   qboQuery,
+  qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
 } from '@/lib/qbo/client';
@@ -34,6 +37,8 @@ export type CreateInvoiceInput = {
   memo?: string;
   docNumber?: string;
   send: boolean;
+  /** One id per submit; QuickBooks de-duplicates retries on it. */
+  requestId: string;
 };
 
 export type CreateInvoiceResult =
@@ -73,7 +78,10 @@ export async function createInvoiceForStudent(
       .eq('student_number', studentNumber)
       .eq('realm_id', realmId)
       .maybeSingle();
-    if (error) return { ok: false, status: 500, error: error.message };
+    if (error) {
+      console.error('[billing] create invoice, link lookup:', error.message);
+      return { ok: false, status: 500, error: SIS_READ_FAILED };
+    }
     if (!link)
       return {
         ok: false,
@@ -130,11 +138,7 @@ export async function createInvoiceForStudent(
       input.lines,
       new Map(items.map((i) => [i.Id, i]))
     );
-    const { data: who } = await service.auth.admin.getUserById(actor.id);
-    const staffName =
-      (who?.user?.user_metadata?.full_name as string | undefined) ??
-      actor.email ??
-      'staff';
+    const staffName = await staffDisplayName(service, actor);
     invoice = (
       await qboRequest<{ Invoice: QbInvoiceFull }>(
         service,
@@ -151,7 +155,10 @@ export async function createInvoiceForStudent(
           ...(customer.email ? { BillEmail: { Address: customer.email } } : {}),
           PrivateNote: `Created from SIS by ${staffName}`,
           ...(docNumber ? { DocNumber: docNumber } : { AutoDocNumber: true }),
-        }
+        },
+        // QuickBooks returns the original invoice for a repeated requestid,
+        // so a retry of the same submit never creates it twice.
+        { requestId: input.requestId }
       )
     ).Invoice;
   } catch (e) {
@@ -187,7 +194,10 @@ export async function createInvoiceForStudent(
         [placed.after.ayCode],
         { realmId }
       );
-      warnings.push(...t.errors.map((e) => `The stage wasn't updated: ${e}`));
+      if (t.errors.length > 0) {
+        console.error('[billing] tiles after create invoice:', t.errors);
+        warnings.push(STAGE_NOT_UPDATED);
+      }
     }
   } catch (e) {
     console.error('[billing] invoice saved in QuickBooks, SIS save failed:', e);
@@ -210,11 +220,17 @@ export async function createInvoiceForStudent(
   let sentTo: string | null = null;
   if (input.send) {
     try {
-      sentTo = (await sendInvoice(service, { qboInvoiceId: invoice.Id, actor }))
-        .sentTo;
+      sentTo = (
+        await sendInvoice(service, {
+          qboInvoiceId: invoice.Id,
+          actor,
+          requestId: `${input.requestId}-s`,
+        })
+      ).sentTo;
     } catch (e) {
+      console.error('[billing] send after create invoice:', e);
       warnings.push(
-        `The invoice was created, but it wasn't emailed: ${qboErrorMessage(e)} Use Send on the invoice page.`
+        `The invoice was created, but it wasn't emailed (${qboReasonOnly(e)}). Use Send on the invoice page.`
       );
     }
   }

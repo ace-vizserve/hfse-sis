@@ -17,6 +17,8 @@ export async function sendInvoice(
     qboInvoiceId: string;
     sendTo?: string | null;
     actor: { id: string; email: string | null; role: string };
+    /** QuickBooks replays the original send for a repeated id. */
+    requestId?: string;
   }
 ): Promise<{ sentTo: string | null }> {
   const to = args.sendTo?.trim() || null;
@@ -29,6 +31,7 @@ export async function sendInvoice(
     };
   }>(service, 'POST', path, undefined, {
     contentType: 'application/octet-stream',
+    ...(args.requestId ? { requestId: args.requestId } : {}),
   });
   const sentTo = to ?? Invoice.BillEmail?.Address ?? null;
   await logAction({

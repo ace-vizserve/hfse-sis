@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
+import { readCustomerProfile } from '@/lib/billing/live.server';
+import { SIS_READ_FAILED } from '@/lib/billing/messages';
 import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -28,12 +30,16 @@ export async function POST(
     );
   const service = createServiceClient();
   const realmId = await connectedRealmId(service).catch(() => null);
-  const { data: row } = await service
+  const { data: row, error: rowError } = await service
     .from('qbo_invoices')
-    .select('qbo_invoice_id, state')
+    .select('qbo_invoice_id, state, qbo_customer_id')
     .eq('qbo_invoice_id', invoiceId)
     .eq('realm_id', realmId ?? '')
     .maybeSingle();
+  if (rowError) {
+    console.error('[billing] send, invoice lookup:', rowError.message);
+    return NextResponse.json({ error: SIS_READ_FAILED }, { status: 500 });
+  }
   if (!row)
     return NextResponse.json(
       { error: 'That invoice is not one of a linked student’s.' },
@@ -44,10 +50,28 @@ export async function POST(
       { error: 'A voided invoice can’t be sent.' },
       { status: 409 }
     );
+  // No address given: send to the customer's email in QuickBooks, so an
+  // invoice made without a billing email still reaches the parents.
+  let sendTo = parsed.data.sendTo ?? null;
+  if (!sendTo) {
+    try {
+      sendTo = row.qbo_customer_id
+        ? (await readCustomerProfile(service, row.qbo_customer_id as string))
+            .email
+        : null;
+    } catch (e) {
+      return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
+    }
+    if (!sendTo)
+      return NextResponse.json(
+        { error: 'The QuickBooks customer has no email to send to.' },
+        { status: 422 }
+      );
+  }
   try {
     const r = await sendInvoice(service, {
       qboInvoiceId: invoiceId,
-      sendTo: parsed.data.sendTo ?? null,
+      sendTo,
       actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
     });
     return NextResponse.json({ ok: true, sentTo: r.sentTo });

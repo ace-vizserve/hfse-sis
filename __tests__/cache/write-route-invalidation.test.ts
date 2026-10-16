@@ -89,6 +89,20 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
   'app/api/billing/students/[studentNumber]/refresh/route.ts':
     'Stage writes go through writeStageFromQbo, which expires the tags; the billing store tables are read uncached.',
+  // Checked 2026-10-16: no lib/billing or lib/qbo loader calls unstable_cache,
+  // and every stage write below goes syncTilesForStudent (lib/billing/
+  // tiles.server.ts) → writeStageFromQbo, which revalidateTags sis:<AY> and
+  // the admissions/records drill tags itself.
+  'app/api/billing/invoices/[invoiceId]/send/route.ts':
+    'Emails through QuickBooks; the only SIS write is the qbo.invoice.send audit_log row, which no cached surface reads.',
+  'app/api/billing/settings/preview/route.ts':
+    'POST computes what a settings save WOULD move (previewReclassify reads only). Nothing is written.',
+  'app/api/billing/students/[studentNumber]/customer/route.ts':
+    'Adds the customer in QuickBooks, then links it (qbo_customers, billing_link_review — read uncached); stage moves from the history load go through writeStageFromQbo, which busts the tags.',
+  'app/api/billing/students/[studentNumber]/invoices/route.ts':
+    'Stores the new invoice in qbo_invoices (read uncached by the Billing loaders); the stage move goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
+  'app/api/billing/students/[studentNumber]/payments/route.ts':
+    'Stores the payment in qbo_payments (read uncached by the Billing loaders); the stage move goes through loadCustomerHistory → writeStageFromQbo, which busts the tags.',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached

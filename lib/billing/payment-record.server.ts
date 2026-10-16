@@ -6,15 +6,23 @@ import { logAction } from '@/lib/audit/log-action';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import type { QbPayment } from '@/lib/billing/invoice-row';
 import {
+  SIS_CATCH_UP,
+  SIS_READ_FAILED,
+  STAGE_NOT_UPDATED,
+} from '@/lib/billing/messages';
+import { prePaymentRefusal } from '@/lib/billing/payment-guard';
+import {
   mergeCreditLines,
   planPayment,
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
+import { staffDisplayName } from '@/lib/billing/staff-name.server';
 import { upsertPayment } from '@/lib/billing/store.server';
 import { round2 } from '@/lib/billing/view';
 import {
   connectedRealmId,
   qboErrorMessage,
+  qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
 } from '@/lib/qbo/client';
@@ -72,7 +80,10 @@ export async function recordPayment(
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId)
     .maybeSingle();
-  if (linkErr) return { ok: false, status: 500, error: linkErr.message };
+  if (linkErr) {
+    console.error('[billing] record payment, link lookup:', linkErr.message);
+    return { ok: false, status: 500, error: SIS_READ_FAILED };
+  }
   if (!link)
     return {
       ok: false,
@@ -81,21 +92,18 @@ export async function recordPayment(
     };
   const customerId = link.qbo_customer_id as string;
 
-  // 1) QuickBooks' figures now.
-  try {
-    const fresh = await loadCustomerHistory(service, studentNumber, undefined);
-    if (fresh.errors.length > 0) {
-      console.warn('[billing] pre-payment read:', fresh.errors);
-      return {
-        ok: false,
-        status: 502,
-        error:
-          "QuickBooks' latest figures couldn't be read, so nothing was recorded. Try again in a minute.",
-      };
-    }
-  } catch (e) {
-    return { ok: false, status: 502, error: qboErrorMessage(e) };
+  // 1) QuickBooks' figures now. Only a failed read refuses; a tile write
+  // problem is logged (the figures were still read) and retried later.
+  const fresh = await loadCustomerHistory(service, studentNumber).catch(
+    (e: unknown) => (e instanceof Error ? e : new Error(String(e)))
+  );
+  const refusal = prePaymentRefusal(fresh);
+  if (refusal) {
+    console.error('[billing] pre-payment read failed:', fresh);
+    return { ok: false, status: 502, error: refusal };
   }
+  if (!(fresh instanceof Error) && fresh.errors.length > 0)
+    console.warn('[billing] pre-payment read, tile problems:', fresh.errors);
   const [inv, pay, dep] = await Promise.all([
     service
       .from('qbo_invoices')
@@ -116,12 +124,13 @@ export async function recordPayment(
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
-  if (inv.error || pay.error || dep.error)
-    return {
-      ok: false,
-      status: 500,
-      error: (inv.error ?? pay.error ?? dep.error)!.message,
-    };
+  if (inv.error || pay.error || dep.error) {
+    console.error(
+      '[billing] record payment, stored lookup:',
+      (inv.error ?? pay.error ?? dep.error)!.message
+    );
+    return { ok: false, status: 500, error: SIS_READ_FAILED };
+  }
   const rows = (inv.data ?? []) as Array<{
     qbo_invoice_id: string;
     doc_number: string | null;
@@ -219,7 +228,7 @@ export async function recordPayment(
         ok: false,
         status: 502,
         error: creditApplied
-          ? `Some of the credit was used, then QuickBooks stopped: ${qboErrorMessage(e)} Reload the page to see where it got to.`
+          ? `Some of the credit was used, then QuickBooks stopped (${qboReasonOnly(e)}). Reload the page to see where it got to.`
           : qboErrorMessage(e),
       };
     }
@@ -244,11 +253,7 @@ export async function recordPayment(
   // 3) The new money.
   let paymentId: string | null = null;
   if (input.amount > 0) {
-    const { data: who } = await service.auth.admin.getUserById(actor.id);
-    const staffName =
-      (who?.user?.user_metadata?.full_name as string | undefined) ??
-      actor.email ??
-      'staff';
+    const staffName = await staffDisplayName(service, actor);
     let created: QbPayment;
     try {
       const { Payment } = await qboRequest<{ Payment: QbPayment }>(
@@ -278,7 +283,7 @@ export async function recordPayment(
         ok: false,
         status: 502,
         error: creditApplied
-          ? `The credit was used, but the payment wasn't recorded: ${qboErrorMessage(e)}`
+          ? `The credit was used, but the payment wasn't recorded (${qboReasonOnly(e)}). Reload the page, then record the payment again.`
           : qboErrorMessage(e),
       };
     }
@@ -293,9 +298,7 @@ export async function recordPayment(
       });
     } catch (e) {
       console.error('[billing] upsertPayment after QuickBooks accepted:', e);
-      warnings.push(
-        'Saved in QuickBooks; the SIS copy will catch up within the hour.'
-      );
+      warnings.push(SIS_CATCH_UP);
     }
     try {
       await logAction({
@@ -321,15 +324,14 @@ export async function recordPayment(
   // 4) Store everything and move the tiles.
   try {
     const after = await loadCustomerHistory(service, studentNumber);
-    warnings.push(
-      ...after.errors.map(
-        (e) => `Saved in QuickBooks; the SIS copy will catch up: ${e}`
-      )
-    );
+    if (after.tileProblem) {
+      console.error('[billing] tiles after payment:', after.errors);
+      warnings.push(STAGE_NOT_UPDATED);
+    }
   } catch (e) {
-    warnings.push(
-      `Saved in QuickBooks; the SIS copy will catch up within the hour (${qboErrorMessage(e)}).`
-    );
+    console.error('[billing] re-read after payment:', e);
+    warnings.push(`${SIS_CATCH_UP.replace(/\.$/, '')} (${qboReasonOnly(e)}).`);
   }
-  return { ok: true, paymentId, plan, warnings };
+  // One sentence once, however many steps hit it.
+  return { ok: true, paymentId, plan, warnings: [...new Set(warnings)] };
 }

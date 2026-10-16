@@ -46,6 +46,10 @@ export async function studentForCustomer(
 /**
  * Reads every invoice and payment of the student's linked QuickBooks customer
  * into the Billing store, then recomputes their tiles for every year touched.
+ *
+ * A failed QuickBooks read (or store write) THROWS. `errors` holds only the
+ * raw tile write failures, for logs and scripts; `tileProblem` says whether
+ * there were any, so screens show one fixed sentence (STAGE_NOT_UPDATED).
  */
 export async function loadCustomerHistory(
   service: SupabaseClient,
@@ -56,6 +60,7 @@ export async function loadCustomerHistory(
   payments: number;
   tilesChanged: number;
   errors: string[];
+  tileProblem: boolean;
 }> {
   const realmId = preloaded?.realmId ?? (await connectedRealmId(service));
   if (!realmId) throw new QboNotConnectedError();
@@ -72,6 +77,7 @@ export async function loadCustomerHistory(
       payments: 0,
       tilesChanged: 0,
       errors: ['This student is not linked to a QuickBooks customer yet.'],
+      tileProblem: false,
     };
   const customerId = link.qbo_customer_id as string;
   const cust = `CustomerRef = '${qbEscape(customerId)}'`;
@@ -217,5 +223,6 @@ export async function loadCustomerHistory(
     payments: payments.length,
     tilesChanged,
     errors,
+    tileProblem: errors.length > 0,
   };
 }

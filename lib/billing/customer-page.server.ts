@@ -11,6 +11,7 @@ import {
   type CustomerProfile,
 } from '@/lib/billing/live.server';
 import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/settings.server';
 import {
   loadStudentInfo,
@@ -69,8 +70,10 @@ export type CustomerPage = {
   connected: boolean;
   environment: 'sandbox' | 'production' | null;
   link: { customerId: string; displayName: string } | null;
-  /** The read from QuickBooks this page just made. */
+  /** The read from QuickBooks this page just made failed (shows stored data). */
   refreshError: string | null;
+  /** The read worked but a Registration / Fees stage couldn't be updated. */
+  stageWarning: string | null;
   profile: CustomerProfile | null;
   balances: Balances;
   invoices: InvoiceRowView[];
@@ -185,6 +188,29 @@ export function toPaymentRow(
   };
 }
 
+/** Payments with unused credit, as Record payment / Use credit take them. */
+export function toCreditSources(
+  payments: PaymentRowView[]
+): Array<CreditSource & { reference: string | null }> {
+  return payments
+    .filter((p) => p.unapplied > 0)
+    .map((p) => ({
+      paymentId: p.id,
+      txnDate: p.txnDate,
+      unapplied: p.unapplied,
+      reference: p.reference,
+    }));
+}
+
+/** The `billing_deposit_accounts` rows as the payment sheet's choices. */
+export function toDepositAccounts(
+  rows: unknown[] | null | undefined
+): Array<{ id: string; label: string }> {
+  return ((rows ?? []) as Array<{ qbo_account_id: string; label: string }>).map(
+    (d) => ({ id: d.qbo_account_id, label: d.label })
+  );
+}
+
 export async function loadCustomerPage(
   service: SupabaseClient,
   studentNumber: string
@@ -205,6 +231,7 @@ export async function loadCustomerPage(
     environment: (conn?.environment as CustomerPage['environment']) ?? null,
     link: null,
     refreshError: null,
+    stageWarning: null,
     profile: null,
     balances: zero,
     invoices: [],
@@ -229,10 +256,23 @@ export async function loadCustomerPage(
   // Every open of this page reads the customer from QuickBooks first (Mr Ace,
   // 2026-10-16), so the page is QuickBooks' data at this moment. A failed
   // read never breaks the page: it shows the stored copy and says so.
+  // `refreshError` is only a failed read (QuickBooks unreachable); a tile
+  // write problem is a separate, fixed `stageWarning` (raw text logged).
   const [refresh, live] = await Promise.all([
-    loadCustomerHistory(service, studentNumber)
-      .then((r) => (r.errors.length ? r.errors[0] : null))
-      .catch((e) => qboErrorMessage(e)),
+    loadCustomerHistory(service, studentNumber).then(
+      (r) => {
+        if (r.tileProblem)
+          console.error('[billing] customer page, tiles:', r.errors);
+        return {
+          error: null as string | null,
+          stageWarning: r.tileProblem ? STAGE_NOT_UPDATED : null,
+        };
+      },
+      (e) => {
+        console.error('[billing] customer page, QuickBooks read:', e);
+        return { error: qboErrorMessage(e), stageWarning: null };
+      }
+    ),
     Promise.all([
       readCustomerProfile(service, customerId),
       readAging(service, { customerId }),
@@ -320,7 +360,8 @@ export async function loadCustomerPage(
   return {
     ...base,
     link: { customerId, displayName: link.display_name as string },
-    refreshError: refresh,
+    refreshError: refresh.error,
+    stageWarning: refresh.stageWarning,
     profile: live?.profile ?? null,
     balances: pickBalances({
       stored,
@@ -337,20 +378,8 @@ export async function loadCustomerPage(
       balance: round2(i.balance),
       items: i.items,
     })),
-    credits: payments
-      .filter((p) => p.unapplied > 0)
-      .map((p) => ({
-        paymentId: p.id,
-        txnDate: p.txnDate,
-        unapplied: p.unapplied,
-        reference: p.reference,
-      })),
-    depositAccounts: (
-      (dep.data ?? []) as Array<{ qbo_account_id: string; label: string }>
-    ).map((d) => ({
-      id: d.qbo_account_id,
-      label: d.label,
-    })),
+    credits: toCreditSources(payments),
+    depositAccounts: toDepositAccounts(dep.data),
     maps: mapsToData(maps),
     stages,
     overdueOldest: oldest

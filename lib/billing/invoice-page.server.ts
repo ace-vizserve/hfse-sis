@@ -9,6 +9,8 @@ import {
 import {
   INVOICE_COLS,
   PAYMENT_COLS,
+  toCreditSources,
+  toDepositAccounts,
   toInvoiceRow,
   toPaymentRow,
   type InvRow,
@@ -64,7 +66,9 @@ export async function loadInvoicePage(
 
   // Read live, like the customer page: the invoice in full, the customer's
   // contact details, and a refresh of the stored copy for the payments.
-  const [detail, profile] = await Promise.all([
+  // The third entry is effect-only: it refreshes the stored copy, so its
+  // result is not destructured; the payments below are read from the store.
+  const [detail, profile /* , refreshed (effect only) */] = await Promise.all([
     readInvoiceDetail(service, qboInvoiceId).then(
       (d) => ({ d, e: null as string | null }),
       (e) => ({ d: null, e: qboErrorMessage(e) })
@@ -173,19 +177,7 @@ export async function loadInvoicePage(
         'sandbox',
       qboInvoiceId
     ),
-    credits: allPayments
-      .filter((p) => p.unapplied > 0)
-      .map((p) => ({
-        paymentId: p.id,
-        txnDate: p.txnDate,
-        unapplied: p.unapplied,
-        reference: p.reference,
-      })),
-    depositAccounts: (
-      (dep.data ?? []) as Array<{ qbo_account_id: string; label: string }>
-    ).map((d) => ({
-      id: d.qbo_account_id,
-      label: d.label,
-    })),
+    credits: toCreditSources(allPayments),
+    depositAccounts: toDepositAccounts(dep.data),
   };
 }
