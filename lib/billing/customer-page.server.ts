@@ -28,7 +28,7 @@ import {
   type InvoiceStatus,
   type MapsData,
 } from '@/lib/billing/view';
-import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
+import { connectedRealmId, qboReasonOnly } from '@/lib/qbo/client';
 import { readStageSnapshot } from '@/lib/qbo/stage-write';
 
 export type InvoiceRowView = {
@@ -270,7 +270,11 @@ export async function loadCustomerPage(
       },
       (e) => {
         console.error('[billing] customer page, QuickBooks read:', e);
-        return { error: qboErrorMessage(e), stageWarning: null };
+        // A page load saves nothing, so the reason only (no "Nothing was saved").
+        return {
+          error: `${qboReasonOnly(e).replace(/\.$/, '')}.`,
+          stageWarning: null,
+        };
       }
     ),
     Promise.all([

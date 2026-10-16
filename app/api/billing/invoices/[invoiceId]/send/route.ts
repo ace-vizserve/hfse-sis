@@ -3,7 +3,10 @@ import { z } from 'zod';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
-import { readCustomerProfile } from '@/lib/billing/live.server';
+import {
+  readCustomerProfile,
+  readInvoiceDetail,
+} from '@/lib/billing/live.server';
 import { SIS_READ_FAILED } from '@/lib/billing/messages';
 import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
@@ -50,23 +53,28 @@ export async function POST(
       { error: 'A voided invoice can’t be sent.' },
       { status: 409 }
     );
-  // No address given: send to the customer's email in QuickBooks, so an
-  // invoice made without a billing email still reaches the parents.
+  // No address given: the invoice's own billing email wins (QuickBooks uses
+  // it when no sendTo is passed). Only an invoice without one falls back to
+  // the customer's email in QuickBooks. Read live — nothing is sent yet.
   let sendTo = parsed.data.sendTo ?? null;
   if (!sendTo) {
     try {
-      sendTo = row.qbo_customer_id
-        ? (await readCustomerProfile(service, row.qbo_customer_id as string))
-            .email
-        : null;
+      const detail = await readInvoiceDetail(service, invoiceId);
+      if (!detail.billEmail) {
+        const customerId =
+          detail.customerId || (row.qbo_customer_id as string | null);
+        sendTo = customerId
+          ? (await readCustomerProfile(service, customerId)).email
+          : null;
+        if (!sendTo)
+          return NextResponse.json(
+            { error: 'The QuickBooks customer has no email to send to.' },
+            { status: 422 }
+          );
+      }
     } catch (e) {
       return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
     }
-    if (!sendTo)
-      return NextResponse.json(
-        { error: 'The QuickBooks customer has no email to send to.' },
-        { status: 422 }
-      );
   }
   try {
     const r = await sendInvoice(service, {
