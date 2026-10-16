@@ -110,6 +110,7 @@ export const ALL_AUDIT_ACTIONS = [
   // Billing module (migration 189).
   'qbo.customer.link',
   'qbo.payment.create',
+  'qbo.payment.apply_credit',
   'billing.link.run',
   'billing.mapping.update',
   'billing.years.update',

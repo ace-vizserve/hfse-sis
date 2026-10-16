@@ -208,6 +208,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.connection.disconnect': 'QuickBooks disconnected',
   'qbo.customer.link': 'Student linked to QuickBooks customer',
   'qbo.payment.create': 'Payment recorded in QuickBooks',
+  'qbo.payment.apply_credit': 'Customer credit used in QuickBooks',
   'billing.link.run': 'Students linked to QuickBooks',
   'billing.mapping.update': 'Billing tile mapping changed',
   'billing.years.update': 'Billing year ranges changed',
@@ -1955,6 +1956,23 @@ function templateSummary(
       }
       const account = str(ctx.deposit_account);
       if (account) parts.push(account);
+      return joinParts(parts);
+    }
+    case 'qbo.payment.apply_credit': {
+      const parts: string[] = [];
+      const amount = Number(ctx.amount);
+      if (
+        ctx.amount !== undefined &&
+        ctx.amount !== null &&
+        Number.isFinite(amount)
+      )
+        parts.push(
+          `S$${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+      const invoices = Array.isArray(ctx.invoices)
+        ? (ctx.invoices as unknown[]).map(String).filter(Boolean)
+        : [];
+      if (invoices.length) parts.push(`to ${invoices.join(', ')}`);
       return joinParts(parts);
     }
     case 'billing.link.run': {
