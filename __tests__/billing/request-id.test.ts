@@ -15,6 +15,23 @@ describe('shouldRenewRequestId', () => {
     ).toBe(true);
   });
 
+  it('keeps the id when our route says QuickBooks may have saved it', () => {
+    expect(
+      shouldRenewRequestId(
+        new ApiError(
+          502,
+          { error: "QuickBooks didn't answer…", keepRequestId: true },
+          'x'
+        )
+      )
+    ).toBe(false);
+    expect(
+      shouldRenewRequestId(
+        new ApiError(502, { error: 'x', keepRequestId: false }, 'x')
+      )
+    ).toBe(true);
+  });
+
   it('keeps the id for platform errors, lost responses and network failures', () => {
     // A platform 502/504 (HTML or empty body) may follow a write QuickBooks
     // accepted; the retry must replay the same id.

@@ -25,6 +25,8 @@ import {
   qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
+  WRITE_OUTCOME_UNKNOWN,
+  writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 
 export type RecordPaymentInput = {
@@ -45,7 +47,13 @@ export type RecordPaymentResult =
       plan: PaymentPlan;
       warnings: string[];
     }
-  | { ok: false; status: number; error: string };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      /** QuickBooks may have saved it: the retry must reuse the requestid. */
+      keepRequestId?: true;
+    };
 
 /**
  * Record payment (spec "Drawers") and Use credit. QuickBooks first:
@@ -204,10 +212,12 @@ export async function recordPayment(
   let creditIndex = 0;
   for (const [paymentId, entries] of byPayment) {
     const requestId = `${input.requestId}-c${creditIndex++}`;
+    let writing = false;
     try {
       const { Payment } = await qboRequest<{
         Payment: QbPayment & { SyncToken: string };
       }>(service, 'GET', `/payment/${encodeURIComponent(paymentId)}`);
+      writing = true;
       await qboRequest(
         service,
         'POST',
@@ -224,6 +234,15 @@ export async function recordPayment(
       );
       creditApplied = true;
     } catch (e) {
+      // No definite answer to the credit update: QuickBooks may have applied
+      // it, so the retry reuses the requestid.
+      if (writing && writeOutcomeUnknown(e))
+        return {
+          ok: false,
+          status: 502,
+          error: WRITE_OUTCOME_UNKNOWN,
+          keepRequestId: true,
+        };
       return {
         ok: false,
         status: 502,
@@ -279,6 +298,15 @@ export async function recordPayment(
       paymentId = Payment.Id;
       created = Payment;
     } catch (e) {
+      // No definite answer: QuickBooks may have recorded the payment, so the
+      // retry reuses the requestid and QuickBooks de-duplicates it.
+      if (writeOutcomeUnknown(e))
+        return {
+          ok: false,
+          status: 502,
+          error: WRITE_OUTCOME_UNKNOWN,
+          keepRequestId: true,
+        };
       return {
         ok: false,
         status: 502,

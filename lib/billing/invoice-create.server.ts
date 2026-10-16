@@ -19,6 +19,8 @@ import {
   qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
+  WRITE_OUTCOME_UNKNOWN,
+  writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import {
   buildInvoiceLines,
@@ -49,7 +51,13 @@ export type CreateInvoiceResult =
       sentTo: string | null;
       warnings: string[];
     }
-  | { ok: false; status: number; error: string };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      /** QuickBooks may have created it: the retry must reuse the requestid. */
+      keepRequestId?: true;
+    };
 
 /**
  * Create Invoice from the customer page (spec "Drawers"). QuickBooks FIRST;
@@ -68,6 +76,7 @@ export async function createInvoiceForStudent(
   let realmId: string;
   let customer: { id: string; name: string; email: string | null };
   let invoice: QbInvoiceFull;
+  let writing = false;
   try {
     const r = await connectedRealmId(service);
     if (!r) throw new QboNotConnectedError();
@@ -139,6 +148,7 @@ export async function createInvoiceForStudent(
       new Map(items.map((i) => [i.Id, i]))
     );
     const staffName = await staffDisplayName(service, actor);
+    writing = true;
     invoice = (
       await qboRequest<{ Invoice: QbInvoiceFull }>(
         service,
@@ -162,6 +172,15 @@ export async function createInvoiceForStudent(
       )
     ).Invoice;
   } catch (e) {
+    // The create itself got no definite answer: QuickBooks may have the
+    // invoice, so the sheet keeps the requestid and a retry is de-duplicated.
+    if (writing && writeOutcomeUnknown(e))
+      return {
+        ok: false,
+        status: 502,
+        error: WRITE_OUTCOME_UNKNOWN,
+        keepRequestId: true,
+      };
     // buildInvoiceLines throws a plain Error with a sentence meant for staff.
     const message =
       e instanceof Error &&

@@ -130,9 +130,10 @@ export function RecordPaymentSheet({
         );
       } catch (err) {
         // Our route answered with its own error (JSON with `error`): take a
-        // fresh id so the next submit isn't replayed from the old one. Network
-        // failures, lost responses and platform timeouts keep the same id, so
-        // a retry is de-duplicated.
+        // fresh id so the next submit isn't replayed from the old one — unless
+        // it said `keepRequestId` (QuickBooks didn't answer the write). That,
+        // network failures, lost responses and platform timeouts keep the
+        // same id, so a retry is de-duplicated.
         if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
         throw err;
       }

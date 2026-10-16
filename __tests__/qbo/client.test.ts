@@ -8,6 +8,8 @@ import {
   qboQueryAll,
   qboReasonOnly,
   qboRequest,
+  WRITE_OUTCOME_UNKNOWN,
+  writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import { qboInvoiceUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
@@ -54,6 +56,27 @@ describe('QuickBooks client helpers', () => {
     expect(qboReasonOnly(grant)).toBe(qboErrorMessage(grant));
     for (const e of [new Error('x'), new QboError(500, null, 'y')])
       expect(qboReasonOnly(e)).not.toContain('Nothing was saved');
+  });
+
+  it('treats a write with no definite answer as possibly saved', () => {
+    expect(writeOutcomeUnknown(new TypeError('fetch failed'))).toBe(true);
+    expect(
+      writeOutcomeUnknown(Object.assign(new Error('x'), { name: 'AbortError' }))
+    ).toBe(true);
+    expect(
+      writeOutcomeUnknown(
+        Object.assign(new Error('x'), { name: 'TimeoutError' })
+      )
+    ).toBe(true);
+    expect(writeOutcomeUnknown(new QboError(500, null, 'x'))).toBe(true);
+    expect(writeOutcomeUnknown(new QboError(503, null, 'x'))).toBe(true);
+    expect(writeOutcomeUnknown(new QboError(408, null, 'x'))).toBe(true);
+    expect(writeOutcomeUnknown(new QboError(429, null, 'x'))).toBe(true);
+    expect(writeOutcomeUnknown(new QboError(400, '6000', 'x'))).toBe(false);
+    expect(writeOutcomeUnknown(new QboError(401, null, 'x'))).toBe(false);
+    expect(writeOutcomeUnknown(new QboNotConnectedError())).toBe(false);
+    expect(writeOutcomeUnknown(new Error('One of the items…'))).toBe(false);
+    expect(WRITE_OUTCOME_UNKNOWN).not.toContain('Nothing was saved');
   });
 
   it('links to the invoice in the right QuickBooks', () => {

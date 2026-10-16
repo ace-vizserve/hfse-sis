@@ -326,6 +326,27 @@ const RECONNECT =
   'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → Settings.';
 
 /**
+ * True when a failed QuickBooks WRITE gave no definite answer, so QuickBooks
+ * may still have saved it: the request never came back (network failure,
+ * abort, timeout), QuickBooks failed on its side (5xx), timed out (408) or
+ * kept throttling (429). A retry must then reuse the same requestid, which
+ * QuickBooks de-duplicates. A 4xx refusal and "not connected" are definite:
+ * nothing was written.
+ */
+export function writeOutcomeUnknown(e: unknown): boolean {
+  if (e instanceof QboNotConnectedError) return false;
+  if (e instanceof QboError)
+    return e.status >= 500 || e.status === 408 || e.status === 429;
+  if (e instanceof TypeError) return true;
+  const name = (e as { name?: unknown } | null)?.name;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+/** The sentence for a write whose outcome is unknown (see above). */
+export const WRITE_OUTCOME_UNKNOWN =
+  "QuickBooks didn't answer, so it may have saved this. Reload the page and check before trying again.";
+
+/**
  * Why a QuickBooks call failed, with no claim about what was saved — for use
  * once QuickBooks has already accepted an earlier write in the same action,
  * where "Nothing was saved" would be untrue.

@@ -37,6 +37,7 @@ const Body = z.object({
 
 // POST /api/billing/students/[studentNumber]/invoices — Create invoice from
 // the customer page. QuickBooks first; nothing is saved unless it accepts.
+// `keepRequestId: true` in an error means QuickBooks may have created it.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ studentNumber: string }> }
@@ -55,6 +56,13 @@ export async function POST(
     actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
     input: parsed.data,
   });
-  if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+  if (!r.ok)
+    return NextResponse.json(
+      {
+        error: r.error,
+        ...(r.keepRequestId ? { keepRequestId: true } : {}),
+      },
+      { status: r.status }
+    );
   return NextResponse.json(r);
 }

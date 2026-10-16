@@ -177,8 +177,9 @@ export function CreateInvoiceSheet({
         );
       } catch (err) {
         // Our route answered with its own error: nothing was created, so the
-        // next submit is a new one. Anything else (lost response, timeout)
-        // keeps the id, so a retry is de-duplicated by QuickBooks.
+        // next submit is a new one. A `keepRequestId` answer (QuickBooks
+        // didn't answer the create) and anything else (lost response,
+        // timeout) keep the id, so a retry is de-duplicated by QuickBooks.
         if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
         throw err;
       }

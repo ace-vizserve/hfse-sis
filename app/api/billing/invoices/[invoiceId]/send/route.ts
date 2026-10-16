@@ -8,12 +8,18 @@ import {
   readInvoiceDetail,
 } from '@/lib/billing/live.server';
 import { SIS_READ_FAILED } from '@/lib/billing/messages';
-import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
+import {
+  connectedRealmId,
+  qboErrorMessage,
+  writeOutcomeUnknown,
+} from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
 const Body = z.object({
   sendTo: z.email('That is not an email address.').optional(),
+  /** One id per click; QuickBooks replays a repeated send instead of emailing twice. */
+  requestId: z.string().uuid().optional(),
 });
 
 // POST /api/billing/invoices/[invoiceId]/send — email the invoice to the
@@ -81,9 +87,21 @@ export async function POST(
       qboInvoiceId: invoiceId,
       sendTo,
       actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
+      ...(parsed.data.requestId ? { requestId: parsed.data.requestId } : {}),
     });
     return NextResponse.json({ ok: true, sentTo: r.sentTo });
   } catch (e) {
+    // No definite answer: QuickBooks may have emailed it, so the button keeps
+    // the request id and a retry is replayed, not sent twice.
+    if (writeOutcomeUnknown(e))
+      return NextResponse.json(
+        {
+          error:
+            "QuickBooks didn't answer, so it may have emailed this. Reload the page and check the invoice activity before sending again.",
+          keepRequestId: true,
+        },
+        { status: 502 }
+      );
     return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
   }
 }
