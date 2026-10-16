@@ -10,7 +10,7 @@
 -- qbo_invoices widens from "invoices attached to a stage" to "every invoice of
 -- a linked customer". ay_code / stage_keys are now the mapping's result.
 -- enrolee_number / stage_key / is_current stay for the KD #231 tile routes
--- until Phase 5 removes them (migration 190 drops the columns).
+-- until Phase 5 removes them (migration 192 drops the columns).
 alter table public.qbo_invoices alter column ay_code drop not null;
 alter table public.qbo_invoices alter column enrolee_number drop not null;
 alter table public.qbo_invoices alter column stage_key drop not null;

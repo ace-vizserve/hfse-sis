@@ -216,7 +216,8 @@ export async function qboRequest<T>(
   service: SupabaseClient,
   method: 'GET' | 'POST',
   path: string,
-  body?: unknown
+  body?: unknown,
+  opts?: { contentType?: string }
 ): Promise<T> {
   const conn = await loadConnection(service);
   const base = `${qboApiBase(conn.environment)}/v3/company/${conn.realm_id}`;
@@ -230,7 +231,11 @@ export async function qboRequest<T>(
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(body
+          ? { 'Content-Type': 'application/json' }
+          : opts?.contentType
+            ? { 'Content-Type': opts.contentType }
+            : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',

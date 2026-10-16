@@ -18,8 +18,11 @@ export type QbPayment = {
   Id: string;
   TxnDate?: string;
   TotalAmt: number;
+  UnappliedAmt?: number;
+  PrivateNote?: string;
   CustomerRef: { value: string };
   DepositToAccountRef?: { value: string; name?: string };
+  PaymentMethodRef?: { value: string; name?: string };
   PaymentRefNum?: string;
   Line?: Array<{
     Amount?: number;

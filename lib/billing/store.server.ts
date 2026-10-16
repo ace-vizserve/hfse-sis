@@ -190,6 +190,7 @@ export async function upsertPayment(
     student_number: args.studentNumber,
     txn_date: args.p.TxnDate ?? null,
     total: Number(args.p.TotalAmt),
+    unapplied: Number(args.p.UnappliedAmt ?? 0),
     deposit_account_id: args.p.DepositToAccountRef?.value ?? null,
     deposit_account_name: args.p.DepositToAccountRef?.name ?? null,
     reference: args.p.PaymentRefNum ?? null,
