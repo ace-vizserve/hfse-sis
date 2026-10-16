@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
+import { creditRequestId } from '@/lib/billing/credit-request-id';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import type { QbPayment } from '@/lib/billing/invoice-row';
 import {
@@ -208,10 +209,11 @@ export async function recordPayment(
     byPayment.set(c.paymentId, list);
   }
   // QuickBooks returns the original response for a repeated requestid, so a
-  // retry of the same submit never records twice.
-  let creditIndex = 0;
+  // retry of the same submit never records twice. Each update's id is keyed
+  // by the credit payment, never its position: a retry re-plans, and a
+  // position id could replay another payment's answer (see creditRequestId).
   for (const [paymentId, entries] of byPayment) {
-    const requestId = `${input.requestId}-c${creditIndex++}`;
+    const requestId = creditRequestId(input.requestId, paymentId);
     let writing = false;
     try {
       const { Payment } = await qboRequest<{
