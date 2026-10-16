@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applicationDate,
   classifyInvoice,
   stageForAccount,
   yearForInvoice,
@@ -165,5 +166,28 @@ describe('classifyInvoice', () => {
       ayCode: null,
       stageKeys: [],
     });
+  });
+});
+
+describe('applicationDate', () => {
+  it('keeps the stored date: created_at already holds Singapore wall-clock time', () => {
+    // An application made at 18:00 Singapore time on 16 Jan is stored as
+    // 2026-01-16 18:00+00 — converting it again would read 17 Jan.
+    expect(applicationDate('2026-01-16T18:00:00+00:00')).toBe('2026-01-16');
+    expect(applicationDate('2026-01-16 23:59:59.123+00')).toBe('2026-01-16');
+  });
+  it('an evening application exactly 7 days after the invoice still counts', () => {
+    expect(
+      yearForInvoice(
+        [
+          { ayCode: 'AY2025', createdOn: '2024-11-11' },
+          {
+            ayCode: 'AY2026',
+            createdOn: applicationDate('2026-01-16T18:00:00+00:00'),
+          },
+        ],
+        '2026-01-09'
+      )
+    ).toBe('AY2026');
   });
 });

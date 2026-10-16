@@ -54,6 +54,17 @@ function addDays(iso: string, days: number): string {
  * Date ranges can't do this — AY2026 and AY2027 invoices overlap May–Jul.
  * Verified on all 868 typed Registration / Fees invoices in production.
  */
+/**
+ * The Singapore date an application was made. The portal's `created_at`
+ * default is `now() AT TIME ZONE 'Asia/Singapore'`: Singapore wall-clock
+ * time stored as if it were UTC. So the date part is already Singapore's —
+ * converting it to Singapore time again would push an evening application
+ * to the next day.
+ */
+export function applicationDate(createdAt: string): string {
+  return createdAt.slice(0, 10);
+}
+
 export function yearForInvoice(
   apps: StudentApplication[],
   txnDate: string | null

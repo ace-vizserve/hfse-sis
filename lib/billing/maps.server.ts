@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
+  applicationDate,
   classifyInvoice,
   stageForAccount,
   type BillingMaps,
@@ -15,7 +16,6 @@ import {
   type InvoiceChange,
 } from '@/lib/billing/settings-helpers';
 import { syncTilesForAllStudents } from '@/lib/billing/tiles.server';
-import { todaySg } from '@/lib/billing/view';
 import {
   connectedRealmId,
   qboQueryAll,
@@ -34,7 +34,11 @@ type Page<T> = PromiseLike<{ data: T[] | null; error: PageErr | null }>;
 /** "This year has no admissions tables" (e.g. a future AY). */
 const NO_TABLE = /PGRST205|42P01|Could not find the table/i;
 
-/** Income account → tile, from every cached QuickBooks item. */
+/**
+ * Income account → tile, from the connected company's cached QuickBooks
+ * items. Account ids repeat across companies, so a sandbox's leftover items
+ * must never place a production invoice.
+ */
 async function loadAccounts(
   service: SupabaseClient
 ): Promise<Map<string, StageChoice>> {
@@ -42,11 +46,14 @@ async function loadAccounts(
     income_account_id: string;
     income_account_name: string | null;
   };
+  const realmId = await connectedRealmId(service).catch(() => null);
+  if (!realmId) return new Map();
   const rows = await fetchAllPages<Row>(
     (from, to) =>
       service
         .from('qbo_items')
         .select('qbo_item_id, income_account_id, income_account_name')
+        .eq('realm_id', realmId)
         .not('income_account_id', 'is', null)
         .range(from, to) as unknown as Page<Row>,
     1000,
@@ -120,7 +127,7 @@ async function loadApplications(
       const list = applications.get(r.studentNumber) ?? [];
       list.push({
         ayCode: ay_code,
-        createdOn: todaySg(new Date(r.created_at)),
+        createdOn: applicationDate(r.created_at),
       });
       applications.set(r.studentNumber, list);
     }
