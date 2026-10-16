@@ -34,7 +34,14 @@ export default async function BillingSettingsPage({
       .from('billing_link_review')
       .select('student_number', { count: 'exact', head: true }),
   ]);
-  const years = [...ayCodes].sort().reverse().slice(0, 4).sort();
+  // The save replaces the whole set of ranges, so a year with a saved range
+  // must always be shown, however old.
+  const years = [
+    ...new Set([
+      ...[...ayCodes].sort().reverse().slice(0, 4),
+      ...settings.ranges.map((r) => r.ayCode),
+    ]),
+  ].sort();
 
   return (
     <PageShell>
