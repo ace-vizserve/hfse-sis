@@ -7,7 +7,6 @@ import {
   summarizeMoves,
   TILES_SKIPPED_MESSAGE,
   tilesSweepBlocker,
-  yearAfterReclassify,
 } from '@/lib/billing/settings-helpers';
 import type { BillingMaps, StageChoice } from '@/lib/billing/classify';
 
@@ -21,17 +20,6 @@ const maps = (
   ranges,
 });
 const AY = [{ ayCode: 'AY2027', startsOn: '2026-01-01', endsOn: '2026-12-31' }];
-
-describe('yearAfterReclassify', () => {
-  it('a KD #231 row (enrolee number set) keeps its stored year', () => {
-    expect(yearAfterReclassify('E1', 'AY2026', null)).toBe('AY2026');
-    expect(yearAfterReclassify('E1', 'AY2026', 'AY2027')).toBe('AY2026');
-  });
-  it('any other row takes the classified year', () => {
-    expect(yearAfterReclassify(null, 'AY2026', 'AY2027')).toBe('AY2027');
-    expect(yearAfterReclassify(undefined, 'AY2026', null)).toBeNull();
-  });
-});
 
 describe('tilesSweepBlocker', () => {
   it('blocks with no year range', () => {

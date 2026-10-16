@@ -34,19 +34,6 @@ export function isRealDate(s: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
-/**
- * The year a stored invoice keeps after re-classifying. A row the KD #231 tile
- * routes made (enrolee_number set) keeps its stored year; Phase 5 removes
- * those routes and this rule with them.
- */
-export function yearAfterReclassify(
-  enroleeNumber: string | null | undefined,
-  storedAyCode: string | null,
-  classifiedAyCode: string | null
-): string | null {
-  return enroleeNumber ? storedAyCode : classifiedAyCode;
-}
-
 export type InvoiceChange = {
   id: string;
   ayCode: string | null;

@@ -9,7 +9,6 @@ import {
   type QbInvoiceFull,
   type QbPayment,
 } from '@/lib/billing/invoice-row';
-import { yearAfterReclassify } from '@/lib/billing/settings-helpers';
 import { qboRequest } from '@/lib/qbo/client';
 import { invoiceState } from '@/lib/qbo/invoice-snapshot';
 import { paymentDateFor } from '@/lib/qbo/sync';
@@ -81,7 +80,7 @@ export async function upsertInvoice(
 }> {
   const { data: prev, error: prevErr } = await service
     .from('qbo_invoices')
-    .select('id, ay_code, stage_keys, enrolee_number, student_number')
+    .select('id, ay_code, stage_keys, student_number')
     .eq('qbo_invoice_id', args.qboInvoiceId)
     .maybeSingle();
   if (prevErr) throw new Error(`Invoice lookup failed: ${prevErr.message}`);
@@ -140,12 +139,7 @@ export async function upsertInvoice(
     lines,
     memo: inv.CustomerMemo?.value ?? null,
     private_note: inv.PrivateNote ?? null,
-    // A row the KD #231 tile routes made (enrolee_number set) keeps its year.
-    ay_code: yearAfterReclassify(
-      prev?.enrolee_number,
-      prev?.ay_code ?? null,
-      place.ayCode
-    ),
+    ay_code: place.ayCode,
     stage_keys: place.stageKeys,
     sync_token: inv.SyncToken,
     synced_at: new Date().toISOString(),
@@ -156,7 +150,6 @@ export async function upsertInvoice(
     : await service.from('qbo_invoices').insert({
         ...row,
         source: args.source ?? 'synced',
-        is_current: false,
         created_by: args.createdBy?.id ?? null,
         created_by_email: args.createdBy?.email ?? null,
       });

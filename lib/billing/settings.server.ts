@@ -18,7 +18,6 @@ import {
   groupChanges,
   summarizeMoves,
   tilesSweepBlocker,
-  yearAfterReclassify,
   type InvoiceChange,
   type Move,
   type MovePreview,
@@ -265,9 +264,7 @@ async function* reclassifyMoves(
   for (let from = 0; ; from += 1000) {
     const { data, error } = await service
       .from('qbo_invoices')
-      .select(
-        'id, student_number, txn_date, lines, ay_code, stage_keys, enrolee_number'
-      )
+      .select('id, student_number, txn_date, lines, ay_code, stage_keys')
       .eq('realm_id', realmId)
       .order('id')
       .range(from, from + 999);
@@ -280,11 +277,9 @@ async function* reclassifyMoves(
       lines: InvoiceLine[];
       ay_code: string | null;
       stage_keys: string[];
-      enrolee_number: string | null;
     }>) {
       const c = classifyInvoice(r.lines ?? [], r.txn_date, maps);
-      // A KD #231 row keeps its year; its stage keys still follow the mapping.
-      const ayCode = yearAfterReclassify(r.enrolee_number, r.ay_code, c.ayCode);
+      const ayCode = c.ayCode;
       if (
         ayCode === r.ay_code &&
         c.stageKeys.join(',') === (r.stage_keys ?? []).join(',')
