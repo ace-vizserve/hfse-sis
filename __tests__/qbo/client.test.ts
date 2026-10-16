@@ -35,10 +35,10 @@ describe('QuickBooks client helpers', () => {
         new QboError(400, 'invalid_grant', 'Incorrect or invalid refresh token')
       )
     ).toBe(
-      'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → Settings.'
+      'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → QuickBooks.'
     );
     expect(qboErrorMessage(new QboNotConnectedError())).toBe(
-      'QuickBooks is not connected. Ask a superadmin to connect it in Billing → Settings.'
+      'QuickBooks is not connected. Ask a superadmin to connect it in Billing → QuickBooks.'
     );
   });
 

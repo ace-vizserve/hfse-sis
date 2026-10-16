@@ -321,9 +321,9 @@ export function qboErrorMessage(e: unknown): string {
 }
 
 const NOT_CONNECTED =
-  'QuickBooks is not connected. Ask a superadmin to connect it in Billing → Settings.';
+  'QuickBooks is not connected. Ask a superadmin to connect it in Billing → QuickBooks.';
 const RECONNECT =
-  'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → Settings.';
+  'QuickBooks needs to be connected again. Ask a superadmin to reconnect it in Billing → QuickBooks.';
 
 /**
  * True when a failed QuickBooks WRITE gave no definite answer, so QuickBooks

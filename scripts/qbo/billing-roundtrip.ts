@@ -11,6 +11,7 @@
  * Writes to the sandbox and the local stack only; refuses anything else.
  */
 import { createInvoiceForStudent } from '@/lib/billing/invoice-create.server';
+import { loadDepositChoices } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import { readAging, readCustomerProfile } from '@/lib/billing/live.server';
 import { recordPayment } from '@/lib/billing/payment-record.server';
@@ -397,12 +398,7 @@ function finish() {
 }
 
 async function firstDepositAccount(): Promise<string | null> {
-  const { data } = await service
-    .from('billing_deposit_accounts')
-    .select('qbo_account_id')
-    .order('sort')
-    .limit(1);
-  return (data?.[0]?.qbo_account_id as string | undefined) ?? null;
+  return (await loadDepositChoices(service))[0]?.id ?? null;
 }
 
 main().catch((e) => {

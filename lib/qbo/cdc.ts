@@ -76,8 +76,8 @@ export async function processChanges(
   let updated = 0;
   const errors: string[] = [];
   if (!invoiceIds.size && !paymentIds.size) return { updated, errors };
-  // The mapping is read once for the whole run.
-  const { loadBillingMaps } = await import('@/lib/billing/settings.server');
+  // The tile and year rules' data is read once for the whole run.
+  const { loadBillingMaps } = await import('@/lib/billing/maps.server');
   const maps = await loadBillingMaps(service);
   const refreshed = new Set<string>();
   // Payments first: they store the payment dates the invoices then read.

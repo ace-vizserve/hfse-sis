@@ -9,7 +9,7 @@ import {
   type QbInvoiceFull,
   type QbPayment,
 } from '@/lib/billing/invoice-row';
-import { loadBillingMaps } from '@/lib/billing/settings.server';
+import { loadBillingMaps } from '@/lib/billing/maps.server';
 import { upsertInvoice, upsertPayment } from '@/lib/billing/store.server';
 import { missingIds } from '@/lib/billing/sync-helpers';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
@@ -84,7 +84,8 @@ export async function loadCustomerHistory(
   const [invoices, payments, maps] = await Promise.all([
     qboQueryAll<QbInvoiceFull>(service, 'Invoice', cust),
     qboQueryAll<QbPayment>(service, 'Payment', cust),
-    preloaded?.maps ?? loadBillingMaps(service),
+    preloaded?.maps ??
+      loadBillingMaps(service, { studentNumbers: [studentNumber] }),
   ]);
   const years = new Set<string>();
 

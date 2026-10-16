@@ -32,7 +32,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import type { InvoiceLine } from '@/lib/billing/classify';
+import { stageForAccount, type InvoiceLine } from '@/lib/billing/classify';
 import {
   duplicateTileWarning,
   mapsFromData,
@@ -50,6 +50,7 @@ type Item = {
   description: string | null;
   unitPrice: number | null;
   accountId: string | null;
+  accountName: string | null;
 };
 type Line = {
   key: number;
@@ -145,13 +146,19 @@ export function CreateInvoiceSheet({
         amount: 0,
       }));
     if (asLines.length === 0) return null;
+    // An item the SIS hasn't cached yet is placed by its account's name.
+    const m = mapsFromData(maps);
+    for (const i of byId.values())
+      if (i.accountId && !m.accounts.has(i.accountId))
+        m.accounts.set(i.accountId, stageForAccount(i.accountName));
     return duplicateTileWarning({
       lines: asLines,
       txnDate,
-      maps: mapsFromData(maps),
+      maps: m,
+      studentNumber,
       existing,
     });
-  }, [items.data, lines, txnDate, maps, existing]);
+  }, [items.data, lines, txnDate, maps, studentNumber, existing]);
 
   const save = useMutation({
     mutationFn: async () => {

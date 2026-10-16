@@ -66,7 +66,7 @@ async function fetchInvoice(
 export type RefreshHint = {
   /** The QuickBooks customer of the changed invoice / payment, when known. */
   customerId?: string;
-  /** The mapping, loaded once per run by the caller. */
+  /** The tile and year rules' data for EVERY student, loaded once per run. */
   maps?: BillingMaps;
 };
 
@@ -100,7 +100,7 @@ export async function refreshInvoice(
   qboInvoiceId: string,
   hint?: RefreshHint
 ): Promise<{ known: boolean; stageChanged: boolean; stageError?: string }> {
-  const { loadBillingMaps } = await import('@/lib/billing/settings.server');
+  const { loadBillingMaps } = await import('@/lib/billing/maps.server');
   const { studentForCustomer } = await import('@/lib/billing/history.server');
   const { upsertInvoice } = await import('@/lib/billing/store.server');
   const { syncTilesForStudent } = await import('@/lib/billing/tiles.server');
@@ -168,7 +168,9 @@ export async function refreshInvoice(
     qboInvoiceId,
     studentNumber,
     realmId,
-    maps: hint?.maps ?? (await loadBillingMaps(service)),
+    maps:
+      hint?.maps ??
+      (await loadBillingMaps(service, { studentNumbers: [studentNumber] })),
     paymentDates,
   });
   const years = [r.before?.ayCode, r.after.ayCode].filter(

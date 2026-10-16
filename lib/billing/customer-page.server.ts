@@ -4,6 +4,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { InvoiceLine } from '@/lib/billing/classify';
 import { pickBalances, type Balances } from '@/lib/billing/balances';
+import {
+  loadDepositChoices,
+  type DepositChoice,
+} from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
   readAging,
@@ -12,7 +16,7 @@ import {
 } from '@/lib/billing/live.server';
 import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
-import { loadBillingMaps } from '@/lib/billing/settings.server';
+import { loadBillingMaps } from '@/lib/billing/maps.server';
 import {
   loadStudentInfo,
   type StudentInfo,
@@ -202,15 +206,6 @@ export function toCreditSources(
     }));
 }
 
-/** The `billing_deposit_accounts` rows as the payment sheet's choices. */
-export function toDepositAccounts(
-  rows: unknown[] | null | undefined
-): Array<{ id: string; label: string }> {
-  return ((rows ?? []) as Array<{ qbo_account_id: string; label: string }>).map(
-    (d) => ({ id: d.qbo_account_id, label: d.label })
-  );
-}
-
 export async function loadCustomerPage(
   service: SupabaseClient,
   studentNumber: string
@@ -239,7 +234,7 @@ export async function loadCustomerPage(
     openInvoices: [],
     credits: [],
     depositAccounts: [],
-    maps: { accounts: [], items: [], ranges: [] },
+    maps: { accounts: [], studentNumber, applications: [] },
     stages: null,
     overdueOldest: null,
   };
@@ -308,13 +303,15 @@ export async function loadCustomerPage(
       .eq('qbo_customer_id', customerId)
       .eq('realm_id', realmId)
       .order('txn_date', { ascending: false }),
-    service
-      .from('billing_deposit_accounts')
-      .select('qbo_account_id, label, sort')
-      .order('sort'),
-    loadBillingMaps(service),
+    // Record payment's banks, live. Unreadable: no choices, the page still
+    // renders and the sheet shows its no-accounts note.
+    loadDepositChoices(service).catch((e: unknown) => {
+      console.error('[billing] customer page, bank accounts:', e);
+      return [] as DepositChoice[];
+    }),
+    loadBillingMaps(service, { studentNumbers: [studentNumber] }),
   ]);
-  for (const r of [inv, pay, dep])
+  for (const r of [inv, pay])
     if (r.error) throw new Error(`Billing lookup failed: ${r.error.message}`);
 
   const today = todaySg();
@@ -322,11 +319,7 @@ export async function loadCustomerPage(
     toInvoiceRow(r, today)
   );
   const docOf = new Map(invoices.map((i) => [i.id, i.docNumber]));
-  const label = new Map(
-    ((dep.data ?? []) as Array<{ qbo_account_id: string; label: string }>).map(
-      (d) => [d.qbo_account_id, d.label]
-    )
-  );
+  const label = new Map(dep.map((d) => [d.id, d.label]));
   const payments: PaymentRowView[] = ((pay.data ?? []) as PayRow[]).map((p) =>
     toPaymentRow(p, docOf, label)
   );
@@ -383,8 +376,8 @@ export async function loadCustomerPage(
       items: i.items,
     })),
     credits: toCreditSources(payments),
-    depositAccounts: toDepositAccounts(dep.data),
-    maps: mapsToData(maps),
+    depositAccounts: dep,
+    maps: mapsToData(maps, studentNumber),
     stages,
     overdueOldest: oldest
       ? { docNumber: oldest.docNumber, dueDate: oldest.dueDate }

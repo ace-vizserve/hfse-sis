@@ -10,7 +10,6 @@ import {
   INVOICE_COLS,
   PAYMENT_COLS,
   toCreditSources,
-  toDepositAccounts,
   toInvoiceRow,
   toPaymentRow,
   type InvRow,
@@ -18,6 +17,10 @@ import {
   type PayRow,
   type PaymentRowView,
 } from '@/lib/billing/customer-page.server';
+import {
+  loadDepositChoices,
+  type DepositChoice,
+} from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
   readCustomerProfile,
@@ -99,10 +102,11 @@ export async function loadInvoicePage(
       .eq('action', 'qbo.invoice.send')
       .eq('entity_id', qboInvoiceId)
       .order('created_at', { ascending: true }),
-    service
-      .from('billing_deposit_accounts')
-      .select('qbo_account_id, label, sort')
-      .order('sort'),
+    // Record payment's banks, live; unreadable → no choices, page renders.
+    loadDepositChoices(service).catch((e: unknown) => {
+      console.error('[billing] invoice page, bank accounts:', e);
+      return [] as DepositChoice[];
+    }),
     service
       .from('qbo_connection')
       .select('environment')
@@ -112,11 +116,7 @@ export async function loadInvoicePage(
   ]);
   if (!inv.data) return null;
   const row = toInvoiceRow(inv.data as InvRow, todaySg());
-  const label = new Map(
-    ((dep.data ?? []) as Array<{ qbo_account_id: string; label: string }>).map(
-      (d) => [d.qbo_account_id, d.label]
-    )
-  );
+  const label = new Map(dep.map((d) => [d.id, d.label]));
   const allPayments = ((pays.data ?? []) as PayRow[]).map((p) =>
     toPaymentRow(p, new Map([[row.id, row.docNumber]]), label)
   );
@@ -178,6 +178,6 @@ export async function loadInvoicePage(
       qboInvoiceId
     ),
     credits: toCreditSources(allPayments),
-    depositAccounts: toDepositAccounts(dep.data),
+    depositAccounts: dep,
   };
 }

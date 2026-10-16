@@ -21,11 +21,16 @@ const maps: BillingMaps = {
     ['A-FEES', 'fees'],
     ['A-ADV', 'none'],
   ]),
-  items: new Map(),
-  ranges: [
-    { ayCode: 'AY2026', startsOn: '2025-06-01', endsOn: '2026-05-31' },
-    { ayCode: 'AY2027', startsOn: '2026-06-01', endsOn: '2027-05-31' },
-  ],
+  applications: new Map([
+    [
+      'S1',
+      [
+        { ayCode: 'AY2026', createdOn: '2025-02-10' },
+        { ayCode: 'AY2027', createdOn: '2026-05-20' },
+      ],
+    ],
+    ['S2', [{ ayCode: 'AY2027', createdOn: '2026-06-01' }]],
+  ]),
 };
 const line = (accountId: string): InvoiceLine => ({
   itemId: 'I1',
@@ -138,9 +143,16 @@ describe('dates and labels', () => {
 
 describe('maps survive a trip to the client', () => {
   it('round trips', () => {
-    const back = mapsFromData(JSON.parse(JSON.stringify(mapsToData(maps))));
+    const data = JSON.parse(JSON.stringify(mapsToData(maps, 'S1')));
+    const back = mapsFromData(data);
     expect(back.accounts.get('A-FEES')).toBe('fees');
-    expect(back.ranges).toEqual(maps.ranges);
+    expect(back.applications.get('S1')).toEqual(maps.applications.get('S1'));
+  });
+  it("ships only the one student's applications", () => {
+    const data = mapsToData(maps, 'S1');
+    expect(data.applications).toHaveLength(2);
+    expect(JSON.stringify(data)).not.toContain('2026-06-01');
+    expect(mapsFromData(data).applications.has('S2')).toBe(false);
   });
 });
 
@@ -159,6 +171,7 @@ describe('duplicateTileWarning', () => {
         lines: [line('A-FEES')],
         txnDate: '2026-10-15',
         maps,
+        studentNumber: 'S1',
         existing,
       })
     ).toBe(
@@ -170,6 +183,7 @@ describe('duplicateTileWarning', () => {
         lines: [line('A-FEES')],
         txnDate: '2026-10-15',
         maps,
+        studentNumber: 'S1',
         existing: [{ ...existing[0], ayCode: 'AY2026' }],
       })
     ).toBeNull());
@@ -179,6 +193,7 @@ describe('duplicateTileWarning', () => {
         lines: [line('A-FEES')],
         txnDate: '2026-10-15',
         maps,
+        studentNumber: 'S1',
         existing: [{ ...existing[0], state: 'voided' }],
       })
     ).toBeNull());
@@ -188,6 +203,7 @@ describe('duplicateTileWarning', () => {
         lines: [line('A-ADV')],
         txnDate: '2026-10-15',
         maps,
+        studentNumber: 'S1',
         existing,
       })
     ).toBeNull());
@@ -197,6 +213,7 @@ describe('duplicateTileWarning', () => {
         lines: [line('A-REG')],
         txnDate: '2026-10-15',
         maps,
+        studentNumber: 'S1',
         existing: [
           {
             docNumber: 'HFSE061210',

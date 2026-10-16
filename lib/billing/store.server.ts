@@ -2,7 +2,11 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { classifyInvoice, type BillingMaps } from '@/lib/billing/classify';
+import {
+  classifyInvoice,
+  stageForAccount,
+  type BillingMaps,
+} from '@/lib/billing/classify';
 import {
   invoiceLines,
   paymentApplied,
@@ -15,11 +19,16 @@ import { paymentDateFor } from '@/lib/qbo/sync';
 
 type Place = { ayCode: string | null; stageKeys: string[] };
 
-/** Item → income account, reading QuickBooks for any item not cached yet. */
+/**
+ * Item → income account, reading QuickBooks for any item not cached yet. A
+ * newly read item's account joins `maps.accounts` (by the tile rule) when the
+ * maps didn't know it, so this invoice and later ones in the run are placed.
+ */
 async function itemAccounts(
   service: SupabaseClient,
   inv: QbInvoiceFull,
-  realmId: string
+  realmId: string,
+  maps: BillingMaps
 ): Promise<Map<string, string | null>> {
   const ids = [
     ...new Set(
@@ -46,6 +55,9 @@ async function itemAccounts(
       };
     }>(service, 'GET', `/item/${id}`);
     map.set(id, Item.IncomeAccountRef?.value ?? null);
+    const acct = Item.IncomeAccountRef;
+    if (acct?.value && !maps.accounts.has(acct.value))
+      maps.accounts.set(acct.value, stageForAccount(acct.name ?? null));
     const up = await service.from('qbo_items').upsert({
       qbo_item_id: Item.Id,
       name: Item.Name,
@@ -117,9 +129,14 @@ export async function upsertInvoice(
   const inv = args.inv;
   const lines = invoiceLines(
     inv,
-    await itemAccounts(service, inv, args.realmId)
+    await itemAccounts(service, inv, args.realmId, args.maps)
   );
-  const place = classifyInvoice(lines, inv.TxnDate ?? null, args.maps);
+  const place = classifyInvoice(
+    lines,
+    inv.TxnDate ?? null,
+    args.maps,
+    args.studentNumber
+  );
   const state = invoiceState(inv);
   const row = {
     qbo_invoice_id: inv.Id,

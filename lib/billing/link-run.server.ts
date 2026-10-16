@@ -269,7 +269,7 @@ export async function runLink(
   // calls a minute; two queries per student). The audit row above is already
   // written, so failures are returned in the result, not the audit.
   const { loadCustomerHistory } = await import('@/lib/billing/history.server');
-  const { loadBillingMaps } = await import('@/lib/billing/settings.server');
+  const { loadBillingMaps } = await import('@/lib/billing/maps.server');
   const todo = studentsNeedingHistory(
     storedRows.map((r) => ({
       studentNumber: r.student_number,

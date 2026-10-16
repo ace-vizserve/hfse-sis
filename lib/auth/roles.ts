@@ -650,7 +650,7 @@ const CLASSROOM_NAV: NavSection[] = [
 // Billing — every QuickBooks invoice and payment of a student's customer;
 // QuickBooks is the record for money and the SIS works through it (spec
 // docs/superpowers/specs/2026-10-15-billing-module-design.md). Route group
-// (billing)/billing/*. Settings is superadmin only: its nav item and its
+// (billing)/billing/*. QuickBooks (/billing/settings) is superadmin only: its nav item and its
 // ROUTE_ACCESS row say so together, or the link would bounce the others.
 const BILLING_NAV: NavSection[] = [
   {
@@ -659,7 +659,7 @@ const BILLING_NAV: NavSection[] = [
       { href: '/billing/review', label: 'To review' },
       {
         href: '/billing/settings',
-        label: 'Settings',
+        label: 'QuickBooks',
         requiresRoles: ['superadmin'],
       },
     ],

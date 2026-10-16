@@ -8,6 +8,7 @@ import {
   type BillingStage,
   type InvoiceLine,
   type StageChoice,
+  type StudentApplication,
 } from '@/lib/billing/classify';
 
 export type InvoiceStatus = 'open' | 'part' | 'overdue' | 'paid' | 'voided';
@@ -140,25 +141,26 @@ export function studentDisplayName(a: {
   return a.enroleeFullName?.trim() || 'Unnamed student';
 }
 
+/** The maps as the browser gets them: the accounts plus ONE student's
+ *  applications (never every student's). */
 export type MapsData = {
   accounts: Array<[string, StageChoice]>;
-  items: Array<[string, StageChoice]>;
-  ranges: BillingMaps['ranges'];
+  studentNumber: string;
+  applications: StudentApplication[];
 };
 
-export function mapsToData(m: BillingMaps): MapsData {
+export function mapsToData(m: BillingMaps, studentNumber: string): MapsData {
   return {
     accounts: [...m.accounts],
-    items: [...m.items],
-    ranges: m.ranges,
+    studentNumber,
+    applications: m.applications.get(studentNumber) ?? [],
   };
 }
 
 export function mapsFromData(d: MapsData): BillingMaps {
   return {
     accounts: new Map(d.accounts),
-    items: new Map(d.items),
-    ranges: d.ranges,
+    applications: new Map([[d.studentNumber, d.applications]]),
   };
 }
 
@@ -170,6 +172,7 @@ export function duplicateTileWarning(args: {
   lines: InvoiceLine[];
   txnDate: string;
   maps: BillingMaps;
+  studentNumber: string;
   existing: Array<{
     docNumber: string | null;
     ayCode: string | null;
@@ -177,7 +180,12 @@ export function duplicateTileWarning(args: {
     state: 'open' | 'paid' | 'voided';
   }>;
 }): string | null {
-  const place = classifyInvoice(args.lines, args.txnDate, args.maps);
+  const place = classifyInvoice(
+    args.lines,
+    args.txnDate,
+    args.maps,
+    args.studentNumber
+  );
   if (!place.ayCode) return null;
   for (const stage of place.stageKeys) {
     const same = args.existing.find(

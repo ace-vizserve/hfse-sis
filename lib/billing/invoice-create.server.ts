@@ -6,7 +6,7 @@ import { logAction } from '@/lib/audit/log-action';
 import type { QbInvoiceFull } from '@/lib/billing/invoice-row';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
 import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
-import { loadBillingMaps } from '@/lib/billing/settings.server';
+import { loadBillingMaps } from '@/lib/billing/maps.server';
 import { staffDisplayName } from '@/lib/billing/staff-name.server';
 import { upsertInvoice } from '@/lib/billing/store.server';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
@@ -196,7 +196,9 @@ export async function createInvoiceForStudent(
   // undo the invoice, it is reported.
   const warnings: string[] = [];
   try {
-    const maps = await loadBillingMaps(service);
+    const maps = await loadBillingMaps(service, {
+      studentNumbers: [studentNumber],
+    });
     const placed = await upsertInvoice(service, {
       inv: invoice,
       qboInvoiceId: invoice.Id,

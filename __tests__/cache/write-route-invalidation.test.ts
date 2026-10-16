@@ -63,22 +63,11 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // Every route that can move a Registration/Fees stage does it through
   // writeStageFromQbo (lib/qbo/stage-write.ts), which expires sis:<AY> and the
   // admissions/records tags itself. The qbo_* tables are read uncached
-  // (lib/qbo/stage-invoices.ts, the Billing loaders, Billing → Settings).
+  // (lib/qbo/stage-invoices.ts, the Billing loaders, Billing → QuickBooks).
   'app/api/quickbooks/webhook/route.ts':
     'Stage moves go through writeStageFromQbo, which busts the tags; qbo_* rows are read uncached.',
   'app/api/quickbooks/disconnect/route.ts':
-    'Deletes qbo_connection, read uncached by lib/qbo/client.ts and Billing → Settings.',
-  // Billing link tables only (qbo_customers, billing_link_review); no cached page reads them
-  'app/api/billing/link/route.ts':
-    'Writes qbo_customers and deletes billing_link_review — no cached module reads either table.',
-  'app/api/billing/settings/deposit-accounts/route.ts':
-    'Billing settings tables; no cached page reads them.',
-  'app/api/billing/settings/items/refresh/route.ts':
-    'Billing settings tables; no cached page reads them.',
-  'app/api/billing/settings/mapping/route.ts':
-    'Billing settings tables (and the stage columns on qbo_invoices); no cached page reads them.',
-  'app/api/billing/settings/years/route.ts':
-    'Billing settings tables (and the stage columns on qbo_invoices); no cached page reads them.',
+    'Deletes qbo_connection, read uncached by lib/qbo/client.ts and Billing → QuickBooks.',
   'app/api/billing/students/[studentNumber]/link/route.ts':
     'Upserts qbo_customers and deletes billing_link_review — no cached module reads either table (the billing readers are uncached).',
   'app/api/billing/students/[studentNumber]/refresh/route.ts':
@@ -89,8 +78,6 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // the admissions/records drill tags itself.
   'app/api/billing/invoices/[invoiceId]/send/route.ts':
     'Emails through QuickBooks; the only SIS write is the qbo.invoice.send audit_log row, which no cached surface reads.',
-  'app/api/billing/settings/preview/route.ts':
-    'POST computes what a settings save WOULD move (previewReclassify reads only). Nothing is written.',
   'app/api/billing/students/[studentNumber]/customer/route.ts':
     'Adds the customer in QuickBooks, then links it (qbo_customers, billing_link_review — read uncached); stage moves from the history load go through writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/invoices/route.ts':

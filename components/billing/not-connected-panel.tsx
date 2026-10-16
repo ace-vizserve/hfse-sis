@@ -22,7 +22,7 @@ export function NotConnectedPanel({ canConnect }: { canConnect: boolean }) {
         </p>
         {canConnect && (
           <Button asChild variant="outline" size="sm" className="mt-2">
-            <Link href="/billing/settings">Open Billing settings</Link>
+            <Link href="/billing/settings">Open QuickBooks connection</Link>
           </Button>
         )}
       </div>

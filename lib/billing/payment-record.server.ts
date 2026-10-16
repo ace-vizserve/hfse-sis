@@ -4,6 +4,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
 import { creditRequestId } from '@/lib/billing/credit-request-id';
+import {
+  loadDepositChoices,
+  type DepositChoice,
+} from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import type { QbPayment } from '@/lib/billing/invoice-row';
 import {
@@ -113,7 +117,7 @@ export async function recordPayment(
   }
   if (!(fresh instanceof Error) && fresh.errors.length > 0)
     console.warn('[billing] pre-payment read, tile problems:', fresh.errors);
-  const [inv, pay, dep] = await Promise.all([
+  const [inv, pay] = await Promise.all([
     service
       .from('qbo_invoices')
       .select('qbo_invoice_id, doc_number, txn_date, balance, state')
@@ -125,18 +129,11 @@ export async function recordPayment(
       .eq('qbo_customer_id', customerId)
       .eq('realm_id', realmId)
       .gt('unapplied', 0),
-    input.depositAccountId
-      ? service
-          .from('billing_deposit_accounts')
-          .select('qbo_account_id, label')
-          .eq('qbo_account_id', input.depositAccountId)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
   ]);
-  if (inv.error || pay.error || dep.error) {
+  if (inv.error || pay.error) {
     console.error(
       '[billing] record payment, stored lookup:',
-      (inv.error ?? pay.error ?? dep.error)!.message
+      (inv.error ?? pay.error)!.message
     );
     return { ok: false, status: 500, error: SIS_READ_FAILED };
   }
@@ -157,7 +154,20 @@ export async function recordPayment(
         error: `${r?.doc_number ?? 'One of the ticked invoices'} no longer has anything owing in QuickBooks. Reload the page and try again.`,
       };
   }
-  if (input.amount > 0 && !dep.data)
+  // The bank must be one of QuickBooks' Bank accounts right now.
+  let dep: DepositChoice | null = null;
+  if (input.depositAccountId) {
+    try {
+      dep =
+        (await loadDepositChoices(service)).find(
+          (d) => d.id === input.depositAccountId
+        ) ?? null;
+    } catch (e) {
+      console.error('[billing] record payment, bank accounts:', e);
+      return { ok: false, status: 502, error: qboErrorMessage(e) };
+    }
+  }
+  if (input.amount > 0 && !dep)
     return {
       ok: false,
       status: 422,
@@ -340,8 +350,7 @@ export async function recordPayment(
         context: {
           studentNumber,
           total: input.amount,
-          deposit_account:
-            (dep.data as { label: string } | null)?.label ?? null,
+          deposit_account: dep?.label ?? null,
           invoices: plan.cashApply.map((a) => doc(a.invoiceId)),
           left_as_credit: plan.leftover,
         },

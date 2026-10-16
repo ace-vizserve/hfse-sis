@@ -19,7 +19,7 @@ export async function GET() {
       Description?: string;
       UnitPrice?: number;
       Type?: string;
-      IncomeAccountRef?: { value: string };
+      IncomeAccountRef?: { value: string; name?: string };
     }>(
       createServiceClient(),
       'Item',
@@ -35,6 +35,7 @@ export async function GET() {
           description: i.Description ?? null,
           unitPrice: typeof i.UnitPrice === 'number' ? i.UnitPrice : null,
           accountId: i.IncomeAccountRef?.value ?? null,
+          accountName: i.IncomeAccountRef?.name ?? null,
         })),
     });
   } catch (e) {

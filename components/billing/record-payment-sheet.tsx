@@ -242,8 +242,8 @@ export function RecordPaymentSheet({
                   </Select>
                   {depositAccounts.length === 0 && (
                     <FieldDescription>
-                      No payment accounts yet — a superadmin sets them in
-                      Billing settings.
+                      QuickBooks has no bank accounts to offer just now. Reload
+                      the page to try again.
                     </FieldDescription>
                   )}
                   {showErrors && needsAccount && !account && (

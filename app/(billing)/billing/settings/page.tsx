@@ -2,56 +2,24 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import { QboConnectionCard } from '@/components/billing/qbo-connection-card';
-import { DepositAccountsCard } from '@/components/billing/settings/deposit-accounts-card';
-import { LinkRunCard } from '@/components/billing/settings/link-run-card';
-import { MappingCard } from '@/components/billing/settings/mapping-card';
-import { YearsCard } from '@/components/billing/settings/years-card';
 import { PageShell } from '@/components/ui/page-shell';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { listAyCodes } from '@/lib/academic-year';
-import { loadSettings } from '@/lib/billing/settings.server';
 import { getQboStatus } from '@/lib/qbo/status';
 import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
 
-const TABS = ['accounts', 'years', 'payments', 'quickbooks'];
-
-// Billing → Settings (superadmin), one tab per job. The QuickBooks connection (moved here from
-// SIS Admin), which invoices fill the Registration and Fees tiles, each
-// year's invoice dates, the payment accounts, and the bulk link run.
+// Billing → QuickBooks (superadmin): the QuickBooks connection only (moved
+// here from SIS Admin). Nothing else is set up in the SIS — which invoices
+// fill the Registration and Fees stages, each invoice's school year and the
+// accounts Record payment offers all come from QuickBooks and the student's
+// applications (KD #232 update 2026-10-16).
 export default async function BillingSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string; tab?: string }>;
+  searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (sessionUser.role !== 'superadmin') redirect('/billing');
-  const service = createServiceClient();
-  const [status, params, settings, ayCodes, review] = await Promise.all([
-    getQboStatus(),
-    searchParams,
-    loadSettings(service),
-    listAyCodes(service),
-    service
-      .from('billing_link_review')
-      .select('student_number', { count: 'exact', head: true }),
-  ]);
-  // The save replaces the whole set of ranges, so a year with a saved range
-  // must always be shown, however old.
-  const years = [
-    ...new Set([
-      ...[...ayCodes].sort().reverse().slice(0, 4),
-      ...settings.ranges.map((r) => r.ayCode),
-    ]),
-  ].sort();
-  // Coming back from the QuickBooks connect flow lands on its own tab.
-  const initialTab =
-    params.tab && TABS.includes(params.tab)
-      ? params.tab
-      : params.connected || params.error
-        ? 'quickbooks'
-        : 'accounts';
+  const [status, params] = await Promise.all([getQboStatus(), searchParams]);
 
   return (
     <PageShell>
@@ -60,12 +28,11 @@ export default async function BillingSettingsPage({
           Billing · superadmin
         </p>
         <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Settings.
+          QuickBooks connection.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Which invoices fill the Registration and Fees stages, the dates each
-          school year&rsquo;s invoices fall in, and the accounts Record payment
-          offers. Saving the tiles shows what would change first.
+          The SIS reads and writes every invoice and payment through this
+          connection to the school&rsquo;s QuickBooks company.
         </p>
       </header>
 
@@ -98,29 +65,9 @@ export default async function BillingSettingsPage({
         </div>
       )}
 
-      <Tabs defaultValue={initialTab} className="gap-6">
-        <TabsList>
-          <TabsTrigger value="accounts">Income accounts</TabsTrigger>
-          <TabsTrigger value="years">School years</TabsTrigger>
-          <TabsTrigger value="payments">Payment accounts</TabsTrigger>
-          <TabsTrigger value="quickbooks">QuickBooks</TabsTrigger>
-        </TabsList>
-        <TabsContent value="accounts">
-          <MappingCard settings={settings} />
-        </TabsContent>
-        <TabsContent value="years" className="max-w-4xl">
-          <YearsCard ayCodes={years} ranges={settings.ranges} />
-        </TabsContent>
-        <TabsContent value="payments" className="max-w-4xl">
-          <DepositAccountsCard settings={settings} />
-        </TabsContent>
-        <TabsContent value="quickbooks" className="max-w-4xl">
-          <div className="flex flex-col gap-6">
-            <QboConnectionCard status={status} />
-            <LinkRunCard reviewCount={review.count ?? 0} />
-          </div>
-        </TabsContent>
-      </Tabs>
+      <div className="max-w-4xl">
+        <QboConnectionCard status={status} />
+      </div>
     </PageShell>
   );
 }

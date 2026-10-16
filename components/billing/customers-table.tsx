@@ -168,7 +168,7 @@ export function CustomersTable({ rows }: { rows: CustomerListRow[] }) {
         <DataTableEmptyState
           icon={Wallet}
           title="No students linked yet"
-          body="Students appear here once they are linked to their QuickBooks customer. A superadmin runs Link students from Billing settings; anyone the SIS can't match goes to To review."
+          body="Students appear here once they are linked to their QuickBooks customer; anyone the SIS can't match goes to To review."
         />
       </Card>
     );
