@@ -26,7 +26,7 @@ import {
   SectionTransferDialog,
   type SiblingSection,
 } from '@/components/sis/section-transfer-dialog';
-import { QboInvoiceStrip } from '@/components/sis/qbo-invoice-strip';
+import { BillingTileLine } from '@/components/sis/billing-tile-line';
 import { StageScrollLink } from '@/components/sis/stage-scroll-link';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -88,9 +88,9 @@ type Props = {
   ayCode: string;
   enroleeNumber: string;
   statusFetchError: boolean;
-  /** QuickBooks invoice on the Registration and Fees stages (migration 188). */
+  /** The Registration and Fees tiles' read-only QuickBooks line (Billing, Phase 5). */
   qbo?: QboStageData | null;
-  /** admissions / school_admin / superadmin — see lib/qbo/roles.ts. */
+  /** admissions / school_admin / superadmin — may open Billing (lib/qbo/roles.ts). */
   canInvoice?: boolean;
   /** Current assigned section's UUID — read by the page from the
    *  section_students roster by id. Drives the "Change section"
@@ -1114,8 +1114,9 @@ function StatusGroupCard({
   transfer: SectionTransfer | null;
   /** Only meaningful for the Placement group's class tile. */
   classChoice?: ClassChoice | null;
-  /** QuickBooks invoices — passed to each tile (Registration and Fees use it). */
+  /** The Registration and Fees tiles' read-only QuickBooks line (Billing, Phase 5). */
   qbo?: QboStageData | null;
+  /** admissions / school_admin / superadmin — may open Billing (lib/qbo/roles.ts). */
   canInvoice?: boolean;
 }) {
   const counts = stageBucketCounts(stages);
@@ -1206,9 +1207,9 @@ function StageStatusTile({
   transfer: SectionTransfer | null;
   /** Data for the in-place assign dialog. See Props. */
   classChoice?: ClassChoice | null;
-  /** QuickBooks invoices for the Registration and Fees stages. Rendered by
-   *  the invoice block (Task 3.2). */
+  /** The Registration and Fees tiles' read-only QuickBooks line (Billing, Phase 5). */
   qbo?: QboStageData | null;
+  /** admissions / school_admin / superadmin — may open Billing (lib/qbo/roles.ts). */
   canInvoice?: boolean;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
@@ -1299,22 +1300,18 @@ function StageStatusTile({
         html={stage.remarks}
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
-      {(stage.key === 'registration' || stage.key === 'fees') && qbo && (
-        <QboInvoiceStrip
-          ayCode={ayCode}
-          enroleeNumber={enroleeNumber}
-          stage={stage.key}
-          stageSnapshot={{
-            status: stage.status,
-            invoice: stage.extrasInitial.invoice ?? null,
-            paymentDate: stage.extrasInitial.paymentDate ?? null,
-            startDate: stage.extrasInitial.startDate ?? null,
-          }}
-          invoice={qbo[stage.key]}
-          connected={qbo.connected}
-          canInvoice={canInvoice}
-        />
-      )}
+      {(stage.key === 'registration' || stage.key === 'fees') &&
+        qbo?.connected && (
+          <BillingTileLine
+            line={qbo[stage.key]}
+            stage={stage.key}
+            stageStatus={stage.status}
+            startDate={stage.extrasInitial.startDate ?? null}
+            studentNumber={qbo.studentNumber}
+            linked={qbo.linked}
+            canOpen={canInvoice}
+          />
+        )}
       {/* Both controls are placement actions, so both gate on the placement
           role, not merely on canEdit. The move opens in place rather than
           linking to /sis/sections/[id]: admissions holds the placement right

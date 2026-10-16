@@ -1,7 +1,8 @@
 // Who owns which field on the Registration and Fees stages once QuickBooks is
 // connected (Mr Ace, 2026-10-14: "one interface"). QuickBooks owns the invoice
 // number, the payment date and the money statuses — they change only through
-// the tile's QuickBooks actions and the sync. Staff own the start date, the
+// Billing (the tile's QuickBooks actions were removed in Billing Phase 5) and
+// the sync. Staff own the start date, the
 // remarks and Cancelled, which QuickBooks cannot know. Before QuickBooks is
 // connected, or after it is disconnected, none of this applies and the stage
 // is edited by hand as before.
@@ -54,7 +55,7 @@ export function qboLockViolation(
         ? (prev?.slice(0, 10) ?? null) === (next?.slice(0, 10) ?? null)
         : prev === next;
     if (!same) {
-      return 'The invoice number and payment date come from QuickBooks. Use Create invoice or Link QB invoice on the tile instead.';
+      return 'The invoice number and payment date come from QuickBooks. Open the student’s Billing page to invoice or record a payment.';
     }
   }
   if (

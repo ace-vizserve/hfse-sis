@@ -5,6 +5,7 @@ import {
   createdByLabel,
   duplicateTileWarning,
   formatDay,
+  formatShortDay,
   invoiceStatus,
   itemsSummary,
   mapsFromData,
@@ -67,6 +68,12 @@ describe('dates and labels', () => {
   it('formatDay', () => {
     expect(formatDay('2026-09-01')).toBe('1 Sep 2026');
     expect(formatDay(null)).toBe('—');
+  });
+  it('formatShortDay', () => {
+    expect(formatShortDay('2026-09-01')).toBe('1 Sep');
+    expect(formatShortDay('2026-10-12T00:00:00Z')).toBe('12 Oct');
+    expect(formatShortDay(null)).toBeNull();
+    expect(formatShortDay('')).toBeNull();
   });
   it('itemsSummary shortens long lists', () => {
     const l = (n: string) => ({ itemName: n });

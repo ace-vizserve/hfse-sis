@@ -69,7 +69,17 @@ export function formatDay(iso: string | null | undefined): string {
   return `${Number(m[3])} ${month} ${m[1]}`;
 }
 
-/** "AY2025 Books, AY2025 Materials Fee, … +4" — each item once. */
+/** `2026-10-12` → `12 Oct` (no year); blank → null. Same fixed month names. */
+export function formatShortDay(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return null;
+  const month = MONTH_SHORT[Number(m[2]) - 1];
+  if (!month) return null;
+  return `${Number(m[3])} ${month}`;
+}
+
+/** "AY2025 Books,AY2025 Materials Fee, … +4" — each item once. */
 export function itemsSummary(
   lines: Array<{ itemName: string | null }>,
   max = 3
