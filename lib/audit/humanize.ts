@@ -202,6 +202,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.discount_code.expire': 'Discount code expired',
   'qbo.invoice.create': 'QuickBooks invoice created',
   'qbo.invoice.link': 'QuickBooks invoice linked',
+  'qbo.invoice.send': 'QuickBooks invoice emailed',
   'qbo.customer.create': 'QuickBooks customer added',
   'qbo.connection.connect': 'QuickBooks connected',
   'qbo.connection.disconnect': 'QuickBooks disconnected',
@@ -1926,6 +1927,13 @@ function templateSummary(
       if (customer) parts.push(customer);
       return joinParts(parts);
     }
+    case 'qbo.invoice.send':
+      return joinParts(
+        [
+          str(ctx.doc_number) ? `invoice ${str(ctx.doc_number)}` : '',
+          str(ctx.sent_to),
+        ].filter(Boolean)
+      );
     case 'qbo.customer.create':
       return joinParts([str(ctx.display_name)].filter(Boolean));
     case 'qbo.connection.connect':

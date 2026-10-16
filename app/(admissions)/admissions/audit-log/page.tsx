@@ -31,6 +31,7 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.stage.update',
   'qbo.invoice.create',
   'qbo.invoice.link',
+  'qbo.invoice.send',
   'qbo.customer.create',
   'qbo.customer.link',
   'qbo.payment.create',

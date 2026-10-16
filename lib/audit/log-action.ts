@@ -103,6 +103,7 @@ export const ALL_AUDIT_ACTIONS = [
   // `system:quickbooks-sync` and `context.source = 'quickbooks'`.
   'qbo.invoice.create',
   'qbo.invoice.link',
+  'qbo.invoice.send',
   'qbo.customer.create',
   'qbo.connection.connect',
   'qbo.connection.disconnect',
