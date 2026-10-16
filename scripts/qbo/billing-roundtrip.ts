@@ -6,7 +6,11 @@
  * then re-read and check the stored copy follows. Finally QuickBooks' own
  * balance and aging agree.
  *
- *   npx tsx --conditions=react-server --env-file=.env.development.local scripts/qbo/billing-roundtrip.ts
+ *   npx tsx --conditions=react-server --env-file=.env.development.local \
+ *     --import ./scripts/local/seed/harness/register.mjs scripts/qbo/billing-roundtrip.ts
+ *
+ * The --import harness lets the stage writes run outside Next (tiptap's
+ * server build, a next/cache stub).
  *
  * Writes to the sandbox and the local stack only; refuses anything else.
  */

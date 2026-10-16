@@ -14,8 +14,14 @@
  * Dry run by default; --apply saves. --actor names the staff account written
  * to the audit log (required).
  *
- *   npx tsx --conditions=react-server --env-file=<env file> scripts/qbo/billing-link.ts \
+ *   npx tsx --conditions=react-server --env-file=<env file> \
+ *     --import ./scripts/local/seed/harness/register.mjs \
+ *     scripts/qbo/billing-link.ts \
  *     --actor ace.guevarra@vizserve.hfse.edu.sg [--reclassify] [--apply]
+ *
+ * The --import harness is required: without it every stage write fails
+ * outside Next (tiptap's browser build, next/cache). It also blanks
+ * RESEND_API_KEY, so the run sends no SIS email.
  */
 import { runLink } from '@/lib/billing/link-run.server';
 import {
