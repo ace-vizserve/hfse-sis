@@ -40,13 +40,16 @@ import {
   School,
   Shield,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Stamp,
   Tag,
   TrendingUp,
   UserCog,
+  UserSearch,
   Users,
   UserX,
+  Wallet,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -71,13 +74,12 @@ export type ModuleSidebarConfig = {
   quickActionByRole: Partial<Record<Role, QuickAction>>;
 };
 
-// Order shown in the module-switcher popover. Lifecycle: intake →
-// identity → docs → classroom (teaching entry point) → grading →
-// attendance → evaluation → admin config.
+// Order shown in the module-switcher popover. Lifecycle: intake → identity → docs → billing → classroom (teaching entry point) → grading → attendance → evaluation → admin config.
 export const MODULE_ORDER: Module[] = [
   'admissions',
   'records',
   'p-files',
+  'billing',
   'classroom',
   'markbook',
   'attendance',
@@ -201,6 +203,23 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     },
     // No quick action — the single nav item (All classes) is already the
     // destination, same reasoning as Attendance/Evaluation above.
+    quickActionByRole: {},
+  },
+
+  billing: {
+    label: 'Billing',
+    icon: ReceiptText,
+    primaryHref: '/billing',
+    fallbackIcon: ReceiptText,
+    iconByHref: {
+      // Who owes what — the customer list.
+      '/billing': Wallet,
+      // Students the SIS couldn't match to a QuickBooks customer.
+      '/billing/review': UserSearch,
+      // Mapping, years, payment accounts, connection.
+      '/billing/settings': SlidersHorizontal,
+    },
+    // No quick action — Customers is already the first row.
     quickActionByRole: {},
   },
 

@@ -43,7 +43,8 @@ export type Module =
   | 'attendance'
   | 'evaluation'
   | 'admissions'
-  | 'classroom';
+  | 'classroom'
+  | 'billing';
 
 export type NavItem = {
   href: string;
@@ -646,6 +647,25 @@ const CLASSROOM_NAV: NavSection[] = [
   },
 ];
 
+// Billing — every QuickBooks invoice and payment of a student's customer;
+// QuickBooks is the record for money and the SIS works through it (spec
+// docs/superpowers/specs/2026-10-15-billing-module-design.md). Route group
+// (billing)/billing/*. Settings is superadmin only: its nav item and its
+// ROUTE_ACCESS row say so together, or the link would bounce the others.
+const BILLING_NAV: NavSection[] = [
+  {
+    items: [
+      { href: '/billing', label: 'Customers' },
+      { href: '/billing/review', label: 'To review' },
+      {
+        href: '/billing/settings',
+        label: 'Settings',
+        requiresRoles: ['superadmin'],
+      },
+    ],
+  },
+];
+
 // SIS admin hub — the system-level admin surface where structural ops live.
 // Distinct from Records. Route group: (sis)/sis/*. Access: school_admin +
 // superadmin own the full hub (Sprint 33 consolidation — the old `admin`
@@ -853,6 +873,7 @@ export const NAV_BY_MODULE: {
   evaluation: NavSection[];
   admissions: NavSection[];
   classroom: NavSection[];
+  billing: NavSection[];
 } = {
   markbook: {
     teacher: [
@@ -1011,6 +1032,7 @@ export const NAV_BY_MODULE: {
   evaluation: EVALUATION_NAV,
   admissions: ADMISSIONS_NAV,
   classroom: CLASSROOM_NAV,
+  billing: BILLING_NAV,
 };
 
 // Which roles may access a given route prefix. Longer prefixes are
@@ -1062,6 +1084,13 @@ export const ROUTE_ACCESS: Array<{
   },
   // QuickBooks connection (migration 188) — superadmin connects it once.
   { prefix: '/sis/admin/quickbooks', allowed: ['superadmin'] },
+  // Billing (spec 2026-10-15). Settings is superadmin only and must stay ABOVE
+  // the `/billing` row — first match in declaration order wins.
+  { prefix: '/billing/settings', allowed: ['superadmin'] },
+  {
+    prefix: '/billing',
+    allowed: ['admissions', 'school_admin', 'superadmin'],
+  },
   // /sis/admin/users is now a redirect stub → /sis/admin/staff?view=accounts
   // (SIS Admin IA Phase 4, KD #154 — staff accounts merged into the staff
   // directory). Kept superadmin-only so the gate still fires before the
