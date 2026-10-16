@@ -26,8 +26,28 @@ const check = (name: string, ok: boolean, detail = '') => {
     `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`
   );
   if (ok) passes++;
-  else failures++;
+  else {
+    failures++;
+    process.exitCode = 1;
+  }
 };
+
+type QboPayment = {
+  UnappliedAmt?: number;
+  Line?: Array<{ LinkedTxn?: Array<{ TxnId: string; TxnType?: string }> }>;
+};
+async function readQboPayment(id: string): Promise<QboPayment> {
+  const { Payment } = await qboRequest<{ Payment: QboPayment }>(
+    service,
+    'GET',
+    `/payment/${id}`
+  );
+  return Payment;
+}
+const linkedIds = (p: QboPayment) =>
+  (p.Line ?? []).flatMap((l) => (l.LinkedTxn ?? []).map((t) => t.TxnId));
+
+const TIPTAP = /generateJSON can only be used in a browser environment/;
 
 async function main() {
   if (
@@ -73,6 +93,7 @@ async function main() {
     display_name: string;
   };
   let found: Pick | null = null;
+  const skipped: string[] = [];
   for (const l of links ?? []) {
     const p = await readCustomerProfile(service, l.qbo_customer_id);
     if (!p.email) continue;
@@ -80,13 +101,27 @@ async function main() {
     // generateJSON); a payment refuses to run on a failed read, so skip them.
     const probe = await loadCustomerHistory(service, l.student_number);
     if (probe.errors.length > 0) {
-      console.warn('skipping', l.student_number, probe.errors[0]?.slice(0, 80));
-      continue;
+      if (probe.errors.every((e) => TIPTAP.test(e))) {
+        skipped.push(`${l.student_number}: ${probe.errors[0]}`);
+        console.warn('skipping', l.student_number, probe.errors[0]);
+        continue;
+      }
+      check(
+        `history load for ${l.student_number}`,
+        false,
+        probe.errors.join(' | ')
+      );
+      return finish();
     }
     found = l as Pick;
     break;
   }
-  if (!found) throw new Error('No linked student whose customer has an email.');
+  if (!found) {
+    if (skipped.length > 0)
+      check('pick a student', false, `all candidates skipped: ${skipped[0]}`);
+    else throw new Error('No linked student whose customer has an email.');
+    return finish();
+  }
   const pick: Pick = found;
   console.log('Student', pick.student_number, pick.display_name);
   const items = await qboQuery<{ Id: string; Name: string }>(
@@ -114,7 +149,7 @@ async function main() {
     a.ok,
     a.ok ? `${a.docNumber}, sent to ${a.sentTo}` : a.error
   );
-  if (!a.ok) return;
+  if (!a.ok) return finish();
   if (a.warnings.length) console.warn('warnings (A):', a.warnings);
   check('A emailed', !!a.sentTo);
   const { data: storedA } = await service
@@ -147,7 +182,7 @@ async function main() {
     p1.ok,
     p1.ok ? `leftover ${p1.plan.leftover}` : p1.error
   );
-  if (!p1.ok || !p1.paymentId) return;
+  if (!p1.ok || !p1.paymentId) return finish();
   if (p1.warnings.length) console.warn('warnings (payment 1):', p1.warnings);
   const { data: pay1 } = await service
     .from('qbo_payments')
@@ -182,7 +217,20 @@ async function main() {
     },
   });
   check('create invoice B', b.ok, b.ok ? (b.docNumber ?? '') : b.error);
-  if (!b.ok) return;
+  if (!b.ok) return finish();
+  // Every credit payment as QuickBooks holds it BEFORE the credit is used.
+  const beforeCredit = new Map<string, QboPayment>();
+  {
+    const open = await qboQuery<{ Id: string }>(
+      service,
+      'Payment',
+      `CustomerRef = '${pick.qbo_customer_id}'`
+    );
+    for (const o of open) {
+      const full = await readQboPayment(o.Id);
+      if (Number(full.UnappliedAmt ?? 0) > 0) beforeCredit.set(o.Id, full);
+    }
+  }
   const p2 = await recordPayment(service, {
     studentNumber: pick.student_number,
     actor,
@@ -202,24 +250,47 @@ async function main() {
   );
   if (p2.ok && p2.warnings.length)
     console.warn('warnings (payment 2):', p2.warnings);
-  const { Payment } = await qboRequest<{
-    Payment: {
-      UnappliedAmt?: number;
-      Line?: Array<{ LinkedTxn?: Array<{ TxnId: string }> }>;
-    };
-  }>(service, 'GET', `/payment/${p1.paymentId}`);
-  const linked = (Payment.Line ?? []).flatMap((l) =>
-    (l.LinkedTxn ?? []).map((t) => t.TxnId)
-  );
+  if (!p2.ok) return finish();
+  // The payment(s) recordPayment actually drew credit from.
+  const usedByPayment = new Map<string, number>();
+  for (const u of p2.plan.creditUse)
+    usedByPayment.set(
+      u.paymentId,
+      (usedByPayment.get(u.paymentId) ?? 0) + u.amount
+    );
+  for (const [paymentId, used] of usedByPayment) {
+    const after = await readQboPayment(paymentId);
+    const before = beforeCredit.get(paymentId);
+    const linkedAfter = linkedIds(after);
+    const linkedBefore = before ? linkedIds(before) : [];
+    check(
+      `credit payment ${paymentId} kept its earlier lines and gained B`,
+      !!before &&
+        linkedBefore.every((id) => linkedAfter.includes(id)) &&
+        linkedAfter.includes(b.qboInvoiceId),
+      `before ${linkedBefore.join(',') || '(none)'} → after ${linkedAfter.join(',')}`
+    );
+    check(
+      `credit payment ${paymentId} unapplied dropped by ${used}`,
+      !!before &&
+        Math.abs(
+          Number(before.UnappliedAmt ?? 0) -
+            Number(after.UnappliedAmt ?? 0) -
+            used
+        ) < 0.005,
+      `${before?.UnappliedAmt} → ${after.UnappliedAmt}`
+    );
+    if (paymentId === p1.paymentId)
+      check(
+        "p1's link to A survived",
+        linkedAfter.includes(a.qboInvoiceId),
+        linkedAfter.join(',')
+      );
+  }
   check(
-    'credit payment kept its line for A and gained B',
-    linked.includes(a.qboInvoiceId) && linked.includes(b.qboInvoiceId),
-    linked.join(',')
-  );
-  check(
-    'credit left 55',
-    Number(Payment.UnappliedAmt) === 55,
-    String(Payment.UnappliedAmt)
+    'credit used covers B in full',
+    p2.plan.creditUsed >= 45 && [...usedByPayment.keys()].length > 0,
+    String(p2.plan.creditUsed)
   );
 
   // 4) QuickBooks → SIS: an invoice voided in QuickBooks (C, made for it) and
@@ -254,7 +325,8 @@ async function main() {
       PrivateNote: 'Round trip — made in QuickBooks directly',
     }
   );
-  await loadCustomerHistory(service, pick.student_number);
+  const reread = await loadCustomerHistory(service, pick.student_number);
+  if (reread.errors.length) console.warn('warnings (re-read):', reread.errors);
   const { data: cRow } = c.ok
     ? await service
         .from('qbo_invoices')
@@ -281,19 +353,31 @@ async function main() {
   // 5) QuickBooks' own figures agree with each other.
   const profile = await readCustomerProfile(service, pick.qbo_customer_id);
   const aging = await readAging(service, { customerId: pick.qbo_customer_id });
-  const row =
-    aging.find((r) => r.customerId === pick!.qbo_customer_id) ?? aging[0];
-  check(
-    'customer balance = aging total',
-    Math.abs((row?.total ?? 0) - profile.balance) < 0.005,
-    `${profile.balance} vs ${row?.total ?? 0}`
-  );
+  const row = aging.find((r) => r.customerId === pick.qbo_customer_id);
+  if (row)
+    check(
+      'customer balance = aging total',
+      Math.abs(row.total - profile.balance) < 0.005,
+      `${profile.balance} vs ${row.total}`
+    );
+  else if (Math.abs(profile.balance) < 0.005)
+    check('customer balance = aging total', true, 'balance 0, not in aging');
+  else
+    check(
+      'customer balance = aging total',
+      false,
+      `customer missing from aging (balance ${profile.balance})`
+    );
 
+  finish();
+}
+
+function finish() {
   console.log(
     `\n${passes} passed, ${failures} failed.` +
       (failures ? '' : ' All checks passed.')
   );
-  if (failures) process.exit(1);
+  if (failures) process.exitCode = 1;
 }
 
 async function firstDepositAccount(): Promise<string | null> {
