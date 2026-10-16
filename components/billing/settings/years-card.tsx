@@ -96,44 +96,56 @@ export function YearsCard({
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {ayCodes.map((ay) => (
-          <div
-            key={ay}
-            className="grid grid-cols-1 gap-3 sm:grid-cols-[5rem_1fr_1fr] sm:items-end"
-          >
-            <p className="font-mono text-[12px] font-semibold text-foreground">
-              {ay}
-            </p>
-            <div className="space-y-1.5">
-              <Label htmlFor={`${ay}-from`}>From</Label>
-              <DatePicker
-                id={`${ay}-from`}
-                value={rows[ay].startsOn}
-                onChange={(v) =>
-                  setRows((s) => ({ ...s, [ay]: { ...s[ay], startsOn: v } }))
-                }
-                placeholder="No range"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`${ay}-to`}>To</Label>
-              <DatePicker
-                id={`${ay}-to`}
-                value={rows[ay].endsOn}
-                onChange={(v) =>
-                  setRows((s) => ({ ...s, [ay]: { ...s[ay], endsOn: v } }))
-                }
-                placeholder="No range"
-              />
-            </div>
-          </div>
-        ))}
-        {problem && <FieldError>{problem}</FieldError>}
+      <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          An invoice dated outside every range fills no stage. It still shows on
-          the customer page.
+          An invoice dated inside a year&rsquo;s range fills that year&rsquo;s
+          Registration or Fees stage. Outside every range it fills no stage, and
+          still shows on the customer page.
         </p>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
+            <span>Year</span>
+            <span>From</span>
+            <span>To</span>
+          </div>
+          {ayCodes.map((ay) => (
+            <div
+              key={ay}
+              className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
+            >
+              <p className="font-mono text-[12px] font-semibold text-foreground">
+                {ay}
+              </p>
+              <div className="min-w-0">
+                <Label htmlFor={`${ay}-from`} className="sr-only">
+                  {ay} from
+                </Label>
+                <DatePicker
+                  id={`${ay}-from`}
+                  value={rows[ay].startsOn}
+                  onChange={(v) =>
+                    setRows((s) => ({ ...s, [ay]: { ...s[ay], startsOn: v } }))
+                  }
+                  placeholder="Not set"
+                />
+              </div>
+              <div className="min-w-0">
+                <Label htmlFor={`${ay}-to`} className="sr-only">
+                  {ay} to
+                </Label>
+                <DatePicker
+                  id={`${ay}-to`}
+                  value={rows[ay].endsOn}
+                  onChange={(v) =>
+                    setRows((s) => ({ ...s, [ay]: { ...s[ay], endsOn: v } }))
+                  }
+                  placeholder="Not set"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        {problem && <FieldError>{problem}</FieldError>}
       </CardContent>
       <ChangePreviewDialog
         preview={preview}

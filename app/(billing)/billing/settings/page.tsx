@@ -7,19 +7,22 @@ import { LinkRunCard } from '@/components/billing/settings/link-run-card';
 import { MappingCard } from '@/components/billing/settings/mapping-card';
 import { YearsCard } from '@/components/billing/settings/years-card';
 import { PageShell } from '@/components/ui/page-shell';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { listAyCodes } from '@/lib/academic-year';
 import { loadSettings } from '@/lib/billing/settings.server';
 import { getQboStatus } from '@/lib/qbo/status';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// Billing → Settings (superadmin). The QuickBooks connection (moved here from
+const TABS = ['accounts', 'years', 'payments', 'quickbooks'];
+
+// Billing → Settings (superadmin), one tab per job. The QuickBooks connection (moved here from
 // SIS Admin), which invoices fill the Registration and Fees tiles, each
 // year's invoice dates, the payment accounts, and the bulk link run.
 export default async function BillingSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{ connected?: string; error?: string; tab?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -42,6 +45,13 @@ export default async function BillingSettingsPage({
       ...settings.ranges.map((r) => r.ayCode),
     ]),
   ].sort();
+  // Coming back from the QuickBooks connect flow lands on its own tab.
+  const initialTab =
+    params.tab && TABS.includes(params.tab)
+      ? params.tab
+      : params.connected || params.error
+        ? 'quickbooks'
+        : 'accounts';
 
   return (
     <PageShell>
@@ -88,15 +98,29 @@ export default async function BillingSettingsPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <MappingCard settings={settings} />
-        <div className="flex min-w-0 flex-col gap-6">
-          <QboConnectionCard status={status} />
+      <Tabs defaultValue={initialTab} className="gap-6">
+        <TabsList>
+          <TabsTrigger value="accounts">Income accounts</TabsTrigger>
+          <TabsTrigger value="years">School years</TabsTrigger>
+          <TabsTrigger value="payments">Payment accounts</TabsTrigger>
+          <TabsTrigger value="quickbooks">QuickBooks</TabsTrigger>
+        </TabsList>
+        <TabsContent value="accounts">
+          <MappingCard settings={settings} />
+        </TabsContent>
+        <TabsContent value="years" className="max-w-3xl">
           <YearsCard ayCodes={years} ranges={settings.ranges} />
+        </TabsContent>
+        <TabsContent value="payments" className="max-w-3xl">
           <DepositAccountsCard settings={settings} />
-          <LinkRunCard reviewCount={review.count ?? 0} />
-        </div>
-      </div>
+        </TabsContent>
+        <TabsContent value="quickbooks">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            <QboConnectionCard status={status} />
+            <LinkRunCard reviewCount={review.count ?? 0} />
+          </div>
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }
