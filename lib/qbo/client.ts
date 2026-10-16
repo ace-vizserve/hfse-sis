@@ -217,16 +217,21 @@ export async function qboRequest<T>(
   method: 'GET' | 'POST',
   path: string,
   body?: unknown,
-  opts?: { contentType?: string }
+  opts?: { contentType?: string; requestId?: string }
 ): Promise<T> {
   const conn = await loadConnection(service);
   const base = `${qboApiBase(conn.environment)}/v3/company/${conn.realm_id}`;
   const sep = path.includes('?') ? '&' : '?';
+  // QuickBooks returns the original response for a repeated requestid, so a
+  // retry of the same write never records twice (max 50 characters).
+  const tail = opts?.requestId
+    ? `${MINOR_VERSION}&requestid=${encodeURIComponent(opts.requestId)}`
+    : MINOR_VERSION;
 
   let throttled = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = await accessToken(service, conn, attempt > 0);
-    const res = await fetch(`${base}${path}${sep}${MINOR_VERSION}`, {
+    const res = await fetch(`${base}${path}${sep}${tail}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,

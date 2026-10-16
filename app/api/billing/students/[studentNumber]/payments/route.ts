@@ -21,6 +21,7 @@ const Body = z.object({
     .optional(),
   invoiceIds: z.array(z.string().min(1)).max(100),
   useCredit: z.boolean(),
+  requestId: z.string().uuid(),
 });
 
 // POST /api/billing/students/[studentNumber]/payments — Record payment and

@@ -11,6 +11,7 @@ import {
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
 import { upsertPayment } from '@/lib/billing/store.server';
+import { round2 } from '@/lib/billing/view';
 import {
   connectedRealmId,
   qboErrorMessage,
@@ -25,6 +26,8 @@ export type RecordPaymentInput = {
   reference?: string;
   invoiceIds: string[];
   useCredit: boolean;
+  /** One id per submit; QuickBooks de-duplicates retries on it. */
+  requestId: string;
 };
 
 export type RecordPaymentResult =
@@ -54,7 +57,8 @@ export async function recordPayment(
     input: RecordPaymentInput;
   }
 ): Promise<RecordPaymentResult> {
-  const { studentNumber, actor, input } = args;
+  const { studentNumber, actor } = args;
+  const input = { ...args.input, amount: round2(args.input.amount) };
   const realmId = await connectedRealmId(service).catch(() => null);
   if (!realmId)
     return {
@@ -80,8 +84,15 @@ export async function recordPayment(
   // 1) QuickBooks' figures now.
   try {
     const fresh = await loadCustomerHistory(service, studentNumber, undefined);
-    if (fresh.errors.length)
+    if (fresh.errors.length > 0) {
       console.warn('[billing] pre-payment read:', fresh.errors);
+      return {
+        ok: false,
+        status: 502,
+        error:
+          "QuickBooks' latest figures couldn't be read, so nothing was recorded. Try again in a minute.",
+      };
+    }
   } catch (e) {
     return { ok: false, status: 502, error: qboErrorMessage(e) };
   }
@@ -179,20 +190,40 @@ export async function recordPayment(
     list.push({ invoiceId: c.invoiceId, amount: c.amount });
     byPayment.set(c.paymentId, list);
   }
+  // QuickBooks returns the original response for a repeated requestid, so a
+  // retry of the same submit never records twice.
+  let creditIndex = 0;
   for (const [paymentId, entries] of byPayment) {
+    const requestId = `${input.requestId}-c${creditIndex++}`;
     try {
       const { Payment } = await qboRequest<{
         Payment: QbPayment & { SyncToken: string };
       }>(service, 'GET', `/payment/${encodeURIComponent(paymentId)}`);
-      await qboRequest(service, 'POST', '/payment', {
-        Id: Payment.Id,
-        SyncToken: Payment.SyncToken,
-        sparse: true,
-        CustomerRef: Payment.CustomerRef,
-        TotalAmt: Payment.TotalAmt,
-        Line: mergeCreditLines(Payment.Line ?? [], entries),
-      });
+      await qboRequest(
+        service,
+        'POST',
+        '/payment',
+        {
+          Id: Payment.Id,
+          SyncToken: Payment.SyncToken,
+          sparse: true,
+          CustomerRef: Payment.CustomerRef,
+          TotalAmt: Payment.TotalAmt,
+          Line: mergeCreditLines(Payment.Line ?? [], entries),
+        },
+        { requestId }
+      );
       creditApplied = true;
+    } catch (e) {
+      return {
+        ok: false,
+        status: 502,
+        error: creditApplied
+          ? `Some of the credit was used, then QuickBooks stopped: ${qboErrorMessage(e)} Reload the page to see where it got to.`
+          : qboErrorMessage(e),
+      };
+    }
+    try {
       await logAction({
         service,
         actor,
@@ -206,13 +237,7 @@ export async function recordPayment(
         },
       });
     } catch (e) {
-      return {
-        ok: false,
-        status: 502,
-        error: creditApplied
-          ? `Some of the credit was used, then QuickBooks stopped: ${qboErrorMessage(e)} Reload the page to see where it got to.`
-          : qboErrorMessage(e),
-      };
+      console.error('[billing] audit row for payment.apply_credit:', e);
     }
   }
 
@@ -224,6 +249,7 @@ export async function recordPayment(
       (who?.user?.user_metadata?.full_name as string | undefined) ??
       actor.email ??
       'staff';
+    let created: QbPayment;
     try {
       const { Payment } = await qboRequest<{ Payment: QbPayment }>(
         service,
@@ -242,21 +268,42 @@ export async function recordPayment(
             Amount: a.amount,
             LinkedTxn: [{ TxnId: a.invoiceId, TxnType: 'Invoice' }],
           })),
-        }
+        },
+        { requestId: input.requestId }
       );
       paymentId = Payment.Id;
+      created = Payment;
+    } catch (e) {
+      return {
+        ok: false,
+        status: 502,
+        error: creditApplied
+          ? `The credit was used, but the payment wasn't recorded: ${qboErrorMessage(e)}`
+          : qboErrorMessage(e),
+      };
+    }
+    // QuickBooks has the payment. Everything below is SIS catch-up and must
+    // never fail the request, or a retry would record it twice.
+    try {
       await upsertPayment(service, {
-        p: Payment,
+        p: created,
         studentNumber,
         realmId,
         createdBy: { id: actor.id, email: actor.email },
       });
+    } catch (e) {
+      console.error('[billing] upsertPayment after QuickBooks accepted:', e);
+      warnings.push(
+        'Saved in QuickBooks; the SIS copy will catch up within the hour.'
+      );
+    }
+    try {
       await logAction({
         service,
         actor,
         action: 'qbo.payment.create',
         entityType: 'qbo_payment',
-        entityId: Payment.Id,
+        entityId: created.Id,
         context: {
           studentNumber,
           total: input.amount,
@@ -267,13 +314,7 @@ export async function recordPayment(
         },
       });
     } catch (e) {
-      return {
-        ok: false,
-        status: 502,
-        error: creditApplied
-          ? `The credit was used, but the payment wasn't recorded: ${qboErrorMessage(e)}`
-          : qboErrorMessage(e),
-      };
+      console.error('[billing] audit row for payment.create:', e);
     }
   }
 

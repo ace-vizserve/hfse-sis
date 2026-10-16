@@ -142,6 +142,46 @@ describe('QuickBooks client helpers', () => {
       expect(await p).toEqual({ Invoice: { Id: '1' } });
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+
+    it('sends requestid only when asked', async () => {
+      const farFuture = new Date(Date.now() + 3_600_000).toISOString();
+      const service = {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  realm_id: 'r1',
+                  environment: 'sandbox',
+                  refresh_token: 'rt',
+                  access_token: 'at',
+                  access_token_expires_at: farFuture,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      } as never;
+      const fetchMock = vi.fn(async (..._args: unknown[]) => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({}),
+      }));
+      vi.stubGlobal('fetch', fetchMock);
+      await qboRequest(
+        service,
+        'POST',
+        '/payment',
+        { a: 1 },
+        { requestId: 'abc-c0' }
+      );
+      await qboRequest(service, 'POST', '/payment', { a: 1 });
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls[0]).toMatch(/\/payment\?minorversion=\d+&requestid=abc-c0$/);
+      expect(urls[1]).not.toContain('requestid');
+    });
   });
 
   it('only admissions, school_admin and superadmin invoice', () => {

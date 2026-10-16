@@ -74,6 +74,8 @@ export function RecordPaymentSheet({
   const [amount, setAmount] = useState(() =>
     mode === 'credit' ? '' : owed.toFixed(2)
   );
+  // One id per open: a retry of the same submit can't record twice.
+  const [requestId] = useState(() => crypto.randomUUID());
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [account, setAccount] = useState(depositAccounts[0]?.id ?? '');
   const [reference, setReference] = useState('');
@@ -107,7 +109,10 @@ export function RecordPaymentSheet({
 
   const save = useMutation({
     mutationFn: () =>
-      apiFetch<{ warnings: string[] }>(
+      apiFetch<{
+        warnings: string[];
+        plan: { creditUsed: number; leftover: number };
+      }>(
         `/api/billing/students/${encodeURIComponent(studentNumber)}/payments`,
         jsonInit('POST', {
           amount: cash,
@@ -116,6 +121,7 @@ export function RecordPaymentSheet({
           ...(reference.trim() ? { reference: reference.trim() } : {}),
           invoiceIds: invoices.filter((i) => ticked.has(i.id)).map((i) => i.id),
           useCredit,
+          requestId,
         })
       ),
   });
@@ -131,9 +137,9 @@ export function RecordPaymentSheet({
       pending: 'Recording in QuickBooks…',
       success: (d) => {
         for (const w of d.warnings) toast.warning(w);
-        if (cash <= 0) return `${formatSgd(plan.creditUsed)} of credit used`;
-        return plan.leftover > 0
-          ? `${formatSgd(cash)} recorded · ${formatSgd(plan.leftover)} kept as credit`
+        if (cash <= 0) return `${formatSgd(d.plan.creditUsed)} of credit used`;
+        return d.plan.leftover > 0
+          ? `${formatSgd(cash)} recorded · ${formatSgd(d.plan.leftover)} kept as credit`
           : `${formatSgd(cash)} recorded in QuickBooks`;
       },
       onResolved: () => {
