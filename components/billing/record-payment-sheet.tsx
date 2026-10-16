@@ -40,7 +40,7 @@ import {
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 export function RecordPaymentSheet({
@@ -75,7 +75,7 @@ export function RecordPaymentSheet({
     mode === 'credit' ? '' : owed.toFixed(2)
   );
   // One id per open: a retry of the same submit can't record twice.
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [account, setAccount] = useState(depositAccounts[0]?.id ?? '');
   const [reference, setReference] = useState('');
@@ -108,22 +108,33 @@ export function RecordPaymentSheet({
   const valid = amountValid && !nothingToDo && (!needsAccount || !!account);
 
   const save = useMutation({
-    mutationFn: () =>
-      apiFetch<{
-        warnings: string[];
-        plan: { creditUsed: number; leftover: number };
-      }>(
-        `/api/billing/students/${encodeURIComponent(studentNumber)}/payments`,
-        jsonInit('POST', {
-          amount: cash,
-          txnDate,
-          depositAccountId: needsAccount ? account : null,
-          ...(reference.trim() ? { reference: reference.trim() } : {}),
-          invoiceIds: invoices.filter((i) => ticked.has(i.id)).map((i) => i.id),
-          useCredit,
-          requestId,
-        })
-      ),
+    mutationFn: async () => {
+      try {
+        return await apiFetch<{
+          warnings: string[];
+          plan: { creditUsed: number; leftover: number };
+        }>(
+          `/api/billing/students/${encodeURIComponent(studentNumber)}/payments`,
+          jsonInit('POST', {
+            amount: cash,
+            txnDate,
+            depositAccountId: needsAccount ? account : null,
+            ...(reference.trim() ? { reference: reference.trim() } : {}),
+            invoiceIds: invoices
+              .filter((i) => ticked.has(i.id))
+              .map((i) => i.id),
+            useCredit,
+            requestId,
+          })
+        );
+      } catch (err) {
+        // The server answered with an error status: take a fresh id so the
+        // next submit isn't replayed from the old one. Network failures and
+        // lost responses keep the same id, so a retry is de-duplicated.
+        if (err instanceof ApiError) setRequestId(crypto.randomUUID());
+        throw err;
+      }
+    },
   });
 
   async function submit(e: React.FormEvent) {
