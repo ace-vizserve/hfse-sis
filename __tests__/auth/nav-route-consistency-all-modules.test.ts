@@ -68,6 +68,7 @@ const REDIRECT_STUBS = new Set([
   '/attendance/calendar', // -> /sis/calendar
   '/sis/admin/users', // -> /sis/admin/staff?view=accounts (KD #154)
   '/admin/admissions', // -> /records (KD #17)
+  '/sis/admin/quickbooks', // -> /billing/settings (Billing Phase 5)
   '/admin', // -> /records; the bare legacy bookmark, gated by KD #173
 ]);
 

@@ -60,6 +60,7 @@ const REDIRECT_ONLY = new Set([
   'app/(records)/records/academic-summary/comments/page.tsx',
   'app/(records)/records/compare/page.tsx',
   'app/(records)/records/discount-codes/page.tsx',
+  'app/(sis)/sis/admin/quickbooks/page.tsx',
   'app/(sis)/sis/admin/users/page.tsx',
 ]);
 

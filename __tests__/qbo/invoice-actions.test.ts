@@ -3,48 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildInvoiceLines,
   createdButNotSaved,
-  linkRefusal,
 } from '@/lib/qbo/invoice-actions';
-import type { QbInvoice } from '@/lib/qbo/invoice-snapshot';
-
-const inv: QbInvoice = {
-  Id: '130',
-  DocNumber: '1042',
-  TotalAmt: 2800,
-  Balance: 2800,
-  SyncToken: '0',
-  CustomerRef: { value: '58', name: 'LIM, SOFIA ALCANTARA' },
-};
-
-describe('linkRefusal', () => {
-  it("allows the customer's own unlinked invoice", () => {
-    expect(
-      linkRefusal({ invoice: inv, customerId: '58', alreadyLinked: null })
-    ).toBeNull();
-  });
-  it("refuses another customer's invoice", () => {
-    expect(
-      linkRefusal({ invoice: inv, customerId: '77', alreadyLinked: null })
-    ).toBe(
-      'Invoice 1042 belongs to LIM, SOFIA ALCANTARA in QuickBooks, not this student.'
-    );
-  });
-  it('refuses an invoice already linked elsewhere', () => {
-    expect(
-      linkRefusal({
-        invoice: inv,
-        customerId: '58',
-        alreadyLinked: {
-          ayCode: 'AY2027',
-          enroleeNumber: 'E270011',
-          stage: 'registration',
-        },
-      })
-    ).toBe(
-      'Invoice 1042 is already linked to the Registration stage of E270011 (AY2027).'
-    );
-  });
-});
 
 describe('createdButNotSaved', () => {
   it('names the QuickBooks number and the way out', () => {

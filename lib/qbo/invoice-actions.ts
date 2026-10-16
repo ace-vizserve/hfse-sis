@@ -1,30 +1,3 @@
-import type { QbInvoice } from '@/lib/qbo/invoice-snapshot';
-
-const STAGE_NAME: Record<string, string> = {
-  registration: 'Registration',
-  fees: 'Fees',
-};
-
-export function linkRefusal(args: {
-  invoice: QbInvoice;
-  customerId: string;
-  alreadyLinked: {
-    ayCode: string;
-    enroleeNumber: string;
-    stage: string;
-  } | null;
-}): string | null {
-  const no = args.invoice.DocNumber ?? args.invoice.Id;
-  if (args.invoice.CustomerRef.value !== args.customerId) {
-    return `Invoice ${no} belongs to ${args.invoice.CustomerRef.name ?? 'another customer'} in QuickBooks, not this student.`;
-  }
-  if (args.alreadyLinked) {
-    const a = args.alreadyLinked;
-    return `Invoice ${no} is already linked to the ${STAGE_NAME[a.stage] ?? a.stage} stage of ${a.enroleeNumber} (${a.ayCode}).`;
-  }
-  return null;
-}
-
 export function createdButNotSaved(docNumber: string | undefined): string {
   return `QuickBooks created invoice ${docNumber ?? '(no number)'}, but the SIS couldn't save it. Use Link QB invoice to attach it — don't create it again.`;
 }

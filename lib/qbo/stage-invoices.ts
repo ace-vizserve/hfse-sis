@@ -28,18 +28,6 @@ export type QboStageData = {
   fees: TileLine | null;
 };
 
-/** Legacy shape, kept only until the old invoice strip is deleted (Task 5.2). */
-export type StageInvoiceView = {
-  qboInvoiceId: string;
-  docNumber: string | null;
-  total: number;
-  balance: number;
-  state: 'open' | 'paid' | 'voided';
-  paymentDate: string | null;
-  syncedAt: string;
-  qbUrl: string;
-};
-
 type Row = {
   doc_number: string | null;
   txn_date: string | null;

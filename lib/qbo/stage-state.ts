@@ -19,12 +19,6 @@ export type StageSnapshot = {
   startDate: string | null;
 };
 
-export type InvoiceSnapshot = {
-  docNumber: string;
-  state: InvoiceState;
-  paymentDate: string | null;
-};
-
 export type StagePatch = {
   status?: string | null;
   invoice?: string | null;
@@ -35,47 +29,6 @@ export const blank = (v: string | null | undefined) => !v || !v.trim();
 const norm = (v: string | null | undefined) => (blank(v) ? null : v!.trim());
 const sameDate = (a: string | null | undefined, b: string | null | undefined) =>
   (norm(a)?.slice(0, 10) ?? null) === (norm(b)?.slice(0, 10) ?? null);
-
-/** Where the stage should end up for this invoice state, starting from `base`. */
-function applyState(
-  stage: QboStageKey,
-  current: StageSnapshot,
-  invoice: InvoiceSnapshot,
-  base: StagePatch
-): StagePatch {
-  const status = base.status !== undefined ? base.status : current.status;
-
-  if (invoice.state === 'voided') {
-    return { status: 'Pending', invoice: null, paymentDate: null };
-  }
-
-  if (invoice.state === 'paid') {
-    if (stage === 'registration') {
-      return { ...base, status: 'Finished', paymentDate: invoice.paymentDate };
-    }
-    // Fees Paid needs a start date (STAGE_STATUS_REQUIRED_FIELDS). Without
-    // one the payment date is still filled and the status waits.
-    if (!blank(current.startDate)) {
-      return { ...base, status: 'Paid', paymentDate: invoice.paymentDate };
-    }
-    return { ...base, paymentDate: invoice.paymentDate };
-  }
-
-  // Open. A stage that was finished on this invoice has reopened — a payment
-  // was deleted or reduced in QuickBooks, and QuickBooks wins on money.
-  if (stage === 'registration' && status === 'Finished') {
-    return { ...base, status: 'Unpaid', paymentDate: null };
-  }
-  if (stage === 'fees' && status === 'Paid') {
-    return { ...base, status: 'Invoiced', paymentDate: null };
-  }
-  // A Fees stage held at Invoiced (no start date) keeps its payment date;
-  // once the invoice is open again that date is stale, so clear it.
-  if (!blank(current.paymentDate)) {
-    return { ...base, paymentDate: null };
-  }
-  return base;
-}
 
 /** Drop every key that already matches the stage; null when nothing is left. */
 export function onlyChanges(
@@ -102,54 +55,4 @@ export function onlyChanges(
     out.paymentDate = patch.paymentDate;
   }
   return Object.keys(out).length > 0 ? out : null;
-}
-
-/** Staff created or linked an invoice on this stage. */
-export function stageOnNewInvoice(
-  stage: QboStageKey,
-  current: StageSnapshot,
-  invoice: InvoiceSnapshot
-): StagePatch | null {
-  if (current.status === 'Cancelled') return null;
-  // Linking the very invoice already typed on the stage is not a re-invoice.
-  const hadInvoice =
-    !blank(current.invoice) &&
-    norm(current.invoice)!.toLowerCase() !==
-      (norm(invoice.docNumber) ?? '').toLowerCase();
-  const base: StagePatch = {
-    status:
-      stage === 'registration'
-        ? 'Unpaid'
-        : hadInvoice
-          ? 'Re-invoiced'
-          : 'Invoiced',
-    invoice: invoice.docNumber,
-    paymentDate: null,
-  };
-  return applyState(stage, current, invoice, base);
-}
-
-/** QuickBooks changed the stage's current invoice. */
-export function stageOnInvoiceChange(
-  stage: QboStageKey,
-  current: StageSnapshot,
-  invoice: InvoiceSnapshot
-): StagePatch | null {
-  if (current.status === 'Cancelled') return null;
-  return onlyChanges(applyState(stage, current, invoice, {}), current);
-}
-
-/** Fees paid in QuickBooks, held back from Paid only by a missing start date. */
-export function needsStartDate(
-  stage: QboStageKey,
-  current: StageSnapshot,
-  state: InvoiceState | null
-): boolean {
-  return (
-    stage === 'fees' &&
-    state === 'paid' &&
-    current.status !== 'Paid' &&
-    current.status !== 'Cancelled' &&
-    blank(current.startDate)
-  );
 }

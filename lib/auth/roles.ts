@@ -830,11 +830,6 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['school_admin', 'superadmin'],
       },
       {
-        href: '/sis/admin/quickbooks',
-        label: 'QuickBooks',
-        requiresRoles: ['superadmin'],
-      },
-      {
         href: '/sis/audit-log',
         label: 'Audit Log',
         requiresRoles: ['school_admin', 'superadmin'],
@@ -1082,7 +1077,7 @@ export const ROUTE_ACCESS: Array<{
     prefix: '/sis/admin/school-config',
     allowed: ['school_admin', 'superadmin'],
   },
-  // QuickBooks connection (migration 188) — superadmin connects it once.
+  // QuickBooks connection moved to /billing/settings; this guards the redirect stub.
   { prefix: '/sis/admin/quickbooks', allowed: ['superadmin'] },
   // Billing (spec 2026-10-15). Settings is superadmin only and must stay ABOVE
   // the `/billing` row — first match in declaration order wins.

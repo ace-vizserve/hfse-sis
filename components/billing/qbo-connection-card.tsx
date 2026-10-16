@@ -1,6 +1,6 @@
 import { CheckCircle2, ReceiptText } from 'lucide-react';
 
-import { QboConnectionActions } from '@/components/sis/qbo-connection-actions';
+import { QboConnectionActions } from '@/components/billing/qbo-connection-actions';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
