@@ -80,7 +80,7 @@ export function YearsCard({
         </CardTitle>
         <CardAction>
           <Button
-            variant="outline"
+            variant="default"
             disabled={!!problem}
             loading={ask.isPending || save.isPending}
             loadingText={save.isPending ? 'Saving…' : 'Checking…'}

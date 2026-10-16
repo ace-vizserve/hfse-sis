@@ -108,14 +108,14 @@ export default async function BillingSettingsPage({
         <TabsContent value="accounts">
           <MappingCard settings={settings} />
         </TabsContent>
-        <TabsContent value="years" className="max-w-3xl">
+        <TabsContent value="years" className="max-w-4xl">
           <YearsCard ayCodes={years} ranges={settings.ranges} />
         </TabsContent>
-        <TabsContent value="payments" className="max-w-3xl">
+        <TabsContent value="payments" className="max-w-4xl">
           <DepositAccountsCard settings={settings} />
         </TabsContent>
-        <TabsContent value="quickbooks">
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <TabsContent value="quickbooks" className="max-w-4xl">
+          <div className="flex flex-col gap-6">
             <QboConnectionCard status={status} />
             <LinkRunCard reviewCount={review.count ?? 0} />
           </div>

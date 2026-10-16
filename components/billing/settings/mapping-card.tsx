@@ -57,7 +57,7 @@ function StageSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-40" aria-label={label}>
+      <SelectTrigger className="h-8 w-52" aria-label={label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -190,7 +190,7 @@ export function MappingCard({ settings }: { settings: BillingSettings }) {
             Refresh items
           </Button>
           <Button
-            variant="outline"
+            variant="default"
             loading={ask.isPending || save.isPending}
             loadingText={save.isPending ? 'Saving…' : 'Checking…'}
             onClick={() =>
