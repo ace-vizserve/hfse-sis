@@ -8,7 +8,7 @@ import {
 describe('createdButNotSaved', () => {
   it('names the QuickBooks number and the way out', () => {
     expect(createdButNotSaved('1042')).toBe(
-      "QuickBooks created invoice 1042, but the SIS couldn't save it. Use Link QB invoice to attach it — don't create it again."
+      "QuickBooks created invoice 1042, but the SIS couldn't save its copy. It will show here after Refresh — don't create it again."
     );
   });
 });

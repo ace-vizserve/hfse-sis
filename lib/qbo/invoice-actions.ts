@@ -1,5 +1,5 @@
 export function createdButNotSaved(docNumber: string | undefined): string {
-  return `QuickBooks created invoice ${docNumber ?? '(no number)'}, but the SIS couldn't save it. Use Link QB invoice to attach it — don't create it again.`;
+  return `QuickBooks created invoice ${docNumber ?? '(no number)'}, but the SIS couldn't save its copy. It will show here after Refresh — don't create it again.`;
 }
 
 type ItemLite = {

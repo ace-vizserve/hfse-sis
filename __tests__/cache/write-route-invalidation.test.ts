@@ -59,15 +59,15 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
-  // ── QuickBooks (migration 188) ─────────────────────────────────────────
-  // The four routes that can move a Registration/Fees stage do it through
+  // ── QuickBooks (migration 188, Billing KD #232) ───────────────────────
+  // Every route that can move a Registration/Fees stage does it through
   // writeStageFromQbo (lib/qbo/stage-write.ts), which expires sis:<AY> and the
   // admissions/records tags itself. The qbo_* tables are read uncached
-  // (lib/qbo/stage-invoices.ts, the SIS Admin QuickBooks page).
+  // (lib/qbo/stage-invoices.ts, the Billing loaders, Billing → Settings).
   'app/api/quickbooks/webhook/route.ts':
     'Stage moves go through writeStageFromQbo, which busts the tags; qbo_* rows are read uncached.',
   'app/api/quickbooks/disconnect/route.ts':
-    'Deletes qbo_connection, read uncached by lib/qbo/client.ts and the SIS Admin QuickBooks page.',
+    'Deletes qbo_connection, read uncached by lib/qbo/client.ts and Billing → Settings.',
   // Billing link tables only (qbo_customers, billing_link_review); no cached page reads them
   'app/api/billing/link/route.ts':
     'Writes qbo_customers and deletes billing_link_review — no cached module reads either table.',
@@ -84,7 +84,7 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   'app/api/billing/students/[studentNumber]/refresh/route.ts':
     'Stage writes go through writeStageFromQbo, which expires the tags; the billing store tables are read uncached.',
   // Checked 2026-10-16: no lib/billing or lib/qbo loader calls unstable_cache,
-  // and every stage write below goes syncTilesForStudent (lib/billing/
+  // and every stage write below goes through syncTilesForStudent (lib/billing/
   // tiles.server.ts) → writeStageFromQbo, which revalidateTags sis:<AY> and
   // the admissions/records drill tags itself.
   'app/api/billing/invoices/[invoiceId]/send/route.ts':

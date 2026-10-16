@@ -912,8 +912,8 @@ export async function PATCH(
 
   // 2.9) QuickBooks owns Registration and Fees once it is connected (KD #231,
   // Mr Ace 2026-10-14: "one interface"). The invoice number, payment date and
-  // money statuses change only through the tile's QuickBooks actions and the
-  // sync; a hand edit of them is refused here, not just hidden in the dialog.
+  // money statuses change only through Billing (KD #232) and the sync; a
+  // hand edit of them is refused here, not just hidden in the dialog.
   // Staff keep the start date, remarks and Cancelled. Not connected (before
   // go-live, or disconnected) → nothing here applies.
   let qboLocked = false;
@@ -1015,7 +1015,7 @@ export async function PATCH(
     }
 
     // While QuickBooks owns the stage (2.9), a blank invoice or payment date
-    // is QuickBooks' to fill (via Link QB invoice), not the person's — so it
+    // is QuickBooks' to fill (through Billing), not the person's — so it
     // can't block their Remarks / Start date / Cancelled edit.
     const completionBlockers = findStageCompletionBlockers(
       stageKey,

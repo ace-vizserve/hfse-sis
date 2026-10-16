@@ -197,36 +197,36 @@ Related reads: `GET /api/sis/today-term` (current-term resolver, KD #116), `GET 
 
 **Casing gotcha:** `stage/:stageKey` takes snake_case **`section_id`**; `assign-section` takes camelCase **`sectionId`**. Both are live and consumed by shipped clients — deliberately not unified.
 
-## QuickBooks (registration / fees invoicing)
+## QuickBooks connection and sync
 
-Roles: `QBO_INVOICE_ROLES` (`lib/qbo/roles.ts`). QuickBooks is written first; the SIS records the invoice only after QuickBooks accepts it. Stage keys are limited to those `isQboStageKey` accepts.
+Roles: `QBO_INVOICE_ROLES` (`lib/qbo/roles.ts`). QuickBooks is written first; the SIS records the invoice only after QuickBooks accepts it.
 
-| Route                   | Method | Description                                                                                  |
-| ----------------------- | ------ | -------------------------------------------------------------------------------------------- |
-| `/api/quickbooks/items` | GET    | Active QuickBooks items. `{ items: [{ id, name, description \| null, unitPrice \| null }] }` |
+| Route                   | Method | Description                                                                                                     |
+| ----------------------- | ------ | --------------------------------------------------------------------------------------------------------------- |
+| `/api/quickbooks/items` | GET    | Active QuickBooks items. `{ items: [{ id, name, description \| null, unitPrice \| null, accountId \| null }] }` |
 
 The tile-level invoice routes (`stage/:stageKey/invoice`, `…/refresh`) and `/api/quickbooks/customers*` were removed by KD #232; invoicing is under `/api/billing/**` below. Still live here: `connect`, `callback`, `disconnect`, `webhook`, `cdc`, `items`.
 
 ## Billing (QuickBooks customers, invoices, payments — KD #232)
 
-Roles: `QBO_INVOICE_ROLES` = admissions, school_admin, superadmin; `QBO_ADMIN_ROLES` = superadmin (`lib/qbo/roles.ts`). QuickBooks is written first; a problem catching the SIS up afterwards is returned as a warning, never as a failure (the write already happened). Create invoice and Record payment send a QuickBooks `requestid` (one per sheet open), so a retry after a lost response never records twice. A Registration / Fees stage-write problem does not block a payment; the hourly check retries it.
+Roles: `QBO_INVOICE_ROLES` = admissions, school_admin, superadmin; `QBO_ADMIN_ROLES` = superadmin (`lib/qbo/roles.ts`). QuickBooks is written first; a problem catching the SIS up afterwards is returned as a warning, never as a failure (the write already happened). Create invoice, Record payment and Send send a QuickBooks `requestid` (one per submit), so a retry after a lost or unclear answer never records twice: when QuickBooks gives no definite answer to the write, the route answers 502 with `keepRequestId: true` and the client keeps the id. A Registration / Fees stage-write problem does not block a payment; the hourly check retries it.
 
-| Route                                           | Method | Role          | Description                                                                                                                   |
-| ----------------------------------------------- | ------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `/api/billing/link`                             | POST   | superadmin    | Link students. Body `{ dryRun }`: match every unlinked student to a QuickBooks customer; `dryRun: true` only counts           |
-| `/api/billing/students/:studentNumber/link`     | POST   | invoice roles | Link one student to a QuickBooks customer (staff choice from To review)                                                       |
-| `/api/billing/students/:studentNumber/refresh`  | POST   | invoice roles | Re-read that customer's invoices and payments from QuickBooks                                                                 |
-| `/api/billing/students/:studentNumber/customer` | POST   | invoice roles | Create the student's QuickBooks customer (one customer per student)                                                           |
-| `/api/billing/students/:studentNumber/invoices` | POST   | invoice roles | Create an invoice in QuickBooks, then record it in the SIS. Idempotent on `requestid`                                         |
-| `/api/billing/students/:studentNumber/payments` | POST   | invoice roles | Record a payment, or Use credit (apply an unapplied payment) in QuickBooks. Idempotent on `requestid`                         |
-| `/api/billing/invoices/:invoiceId/send`         | POST   | invoice roles | Send the invoice by QuickBooks email to the invoice's own billing email (the customer's email only when the invoice has none) |
-| `/api/billing/customers`                        | GET    | invoice roles | Search QuickBooks customers (`q`) for linking                                                                                 |
-| `/api/billing/settings`                         | GET    | superadmin    | Mapping, years, payment accounts and connection state for the Settings page                                                   |
-| `/api/billing/settings/mapping`                 | PUT    | superadmin    | Save which income accounts (+ item overrides) fill the Registration and Fees tiles                                            |
-| `/api/billing/settings/years`                   | PUT    | superadmin    | Save the per-year invoice-date ranges                                                                                         |
-| `/api/billing/settings/deposit-accounts`        | PUT    | superadmin    | Save the accounts a payment can be deposited to                                                                               |
-| `/api/billing/settings/items/refresh`           | POST   | superadmin    | Re-read the QuickBooks item list                                                                                              |
-| `/api/billing/settings/preview`                 | POST   | superadmin    | "What would change" for a mapping / years edit, without saving                                                                |
+| Route                                           | Method | Role          | Description                                                                                                                                         |
+| ----------------------------------------------- | ------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/billing/link`                             | POST   | superadmin    | Link students. Body `{ dryRun }`: match every unlinked student to a QuickBooks customer; `dryRun: true` only counts                                 |
+| `/api/billing/students/:studentNumber/link`     | POST   | invoice roles | Link one student to a QuickBooks customer (staff choice from To review)                                                                             |
+| `/api/billing/students/:studentNumber/refresh`  | POST   | invoice roles | Re-read that customer's invoices and payments from QuickBooks                                                                                       |
+| `/api/billing/students/:studentNumber/customer` | POST   | invoice roles | Create the student's QuickBooks customer (one customer per student)                                                                                 |
+| `/api/billing/students/:studentNumber/invoices` | POST   | invoice roles | Create an invoice in QuickBooks, then record it in the SIS. Idempotent on `requestid`                                                               |
+| `/api/billing/students/:studentNumber/payments` | POST   | invoice roles | Record a payment, or Use credit (apply an unapplied payment) in QuickBooks. Idempotent on `requestid`                                               |
+| `/api/billing/invoices/:invoiceId/send`         | POST   | invoice roles | Send the invoice by QuickBooks email to the invoice's own billing email (the customer's email only when the invoice has none); optional `requestId` |
+| `/api/billing/customers`                        | GET    | invoice roles | Search QuickBooks customers (`q`) for linking                                                                                                       |
+| `/api/billing/settings`                         | GET    | superadmin    | Mapping, years, payment accounts and connection state for the Settings page                                                                         |
+| `/api/billing/settings/mapping`                 | PUT    | superadmin    | Save which income accounts (+ item overrides) fill the Registration and Fees tiles                                                                  |
+| `/api/billing/settings/years`                   | PUT    | superadmin    | Save the per-year invoice-date ranges                                                                                                               |
+| `/api/billing/settings/deposit-accounts`        | PUT    | superadmin    | Save the accounts a payment can be deposited to                                                                                                     |
+| `/api/billing/settings/items/refresh`           | POST   | superadmin    | Re-read the QuickBooks item list                                                                                                                    |
+| `/api/billing/settings/preview`                 | POST   | superadmin    | "What would change" for a mapping / years edit, without saving                                                                                      |
 
 ## SIS Admin & AY Setup
 

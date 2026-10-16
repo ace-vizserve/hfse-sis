@@ -10,9 +10,11 @@ import {
   type StudentInfo,
 } from '@/lib/billing/students.server';
 import {
+  connectedRealmId,
   qbEscape,
   QboError,
   qboErrorMessage,
+  QboNotConnectedError,
   qboQuery,
   qboRequest,
 } from '@/lib/qbo/client';
@@ -50,6 +52,40 @@ export async function POST(
           'This student has no first and last name on record to name the customer.',
       },
       { status: 422 }
+    );
+  // Already linked (another tab, another person): never add a second customer.
+  let realmId: string | null;
+  try {
+    realmId = await connectedRealmId(service);
+  } catch (e) {
+    console.error('[billing] add to QuickBooks, connection lookup:', e);
+    return NextResponse.json({ error: SIS_READ_FAILED }, { status: 500 });
+  }
+  if (!realmId)
+    return NextResponse.json(
+      { error: qboErrorMessage(new QboNotConnectedError()) },
+      { status: 502 }
+    );
+  const { data: linked, error: linkedErr } = await service
+    .from('qbo_customers')
+    .select('qbo_customer_id')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId)
+    .maybeSingle();
+  if (linkedErr) {
+    console.error(
+      '[billing] add to QuickBooks, link lookup:',
+      linkedErr.message
+    );
+    return NextResponse.json({ error: SIS_READ_FAILED }, { status: 500 });
+  }
+  if (linked)
+    return NextResponse.json(
+      {
+        error:
+          'This student is already linked to a QuickBooks customer. Reload To review.',
+      },
+      { status: 409 }
     );
   const company = [s.fatherFullName, s.motherFullName]
     .map((n) => n?.trim())
