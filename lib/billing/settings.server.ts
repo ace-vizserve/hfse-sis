@@ -16,9 +16,12 @@ import {
 } from '@/lib/qbo/client';
 import {
   groupChanges,
+  summarizeMoves,
   tilesSweepBlocker,
   yearAfterReclassify,
   type InvoiceChange,
+  type Move,
+  type MovePreview,
 } from '@/lib/billing/settings-helpers';
 import { syncTilesForAllStudents } from '@/lib/billing/tiles.server';
 
@@ -247,19 +250,18 @@ export async function loadSettings(
   };
 }
 
+type Moved = Move & { id: string };
+
 /**
- * Re-applies the mapping and year ranges to every stored invoice. Returns the
- * students whose invoices moved and every year they moved from or to.
+ * Every stored invoice whose year or tiles change under `maps`, a page at a
+ * time. Shared by reclassifyAll (which writes them) and previewReclassify
+ * (which only counts them), so the preview is exactly what a save does.
  */
-export async function reclassifyAll(
+async function* reclassifyMoves(
   service: SupabaseClient,
-  preloaded?: { realmId: string; maps: BillingMaps }
-): Promise<{ changed: string[]; years: string[] }> {
-  const realmId = preloaded?.realmId ?? (await connectedRealmId(service));
-  if (!realmId) return { changed: [], years: [] };
-  const maps = preloaded?.maps ?? (await loadBillingMaps(service));
-  const changed = new Set<string>();
-  const years = new Set<string>();
+  realmId: string,
+  maps: BillingMaps
+): AsyncGenerator<Moved[]> {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await service
       .from('qbo_invoices')
@@ -270,7 +272,7 @@ export async function reclassifyAll(
       .order('id')
       .range(from, from + 999);
     if (error) throw new Error(`Invoice lookup failed: ${error.message}`);
-    const pending: InvoiceChange[] = [];
+    const page: Moved[] = [];
     for (const r of (data ?? []) as Array<{
       id: string;
       student_number: string;
@@ -288,10 +290,43 @@ export async function reclassifyAll(
         c.stageKeys.join(',') === (r.stage_keys ?? []).join(',')
       )
         continue;
-      pending.push({ id: r.id, ayCode, stageKeys: c.stageKeys });
-      changed.add(r.student_number);
-      if (r.ay_code) years.add(r.ay_code);
-      if (ayCode) years.add(ayCode);
+      page.push({
+        id: r.id,
+        studentNumber: r.student_number,
+        fromAy: r.ay_code,
+        fromStages: r.stage_keys ?? [],
+        toAy: ayCode,
+        toStages: c.stageKeys,
+      });
+    }
+    yield page;
+    if (!data || data.length < 1000) return;
+  }
+}
+
+/**
+ * Re-applies the mapping and year ranges to every stored invoice. Returns the
+ * students whose invoices moved and every year they moved from or to.
+ */
+export async function reclassifyAll(
+  service: SupabaseClient,
+  preloaded?: { realmId: string; maps: BillingMaps }
+): Promise<{ changed: string[]; years: string[] }> {
+  const realmId = preloaded?.realmId ?? (await connectedRealmId(service));
+  if (!realmId) return { changed: [], years: [] };
+  const maps = preloaded?.maps ?? (await loadBillingMaps(service));
+  const changed = new Set<string>();
+  const years = new Set<string>();
+  for await (const page of reclassifyMoves(service, realmId, maps)) {
+    const pending: InvoiceChange[] = page.map((m) => ({
+      id: m.id,
+      ayCode: m.toAy,
+      stageKeys: m.toStages,
+    }));
+    for (const m of page) {
+      changed.add(m.studentNumber);
+      if (m.fromAy) years.add(m.fromAy);
+      if (m.toAy) years.add(m.toAy);
     }
     for (const g of groupChanges(pending)) {
       const up = await service
@@ -301,9 +336,21 @@ export async function reclassifyAll(
       if (up.error)
         throw new Error(`Invoice update failed: ${up.error.message}`);
     }
-    if (!data || data.length < 1000) break;
   }
   return { changed: [...changed], years: [...years] };
+}
+
+/** What saving `maps` would move, without saving anything. */
+export async function previewReclassify(
+  service: SupabaseClient,
+  maps: BillingMaps
+): Promise<MovePreview> {
+  const realmId = await connectedRealmId(service);
+  if (!realmId) return summarizeMoves([]);
+  const all: Move[] = [];
+  for await (const page of reclassifyMoves(service, realmId, maps))
+    all.push(...page);
+  return summarizeMoves(all);
 }
 
 /**

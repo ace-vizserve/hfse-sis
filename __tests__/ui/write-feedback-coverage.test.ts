@@ -52,6 +52,7 @@ const CONVERTED_ROOTS = [
   'components/markbook',
   'components/change-requests',
   'components/sis',
+  'components/billing',
 ];
 
 type Exemption = { decided: string; why: string };

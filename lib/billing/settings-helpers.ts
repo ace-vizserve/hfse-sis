@@ -82,3 +82,54 @@ export function groupChanges(
       out.push({ ...g, ids: g.ids.slice(i, i + chunk) });
   return out;
 }
+
+/** One stored invoice whose year or tiles would change. */
+export type Move = {
+  studentNumber: string;
+  fromAy: string | null;
+  fromStages: string[];
+  toAy: string | null;
+  toStages: string[];
+};
+
+export type MovePreview = {
+  invoices: number;
+  students: number;
+  byYear: Array<{
+    ayCode: string;
+    registration: { gain: number; lose: number };
+    fees: { gain: number; lose: number };
+  }>;
+};
+
+/** "What would change" before a settings save: per year, per tile. Pure. */
+export function summarizeMoves(moves: Move[]): MovePreview {
+  const years = new Map<string, MovePreview['byYear'][number]>();
+  const at = (ay: string) => {
+    let y = years.get(ay);
+    if (!y) {
+      y = {
+        ayCode: ay,
+        registration: { gain: 0, lose: 0 },
+        fees: { gain: 0, lose: 0 },
+      };
+      years.set(ay, y);
+    }
+    return y;
+  };
+  for (const m of moves) {
+    for (const s of ['registration', 'fees'] as const) {
+      const was = !!m.fromAy && m.fromStages.includes(s);
+      const now = !!m.toAy && m.toStages.includes(s);
+      if (was && (!now || m.toAy !== m.fromAy)) at(m.fromAy!)[s].lose += 1;
+      if (now && (!was || m.toAy !== m.fromAy)) at(m.toAy!)[s].gain += 1;
+    }
+  }
+  return {
+    invoices: moves.length,
+    students: new Set(moves.map((m) => m.studentNumber)).size,
+    byYear: [...years.values()].sort((a, b) =>
+      a.ayCode.localeCompare(b.ayCode)
+    ),
+  };
+}

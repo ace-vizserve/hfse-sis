@@ -4,6 +4,7 @@ import {
   firstDuplicate,
   groupChanges,
   isRealDate,
+  summarizeMoves,
   TILES_SKIPPED_MESSAGE,
   tilesSweepBlocker,
   yearAfterReclassify,
@@ -87,4 +88,58 @@ describe('groupChanges', () => {
       { ayCode: null, stageKeys: [], ids: ['3'] },
     ]);
   });
+});
+
+describe('summarizeMoves', () => {
+  it('counts what each year gains and loses, per tile', () => {
+    expect(
+      summarizeMoves([
+        // SDF invoice leaves AY2027 Fees.
+        {
+          studentNumber: 'S1',
+          fromAy: 'AY2027',
+          fromStages: ['fees'],
+          toAy: null,
+          toStages: [],
+        },
+        // A Registration invoice moves from AY2026 to AY2027.
+        {
+          studentNumber: 'S2',
+          fromAy: 'AY2026',
+          fromStages: ['registration'],
+          toAy: 'AY2027',
+          toStages: ['registration'],
+        },
+        // Same student, a new Fees invoice lands on AY2027.
+        {
+          studentNumber: 'S2',
+          fromAy: null,
+          fromStages: [],
+          toAy: 'AY2027',
+          toStages: ['fees'],
+        },
+      ])
+    ).toEqual({
+      invoices: 3,
+      students: 2,
+      byYear: [
+        {
+          ayCode: 'AY2026',
+          registration: { gain: 0, lose: 1 },
+          fees: { gain: 0, lose: 0 },
+        },
+        {
+          ayCode: 'AY2027',
+          registration: { gain: 1, lose: 0 },
+          fees: { gain: 1, lose: 1 },
+        },
+      ],
+    });
+  });
+  it('nothing moves', () =>
+    expect(summarizeMoves([])).toEqual({
+      invoices: 0,
+      students: 0,
+      byYear: [],
+    }));
 });

@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   // cancelled, expired or failed attempt cannot leave a stale state behind.
   const back = (q: string) => {
     const res = NextResponse.redirect(
-      new URL(`/sis/admin/quickbooks?${q}`, request.url)
+      new URL(`/billing/settings?${q}`, request.url)
     );
     res.cookies.delete({ name: 'qbo_oauth_state', path: '/api/quickbooks' });
     return res;
