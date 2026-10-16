@@ -67,11 +67,12 @@ async function main() {
   const { data: links } = await service
     .from('qbo_customers')
     .select('student_number, qbo_customer_id, display_name');
-  let pick: {
+  type Pick = {
     student_number: string;
     qbo_customer_id: string;
     display_name: string;
-  } | null = null;
+  };
+  let found: Pick | null = null;
   for (const l of links ?? []) {
     const p = await readCustomerProfile(service, l.qbo_customer_id);
     if (!p.email) continue;
@@ -82,10 +83,11 @@ async function main() {
       console.warn('skipping', l.student_number, probe.errors[0]?.slice(0, 80));
       continue;
     }
-    pick = l as typeof pick;
+    found = l as Pick;
     break;
   }
-  if (!pick) throw new Error('No linked student whose customer has an email.');
+  if (!found) throw new Error('No linked student whose customer has an email.');
+  const pick: Pick = found;
   console.log('Student', pick.student_number, pick.display_name);
   const items = await qboQuery<{ Id: string; Name: string }>(
     service,
