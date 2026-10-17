@@ -14,6 +14,10 @@ A Student Information System for HFSE International School, Singapore. Modules �
 
 Do not edit any of the four without explicit user approval, and **do not add new files to `.claude/rules/`** — anything put there is paid for in every session. On-demand material goes in `docs/` (below).
 
+## Finding things — the graph first
+
+When the `graphify` MCP server is connected, look a symbol, file, KD or doc up in it before grepping or reading docs: it covers this repo and the parent portal (`../app-online-admission`) — code, docs, KDs and migrations — rebuilt nightly. Query by name (a function, file or KD), not by plain-English question. It can lag a day: read the real file before acting on anything it returns. The same graph is browsable as an Obsidian vault at `~/Documents/hfse-sis-vault`.
+
 ## Stable rules — on-demand (read with the Read tool when relevant)
 
 These live **outside** `.claude/rules/`, so they cost nothing until read. Read before acting when any of the "Read when..." conditions apply.
