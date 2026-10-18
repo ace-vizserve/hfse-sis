@@ -7687,13 +7687,11 @@ export async function GET(request: NextRequest) {
       ])
     );
     return NextResponse.json({
-      customers: students
-        .slice(0, 30)
-        .map((c) => ({
-          id: c.Id,
-          displayName: c.DisplayName,
-          linkedTo: holder.get(c.Id) ?? null,
-        })),
+      customers: students.slice(0, 30).map((c) => ({
+        id: c.Id,
+        displayName: c.DisplayName,
+        linkedTo: holder.get(c.Id) ?? null,
+      })),
     });
   } catch (e) {
     return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });

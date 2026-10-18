@@ -2012,15 +2012,13 @@ export async function PUT(request: Request) {
   if (del.error)
     return NextResponse.json({ error: del.error.message }, { status: 500 });
   if (ranges.length) {
-    const ins = await service
-      .from('billing_year_ranges')
-      .insert(
-        ranges.map((r) => ({
-          ay_code: r.ayCode,
-          starts_on: r.startsOn,
-          ends_on: r.endsOn,
-        }))
-      );
+    const ins = await service.from('billing_year_ranges').insert(
+      ranges.map((r) => ({
+        ay_code: r.ayCode,
+        starts_on: r.startsOn,
+        ends_on: r.endsOn,
+      }))
+    );
     if (ins.error)
       return NextResponse.json({ error: ins.error.message }, { status: 500 });
   }
@@ -2131,15 +2129,13 @@ export async function PUT(request: Request) {
     .neq('qbo_account_id', '');
   if (del.error)
     return NextResponse.json({ error: del.error.message }, { status: 500 });
-  const ins = await service
-    .from('billing_deposit_accounts')
-    .insert(
-      parsed.data.accounts.map((a) => ({
-        qbo_account_id: a.id,
-        label: a.label,
-        sort: a.sort,
-      }))
-    );
+  const ins = await service.from('billing_deposit_accounts').insert(
+    parsed.data.accounts.map((a) => ({
+      qbo_account_id: a.id,
+      label: a.label,
+      sort: a.sort,
+    }))
+  );
   if (ins.error)
     return NextResponse.json({ error: ins.error.message }, { status: 500 });
   await logAction({
