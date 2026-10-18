@@ -14,10 +14,6 @@ A Student Information System for HFSE International School, Singapore. Modules �
 
 Do not edit any of the four without explicit user approval, and **do not add new files to `.claude/rules/`** — anything put there is paid for in every session. On-demand material goes in `docs/` (below).
 
-## Notes vault
-
-Mr Ace's working notes for the SIS and the parent portal (meetings, staff asks, how the two connect) live in the Obsidian vault `~/Documents/hfse-sis-vault/notes/`. When a task touches something he may have told you, search it first. When he gives details to keep, write them there as a dated note with `[[links]]` to related notes. Decisions still go in the KD files.
-
 ## Stable rules — on-demand (read with the Read tool when relevant)
 
 These live **outside** `.claude/rules/`, so they cost nothing until read. Read before acting when any of the "Read when..." conditions apply.
