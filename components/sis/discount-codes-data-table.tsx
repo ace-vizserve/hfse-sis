@@ -1,10 +1,16 @@
 'use client';
 
-import { CalendarRange, Tag } from 'lucide-react';
+import { CalendarRange, Clock, Tag } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import * as React from 'react';
 
-import { DiscountCodeRowActions } from '@/components/sis/discount-code-row-actions';
+import {
+  DiscountCodeRowActions,
+  todayISO,
+} from '@/components/sis/discount-code-row-actions';
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { CodeChip } from '@/components/ui/code-chip';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -163,6 +169,31 @@ export function DiscountCodesDataTable({
     [codes, ayCode]
   );
 
+  // Bulk Expire: the row's own PATCH (op=expire, end date = today) once per
+  // ticked code that has not already expired.
+  const bulk = useBulkAction();
+  const [expiring, setExpiring] = React.useState<DiscountCodeRow[] | null>(
+    null
+  );
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  async function expireMany() {
+    const picked = expiring ?? [];
+    setExpiring(null);
+    await bulk(picked, {
+      pending: `Expiring ${picked.length} ${picked.length === 1 ? 'code' : 'codes'}…`,
+      done: (n) => `${n} ${n === 1 ? 'code' : 'codes'} expired`,
+      failed: 'Could not expire',
+      label: (r) => r.discountCode,
+      one: (r) =>
+        apiFetch(
+          `/api/sis/discount-codes/${encodeURIComponent(String(r.id))}?ay=${encodeURIComponent(ayCode)}&op=expire`,
+          jsonInit('PATCH', { endDate: todayISO() })
+        ),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
   // Unique enroleeType values for the facet dropdown.
   const enroleeTypes = Array.from(
     new Set(
@@ -171,72 +202,101 @@ export function DiscountCodesDataTable({
   ).sort();
 
   return (
-    <DataTable<DiscountCodeRow>
-      data={rows}
-      columns={columns}
-      getRowId={(row) => String(row.id)}
-      searchKeys={[
-        'discountCode',
-        // The plain copy — searching the raw column would match `strong` and
-        // miss a phrase split across two formatting tags.
-        'detailsPlain',
-        (row) => row.enroleeType ?? '',
-      ]}
-      searchPlaceholder="Search codes, details, or type…"
-      statusTabs={[
-        {
-          value: 'all',
-          label: 'All',
-          predicate: () => true,
-          isDefault: true,
-        },
-        {
-          value: 'active',
-          label: 'Active',
-          predicate: (r: DiscountCodeRow) => r.status === 'active',
-        },
-        {
-          value: 'scheduled',
-          label: 'Scheduled',
-          predicate: (r: DiscountCodeRow) => r.status === 'scheduled',
-        },
-        {
-          value: 'expired',
-          label: 'Expired',
-          predicate: (r: DiscountCodeRow) => r.status === 'expired',
-        },
-        {
-          value: 'inactive',
-          label: 'Inactive',
-          predicate: (r: DiscountCodeRow) => r.status === 'inactive',
-        },
-      ]}
-      facets={[
-        ...(enroleeTypes.length > 0
-          ? [
-              {
-                columnId: 'enroleeType',
-                label: 'Type',
-                valueOptions: enroleeTypes,
-              },
-            ]
-          : []),
-      ]}
-      toolbarTrailing={toolbarTrailing}
-      // Namespaced so filters/search persist + are shareable; leaves the page's
-      // own ?ay= (server-scope) untouched (KD #84).
-      url={{ enabled: true, namespace: 'discounts' }}
-      initialSort={[{ id: 'discountCode', desc: false }]}
-      pageSize={25}
-      emptyState={{
-        icon: Tag,
-        title: 'No discount codes yet.',
-        body: TABLE_COPY.discountCodesFooter(ayLabel),
-      }}
-      emptyFilteredState={{
-        title: 'No codes match.',
-        body: 'Try clearing filters or adjusting the search.',
-      }}
-    />
+    <>
+      <DataTable<DiscountCodeRow>
+        data={rows}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        searchKeys={[
+          'discountCode',
+          // The plain copy — searching the raw column would match `strong` and
+          // miss a phrase split across two formatting tags.
+          'detailsPlain',
+          (row) => row.enroleeType ?? '',
+        ]}
+        searchPlaceholder="Search codes, details, or type…"
+        statusTabs={[
+          {
+            value: 'all',
+            label: 'All',
+            predicate: () => true,
+            isDefault: true,
+          },
+          {
+            value: 'active',
+            label: 'Active',
+            predicate: (r: DiscountCodeRow) => r.status === 'active',
+          },
+          {
+            value: 'scheduled',
+            label: 'Scheduled',
+            predicate: (r: DiscountCodeRow) => r.status === 'scheduled',
+          },
+          {
+            value: 'expired',
+            label: 'Expired',
+            predicate: (r: DiscountCodeRow) => r.status === 'expired',
+          },
+          {
+            value: 'inactive',
+            label: 'Inactive',
+            predicate: (r: DiscountCodeRow) => r.status === 'inactive',
+          },
+        ]}
+        facets={[
+          ...(enroleeTypes.length > 0
+            ? [
+                {
+                  columnId: 'enroleeType',
+                  label: 'Type',
+                  valueOptions: enroleeTypes,
+                },
+              ]
+            : []),
+        ]}
+        toolbarTrailing={toolbarTrailing}
+        // Namespaced so filters/search persist + are shareable; leaves the page's
+        // own ?ay= (server-scope) untouched (KD #84).
+        url={{ enabled: true, namespace: 'discounts' }}
+        initialSort={[{ id: 'discountCode', desc: false }]}
+        pageSize={25}
+        selection={{
+          enabled: true,
+          enableRowSelection: (r) => r.status !== 'expired',
+          bulkActions: [
+            {
+              key: 'expire',
+              label: 'Expire',
+              icon: Clock,
+              destructive: true,
+              onTrigger: (picked) => setExpiring(picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
+        emptyState={{
+          icon: Tag,
+          title: 'No discount codes yet.',
+          body: TABLE_COPY.discountCodesFooter(ayLabel),
+        }}
+        emptyFilteredState={{
+          title: 'No codes match.',
+          body: 'Try clearing filters or adjusting the search.',
+        }}
+      />
+      <BulkActionDialog
+        open={expiring !== null}
+        onOpenChange={(o) => !o && setExpiring(null)}
+        title={
+          expiring?.length === 1
+            ? 'Expire this discount code?'
+            : `Expire ${expiring?.length ?? 0} discount codes?`
+        }
+        description="Sets each end date to today. The codes stop appearing in active offers immediately. Expiring keeps them in your records. To bring one back, edit its end date to a future day."
+        confirmLabel="Expire codes"
+        destructive
+        onConfirm={expireMany}
+      />
+    </>
   );
 }
