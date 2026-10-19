@@ -8,7 +8,7 @@ import {
   COHORT_TITLES,
   getStpCohort,
 } from '@/lib/sis/cohorts';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -31,8 +31,14 @@ export default async function AdmissionsCohortsStpPage({
 
   const resolved = await searchParams;
   const service = createServiceClient();
-  const currentAy = await getCurrentAcademicYear(service);
-  const ayCode = resolved.ay ?? currentAy?.ay_code ?? '';
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(service),
+    listAyCodes(service),
+  ]);
+  const ayCode =
+    resolved.ay && ayCodes.includes(resolved.ay)
+      ? resolved.ay
+      : (currentAy?.ay_code ?? '');
 
   const rows = ayCode ? await getStpCohort(ayCode, 'funnel') : [];
 
@@ -44,6 +50,7 @@ export default async function AdmissionsCohortsStpPage({
       count={rows.length}
       scope="funnel"
       ayCode={ayCode}
+      ayCodes={ayCodes}
     >
       <CohortTable kind="stp" scope="funnel" ayCode={ayCode} rows={rows} />
     </CohortPageShell>

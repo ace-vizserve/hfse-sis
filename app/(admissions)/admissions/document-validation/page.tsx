@@ -1,6 +1,7 @@
 import { FileCheck } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { ValidationQueue } from '@/components/admissions/document-validation/validation-queue';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
@@ -57,7 +58,7 @@ export default async function DocumentValidationPage({
   // the AY2027 intake. Checked against the real years, never a regex — the
   // code becomes a table prefix.
   const { ay: ayParam } = await searchParams;
-  const ayCodes = ayParam ? await listAyCodes(createServiceClient()) : [];
+  const ayCodes = await listAyCodes(createServiceClient());
   const ayCode =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
 
@@ -66,18 +67,23 @@ export default async function DocumentValidationPage({
 
   return (
     <PageShell>
-      <header className="space-y-2">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Admissions · Awaiting validation
-        </p>
-        <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-          Document validation
-        </h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          {rows.length === 0
-            ? 'No documents are waiting for review right now. New parent uploads will land here for approval.'
-            : `${rows.length.toLocaleString('en-SG')} document${rows.length === 1 ? '' : 's'} from ${applicantCount.toLocaleString('en-SG')} applicant${applicantCount === 1 ? '' : 's'} waiting for review.${canValidate ? ' Approve the file or reject it with a reason — the parent will be notified to re-upload.' : ' You have read-only access to this queue.'}`}
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Admissions · Awaiting validation
+          </p>
+          <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+            Document validation
+          </h1>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            {rows.length === 0
+              ? 'No documents are waiting for review right now. New parent uploads will land here for approval.'
+              : `${rows.length.toLocaleString('en-SG')} document${rows.length === 1 ? '' : 's'} from ${applicantCount.toLocaleString('en-SG')} applicant${applicantCount === 1 ? '' : 's'} waiting for review.${canValidate ? ' Approve the file or reject it with a reason — the parent will be notified to re-upload.' : ' You have read-only access to this queue.'}`}
+          </p>
+        </div>
+        <div className="sm:w-40">
+          <AySwitcher current={ayCode} options={ayCodes} />
+        </div>
       </header>
 
       <ValidationQueue rows={rows} ayCode={ayCode} canValidate={canValidate} />

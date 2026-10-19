@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Download } from 'lucide-react';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { PageShell } from '@/components/ui/page-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,8 @@ export type CohortPageShellProps = {
   count: number;
   ayCode: string;
   scope: CohortScope;
+  /** Every academic year the viewer can switch to. Omit to hide the switcher. */
+  ayCodes?: readonly string[];
   /** Optional filter chip strip — typically a `<CohortFilterChips>`-style
    *  client component that lives next to the per-cohort table. Renders right
    *  above the children block. */
@@ -50,6 +53,7 @@ export function CohortPageShell({
   count,
   ayCode,
   scope,
+  ayCodes,
   filterChips,
   children,
 }: CohortPageShellProps) {
@@ -80,6 +84,9 @@ export function CohortPageShell({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {ayCodes && ayCodes.length > 0 ? (
+            <AySwitcher current={ayCode} options={ayCodes} className="w-36" />
+          ) : null}
           <Button asChild variant="outline" size="sm">
             <a href={csvHref} download={filename}>
               <Download className="size-3.5" />

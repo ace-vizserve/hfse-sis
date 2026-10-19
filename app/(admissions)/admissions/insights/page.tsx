@@ -21,6 +21,7 @@ import { notFound, redirect } from 'next/navigation';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 import { TrendDeltaCaption } from '@/components/dashboard/insights/trend-delta-caption';
@@ -712,7 +713,12 @@ export default async function AdmissionsInsightsPage({
         actions={<ExportCsvButton data={exportData} />}
       />
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <AySwitcher
+          current={selectedAy}
+          options={ayCodes}
+          className="h-9 w-36"
+        />
         <CompareAyPicker
           primaryAy={selectedAy}
           ayCodes={ayCodes}

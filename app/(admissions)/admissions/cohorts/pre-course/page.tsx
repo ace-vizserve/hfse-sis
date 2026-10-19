@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { CohortPageShell } from '@/components/sis/cohorts/cohort-page-shell';
 import { CohortTable } from '@/components/sis/cohorts/cohort-table';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import type { Role } from '@/lib/auth/roles';
 import {
   COHORT_DESCRIPTIONS,
@@ -31,8 +31,14 @@ export default async function AdmissionsCohortsPreCoursePage({
 
   const resolved = await searchParams;
   const service = createServiceClient();
-  const currentAy = await getCurrentAcademicYear(service);
-  const ayCode = resolved.ay ?? currentAy?.ay_code ?? '';
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(service),
+    listAyCodes(service),
+  ]);
+  const ayCode =
+    resolved.ay && ayCodes.includes(resolved.ay)
+      ? resolved.ay
+      : (currentAy?.ay_code ?? '');
 
   const rows = ayCode ? await getPreCourseCohort(ayCode, 'funnel') : [];
 
@@ -44,6 +50,7 @@ export default async function AdmissionsCohortsPreCoursePage({
       count={rows.length}
       scope="funnel"
       ayCode={ayCode}
+      ayCodes={ayCodes}
     >
       <CohortTable
         kind="pre-course"
