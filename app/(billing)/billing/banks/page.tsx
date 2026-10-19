@@ -1,10 +1,21 @@
+import { ExternalLink, Landmark } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
-import { BankAccountSelect } from '@/components/billing/bank-period-picker';
+import { BankPeriodPicker } from '@/components/billing/bank-period-picker';
 import { BankTransactionsTable } from '@/components/billing/bank-transactions-table';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
+import { RefreshButton } from '@/components/billing/refresh-button';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import type { BankLedger } from '@/lib/billing/bank-ledger';
 import {
@@ -13,7 +24,7 @@ import {
   type BankAccount,
 } from '@/lib/billing/banks.server';
 import { isRealDate } from '@/lib/billing/settings-helpers';
-import { todaySg } from '@/lib/billing/view';
+import { formatDay, todaySg } from '@/lib/billing/view';
 import { connectedRealmId } from '@/lib/qbo/client';
 import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { formatSgd } from '@/lib/qbo/format';
@@ -22,16 +33,11 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
-// Billing → Bank accounts, as QuickBooks' Bank Register: the account
-// dropdown, Reconcile and the Ending balance at the top, then the account's
+// Billing → Bank accounts. WHAT is here is QuickBooks' Bank Register: the
+// account choice, Reconcile, the Ending balance, then the account's
 // transactions for a period — its General Ledger, read when the page loads.
-// The figures are QuickBooks' own.
-
-const CRUMBS = [
-  { label: 'Accounting' },
-  { label: 'Chart of accounts', href: '/billing/accounts' },
-  { label: 'Bank Register' },
-];
+// HOW it looks is the SIS's: hero, one tile per bank account (the chosen one
+// highlighted), and the register in a card. The figures are QuickBooks' own.
 
 /** The same day a year earlier (29 Feb → 28 Feb). */
 function yearBefore(iso: string): string {
@@ -78,75 +84,148 @@ export default async function BillingBanksPage({
     }
   }
   const qbBase = qboAppUrl(qboEnv()?.environment ?? 'sandbox', '');
+  const href = (id: string) =>
+    `/billing/banks?${new URLSearchParams({ account: id, from, to }).toString()}`;
 
   return (
     <PageShell>
       <BillingPageHeader
-        crumbs={CRUMBS}
-        title="Bank Register"
-        actions={
-          realmId && selected ? (
-            <Button asChild>
-              <a
-                href={`${qbBase}/app/reconcile?accountId=${encodeURIComponent(selected.id)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Reconcile
-              </a>
-            </Button>
-          ) : undefined
-        }
-      >
-        {realmId && !error && selected && ledger && (
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <BankAccountSelect accounts={accounts} value={selected.id} />
-            <div className="text-right">
-              <p className="text-[12px] text-muted-foreground">
-                Ending balance
-              </p>
-              <p
-                className={cn(
-                  'font-serif text-[26px] font-semibold leading-none tabular-nums',
-                  selected.balance < 0 ? 'text-destructive' : 'text-foreground'
-                )}
-              >
-                {formatSgd(selected.balance)}
-              </p>
-            </div>
-          </div>
-        )}
-      </BillingPageHeader>
+        crumbs={[{ label: 'Accounting' }, { label: 'Bank accounts' }]}
+        title="Bank accounts"
+        description="The balance of each bank account in QuickBooks, and every transaction in and out of it."
+        actions={realmId && !error ? <RefreshButton /> : undefined}
+      />
 
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-          <p className="font-serif text-base font-semibold text-foreground">
-            QuickBooks could not be read
-          </p>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {error} Refresh the page to try again.
-          </p>
-        </div>
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="font-serif text-base">
+              QuickBooks could not be read
+            </CardTitle>
+            <CardDescription>
+              {error} Refresh the page to try again.
+            </CardDescription>
+          </CardHeader>
+        </Card>
       ) : accounts.length === 0 || !selected || !ledger ? (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="font-serif text-base font-semibold text-foreground">
-            No bank accounts in QuickBooks
-          </p>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            Accounts of type Bank in QuickBooks&rsquo; Chart of Accounts show
-            here.
-          </p>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-serif text-base">
+              No bank accounts in QuickBooks
+            </CardTitle>
+            <CardDescription>
+              Accounts of type Bank in QuickBooks&rsquo; Chart of accounts show
+              here.
+            </CardDescription>
+          </CardHeader>
+        </Card>
       ) : (
-        <BankTransactionsTable
-          key={selected.id}
-          rows={ledger.rows}
-          from={from}
-          to={to}
-          accountName={selected.name}
-        />
+        <>
+          <nav
+            aria-label="Bank accounts"
+            className="@container/main grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {accounts.map((a) => {
+              const on = a.id === selected.id;
+              return (
+                <Link
+                  key={a.id}
+                  href={href(a.id)}
+                  aria-current={on ? 'page' : undefined}
+                  className="group block"
+                >
+                  <Card
+                    className={cn(
+                      'h-full gap-3 bg-gradient-to-t from-primary/5 to-card py-4 shadow-xs transition-all duration-200',
+                      on
+                        ? 'border-primary ring-1 ring-primary'
+                        : 'group-hover:-translate-y-0.5 group-hover:shadow-md'
+                    )}
+                  >
+                    <CardHeader className="px-4">
+                      <CardDescription className="truncate font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                        {a.name}
+                      </CardDescription>
+                      <CardTitle
+                        className={cn(
+                          'font-serif text-[24px] font-semibold leading-none tabular-nums',
+                          a.balance < 0 ? 'text-destructive' : 'text-foreground'
+                        )}
+                      >
+                        {formatSgd(a.balance)}
+                      </CardTitle>
+                      <CardAction>
+                        <div
+                          className={cn(
+                            'flex size-9 items-center justify-center rounded-xl',
+                            on
+                              ? 'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
+                          <Landmark className="size-4" />
+                        </div>
+                      </CardAction>
+                    </CardHeader>
+                  </Card>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Bank register
+              </CardDescription>
+              <CardTitle className="font-serif text-2xl font-semibold tracking-tight">
+                {selected.name}
+              </CardTitle>
+              <CardDescription>
+                {formatDay(from)} to {formatDay(to)}
+              </CardDescription>
+              <CardAction className="flex items-center gap-5">
+                <div className="text-right">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Ending balance
+                  </p>
+                  <p
+                    className={cn(
+                      'font-serif text-[28px] font-semibold leading-tight tabular-nums',
+                      selected.balance < 0
+                        ? 'text-destructive'
+                        : 'text-foreground'
+                    )}
+                  >
+                    {formatSgd(selected.balance)}
+                  </p>
+                </div>
+                <Button asChild variant="outline">
+                  <a
+                    href={`${qbBase}/app/reconcile?accountId=${encodeURIComponent(selected.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Reconcile
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="min-w-0 space-y-4">
+              <BankPeriodPicker from={from} to={to} />
+              <BankTransactionsTable
+                key={selected.id}
+                rows={ledger.rows}
+                from={from}
+                to={to}
+                accountName={selected.name}
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
     </PageShell>
   );
