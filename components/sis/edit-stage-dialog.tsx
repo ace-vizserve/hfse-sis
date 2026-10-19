@@ -71,8 +71,8 @@ export function EditStageDialog({
   ayCode,
   enroleeNumber,
   stageKey,
-  initialStatus,
-  initialRemarks,
+  initialStatus: initialStatusProp,
+  initialRemarks: initialRemarksProp,
   initialExtras,
   prereqStatuses,
   qboManaged = false,
@@ -104,6 +104,11 @@ export function EditStageDialog({
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
     null
   );
+
+  // A student with no status row yet arrives with every field undefined
+  // (enrollment-tab builds `{}` for it); treat that as "nothing set".
+  const initialStatus = initialStatusProp ?? null;
+  const initialRemarks = initialRemarksProp ?? null;
 
   const cols = STAGE_COLUMN_MAP[stageKey];
   const qboLocked =
