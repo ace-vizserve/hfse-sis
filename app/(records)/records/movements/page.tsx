@@ -10,7 +10,8 @@ import {
 
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   Card,
   CardAction,
@@ -23,7 +24,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { MovementsTable } from '@/components/sis/movements-table';
 import { getMovementEvents } from '@/lib/sis/movements';
 
-type SearchParams = Promise<{ scope?: string }>;
+type SearchParams = Promise<{ scope?: string; ay?: string }>;
 
 export default async function MovementsPage({
   searchParams,
@@ -45,14 +46,19 @@ export default async function MovementsPage({
   const includeAllAYs = params.scope === 'all';
 
   const service = createServiceClient();
-  const currentAy = await getCurrentAcademicYear(service);
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(service),
+    listAyCodes(service),
+  ]);
   if (!currentAy) {
     redirect('/');
   }
+  const selectedAy =
+    params.ay && ayCodes.includes(params.ay) ? params.ay : currentAy.ay_code;
 
   // Reason filtering is now a client-side facet on the table (KD #84); the page
   // loads the full event set and the KPI cards count over it.
-  const events = await getMovementEvents(currentAy.ay_code, {
+  const events = await getMovementEvents(selectedAy, {
     includeAllAYs,
   });
 
@@ -64,7 +70,7 @@ export default async function MovementsPage({
     lateEnrolled: events.filter((e) => e.kind === 'late-enrolled').length,
     reEnrolled: events.filter((e) => e.kind === 're-enrolled').length,
   };
-  const scopeLabel = includeAllAYs ? 'All years' : `${currentAy.ay_code}`;
+  const scopeLabel = includeAllAYs ? 'All years' : selectedAy;
 
   return (
     <PageShell>
@@ -76,17 +82,25 @@ export default async function MovementsPage({
         Dashboard
       </Link>
 
-      <header className="space-y-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Records · Enrolment movements · {currentAy.ay_code}
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Enrolment movements.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Track every section transfer, withdrawal, and late enrolment in one
-          place.
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-4">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Records · Enrolment movements ·{' '}
+            {includeAllAYs ? 'All years' : selectedAy}
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            Enrolment movements.
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Track every section transfer, withdrawal, and late enrolment in one
+            place.
+          </p>
+        </div>
+        {!includeAllAYs && (
+          <div className="sm:w-40">
+            <AySwitcher current={selectedAy} options={ayCodes} />
+          </div>
+        )}
       </header>
 
       <div className="@container/main">
@@ -124,7 +138,7 @@ export default async function MovementsPage({
 
       <MovementsTable
         events={events}
-        ayCode={currentAy.ay_code}
+        ayCode={selectedAy}
         includeAllAYs={includeAllAYs}
       />
     </PageShell>

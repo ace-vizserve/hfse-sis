@@ -243,6 +243,8 @@ export function MovementsTable({ events, ayCode, includeAllAYs }: Props) {
   const handleScopeToggle = (next: boolean) => {
     const params = new URLSearchParams();
     if (next) params.set('scope', 'all');
+    // Keep the viewed year so leaving "All years" returns to the same year.
+    if (ayCode) params.set('ay', ayCode);
     const qs = params.toString();
     startTransition(() => {
       router.push(`/records/movements${qs ? `?${qs}` : ''}`);
