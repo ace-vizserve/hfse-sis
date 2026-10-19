@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, FilePlus2, HandCoins } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { CreateInvoiceSheet } from '@/components/billing/create-invoice-sheet';
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
@@ -31,8 +31,20 @@ export function CustomerActions(props: {
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  /** Opened from the Customers list' Receive payment / Create invoice
+   *  (`?new=payment` / `?new=invoice`), as QuickBooks opens the form. */
+  initialSheet?: 'invoice' | 'payment' | null;
 }) {
-  const [sheet, setSheet] = useState<'invoice' | 'payment' | null>(null);
+  const [sheet, setSheet] = useState<'invoice' | 'payment' | null>(
+    props.initialSheet ?? null
+  );
+  // Drop `?new=` once used, so a reload doesn't open the form again.
+  useEffect(() => {
+    if (!props.initialSheet) return;
+    const u = new URL(window.location.href);
+    u.searchParams.delete('new');
+    window.history.replaceState(window.history.state, '', u);
+  }, [props.initialSheet]);
   const [key, setKey] = useState(0);
   const open = (s: 'invoice' | 'payment') => {
     setKey((k) => k + 1);

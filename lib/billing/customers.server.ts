@@ -3,7 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getCurrentAcademicYear } from '@/lib/academic-year';
-import { readAging } from '@/lib/billing/live.server';
+import { readAging, readCustomerContacts } from '@/lib/billing/live.server';
 import { loadStudentInfo } from '@/lib/billing/students.server';
 import { round2, todaySg } from '@/lib/billing/view';
 import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
@@ -15,6 +15,9 @@ export type CustomerListRow = {
   level: string | null;
   customerId: string;
   customerName: string;
+  // QuickBooks' Company name and Phone, read live; null when it can't be read.
+  companyName: string | null;
+  phone: string | null;
   openBalance: number;
   overdue: number;
   lastPayment: string | null;
@@ -35,6 +38,12 @@ export type CustomersList = {
     overdueCount: number;
     paidThisMonth: number;
     paymentsThisMonth: number;
+    // The QuickBooks money bar: invoices with a balance, those past due, and
+    // payments in the last 30 days.
+    openInvoices: number;
+    overdueInvoices: number;
+    paidLast30: number;
+    paymentsLast30: number;
   };
   reviewCount: number;
   currentAy: string | null;
@@ -64,6 +73,10 @@ export async function loadCustomersList(
       overdueCount: 0,
       paidThisMonth: 0,
       paymentsThisMonth: 0,
+      openInvoices: 0,
+      overdueInvoices: 0,
+      paidLast30: 0,
+      paymentsLast30: 0,
     },
     reviewCount: 0,
     currentAy: null,
@@ -137,6 +150,9 @@ export async function loadCustomersList(
 
   const today = todaySg();
   const monthStart = `${today.slice(0, 7)}-01`;
+  const since30 = new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
   const customerOf = new Map(
     links.map((l) => [l.student_number, l.qbo_customer_id])
   );
@@ -164,19 +180,27 @@ export async function loadCustomersList(
     }
     return s;
   };
+  let openInvoices = 0;
+  let overdueInvoices = 0;
   for (const r of invoices) {
     if (!mine(r) || r.state === 'voided') continue;
     const s = at(r.student_number);
     const bal = Number(r.balance);
     if (bal > 0) {
       s.owed += bal;
-      if (r.due_date && r.due_date.slice(0, 10) < today) s.overdue += bal;
+      openInvoices += 1;
+      if (r.due_date && r.due_date.slice(0, 10) < today) {
+        s.overdue += bal;
+        overdueInvoices += 1;
+      }
     }
     const d = r.txn_date?.slice(0, 10) ?? null;
     if (d && (!s.lastInvoice || d > s.lastInvoice)) s.lastInvoice = d;
   }
   let paidThisMonth = 0;
   let paymentsThisMonth = 0;
+  let paidLast30 = 0;
+  let paymentsLast30 = 0;
   for (const p of payments) {
     if (!mine(p)) continue;
     const s = at(p.student_number);
@@ -186,12 +210,20 @@ export async function loadCustomersList(
       paidThisMonth += Number(p.total);
       paymentsThisMonth += 1;
     }
+    if (d && d >= since30) {
+      paidLast30 += Number(p.total);
+      paymentsLast30 += 1;
+    }
   }
 
   // QuickBooks' own figures when it answers; the stored sums when it doesn't.
   let byId: Map<string, { total: number; overdue: number }> | null = null;
   let byName: Map<string, { total: number; overdue: number }> | null = null;
   let balanceError: string | null = null;
+  const contacts = readCustomerContacts(service).catch(
+    () =>
+      new Map<string, { companyName: string | null; phone: string | null }>()
+  );
   try {
     const aging = await readAging(service);
     byId = new Map();
@@ -204,10 +236,13 @@ export async function loadCustomersList(
     balanceError = qboErrorMessage(e);
   }
 
-  const info = await loadStudentInfo(
-    service,
-    links.map((l) => l.student_number)
-  );
+  const [info, contactOf] = await Promise.all([
+    loadStudentInfo(
+      service,
+      links.map((l) => l.student_number)
+    ),
+    contacts,
+  ]);
   const rows: CustomerListRow[] = links.map((l) => {
     const s = stored.get(l.student_number);
     const a = byId
@@ -221,6 +256,8 @@ export async function loadCustomersList(
       level: student?.level ?? null,
       customerId: l.qbo_customer_id,
       customerName: l.display_name,
+      companyName: contactOf.get(l.qbo_customer_id)?.companyName ?? null,
+      phone: contactOf.get(l.qbo_customer_id)?.phone ?? null,
       openBalance: round2(byId ? (a?.total ?? 0) : (s?.owed ?? 0)),
       overdue: round2(byId ? (a?.overdue ?? 0) : (s?.overdue ?? 0)),
       lastPayment: s?.lastPayment ?? null,
@@ -262,6 +299,10 @@ export async function loadCustomersList(
       overdueCount: rows.filter((r) => r.overdue > 0).length,
       paidThisMonth: round2(paidThisMonth),
       paymentsThisMonth,
+      openInvoices,
+      overdueInvoices,
+      paidLast30: round2(paidLast30),
+      paymentsLast30,
     },
     reviewCount: review.count ?? 0,
     currentAy: currentAy?.ay_code ?? null,

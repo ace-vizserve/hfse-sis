@@ -37,12 +37,12 @@ export default async function BillingCustomerPage({
   searchParams,
 }: {
   params: Promise<{ studentNumber: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; new?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
-  const [{ studentNumber }, { tab }] = await Promise.all([
+  const [{ studentNumber }, { tab, new: newSheet }] = await Promise.all([
     params,
     searchParams,
   ]);
@@ -140,6 +140,11 @@ export default async function BillingCustomerPage({
                 openInvoices={page.openInvoices}
                 credits={page.credits}
                 depositAccounts={page.depositAccounts}
+                initialSheet={
+                  newSheet === 'payment' || newSheet === 'invoice'
+                    ? newSheet
+                    : null
+                }
               />
             </>
           )}

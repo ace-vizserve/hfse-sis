@@ -1,11 +1,10 @@
-import { AlertTriangle, CalendarClock, Users, Wallet } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { CustomersTable } from '@/components/billing/customers-table';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
@@ -15,8 +14,9 @@ import { formatSgd } from '@/lib/qbo/format';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// Billing → Customers. Every linked student with what they owe. Open balance
-// and Overdue are QuickBooks' own A/R aging, read when the page loads.
+// Billing → Customers, as QuickBooks' Customers list. Every linked student's
+// customer with what they owe; Open balance is QuickBooks' own A/R aging,
+// read when the page loads.
 export default async function BillingCustomersPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -35,8 +35,10 @@ export default async function BillingCustomersPage() {
             Customers.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every student linked to their QuickBooks customer, with what they
-            owe. Open a student to see all their invoices and payments.
+            Every student linked to their QuickBooks customer.
+            {list.currentAy
+              ? ` ${list.currentAyLinked.toLocaleString('en-SG')} of ${list.currentAyStudents.toLocaleString('en-SG')} ${list.currentAy} students are linked.`
+              : ''}
           </p>
         </div>
         {list.connected && (
@@ -77,41 +79,7 @@ export default async function BillingCustomersPage() {
             </div>
           )}
 
-          <div className="@container/main">
-            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @3xl/main:grid-cols-4">
-              <MetricCard
-                label="Linked students"
-                value={list.totals.linked.toLocaleString('en-SG')}
-                icon={Users}
-                subtext={
-                  list.currentAy
-                    ? `${list.currentAyLinked.toLocaleString('en-SG')} of ${list.currentAyStudents.toLocaleString('en-SG')} in ${list.currentAy}`
-                    : undefined
-                }
-              />
-              <MetricCard
-                label="Open balance"
-                value={formatSgd(list.totals.openBalance)}
-                icon={Wallet}
-                subtext={`across ${list.totals.owing.toLocaleString('en-SG')} students`}
-              />
-              <MetricCard
-                label="Overdue"
-                value={formatSgd(list.totals.overdue)}
-                icon={AlertTriangle}
-                intent={list.totals.overdue > 0 ? 'bad' : 'default'}
-                subtext={`${list.totals.overdueCount.toLocaleString('en-SG')} students past the due date`}
-              />
-              <MetricCard
-                label="Paid this month"
-                value={formatSgd(list.totals.paidThisMonth)}
-                icon={CalendarClock}
-                subtext={`${list.totals.paymentsThisMonth.toLocaleString('en-SG')} payments`}
-              />
-            </div>
-          </div>
-
-          <CustomersTable rows={list.rows} />
+          <CustomersTable rows={list.rows} totals={list.totals} />
 
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             {list.balancesFrom === 'quickbooks'

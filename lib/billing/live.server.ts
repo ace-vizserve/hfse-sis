@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { parseAgedReceivables, type AgingRow } from '@/lib/billing/aging';
 import { todaySg } from '@/lib/billing/view';
-import { qbEscape, qboQuery, qboRequest } from '@/lib/qbo/client';
+import { qbEscape, qboQuery, qboQueryAll, qboRequest } from '@/lib/qbo/client';
 import { invoiceState, type QbInvoice } from '@/lib/qbo/invoice-snapshot';
 
 // Read straight from QuickBooks, never from the stored copy: the figures and
@@ -304,4 +304,29 @@ export async function readInvoiceDetail(
     location: inv.DepartmentRef?.name ?? null,
     customerId: inv.CustomerRef.value,
   };
+}
+
+/** Every QuickBooks customer's Company name and Phone, by customer id — the
+ *  Customers list's two contact columns. */
+export async function readCustomerContacts(
+  service: SupabaseClient
+): Promise<Map<string, { companyName: string | null; phone: string | null }>> {
+  const rows = await qboQueryAll<{
+    Id: string;
+    CompanyName?: string;
+    PrimaryPhone?: { FreeFormNumber?: string };
+    Mobile?: { FreeFormNumber?: string };
+  }>(service, 'Customer');
+  return new Map(
+    rows.map((c) => [
+      c.Id,
+      {
+        companyName: c.CompanyName?.trim() || null,
+        phone:
+          c.PrimaryPhone?.FreeFormNumber?.trim() ||
+          c.Mobile?.FreeFormNumber?.trim() ||
+          null,
+      },
+    ])
+  );
 }
