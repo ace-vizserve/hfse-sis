@@ -56,6 +56,7 @@ import {
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient } from '@/lib/supabase/server';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -221,11 +222,10 @@ export default async function AttendanceDashboard({
   }
 
   const supabase = await createClient();
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  const [ay, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
   if (!ay) {
     return (
       <PageShell>
@@ -238,7 +238,10 @@ export default async function AttendanceDashboard({
 
   const resolvedSearch = await searchParams;
   const selectedAy =
-    typeof resolvedSearch.ay === 'string' ? resolvedSearch.ay : ay.ay_code;
+    typeof resolvedSearch.ay === 'string' && ayCodes.includes(resolvedSearch.ay)
+      ? resolvedSearch.ay
+      : ay.ay_code;
+  const isCurrentAy = selectedAy === ay.ay_code;
   // getSchoolConfig() takes no AY/term input, so it's independent of
   // getDashboardWindows() and the term-resolution chain below — parallelized
   // rather than fetched serially after them (§2 of 11-performance-patterns.md).
@@ -247,10 +250,10 @@ export default async function AttendanceDashboard({
     getSchoolConfig(),
   ]);
   const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
-  const ayCodes = [ay.ay_code];
 
-  // Resolve current term for the VL quota card (KD #94 — VL is per-term).
-  // Prefer the current-flagged term in the selected AY; fall back to T1.
+  // Resolve the term for the VL quota card (KD #94 — VL is per-term).
+  // The current year uses its current-flagged term (T1 if none); a past or
+  // future year uses its last term.
   // termRow genuinely depends on ayRow, so this pair stays sequential.
   const { data: ayRow } = await supabase
     .from('academic_years')
@@ -273,7 +276,9 @@ export default async function AttendanceDashboard({
       is_current: boolean;
     };
     const terms = (termRow ?? []) as TermRow[];
-    const active = terms.find((t) => t.is_current) ?? terms[0] ?? null;
+    const active = isCurrentAy
+      ? (terms.find((t) => t.is_current) ?? terms[0] ?? null)
+      : (terms[terms.length - 1] ?? null);
     if (active) {
       currentTermId = active.id;
       currentTermLabel = active.label;
@@ -458,7 +463,6 @@ export default async function AttendanceDashboard({
         }
         termWindows={windows.term}
         ayWindows={windows.ay}
-        showAySwitcher={false}
         presets={TERM_SCOPED_PRESETS}
       />
 
