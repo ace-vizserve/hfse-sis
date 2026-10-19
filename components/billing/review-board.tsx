@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, Link2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Link2, Search, UserPlus } from 'lucide-react';
 
 import { NewCustomerSheet } from '@/components/billing/new-customer-sheet';
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
@@ -312,30 +312,32 @@ export function ReviewBoard({
         header: () => <div className="text-right">Not listed?</div>,
         meta: { label: 'Not listed?', excludeFromExport: true },
         cell: ({ row }) => (
-          <div className="flex flex-col items-end gap-1.5 whitespace-nowrap">
+          <div className="ml-auto flex w-fit flex-col gap-1.5 whitespace-nowrap">
             <Button
-              variant="link"
+              variant="outline"
               size="sm"
-              className="h-auto p-0"
+              className="w-full justify-start"
               disabled={!!busy}
               onClick={() => {
                 setPickKey((k) => k + 1);
                 setPick(row.original);
               }}
             >
+              <Search className="size-3.5" />
               Find in QuickBooks
             </Button>
             <Button
-              variant="link"
+              variant="outline"
               size="sm"
-              className="h-auto p-0"
+              className="w-full justify-start"
               disabled={!!busy}
               onClick={() => {
                 setAddKey((k) => k + 1);
                 setAdd(row.original);
               }}
             >
-              Add as new customer
+              <UserPlus className="size-3.5" />
+              New customer
             </Button>
           </div>
         ),
