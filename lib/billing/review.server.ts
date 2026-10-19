@@ -11,6 +11,10 @@ import {
   hfseCustomerName,
   reviewReason,
 } from '@/lib/billing/review';
+import {
+  readCustomerContacts,
+  type CustomerContact,
+} from '@/lib/billing/live.server';
 import { loadStudentInfo } from '@/lib/billing/students.server';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 
@@ -24,6 +28,9 @@ export type ReviewRow = {
     customerId: string;
     displayName: string;
     reason: string;
+    /** What QuickBooks holds for this customer, to tell candidates apart;
+     *  null when QuickBooks couldn't be read. */
+    details: CustomerContact | null;
   }>;
 };
 
@@ -62,10 +69,19 @@ export async function loadReviewList(service: SupabaseClient): Promise<{
     getCurrentAcademicYear(),
     getUpcomingAcademicYear(),
   ]);
-  const info = await loadStudentInfo(
-    service,
-    rows.map((r) => r.student_number)
-  );
+  const [info, contacts] = await Promise.all([
+    loadStudentInfo(
+      service,
+      rows.map((r) => r.student_number)
+    ),
+    readCustomerContacts(
+      service,
+      rows.flatMap((r) => (r.candidates ?? []).map((c) => c.customerId))
+    ).catch((e: unknown) => {
+      console.error('[billing] to review, customer details:', e);
+      return new Map<string, CustomerContact>();
+    }),
+  ]);
   const cur = current?.ay_code ?? null;
   const up = upcoming?.ay_code ?? null;
   const keys = [up, cur].filter((k): k is string => !!k);
@@ -90,7 +106,10 @@ export async function loadReviewList(service: SupabaseClient): Promise<{
         level: s?.level ?? null,
         reason: reviewReason(candidates),
         newName: s ? hfseCustomerName(s) : null,
-        candidates,
+        candidates: candidates.map((c) => ({
+          ...c,
+          details: contacts.get(c.customerId) ?? null,
+        })),
       });
   }
   const defaultKey =

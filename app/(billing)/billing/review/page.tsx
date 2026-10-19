@@ -1,3 +1,5 @@
+import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
@@ -12,9 +14,8 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Billing → To review. Students the SIS could not match to a QuickBooks
-// customer by itself: pick a suggestion, pick another, or add them. No
-// QuickBooks page matches it, so it takes the Billing header and
-// QuickBooks' list conventions (underline tabs, an Action column of links).
+// customer by itself: pick a suggestion, pick another, or add them. A SIS
+// page: back link, hero, a tab per year with its count, the DataTable.
 export default async function BillingReviewPage({
   searchParams,
 }: {
@@ -32,19 +33,19 @@ export default async function BillingReviewPage({
 
   return (
     <PageShell>
-      <BillingPageHeader
-        crumbs={[
-          { label: 'Customers', href: '/billing' },
-          { label: 'To review' },
-        ]}
-        title="To review"
-        actions={list && <RefreshButton label="Refresh" />}
+      <Link
+        href="/billing"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Students the SIS could not match to a QuickBooks customer by itself.
-          Pick the right customer, or add the student to QuickBooks.
-        </p>
-      </BillingPageHeader>
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Customers
+      </Link>
+      <BillingPageHeader
+        crumbs={[{ label: 'To review' }]}
+        title="To review"
+        description="Students the SIS could not match to a QuickBooks customer by itself. Pick the right customer, or add the student to QuickBooks."
+        actions={list && <RefreshButton label="Refresh" />}
+      />
       {!list ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : (

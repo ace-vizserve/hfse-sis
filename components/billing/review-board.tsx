@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Search, UserPlus } from 'lucide-react';
 
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
 import {
@@ -24,6 +24,7 @@ import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { ReviewRow } from '@/lib/billing/review.server';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 type Busy = { studentNumber: string; what: string } | null;
@@ -119,7 +120,12 @@ export function ReviewBoard({
                     busy.what === c.customerId
                   }
                   loadingText="Linking…"
-                  className="h-auto py-1 text-left"
+                  title={
+                    c.reason === 'already linked to another student'
+                      ? 'Already linked to another student'
+                      : `Link ${row.original.name} to ${c.displayName}`
+                  }
+                  className="h-auto max-w-72 flex-col items-start gap-0.5 whitespace-normal py-1.5 text-left"
                   onClick={() => {
                     setBusy({
                       studentNumber: row.original.studentNumber,
@@ -139,12 +145,30 @@ export function ReviewBoard({
                     ).finally(() => setBusy(null));
                   }}
                 >
-                  <span>
+                  <span className="font-medium text-foreground">
                     {c.displayName}
-                    <span className="ml-1 text-muted-foreground">
-                      · {c.reason}
-                    </span>
                   </span>
+                  {/* What QuickBooks holds for this candidate, so two
+                      look-alike names can be told apart: the parents, and
+                      the open balance. */}
+                  {c.details ? (
+                    <>
+                      <span className="text-[12px] font-normal text-muted-foreground">
+                        {c.details.companyName ?? 'No parents listed'}
+                      </span>
+                      <span className="text-[12px] font-normal text-muted-foreground">
+                        {c.reason} · Open balance{' '}
+                        <span className="tabular-nums text-foreground">
+                          {formatSgd(c.details.balance)}
+                        </span>
+                        {!c.details.active && ' · Inactive in QuickBooks'}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[12px] font-normal text-muted-foreground">
+                      {c.reason} · details couldn&rsquo;t be read
+                    </span>
+                  )}
                 </Button>
               ))}
             </div>
@@ -156,27 +180,31 @@ export function ReviewBoard({
         header: () => <div className="text-right">Action</div>,
         meta: { label: 'Action', excludeFromExport: true },
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+          <div className="flex justify-end gap-2 whitespace-nowrap">
             <Button
               size="sm"
-              variant="link"
-              className="h-auto p-0"
+              variant="outline"
               disabled={!!busy || !row.original.newName}
+              loading={
+                busy?.studentNumber === row.original.studentNumber &&
+                busy.what === 'add'
+              }
+              loadingText="Adding…"
               onClick={() => setAdd(row.original)}
             >
+              <UserPlus className="size-3.5" />
               Add to QuickBooks
             </Button>
-            <span className="h-4 w-px bg-border" aria-hidden />
             <Button
               size="sm"
-              variant="link"
-              className="h-auto p-0"
+              variant="outline"
               disabled={!!busy}
               onClick={() => {
                 setPickKey((k) => k + 1);
                 setPick(row.original);
               }}
             >
+              <Search className="size-3.5" />
               Pick another
             </Button>
           </div>
@@ -191,7 +219,7 @@ export function ReviewBoard({
   return (
     <>
       <Tabs defaultValue={focusGroup ?? defaultKey} className="gap-4">
-        <TabsList variant="line">
+        <TabsList>
           {groups.map((g) => (
             <TabsTrigger key={g.key} value={g.key}>
               {g.label}{' '}
