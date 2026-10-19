@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, Search, UserPlus } from 'lucide-react';
+import { CheckCircle2, Link2, Search, UserPlus } from 'lucide-react';
 
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
 import {
@@ -28,6 +28,16 @@ import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 type Busy = { studentNumber: string; what: string } | null;
+type Bulk = { kind: 'link' | 'add'; rows: ReviewRow[] } | null;
+
+const TAKEN = 'already linked to another student';
+
+// The one suggestion a bulk Link can use: a student with exactly one
+// customer still free to link. Two or more need a person to choose.
+function soleCandidate(r: ReviewRow) {
+  const free = r.candidates.filter((c) => c.reason !== TAKEN);
+  return free.length === 1 ? free[0] : null;
+}
 
 export function ReviewBoard({
   groups,
@@ -44,6 +54,8 @@ export function ReviewBoard({
   const [pick, setPick] = React.useState<ReviewRow | null>(null);
   const [add, setAdd] = React.useState<ReviewRow | null>(null);
   const [pickKey, setPickKey] = React.useState(0);
+  const [bulk, setBulk] = React.useState<Bulk>(null);
+  const [reset, setReset] = React.useState(0);
   const focusGroup = focus
     ? groups.find((g) => g.rows.some((r) => r.studentNumber === focus))?.key
     : undefined;
@@ -62,6 +74,61 @@ export function ReviewBoard({
         jsonInit('POST', {})
       ),
   });
+
+  // Bulk Link / Add: one student at a time, so QuickBooks is never asked for
+  // many writes at once; the ones that fail are named in the toast.
+  async function runBulk(kind: 'link' | 'add', rows: ReviewRow[]) {
+    const targets =
+      kind === 'link'
+        ? rows.filter((r) => soleCandidate(r))
+        : rows.filter((r) => r.newName);
+    if (targets.length === 0) return;
+    await run(
+      async () => {
+        const failed: string[] = [];
+        for (const r of targets) {
+          try {
+            if (kind === 'link')
+              await link.mutateAsync({
+                studentNumber: r.studentNumber,
+                customerId: soleCandidate(r)!.customerId,
+              });
+            else await create.mutateAsync(r.studentNumber);
+          } catch (e) {
+            failed.push(
+              `${r.name}: ${e instanceof Error ? e.message : 'not saved'}`
+            );
+          }
+        }
+        if (failed.length === targets.length)
+          throw new Error(failed.join(' · '));
+        return { done: targets.length - failed.length, failed };
+      },
+      {
+        pending:
+          kind === 'link'
+            ? `Linking ${targets.length} ${targets.length === 1 ? 'student' : 'students'}…`
+            : `Adding ${targets.length} ${targets.length === 1 ? 'student' : 'students'} to QuickBooks…`,
+        success: (d) => {
+          const verb = kind === 'link' ? 'linked' : 'added to QuickBooks';
+          return d.failed.length
+            ? {
+                title: `${d.done} ${verb}, ${d.failed.length} not`,
+                description: d.failed.join(' · '),
+              }
+            : `${d.done} ${d.done === 1 ? 'student' : 'students'} ${verb}`;
+        },
+        onResolved: () => setReset((n) => n + 1),
+      }
+    );
+  }
+
+  const bulkTargets = bulk
+    ? bulk.kind === 'link'
+      ? bulk.rows.filter((r) => soleCandidate(r))
+      : bulk.rows.filter((r) => r.newName)
+    : [];
+  const bulkSkipped = bulk ? bulk.rows.length - bulkTargets.length : 0;
 
   const columns = React.useMemo<ColumnDef<ReviewRow, unknown>[]>(
     () => [
@@ -112,16 +179,14 @@ export function ReviewBoard({
                   key={c.customerId}
                   size="sm"
                   variant="outline"
-                  disabled={
-                    !!busy || c.reason === 'already linked to another student'
-                  }
+                  disabled={!!busy || c.reason === TAKEN}
                   loading={
                     busy?.studentNumber === row.original.studentNumber &&
                     busy.what === c.customerId
                   }
                   loadingText="Linking…"
                   title={
-                    c.reason === 'already linked to another student'
+                    c.reason === TAKEN
                       ? 'Already linked to another student'
                       : `Link ${row.original.name} to ${c.displayName}`
                   }
@@ -249,6 +314,26 @@ export function ReviewBoard({
                 initialSearch={
                   focus && g.key === focusGroup ? focus : undefined
                 }
+                selection={{
+                  enabled: true,
+                  bulkActions: [
+                    {
+                      key: 'link',
+                      label: 'Link to suggested customer',
+                      icon: Link2,
+                      onTrigger: (selected) =>
+                        setBulk({ kind: 'link', rows: selected }),
+                    },
+                    {
+                      key: 'add',
+                      label: 'Add to QuickBooks',
+                      icon: UserPlus,
+                      onTrigger: (selected) =>
+                        setBulk({ kind: 'add', rows: selected }),
+                    },
+                  ],
+                }}
+                selectionResetSignal={reset}
                 initialSort={[{ id: 'student', desc: false }]}
                 pageSize={25}
                 emptyFilteredState={{
@@ -299,6 +384,63 @@ export function ReviewBoard({
               Add to QuickBooks
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!bulk} onOpenChange={(o) => !o && setBulk(null)}>
+        <AlertDialogContent>
+          {bulkTargets.length === 0 ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {bulk?.kind === 'link'
+                    ? 'These students need a person to choose'
+                    : 'These students can’t be added'}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {bulk?.kind === 'link'
+                    ? 'Each one has no suggested customer, or more than one. Click the right suggestion in their row, or use Pick another.'
+                    : 'None of them has a first and last name on record to name the customer.'}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Close</AlertDialogCancel>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {bulk?.kind === 'link'
+                    ? `Link ${bulkTargets.length} ${bulkTargets.length === 1 ? 'student' : 'students'} to their suggested customer?`
+                    : `Add ${bulkTargets.length} ${bulkTargets.length === 1 ? 'student' : 'students'} to QuickBooks?`}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {bulk?.kind === 'link'
+                    ? 'Each student is linked to the one QuickBooks customer suggested for them, and their invoices are read.'
+                    : 'A new QuickBooks customer is created for each student, with the parents as Company name, and linked to them. Only do this when they really have no customer yet.'}
+                  {bulkSkipped > 0 &&
+                    ` ${bulkSkipped} of the ${bulk?.rows.length} selected ${bulkSkipped === 1 ? 'is' : 'are'} left out: ${
+                      bulk?.kind === 'link'
+                        ? 'they have no suggestion, or more than one, so choose for them in their row.'
+                        : 'they have no first and last name on record.'
+                    }`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    const b = bulk!;
+                    setBulk(null);
+                    void runBulk(b.kind, b.rows);
+                  }}
+                >
+                  {bulk?.kind === 'link' ? 'Link' : 'Add to QuickBooks'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </>
