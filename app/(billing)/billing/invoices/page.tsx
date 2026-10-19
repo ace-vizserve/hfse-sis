@@ -6,6 +6,7 @@ import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadInvoicesList } from '@/lib/billing/invoices-list.server';
+import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -44,7 +45,11 @@ export default async function BillingInvoicesPage() {
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : (
         <>
-          <InvoicesTable rows={list.rows} bar={list.bar} />
+          <InvoicesTable
+            rows={list.rows}
+            bar={list.bar}
+            qbBase={qboAppUrl(qboEnv()?.environment ?? 'sandbox', '')}
+          />
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
             Changes in QuickBooks arrive within the hour · Every action is in
             the audit log

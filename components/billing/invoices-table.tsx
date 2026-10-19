@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { ChevronDown, FileText, Send } from 'lucide-react';
+import { BellRing, Download, FileText, Send } from 'lucide-react';
 import Link from 'next/link';
 
 import {
@@ -24,18 +24,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  InvoiceRowMenu,
+  downloadInvoicePdfs,
+  receivePaymentHref,
+} from '@/components/billing/invoice-row-menu';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DatePicker } from '@/components/ui/date-picker';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Label } from '@/components/ui/label';
 import type {
@@ -53,12 +52,14 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 // payment or View, with Send and Open customer under ▾), and Send on ticked
 // invoices — QuickBooks' Batch actions.
 
+// QuickBooks' Status list: All, Needs attention, Unpaid (Overdue, Not due),
+// Paid — plus Voided, which QuickBooks keeps under All.
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
+  { value: 'attention', label: 'Needs attention' },
   { value: 'unpaid', label: 'Unpaid' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'not-due', label: 'Not due' },
-  { value: 'part', label: 'Partially paid' },
+  { value: 'overdue', label: 'Unpaid · Overdue' },
+  { value: 'not-due', label: 'Unpaid · Not due' },
   { value: 'paid', label: 'Paid' },
   { value: 'voided', label: 'Voided' },
 ] as const;
@@ -74,8 +75,8 @@ function matchesStatus(r: InvoiceListRow, s: StatusFilter): boolean {
       return r.status === 'overdue';
     case 'not-due':
       return r.status === 'open' || r.status === 'part';
-    case 'part':
-      return r.status === 'part';
+    case 'attention':
+      return r.status === 'overdue';
     case 'paid':
       return r.status === 'paid';
     case 'voided':
@@ -87,8 +88,8 @@ function matchesStatus(r: InvoiceListRow, s: StatusFilter): boolean {
 
 const invoiceHref = (r: InvoiceListRow) =>
   `/billing/${encodeURIComponent(r.studentNumber)}/invoices/${encodeURIComponent(r.id)}`;
-const customerHref = (r: InvoiceListRow, next?: 'payment') =>
-  `/billing/${encodeURIComponent(r.studentNumber)}${next ? `?new=${next}` : ''}`;
+const customerHref = (r: InvoiceListRow) =>
+  `/billing/${encodeURIComponent(r.studentNumber)}`;
 
 /** What Send needs of an invoice. */
 export type SendableInvoice = { id: string; docNumber: string | null };
@@ -207,13 +208,16 @@ function MoneyBar({ bar }: { bar: InvoicesList['bar'] }) {
 export function InvoicesTable({
   rows,
   bar,
+  qbBase,
 }: {
   rows: InvoiceListRow[];
   bar: InvoicesList['bar'];
+  /** The QuickBooks web app's address (sandbox or production). */
+  qbBase: string;
 }) {
   const today = React.useMemo(() => todaySg(), []);
   const [status, setStatus] = React.useState<StatusFilter>('all');
-  const [date, setDate] = React.useState<DateFilter>('last-365');
+  const [date, setDate] = React.useState<DateFilter>('last-3-months');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [confirm, setConfirm] = React.useState<InvoiceListRow[] | null>(null);
   const [reset, setReset] = React.useState(0);
@@ -314,46 +318,29 @@ export function InvoicesTable({
           const r = row.original;
           const owing = r.state !== 'voided' && r.balance > 0;
           return (
-            <div className="flex items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-2">
+              <Button asChild variant="link" size="sm" className="h-auto p-0">
+                <Link href={invoiceHref(r)}>View</Link>
+              </Button>
+              <span className="h-4 w-px bg-border" aria-hidden />
               <Button asChild variant="link" size="sm" className="h-auto p-0">
                 {owing ? (
-                  <Link
-                    href={`${customerHref(r)}?new=payment&invoice=${encodeURIComponent(r.id)}`}
-                  >
-                    Receive payment
-                  </Link>
+                  <Link href={receivePaymentHref(r)}>Receive payment</Link>
                 ) : (
-                  <Link href={invoiceHref(r)}>View</Link>
+                  <a
+                    href={`/api/billing/invoices/${encodeURIComponent(r.id)}/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Print
+                  </a>
                 )}
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    aria-label={`More for ${r.docNumber ?? 'this invoice'}`}
-                  >
-                    <ChevronDown className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  {owing && (
-                    <DropdownMenuItem asChild>
-                      <Link href={invoiceHref(r)}>View</Link>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    disabled={r.state === 'voided'}
-                    onSelect={() => setConfirm([r])}
-                  >
-                    Send
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href={customerHref(r)}>Open customer</Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <InvoiceRowMenu
+                invoice={r}
+                qbUrl={`${qbBase}/app/invoice?txnId=${encodeURIComponent(r.id)}`}
+                onSend={() => setConfirm([r])}
+              />
             </div>
           );
         },
@@ -423,7 +410,7 @@ export function InvoicesTable({
         enableSorting: false,
       },
     ],
-    [today]
+    [today, qbBase]
   );
 
   return (
@@ -507,6 +494,26 @@ export function InvoicesTable({
                   label: 'Send',
                   icon: Send,
                   onTrigger: (selected) => setConfirm(selected),
+                },
+                {
+                  key: 'reminder',
+                  label: 'Send reminder',
+                  icon: BellRing,
+                  onTrigger: (selected) =>
+                    setConfirm(
+                      selected.filter(
+                        (r) => r.state !== 'voided' && r.balance > 0
+                      )
+                    ),
+                },
+                {
+                  key: 'print',
+                  label: 'Print',
+                  icon: Download,
+                  onTrigger: async (selected) => {
+                    await downloadInvoicePdfs(selected);
+                    setReset((n) => n + 1);
+                  },
                 },
               ],
             }}
