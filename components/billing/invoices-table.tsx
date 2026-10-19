@@ -6,13 +6,15 @@ import { BellRing, Download, FileText, Send } from 'lucide-react';
 import Link from 'next/link';
 
 import {
-  DATE_OPTIONS,
-  FilterSelect,
   StatusCell,
   dateRange,
   invoiceRow,
   type DateFilter,
 } from '@/components/billing/customer-transactions';
+import {
+  DateRangeFilter,
+  isDateFilter,
+} from '@/components/billing/date-range-filter';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,132 +32,66 @@ import {
 } from '@/components/billing/invoice-row-menu';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
-import { DatePicker } from '@/components/ui/date-picker';
 import { IdentifierLink } from '@/components/ui/identifier-link';
-import { Label } from '@/components/ui/label';
-import type {
-  InvoiceListRow,
-  InvoicesList,
-} from '@/lib/billing/invoices-list.server';
+import type { StatusTabConfig } from '@/components/ui/data-table/types';
+import type { InvoiceListRow } from '@/lib/billing/invoices-list.server';
 import { useSendInvoices } from '@/components/billing/use-send-invoices';
 import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 
-// Billing → Invoices, as QuickBooks' Invoices list: the money bar, Status and
-// Date filters, Date · No. · Customer · Amount · Status · Action (Receive
-// payment or View, with Send and Open customer under ▾), and Send on ticked
-// invoices — QuickBooks' Batch actions.
+// Billing → Invoices: QuickBooks' Invoices list (its statuses, Date filter,
+// Date · No. · Customer · Amount · Status · Action with the row ▾, and Send /
+// Send reminder / Print on ticked invoices) in the SIS's table — status tabs,
+// a Date chip, and the bulk bar in the footer.
 
-// QuickBooks' Status list: All, Needs attention, Unpaid (Overdue, Not due),
-// Paid — plus Voided, which QuickBooks keeps under All.
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'attention', label: 'Needs attention' },
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'overdue', label: 'Unpaid · Overdue' },
-  { value: 'not-due', label: 'Unpaid · Not due' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'voided', label: 'Voided' },
-] as const;
-type StatusFilter = (typeof STATUS_OPTIONS)[number]['value'];
+/** The table's URL namespace — the page's stat tiles deep-link into it
+ *  (`?billing-invoices.status=overdue`). */
+const INVOICES_NS = 'billing-invoices';
 
-function matchesStatus(r: InvoiceListRow, s: StatusFilter): boolean {
-  switch (s) {
-    case 'unpaid':
-      return (
-        r.status === 'open' || r.status === 'part' || r.status === 'overdue'
-      );
-    case 'overdue':
-      return r.status === 'overdue';
-    case 'not-due':
-      return r.status === 'open' || r.status === 'part';
-    case 'attention':
-      return r.status === 'overdue';
-    case 'paid':
-      return r.status === 'paid';
-    case 'voided':
-      return r.status === 'voided';
-    default:
-      return true;
-  }
-}
+// QuickBooks' Status list. Needs attention is QuickBooks' word for overdue.
+const STATUS_TABS: Array<StatusTabConfig<InvoiceListRow>> = [
+  { value: 'all', label: 'All', predicate: () => true, isDefault: true },
+  {
+    value: 'overdue',
+    label: 'Overdue',
+    predicate: (r) => r.status === 'overdue',
+  },
+  {
+    value: 'not-due',
+    label: 'Not due',
+    predicate: (r) => r.status === 'open' || r.status === 'part',
+  },
+  { value: 'paid', label: 'Paid', predicate: (r) => r.status === 'paid' },
+  {
+    value: 'voided',
+    label: 'Voided',
+    predicate: (r) => r.status === 'voided',
+  },
+];
 
 const invoiceHref = (r: InvoiceListRow) =>
   `/billing/${encodeURIComponent(r.studentNumber)}/invoices/${encodeURIComponent(r.id)}`;
 const customerHref = (r: InvoiceListRow) =>
   `/billing/${encodeURIComponent(r.studentNumber)}`;
 
-/** QuickBooks' Invoices money bar: Unpaid (last 365 days) split overdue /
- *  not due yet, and Paid (last 30 days). */
-function MoneyBar({ bar }: { bar: InvoicesList['bar'] }) {
-  const unpaid = bar.overdue + bar.notDueYet;
-  const pct = unpaid > 0 ? (bar.overdue / unpaid) * 100 : 0;
-  return (
-    <div className="grid grid-cols-1 gap-6 rounded-xl border border-border bg-muted/60 p-5 md:grid-cols-2">
-      <div className="space-y-2">
-        <p className="text-[13px] text-muted-foreground">
-          <span className="font-semibold tabular-nums text-foreground">
-            {formatSgd(unpaid)} unpaid
-          </span>{' '}
-          · last 365 days
-        </p>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-              {formatSgd(bar.overdue)}
-            </p>
-            <p className="text-[13px] text-muted-foreground">Overdue</p>
-          </div>
-          <div className="text-right">
-            <p className="font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-              {formatSgd(bar.notDueYet)}
-            </p>
-            <p className="text-[13px] text-muted-foreground">Not due yet</p>
-          </div>
-        </div>
-        <div className="flex h-3 overflow-hidden rounded-sm bg-hairline-strong">
-          <span className="bg-brand-amber" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <p className="text-[13px] text-muted-foreground">
-          <span className="font-semibold tabular-nums text-foreground">
-            {formatSgd(bar.paidLast30)} paid
-          </span>{' '}
-          · last 30 days
-        </p>
-        <div>
-          <p className="font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-            {bar.paymentsLast30.toLocaleString('en-SG')}
-          </p>
-          <p className="text-[13px] text-muted-foreground">Payments received</p>
-        </div>
-        <div className="h-3 rounded-sm bg-brand-mint" />
-      </div>
-    </div>
-  );
-}
-
 export function InvoicesTable({
   rows,
-  bar,
   qbBase,
-  createAction,
+  initialDate,
 }: {
   rows: InvoiceListRow[];
-  bar: InvoicesList['bar'];
-  /** QuickBooks' Create invoice button, at the end of the filter row. */
-  createAction?: React.ReactNode;
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
+  /** The Date filter to open on (`?date=`; a stat tile widens it). */
+  initialDate?: string;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const [status, setStatus] = React.useState<StatusFilter>('all');
-  const [date, setDate] = React.useState<DateFilter>('last-3-months');
+  const [date, setDate] = React.useState<DateFilter>(
+    isDateFilter(initialDate) ? initialDate : 'last-3-months'
+  );
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [confirm, setConfirm] = React.useState<InvoiceListRow[] | null>(null);
   const [reset, setReset] = React.useState(0);
@@ -164,13 +100,12 @@ export function InvoicesTable({
   const shown = React.useMemo(() => {
     const [from, to] = dateRange(date, today, custom);
     return rows.filter((r) => {
-      if (!matchesStatus(r, status)) return false;
       const d = r.txnDate?.slice(0, 10) ?? '';
       if (from && d < from) return false;
       if (to && d > to) return false;
       return true;
     });
-  }, [rows, status, date, custom, today]);
+  }, [rows, date, custom, today]);
 
   const columns = React.useMemo<ColumnDef<InvoiceListRow, unknown>[]>(
     () => [
@@ -353,12 +288,6 @@ export function InvoicesTable({
 
   return (
     <>
-      <MoneyBar bar={bar} />
-      <Tabs defaultValue="all">
-        <TabsList variant="line">
-          <TabsTrigger value="all">All invoices</TabsTrigger>
-        </TabsList>
-      </Tabs>
       {rows.length === 0 ? (
         <Card className="py-0">
           <DataTableEmptyState
@@ -371,56 +300,14 @@ export function InvoicesTable({
         <>
           <DataTable<InvoiceListRow>
             toolbarFilters={
-              <>
-                <FilterSelect
-                  id="inv-status"
-                  label="Status"
-                  value={status}
-                  options={STATUS_OPTIONS}
-                  onChange={setStatus}
-                />
-                <FilterSelect
-                  id="inv-date"
-                  label="Date"
-                  value={date}
-                  options={DATE_OPTIONS}
-                  onChange={setDate}
-                />
-                {date === 'custom' && (
-                  <>
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor="inv-from"
-                        className="text-[12px] text-muted-foreground"
-                      >
-                        From
-                      </Label>
-                      <DatePicker
-                        id="inv-from"
-                        value={custom.from}
-                        onChange={(from) => setCustom((c) => ({ ...c, from }))}
-                        placeholder="Any date"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor="inv-to"
-                        className="text-[12px] text-muted-foreground"
-                      >
-                        To
-                      </Label>
-                      <DatePicker
-                        id="inv-to"
-                        value={custom.to}
-                        onChange={(to) => setCustom((c) => ({ ...c, to }))}
-                        placeholder="Any date"
-                      />
-                    </div>
-                  </>
-                )}
-              </>
+              <DateRangeFilter
+                value={date}
+                onChange={setDate}
+                custom={custom}
+                onCustomChange={setCustom}
+              />
             }
-            toolbarTrailing={createAction}
+            statusTabs={STATUS_TABS}
             data={shown}
             columns={columns}
             getRowId={(r) => r.id}
@@ -433,7 +320,6 @@ export function InvoicesTable({
             searchPlaceholder="Search number or customer"
             selection={{
               enabled: true,
-              placement: 'menu',
               enableRowSelection: (r) => r.state !== 'voided',
               bulkActions: [
                 {
@@ -474,12 +360,12 @@ export function InvoicesTable({
               tile: false,
             }}
             initialSort={[{ id: 'date', desc: true }]}
-            url={{ enabled: true, namespace: 'billing-invoices' }}
+            url={{ enabled: true, namespace: INVOICES_NS }}
             pageSize={50}
             csv={{ filename: 'billing-invoices.csv' }}
             emptyFilteredState={{
               title: 'No invoices match.',
-              body: 'Set Status or Date back to All, or clear the search.',
+              body: 'Pick All, set Date to Any date, or clear the search.',
             }}
           />
         </>

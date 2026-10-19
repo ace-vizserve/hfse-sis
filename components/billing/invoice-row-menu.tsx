@@ -83,7 +83,7 @@ export function InvoiceRowMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
           className="size-7"
           aria-label={`More for ${invoice.docNumber ?? 'this invoice'}`}
