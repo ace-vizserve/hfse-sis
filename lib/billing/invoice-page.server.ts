@@ -48,6 +48,9 @@ export type InvoicePage = {
   qbUrl: string;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  /** QuickBooks' ‹ › on an invoice: this customer's older and newer invoice. */
+  older: { id: string; docNumber: string | null } | null;
+  newer: { id: string; docNumber: string | null } | null;
 };
 
 const SIS_NOTE = /^Created from SIS by (.+)$/;
@@ -83,7 +86,7 @@ export async function loadInvoicePage(
   ]);
   if (detail.d && detail.d.customerId !== link.qbo_customer_id) return null;
 
-  const [inv, pays, sends, dep, conn, info] = await Promise.all([
+  const [inv, pays, sends, dep, conn, info, siblings] = await Promise.all([
     service
       .from('qbo_invoices')
       .select(INVOICE_COLS)
@@ -113,6 +116,13 @@ export async function loadInvoicePage(
       .eq('id', 1)
       .maybeSingle(),
     loadStudentInfo(service, [studentNumber]),
+    service
+      .from('qbo_invoices')
+      .select('qbo_invoice_id, doc_number, txn_date')
+      .eq('qbo_customer_id', link.qbo_customer_id)
+      .eq('realm_id', realmId)
+      .order('txn_date', { ascending: true })
+      .order('qbo_invoice_id', { ascending: true }),
   ]);
   if (!inv.data) return null;
   const row = toInvoiceRow(inv.data as InvRow, todaySg());
@@ -179,5 +189,25 @@ export async function loadInvoicePage(
     ),
     credits: toCreditSources(allPayments),
     depositAccounts: dep,
+    ...neighbours(
+      (siblings.data ?? []) as Array<{
+        qbo_invoice_id: string;
+        doc_number: string | null;
+      }>,
+      qboInvoiceId
+    ),
   };
+}
+
+/** The invoices either side of this one, oldest first. */
+function neighbours(
+  list: Array<{ qbo_invoice_id: string; doc_number: string | null }>,
+  id: string
+): Pick<InvoicePage, 'older' | 'newer'> {
+  const i = list.findIndex((x) => x.qbo_invoice_id === id);
+  const at = (k: number) =>
+    i >= 0 && list[k]
+      ? { id: list[k].qbo_invoice_id, docNumber: list[k].doc_number }
+      : null;
+  return { older: at(i - 1), newer: at(i + 1) };
 }

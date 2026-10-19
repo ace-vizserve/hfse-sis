@@ -1,11 +1,9 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  CalendarDays,
-  CalendarX2,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
-  ReceiptText,
-  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -15,16 +13,9 @@ import { InvoicePayButton } from '@/components/billing/invoice-pay-button';
 import { InvoiceStatusBadge } from '@/components/billing/invoice-status-badge';
 import { RefreshButton } from '@/components/billing/refresh-button';
 import { SendInvoiceButton } from '@/components/billing/send-invoice-button';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import {
   Table,
@@ -46,8 +37,8 @@ const daysBetween = (a: string, b: string) =>
     (Date.parse(`${b}T00:00:00`) - Date.parse(`${a}T00:00:00`)) / 86_400_000
   );
 
-// One invoice, laid out like QuickBooks' own view (Mr Ace, 2026-10-16):
-// lines with each line's GST code, totals, billing address, Invoice activity.
+// One invoice, laid out like QuickBooks' own invoice (Mr Ace, 2026-10-16;
+// redone to match the QuickBooks screen 2026-10-19).
 export default async function BillingInvoicePage({
   params,
 }: {
@@ -85,36 +76,67 @@ export default async function BillingInvoicePage({
     ? d.billAddress
     : (page.profile?.billAddress ?? []);
 
+  const invHref = (id: string) =>
+    `${customerHref}/invoices/${encodeURIComponent(id)}`;
+
+  // Laid out as QuickBooks' invoice: ‹ Invoice no. › to step through this
+  // customer's invoices, Receive payment and Send on the right, then the
+  // invoice as a document — customer and Bill to beside Invoice no. / Terms
+  // / dates, the lines with their GST code, notes left and totals right.
   return (
     <PageShell>
-      <Link
-        href={customerHref}
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        {page.studentName}
-      </Link>
-
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Billing · {page.customerName} · Invoice
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Invoice {page.row.docNumber ?? 'without a number'}.
-          </h1>
-          <div className="flex flex-wrap items-center gap-2">
-            <InvoiceStatusBadge status={page.row.status} />
-            {page.row.tile && (
-              <Badge
-                variant="secondary"
-                className="h-6 font-mono text-[10px] uppercase tracking-wider"
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href={customerHref}
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {page.customerName}
+        </Link>
+        <nav
+          aria-label="This customer's invoices"
+          className="flex items-center gap-1"
+        >
+          <Button
+            asChild={!!page.older}
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            disabled={!page.older}
+          >
+            {page.older ? (
+              <Link
+                href={invHref(page.older.id)}
+                aria-label={`Older: ${page.older.docNumber ?? 'invoice'}`}
               >
-                {page.row.tile}
-              </Badge>
+                <ChevronLeft className="size-4" />
+              </Link>
+            ) : (
+              <ChevronLeft className="size-4" />
             )}
-          </div>
-        </div>
+          </Button>
+          <span className="font-mono text-[13px] tabular-nums text-foreground">
+            Invoice {page.row.docNumber ?? '—'}
+          </span>
+          <Button
+            asChild={!!page.newer}
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            disabled={!page.newer}
+          >
+            {page.newer ? (
+              <Link
+                href={invHref(page.newer.id)}
+                aria-label={`Newer: ${page.newer.docNumber ?? 'invoice'}`}
+              >
+                <ChevronRight className="size-4" />
+              </Link>
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+          </Button>
+        </nav>
         <div className="flex flex-wrap items-center gap-2">
           <RefreshButton label="Refresh" />
           <Button asChild variant="ghost">
@@ -146,7 +168,7 @@ export default async function BillingInvoicePage({
             />
           )}
         </div>
-      </header>
+      </div>
 
       {page.detailError && (
         <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-5">
@@ -165,128 +187,210 @@ export default async function BillingInvoicePage({
         </div>
       )}
 
-      <div className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @3xl/main:grid-cols-4">
-          <MetricCard
-            label="Total"
-            value={formatSgd(total)}
-            icon={ReceiptText}
-            subtext={d ? `GST ${formatSgd(d.tax)}` : undefined}
-          />
-          <MetricCard
-            label="Balance"
-            value={formatSgd(balance)}
-            icon={Wallet}
-            intent={overdueDays > 0 ? 'bad' : 'default'}
-            subtext={`${formatSgd(paid)} paid`}
-          />
-          <MetricCard
-            label="Invoice date"
-            value={formatDay(d?.txnDate ?? page.row.txnDate)}
-            icon={CalendarDays}
-            subtext={d?.terms ? `Terms: ${d.terms}` : undefined}
-          />
-          <MetricCard
-            label="Due date"
-            value={formatDay(due)}
-            icon={CalendarX2}
-            intent={overdueDays > 0 ? 'bad' : 'default'}
-            subtext={
-              overdueDays > 0
-                ? `${overdueDays} days overdue`
-                : balance > 0
-                  ? 'Not overdue'
-                  : 'Nothing owing'
-            }
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="gap-0 py-0">
-          <CardHeader className="border-b border-border py-4">
-            <CardTitle className="font-serif text-lg font-semibold tracking-tight">
-              Lines
-            </CardTitle>
-            <CardDescription>
-              GST follows each item&rsquo;s tax code in QuickBooks.
-            </CardDescription>
-          </CardHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Item</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead>GST</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(d?.lines ?? []).map((l, i) => (
-                <TableRow key={i}>
-                  <TableCell className="text-foreground">
-                    {l.itemName ?? '—'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {l.description ?? ''}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {l.qty ?? ''}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {l.rate != null ? formatSgd(l.rate) : ''}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {l.taxCode ?? '—'}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatSgd(l.amount)}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!d && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
-                    {page.row.items}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          <dl className="ml-auto grid w-full max-w-sm grid-cols-[1fr_auto] gap-x-8 gap-y-1.5 border-t border-border px-6 py-4 text-sm">
-            {d && (
-              <>
-                <dt className="text-right text-muted-foreground">Subtotal</dt>
-                <dd className="text-right tabular-nums">
-                  {formatSgd(d.subtotal)}
+          {/* The document's head: what it is, its state, what's owed. */}
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-6 py-5">
+            <div className="space-y-2">
+              <h1 className="font-serif text-[32px] font-semibold leading-none tracking-tight text-foreground">
+                Invoice
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <InvoiceStatusBadge status={page.row.status} />
+                {overdueDays > 0 && (
+                  <span className="text-sm text-destructive">
+                    Overdue {overdueDays} {overdueDays === 1 ? 'day' : 'days'}
+                  </span>
+                )}
+                {page.row.tile && (
+                  <Badge
+                    variant="secondary"
+                    className="h-6 font-mono text-[10px] uppercase tracking-wider"
+                  >
+                    {page.row.tile}
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[12px] text-muted-foreground">Balance due</p>
+              <p className="font-serif text-[30px] font-semibold leading-none tabular-nums text-foreground">
+                {formatSgd(balance)}
+              </p>
+            </div>
+          </div>
+
+          {/* Customer and Bill to | Invoice no., Terms, dates. */}
+          <div className="grid grid-cols-1 gap-6 bg-accent/40 px-6 py-5 text-sm md:grid-cols-[minmax(0,1fr)_260px]">
+            <dl className="space-y-3">
+              <div className="space-y-0.5">
+                <dt className="text-[12px] text-muted-foreground">Customer</dt>
+                <dd>
+                  <Link
+                    href={customerHref}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {page.customerName}
+                  </Link>
                 </dd>
-                <dt className="text-right text-muted-foreground">GST</dt>
-                <dd className="text-right tabular-nums">{formatSgd(d.tax)}</dd>
-              </>
-            )}
-            <dt className="text-right font-semibold">Total</dt>
-            <dd className="text-right font-semibold tabular-nums">
-              {formatSgd(total)}
-            </dd>
-            <dt className="text-right text-muted-foreground">Paid</dt>
-            <dd className="text-right tabular-nums">−{formatSgd(paid)}</dd>
-            <dt className="text-right font-serif text-base font-semibold">
-              Balance due
-            </dt>
-            <dd className="text-right font-serif text-base font-semibold tabular-nums">
-              {formatSgd(balance)}
-            </dd>
-          </dl>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-border px-6 py-4 text-sm">
-            <dt className="text-muted-foreground">Message on invoice</dt>
-            <dd>{d?.customerMemo ?? page.row.memo ?? '—'}</dd>
-            <dt className="text-muted-foreground">Memo</dt>
-            <dd>{d?.privateNote ?? '—'}</dd>
-            <dt className="text-muted-foreground">Location</dt>
-            <dd>{d?.location ?? '—'}</dd>
-          </dl>
+              </div>
+              <div className="space-y-0.5">
+                <dt className="text-[12px] text-muted-foreground">
+                  Customer email
+                </dt>
+                <dd className="text-foreground">
+                  {[d?.billEmail ?? page.profile?.email, d?.billEmailCc]
+                    .filter(Boolean)
+                    .join(', ') || '—'}
+                </dd>
+              </div>
+              <div className="space-y-0.5">
+                <dt className="text-[12px] text-muted-foreground">Bill to</dt>
+                <dd className="leading-relaxed text-foreground">
+                  {page.profile?.companyName && (
+                    <span className="block">{page.profile.companyName}</span>
+                  )}
+                  {address.length
+                    ? address.map((l) => (
+                        <span key={l} className="block">
+                          {l}
+                        </span>
+                      ))
+                    : !page.profile?.companyName && '—'}
+                </dd>
+              </div>
+            </dl>
+            <dl className="grid grid-cols-[auto_1fr] content-start gap-x-6 gap-y-2">
+              <dt className="text-muted-foreground">Invoice no.</dt>
+              <dd className="font-mono text-[13px] tabular-nums text-foreground">
+                {page.row.docNumber ?? '—'}
+              </dd>
+              <dt className="text-muted-foreground">Terms</dt>
+              <dd className="text-foreground">{d?.terms ?? '—'}</dd>
+              <dt className="text-muted-foreground">Invoice date</dt>
+              <dd className="tabular-nums text-foreground">
+                {formatDay(d?.txnDate ?? page.row.txnDate)}
+              </dd>
+              <dt className="text-muted-foreground">Due date</dt>
+              <dd
+                className={
+                  overdueDays > 0
+                    ? 'tabular-nums text-destructive'
+                    : 'tabular-nums text-foreground'
+                }
+              >
+                {formatDay(due)}
+              </dd>
+              {d?.location && (
+                <>
+                  <dt className="text-muted-foreground">Location</dt>
+                  <dd className="text-foreground">{d.location}</dd>
+                </>
+              )}
+            </dl>
+          </div>
+
+          <div className="border-t border-border">
+            <p className="px-6 pt-5 font-serif text-base font-semibold text-foreground">
+              Product or service
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10 pl-6">#</TableHead>
+                  <TableHead>Product/service</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="pr-6">GST</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(d?.lines ?? []).map((l, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="pl-6 tabular-nums text-muted-foreground">
+                      {i + 1}
+                    </TableCell>
+                    <TableCell className="text-foreground">
+                      {l.itemName ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {l.description ?? ''}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.qty ?? ''}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.rate != null ? formatSgd(l.rate) : ''}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatSgd(l.amount)}
+                    </TableCell>
+                    <TableCell className="pr-6 text-muted-foreground">
+                      {l.taxCode ?? '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!d && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="px-6 text-muted-foreground"
+                    >
+                      {page.row.items}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Notes left, totals right, as QuickBooks' invoice foot. */}
+          <div className="grid grid-cols-1 gap-6 border-t border-border px-6 py-5 text-sm md:grid-cols-[minmax(0,1fr)_320px]">
+            <dl className="space-y-3">
+              <div className="space-y-0.5">
+                <dt className="text-[12px] text-muted-foreground">
+                  Note to customer
+                </dt>
+                <dd className="text-foreground">
+                  {d?.customerMemo ?? page.row.memo ?? '—'}
+                </dd>
+              </div>
+              <div className="space-y-0.5">
+                <dt className="text-[12px] text-muted-foreground">
+                  Memo on statement (hidden)
+                </dt>
+                <dd className="text-foreground">{d?.privateNote ?? '—'}</dd>
+              </div>
+            </dl>
+            <dl className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-1.5">
+              {d && (
+                <>
+                  <dt className="text-muted-foreground">Subtotal</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatSgd(d.subtotal)}
+                  </dd>
+                  <dt className="text-muted-foreground">GST</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatSgd(d.tax)}
+                  </dd>
+                </>
+              )}
+              <dt className="font-semibold text-foreground">Invoice total</dt>
+              <dd className="text-right font-semibold tabular-nums">
+                {formatSgd(total)}
+              </dd>
+              <dt className="text-muted-foreground">Amount paid</dt>
+              <dd className="text-right tabular-nums">−{formatSgd(paid)}</dd>
+              <dt className="border-t border-border pt-2 font-serif text-base font-semibold text-foreground">
+                Balance due
+              </dt>
+              <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
+                {formatSgd(balance)}
+              </dd>
+            </dl>
+          </div>
         </Card>
 
         <div className="flex min-w-0 flex-col gap-6">
@@ -306,32 +410,11 @@ export default async function BillingInvoicePage({
           <Card>
             <CardHeader>
               <CardTitle className="font-serif text-lg font-semibold tracking-tight">
-                Billing address
+                Contact
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <p className="leading-relaxed">
-                {page.customerName}
-                {page.profile?.companyName && (
-                  <>
-                    <br />
-                    {page.profile.companyName}
-                  </>
-                )}
-                {address.map((l) => (
-                  <span key={l}>
-                    <br />
-                    {l}
-                  </span>
-                ))}
-              </p>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
-                <dt className="text-muted-foreground">Email</dt>
-                <dd>
-                  {[d?.billEmail ?? page.profile?.email, d?.billEmailCc]
-                    .filter(Boolean)
-                    .join(', ') || '—'}
-                </dd>
+            <CardContent>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
                 <dt className="text-muted-foreground">Phone</dt>
                 <dd className="font-mono text-[13px]">
                   {page.profile?.phone ?? '—'}

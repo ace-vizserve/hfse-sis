@@ -27,7 +27,7 @@ export function InvoicePayButton(props: {
         }}
       >
         <HandCoins className="size-4" />
-        Record payment
+        Receive payment
       </Button>
       {open && (
         <RecordPaymentSheet
