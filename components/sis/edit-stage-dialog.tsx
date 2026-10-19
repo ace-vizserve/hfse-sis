@@ -347,8 +347,7 @@ export function EditStageDialog({
 
   // On the application stage's Cancelled / Withdrawn path the block further
   // down is already the gate for exactly this — in more specific words, and
-  // owning the controls that actually write the reason (the Stage details
-  // inputs for it are overwritten by that block on submit). Printing a second
+  // owning the controls that actually write the reason. Printing a second
   // red sentence beside it would read as two mechanisms rather than one, so
   // the general notice stands aside there. Save stays blocked either way: the
   // footer's condition covers both.
@@ -816,127 +815,9 @@ export function EditStageDialog({
                         <AlertTriangle className="size-3.5 shrink-0" />
                         {stageStatusMissingMessage(stageKey)}
                       </p>
-                    ) : (
-                      <FormDescription>
-                        Pick from the canonical list or enter a custom value if
-                        admissions still uses one not listed.
-                      </FormDescription>
-                    )}
+                    ) : null}
                     <FormMessage />
                   </FormItem>
-
-                  {cols.extras.length > 0 && (
-                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-3">
-                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        Stage details
-                      </p>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        {/* Plain fields first, then the score pairs, so Math
-                            and English sit side by side on one row instead of
-                            landing diagonally in the two-column grid. */}
-                        {[
-                          ...cols.extras.filter((x) => x.kind !== 'score'),
-                          ...cols.extras.filter((x) => x.kind === 'score'),
-                        ].map((e) =>
-                          e.kind === 'score' ? (
-                            <FormField
-                              key={e.fieldKey}
-                              control={form.control}
-                              name={`extras.${e.fieldKey}` as const}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <AssessmentScoreField
-                                    label={e.label}
-                                    stored={initialExtras[e.fieldKey] ?? null}
-                                    onChange={field.onChange}
-                                    required={blockedFieldKeys.has(e.fieldKey)}
-                                  />
-                                </FormItem>
-                              )}
-                            />
-                          ) : (
-                            <FormField
-                              key={e.fieldKey}
-                              control={form.control}
-                              name={`extras.${e.fieldKey}` as const}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel className="text-xs">
-                                    {e.label}
-                                    {blockedFieldKeys.has(e.fieldKey) && (
-                                      <span className="text-destructive">
-                                        {' '}
-                                        *
-                                      </span>
-                                    )}
-                                  </FormLabel>
-                                  <FormControl>
-                                    {e.kind === 'date' ? (
-                                      <DatePicker
-                                        value={
-                                          (field.value as string | null) ?? ''
-                                        }
-                                        onChange={(next) =>
-                                          field.onChange(
-                                            next === '' ? null : next
-                                          )
-                                        }
-                                      />
-                                    ) : (
-                                      <Input
-                                        type="text"
-                                        value={
-                                          (field.value as string | null) ?? ''
-                                        }
-                                        onChange={(ev) =>
-                                          field.onChange(
-                                            ev.target.value === ''
-                                              ? null
-                                              : ev.target.value
-                                          )
-                                        }
-                                        placeholder=""
-                                      />
-                                    )}
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          )
-                        )}
-                      </div>
-                      {showCompletionNotice && (
-                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-                          <AlertTriangle className="size-3.5 shrink-0" />
-                          {completionMessage}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <FormField
-                    control={form.control}
-                    name="remarks"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Remarks</FormLabel>
-                        <FormControl>
-                          <RichTextEditor
-                            value={field.value ?? ''}
-                            onChange={(v) =>
-                              field.onChange(v === '' ? null : v)
-                            }
-                            onBlur={field.onBlur}
-                            rows={4}
-                            placeholder="Notes for this stage…"
-                            maxLength={4000}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
                   {stageKey === 'application' && isTerminalStatus && (
                     <div className="space-y-4 rounded-lg border border-hairline p-4">
@@ -1090,6 +971,125 @@ export function EditStageDialog({
                         )
                       )}
                     </div>
+                  )}
+
+                  {/* The application's only extras are the ending reason and
+                      notes, which the block under Status owns. */}
+                  {cols.extras.length > 0 && stageKey !== 'application' && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Stage details
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {/* Plain fields first, then the score pairs, so Math
+                            and English sit side by side on one row instead of
+                            landing diagonally in the two-column grid. */}
+                        {[
+                          ...cols.extras.filter((x) => x.kind !== 'score'),
+                          ...cols.extras.filter((x) => x.kind === 'score'),
+                        ].map((e) =>
+                          e.kind === 'score' ? (
+                            <FormField
+                              key={e.fieldKey}
+                              control={form.control}
+                              name={`extras.${e.fieldKey}` as const}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <AssessmentScoreField
+                                    label={e.label}
+                                    stored={initialExtras[e.fieldKey] ?? null}
+                                    onChange={field.onChange}
+                                    required={blockedFieldKeys.has(e.fieldKey)}
+                                  />
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <FormField
+                              key={e.fieldKey}
+                              control={form.control}
+                              name={`extras.${e.fieldKey}` as const}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-xs">
+                                    {e.label}
+                                    {blockedFieldKeys.has(e.fieldKey) && (
+                                      <span className="text-destructive">
+                                        {' '}
+                                        *
+                                      </span>
+                                    )}
+                                  </FormLabel>
+                                  <FormControl>
+                                    {e.kind === 'date' ? (
+                                      <DatePicker
+                                        value={
+                                          (field.value as string | null) ?? ''
+                                        }
+                                        onChange={(next) =>
+                                          field.onChange(
+                                            next === '' ? null : next
+                                          )
+                                        }
+                                      />
+                                    ) : (
+                                      <Input
+                                        type="text"
+                                        value={
+                                          (field.value as string | null) ?? ''
+                                        }
+                                        onChange={(ev) =>
+                                          field.onChange(
+                                            ev.target.value === ''
+                                              ? null
+                                              : ev.target.value
+                                          )
+                                        }
+                                        placeholder=""
+                                      />
+                                    )}
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )
+                        )}
+                      </div>
+                      {showCompletionNotice && (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="size-3.5 shrink-0" />
+                          {completionMessage}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Ending the application: its Notes say why, so Remarks
+                      stands aside (whatever it holds is kept). */}
+                  {!endingApplication && (
+                    <FormField
+                      control={form.control}
+                      name="remarks"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Remarks</FormLabel>
+                          <FormControl>
+                            <RichTextEditor
+                              value={field.value ?? ''}
+                              onChange={(v) =>
+                                field.onChange(v === '' ? null : v)
+                              }
+                              onBlur={field.onBlur}
+                              rows={4}
+                              placeholder="Notes for this stage…"
+                              maxLength={4000}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   )}
                 </div>
 
