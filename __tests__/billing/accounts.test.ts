@@ -100,6 +100,41 @@ describe('accountRows', () => {
     expect(rows.find((r) => r.id === '4')!.balance).toBe(13495);
     expect(rows.find((r) => r.id === '1')!.balance).toBeNull();
   });
+
+  it('marks BAL / P&L and the Action as QuickBooks does; Retained Earnings has neither balance nor register', () => {
+    const rows = accountRows([
+      ...list,
+      acct({
+        Id: '8',
+        Name: 'Retained Earnings',
+        Classification: 'Equity',
+        AccountType: 'Equity',
+        AccountSubType: 'RetainedEarnings',
+        CurrentBalance: 500,
+      }),
+    ]);
+    const by = (id: string) => rows.find((r) => r.id === id)!;
+    expect([by('2').statement, by('2').action]).toEqual(['BAL', 'register']);
+    expect([by('1').statement, by('1').action]).toEqual(['P&L', 'report']);
+    // QuickBooks' page shows what is owed as positive; the API sends it
+    // negative.
+    expect(
+      accountRows([
+        acct({
+          Id: '9',
+          Name: 'Accounts Payable (A/P)',
+          Classification: 'Liability',
+          AccountType: 'Accounts Payable',
+          CurrentBalance: -1602.67,
+        }),
+      ])[0].balance
+    ).toBe(1602.67);
+    expect([by('8').statement, by('8').action, by('8').balance]).toEqual([
+      'BAL',
+      'report',
+      null,
+    ]);
+  });
 });
 
 describe('filterAccounts', () => {

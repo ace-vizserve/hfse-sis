@@ -31,6 +31,11 @@ export type AccountRow = {
   /** QuickBooks balance (a parent's includes its sub-accounts). Null for
    *  income and expense accounts, which QuickBooks shows without one. */
   balance: number | null;
+  /** QuickBooks' chip beside the type: BAL (balance sheet) or P&L. */
+  statement: 'BAL' | 'P&L';
+  /** QuickBooks' Action: "View register" for balance-sheet accounts that
+   *  have one, else "Run report". */
+  action: 'register' | 'report';
 };
 
 /** QuickBooks' account types in the order its Chart of accounts lists
@@ -108,6 +113,10 @@ export function accountRows(list: QbAccount[]): AccountRow[] {
   const add = (a: QbAccount, depth: number) => {
     const kids = (byParent.get(a.Id) ?? []).sort(byName);
     const type = a.AccountType ?? '';
+    const bal = hasBalance(a.Classification);
+    // Retained Earnings is a balance-sheet account QuickBooks shows with no
+    // balance and no register — it is worked out, not posted to.
+    const retained = a.AccountSubType === 'RetainedEarnings';
     out.push({
       id: a.Id,
       name: a.Name,
@@ -117,13 +126,20 @@ export function accountRows(list: QbAccount[]): AccountRow[] {
       type,
       typeLabel: TYPE_LABEL.get(type) ?? type,
       detailType: detailTypeName(a.AccountSubType),
-      balance: hasBalance(a.Classification)
-        ? Number(
-            (kids.length
-              ? a.CurrentBalanceWithSubAccounts
-              : a.CurrentBalance) ?? 0
-          )
-        : null,
+      // The API signs a liability or equity balance as a debit (what is owed
+      // comes back negative); QuickBooks' page shows it the other way round,
+      // owed as positive, so it is flipped to match the page.
+      balance:
+        bal && !retained
+          ? (a.Classification === 'Asset' ? 1 : -1) *
+              Number(
+                (kids.length
+                  ? a.CurrentBalanceWithSubAccounts
+                  : a.CurrentBalance) ?? 0
+              ) || 0
+          : null,
+      statement: bal ? 'BAL' : 'P&L',
+      action: bal && !retained ? 'register' : 'report',
     });
     for (const k of kids) add(k, depth + 1);
   };
