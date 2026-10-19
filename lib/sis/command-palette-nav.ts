@@ -2,6 +2,7 @@ import {
   CalendarClockIcon,
   ClipboardListIcon,
   FileTextIcon,
+  FolderOpenIcon,
   GraduationCapIcon,
   HomeIcon,
   InboxIcon,
@@ -449,10 +450,11 @@ export function visibleQuickActions(
 // would drift, and the registry already carries role-coverage gaps
 // (registry.ts:311).
 //
-// ⚠ Every enrolled verb is keyed on `studentNumber` — the only stable student
-// ID (Hard Rule #4). `enroleeNumber` resets each AY and must never key these.
-// A match with no studentNumber is an APPLICANT: no Records or Attendance row
-// exists for them, so they get the admissions verb alone.
+// ⚠ Every cross-year verb (Records, Attendance, Billing) is keyed on
+// `studentNumber` — the only stable student ID (Hard Rule #4). The two per-year
+// surfaces (application, P-Files) are keyed on `enroleeNumber` AND carry the
+// AY. A match with no studentNumber is an APPLICANT: no Records, Attendance or
+// Billing page exists for them, so they get the application and documents.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type StudentVerb = {
@@ -479,6 +481,25 @@ export function visibleStudentVerbs(
 ): StudentVerb[] {
   const candidates: StudentVerb[] = [];
   const sn = target.studentNumber;
+
+  // This year's application and documents — keyed on enroleeNumber, which is
+  // why each carries the AY (an enroleeNumber alone is ambiguous across years).
+  const ay = `?ay=${encodeURIComponent(target.ayCode)}`;
+  const en = encodeURIComponent(target.enroleeNumber);
+  const application: StudentVerb = {
+    key: 'application',
+    label: 'Open application',
+    icon: FileTextIcon,
+    href: `/admissions/applications/${en}${ay}`,
+    hint: 'Admissions',
+  };
+  const documents: StudentVerb = {
+    key: 'documents',
+    label: 'Documents',
+    icon: FolderOpenIcon,
+    href: `/p-files/${en}${ay}`,
+    hint: 'P-Files',
+  };
 
   if (sn) {
     const base = `/records/students/${encodeURIComponent(sn)}`;
@@ -512,16 +533,19 @@ export function visibleStudentVerbs(
         icon: ClipboardListIcon,
         href: `${base}?tab=discipline`,
         hint: 'Records',
-      }
+      },
+      {
+        key: 'billing',
+        label: 'Billing',
+        icon: WalletIcon,
+        href: `/billing/${encodeURIComponent(sn)}`,
+        hint: 'Billing',
+      },
+      application,
+      documents
     );
   } else {
-    candidates.push({
-      key: 'application',
-      label: 'Open application',
-      icon: FileTextIcon,
-      href: `/admissions/applications/${encodeURIComponent(target.enroleeNumber)}?ay=${encodeURIComponent(target.ayCode)}`,
-      hint: 'Admissions',
-    });
+    candidates.push(application, documents);
   }
 
   return candidates.filter((verb) =>
@@ -529,13 +553,22 @@ export function visibleStudentVerbs(
   );
 }
 
-/** The verb Enter runs — today's behaviour, unchanged. The first surviving
- *  verb is the record for an enrolled student and the application for an
- *  applicant, which is exactly what studentHref() resolved to before the
- *  sub-view existed. Null when the role can reach none of them. */
+/** The module a path belongs to — its first segment (`/billing/x` → `billing`). */
+const moduleOf = (path: string) => hrefPathname(path).split('/')[1] ?? '';
+
+/** The verb Enter runs: the student in the module you are standing in
+ *  (`currentPath`), so searching from Billing opens their Billing page.
+ *  A module with no page per student falls back to the first surviving verb
+ *  — the record for an enrolled student, the application for an applicant.
+ *  Null when the role can reach none of them. */
 export function primaryStudentVerb(
   target: StudentVerbTarget,
-  role: Role | null
+  role: Role | null,
+  currentPath?: string | null
 ): StudentVerb | null {
-  return visibleStudentVerbs(target, role)[0] ?? null;
+  const verbs = visibleStudentVerbs(target, role);
+  const here = currentPath ? moduleOf(currentPath) : '';
+  return (
+    (here && verbs.find((v) => moduleOf(v.href) === here)) || verbs[0] || null
+  );
 }

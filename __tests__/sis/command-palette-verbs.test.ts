@@ -49,12 +49,14 @@ const keysFor = (
 ) => visibleStudentVerbs(t, role).map((v) => v.key);
 
 describe('visibleStudentVerbs — enrolled student', () => {
-  it('gives an academic coordinator every surface', () => {
+  it('gives an academic coordinator every surface they can reach', () => {
+    // ROUTE_ACCESS: /billing and /p-files exclude academic_coordinator.
     expect(keysFor(ENROLLED, 'academic_coordinator')).toEqual([
       'record',
       'attendance',
       'academic',
       'discipline',
+      'application',
     ]);
   });
 
@@ -69,6 +71,9 @@ describe('visibleStudentVerbs — enrolled student', () => {
       'record',
       'academic',
       'discipline',
+      'billing',
+      'application',
+      'documents',
     ]);
   });
 
@@ -76,13 +81,27 @@ describe('visibleStudentVerbs — enrolled student', () => {
     expect(keysFor(ENROLLED, null)).toEqual([]);
   });
 
-  it('keys every enrolled verb on studentNumber, never enroleeNumber', () => {
+  it('keys every cross-year verb on studentNumber, never enroleeNumber', () => {
     // Hard Rule #4 — enroleeNumber resets each AY and must not address a
-    // cross-year record.
-    for (const verb of visibleStudentVerbs(ENROLLED, 'academic_coordinator')) {
-      expect(verb.href).toContain('2024-0117');
-      expect(verb.href).not.toContain('E26-0042');
+    // cross-year record. The per-year surfaces are keyed on enroleeNumber
+    // and carry the AY.
+    const perYear = new Set(['application', 'documents']);
+    for (const verb of visibleStudentVerbs(ENROLLED, 'superadmin')) {
+      if (perYear.has(verb.key)) {
+        expect(verb.href).toContain('E26-0042');
+        expect(verb.href).toContain('ay=AY2026');
+      } else {
+        expect(verb.href).toContain('2024-0117');
+        expect(verb.href).not.toContain('E26-0042');
+      }
     }
+  });
+
+  it('opens Billing at the student, keyed on studentNumber', () => {
+    const billing = visibleStudentVerbs(ENROLLED, 'admissions').find(
+      (v) => v.key === 'billing'
+    );
+    expect(billing?.href).toBe('/billing/2024-0117');
   });
 
   it('deep-links the tab verbs at the Records detail page', () => {
@@ -98,8 +117,11 @@ describe('visibleStudentVerbs — enrolled student', () => {
 });
 
 describe('visibleStudentVerbs — applicant', () => {
-  it('offers only the application, since no Records row exists yet', () => {
-    expect(keysFor(APPLICANT, 'admissions')).toEqual(['application']);
+  it('offers the application and documents, since no Records row exists yet', () => {
+    expect(keysFor(APPLICANT, 'admissions')).toEqual([
+      'application',
+      'documents',
+    ]);
   });
 
   it('carries the AY, because enroleeNumber alone is ambiguous across years', () => {
@@ -117,6 +139,30 @@ describe('primaryStudentVerb — what Enter runs', () => {
   it('is the record for an enrolled student, as before the sub-view existed', () => {
     expect(primaryStudentVerb(ENROLLED, 'academic_coordinator')?.href).toBe(
       '/records/students/2024-0117'
+    );
+  });
+
+  it('opens the student in the module you are standing in', () => {
+    const at = (path: string) =>
+      primaryStudentVerb(ENROLLED, 'admissions', path)?.key;
+    expect(at('/billing')).toBe('billing');
+    expect(at('/billing/H250001/invoices/9')).toBe('billing');
+    expect(at('/p-files')).toBe('documents');
+    expect(at('/admissions/applications?ay=AY2026')).toBe('application');
+    expect(at('/records/students')).toBe('record');
+  });
+
+  it('falls back to the first surface in a module with no student page', () => {
+    expect(
+      primaryStudentVerb(ENROLLED, 'academic_coordinator', '/markbook')?.key
+    ).toBe('record');
+    // In Billing, but this role cannot reach Billing.
+    expect(
+      primaryStudentVerb(ENROLLED, 'academic_coordinator', '/billing')?.key
+    ).toBe('record');
+    // An applicant has no Billing page.
+    expect(primaryStudentVerb(APPLICANT, 'admissions', '/billing')?.key).toBe(
+      'application'
     );
   });
 
