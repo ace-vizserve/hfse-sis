@@ -12,6 +12,9 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { AssignSectionDialog } from '@/components/sis/assign-section-dialog';
 import { BulkSectionPicker } from '@/components/sis/bulk-section-picker';
+import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { useBulkAction } from '@/lib/hooks/use-bulk-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
@@ -126,6 +129,10 @@ export function UnsyncedStudentsQueue({
     null
   );
   const [resetSignal, setResetSignal] = React.useState(0);
+  const [late, setLate] = React.useState<Array<{
+    payload: MidTermPayload;
+    name: string;
+  }> | null>(null);
 
   const bulkKeys = new Set(
     (bulkRows ?? []).map((r) => sectionMapKey(r.ayCode, r.levelApplied ?? ''))
@@ -144,24 +151,30 @@ export function UnsyncedStudentsQueue({
     const sectionName =
       bulkLevel?.sections.find((s) => s.id === sectionId)?.name ?? 'the class';
     setBulkRows(null);
-    let lateJoiners = 0;
+    const joiningLate: Array<{ payload: MidTermPayload; name: string }> = [];
     await bulk(picked, {
       pending: `Assigning ${picked.length} ${picked.length === 1 ? 'student' : 'students'}…`,
-      done: (n) =>
-        `${n} assigned to ${sectionName}` +
-        (lateJoiners > 0
-          ? `. ${lateJoiners} joined after the year began.`
-          : ''),
+      done: (n) => `${n} assigned to ${sectionName}`,
       failed: 'Could not assign',
       label: fullNameOf,
       one: async (r) => {
-        const body = await apiFetch<{ midTermEnrolment?: unknown }>(
+        const body = await apiFetch<{
+          midTermEnrolment?: MidTermPayload | null;
+        }>(
           `/api/sis/students/${encodeURIComponent(r.enroleeNumber)}/assign-section?ay=${encodeURIComponent(r.ayCode)}`,
           jsonInit('POST', { sectionId })
         );
-        if (body?.midTermEnrolment) lateJoiners += 1;
+        if (body?.midTermEnrolment?.sectionId) {
+          joiningLate.push({
+            payload: body.midTermEnrolment,
+            name: fullNameOf(r),
+          });
+        }
       },
     });
+    // Students joining after the year began get the same term-and-date step the
+    // single dialog shows, asked once for all of them.
+    if (joiningLate.length > 0) setLate(joiningLate);
     setResetSignal((s) => s + 1);
   }
 
@@ -330,7 +343,7 @@ export function UnsyncedStudentsQueue({
       <DataTable
         data={rows}
         columns={columns}
-        getRowId={(r) => r.enroleeNumber}
+        getRowId={(r) => applicantMapKey(r.ayCode, r.enroleeNumber)}
         searchKeys={[
           (r) => fullNameOf(r),
           (r) => r.enroleeNumber,
@@ -395,6 +408,26 @@ export function UnsyncedStudentsQueue({
         blocked={bulkBlocked}
         onConfirm={assignMany}
       />
+      <Dialog open={late !== null} onOpenChange={(o) => !o && setLate(null)}>
+        <DialogContent className="sm:max-w-md">
+          {late && (
+            <LateEnrolleePrompt
+              payload={late[0].payload}
+              others={
+                late.length > 1
+                  ? {
+                      payloads: late.slice(1).map((l) => l.payload),
+                      names: Object.fromEntries(
+                        late.map((l) => [l.payload.sectionStudentId, l.name])
+                      ),
+                    }
+                  : undefined
+              }
+              onDone={() => setLate(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       {dialogRow && (
         <AssignSectionDialog
           enroleeNumber={dialogRow.enroleeNumber}

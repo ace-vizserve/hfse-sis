@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { sgToday } from '@/lib/dates';
 import { Button } from '@/components/ui/button';
@@ -41,9 +42,14 @@ function firstDayForTerm(payload: MidTermPayload, term: number | null): string {
 
 export function LateEnrolleePrompt({
   payload,
+  others,
   onDone,
 }: {
   payload: MidTermPayload;
+  /** Several students at once: the rest of them, beside `payload`. The term
+   *  and date chosen here are applied to every one. `names` maps
+   *  sectionStudentId to a display name for the "not done" list. */
+  others?: { payloads: MidTermPayload[]; names: Record<string, string> };
   /**
    * Called once the user has chosen or dismissed, so the host can close.
    *
@@ -82,8 +88,33 @@ export function LateEnrolleePrompt({
   const run = useWriteAction();
   const [applyingLate, setApplyingLate] = useState(false);
 
+  const bulk = useBulkAction();
+
   async function confirm(term: number) {
     setApplyingLate(true);
+    if (others) {
+      const all = [payload, ...others.payloads];
+      const result = await bulk(all, {
+        pending: `Marking ${all.length} students as late enrollees…`,
+        done: (n) =>
+          `${n} marked as late ${n === 1 ? 'enrollee' : 'enrollees'} · T${term}`,
+        failed: 'Could not mark as late enrollee',
+        label: (p) => others.names[p.sectionStudentId] ?? 'a student',
+        one: (p) =>
+          apiFetch(
+            `/api/sections/${p.sectionId}/students/${p.sectionStudentId}`,
+            jsonInit('PATCH', {
+              enrollment_status: 'late_enrollee',
+              late_enrollee_term_number: term,
+              enrollment_date: firstDayValue,
+            })
+          ),
+      });
+      setApplyingLate(false);
+      void result;
+      onDone();
+      return;
+    }
     const result = await run(
       () => lateMutation.mutateAsync({ term, firstDay: firstDayValue }),
       {
@@ -109,6 +140,9 @@ export function LateEnrolleePrompt({
           Joining after the year started
         </DialogTitle>
         <DialogDescription>
+          {others
+            ? `${others.payloads.length + 1} students are joining after the year started. The term and date you choose apply to all of them. `
+            : ''}
           {payload.activeTermNumber !== null
             ? `T${payload.activeTermNumber} is already under way, so this is a late enrollee. Choose which term they join — this skips assessments from before they arrived.`
             : `The school year has already started, so this is a late enrollee. They'll join the next term, ${payload.termLabel}.`}
