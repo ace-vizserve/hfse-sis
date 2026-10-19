@@ -49,7 +49,7 @@ const phone = (p?: { FreeFormNumber?: string }) =>
 
 async function refName(
   service: SupabaseClient,
-  entity: 'term' | 'paymentmethod',
+  entity: 'term' | 'paymentmethod' | 'customertype',
   ref?: { value: string; name?: string }
 ): Promise<string | null> {
   if (!ref) return null;
@@ -58,8 +58,14 @@ async function refName(
     const res = await qboRequest<{
       Term?: { Name: string };
       PaymentMethod?: { Name: string };
+      CustomerType?: { Name: string };
     }>(service, 'GET', `/${entity}/${encodeURIComponent(ref.value)}`);
-    return res.Term?.Name ?? res.PaymentMethod?.Name ?? null;
+    return (
+      res.Term?.Name ??
+      res.PaymentMethod?.Name ??
+      res.CustomerType?.Name ??
+      null
+    );
   } catch {
     return null;
   }
@@ -86,6 +92,12 @@ export type CustomerProfile = {
   deliveryMethod: string | null;
   currency: string | null;
   notes: string | null;
+  fax: string | null;
+  website: string | null;
+  /** QuickBooks' Customer type, by name. */
+  customerType: string | null;
+  /** Files attached to the customer in QuickBooks; null when unread. */
+  attachments: number | null;
   /** QuickBooks' open balance: owed minus unused credit. */
   balance: number;
 };
@@ -115,12 +127,23 @@ export async function readCustomerProfile(
       PreferredDeliveryMethod?: string;
       CurrencyRef?: { value: string; name?: string };
       Notes?: string;
+      Fax?: { FreeFormNumber?: string };
+      WebAddr?: { URI?: string };
+      CustomerTypeRef?: { value: string; name?: string };
       Balance?: number;
     };
   }>(service, 'GET', `/customer/${encodeURIComponent(customerId)}`);
-  const [terms, paymentMethod] = await Promise.all([
+  const [terms, paymentMethod, customerType, attachments] = await Promise.all([
     refName(service, 'term', c.SalesTermRef),
     refName(service, 'paymentmethod', c.PaymentMethodRef),
+    refName(service, 'customertype', c.CustomerTypeRef),
+    qboQuery<{ Id: string }>(
+      service,
+      'Attachable',
+      `AttachableRef.EntityRef.Type = 'Customer' AND AttachableRef.EntityRef.value = '${qbEscape(c.Id)}'`
+    )
+      .then((rows) => rows.length)
+      .catch(() => null),
   ]);
   const bill = addressLines(c.BillAddr);
   const ship = addressLines(c.ShipAddr);
@@ -148,6 +171,10 @@ export async function readCustomerProfile(
         : null,
     currency: c.CurrencyRef?.name ?? c.CurrencyRef?.value ?? null,
     notes: c.Notes?.trim() || null,
+    fax: phone(c.Fax),
+    website: c.WebAddr?.URI?.trim() || null,
+    customerType,
+    attachments,
     balance: Number(c.Balance ?? 0),
   };
 }
