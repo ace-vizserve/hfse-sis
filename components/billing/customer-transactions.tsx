@@ -3,9 +3,11 @@
 import * as React from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   Download,
   FileText,
@@ -33,21 +35,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardFooter } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import { DatePicker } from '@/components/ui/date-picker';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type {
   InvoiceRowView,
   PaymentRowView,
@@ -57,10 +62,12 @@ import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
 
-// The customer page's Transaction List, laid out as QuickBooks lays out its
-// own: one list of invoices and payments with Type / Status / Date filters,
-// Date · Type · No. · Customer · Memo · Amount · Status · Action.
-// (QuickBooks' customer page, sandbox capture 2026-10-19.)
+// The customer page's Transaction List. What it holds is QuickBooks' (one
+// list of invoices and payments, Type / Status / Date filters, Date · Type ·
+// No. · Customer · Memo · Amount · Status · Action, batch Send / Print /
+// Receive payment, the Total line — sandbox capture 2026-10-19). How it
+// looks is the SIS's: Type as status tabs, Status as a facet, Date as a
+// toolbar filter, batch actions in the selection footer, Total in a card.
 
 type Tone = 'bad' | 'good' | 'warn' | 'plain';
 
@@ -162,26 +169,27 @@ function paymentRow(p: PaymentRowView): TxnRow {
   };
 }
 
+// QuickBooks' Type filter, as the SIS's status tabs.
 const TYPE_OPTIONS = [
-  { value: 'all', label: 'All transactions' },
-  { value: 'invoices', label: 'All invoices' },
-  { value: 'open', label: 'Open invoices' },
-  { value: 'overdue', label: 'Overdue invoices' },
-  { value: 'paid', label: 'Paid invoices' },
+  { value: 'all', label: 'All' },
+  { value: 'invoices', label: 'Invoices' },
+  { value: 'open', label: 'Open' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'paid', label: 'Paid' },
   { value: 'payments', label: 'Payments' },
 ] as const;
 type TypeFilter = (typeof TYPE_OPTIONS)[number]['value'];
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'open', label: 'Open' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'closed', label: 'Closed' },
-  { value: 'unapplied', label: 'Unapplied' },
-  { value: 'voided', label: 'Voided' },
-] as const;
-type StatusFilter = (typeof STATUS_OPTIONS)[number]['value'];
+// QuickBooks' Status filter, as the SIS's Status facet.
+const STATE_LABEL: Record<TxnRow['statusKey'], string> = {
+  open: 'Open',
+  overdue: 'Overdue',
+  paid: 'Paid',
+  closed: 'Closed',
+  unapplied: 'Unapplied',
+  voided: 'Voided',
+};
+const STATE_ORDER = Object.values(STATE_LABEL);
 
 export const DATE_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -310,31 +318,50 @@ export function FilterSelect<T extends string>({
   onChange: (v: T) => void;
   className?: string;
 }) {
-  // Compact, toolbar-height: the filter's name sits inside the trigger
-  // ("Type  All transactions"), so a row of filters lines up with Batch
-  // actions and the search box on one line, as QuickBooks' filter row does.
+  // A single-choice toolbar filter in the SIS's facet look: a dashed outline
+  // chip named by the filter ("Date ▾"); once set off its first option the
+  // chosen value shows beside the name, as a facet shows its count.
+  const current = options.find((o) => o.value === value);
+  const isSet = value !== options[0]?.value;
   return (
-    <div>
-      <Label htmlFor={id} className="sr-only">
-        {label}
-      </Label>
-      <Select value={value} onValueChange={(v) => onChange(v as T)}>
-        <SelectTrigger
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
           id={id}
-          className={cn('h-8 w-auto min-w-36 gap-1.5 text-[13px]', className)}
+          variant="outline"
+          size="sm"
+          className={cn('h-8 border-dashed', className)}
         >
-          <span className="text-muted-foreground">{label}</span>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
+          {label}
+          {isSet && current && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+              <Badge
+                variant="secondary"
+                className="rounded-sm px-1.5 font-normal"
+              >
+                {current.label}
+              </Badge>
+            </>
+          )}
+          <ChevronDown className="ml-1 h-3 w-3 opacity-60" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuLabel>{label}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(v) => onChange(v as T)}
+        >
           {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
+            <DropdownMenuRadioItem key={o.value} value={o.value}>
               {o.label}
-            </SelectItem>
+            </DropdownMenuRadioItem>
           ))}
-        </SelectContent>
-      </Select>
-    </div>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -370,8 +397,7 @@ export function CustomerTransactions({
   initialType?: TypeFilter;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const [type, setType] = React.useState<TypeFilter>(initialType);
-  const [status, setStatus] = React.useState<StatusFilter>('all');
+  const params = useSearchParams();
   const [date, setDate] = React.useState<DateFilter>('all');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [reset, setReset] = React.useState(0);
@@ -389,23 +415,49 @@ export function CustomerTransactions({
     ],
     [invoices, payments, today]
   );
+  // The Date filter narrows what the table gets; Type (status tabs) and
+  // Status (facet) are the table's own, kept in its URL params.
   const shown = React.useMemo(() => {
     const [from, to] = dateRange(date, today, custom);
+    if (!from && !to) return rows;
     return rows.filter((r) => {
-      if (!matchesType(r, type)) return false;
-      if (status !== 'all' && r.statusKey !== status) return false;
       const d = r.date?.slice(0, 10) ?? '';
       if (from && d < from) return false;
       if (to && d > to) return false;
       return true;
     });
-  }, [rows, type, status, date, custom, today]);
+  }, [rows, date, custom, today]);
 
-  // QuickBooks' Total line: invoices less payments, of what's listed.
+  const statusTabs = React.useMemo(
+    () =>
+      TYPE_OPTIONS.map((o) => ({
+        value: o.value,
+        label: o.label,
+        predicate: (r: TxnRow) => matchesType(r, o.value),
+        isDefault: o.value === initialType,
+      })),
+    [initialType]
+  );
+
+  // QuickBooks' Total line: invoices less payments, of what's listed — the
+  // tab, the Status filter and the Date filter (the search box aside).
+  const tab = (params?.get('billing-txns.status') ?? initialType) as TypeFilter;
+  const states = params?.get('billing-txns.state')?.split(',').filter(Boolean);
+  const listed = React.useMemo(
+    () =>
+      shown.filter(
+        (r) =>
+          matchesType(r, tab) &&
+          (!states?.length || states.includes(STATE_LABEL[r.statusKey]))
+      ),
+    // `states` is a fresh array each render; its joined form is the key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shown, tab, states?.join(',')]
+  );
   const total = React.useMemo(
     () =>
       Math.round(
-        shown.reduce(
+        listed.reduce(
           (s, r) =>
             s +
             (r.kind === 'payment'
@@ -416,7 +468,7 @@ export function CustomerTransactions({
           0
         ) * 100
       ) / 100,
-    [shown]
+    [listed]
   );
 
   const openById = React.useMemo(
@@ -630,6 +682,14 @@ export function CustomerTransactions({
       },
       // Off by default; switch on from Columns, as QuickBooks' gear does.
       {
+        // The Status facet's column: the plain state, without the days.
+        id: 'state',
+        accessorFn: (r) => STATE_LABEL[r.statusKey],
+        header: 'State',
+        meta: { label: 'State' },
+        enableSorting: false,
+      },
+      {
         id: 'dueDate',
         accessorFn: (r) => r.invoice?.dueDate ?? '',
         header: ({ column }) => (
@@ -712,23 +772,9 @@ export function CustomerTransactions({
       </Card>
     );
 
-  // QuickBooks: Batch actions · Type · Status · Date in one row.
+  // QuickBooks' Date filter; Type is the status tabs, Status a facet.
   const filters = (
     <>
-      <FilterSelect
-        id="txn-type"
-        label="Type"
-        value={type}
-        options={TYPE_OPTIONS}
-        onChange={setType}
-      />
-      <FilterSelect
-        id="txn-status"
-        label="Status"
-        value={status}
-        options={STATUS_OPTIONS}
-        onChange={setStatus}
-      />
       <FilterSelect
         id="txn-date"
         label="Date"
@@ -738,34 +784,26 @@ export function CustomerTransactions({
       />
       {date === 'custom' && (
         <>
-          <div className="space-y-1">
-            <Label
-              htmlFor="txn-from"
-              className="text-[12px] text-muted-foreground"
-            >
-              From
-            </Label>
-            <DatePicker
-              id="txn-from"
-              value={custom.from}
-              onChange={(from) => setCustom((c) => ({ ...c, from }))}
-              placeholder="Any date"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label
-              htmlFor="txn-to"
-              className="text-[12px] text-muted-foreground"
-            >
-              To
-            </Label>
-            <DatePicker
-              id="txn-to"
-              value={custom.to}
-              onChange={(to) => setCustom((c) => ({ ...c, to }))}
-              placeholder="Any date"
-            />
-          </div>
+          <Label htmlFor="txn-from" className="sr-only">
+            From
+          </Label>
+          <DatePicker
+            id="txn-from"
+            value={custom.from}
+            onChange={(from) => setCustom((c) => ({ ...c, from }))}
+            placeholder="From"
+            className="h-8 w-36 text-[13px]"
+          />
+          <Label htmlFor="txn-to" className="sr-only">
+            To
+          </Label>
+          <DatePicker
+            id="txn-to"
+            value={custom.to}
+            onChange={(to) => setCustom((c) => ({ ...c, to }))}
+            placeholder="To"
+            className="h-8 w-36 text-[13px]"
+          />
         </>
       )}
     </>
@@ -778,12 +816,21 @@ export function CustomerTransactions({
         toolbarFilters={filters}
         columns={columns}
         getRowId={(r) => r.key}
+        statusTabs={statusTabs}
+        facets={[
+          {
+            columnId: 'state',
+            label: 'Status',
+            valueOptions: STATE_ORDER.filter((s) =>
+              rows.some((r) => STATE_LABEL[r.statusKey] === s)
+            ),
+          },
+        ]}
         selectionResetSignal={reset}
         selection={
           canRecord
             ? {
                 enabled: true,
-                placement: 'menu',
                 enableRowSelection: (r) =>
                   r.kind === 'invoice' && r.statusKey !== 'voided',
                 bulkActions: [
@@ -830,8 +877,9 @@ export function CustomerTransactions({
         ]}
         searchPlaceholder="Find by number or memo"
         initialColumnVisibility={{
-          // Every row is this customer; the left panel already names them.
+          // Every row is this customer; the page's title already names them.
           customer: false,
+          state: false,
           dueDate: false,
           balance: false,
           depositTo: false,
@@ -845,15 +893,26 @@ export function CustomerTransactions({
         csv={{ filename: `billing-${studentNumber}-transactions.csv` }}
         emptyFilteredState={{
           title: 'No transactions match.',
-          body: 'Set Type, Status or Date back to All, or clear the search.',
+          body: 'Pick the All tab, clear Status or Date, or clear the search.',
         }}
       />
-      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-        <span className="font-semibold text-foreground">Total</span>
-        <span className="font-semibold tabular-nums text-foreground">
-          {formatSgd(total)}
-        </span>
-      </div>
+      <Card className="gap-0 py-0">
+        <CardFooter className="justify-between gap-4 px-5 py-4">
+          <div className="space-y-0.5">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Total
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Invoices less payments, of the{' '}
+              {listed.length.toLocaleString('en-SG')}{' '}
+              {listed.length === 1 ? 'transaction' : 'transactions'} listed
+            </p>
+          </div>
+          <span className="font-serif text-2xl font-semibold tabular-nums text-foreground">
+            {total < 0 ? `-${formatSgd(-total)}` : formatSgd(total)}
+          </span>
+        </CardFooter>
+      </Card>
       <AlertDialog
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}

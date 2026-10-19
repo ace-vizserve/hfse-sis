@@ -1,40 +1,42 @@
 import {
   AlertTriangle,
-  ChevronLeft,
+  ArrowLeft,
+  Coins,
   FileText,
   FolderOpen,
-  Mail,
-  Phone,
+  Layers,
   UserRound,
   UserSearch,
+  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { CreditPanel } from '@/components/billing/credit-panel';
 import { CustomerActions } from '@/components/billing/customer-actions';
-import { EditCustomerButton } from '@/components/billing/edit-customer-button';
 import { CustomerTabs } from '@/components/billing/customer-tabs';
-import { CustomerNavPanel } from '@/components/billing/customer-nav-panel';
+import { EditCustomerButton } from '@/components/billing/edit-customer-button';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { loadCustomerPage } from '@/lib/billing/customer-page.server';
-import { loadCustomerNav } from '@/lib/billing/customer-nav.server';
 import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
-import { connectedRealmId } from '@/lib/qbo/client';
+import { loadCustomerPage } from '@/lib/billing/customer-page.server';
+import { formatDay } from '@/lib/billing/view';
+import { formatSgd } from '@/lib/qbo/format';
 import { qboAppUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
-import { formatSgd } from '@/lib/qbo/format';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Billing → one student. Everything billed to their QuickBooks customer,
 // newest first, no year filter (Mr Ace: "historical not focused on AY …
 // just like an audit log"). Reads the customer from QuickBooks every time it
-// opens.
+// opens. QuickBooks decides what the page holds (Edit ▾, New transaction ▾,
+// Open balance / Overdue, Transaction List / Customer Details); the SIS
+// decides how it looks — a SIS detail page.
 export default async function BillingCustomerPage({
   params,
   searchParams,
@@ -49,23 +51,17 @@ export default async function BillingCustomerPage({
     await Promise.all([params, searchParams]);
   const initialTab =
     tab === 'payments' || tab === 'details' ? tab : 'transactions';
-  const service = createServiceClient();
   const page = await loadCustomerPage(
-    service,
+    createServiceClient(),
     decodeURIComponent(studentNumber)
   );
   if (!page) notFound();
-  // The left panel's customers (QuickBooks' customer list on this page).
-  const realmId = page.connected
-    ? await connectedRealmId(service).catch(() => null)
-    : null;
-  const nav = realmId
-    ? await loadCustomerNav(service, realmId).catch(() => [])
-    : [];
 
   const name =
     page.student?.name ?? page.link?.displayName ?? page.studentNumber;
   const b = page.balances;
+  const openCount = page.openInvoices.length;
+  const p = page.profile;
 
   // The same student in the other modules — the application and documents of
   // their newest year, and the record. Only links this role can open.
@@ -95,122 +91,138 @@ export default async function BillingCustomerPage({
   );
 
   // QuickBooks' own page for this customer.
+  const qbBase = page.environment ? qboAppUrl(page.environment, '') : null;
   const qbHref =
-    page.link && page.environment
-      ? `${qboAppUrl(page.environment, '')}/app/customerdetail?nameId=${encodeURIComponent(page.link.customerId)}`
+    page.link && qbBase
+      ? `${qbBase}/app/customerdetail?nameId=${encodeURIComponent(page.link.customerId)}`
       : null;
-  const p = page.profile;
 
-  if (!page.connected || !page.link)
-    return (
-      <PageShell>
-        <Link
-          href="/billing"
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          Customers
-        </Link>
-        <header className="space-y-2">
-          <h1 className="font-serif text-[30px] font-semibold leading-tight tracking-tight text-foreground">
-            {name}
-          </h1>
-          <p className="font-mono text-[12px] tabular-nums text-muted-foreground">
-            {page.studentNumber}
-            {page.student?.level
-              ? ` · ${page.student.level}, ${page.student.ayCode}`
-              : ''}
-          </p>
-        </header>
-        {!page.connected ? (
-          <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
-        ) : (
-          <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-              <UserSearch className="size-4" />
-            </div>
-            <div className="flex-1 space-y-1.5">
-              <p className="font-serif text-base font-semibold text-foreground">
-                Find their QuickBooks customer
-              </p>
-              <p className="text-sm text-muted-foreground">
-                The SIS couldn&rsquo;t match this student to a QuickBooks
-                customer by itself. Pick the right one, or add them to
-                QuickBooks.
-              </p>
-              <Button asChild variant="outline" size="sm" className="mt-2">
-                <Link
-                  href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
-                >
-                  Open in To review
+  const description = page.link ? (
+    <>
+      QuickBooks customer{' '}
+      <span className="font-mono text-[13px] text-foreground">
+        {page.link.displayName}
+      </span>
+      {p?.companyName ? ` · Parents: ${p.companyName}` : ''}
+      {page.student?.level
+        ? ` · ${page.student.level}, ${page.student.ayCode}`
+        : ''}
+    </>
+  ) : (
+    'Not linked to a QuickBooks customer yet.'
+  );
+
+  return (
+    <PageShell>
+      <Link
+        href="/billing"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Customers
+      </Link>
+
+      <BillingPageHeader
+        crumbs={[{ label: page.studentNumber }]}
+        title={name.replace(/\.+$/, '')}
+        description={description}
+        actions={
+          page.link &&
+          page.connected && (
+            <>
+              <RefreshButton label="Refresh" />
+              <EditCustomerButton
+                studentNumber={page.studentNumber}
+                qbHref={qbHref}
+              />
+              <CustomerActions
+                studentNumber={page.studentNumber}
+                studentName={name}
+                customerEmail={p?.email ?? null}
+                maps={page.maps}
+                existing={page.invoices.map((i) => ({
+                  docNumber: i.docNumber,
+                  ayCode: i.ayCode,
+                  stageKeys: i.stageKeys,
+                  state: i.state,
+                }))}
+                openInvoices={page.openInvoices}
+                credits={page.credits}
+                depositAccounts={page.depositAccounts}
+                paymentMethods={page.paymentMethods}
+                customerBalance={b.openBalance}
+                initialSheet={
+                  newSheet === 'payment' || newSheet === 'invoice'
+                    ? newSheet
+                    : null
+                }
+                initialInvoiceId={
+                  newSheet === 'payment' ? (newInvoice ?? null) : null
+                }
+              />
+            </>
+          )
+        }
+      >
+        {related.length > 0 && (
+          <nav
+            aria-label="This student elsewhere"
+            className="flex flex-wrap gap-2"
+          >
+            {related.map((l) => (
+              <Button key={l.href} asChild variant="outline" size="sm">
+                <Link href={l.href}>
+                  <l.icon className="size-3.5" />
+                  {l.label}
                 </Link>
               </Button>
-            </div>
-          </div>
+            ))}
+          </nav>
         )}
-      </PageShell>
-    );
+      </BillingPageHeader>
 
-  // Laid out as QuickBooks' customer page: ‹ Customers with Edit ▾ and New
-  // transaction ▾ on one bar; the customer list down the left; the customer
-  // card beside the Summary; then the tabs and the list.
-  return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 px-4 py-6 md:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/billing"
-          className="inline-flex w-fit items-center gap-1 text-[15px] text-primary hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          Customers
-        </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton label="Refresh" />
-          <EditCustomerButton
-            studentNumber={page.studentNumber}
-            qbHref={qbHref}
-          />
-          <CustomerActions
-            studentNumber={page.studentNumber}
-            studentName={name}
-            customerEmail={p?.email ?? null}
-            maps={page.maps}
-            existing={page.invoices.map((i) => ({
-              docNumber: i.docNumber,
-              ayCode: i.ayCode,
-              stageKeys: i.stageKeys,
-              state: i.state,
-            }))}
-            openInvoices={page.openInvoices}
-            credits={page.credits}
-            depositAccounts={page.depositAccounts}
-            paymentMethods={page.paymentMethods}
-            customerBalance={b.openBalance}
-            initialSheet={
-              newSheet === 'payment' || newSheet === 'invoice' ? newSheet : null
-            }
-            initialInvoiceId={
-              newSheet === 'payment' ? (newInvoice ?? null) : null
-            }
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[240px_minmax(0,1fr)]">
-        <div className="hidden 2xl:block">
-          <div className="sticky top-4 h-[calc(100vh-7rem)]">
-            <CustomerNavPanel customers={nav} current={page.studentNumber} />
+      {!page.connected ? (
+        <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
+      ) : !page.link ? (
+        <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <UserSearch className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              Find their QuickBooks customer
+            </p>
+            <p className="text-sm text-muted-foreground">
+              The SIS couldn&rsquo;t match this student to a QuickBooks customer
+              by itself. Pick the right one, or add them to QuickBooks.
+            </p>
+            <Button asChild variant="outline" size="sm" className="mt-2">
+              <Link
+                href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
+              >
+                Open in To review
+              </Link>
+            </Button>
           </div>
         </div>
-
-        <div className="min-w-0 space-y-4">
+      ) : (
+        <>
           {page.refreshError && (
-            <p className="flex items-start gap-2 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-ink">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              Showing what the SIS last read: {page.refreshError} Refresh to try
-              QuickBooks again.
-            </p>
+            <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
+                <AlertTriangle className="size-4" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-serif text-base font-semibold text-foreground">
+                  Showing what the SIS last read
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {page.refreshError} Refresh to try QuickBooks again.
+                </p>
+              </div>
+            </div>
           )}
+
           {page.stageWarning && (
             <p className="flex items-start gap-2 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -218,140 +230,67 @@ export default async function BillingCustomerPage({
             </p>
           )}
 
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <Card className="py-5">
-              <CardContent className="space-y-4 px-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-serif text-[26px] font-semibold leading-tight tracking-tight text-foreground">
-                    {page.link.displayName}
-                  </h1>
-                  {p?.email && (
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                    >
-                      <a
-                        href={`mailto:${p.email}`}
-                        aria-label={`Email ${p.email}`}
-                        title={p.email}
-                      >
-                        <Mail className="size-4" />
-                      </a>
-                    </Button>
-                  )}
-                  {(p?.phone || p?.mobile) && (
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                    >
-                      <a
-                        href={`tel:${p.phone ?? p.mobile}`}
-                        aria-label={`Call ${p.phone ?? p.mobile}`}
-                        title={p.phone ?? p.mobile ?? undefined}
-                      >
-                        <Phone className="size-4" />
-                      </a>
-                    </Button>
-                  )}
-                </div>
-                <dl className="space-y-3 text-sm">
-                  <div className="space-y-0.5">
-                    <dt className="text-[12px] text-muted-foreground">
-                      Company
-                    </dt>
-                    <dd className="text-foreground">{p?.companyName ?? '—'}</dd>
-                  </div>
-                  <div className="space-y-0.5">
-                    <dt className="text-[12px] text-muted-foreground">
-                      Billing address
-                    </dt>
-                    <dd className="text-foreground">
-                      {p?.billAddress.length ? p.billAddress.join(', ') : '—'}
-                    </dd>
-                  </div>
-                  <div className="space-y-0.5">
-                    <dt className="text-[12px] text-muted-foreground">Notes</dt>
-                    <dd className="text-foreground">
-                      {p?.notes || (
-                        <span className="text-muted-foreground">
-                          Add notes with Edit
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                  {/* QuickBooks' Custom Fields slot: what the SIS knows. */}
-                  <div className="space-y-1">
-                    <dt className="text-[12px] text-muted-foreground">
-                      Student
-                    </dt>
-                    <dd className="space-y-1.5 text-foreground">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                        <span className="font-mono text-[13px] tabular-nums">
-                          {page.studentNumber}
-                        </span>
-                        {page.student?.level && (
-                          <span className="text-muted-foreground">
-                            {page.student.level}, {page.student.ayCode}
-                          </span>
-                        )}
-                        {page.stages && (
-                          <>
-                            <span className="rounded-md bg-muted px-2 py-0.5 text-[13px] text-foreground">
-                              Registration: {page.stages.registration ?? '—'}
-                            </span>
-                            <span className="rounded-md bg-muted px-2 py-0.5 text-[13px] text-foreground">
-                              Fees: {page.stages.fees ?? '—'}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      {related.length > 0 && (
-                        <div className="flex flex-wrap gap-x-4 gap-y-1">
-                          {related.map((l) => (
-                            <Link
-                              key={l.href}
-                              href={l.href}
-                              className="inline-flex items-center gap-1 text-[13px] text-primary hover:underline"
-                            >
-                              <l.icon className="size-3.5" />
-                              {l.label}
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </CardContent>
-            </Card>
-            <Card className="py-5">
-              <CardContent className="space-y-5 px-5">
-                <p className="text-[13px] font-semibold uppercase tracking-wide text-foreground">
-                  Summary
-                </p>
-                <SummaryLine
-                  bar="bg-brand-amber"
-                  value={formatSgd(b.openBalance)}
-                  label="Open balance"
-                />
-                <SummaryLine
-                  bar="bg-destructive"
-                  value={formatSgd(b.overdue)}
-                  label="Overdue payment"
-                />
-                {b.credit > 0 && (
-                  <SummaryLine
-                    bar="bg-brand-mint"
-                    value={formatSgd(b.credit)}
-                    label="Unused credit"
-                  />
-                )}
-              </CardContent>
-            </Card>
+          <div className="@container/main">
+            <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+              <MetricCard
+                label="Open balance"
+                value={formatSgd(b.openBalance)}
+                icon={Wallet}
+                subtext={
+                  b.credit > 0
+                    ? `${openCount} open invoices · ${formatSgd(b.owedOnInvoices)} before credit`
+                    : `${openCount} open invoices`
+                }
+                href="?billing-txns.status=open"
+              />
+              <MetricCard
+                label="Overdue"
+                value={formatSgd(b.overdue)}
+                icon={AlertTriangle}
+                tileClassName={
+                  b.overdue > 0
+                    ? 'from-destructive to-destructive/80'
+                    : undefined
+                }
+                subtext={
+                  page.overdueOldest
+                    ? `${page.overdueOldest.docNumber ?? 'An invoice'}, due ${formatDay(page.overdueOldest.dueDate)}`
+                    : 'Nothing past its due date'
+                }
+                href="?billing-txns.status=overdue"
+              />
+              <MetricCard
+                label="Unused credit"
+                value={formatSgd(b.credit)}
+                icon={Coins}
+                tileClassName={
+                  b.credit > 0
+                    ? 'from-brand-amber to-brand-amber/80'
+                    : undefined
+                }
+                subtext={
+                  b.credit > 0
+                    ? 'Use it on an invoice below'
+                    : 'No unused credit'
+                }
+              />
+              <MetricCard
+                // The Registration and Fees stages: two words don't fit one
+                // tile's figure, so Fees rides in the line under it.
+                label={
+                  page.stages
+                    ? `Registration · ${page.stages.ayCode}`
+                    : 'Registration · Fees'
+                }
+                value={page.stages ? (page.stages.registration ?? '—') : '—'}
+                icon={Layers}
+                subtext={
+                  page.stages
+                    ? `Fees: ${page.stages.fees ?? '—'} · filled from these invoices`
+                    : 'No application on record'
+                }
+              />
+            </div>
           </div>
 
           {b.credit > 0 && (
@@ -381,34 +320,19 @@ export default async function BillingCustomerPage({
             paymentMethods={page.paymentMethods}
             canRecord={page.connected}
             customerBalance={b.openBalance}
-            qbBase={page.environment ? qboAppUrl(page.environment, '') : null}
+            qbBase={qbBase}
             initialTab={initialTab}
           />
-        </div>
-      </div>
-    </div>
-  );
-}
 
-/** One figure in the Summary card, with QuickBooks' coloured bar beside it. */
-function SummaryLine({
-  bar,
-  value,
-  label,
-}: {
-  bar: string;
-  value: string;
-  label: string;
-}) {
-  return (
-    <div className="flex gap-3">
-      <span aria-hidden className={`w-1 shrink-0 rounded-full ${bar}`} />
-      <div className="space-y-0.5">
-        <p className="font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-          {value}
-        </p>
-        <p className="text-sm text-foreground">{label}</p>
-      </div>
-    </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            {b.source === 'quickbooks'
+              ? 'Read from QuickBooks just now'
+              : 'Balances added up from the last QuickBooks read'}{' '}
+            · QuickBooks is the record for money · Every action is in the audit
+            log
+          </p>
+        </>
+      )}
+    </PageShell>
   );
 }
