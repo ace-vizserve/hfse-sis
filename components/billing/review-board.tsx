@@ -3,8 +3,9 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, ChevronDown, Link2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Link2, UserPlus } from 'lucide-react';
 
+import { NewCustomerSheet } from '@/components/billing/new-customer-sheet';
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
 import {
   AlertDialog,
@@ -16,17 +17,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { ReviewRow } from '@/lib/billing/review.server';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -50,6 +46,22 @@ function whyLabel(reason: string): string {
   return 'Needs a check';
 }
 
+// What staff do about it, in one line under the label.
+function whatToDo(label: string): string {
+  switch (label) {
+    case 'No match':
+      return 'Find them in QuickBooks, or add them as a new customer.';
+    case 'Several matches':
+      return 'Link the one that is theirs — the parents tell them apart.';
+    case 'Match already linked':
+      return 'Their name is on a customer linked to another student. Find the right one, or add them as new.';
+    case 'Invoice under another name':
+      return 'An invoice typed for them is under another customer, often a sibling. Link it if it is theirs.';
+    default:
+      return 'Check the customers below, or find them in QuickBooks.';
+  }
+}
+
 // The one suggestion a bulk Link can use: a student with exactly one
 // customer still free to link. Two or more need a person to choose.
 function soleCandidate(r: ReviewRow) {
@@ -71,6 +83,7 @@ export function ReviewBoard({
   const [busy, setBusy] = React.useState<Busy>(null);
   const [pick, setPick] = React.useState<ReviewRow | null>(null);
   const [add, setAdd] = React.useState<ReviewRow | null>(null);
+  const [addKey, setAddKey] = React.useState(0);
   const [pickKey, setPickKey] = React.useState(0);
   const [bulk, setBulk] = React.useState<Bulk>(null);
   const [reset, setReset] = React.useState(0);
@@ -164,9 +177,9 @@ export function ReviewBoard({
     [link, run]
   );
 
-  // Student · Why (short, a facet) · the QuickBooks customers that could be
-  // theirs, one line each with what QuickBooks holds and its own Link ·
-  // Action: Pick another, ▾ Add to QuickBooks.
+  // Student · What the SIS found (the situation, and what to do about it) ·
+  // the QuickBooks customers that could be theirs, each with what QuickBooks
+  // holds and its own Link · Not listed? Find in QuickBooks / Add as new.
   const columns = React.useMemo<ColumnDef<ReviewRow, unknown>[]>(
     () => [
       {
@@ -177,7 +190,7 @@ export function ReviewBoard({
         ),
         meta: { label: 'Student' },
         cell: ({ row }) => (
-          <div className="min-w-52 space-y-0.5">
+          <div className="min-w-40 space-y-0.5">
             <div className="font-medium text-foreground">
               {row.original.name}
             </div>
@@ -193,37 +206,52 @@ export function ReviewBoard({
         id: 'why',
         accessorFn: (r) => whyLabel(r.reason),
         header: ({ column }) => (
-          <SortableHeader column={column}>Why</SortableHeader>
+          <SortableHeader column={column}>What the SIS found</SortableHeader>
         ),
-        meta: { label: 'Why' },
+        meta: { label: 'What the SIS found' },
         filterFn: (row, id, value: string[]) =>
           !value?.length || value.includes(row.getValue<string>(id)),
-        cell: ({ row }) => (
-          <span
-            className="whitespace-nowrap text-sm text-foreground"
-            title={row.original.reason}
-          >
-            {whyLabel(row.original.reason)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const label = whyLabel(row.original.reason);
+          return (
+            <div className="w-52 space-y-1.5 whitespace-normal">
+              <Badge
+                className={
+                  label === 'No match'
+                    ? 'h-6 border-brand-amber/40 bg-brand-amber/10 text-ink'
+                    : 'h-6 border-brand-indigo-soft bg-accent text-brand-indigo-deep'
+                }
+              >
+                {label === 'Several matches'
+                  ? `${row.original.candidates.length} possible customers`
+                  : label}
+              </Badge>
+              <p className="text-[12px] leading-snug text-muted-foreground">
+                {whatToDo(label)}
+              </p>
+            </div>
+          );
+        },
       },
       {
         id: 'suggested',
         accessorFn: (r) => r.candidates.map((c) => c.displayName).join(', '),
-        header: 'Suggested customers',
-        meta: { label: 'Suggested customers' },
+        header: 'Possible QuickBooks customers',
+        meta: { label: 'Possible QuickBooks customers' },
         cell: ({ row }) =>
           row.original.candidates.length === 0 ? (
-            <span className="text-sm text-muted-foreground">None</span>
+            <span className="text-sm text-muted-foreground">
+              None with this name
+            </span>
           ) : (
-            <ul className="min-w-80 divide-y divide-hairline">
+            <ul className="w-[26rem] space-y-2">
               {row.original.candidates.map((c) => {
                 const taken = c.reason === TAKEN;
                 const d = c.details;
                 return (
                   <li
                     key={c.customerId}
-                    className="flex items-center gap-4 py-1.5 first:pt-0 last:pb-0"
+                    className="flex items-center gap-4 rounded-lg border border-hairline px-3 py-2"
                   >
                     {/* What QuickBooks holds, so look-alike names can be
                         told apart: the parents and the open balance. */}
@@ -231,16 +259,21 @@ export function ReviewBoard({
                       <div className="truncate text-sm font-medium text-foreground">
                         {c.displayName}
                       </div>
-                      <div className="truncate text-[12px] text-muted-foreground">
+                      <div
+                        className="truncate text-[12px] text-muted-foreground"
+                        title={d?.companyName ?? undefined}
+                      >
                         {d
                           ? [
-                              d.companyName ?? 'No parents listed',
-                              `${formatSgd(d.balance)} open`,
+                              d.companyName
+                                ? `Parents: ${d.companyName}`
+                                : 'No parents listed',
+                              `Owes ${formatSgd(d.balance)}`,
                               !d.active && 'Inactive in QuickBooks',
                             ]
                               .filter(Boolean)
                               .join(' · ')
-                          : 'Details couldn’t be read'}
+                          : 'QuickBooks details couldn’t be read'}
                       </div>
                     </div>
                     {taken ? (
@@ -249,19 +282,21 @@ export function ReviewBoard({
                       </span>
                     ) : (
                       <Button
-                        variant="link"
+                        variant="outline"
                         size="sm"
-                        className="h-auto shrink-0 p-0"
+                        className="shrink-0"
                         disabled={!!busy}
                         loading={
                           busy?.studentNumber === row.original.studentNumber &&
                           busy.what === c.customerId
                         }
                         loadingText="Linking…"
+                        title={`Link ${row.original.name} to ${c.displayName}`}
                         onClick={() =>
                           linkTo(row.original, c.customerId, c.displayName)
                         }
                       >
+                        <Link2 className="size-3.5" />
                         Link
                       </Button>
                     )}
@@ -274,10 +309,10 @@ export function ReviewBoard({
       },
       {
         id: 'actions',
-        header: () => <div className="text-right">Action</div>,
-        meta: { label: 'Action', excludeFromExport: true },
+        header: () => <div className="text-right">Not listed?</div>,
+        meta: { label: 'Not listed?', excludeFromExport: true },
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+          <div className="flex flex-col items-end gap-1.5 whitespace-nowrap">
             <Button
               variant="link"
               size="sm"
@@ -288,30 +323,20 @@ export function ReviewBoard({
                 setPick(row.original);
               }}
             >
-              Pick another
+              Find in QuickBooks
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-7"
-                  disabled={!!busy}
-                  aria-label={`More for ${row.original.name}`}
-                >
-                  <ChevronDown className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
-                  disabled={!row.original.newName}
-                  onSelect={() => setAdd(row.original)}
-                >
-                  <UserPlus className="size-4" />
-                  Add to QuickBooks
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0"
+              disabled={!!busy}
+              onClick={() => {
+                setAddKey((k) => k + 1);
+                setAdd(row.original);
+              }}
+            >
+              Add as new customer
+            </Button>
           </div>
         ),
         enableSorting: false,
@@ -354,7 +379,7 @@ export function ReviewBoard({
                 facets={[
                   {
                     columnId: 'why',
-                    label: 'Why',
+                    label: 'What the SIS found',
                     valueOptions: [
                       ...new Set(g.rows.map((r) => whyLabel(r.reason))),
                     ].sort(),
@@ -375,7 +400,7 @@ export function ReviewBoard({
                     },
                     {
                       key: 'add',
-                      label: 'Add to QuickBooks',
+                      label: 'Add as new customers',
                       icon: UserPlus,
                       onTrigger: (selected) =>
                         setBulk({ kind: 'add', rows: selected }),
@@ -406,35 +431,14 @@ export function ReviewBoard({
         />
       )}
 
-      <AlertDialog open={!!add} onOpenChange={(o) => !o && setAdd(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Add {add?.name} to QuickBooks?</AlertDialogTitle>
-            <AlertDialogDescription>
-              A new QuickBooks customer named “{add?.newName}” is created, with
-              the parents as Company name, and linked to this student. Only do
-              this when they really have no customer yet.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const row = add!;
-                setAdd(null);
-                setBusy({ studentNumber: row.studentNumber, what: 'add' });
-                void run(() => create.mutateAsync(row.studentNumber), {
-                  pending: 'Adding to QuickBooks…',
-                  success: (d) =>
-                    `${d.displayName} added to QuickBooks and linked`,
-                }).finally(() => setBusy(null));
-              }}
-            >
-              Add to QuickBooks
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {add && (
+        <NewCustomerSheet
+          key={addKey}
+          open
+          onOpenChange={(o) => !o && setAdd(null)}
+          student={add}
+        />
+      )}
 
       <AlertDialog open={!!bulk} onOpenChange={(o) => !o && setBulk(null)}>
         <AlertDialogContent>
@@ -448,7 +452,7 @@ export function ReviewBoard({
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {bulk?.kind === 'link'
-                    ? 'Each one has no suggested customer, or more than one. Click the right suggestion in their row, or use Pick another.'
+                    ? 'Each one has no suggested customer, or more than one. Click the right suggestion in their row, or use Find in QuickBooks.'
                     : 'None of them has a first and last name on record to name the customer.'}
                 </AlertDialogDescription>
               </AlertDialogHeader>

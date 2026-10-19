@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { linkStudentToCustomer } from '@/lib/billing/link-student.server';
 import { SIS_READ_FAILED } from '@/lib/billing/messages';
+import { newCustomerBody } from '@/lib/billing/new-customer';
 import { hfseCustomerName } from '@/lib/billing/review';
 import {
   loadStudentInfo,
@@ -28,16 +29,27 @@ import {
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// POST /api/billing/students/[studentNumber]/customer — To review → Add to
-// QuickBooks: the student really has no customer yet. Created the way HFSE
-// names customers ("SURNAME, Given M.", parents in Company name), then linked.
+// POST /api/billing/students/[studentNumber]/customer — the student really
+// has no customer yet: add one to QuickBooks, then link it. With no body (To
+// review's bulk Add) it is named the way HFSE names customers ("SURNAME,
+// Given M.", parents in Company name); with `form` (Billing → New customer)
+// it is the form staff checked, sent with a request id so a retry never adds
+// two.
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ studentNumber: string }> }
 ) {
   const auth = await requireRole([...QBO_INVOICE_ROLES]);
   if ('error' in auth) return auth.error;
   const { studentNumber } = await params;
+  const raw = await request.text();
+  const parsedBody = NewCustomerBody.safeParse(raw ? JSON.parse(raw) : {});
+  if (!parsedBody.success)
+    return NextResponse.json(
+      { error: parsedBody.error.issues[0]?.message ?? 'Check the form.' },
+      { status: 400 }
+    );
+  const { form, requestId } = parsedBody.data;
   const service = createServiceClient();
   let s: StudentInfo | undefined;
   try {
@@ -51,7 +63,7 @@ export async function POST(
       { error: 'There is no student with that student number.' },
       { status: 404 }
     );
-  const name = hfseCustomerName(s);
+  const name = form ? form.displayName : hfseCustomerName(s);
   if (!name)
     return NextResponse.json(
       {
@@ -101,30 +113,44 @@ export async function POST(
   let customerId: string;
   try {
     // QuickBooks refuses a second customer with the same name, active or not.
-    const same = await qboQuery<{ Id: string; Active: boolean }>(
-      service,
-      'Customer',
-      `Active IN (true, false) and DisplayName = '${qbEscape(name)}'`,
-      'maxresults 1'
-    );
+    // A form save carries a request id instead: its retry must get back the
+    // customer it already added, which this check would refuse.
+    const same = form
+      ? []
+      : await qboQuery<{ Id: string; Active: boolean }>(
+          service,
+          'Customer',
+          `Active IN (true, false) and DisplayName = '${qbEscape(name)}'`,
+          'maxresults 1'
+        );
     if (same[0])
       return NextResponse.json(
         {
           error: same[0].Active
-            ? `QuickBooks already has a customer named “${name}”. Use Pick another and choose it.`
-            : `QuickBooks has an inactive customer named “${name}”. Make it active in QuickBooks, then use Pick another.`,
+            ? `QuickBooks already has a customer named “${name}”. Use Find in QuickBooks and choose it.`
+            : `QuickBooks has an inactive customer named “${name}”. Make it active in QuickBooks, then use Find in QuickBooks.`,
         },
         { status: 409 }
       );
     const created = await qboRequest<{
       Customer: { Id: string; DisplayName: string };
-    }>(service, 'POST', '/customer', {
-      DisplayName: name,
-      ...(s.firstName?.trim() ? { GivenName: s.firstName.trim() } : {}),
-      ...(s.middleName?.trim() ? { MiddleName: s.middleName.trim() } : {}),
-      ...(s.lastName?.trim() ? { FamilyName: s.lastName.trim() } : {}),
-      ...(company ? { CompanyName: company.slice(0, 100) } : {}),
-    });
+    }>(
+      service,
+      'POST',
+      '/customer',
+      form
+        ? newCustomerBody(form)
+        : {
+            DisplayName: name,
+            ...(s.firstName?.trim() ? { GivenName: s.firstName.trim() } : {}),
+            ...(s.middleName?.trim()
+              ? { MiddleName: s.middleName.trim() }
+              : {}),
+            ...(s.lastName?.trim() ? { FamilyName: s.lastName.trim() } : {}),
+            ...(company ? { CompanyName: company.slice(0, 100) } : {}),
+          },
+      requestId ? { requestId } : undefined
+    );
     customerId = created.Customer.Id;
     await logAction({
       service,
@@ -142,9 +168,14 @@ export async function POST(
     if (e instanceof QboError && e.code === '6240')
       return NextResponse.json(
         {
-          error: `QuickBooks already uses the name “${name}” for a supplier or employee. Add the customer in QuickBooks under a different name, then use Pick another.`,
+          error: `QuickBooks already has a customer, supplier or employee named “${name}”. Change the display name, or use Find in QuickBooks to link the customer that has it.`,
         },
         { status: 409 }
+      );
+    if (requestId && writeOutcomeUnknown(e))
+      return NextResponse.json(
+        { error: WRITE_OUTCOME_UNKNOWN, keepRequestId: true },
+        { status: 502 }
       );
     return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
   }
@@ -158,7 +189,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "The customer was added to QuickBooks, but the SIS couldn't link it just now. Use Pick another and choose it — don't add it again.",
+          "The customer was added to QuickBooks, but the SIS couldn't link it just now. Use Find in QuickBooks and choose it — don't add it again.",
       },
       { status: r.status }
     );
@@ -193,6 +224,13 @@ const CustomerFields = z.object({
   billCountry: str(255),
   notes: str(2000),
 });
+const NewCustomerBody = z
+  .object({
+    /** The New customer form; none = To review's Add (HFSE naming). */
+    form: CustomerFields.optional(),
+    requestId: z.string().uuid().optional(),
+  })
+  .refine((b) => !b.form || !!b.requestId, 'A request id is required.');
 const CustomerFormBody = CustomerFields.extend({
   /** The form as it opened (what changed is measured against it). */
   opened: z.record(z.string(), z.string()),

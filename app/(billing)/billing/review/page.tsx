@@ -43,7 +43,7 @@ export default async function BillingReviewPage({
       <BillingPageHeader
         crumbs={[{ label: 'To review' }]}
         title="To review"
-        description="Students the SIS could not match to a QuickBooks customer by itself. Pick the right customer, or add the student to QuickBooks."
+        description="Students the SIS could not match to a QuickBooks customer by itself. For each one, link the customer that is theirs, find them in QuickBooks, or add them as a new customer."
         actions={list && <RefreshButton label="Refresh" />}
       />
       {!list ? (

@@ -1,28 +1,15 @@
-import {
-  AlertTriangle,
-  CalendarClock,
-  ChevronDown,
-  ExternalLink,
-  FileText,
-  ListChecks,
-  Wallet,
-} from 'lucide-react';
+import { AlertTriangle, CalendarClock, FileText, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { CustomersTable } from '@/components/billing/customers-table';
+import { NewCustomerButton } from '@/components/billing/new-customer-button';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomersList } from '@/lib/billing/customers.server';
 import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
@@ -35,7 +22,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 // top, New customer ▾); the SIS decides how it looks — hero header, stat
 // tiles that deep-link to the table's status tabs, the shared DataTable.
 // Open balance is QuickBooks' own A/R aging, read when the page loads. New
-// customers come into the SIS from To review ("Add to QuickBooks").
+// customers are added from New customer (or To review), always for a
+// student.
 
 /** A stat tile's money, to the dollar: a tile is read at a glance, and S$
  *  with cents doesn't fit four across a laptop screen. */
@@ -73,40 +61,7 @@ export default async function BillingCustomersPage() {
                   )}
                 </Link>
               </Button>
-              <div className="flex">
-                <Button asChild className="rounded-r-none">
-                  <Link href="/billing/review">New customer</Link>
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      className="rounded-l-none border-l border-primary-foreground/30"
-                      aria-label="More ways to add customers"
-                    >
-                      <ChevronDown className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-60">
-                    <DropdownMenuItem asChild>
-                      <Link href="/billing/review">
-                        <ListChecks className="size-4" />
-                        To review
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <a
-                        href={`${qbBase}/app/customers`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <ExternalLink className="size-4" />
-                        Import customers in QuickBooks
-                      </a>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <NewCustomerButton importHref={`${qbBase}/app/customers`} />
             </>
           )
         }
