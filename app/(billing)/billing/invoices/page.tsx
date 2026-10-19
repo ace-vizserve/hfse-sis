@@ -39,6 +39,7 @@ export default async function BillingInvoicesPage() {
           qbBase={qbBase}
           createAction={
             <CreateInvoicePicker
+              key="create-invoice"
               customers={list.customers}
               importHref={`${qbBase}/app/invoices`}
             />

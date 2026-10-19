@@ -43,7 +43,11 @@ export default async function BillingSalesPage({
           list={list}
           qbBase={qbBase}
           newTransaction={
-            <NewTransactionMenu customers={list.customers} qbBase={qbBase} />
+            <NewTransactionMenu
+              key="new-transaction"
+              customers={list.customers}
+              qbBase={qbBase}
+            />
           }
           initialType={type === 'payments' ? 'payments' : 'all'}
         />
