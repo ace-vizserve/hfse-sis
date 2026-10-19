@@ -8,7 +8,13 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
-import { FieldError } from '@/components/ui/field';
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -22,8 +28,18 @@ import {
   SheetClose,
   SheetContent,
   SheetDescription,
+  SheetFooter,
+  SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { stageForAccount, type InvoiceLine } from '@/lib/billing/classify';
 import { clearInvoiceCopy, readInvoiceCopy } from '@/lib/billing/invoice-copy';
 import {
@@ -36,7 +52,6 @@ import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
-import { cn } from '@/lib/utils';
 
 type Item = {
   id: string;
@@ -68,38 +83,12 @@ const emptyLine = (key: number): Line => ({
   unitPrice: '',
 });
 
-/** A label over its control, as QuickBooks' invoice form sets them. */
-function Labelled({
-  label,
-  htmlFor,
-  children,
-  className,
-}: {
-  label: string;
-  htmlFor?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn('space-y-1', className)}>
-      <label
-        htmlFor={htmlFor}
-        className="block text-[13px] text-muted-foreground"
-      >
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-// Create invoice, laid out as QuickBooks' new-invoice screen (Mr Ace,
-// 2026-10-19: "use QB as reference"): the invoice head (INVOICE, Balance
-// due), the customer band (customer and email | Invoice no., Invoice date,
-// Due date), the Product or service lines with Add product or service / Clear
-// all lines, Note to customer beside the totals, and QuickBooks' footer bar —
-// Cancel | Save and close, Save and send. The customer is always the
-// student's linked QuickBooks customer.
+// Create invoice: QuickBooks' new-invoice fields (Mr Ace, 2026-10-19: "use
+// QB as reference") in the SIS sheet ("we always use SIS layout") — Customer
+// email, Invoice no., Invoice date, Due date; the product or service lines
+// with Add line / Clear all; Note to customer; the totals; Cancel, Save and
+// send, Create invoice. The customer is always the student's linked
+// QuickBooks customer.
 export function CreateInvoiceSheet({
   open,
   onOpenChange,
@@ -288,7 +277,7 @@ export function CreateInvoiceSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-none lg:w-[min(1280px,96vw)]"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-3xl"
       >
         <form
           onSubmit={(e) => {
@@ -297,85 +286,66 @@ export function CreateInvoiceSheet({
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          {/* Title bar, as QuickBooks: the form's name and close. */}
-          <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border pl-4 pr-14 sm:pl-6">
-            <SheetTitle className="font-serif text-[22px] font-semibold tracking-tight">
-              Invoice
+          <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {studentName}
+            </p>
+            <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
+              Create invoice
             </SheetTitle>
-            <SheetDescription className="truncate text-sm">
-              New, for {studentName} — created in QuickBooks
+            <SheetDescription>
+              {copiedFrom
+                ? `A new invoice for ${studentName}, copied from invoice ${copiedFrom} and created in QuickBooks.`
+                : `A new invoice for ${studentName}, created in QuickBooks.`}
             </SheetDescription>
-          </div>
+          </SheetHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-muted/50 p-3 sm:p-6">
-            <article className="mx-auto max-w-360 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-              {/* INVOICE and Balance due. */}
-              <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 sm:px-8">
-                <h2 className="font-serif text-[32px] font-semibold leading-none tracking-tight text-brand-indigo">
-                  INVOICE
-                </h2>
-                <div className="text-right">
-                  <p className="text-[13px] text-muted-foreground">
-                    Balance due
-                  </p>
-                  <p className="font-serif text-[26px] font-semibold leading-tight tabular-nums text-foreground">
-                    {formatSgd(total)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Customer | Invoice no., Invoice date, Due date. */}
-              <div className="grid grid-cols-1 gap-x-8 gap-y-4 bg-accent/50 px-5 py-5 sm:px-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
-                <div className="space-y-3">
-                  <Labelled label="Customer">
-                    <div className="flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground shadow-input">
-                      <span className="truncate">{studentName}</span>
-                    </div>
-                  </Labelled>
-                  <Labelled label="Customer email">
-                    <div className="flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-input">
-                      {customerEmail ? (
-                        <span className="truncate">{customerEmail}</span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          None in QuickBooks
-                        </span>
-                      )}
-                    </div>
-                  </Labelled>
-                </div>
-                <div className="space-y-3">
-                  <Labelled label="Invoice no." htmlFor="bill-doc-number">
-                    <Input
-                      id="bill-doc-number"
-                      value={docNumber}
-                      maxLength={21}
-                      onChange={(e) => setDocNumber(e.target.value)}
-                      placeholder="QuickBooks’ next number"
-                      className="bg-card tabular-nums"
-                    />
-                  </Labelled>
-                  <Labelled label="Invoice date" htmlFor="bill-txn-date">
-                    <DatePicker
-                      id="bill-txn-date"
-                      value={txnDate}
-                      onChange={(d) => setTxnDate(d || todaySg())}
-                      allowClear={false}
-                    />
-                  </Labelled>
-                  <Labelled label="Due date" htmlFor="bill-due-date">
-                    <DatePicker
-                      id="bill-due-date"
-                      value={dueDate}
-                      onChange={setDueDate}
-                      placeholder="The customer’s terms"
-                    />
-                  </Labelled>
-                </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <FieldGroup>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="bill-email">Customer email</FieldLabel>
+                  <Input
+                    id="bill-email"
+                    value={customerEmail ?? ''}
+                    placeholder="None in QuickBooks"
+                    readOnly
+                    disabled
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="bill-doc-number">Invoice no.</FieldLabel>
+                  <Input
+                    id="bill-doc-number"
+                    value={docNumber}
+                    maxLength={21}
+                    onChange={(e) => setDocNumber(e.target.value)}
+                    placeholder="QuickBooks’ next number"
+                    className="font-mono tabular-nums"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="bill-txn-date">Invoice date</FieldLabel>
+                  <DatePicker
+                    id="bill-txn-date"
+                    value={txnDate}
+                    onChange={(d) => setTxnDate(d || todaySg())}
+                    allowClear={false}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="bill-due-date">Due date</FieldLabel>
+                  <DatePicker
+                    id="bill-due-date"
+                    value={dueDate}
+                    onChange={setDueDate}
+                    placeholder="The customer’s terms"
+                  />
+                </Field>
               </div>
 
               {warning && (
-                <div className="mx-5 mt-5 flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4 sm:mx-8">
+                <div className="flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
                     <AlertTriangle className="size-4" />
                   </div>
@@ -383,54 +353,47 @@ export function CreateInvoiceSheet({
                 </div>
               )}
 
-              {/* Product or service. */}
-              <div className="px-5 pt-6 sm:px-8">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="font-serif text-base font-semibold text-foreground">
-                    Product or service
+              {/* The lines: product or service (with its description), qty,
+                  rate, amount. */}
+              <section className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
+                  <h3 className="font-serif text-base font-semibold tracking-tight text-foreground">
+                    Products and services
                   </h3>
-                  {copiedFrom && (
-                    <p className="text-[13px] text-muted-foreground">
-                      Copied from invoice {copiedFrom}
-                    </p>
-                  )}
+                  <p className="text-[12px] text-muted-foreground">
+                    {lines.length === 1 ? '1 line' : `${lines.length} lines`}
+                  </p>
                 </div>
                 {items.isError && (
-                  <FieldError className="mt-2">
+                  <FieldError className="px-4 pt-3">
                     {(items.error as Error).message}
                   </FieldError>
                 )}
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[760px] border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-[13px] text-muted-foreground">
-                        <th className="w-8 py-2 pr-2 font-medium">#</th>
-                        <th className="w-[30%] py-2 pr-2 font-medium">
-                          Product/service
-                        </th>
-                        <th className="py-2 pr-2 font-medium">Description</th>
-                        <th className="w-20 py-2 pr-2 text-right font-medium">
-                          Qty
-                        </th>
-                        <th className="w-32 py-2 pr-2 text-right font-medium">
-                          Rate
-                        </th>
-                        <th className="w-32 py-2 pr-2 text-right font-medium">
+                <div className="overflow-x-auto">
+                  <Table className="[&_td]:px-3 [&_th]:px-3">
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-8">#</TableHead>
+                        <TableHead className="w-full">
+                          Product or service
+                        </TableHead>
+                        <TableHead className="w-20 text-right">Qty</TableHead>
+                        <TableHead className="w-28 text-right">Rate</TableHead>
+                        <TableHead className="w-28 text-right">
                           Amount
-                        </th>
-                        <th className="w-10 py-2" aria-label="Delete" />
-                      </tr>
-                    </thead>
-                    <tbody>
+                        </TableHead>
+                        <TableHead className="w-12">
+                          <span className="sr-only">Delete</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {lines.map((l, i) => (
-                        <tr
-                          key={l.key}
-                          className="border-b border-border align-middle"
-                        >
-                          <td className="py-2 pr-2 tabular-nums text-muted-foreground">
+                        <TableRow key={l.key} className="align-top">
+                          <TableCell className="pt-4 tabular-nums text-muted-foreground">
                             {i + 1}
-                          </td>
-                          <td className="py-2 pr-2">
+                          </TableCell>
+                          <TableCell className="min-w-56 space-y-2 whitespace-normal">
                             <Select
                               value={l.itemId}
                               onValueChange={(id) => {
@@ -475,17 +438,16 @@ export function CreateInvoiceSheet({
                                 ))}
                               </SelectContent>
                             </Select>
-                          </td>
-                          <td className="py-2 pr-2">
                             <Input
                               value={l.description}
                               onChange={(e) =>
                                 setLine(l.key, { description: e.target.value })
                               }
+                              placeholder="Description"
                               aria-label={`Description, line ${i + 1}`}
                             />
-                          </td>
-                          <td className="py-2 pr-2">
+                          </TableCell>
+                          <TableCell>
                             <Input
                               inputMode="decimal"
                               value={l.qty}
@@ -493,10 +455,10 @@ export function CreateInvoiceSheet({
                                 setLine(l.key, { qty: e.target.value })
                               }
                               aria-label={`Qty, line ${i + 1}`}
-                              className="text-right tabular-nums"
+                              className="ml-auto w-16 text-right tabular-nums"
                             />
-                          </td>
-                          <td className="py-2 pr-2">
+                          </TableCell>
+                          <TableCell>
                             <Input
                               inputMode="decimal"
                               value={l.unitPrice}
@@ -504,17 +466,17 @@ export function CreateInvoiceSheet({
                                 setLine(l.key, { unitPrice: e.target.value })
                               }
                               aria-label={`Rate, line ${i + 1}`}
-                              className="text-right tabular-nums"
+                              className="ml-auto w-28 text-right tabular-nums"
                             />
-                          </td>
-                          <td className="py-2 pr-2 text-right tabular-nums text-foreground">
+                          </TableCell>
+                          <TableCell className="pt-4 text-right tabular-nums text-foreground">
                             {amountOf(l)}
-                          </td>
-                          <td className="py-2 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             <Button
                               type="button"
                               size="icon"
-                              variant="ghost"
+                              variant="outline"
                               className="size-8"
                               aria-label={`Delete line ${i + 1}`}
                               disabled={lines.length === 1}
@@ -526,13 +488,13 @@ export function CreateInvoiceSheet({
                             >
                               <Trash2 className="size-4" />
                             </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
                   <Button
                     type="button"
                     size="sm"
@@ -542,94 +504,86 @@ export function CreateInvoiceSheet({
                     }
                   >
                     <Plus className="size-3.5" />
-                    Add product or service
+                    Add line
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => setLines([emptyLine(nextKey())])}
                   >
-                    Clear all lines
+                    Clear all
                   </Button>
                 </div>
-                {showErrors && !linesValid && (
-                  <FieldError className="mt-2">
-                    Each line needs a product or service, a quantity above 0 and
-                    a rate.
-                  </FieldError>
-                )}
-              </div>
+              </section>
+              {showErrors && !linesValid && (
+                <FieldError>
+                  Each line needs a product or service, a quantity above 0 and a
+                  rate.
+                </FieldError>
+              )}
 
-              {/* Note to customer left, totals right. */}
-              <div className="mt-6 grid grid-cols-1 gap-8 border-t border-border px-5 py-6 sm:px-8 md:grid-cols-[minmax(0,1fr)_340px]">
-                <Labelled
-                  label="Note to customer"
-                  htmlFor="bill-memo"
-                  className="max-w-md"
-                >
-                  {/* Plain text: QuickBooks prints the note as typed. */}
-                  <Input
-                    id="bill-memo"
-                    value={memo}
-                    maxLength={1000}
-                    onChange={(e) => setMemo(e.target.value)}
-                    className="bg-card"
-                  />
-                </Labelled>
-                <dl className="grid h-fit grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm">
-                  <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="text-right tabular-nums">
-                    {formatSgd(total)}
-                  </dd>
-                  <dt className="text-muted-foreground">GST</dt>
-                  <dd className="text-right text-muted-foreground">
-                    By each item&rsquo;s tax code
-                  </dd>
-                  <dt className="border-t border-border pt-2 font-serif text-base font-semibold text-foreground">
-                    Total before GST
-                  </dt>
-                  <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
-                    {formatSgd(total)}
-                  </dd>
-                </dl>
-              </div>
-            </article>
+              <Field>
+                <FieldLabel htmlFor="bill-memo">Note to customer</FieldLabel>
+                {/* Plain text: QuickBooks prints the note as typed. */}
+                <Input
+                  id="bill-memo"
+                  value={memo}
+                  maxLength={1000}
+                  onChange={(e) => setMemo(e.target.value)}
+                />
+                <FieldDescription>
+                  Printed on the invoice the customer receives.
+                </FieldDescription>
+              </Field>
+
+              <dl className="ml-auto grid w-full max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+                <dt className="text-muted-foreground">Subtotal</dt>
+                <dd className="text-right tabular-nums">{formatSgd(total)}</dd>
+                <dt className="text-muted-foreground">GST</dt>
+                <dd className="text-right text-muted-foreground">
+                  By each item&rsquo;s tax code
+                </dd>
+                <dt className="border-t border-border pt-2 whitespace-nowrap font-serif text-base font-semibold text-foreground">
+                  Total before GST
+                </dt>
+                <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
+                  {formatSgd(total)}
+                </dd>
+              </dl>
+            </FieldGroup>
           </div>
 
-          {/* Footer bar, as QuickBooks: Cancel | Save and close, Save and send. */}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-3 sm:px-6">
+          <SheetFooter className="shrink-0 flex-row flex-wrap justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <SheetClose asChild>
-              <Button type="button" variant="ghost" disabled={!!saving}>
+              <Button type="button" variant="outline" disabled={!!saving}>
                 Cancel
               </Button>
             </SheetClose>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="submit"
-                variant="outline"
-                loading={saving === 'close'}
-                loadingText="Saving in QuickBooks…"
-                disabled={!!saving}
-              >
-                Save and close
-              </Button>
-              <Button
-                type="button"
-                loading={saving === 'send'}
-                loadingText="Saving and sending…"
-                disabled={!!saving || !customerEmail}
-                title={
-                  customerEmail
-                    ? `Creates it and emails it to ${customerEmail}`
-                    : 'The QuickBooks customer has no email to send to.'
-                }
-                onClick={() => void submit(true)}
-              >
-                Save and send
-              </Button>
-            </div>
-          </div>
+            <Button
+              type="button"
+              variant="outline"
+              loading={saving === 'send'}
+              loadingText="Saving and sending…"
+              disabled={!!saving || !customerEmail}
+              title={
+                customerEmail
+                  ? `Creates it and emails it to ${customerEmail}`
+                  : 'The QuickBooks customer has no email to send to.'
+              }
+              onClick={() => void submit(true)}
+            >
+              Save and send
+            </Button>
+            <Button
+              type="submit"
+              loading={saving === 'close'}
+              loadingText="Creating in QuickBooks…"
+              disabled={!!saving}
+            >
+              Create invoice
+            </Button>
+          </SheetFooter>
         </form>
       </SheetContent>
     </Sheet>

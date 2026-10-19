@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ChevronDown, ExternalLink, Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import { EditCustomerSheet } from '@/components/billing/edit-customer-sheet';
@@ -12,8 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// QuickBooks' split Edit button on a customer: Edit opens the Customer form;
-// ▾ opens the customer in QuickBooks.
+// QuickBooks' Edit ▾ on a customer, the SIS way: one outline menu with Edit
+// customer (the Customer sheet) and Open in QuickBooks.
 export function EditCustomerButton({
   studentNumber,
   qbHref,
@@ -25,40 +25,34 @@ export function EditCustomerButton({
   const [key, setKey] = useState(0);
   return (
     <>
-      <div className="flex">
-        <Button
-          variant="outline"
-          className="rounded-r-none"
-          onClick={() => {
-            setKey((k) => k + 1);
-            setOpen(true);
-          }}
-        >
-          Edit
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-l-none border-l-0"
-              aria-label="More for this customer"
-            >
-              <ChevronDown className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            {qbHref && (
-              <DropdownMenuItem asChild>
-                <a href={qbHref} target="_blank" rel="noreferrer">
-                  <ExternalLink className="size-4" />
-                  Open in QuickBooks
-                </a>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline">
+            <Pencil className="size-4" />
+            Edit
+            <ChevronDown className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem
+            onSelect={() => {
+              setKey((k) => k + 1);
+              setOpen(true);
+            }}
+          >
+            <Pencil className="size-4" />
+            Edit customer
+          </DropdownMenuItem>
+          {qbHref && (
+            <DropdownMenuItem asChild>
+              <a href={qbHref} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" />
+                Open in QuickBooks
+              </a>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {open && (
         <EditCustomerSheet
           key={key}

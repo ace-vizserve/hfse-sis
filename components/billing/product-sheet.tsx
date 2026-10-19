@@ -147,7 +147,10 @@ export function ProductSheet({
         className="flex w-full flex-col gap-0 p-0 sm:max-w-xl"
       >
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <SheetHeader className="shrink-0 border-b border-border p-5">
+          <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Products and services
+            </p>
             <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
               {itemId ? 'Edit service' : 'New service'}
             </SheetTitle>
@@ -156,7 +159,7 @@ export function ProductSheet({
               QuickBooks.
             </SheetDescription>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {loadError ? (
               <p className="text-sm text-destructive">
                 {loadError instanceof Error
@@ -294,9 +297,9 @@ export function ProductSheet({
               </FieldGroup>
             )}
           </div>
-          <SheetFooter className="shrink-0 flex-row justify-between gap-2 border-t border-border bg-background p-5">
+          <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <SheetClose asChild>
-              <Button type="button" variant="ghost" disabled={saving}>
+              <Button type="button" variant="outline" disabled={saving}>
                 Cancel
               </Button>
             </SheetClose>
@@ -306,7 +309,7 @@ export function ProductSheet({
               loadingText="Saving…"
               disabled={saving || !ready}
             >
-              Save and close
+              {itemId ? 'Save changes' : 'Create service'}
             </Button>
           </SheetFooter>
         </form>

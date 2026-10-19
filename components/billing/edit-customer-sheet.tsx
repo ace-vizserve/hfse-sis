@@ -147,15 +147,19 @@ export function EditCustomerSheet({
         className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl"
       >
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <SheetHeader className="shrink-0 border-b border-border p-5">
+          <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {read.data?.form.displayName || 'QuickBooks customer'}
+            </p>
             <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
-              Customer
+              Edit customer
             </SheetTitle>
             <SheetDescription>
-              Saved straight to QuickBooks, as Edit does there.
+              The customer&rsquo;s name, contact details and billing address.
+              Changes are saved straight to QuickBooks.
             </SheetDescription>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {read.isError ? (
               <p className="text-sm text-destructive">
                 {read.error instanceof Error
@@ -236,9 +240,9 @@ export function EditCustomerSheet({
               </FieldGroup>
             )}
           </div>
-          <SheetFooter className="shrink-0 flex-row justify-between gap-2 border-t border-border bg-background p-5">
+          <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <SheetClose asChild>
-              <Button type="button" variant="ghost" disabled={saving}>
+              <Button type="button" variant="outline" disabled={saving}>
                 Cancel
               </Button>
             </SheetClose>
@@ -248,7 +252,7 @@ export function EditCustomerSheet({
               loadingText="Saving…"
               disabled={saving || !current}
             >
-              Save
+              Save changes
             </Button>
           </SheetFooter>
         </form>

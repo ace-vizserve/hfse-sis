@@ -17,7 +17,7 @@ export function RefreshButton({
   const [pending, start] = useTransition();
   return (
     <Button
-      variant="ghost"
+      variant="outline"
       loading={pending}
       loadingText="Reading QuickBooks…"
       onClick={() => start(() => router.refresh())}
