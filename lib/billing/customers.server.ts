@@ -6,8 +6,41 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { readAging, readCustomerContacts } from '@/lib/billing/live.server';
 import { loadStudentInfo } from '@/lib/billing/students.server';
 import { round2, todaySg } from '@/lib/billing/view';
-import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
+import {
+  connectedRealmId,
+  qboErrorMessage,
+  qboQueryAll,
+} from '@/lib/qbo/client';
 import { fetchAllPages } from '@/lib/supabase/paginate';
+
+/** QuickBooks' pending estimates of these customers: per customer, the
+ *  count and amount (the money bar's "estimates" segment). Null when
+ *  QuickBooks can't be read. */
+async function readPendingEstimates(
+  service: SupabaseClient,
+  customerIds: Set<string>
+): Promise<Map<string, { count: number; total: number }> | null> {
+  type Est = {
+    TxnStatus?: string;
+    TotalAmt?: number;
+    CustomerRef?: { value: string };
+  };
+  try {
+    const rows = await qboQueryAll<Est>(service, 'Estimate');
+    const out = new Map<string, { count: number; total: number }>();
+    for (const e of rows) {
+      const id = e.CustomerRef?.value;
+      if (!id || !customerIds.has(id) || e.TxnStatus !== 'Pending') continue;
+      const s = out.get(id) ?? { count: 0, total: 0 };
+      s.count += 1;
+      s.total += Number(e.TotalAmt ?? 0);
+      out.set(id, s);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
 
 export type CustomerListRow = {
   studentNumber: string;
@@ -22,6 +55,10 @@ export type CustomerListRow = {
   overdue: number;
   lastPayment: string | null;
   lastInvoice: string | null;
+  /** Invoices with a balance (Send reminder emails these). */
+  openInvoiceList: Array<{ id: string; docNumber: string | null }>;
+  /** Pending estimates in QuickBooks (0 when they can't be read). */
+  estimates: number;
 };
 
 export type CustomersList = {
@@ -44,6 +81,8 @@ export type CustomersList = {
     overdueInvoices: number;
     paidLast30: number;
     paymentsLast30: number;
+    /** Pending estimates; null when QuickBooks couldn't be read. */
+    estimates: { count: number; total: number } | null;
   };
   reviewCount: number;
   currentAy: string | null;
@@ -77,6 +116,7 @@ export async function loadCustomersList(
       overdueInvoices: 0,
       paidLast30: 0,
       paymentsLast30: 0,
+      estimates: null,
     },
     reviewCount: 0,
     currentAy: null,
@@ -93,6 +133,8 @@ export async function loadCustomersList(
   };
   type Inv = {
     id: string;
+    qbo_invoice_id: string;
+    doc_number: string | null;
     student_number: string;
     qbo_customer_id: string | null;
     state: 'open' | 'paid' | 'voided';
@@ -123,7 +165,7 @@ export async function loadCustomersList(
         service
           .from('qbo_invoices')
           .select(
-            'id, student_number, qbo_customer_id, state, balance, due_date, txn_date'
+            'id, qbo_invoice_id, doc_number, student_number, qbo_customer_id, state, balance, due_date, txn_date'
           )
           .eq('realm_id', realmId)
           .range(from, to) as unknown as Page<Inv>,
@@ -170,12 +212,19 @@ export async function loadCustomersList(
       overdue: number;
       lastInvoice: string | null;
       lastPayment: string | null;
+      open: Array<{ id: string; docNumber: string | null }>;
     }
   >();
   const at = (sn: string) => {
     let s = stored.get(sn);
     if (!s) {
-      s = { owed: 0, overdue: 0, lastInvoice: null, lastPayment: null };
+      s = {
+        owed: 0,
+        overdue: 0,
+        lastInvoice: null,
+        lastPayment: null,
+        open: [],
+      };
       stored.set(sn, s);
     }
     return s;
@@ -188,6 +237,7 @@ export async function loadCustomersList(
     const bal = Number(r.balance);
     if (bal > 0) {
       s.owed += bal;
+      s.open.push({ id: r.qbo_invoice_id, docNumber: r.doc_number });
       openInvoices += 1;
       if (r.due_date && r.due_date.slice(0, 10) < today) {
         s.overdue += bal;
@@ -239,12 +289,13 @@ export async function loadCustomersList(
     balanceError = qboErrorMessage(e);
   }
 
-  const [info, contactOf] = await Promise.all([
+  const [info, contactOf, estimatesOf] = await Promise.all([
     loadStudentInfo(
       service,
       links.map((l) => l.student_number)
     ),
     contacts,
+    readPendingEstimates(service, new Set(links.map((l) => l.qbo_customer_id))),
   ]);
   const rows: CustomerListRow[] = links.map((l) => {
     const s = stored.get(l.student_number);
@@ -265,6 +316,8 @@ export async function loadCustomersList(
       overdue: round2(byId ? (a?.overdue ?? 0) : (s?.overdue ?? 0)),
       lastPayment: s?.lastPayment ?? null,
       lastInvoice: s?.lastInvoice ?? null,
+      openInvoiceList: s?.open ?? [],
+      estimates: estimatesOf?.get(l.qbo_customer_id)?.count ?? 0,
     };
   });
 
@@ -306,6 +359,12 @@ export async function loadCustomersList(
       overdueInvoices,
       paidLast30: round2(paidLast30),
       paymentsLast30,
+      estimates: estimatesOf
+        ? [...estimatesOf.values()].reduce(
+            (t, e) => ({ count: t.count + e.count, total: t.total + e.total }),
+            { count: 0, total: 0 }
+          )
+        : null,
     },
     reviewCount: review.count ?? 0,
     currentAy: currentAy?.ay_code ?? null,

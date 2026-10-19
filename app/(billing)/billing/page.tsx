@@ -1,61 +1,93 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { CustomersTable } from '@/components/billing/customers-table';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomersList } from '@/lib/billing/customers.server';
+import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// Billing → Customers, as QuickBooks' Customers list. Every linked student's
-// customer with what they owe; Open balance is QuickBooks' own A/R aging,
-// read when the page loads.
+// Billing → Customers, as QuickBooks' Customers list: breadcrumb and title,
+// "Last updated" + refresh, Customer types and the New customer ▾ split
+// button, the money bar, then the list. Open balance is QuickBooks' own A/R
+// aging, read when the page loads. New customers come into the SIS from
+// To review ("Add to QuickBooks"), so New customer opens it.
 export default async function BillingCustomersPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
 
   const list = await loadCustomersList(createServiceClient());
+  const qbBase = qboAppUrl(qboEnv()?.environment ?? 'sandbox', '');
 
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Billing · QuickBooks
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Customers.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every student linked to their QuickBooks customer.
-            {list.currentAy
-              ? ` ${list.currentAyLinked.toLocaleString('en-SG')} of ${list.currentAyStudents.toLocaleString('en-SG')} ${list.currentAy} students are linked.`
-              : ''}
-          </p>
-        </div>
-        {list.connected && (
-          <div className="flex flex-wrap items-center gap-2">
-            <RefreshButton />
-            <Button asChild variant="outline">
-              <Link href="/billing/review">
-                To review
-                {list.reviewCount > 0 && (
-                  <Badge variant="secondary" className="h-5 tabular-nums">
-                    {list.reviewCount}
-                  </Badge>
-                )}
-              </Link>
-            </Button>
-          </div>
-        )}
-      </header>
+      <BillingPageHeader
+        crumbs={[{ label: 'Billing' }, { label: 'Customers' }]}
+        title="Customers"
+        actions={
+          list.connected && (
+            <>
+              <span className="text-[13px] text-muted-foreground">
+                {list.balancesFrom === 'quickbooks'
+                  ? 'Last updated just now'
+                  : 'Balances from the last QuickBooks read'}
+              </span>
+              <RefreshButton label="Refresh" />
+              <Button asChild variant="outline">
+                <a
+                  href={`${qbBase}/app/customers`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Customer types
+                </a>
+              </Button>
+              <div className="flex">
+                <Button asChild className="rounded-r-none">
+                  <Link href="/billing/review">New customer</Link>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      className="rounded-l-none border-l border-primary-foreground/30"
+                      aria-label="More ways to add customers"
+                    >
+                      <ChevronDown className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem asChild>
+                      <a
+                        href={`${qbBase}/app/customers`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink className="size-4" />
+                        Import customers
+                      </a>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </>
+          )
+        }
+      />
 
       {!list.connected ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
@@ -78,15 +110,11 @@ export default async function BillingCustomersPage() {
             </div>
           )}
 
-          <CustomersTable rows={list.rows} totals={list.totals} />
-
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            {list.balancesFrom === 'quickbooks'
-              ? 'Balances read from QuickBooks just now'
-              : 'Balances added up from the last QuickBooks read'}{' '}
-            · Changes in QuickBooks arrive within the hour · Every action is in
-            the audit log
-          </p>
+          <CustomersTable
+            rows={list.rows}
+            totals={list.totals}
+            qbBase={qbBase}
+          />
         </>
       )}
     </PageShell>
