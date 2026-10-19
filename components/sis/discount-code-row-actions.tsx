@@ -28,7 +28,7 @@ type Props = {
   code: DiscountCode;
 };
 
-function todayISO(): string {
+export function todayISO(): string {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
