@@ -436,7 +436,6 @@ export function ProductsView({
                 value={type}
                 options={TYPE_OPTIONS}
                 onChange={setType}
-                className="h-8 w-40"
               />
               <FilterSelect
                 id="items-stock"
@@ -444,7 +443,6 @@ export function ProductsView({
                 value={stock}
                 options={STOCK_OPTIONS}
                 onChange={setStock}
-                className="h-8 w-36"
               />
               <FilterSelect
                 id="items-status"
@@ -452,7 +450,6 @@ export function ProductsView({
                 value={status}
                 options={STATUS_OPTIONS}
                 onChange={setStatus}
-                className="h-8 w-32"
               />
             </div>
           }

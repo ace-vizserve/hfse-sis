@@ -196,8 +196,8 @@ export default async function BillingCustomerPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="hidden lg:block">
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="hidden 2xl:block">
           <div className="sticky top-4 h-[calc(100vh-7rem)]">
             <CustomerNavPanel customers={nav} current={page.studentNumber} />
           </div>
@@ -218,7 +218,7 @@ export default async function BillingCustomerPage({
             </p>
           )}
 
-          <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
             <Card className="py-5">
               <CardContent className="space-y-4 px-5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -289,14 +289,25 @@ export default async function BillingCustomerPage({
                       Student
                     </dt>
                     <dd className="space-y-1.5 text-foreground">
-                      <div className="font-mono text-[12px] tabular-nums text-muted-foreground">
-                        {page.studentNumber}
-                        {page.student?.level
-                          ? ` · ${page.student.level}, ${page.student.ayCode}`
-                          : ''}
-                        {page.stages
-                          ? ` · Registration: ${page.stages.registration ?? '—'} · Fees: ${page.stages.fees ?? '—'}`
-                          : ''}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+                        <span className="font-mono text-[13px] tabular-nums">
+                          {page.studentNumber}
+                        </span>
+                        {page.student?.level && (
+                          <span className="text-muted-foreground">
+                            {page.student.level}, {page.student.ayCode}
+                          </span>
+                        )}
+                        {page.stages && (
+                          <>
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[13px] text-foreground">
+                              Registration: {page.stages.registration ?? '—'}
+                            </span>
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[13px] text-foreground">
+                              Fees: {page.stages.fees ?? '—'}
+                            </span>
+                          </>
+                        )}
                       </div>
                       {related.length > 0 && (
                         <div className="flex flex-wrap gap-x-4 gap-y-1">

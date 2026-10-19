@@ -310,13 +310,20 @@ export function FilterSelect<T extends string>({
   onChange: (v: T) => void;
   className?: string;
 }) {
+  // Compact, toolbar-height: the filter's name sits inside the trigger
+  // ("Type  All transactions"), so a row of filters lines up with Batch
+  // actions and the search box on one line, as QuickBooks' filter row does.
   return (
-    <div className="space-y-1">
-      <Label htmlFor={id} className="text-[12px] text-muted-foreground">
+    <div>
+      <Label htmlFor={id} className="sr-only">
         {label}
       </Label>
       <Select value={value} onValueChange={(v) => onChange(v as T)}>
-        <SelectTrigger id={id} className={cn('h-9 w-44', className)}>
+        <SelectTrigger
+          id={id}
+          className={cn('h-8 w-auto min-w-36 gap-1.5 text-[13px]', className)}
+        >
+          <span className="text-muted-foreground">{label}</span>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -481,7 +488,7 @@ export function CustomerTransactions({
           const p = row.original.payment;
           if (p && p.appliedTo.length > 0)
             return (
-              <span className="text-sm text-muted-foreground">
+              <span className="whitespace-nowrap text-sm text-muted-foreground">
                 Paid towards{' '}
                 {p.appliedTo.map((a, n) => (
                   <React.Fragment key={a.invoiceId}>
@@ -497,7 +504,10 @@ export function CustomerTransactions({
               </span>
             );
           return (
-            <span className="line-clamp-2 max-w-44 text-sm text-muted-foreground">
+            <span
+              title={row.original.memo ?? undefined}
+              className="block max-w-40 truncate text-sm text-muted-foreground"
+            >
               {row.original.memo ?? ''}
             </span>
           );
@@ -566,7 +576,7 @@ export function CustomerTransactions({
           const open = openById.get(r.id);
           const inv = r.invoice!;
           return (
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-2 whitespace-nowrap">
               <Button asChild variant="link" size="sm" className="h-auto p-0">
                 <Link href={invoiceHref(r.id)}>View</Link>
               </Button>
@@ -718,7 +728,6 @@ export function CustomerTransactions({
         value={status}
         options={STATUS_OPTIONS}
         onChange={setStatus}
-        className="w-36"
       />
       <FilterSelect
         id="txn-date"
@@ -726,7 +735,6 @@ export function CustomerTransactions({
         value={date}
         options={DATE_OPTIONS}
         onChange={setDate}
-        className="w-40"
       />
       {date === 'custom' && (
         <>

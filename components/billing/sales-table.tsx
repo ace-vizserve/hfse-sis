@@ -561,7 +561,6 @@ export function SalesTable({
         value={type}
         options={TYPE_OPTIONS}
         onChange={setType}
-        className="w-48"
       />
       <FilterSelect
         id="sales-date"
@@ -569,7 +568,6 @@ export function SalesTable({
         value={date}
         options={DATE_OPTIONS}
         onChange={setDate}
-        className="w-40"
       />
       {date === 'custom' && (
         <>
