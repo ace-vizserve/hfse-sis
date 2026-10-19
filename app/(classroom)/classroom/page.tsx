@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { Layers, Users } from 'lucide-react';
 
 import { ClassroomListTable } from '@/components/classroom/classroom-list-table';
-import { Badge } from '@/components/ui/badge';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   Card,
   CardAction,
@@ -28,7 +29,12 @@ type LevelLite = {
   level_type: 'primary' | 'secondary';
 };
 
-export default async function ClassroomListPage() {
+export default async function ClassroomListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const view = await getSessionUser();
   if (!view) redirect('/login');
   const { id: userId, role } = view;
@@ -49,11 +55,19 @@ export default async function ClassroomListPage() {
     role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const selectedAyCode =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
+  const { data: ay } = selectedAyCode
+    ? await supabase
+        .from('academic_years')
+        .select('id, ay_code, label')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
 
   // `[]` (no assigned classes) is NOT the same as `null` (unscoped/all) —
   // an empty scoped list must render zero classes, never fall through to
@@ -153,13 +167,8 @@ export default async function ClassroomListPage() {
             write-ups — in one place. Click a class to open it.
           </p>
         </div>
-        {ay && (
-          <Badge
-            variant="outline"
-            className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {ay.ay_code}
-          </Badge>
+        {ay && ayCodes.length > 0 && (
+          <AySwitcher current={ay.ay_code} options={ayCodes} className="w-36" />
         )}
       </header>
 
