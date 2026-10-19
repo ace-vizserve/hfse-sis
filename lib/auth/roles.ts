@@ -652,27 +652,41 @@ const CLASSROOM_NAV: NavSection[] = [
 // docs/superpowers/specs/2026-10-15-billing-module-design.md). Route group
 // (billing)/billing/*. QuickBooks (/billing/settings) is superadmin only: its nav item and its
 // ROUTE_ACCESS row say so together, or the link would bounce the others.
+// Grouped as the pages' eyebrows are: Customers, Sales, Accounting, Admin.
 const BILLING_NAV: NavSection[] = [
   {
+    label: 'Customers',
     items: [
       { href: '/billing', label: 'Customers' },
+      { href: '/billing/review', label: 'To review' },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
       { href: '/billing/invoices', label: 'Invoices' },
       { href: '/billing/sales', label: 'Sales transactions' },
       { href: '/billing/products', label: 'Products & services' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
       { href: '/billing/accounts', label: 'Chart of accounts' },
-      { href: '/billing/reports', label: 'Reports' },
       { href: '/billing/banks', label: 'Bank accounts' },
-      { href: '/billing/review', label: 'To review' },
+      { href: '/billing/reports', label: 'Reports' },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
       {
         href: '/billing/settings',
         label: 'QuickBooks',
         requiresRoles: ['superadmin'],
       },
+      { href: '/billing/audit-log', label: 'Audit Log' },
     ],
-  },
-  {
-    label: 'Admin',
-    items: [{ href: '/billing/audit-log', label: 'Audit Log' }],
   },
 ];
 
