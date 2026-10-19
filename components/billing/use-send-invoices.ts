@@ -18,6 +18,8 @@ export type SendableInvoice = { id: string; docNumber: string | null };
 export function useSendInvoices() {
   const run = useWriteAction();
   const ids = React.useRef(new Map<string, string>());
+  // Invoices whose last answer was unclear keep their id until a success.
+  const wasUnclear = React.useRef(new Set<string>());
   const send = useMutation({
     mutationFn: async (rows: SendableInvoice[]) => {
       let sent = 0;
@@ -35,13 +37,17 @@ export function useSendInvoices() {
             jsonInit('POST', { requestId: id })
           );
           ids.current.delete(r.id);
+          wasUnclear.current.delete(r.id);
           sent += 1;
         } catch (err) {
           const name = r.docNumber ?? r.id;
           if (shouldRenewRequestId(err)) {
-            ids.current.delete(r.id);
+            if (!wasUnclear.current.has(r.id)) ids.current.delete(r.id);
             failed.push(name);
-          } else unclear.push(name);
+          } else {
+            wasUnclear.current.add(r.id);
+            unclear.push(name);
+          }
         }
       }
       if (sent === 0 && unclear.length === 0)

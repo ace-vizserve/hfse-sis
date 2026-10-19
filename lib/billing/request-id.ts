@@ -17,3 +17,21 @@ export function shouldRenewRequestId(err: unknown): boolean {
   const b = body as Record<string, unknown>;
   return typeof b.error === 'string' && b.keepRequestId !== true;
 }
+
+/**
+ * The sticky form: once any attempt's outcome was unclear (`shouldRenewRequestId`
+ * said keep), later errors keep the id too — that unclear attempt may still
+ * have been saved under it, and a fresh id would let a retry write it again
+ * (e.g. a second payment on a part-paid invoice). `unclear` is per form/item,
+ * a ref the caller keeps for as long as the id lives.
+ */
+export function shouldRenewAfter(
+  err: unknown,
+  unclear: { current: boolean }
+): boolean {
+  if (!shouldRenewRequestId(err)) {
+    unclear.current = true;
+    return false;
+  }
+  return !unclear.current;
+}

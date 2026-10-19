@@ -56,6 +56,7 @@ export async function voidInvoice(
 
   let voided: QbInvoiceFull;
   let writing = false;
+  let alreadyVoided = false;
   try {
     // Live: the SyncToken QuickBooks wants, and whether it is still unpaid.
     const { Invoice: live } = await qboRequest<{ Invoice: QbInvoiceFull }>(
@@ -63,34 +64,47 @@ export async function voidInvoice(
       'GET',
       `/invoice/${encodeURIComponent(args.qboInvoiceId)}`
     );
-    const state = invoiceState(live);
-    if (state === 'voided')
+    // Moved in QuickBooks to another customer since the SIS last read it:
+    // not this student's to void any more.
+    if (
+      live.CustomerRef?.value &&
+      row.qbo_customer_id &&
+      live.CustomerRef.value !== row.qbo_customer_id
+    )
       return {
         ok: false,
         status: 409,
-        error: 'This invoice is already voided.',
+        error:
+          'This invoice now belongs to another QuickBooks customer. Refresh the page.',
       };
-    if (
+    // Already voided — most often our own earlier attempt whose answer was
+    // lost. QuickBooks has it voided, so finish the SIS side and report it.
+    if (invoiceState(live) === 'voided') {
+      voided = live;
+      alreadyVoided = true;
+    } else if (
       linkedPaymentIds(live).length > 0 ||
       Number(live.Balance) !== Number(live.TotalAmt)
-    )
+    ) {
       return {
         ok: false,
         status: 409,
         error:
           'This invoice has a payment on it, so it can only be voided in QuickBooks.',
       };
-    writing = true;
-    voided = (
-      await qboRequest<{ Invoice: QbInvoiceFull }>(
-        service,
-        'POST',
-        '/invoice?operation=void',
-        { Id: live.Id, SyncToken: live.SyncToken, sparse: true },
-        // QuickBooks answers a repeated requestid with the original answer.
-        { requestId: args.requestId }
-      )
-    ).Invoice;
+    } else {
+      writing = true;
+      voided = (
+        await qboRequest<{ Invoice: QbInvoiceFull }>(
+          service,
+          'POST',
+          '/invoice?operation=void',
+          { Id: live.Id, SyncToken: live.SyncToken, sparse: true },
+          // QuickBooks answers a repeated requestid with the original answer.
+          { requestId: args.requestId }
+        )
+      ).Invoice;
+    }
   } catch (e) {
     if (writing && writeOutcomeUnknown(e))
       return {
@@ -149,6 +163,7 @@ export async function voidInvoice(
     context: {
       studentNumber,
       doc_number: voided.DocNumber ?? null,
+      ...(alreadyVoided ? { already_voided: true } : {}),
     },
   });
   return { ok: true, docNumber: voided.DocNumber ?? null, warnings };

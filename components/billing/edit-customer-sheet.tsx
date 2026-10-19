@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { MapPin, NotebookPen, UserRound } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { CustomerForm } from '@/lib/billing/customer-form';
-import { shouldRenewRequestId } from '@/lib/billing/request-id';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -66,7 +66,7 @@ export function EditCustomerSheet({
   const url = `/api/billing/students/${encodeURIComponent(studentNumber)}/customer`;
   const read = useQuery({
     queryKey: ['billing-customer-form', studentNumber],
-    queryFn: () => apiFetch<{ form: CustomerForm }>(url),
+    queryFn: () => apiFetch<{ form: CustomerForm; syncToken: string }>(url),
     enabled: open,
     staleTime: 0,
     gcTime: 0,
@@ -74,6 +74,8 @@ export function EditCustomerSheet({
   const [form, setForm] = useState<CustomerForm | null>(null);
   const current = form ?? read.data?.form ?? null;
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  // Kept once an attempt was unclear: see shouldRenewAfter.
+  const unclearRef = useRef(false);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -90,10 +92,18 @@ export function EditCustomerSheet({
       try {
         return await apiFetch<{ form: CustomerForm; changed: string[] }>(
           url,
-          jsonInit('PATCH', { ...body, requestId })
+          jsonInit('PATCH', {
+            ...body,
+            // The version the form opened with: QuickBooks refuses the save
+            // if the customer changed there since.
+            opened: read.data?.form,
+            syncToken: read.data?.syncToken,
+            requestId,
+          })
         );
       } catch (err) {
-        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
+        if (shouldRenewAfter(err, unclearRef))
+          setRequestId(crypto.randomUUID());
         throw err;
       }
     },

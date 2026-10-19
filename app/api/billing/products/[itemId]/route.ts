@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
-import { ProductFormBody } from '@/lib/billing/product-form';
+import { ProductEditBody } from '@/lib/billing/product-form';
 import {
   NotAServiceError,
   readProductForm,
@@ -13,6 +13,7 @@ import {
   QboError,
   qboErrorMessage,
   QboNotConnectedError,
+  WRITE_OUTCOME_UNKNOWN,
   writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
@@ -64,7 +65,7 @@ export async function PATCH(
   const auth = await requireRole([...QBO_INVOICE_ROLES]);
   if ('error' in auth) return auth.error;
   const { itemId } = await params;
-  const parsed = ProductFormBody.safeParse(
+  const parsed = ProductEditBody.safeParse(
     (await request.json().catch(() => ({}))) ?? {}
   );
   if (!parsed.success)
@@ -74,18 +75,35 @@ export async function PATCH(
     );
   const c = await connected(itemId);
   if ('error' in c) return c.error;
-  const { requestId, ...form } = parsed.data;
+  const { requestId, syncToken, opened, ...form } = parsed.data;
   let result: { name: string; changed: string[] };
   try {
-    result = await updateService(c.service, itemId, form, requestId);
+    result = await updateService(c.service, itemId, {
+      form,
+      opened: { ...form, ...opened },
+      syncToken,
+      requestId,
+    });
   } catch (e) {
     if (e instanceof NotAServiceError)
       return NextResponse.json({ error: e.message }, { status: 422 });
+    if (writeOutcomeUnknown(e))
+      return NextResponse.json(
+        { error: WRITE_OUTCOME_UNKNOWN, keepRequestId: true },
+        { status: 502 }
+      );
+    // QuickBooks' stale-object refusal: the item changed there since the
+    // form opened.
+    if (e instanceof QboError && e.code === '5010')
+      return NextResponse.json(
+        {
+          error:
+            'This item was changed in QuickBooks since you opened Edit. Close it and open Edit again to see the latest.',
+        },
+        { status: 409 }
+      );
     const status = e instanceof QboError && e.status === 400 ? 422 : 502;
-    return NextResponse.json(
-      { error: qboErrorMessage(e), keepRequestId: writeOutcomeUnknown(e) },
-      { status }
-    );
+    return NextResponse.json({ error: qboErrorMessage(e) }, { status });
   }
   if (result.changed.length > 0)
     await logAction({

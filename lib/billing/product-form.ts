@@ -140,3 +140,11 @@ export const ProductFormBody = z.object({
   /** One id per Save; QuickBooks replays a repeated write. */
   requestId: z.string().uuid(),
 });
+
+/** Edit → Save: the form plus the version it opened with. */
+export const ProductEditBody = ProductFormBody.extend({
+  /** The form as it opened (what changed is measured against it). */
+  opened: ProductFormBody.omit({ requestId: true }).partial(),
+  /** The SyncToken of the version the form opened with. */
+  syncToken: z.string().min(1).max(20),
+});

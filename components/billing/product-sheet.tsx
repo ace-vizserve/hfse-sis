@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -36,7 +36,7 @@ import {
   type ProductForm,
 } from '@/lib/billing/product-form';
 import type { ProductFormOptions } from '@/lib/billing/products.server';
-import { shouldRenewRequestId } from '@/lib/billing/request-id';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -68,7 +68,7 @@ export function ProductSheet({
     : null;
   const read = useQuery({
     queryKey: ['billing-product-form', itemId],
-    queryFn: () => apiFetch<{ form: ProductForm }>(itemUrl!),
+    queryFn: () => apiFetch<{ form: ProductForm; syncToken: string }>(itemUrl!),
     enabled: open && !!itemUrl,
     staleTime: 0,
     gcTime: 0,
@@ -77,6 +77,8 @@ export function ProductSheet({
   const current: ProductForm | null =
     form ?? (itemId ? (read.data?.form ?? null) : EMPTY_PRODUCT_FORM);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  // Kept once an attempt was unclear: see shouldRenewAfter.
+  const unclearRef = useRef(false);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -92,10 +94,23 @@ export function ProductSheet({
       try {
         return await apiFetch<{ name: string; changed?: string[] }>(
           itemUrl ?? '/api/billing/products',
-          jsonInit(itemUrl ? 'PATCH' : 'POST', { ...body, requestId })
+          jsonInit(
+            itemUrl ? 'PATCH' : 'POST',
+            itemUrl
+              ? {
+                  ...body,
+                  // The version the form opened with: QuickBooks refuses the
+                  // save if the item changed there since.
+                  opened: read.data?.form,
+                  syncToken: read.data?.syncToken,
+                  requestId,
+                }
+              : { ...body, requestId }
+          )
         );
       } catch (err) {
-        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
+        if (shouldRenewAfter(err, unclearRef))
+          setRequestId(crypto.randomUUID());
         throw err;
       }
     },

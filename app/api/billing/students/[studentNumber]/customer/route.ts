@@ -22,6 +22,7 @@ import {
   QboNotConnectedError,
   qboQuery,
   qboRequest,
+  WRITE_OUTCOME_UNKNOWN,
   writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
@@ -166,7 +167,7 @@ export async function POST(
 }
 
 const str = (max: number) => z.string().max(max).default('');
-const CustomerFormBody = z.object({
+const CustomerFields = z.object({
   title: str(16),
   givenName: str(100),
   middleName: str(100),
@@ -191,6 +192,12 @@ const CustomerFormBody = z.object({
   billPostalCode: str(30),
   billCountry: str(255),
   notes: str(2000),
+});
+const CustomerFormBody = CustomerFields.extend({
+  /** The form as it opened (what changed is measured against it). */
+  opened: z.record(z.string(), z.string()),
+  /** The SyncToken of the version the form opened with. */
+  syncToken: z.string().min(1).max(20),
   /** One id per Save; QuickBooks replays a repeated update. */
   requestId: z.string().uuid(),
 });
@@ -244,9 +251,7 @@ export async function GET(
   const c = await linkedCustomer(studentNumber);
   if ('error' in c) return c.error;
   try {
-    return NextResponse.json({
-      form: await readCustomerForm(c.service, c.customerId),
-    });
+    return NextResponse.json(await readCustomerForm(c.service, c.customerId));
   } catch (e) {
     return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
   }
@@ -271,20 +276,38 @@ export async function PATCH(
     );
   const c = await linkedCustomer(studentNumber);
   if ('error' in c) return c.error;
-  const { requestId, ...form } = parsed.data;
+  const { requestId, syncToken, opened: openedRaw, ...form } = parsed.data;
+  const opened = CustomerFields.parse(openedRaw);
   let result: Awaited<ReturnType<typeof updateCustomer>>;
   try {
-    result = await updateCustomer(c.service, c.customerId, form, requestId);
+    result = await updateCustomer(c.service, c.customerId, {
+      form,
+      opened,
+      syncToken,
+      requestId,
+    });
   } catch (e) {
+    if (writeOutcomeUnknown(e))
+      return NextResponse.json(
+        { error: WRITE_OUTCOME_UNKNOWN, keepRequestId: true },
+        { status: 502 }
+      );
+    // QuickBooks' stale-object refusal: the customer changed there since the
+    // form opened.
+    if (e instanceof QboError && e.code === '5010')
+      return NextResponse.json(
+        {
+          error:
+            'This customer was changed in QuickBooks since you opened Edit. Close it and open Edit again to see the latest.',
+        },
+        { status: 409 }
+      );
     const status = e instanceof QboError && e.status === 400 ? 422 : 502;
-    return NextResponse.json(
-      { error: qboErrorMessage(e), keepRequestId: writeOutcomeUnknown(e) },
-      { status }
-    );
+    return NextResponse.json({ error: qboErrorMessage(e) }, { status });
   }
   // QuickBooks has it; from here nothing reports failure.
   if (result.changed.length > 0) {
-    if (result.saved.displayName !== result.before.displayName) {
+    if (result.saved.displayName !== opened.displayName) {
       const { error } = await c.service
         .from('qbo_customers')
         .update({ display_name: result.saved.displayName })

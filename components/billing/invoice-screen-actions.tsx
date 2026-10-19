@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { stashInvoiceCopy, type InvoiceCopy } from '@/lib/billing/invoice-copy';
-import { shouldRenewRequestId } from '@/lib/billing/request-id';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -107,6 +107,8 @@ export function InvoiceFooterBar({
   const run = useWriteAction();
   const [confirmVoid, setConfirmVoid] = useState(false);
   const requestId = useRef<string | null>(null);
+  // Kept once an attempt was unclear: see shouldRenewAfter.
+  const unclearRef = useRef(false);
   const doVoid = useMutation({
     mutationFn: async () => {
       requestId.current ??= crypto.randomUUID();
@@ -119,9 +121,10 @@ export function InvoiceFooterBar({
           jsonInit('POST', { requestId: requestId.current })
         );
         requestId.current = null;
+        unclearRef.current = false;
         return r;
       } catch (err) {
-        if (shouldRenewRequestId(err)) requestId.current = null;
+        if (shouldRenewAfter(err, unclearRef)) requestId.current = null;
         throw err;
       }
     },

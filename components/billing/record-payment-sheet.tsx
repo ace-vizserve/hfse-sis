@@ -2,7 +2,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { History, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,7 @@ import {
   type PayableInvoice,
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
-import { shouldRenewRequestId } from '@/lib/billing/request-id';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
@@ -105,6 +105,8 @@ export function RecordPaymentSheet({
   );
   // One id per open: a retry of the same submit can't record twice.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  // Kept once an attempt was unclear: see shouldRenewAfter.
+  const unclearRef = useRef(false);
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [account, setAccount] = useState(depositAccounts[0]?.id ?? '');
   const [method, setMethod] = useState('');
@@ -234,7 +236,8 @@ export function RecordPaymentSheet({
         // it said `keepRequestId` (QuickBooks didn't answer the write). That,
         // network failures, lost responses and platform timeouts keep the
         // same id, so a retry is de-duplicated.
-        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
+        if (shouldRenewAfter(err, unclearRef))
+          setRequestId(crypto.randomUUID());
         throw err;
       }
     },

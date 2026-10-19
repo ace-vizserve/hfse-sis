@@ -12,6 +12,7 @@ import {
   QboError,
   qboErrorMessage,
   QboNotConnectedError,
+  WRITE_OUTCOME_UNKNOWN,
   writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
@@ -66,7 +67,9 @@ export async function POST(request: Request) {
   } catch (e) {
     const status = e instanceof QboError && e.status === 400 ? 422 : 502;
     return NextResponse.json(
-      { error: qboErrorMessage(e), keepRequestId: writeOutcomeUnknown(e) },
+      writeOutcomeUnknown(e)
+        ? { error: WRITE_OUTCOME_UNKNOWN, keepRequestId: true }
+        : { error: qboErrorMessage(e) },
       { status }
     );
   }

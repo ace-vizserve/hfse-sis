@@ -14,42 +14,52 @@ import { qboRequest } from '@/lib/qbo/client';
 // that Billing edits, read from and written back to QuickBooks (a sparse
 // update — every field not sent is left as QuickBooks has it).
 
+/** The form as it opens, with the SyncToken of the version it shows. */
 export async function readCustomerForm(
   service: SupabaseClient,
   customerId: string
-): Promise<CustomerForm> {
+): Promise<{ form: CustomerForm; syncToken: string }> {
   const { Customer } = await qboRequest<{ Customer: QbCustomer }>(
     service,
     'GET',
     `/customer/${encodeURIComponent(customerId)}`
   );
-  return toForm(Customer);
+  return { form: toForm(Customer), syncToken: Customer.SyncToken };
 }
 
 /**
- * Writes the form to QuickBooks as a sparse update on the customer's current
- * SyncToken (QuickBooks refuses a stale one, so a change made in QuickBooks
- * meanwhile is never overwritten blind). Returns the saved form and what
- * changed.
+ * Writes the form to QuickBooks as a sparse update on the SyncToken of the
+ * version the form OPENED with: if the customer changed in QuickBooks since,
+ * QuickBooks refuses the save instead of it overwriting that change. What
+ * changed is measured against the opened form, so a retry after a lost
+ * answer (QuickBooks replays it for the same requestId) still reports and
+ * audits the change.
+ *
+ * The billing address is sent whole (QuickBooks replaces a nested address
+ * object), built on QuickBooks' current one so lines the form doesn't show
+ * (Line3–5, coordinates) are kept.
  */
 export async function updateCustomer(
   service: SupabaseClient,
   customerId: string,
-  form: CustomerForm,
-  requestId: string
-): Promise<{ saved: CustomerForm; before: CustomerForm; changed: string[] }> {
+  args: {
+    form: CustomerForm;
+    opened: CustomerForm;
+    syncToken: string;
+    requestId: string;
+  }
+): Promise<{ saved: CustomerForm; changed: string[] }> {
+  const { form } = args;
+  const changed = changedFields(args.opened, form);
+  if (changed.length === 0) return { saved: args.opened, changed };
   const { Customer: cur } = await qboRequest<{ Customer: QbCustomer }>(
     service,
     'GET',
     `/customer/${encodeURIComponent(customerId)}`
   );
-  const before = toForm(cur);
-  const changed = changedFields(before, form);
-  if (changed.length === 0) return { saved: before, before, changed };
-  const blank = (v: string) => (v.trim() ? v.trim() : undefined);
   const body = {
     Id: cur.Id,
-    SyncToken: cur.SyncToken,
+    SyncToken: args.syncToken,
     sparse: true,
     Title: form.title.trim(),
     GivenName: form.givenName.trim(),
@@ -63,9 +73,10 @@ export async function updateCustomer(
     Mobile: { FreeFormNumber: form.mobile.trim() },
     Fax: { FreeFormNumber: form.fax.trim() },
     AlternatePhone: { FreeFormNumber: form.other.trim() },
-    WebAddr: blank(form.website) ? { URI: form.website.trim() } : undefined,
+    // An empty URI clears it; leaving WebAddr out would keep the old one.
+    WebAddr: { URI: form.website.trim() },
     BillAddr: {
-      ...(cur.BillAddr?.Id ? { Id: cur.BillAddr.Id } : {}),
+      ...(cur.BillAddr ?? {}),
       Line1: form.billLine1.trim(),
       Line2: form.billLine2.trim(),
       City: form.billCity.trim(),
@@ -80,7 +91,7 @@ export async function updateCustomer(
     'POST',
     '/customer',
     body,
-    { requestId }
+    { requestId: args.requestId }
   );
-  return { saved: toForm(next), before, changed };
+  return { saved: toForm(next), changed };
 }

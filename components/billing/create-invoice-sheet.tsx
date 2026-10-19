@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ import {
   todaySg,
   type MapsData,
 } from '@/lib/billing/view';
-import { shouldRenewRequestId } from '@/lib/billing/request-id';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -153,6 +153,8 @@ export function CreateInvoiceSheet({
   const copiedFrom = copy ? (copy.from ?? 'an invoice') : null;
   // One id per open: a retry of the same submit can't create it twice.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  // Kept once an attempt was unclear: see shouldRenewAfter.
+  const unclearRef = useRef(false);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState<null | 'close' | 'send'>(null);
 
@@ -235,7 +237,8 @@ export function CreateInvoiceSheet({
         // next submit is a new one. A `keepRequestId` answer (QuickBooks
         // didn't answer the create) and anything else (lost response,
         // timeout) keep the id, so a retry is de-duplicated by QuickBooks.
-        if (shouldRenewRequestId(err)) setRequestId(crypto.randomUUID());
+        if (shouldRenewAfter(err, unclearRef))
+          setRequestId(crypto.randomUUID());
         throw err;
       }
     },

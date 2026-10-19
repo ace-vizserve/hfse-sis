@@ -65,10 +65,16 @@ async function readItem(service: SupabaseClient, itemId: string) {
 export async function readProductForm(
   service: SupabaseClient,
   itemId: string
-): Promise<{ form: ProductForm; type: string; active: boolean }> {
+): Promise<{
+  form: ProductForm;
+  type: string;
+  active: boolean;
+  syncToken: string;
+}> {
   const item = await readItem(service, itemId);
   return {
     form: toProductForm(item),
+    syncToken: item.SyncToken,
     type: item.Type ?? 'Service',
     active: item.Active !== false,
   };
@@ -89,24 +95,31 @@ export async function createService(
   return { id: Item.Id, name: Item.Name };
 }
 
-/** Edit → Save, on the item's current SyncToken (QuickBooks refuses a stale
- *  one, so a change made in QuickBooks meanwhile is never overwritten). */
+/** Edit → Save, on the SyncToken of the version the form OPENED with:
+ *  QuickBooks refuses a stale one, so a change made in QuickBooks meanwhile
+ *  is never overwritten. What changed is measured against the opened form,
+ *  so a retry after a lost answer still reports (and audits) it. */
 export async function updateService(
   service: SupabaseClient,
   itemId: string,
-  form: ProductForm,
-  requestId: string
+  args: {
+    form: ProductForm;
+    opened: ProductForm;
+    syncToken: string;
+    requestId: string;
+  }
 ): Promise<{ name: string; changed: string[] }> {
+  const { form, requestId } = args;
   const cur = await readItem(service, itemId);
   if ((cur.Type ?? 'Service') !== 'Service')
     throw new NotAServiceError(cur.Type ?? '');
-  const changed = changedProductFields(toProductForm(cur), form);
+  const changed = changedProductFields(args.opened, form);
   if (changed.length === 0) return { name: cur.Name, changed };
   const { Item } = await qboRequest<{ Item: QbItem }>(
     service,
     'POST',
     '/item',
-    productBody(form, cur),
+    productBody(form, { Id: cur.Id, SyncToken: args.syncToken }),
     { requestId }
   );
   return { name: Item.Name, changed };
