@@ -53,3 +53,57 @@ export function parseAgedReceivables(json: unknown): AgingRow[] {
   walk(j.Rows?.Row ?? []);
   return out;
 }
+
+/** The same report with every bucket QuickBooks prints, for the A/R aging
+ *  page: the bucket titles between the name and Total ("Current", "1 - 30",
+ *  …, "91 and over"), each customer's amount per bucket, and the report's
+ *  own Total row. */
+export type AgingReport = {
+  buckets: string[];
+  rows: Array<{
+    customerId: string | null;
+    name: string;
+    amounts: number[];
+    total: number;
+  }>;
+  totals: { amounts: number[]; total: number } | null;
+};
+
+export function parseAgingReport(json: unknown): AgingReport {
+  const j = (json ?? {}) as {
+    Columns?: { Column?: Array<{ ColTitle?: string }> };
+    Rows?: { Row?: Row[] };
+  };
+  const titles = (j.Columns?.Column ?? []).map((c) =>
+    (c.ColTitle ?? '').trim()
+  );
+  const iTotal = titles.indexOf('Total');
+  if (iTotal < 1) return { buckets: [], rows: [], totals: null };
+  const buckets = titles.slice(1, iTotal);
+  const rows: AgingReport['rows'] = [];
+  let totals: AgingReport['totals'] = null;
+  const read = (cols: Col[]) => ({
+    amounts: buckets.map((_, k) => r2(num(cols[k + 1]?.value))),
+    total: r2(num(cols[iTotal]?.value)),
+  });
+  const walk = (list: Row[]) => {
+    for (const r of list) {
+      if (r.ColData?.length) {
+        const name = (r.ColData[0]?.value ?? '').trim();
+        if (name.toUpperCase() === 'TOTAL') totals = read(r.ColData);
+        else if (name)
+          rows.push({
+            customerId: r.ColData[0]?.id ?? null,
+            name,
+            ...read(r.ColData),
+          });
+      }
+      if (r.Rows?.Row) walk(r.Rows.Row);
+      const s = (r as { Summary?: { ColData?: Col[] } }).Summary?.ColData;
+      if (s?.length && (s[0]?.value ?? '').trim().toUpperCase() === 'TOTAL')
+        totals = read(s);
+    }
+  };
+  walk(j.Rows?.Row ?? []);
+  return { buckets, rows, totals };
+}

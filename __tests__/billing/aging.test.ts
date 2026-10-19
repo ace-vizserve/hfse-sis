@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAgedReceivables } from '@/lib/billing/aging';
+import { parseAgedReceivables, parseAgingReport } from '@/lib/billing/aging';
 
 // Shape returned by the sandbox, 2026-10-16 (MARQUEZ, Zara Grace A.).
 const report = {
@@ -79,5 +79,44 @@ describe('parseAgedReceivables', () => {
   it('an empty or odd report gives no rows', () => {
     expect(parseAgedReceivables({})).toEqual([]);
     expect(parseAgedReceivables(null)).toEqual([]);
+  });
+});
+
+describe('parseAgingReport', () => {
+  it('keeps every bucket, each customer and the TOTAL row', () => {
+    const r = parseAgingReport(report);
+    expect(r.buckets).toEqual([
+      'Current',
+      '1 - 30',
+      '31 - 60',
+      '61 - 90',
+      '91 and over',
+    ]);
+    expect(r.rows).toEqual([
+      {
+        customerId: '58',
+        name: 'MARQUEZ, Zara Grace A.',
+        amounts: [890, 80, 0, 0, 0],
+        total: 970,
+      },
+      {
+        customerId: null,
+        name: 'TAN, Wei Ling',
+        amounts: [0, 0, 0, 0, 120.5],
+        total: 120.5,
+      },
+    ]);
+    expect(r.totals).toEqual({
+      amounts: [890, 80, 0, 0, 120.5],
+      total: 1090.5,
+    });
+  });
+
+  it('returns nothing for a report without a Total column', () => {
+    expect(parseAgingReport({})).toEqual({
+      buckets: [],
+      rows: [],
+      totals: null,
+    });
   });
 });

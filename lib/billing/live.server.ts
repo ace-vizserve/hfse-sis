@@ -2,7 +2,12 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { parseAgedReceivables, type AgingRow } from '@/lib/billing/aging';
+import {
+  parseAgedReceivables,
+  parseAgingReport,
+  type AgingReport,
+  type AgingRow,
+} from '@/lib/billing/aging';
 import { todaySg } from '@/lib/billing/view';
 import { qbEscape, qboQuery, qboQueryAll, qboRequest } from '@/lib/qbo/client';
 import { invoiceState, type QbInvoice } from '@/lib/qbo/invoice-snapshot';
@@ -329,4 +334,55 @@ export async function readCustomerContacts(
       },
     ])
   );
+}
+
+/** QuickBooks' A/R Aging Summary as of a date, every bucket kept. */
+export async function readAgingReport(
+  service: SupabaseClient,
+  asOf: string
+): Promise<AgingReport> {
+  const q = new URLSearchParams({ report_date: asOf });
+  const json = await qboRequest<unknown>(
+    service,
+    'GET',
+    `/reports/AgedReceivables?${q.toString()}`
+  );
+  return parseAgingReport(json);
+}
+
+export type ProductRow = {
+  id: string;
+  name: string;
+  type: string;
+  description: string | null;
+  price: number | null;
+  incomeAccount: string | null;
+  active: boolean;
+};
+
+/** QuickBooks' Products and Services list, read live (active and inactive). */
+export async function readProducts(
+  service: SupabaseClient
+): Promise<ProductRow[]> {
+  const rows = await qboQueryAll<{
+    Id: string;
+    Name: string;
+    FullyQualifiedName?: string;
+    Type?: string;
+    Description?: string;
+    UnitPrice?: number;
+    IncomeAccountRef?: { name?: string };
+    Active?: boolean;
+  }>(service, 'Item', 'Active IN (true, false)');
+  return rows
+    .map((i) => ({
+      id: i.Id,
+      name: i.FullyQualifiedName ?? i.Name,
+      type: i.Type ?? 'Service',
+      description: i.Description?.trim() || null,
+      price: typeof i.UnitPrice === 'number' ? i.UnitPrice : null,
+      incomeAccount: i.IncomeAccountRef?.name ?? null,
+      active: i.Active !== false,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -1,5 +1,8 @@
 import {
   AlertTriangle,
+  HandCoins,
+  Hourglass,
+  Package,
   Archive,
   ArrowRightLeft,
   Award,
@@ -217,6 +220,12 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/billing': Wallet,
       // QuickBooks' Invoices list, across every linked customer.
       '/billing/invoices': FileText,
+      // Every payment received, and what it paid.
+      '/billing/payments': HandCoins,
+      // QuickBooks' items — what can go on an invoice.
+      '/billing/products': Package,
+      // QuickBooks' A/R aging summary report.
+      '/billing/aging': Hourglass,
       // Students the SIS couldn't match to a QuickBooks customer.
       '/billing/review': UserSearch,
       // QuickBooks' bank accounts: balances and transactions.
