@@ -53,6 +53,8 @@ import {
   type DashboardSearchParams,
 } from '@/lib/dashboard/range';
 import { getDashboardWindows } from '@/lib/dashboard/windows';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   getEvaluationChaseKpis,
   getEvaluationKpisRange,
@@ -149,11 +151,21 @@ export default async function EvaluationHub({
   // Current AY → its T1-T3 terms + window state. Cheap query + used only
   // by the toggle strip on this page.
   const supabase = await createClient();
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const ayParam =
+    typeof resolvedSearch.ay === 'string' ? resolvedSearch.ay : undefined;
+  const selectedAyCode =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
+  const { data: ay } = selectedAyCode
+    ? await supabase
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
   const { data: termRows } = ay
     ? await supabase
         .from('terms')
@@ -171,7 +183,7 @@ export default async function EvaluationHub({
   };
   const terms = (termRows ?? []) as TermLite[];
 
-  // Dashboard band — current AY only.
+  // Dashboard band — the chosen academic year (the current one by default).
   const ayCode = ay?.ay_code ?? '';
 
   const windows = ayCode
@@ -360,6 +372,10 @@ export default async function EvaluationHub({
                 rowSetsPromise={rowSetsPromise}
               />
             </Suspense>
+          ) : !canToggle && ayCode && ayCodes.length > 0 ? (
+            // Oversight roles switch year from the toolbar below; the teacher
+            // view has no toolbar, so the switch sits here.
+            <AySwitcher current={ayCode} options={ayCodes} className="w-36" />
           ) : undefined
         }
       />
@@ -422,7 +438,7 @@ export default async function EvaluationHub({
 
           <ComparisonToolbar
             ayCode={ayCode}
-            ayCodes={[ayCode]}
+            ayCodes={ayCodes}
             range={{ from: rangeInput.from, to: rangeInput.to }}
             comparison={
               rangeInput.cmpFrom && rangeInput.cmpTo
@@ -431,7 +447,6 @@ export default async function EvaluationHub({
             }
             termWindows={windows.term}
             ayWindows={windows.ay}
-            showAySwitcher={false}
             presets={TERM_SCOPED_PRESETS}
           />
 

@@ -10,7 +10,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { EvaluationSectionsList } from '@/components/evaluation/sections-list';
-import { Badge } from '@/components/ui/badge';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import {
   Card,
   CardAction,
@@ -44,7 +45,12 @@ type LevelLite = {
 // term picker belongs on the class's own page (Classroom's Write-ups tab /
 // /evaluation/sections/[sectionId], which keeps its own term switcher), not
 // before you've picked a class.
-export default async function EvaluationSectionsPickerPage() {
+export default async function EvaluationSectionsPickerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   // A role allowlist that redirects — it decides whether the viewer may be
@@ -64,11 +70,19 @@ export default async function EvaluationSectionsPickerPage() {
 
   const supabase = await createClient();
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const selectedAyCode =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
+  const { data: ay } = selectedAyCode
+    ? await supabase
+        .from('academic_years')
+        .select('id, ay_code, label')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
 
   if (!ay) {
     return (
@@ -250,16 +264,11 @@ export default async function EvaluationSectionsPickerPage() {
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {isTeacher
               ? 'Your advisory sections. Open one to write student evaluations.'
-              : 'Every section in the current academic year. Pick one to view or edit evaluations.'}
+              : 'Every section in the chosen academic year. Pick one to view or edit evaluations.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant="outline"
-            className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {ay.ay_code}
-          </Badge>
+          <AySwitcher current={ay.ay_code} options={ayCodes} className="w-36" />
         </div>
       </header>
 

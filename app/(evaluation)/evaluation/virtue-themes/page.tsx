@@ -2,11 +2,17 @@ import { redirect } from 'next/navigation';
 
 import { VirtueThemesEditor } from '@/components/evaluation/virtue-themes-editor';
 import { PageShell } from '@/components/ui/page-shell';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { listAyCodes, requireCurrentAyCode } from '@/lib/academic-year';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSessionUser } from '@/lib/supabase/server';
 
-export default async function VirtueThemesPage() {
+export default async function VirtueThemesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const session = await getSessionUser();
   if (!session) redirect('/login');
   if (
@@ -18,7 +24,11 @@ export default async function VirtueThemesPage() {
   }
 
   const service = createServiceClient();
-  const ayCode = await requireCurrentAyCode(service);
+  const [currentAyCode, ayCodes] = await Promise.all([
+    requireCurrentAyCode(service),
+    listAyCodes(service),
+  ]);
+  const ayCode = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAyCode;
 
   const { data: ayRow } = await service
     .from('academic_years')
@@ -49,18 +59,23 @@ export default async function VirtueThemesPage() {
 
   return (
     <PageShell>
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Evaluation · {ayCode}
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Virtue themes.
-        </h1>
-        <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-          The virtue theme for each term prints on the report card as the Form
-          Class Adviser&rsquo;s Comments heading (&ldquo;HFSE Virtues:
-          &hellip;&rdquo;) and frames the advisers&rsquo; write-ups.
-        </p>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Evaluation · {ayCode}
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            Virtue themes.
+          </h1>
+          <p className="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
+            The virtue theme for each term prints on the report card as the Form
+            Class Adviser&rsquo;s Comments heading (&ldquo;HFSE Virtues:
+            &hellip;&rdquo;) and frames the advisers&rsquo; write-ups.
+          </p>
+        </div>
+        {ayCodes.length > 0 && (
+          <AySwitcher current={ayCode} options={ayCodes} className="w-36" />
+        )}
       </header>
 
       {terms.length === 0 ? (
@@ -69,6 +84,7 @@ export default async function VirtueThemesPage() {
         </div>
       ) : (
         <VirtueThemesEditor
+          key={ayCode}
           terms={terms.map((t) => ({
             id: t.id,
             label: t.label,
