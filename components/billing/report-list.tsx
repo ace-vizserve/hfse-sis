@@ -2,9 +2,9 @@
 
 import {
   ChevronDown,
-  ChevronRight,
+  ChevronUp,
   ExternalLink,
-  EllipsisVertical,
+  FileBarChart,
   Search,
   Star,
 } from 'lucide-react';
@@ -12,7 +12,15 @@ import Link from 'next/link';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,17 +30,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-// QuickBooks' Standard reports page: "Type report name here", Favorites on
-// top, then collapsible sections ("Who owes you", "For my accountant"), each
-// report with its star (a favourite, kept in this browser) and ⋮ (Open in
-// QuickBooks). Reports the SIS reads open here; the ones QuickBooks' API
-// can't produce open in QuickBooks.
+// Billing → Reports. WHAT is here is QuickBooks' Standard reports page: find a
+// report by name, Favorites on top (a star, kept in this browser), then the
+// collapsible groups ("Who owes you", "For my accountant"), each report with
+// its star and ▾ (Open in QuickBooks). HOW it looks is the SIS's: a card per
+// group. Reports the SIS reads open here; the ones QuickBooks' API can't
+// produce open in QuickBooks.
 
 export type ListedReport = {
   /** Stable id: the SIS key, or the QuickBooks title for a QuickBooks-only one. */
   id: string;
   title: string;
   group: string;
+  /** One plain line on what the report shows (SIS reports only). */
+  blurb?: string;
   /** SIS page, or null when the report opens in QuickBooks. */
   href: string | null;
 };
@@ -56,6 +67,12 @@ function writeFavorites(ids: string[]) {
     // Private window or blocked storage: the star still works until reload.
   }
 }
+
+const SECTION_NOTE: Record<string, string> = {
+  Favorites: 'The reports you starred, kept in this browser.',
+  'Who owes you': 'What customers owe and how long it has been owed.',
+  'For my accountant': 'The books, account by account.',
+};
 
 export function ReportList({
   reports,
@@ -104,7 +121,7 @@ export function ReportList({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="relative w-full max-w-md">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -119,46 +136,66 @@ export function ReportList({
       {sections.map((s) => {
         if (needle && s.items.length === 0) return null;
         const open = !shut.has(s.name);
-        const Chevron = open ? ChevronDown : ChevronRight;
         return (
-          <Card key={s.name} className="gap-0 px-6 py-4">
-            <button
-              type="button"
-              onClick={() => toggleGroup(s.name)}
-              aria-expanded={open}
-              className="flex items-center gap-2 text-left"
-            >
-              <Chevron className="size-4 text-muted-foreground" />
-              <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
+          <Card key={s.name}>
+            <CardHeader>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight">
                 {s.name}
-              </h2>
-            </button>
-            {open &&
-              (s.items.length === 0 ? (
-                <p className="mt-3 pl-6 text-sm text-muted-foreground">
-                  Star a report to keep it here.
-                </p>
-              ) : (
-                // Down the left column first, then the right, as QuickBooks.
-                <ul className="mt-2 gap-x-10 md:columns-2">
-                  {s.items.map((r) => (
-                    <ReportRow
-                      key={r.id}
-                      report={r}
-                      starred={favs.includes(r.id)}
-                      onStar={() => toggleFav(r.id)}
-                      qbReportsUrl={qbReportsUrl}
-                    />
-                  ))}
-                </ul>
-              ))}
+              </CardTitle>
+              <CardDescription>
+                {SECTION_NOTE[s.name] ?? ''}
+                {s.items.length > 0 &&
+                  ` ${s.items.length} ${s.items.length === 1 ? 'report' : 'reports'}.`}
+              </CardDescription>
+              <CardAction>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => toggleGroup(s.name)}
+                  aria-expanded={open}
+                  aria-label={`${open ? 'Hide' : 'Show'} ${s.name}`}
+                >
+                  {open ? (
+                    <ChevronUp className="size-4" />
+                  ) : (
+                    <ChevronDown className="size-4" />
+                  )}
+                </Button>
+              </CardAction>
+            </CardHeader>
+            {open && (
+              <CardContent>
+                {s.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Star a report to keep it here.
+                  </p>
+                ) : (
+                  <ul className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+                    {s.items.map((r) => (
+                      <ReportRow
+                        key={r.id}
+                        report={r}
+                        starred={favs.includes(r.id)}
+                        onStar={() => toggleFav(r.id)}
+                        qbReportsUrl={qbReportsUrl}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            )}
           </Card>
         );
       })}
       {needle && sections.every((s) => s.items.length === 0) && (
-        <p className="text-sm text-muted-foreground">
-          No report is named like that. Clear the search to see them all.
-        </p>
+        <Card className="py-0">
+          <DataTableEmptyState
+            icon={FileBarChart}
+            title="No report is named like that."
+            body="Clear the search to see them all."
+          />
+        </Card>
       )}
     </div>
   );
@@ -178,7 +215,7 @@ function ReportRow({
   const name = r.href ? (
     <Link
       href={r.href}
-      className="min-w-0 flex-1 truncate text-sm text-foreground hover:text-primary hover:underline"
+      className="truncate font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
     >
       {r.title}
     </Link>
@@ -187,7 +224,7 @@ function ReportRow({
       href={qbReportsUrl}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-sm text-foreground hover:text-primary hover:underline"
+      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
       title="Opens in QuickBooks"
     >
       <span className="truncate">{r.title}</span>
@@ -195,10 +232,15 @@ function ReportRow({
     </a>
   );
   return (
-    <li className="flex break-inside-avoid items-center gap-2 border-b border-border py-1.5">
-      {name}
+    <li className="flex items-center gap-2 border-b border-border py-2.5">
+      <div className="flex min-w-0 flex-1 flex-col text-sm">
+        {name}
+        <span className="truncate text-xs text-muted-foreground">
+          {r.blurb ?? 'Opens in QuickBooks.'}
+        </span>
+      </div>
       <Button
-        variant="ghost"
+        variant="outline"
         size="icon"
         className="size-8"
         aria-pressed={starred}
@@ -215,12 +257,12 @@ function ReportRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             className="size-8"
             aria-label={`More for ${r.title}`}
           >
-            <EllipsisVertical className="size-4" />
+            <ChevronDown className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">

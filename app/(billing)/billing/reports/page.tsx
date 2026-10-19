@@ -40,6 +40,7 @@ export default async function BillingReportsPage() {
       id: r.key,
       title: r.title,
       group: r.group,
+      blurb: r.blurb,
       href: `/billing/reports/${r.key}`,
     })),
     ...QB_ONLY_REPORTS.map((r) => ({
@@ -53,8 +54,9 @@ export default async function BillingReportsPage() {
   return (
     <PageShell>
       <BillingPageHeader
-        crumbs={[{ label: 'Reports' }, { label: 'Standard reports' }]}
-        title="Standard reports"
+        crumbs={[{ label: 'Reports' }]}
+        title="Reports"
+        description="QuickBooks' standard reports, read live: who owes the school, and the books for the accountant. Star the ones you use most."
       />
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />

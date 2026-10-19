@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
 
 import { DatePicker } from '@/components/ui/date-picker';
-import { Label } from '@/components/ui/label';
+import { Field, FieldLabel } from '@/components/ui/field';
 import {
   Select,
   SelectContent,
@@ -74,15 +74,10 @@ export function ReportPeriodPicker({
 
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <div className="space-y-1.5">
-        <Label
-          htmlFor="report-period"
-          className="text-xs text-muted-foreground"
-        >
-          Report period
-        </Label>
+      <Field className="w-48 gap-1.5">
+        <FieldLabel htmlFor="report-period">Report period</FieldLabel>
         <Select value={period} onValueChange={pickPeriod}>
-          <SelectTrigger id="report-period" className="h-9 w-44">
+          <SelectTrigger id="report-period" className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -93,60 +88,42 @@ export function ReportPeriodPicker({
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </Field>
       {kind === 'asOf' ? (
-        <div className="space-y-1.5">
-          <Label
-            htmlFor="report-as-of"
-            className="text-xs text-muted-foreground"
-          >
-            as of
-          </Label>
+        <Field className="w-44 gap-1.5">
+          <FieldLabel htmlFor="report-as-of">As of</FieldLabel>
           <DatePicker
             id="report-as-of"
             value={asOf}
             allowClear={false}
             onChange={(v) => pickDate('asOf', v)}
-            className="w-40"
           />
-        </div>
+        </Field>
       ) : (
         <>
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="report-from"
-              className="text-xs text-muted-foreground"
-            >
-              From
-            </Label>
+          <Field className="w-44 gap-1.5">
+            <FieldLabel htmlFor="report-from">From</FieldLabel>
             <DatePicker
               id="report-from"
               value={from}
               allowClear={false}
               onChange={(v) => pickDate('from', v)}
-              className="w-40"
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="report-to"
-              className="text-xs text-muted-foreground"
-            >
-              To
-            </Label>
+          </Field>
+          <Field className="w-44 gap-1.5">
+            <FieldLabel htmlFor="report-to">To</FieldLabel>
             <DatePicker
               id="report-to"
               value={to}
               allowClear={false}
               onChange={(v) => pickDate('to', v)}
-              className="w-40"
             />
-          </div>
+          </Field>
         </>
       )}
       {pending && (
         <Loader2
-          className="mb-2.5 size-4 animate-spin text-muted-foreground"
+          className="mb-3 size-4 animate-spin text-muted-foreground"
           aria-label="Reading QuickBooks"
         />
       )}

@@ -1,12 +1,22 @@
-import { ChevronLeft, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
-import { ReportPaper } from '@/components/billing/report-paper';
+import { RefreshIcon } from '@/components/billing/toolbar-icons';
+import {
+  ReportExportButton,
+  ReportPaper,
+} from '@/components/billing/report-paper';
 import { ReportPeriodPicker } from '@/components/billing/report-period-picker';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import type { ParsedReport } from '@/lib/billing/report';
 import { reportDef } from '@/lib/billing/report-catalog';
@@ -111,16 +121,18 @@ export default async function BillingReportPage({
 
   return (
     <PageShell>
-      <div className="space-y-2">
+      <div className="flex flex-col gap-5">
         <Link
           href="/billing/reports"
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ChevronLeft className="size-4" />
-          Back to standard reports
+          <ArrowLeft className="size-3.5" />
+          Back to reports
         </Link>
         <BillingPageHeader
+          crumbs={[{ label: 'Reports' }]}
           title={def.title}
+          description={def.blurb}
           actions={
             realmId ? (
               <>
@@ -130,11 +142,15 @@ export default async function BillingReportPage({
                     Customize
                   </a>
                 </Button>
-                <Button asChild>
+                <Button asChild variant="outline">
                   <a href={qbReportsUrl} target="_blank" rel="noreferrer">
                     Save As
                   </a>
                 </Button>
+                {report && !error && (
+                  <ReportExportButton report={report} csvName={csvName} />
+                )}
+                <RefreshIcon />
               </>
             ) : undefined
           }
@@ -153,14 +169,16 @@ export default async function BillingReportPage({
             to={dates.to}
           />
           {error || !report ? (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="font-serif text-base font-semibold text-foreground">
-                QuickBooks could not be read
-              </p>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                {error} Refresh the page to try again.
-              </p>
-            </div>
+            <Card className="border-destructive/30 bg-destructive/5">
+              <CardHeader>
+                <CardTitle className="font-serif text-base">
+                  QuickBooks could not be read
+                </CardTitle>
+                <CardDescription>
+                  {error} Refresh the page to try again.
+                </CardDescription>
+              </CardHeader>
+            </Card>
           ) : (
             <ReportPaper
               reportKey={def.key}
@@ -172,7 +190,6 @@ export default async function BillingReportPage({
               countInHeader={def.countInHeader}
               studentByCustomer={students}
               readAt={readAt}
-              csvName={csvName}
               qbReportsUrl={qbReportsUrl}
             />
           )}
