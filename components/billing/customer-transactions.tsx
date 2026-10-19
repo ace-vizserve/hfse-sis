@@ -319,6 +319,7 @@ export function CustomerTransactions({
   openInvoices,
   credits,
   depositAccounts,
+  paymentMethods,
   canRecord,
   customerBalance,
   initialType = 'all',
@@ -331,6 +332,7 @@ export function CustomerTransactions({
   openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  paymentMethods?: Array<{ id: string; label: string }>;
   /** False when QuickBooks isn't connected — Receive payment is hidden. */
   canRecord: boolean;
   customerBalance?: number | null;
@@ -728,6 +730,7 @@ export function CustomerTransactions({
           openInvoices={paying.invoices}
           credits={credits}
           depositAccounts={depositAccounts}
+          paymentMethods={paymentMethods}
           mode="pay"
           customerBalance={customerBalance}
         />

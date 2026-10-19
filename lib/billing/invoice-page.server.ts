@@ -19,7 +19,9 @@ import {
 } from '@/lib/billing/customer-page.server';
 import {
   loadDepositChoices,
+  loadPaymentMethods,
   type DepositChoice,
+  type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
@@ -48,6 +50,7 @@ export type InvoicePage = {
   qbUrl: string;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  paymentMethods: PaymentMethodChoice[];
   /** QuickBooks' ‹ › on an invoice: this customer's older and newer invoice. */
   older: { id: string; docNumber: string | null } | null;
   newer: { id: string; docNumber: string | null } | null;
@@ -86,44 +89,50 @@ export async function loadInvoicePage(
   ]);
   if (detail.d && detail.d.customerId !== link.qbo_customer_id) return null;
 
-  const [inv, pays, sends, dep, conn, info, siblings] = await Promise.all([
-    service
-      .from('qbo_invoices')
-      .select(INVOICE_COLS)
-      .eq('qbo_invoice_id', qboInvoiceId)
-      .eq('student_number', studentNumber)
-      .eq('realm_id', realmId)
-      .maybeSingle(),
-    service
-      .from('qbo_payments')
-      .select(PAYMENT_COLS)
-      .eq('qbo_customer_id', link.qbo_customer_id)
-      .eq('realm_id', realmId),
-    service
-      .from('audit_log')
-      .select('created_at, actor_email, context')
-      .eq('action', 'qbo.invoice.send')
-      .eq('entity_id', qboInvoiceId)
-      .order('created_at', { ascending: true }),
-    // Record payment's banks, live; unreadable → no choices, page renders.
-    loadDepositChoices(service).catch((e: unknown) => {
-      console.error('[billing] invoice page, bank accounts:', e);
-      return [] as DepositChoice[];
-    }),
-    service
-      .from('qbo_connection')
-      .select('environment')
-      .eq('id', 1)
-      .maybeSingle(),
-    loadStudentInfo(service, [studentNumber]),
-    service
-      .from('qbo_invoices')
-      .select('qbo_invoice_id, doc_number, txn_date')
-      .eq('qbo_customer_id', link.qbo_customer_id)
-      .eq('realm_id', realmId)
-      .order('txn_date', { ascending: true })
-      .order('qbo_invoice_id', { ascending: true }),
-  ]);
+  const [inv, pays, sends, dep, conn, info, siblings, methods] =
+    await Promise.all([
+      service
+        .from('qbo_invoices')
+        .select(INVOICE_COLS)
+        .eq('qbo_invoice_id', qboInvoiceId)
+        .eq('student_number', studentNumber)
+        .eq('realm_id', realmId)
+        .maybeSingle(),
+      service
+        .from('qbo_payments')
+        .select(PAYMENT_COLS)
+        .eq('qbo_customer_id', link.qbo_customer_id)
+        .eq('realm_id', realmId),
+      service
+        .from('audit_log')
+        .select('created_at, actor_email, context')
+        .eq('action', 'qbo.invoice.send')
+        .eq('entity_id', qboInvoiceId)
+        .order('created_at', { ascending: true }),
+      // Record payment's banks, live; unreadable → no choices, page renders.
+      loadDepositChoices(service).catch((e: unknown) => {
+        console.error('[billing] invoice page, bank accounts:', e);
+        return [] as DepositChoice[];
+      }),
+      service
+        .from('qbo_connection')
+        .select('environment')
+        .eq('id', 1)
+        .maybeSingle(),
+      loadStudentInfo(service, [studentNumber]),
+      service
+        .from('qbo_invoices')
+        .select('qbo_invoice_id, doc_number, txn_date')
+        .eq('qbo_customer_id', link.qbo_customer_id)
+        .eq('realm_id', realmId)
+        .order('txn_date', { ascending: true })
+        .order('qbo_invoice_id', { ascending: true }),
+      // Receive Payment's methods, live; unreadable → no choices (optional).
+      loadPaymentMethods(service).catch((e: unknown) => {
+        console.error('[billing] invoice page, payment methods:', e);
+        return [] as PaymentMethodChoice[];
+      }),
+    ]);
   if (!inv.data) return null;
   const row = toInvoiceRow(inv.data as InvRow, todaySg());
   const label = new Map(dep.map((d) => [d.id, d.label]));
@@ -189,6 +198,7 @@ export async function loadInvoicePage(
     ),
     credits: toCreditSources(allPayments),
     depositAccounts: dep,
+    paymentMethods: methods,
     ...neighbours(
       (siblings.data ?? []) as Array<{
         qbo_invoice_id: string;

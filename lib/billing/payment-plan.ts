@@ -4,6 +4,8 @@
 // Credit is used first when asked, oldest credit first; then the new money,
 // oldest invoice first. Anything the ticked invoices don't need stays on the
 // payment unapplied — QuickBooks keeps it as credit on the customer.
+// When the person types the Payment cells, planAllocatedPayment pays exactly
+// those amounts instead of oldest-first.
 
 import { round2 } from '@/lib/billing/view';
 
@@ -58,10 +60,77 @@ export function planPayment(args: {
       .filter((i) => i.balance > 0)
       .map((i) => [i.id, cents(i.balance)] as [string, number])
   );
+  return fill(owed, args.credits, args.useCredit, args.amount);
+}
+
+export type Allocation = { invoiceId: string; amount: number };
+
+/**
+ * Record payment with the Payment cells typed in (QuickBooks' Receive
+ * Payment): each allocation is what that invoice receives in total. Credit
+ * (when asked) goes to the allocated invoices first, oldest credit first;
+ * the new money covers the rest of each allocation. Whatever the money
+ * doesn't need stays unapplied — credit on the customer, as planPayment.
+ *
+ * Refused (with the sentence to show) when an allocation names an invoice
+ * not in `invoices`, repeats one, is not more than 0, is more than that
+ * invoice's open balance, or when the allocations add up to more than the
+ * amount plus the credit used.
+ */
+export function planAllocatedPayment(args: {
+  invoices: OpenInvoice[];
+  credits: CreditSource[];
+  useCredit: boolean;
+  amount: number;
+  allocations: Allocation[];
+}): { ok: true; plan: PaymentPlan } | { ok: false; error: string } {
+  const byId = new Map(args.invoices.map((i) => [i.id, i]));
+  const want = new Map<string, number>();
+  for (const a of args.allocations) {
+    const i = byId.get(a.invoiceId);
+    const name = i?.docNumber ?? 'One of the invoices';
+    if (!i)
+      return { ok: false, error: `${name} is not open on this customer.` };
+    if (want.has(a.invoiceId))
+      return { ok: false, error: `${name} is listed twice.` };
+    const c = cents(a.amount);
+    if (!Number.isFinite(a.amount) || c <= 0)
+      return { ok: false, error: `Enter a payment above 0 for ${name}.` };
+    if (c > cents(i.balance))
+      return {
+        ok: false,
+        error: `The payment for ${name} is more than its open balance.`,
+      };
+    want.set(a.invoiceId, c);
+  }
+  // Oldest invoice first, so credit lands where planPayment would put it.
+  const owed = new Map(
+    oldestFirst(args.invoices)
+      .filter((i) => want.has(i.id))
+      .map((i) => [i.id, want.get(i.id)!] as [string, number])
+  );
+  const plan = fill(owed, args.credits, args.useCredit, args.amount);
+  const allocated = [...want.values()].reduce((s, c) => s + c, 0);
+  if (allocated > cents(plan.creditUsed) + cents(Math.max(0, args.amount)))
+    return {
+      ok: false,
+      error:
+        'The payments add up to more than the amount received and the credit used.',
+    };
+  return { ok: true, plan };
+}
+
+/** Credit first, then the money, into `owed` (cents, in paying order). */
+function fill(
+  owed: Map<string, number>,
+  credits: CreditSource[],
+  useCredit: boolean,
+  amount: number
+): PaymentPlan {
   const creditUse: PaymentPlan['creditUse'] = [];
-  if (args.useCredit) {
+  if (useCredit) {
     for (const c of oldestFirst(
-      args.credits.map((c) => ({ ...c, docNumber: c.paymentId }))
+      credits.map((c) => ({ ...c, docNumber: c.paymentId }))
     )) {
       let left = cents(c.unapplied);
       for (const [id, due] of owed) {
@@ -79,7 +148,7 @@ export function planPayment(args: {
     }
   }
   const cashApply: PaymentPlan['cashApply'] = [];
-  let cash = cents(Math.max(0, args.amount));
+  let cash = cents(Math.max(0, amount));
   for (const [id, due] of owed) {
     if (cash <= 0) break;
     if (due <= 0) continue;
@@ -96,6 +165,26 @@ export function planPayment(args: {
     cashApplied,
     leftover: cash / 100,
   };
+}
+
+/** QuickBooks' limit on a Payment's PrivateNote (Memo). */
+export const PAYMENT_NOTE_MAX = 4000;
+
+/**
+ * The Payment's Memo: what the person typed, then "Recorded from SIS by …"
+ * on its own line. Within QuickBooks' 4000 characters — the typed part is
+ * cut, never the SIS line.
+ */
+export function paymentNote(
+  memo: string | null | undefined,
+  staffName: string
+): string {
+  const sis = `Recorded from SIS by ${staffName}`;
+  const typed = memo?.trim() ?? '';
+  if (!typed) return sis.slice(0, PAYMENT_NOTE_MAX);
+  const room = PAYMENT_NOTE_MAX - sis.length - 1;
+  if (room <= 0) return sis.slice(0, PAYMENT_NOTE_MAX);
+  return `${typed.slice(0, room).trimEnd()}\n${sis}`;
 }
 
 /**

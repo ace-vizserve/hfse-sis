@@ -20,6 +20,22 @@ const Body = z.object({
     .max(21, 'A reference is at most 21 characters in QuickBooks.')
     .optional(),
   invoiceIds: z.array(z.string().min(1)).max(100),
+  // The Payment cells the person typed; absent = oldest first, as before.
+  allocations: z
+    .array(
+      z.object({
+        invoiceId: z.string().min(1),
+        amount: z.number().positive().max(1_000_000),
+      })
+    )
+    .max(100)
+    .optional(),
+  paymentMethodId: z.string().min(1).nullable().optional(),
+  memo: z
+    .string()
+    .trim()
+    .max(4000, 'A memo is at most 4000 characters in QuickBooks.')
+    .optional(),
   useCredit: z.boolean(),
   requestId: z.string().uuid(),
 });

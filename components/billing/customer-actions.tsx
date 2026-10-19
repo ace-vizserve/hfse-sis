@@ -31,6 +31,7 @@ export function CustomerActions(props: {
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
   /** Opened from the Customers list' Receive payment / Create invoice
    *  (`?new=payment` / `?new=invoice`), as QuickBooks opens the form. */
@@ -106,6 +107,7 @@ export function CustomerActions(props: {
           }
           credits={props.credits}
           depositAccounts={props.depositAccounts}
+          paymentMethods={props.paymentMethods}
           mode="pay"
           customerBalance={props.customerBalance}
         />

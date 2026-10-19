@@ -6,7 +6,9 @@ import { logAction } from '@/lib/audit/log-action';
 import { creditRequestId } from '@/lib/billing/credit-request-id';
 import {
   loadDepositChoices,
+  loadPaymentMethods,
   type DepositChoice,
+  type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import type { QbPayment } from '@/lib/billing/invoice-row';
@@ -18,7 +20,10 @@ import {
 import { prePaymentRefusal } from '@/lib/billing/payment-guard';
 import {
   mergeCreditLines,
+  paymentNote,
+  planAllocatedPayment,
   planPayment,
+  type Allocation,
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
 import { staffDisplayName } from '@/lib/billing/staff-name.server';
@@ -40,6 +45,13 @@ export type RecordPaymentInput = {
   depositAccountId: string | null;
   reference?: string;
   invoiceIds: string[];
+  /** The Payment cells typed on the form: each invoice's total (credit +
+   *  money). Absent → oldest first, up to the amount, as planPayment. */
+  allocations?: Allocation[];
+  /** QuickBooks PaymentMethodRef; optional. */
+  paymentMethodId?: string | null;
+  /** The Memo the person typed; "Recorded from SIS by …" follows it. */
+  memo?: string;
   useCredit: boolean;
   /** One id per submit; QuickBooks de-duplicates retries on it. */
   requestId: string;
@@ -66,7 +78,8 @@ export type RecordPaymentResult =
  *    are QuickBooks' own at this moment;
  * 2. credit (when asked) is applied by adding lines to the credit payments;
  * 3. the new money becomes one QuickBooks Payment applied oldest invoice
- *    first; whatever the ticked invoices don't need stays as credit;
+ *    first — or, when the Payment cells were typed (`allocations`), exactly
+ *    those amounts; whatever the invoices don't need stays as credit;
  * 4. the customer is re-read again, which stores the payment and moves the
  *    tiles.
  */
@@ -145,7 +158,11 @@ export async function recordPayment(
     state: string;
   }>;
   const byId = new Map(rows.map((r) => [r.qbo_invoice_id, r]));
-  for (const id of input.invoiceIds) {
+  // Typed Payment cells name the invoices they pay; otherwise the ticked ones.
+  const payIds = input.allocations
+    ? [...new Set(input.allocations.map((a) => a.invoiceId))]
+    : input.invoiceIds;
+  for (const id of payIds) {
     const r = byId.get(id);
     if (!r || r.state !== 'open' || Number(r.balance) <= 0)
       return {
@@ -173,8 +190,29 @@ export async function recordPayment(
       status: 422,
       error: 'Choose the account the money was paid into.',
     };
-  const plan = planPayment({
-    invoices: input.invoiceIds.map((id) => {
+  // The payment method, when chosen, must be one of QuickBooks' own now. It
+  // only goes on a new Payment, so credit-only use ignores it.
+  let method: PaymentMethodChoice | null = null;
+  if (input.amount > 0 && input.paymentMethodId) {
+    try {
+      method =
+        (await loadPaymentMethods(service)).find(
+          (m) => m.id === input.paymentMethodId
+        ) ?? null;
+    } catch (e) {
+      console.error('[billing] record payment, payment methods:', e);
+      return { ok: false, status: 502, error: qboErrorMessage(e) };
+    }
+    if (!method)
+      return {
+        ok: false,
+        status: 422,
+        error:
+          'That payment method is no longer in QuickBooks. Reload the page and choose again.',
+      };
+  }
+  const planArgs = {
+    invoices: payIds.map((id) => {
       const r = byId.get(id)!;
       return {
         id,
@@ -196,7 +234,19 @@ export async function recordPayment(
     })),
     useCredit: input.useCredit,
     amount: input.amount,
-  });
+  };
+  let plan: PaymentPlan;
+  if (input.allocations) {
+    // Each typed amount is checked against QuickBooks' balance just read:
+    // this customer's, open, above 0, not over the balance, and all of them
+    // within the money plus the credit used.
+    const r = planAllocatedPayment({
+      ...planArgs,
+      allocations: input.allocations,
+    });
+    if (!r.ok) return { ok: false, status: 422, error: r.error };
+    plan = r.plan;
+  } else plan = planPayment(planArgs);
   if (input.amount <= 0 && plan.creditUsed <= 0)
     return {
       ok: false,
@@ -299,7 +349,9 @@ export async function recordPayment(
           ...(input.reference?.trim()
             ? { PaymentRefNum: input.reference.trim() }
             : {}),
-          PrivateNote: `Recorded from SIS by ${staffName}`,
+          ...(method ? { PaymentMethodRef: { value: method.id } } : {}),
+          // The typed Memo first, then who recorded it from the SIS.
+          PrivateNote: paymentNote(input.memo, staffName),
           Line: plan.cashApply.map((a) => ({
             Amount: a.amount,
             LinkedTxn: [{ TxnId: a.invoiceId, TxnType: 'Invoice' }],
@@ -351,6 +403,8 @@ export async function recordPayment(
           studentNumber,
           total: input.amount,
           deposit_account: dep?.label ?? null,
+          payment_method: method?.label ?? null,
+          amounts_typed: !!input.allocations,
           invoices: plan.cashApply.map((a) => doc(a.invoiceId)),
           left_as_credit: plan.leftover,
         },

@@ -25,3 +25,23 @@ export async function loadDepositChoices(
     .map((b) => ({ id: b.Id, label: b.Name }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+export type PaymentMethodChoice = { id: string; label: string };
+
+/**
+ * Receive Payment's "Payment method": QuickBooks' active payment methods
+ * (Cash, Cheque, PayNow…), read live. Throws when QuickBooks can't be read;
+ * pages catch it and show no choices (the field is optional).
+ */
+export async function loadPaymentMethods(
+  service: SupabaseClient
+): Promise<PaymentMethodChoice[]> {
+  const methods = await qboQueryAll<{ Id: string; Name: string }>(
+    service,
+    'PaymentMethod',
+    'Active = true'
+  );
+  return methods
+    .map((m) => ({ id: m.Id, label: m.Name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}

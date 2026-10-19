@@ -6,7 +6,9 @@ import type { InvoiceLine } from '@/lib/billing/classify';
 import { pickBalances, type Balances } from '@/lib/billing/balances';
 import {
   loadDepositChoices,
+  loadPaymentMethods,
   type DepositChoice,
+  type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
@@ -85,6 +87,7 @@ export type CustomerPage = {
   openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  paymentMethods: PaymentMethodChoice[];
   maps: MapsData;
   stages: {
     ayCode: string;
@@ -234,6 +237,7 @@ export async function loadCustomerPage(
     openInvoices: [],
     credits: [],
     depositAccounts: [],
+    paymentMethods: [],
     maps: { accounts: [], studentNumber, applications: [] },
     stages: null,
     overdueOldest: null,
@@ -288,7 +292,7 @@ export async function loadCustomerPage(
       .catch(() => null),
   ]);
 
-  const [inv, pay, dep, maps] = await Promise.all([
+  const [inv, pay, dep, maps, methods] = await Promise.all([
     service
       .from('qbo_invoices')
       .select(INVOICE_COLS)
@@ -310,6 +314,11 @@ export async function loadCustomerPage(
       return [] as DepositChoice[];
     }),
     loadBillingMaps(service, { studentNumbers: [studentNumber] }),
+    // Receive Payment's methods, live; unreadable → no choices (optional).
+    loadPaymentMethods(service).catch((e: unknown) => {
+      console.error('[billing] customer page, payment methods:', e);
+      return [] as PaymentMethodChoice[];
+    }),
   ]);
   for (const r of [inv, pay])
     if (r.error) throw new Error(`Billing lookup failed: ${r.error.message}`);
@@ -379,6 +388,7 @@ export async function loadCustomerPage(
     })),
     credits: toCreditSources(payments),
     depositAccounts: dep,
+    paymentMethods: methods,
     maps: mapsToData(maps, studentNumber),
     stages,
     overdueOldest: oldest

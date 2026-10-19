@@ -138,6 +138,7 @@ export default async function BillingCustomerPage({
                 openInvoices={page.openInvoices}
                 credits={page.credits}
                 depositAccounts={page.depositAccounts}
+                paymentMethods={page.paymentMethods}
                 customerBalance={b.openBalance}
                 initialSheet={
                   newSheet === 'payment' || newSheet === 'invoice'
@@ -340,6 +341,7 @@ export default async function BillingCustomerPage({
               openInvoices={page.openInvoices}
               credits={page.credits}
               depositAccounts={page.depositAccounts}
+              paymentMethods={page.paymentMethods}
               customerBalance={b.openBalance}
             />
           )}
@@ -355,6 +357,7 @@ export default async function BillingCustomerPage({
             openInvoices={page.openInvoices}
             credits={page.credits}
             depositAccounts={page.depositAccounts}
+            paymentMethods={page.paymentMethods}
             canRecord={page.connected}
             customerBalance={b.openBalance}
             initialTab={initialTab}
