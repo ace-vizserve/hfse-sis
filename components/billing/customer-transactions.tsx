@@ -67,7 +67,7 @@ const daysBetween = (from: string, to: string) =>
       DAY_MS
   );
 
-function invoiceRow(i: InvoiceRowView, today: string): TxnRow {
+export function invoiceRow(i: InvoiceRowView, today: string): TxnRow {
   const base = {
     key: `i${i.id}`,
     kind: 'invoice' as const,
@@ -161,7 +161,7 @@ const STATUS_OPTIONS = [
 ] as const;
 type StatusFilter = (typeof STATUS_OPTIONS)[number]['value'];
 
-const DATE_OPTIONS = [
+export const DATE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'this-month', label: 'This month' },
   { value: 'last-month', label: 'Last month' },
@@ -171,7 +171,7 @@ const DATE_OPTIONS = [
   { value: 'last-365', label: 'Last 365 days' },
   { value: 'custom', label: 'Custom' },
 ] as const;
-type DateFilter = (typeof DATE_OPTIONS)[number]['value'];
+export type DateFilter = (typeof DATE_OPTIONS)[number]['value'];
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (y: number, m: number, d: number) => {
@@ -234,7 +234,7 @@ const TONE_CLASS: Record<Tone, string> = {
   plain: 'text-foreground',
 };
 
-function StatusCell({ row }: { row: TxnRow }) {
+export function StatusCell({ row }: { row: TxnRow }) {
   const Icon =
     row.tone === 'bad'
       ? AlertCircle
@@ -265,7 +265,7 @@ function StatusCell({ row }: { row: TxnRow }) {
   );
 }
 
-function FilterSelect<T extends string>({
+export function FilterSelect<T extends string>({
   id,
   label,
   value,

@@ -215,6 +215,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     iconByHref: {
       // Who owes what — the customer list.
       '/billing': Wallet,
+      // QuickBooks' Invoices list, across every linked customer.
+      '/billing/invoices': FileText,
       // Students the SIS couldn't match to a QuickBooks customer.
       '/billing/review': UserSearch,
       // QuickBooks' bank accounts: balances and transactions.

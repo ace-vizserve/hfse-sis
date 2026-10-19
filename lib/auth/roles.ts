@@ -656,6 +656,7 @@ const BILLING_NAV: NavSection[] = [
   {
     items: [
       { href: '/billing', label: 'Customers' },
+      { href: '/billing/invoices', label: 'Invoices' },
       { href: '/billing/review', label: 'To review' },
       { href: '/billing/banks', label: 'Bank accounts' },
       {

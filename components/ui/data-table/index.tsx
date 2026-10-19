@@ -11,6 +11,7 @@ import {
 import dynamic from 'next/dynamic';
 import { ChevronDown, Columns3, Download, Search, X } from 'lucide-react';
 import {
+  type ColumnDef,
   type ColumnFiltersState,
   type RowSelectionState,
   type SortingState,
@@ -26,6 +27,7 @@ import {
 } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -261,9 +263,16 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const facetIdKey = [...facets, ...facetGroups.flatMap((g) => g.facets)]
     .map((f) => f.columnId)
     .join('\u0000');
+  const selectionOn = Boolean(selection?.enabled);
   const tableColumns = useMemo(() => {
     const facetIds = new Set(facetIdKey.split('\u0000'));
-    return columns.map((c) => {
+    // Selection on and no tick column of the table's own: add the standard
+    // one, so a table only declares its bulk actions.
+    const withSelect =
+      selectionOn && !columns.some((c) => c.id === 'select')
+        ? [selectColumn<TRow>(), ...columns]
+        : columns;
+    return withSelect.map((c) => {
       const id =
         c.id ??
         ('accessorKey' in c && typeof c.accessorKey === 'string'
@@ -272,7 +281,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       if (!id || !facetIds.has(id) || c.filterFn) return c;
       return { ...c, filterFn: facetInListFilter } as typeof c;
     });
-  }, [columns, facetIdKey]);
+  }, [columns, facetIdKey, selectionOn]);
 
   const table = useReactTable<TRow>({
     data: tabFilteredData,
@@ -1014,4 +1023,38 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       )}
     </div>
   );
+}
+
+/** The tick column a table gets when `selection` is on and it declares no
+ *  `select` column itself. The header ticks this page only. */
+function selectColumn<TRow>(): ColumnDef<TRow> {
+  return {
+    id: 'select',
+    header: ({ table }) => {
+      const pageRows = table.getRowModel().rows.filter((r) => r.getCanSelect());
+      const selected = pageRows.filter((r) => r.getIsSelected()).length;
+      const all = pageRows.length > 0 && selected === pageRows.length;
+      return (
+        <Checkbox
+          checked={all ? true : selected > 0 ? 'indeterminate' : false}
+          onCheckedChange={(v) => {
+            for (const r of pageRows) r.toggleSelected(!!v);
+          }}
+          disabled={pageRows.length === 0}
+          aria-label="Select all on this page"
+        />
+      );
+    },
+    cell: ({ row }) => (
+      <Checkbox
+        checked={row.getIsSelected()}
+        disabled={!row.getCanSelect()}
+        onCheckedChange={(v) => row.toggleSelected(!!v)}
+        aria-label="Select row"
+      />
+    ),
+    enableSorting: false,
+    enableHiding: false,
+    meta: { label: 'Select', excludeFromExport: true },
+  };
 }
