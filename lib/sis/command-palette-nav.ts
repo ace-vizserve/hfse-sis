@@ -450,11 +450,11 @@ export function visibleQuickActions(
 // would drift, and the registry already carries role-coverage gaps
 // (registry.ts:311).
 //
-// ⚠ Every cross-year verb (Records, Attendance, Billing) is keyed on
+// ⚠ Every cross-year verb (Records, Attendance) is keyed on
 // `studentNumber` — the only stable student ID (Hard Rule #4). The two per-year
 // surfaces (application, P-Files) are keyed on `enroleeNumber` AND carry the
-// AY. A match with no studentNumber is an APPLICANT: no Records, Attendance or
-// Billing page exists for them, so they get the application and documents.
+// AY. A match with no studentNumber is an APPLICANT: no Records or Attendance
+// page exists for them, so they get the application and documents.
 // ──────────────────────────────────────────────────────────────────────────
 
 export type StudentVerb = {
@@ -534,13 +534,6 @@ export function visibleStudentVerbs(
         href: `${base}?tab=discipline`,
         hint: 'Records',
       },
-      {
-        key: 'billing',
-        label: 'Billing',
-        icon: WalletIcon,
-        href: `/billing/${encodeURIComponent(sn)}`,
-        hint: 'Billing',
-      },
       application,
       documents
     );
@@ -553,11 +546,11 @@ export function visibleStudentVerbs(
   );
 }
 
-/** The module a path belongs to — its first segment (`/billing/x` → `billing`). */
+/** The module a path belongs to — its first segment (`/p-files/x` → `p-files`). */
 const moduleOf = (path: string) => hrefPathname(path).split('/')[1] ?? '';
 
 /** The verb Enter runs: the student in the module you are standing in
- *  (`currentPath`), so searching from Billing opens their Billing page.
+ *  (`currentPath`), so searching from P-Files opens their documents.
  *  A module with no page per student falls back to the first surviving verb
  *  — the record for an enrolled student, the application for an applicant.
  *  Null when the role can reach none of them. */

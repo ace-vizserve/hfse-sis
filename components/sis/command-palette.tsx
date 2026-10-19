@@ -432,8 +432,8 @@ export function CommandPalette({
     } satisfies RecentStudent);
   }
 
-  /** Enter on a student — the student in the module you are in (Billing →
-   *  their Billing page); elsewhere the record for an enrolled student and
+  /** Enter on a student — the student in the module you are in (P-Files →
+   *  their documents); elsewhere the record for an enrolled student and
    *  the application for an applicant. */
   function openStudentPrimary(s: StudentMatch) {
     const verb = primaryStudentVerb(s, role, pathname);

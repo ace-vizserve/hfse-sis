@@ -50,7 +50,7 @@ const keysFor = (
 
 describe('visibleStudentVerbs — enrolled student', () => {
   it('gives an academic coordinator every surface they can reach', () => {
-    // ROUTE_ACCESS: /billing and /p-files exclude academic_coordinator.
+    // ROUTE_ACCESS: /p-files excludes academic_coordinator.
     expect(keysFor(ENROLLED, 'academic_coordinator')).toEqual([
       'record',
       'attendance',
@@ -71,7 +71,6 @@ describe('visibleStudentVerbs — enrolled student', () => {
       'record',
       'academic',
       'discipline',
-      'billing',
       'application',
       'documents',
     ]);
@@ -95,13 +94,6 @@ describe('visibleStudentVerbs — enrolled student', () => {
         expect(verb.href).not.toContain('E26-0042');
       }
     }
-  });
-
-  it('opens Billing at the student, keyed on studentNumber', () => {
-    const billing = visibleStudentVerbs(ENROLLED, 'admissions').find(
-      (v) => v.key === 'billing'
-    );
-    expect(billing?.href).toBe('/billing/2024-0117');
   });
 
   it('deep-links the tab verbs at the Records detail page', () => {
@@ -145,9 +137,8 @@ describe('primaryStudentVerb — what Enter runs', () => {
   it('opens the student in the module you are standing in', () => {
     const at = (path: string) =>
       primaryStudentVerb(ENROLLED, 'admissions', path)?.key;
-    expect(at('/billing')).toBe('billing');
-    expect(at('/billing/H250001/invoices/9')).toBe('billing');
     expect(at('/p-files')).toBe('documents');
+    expect(at('/p-files/E26-0042')).toBe('documents');
     expect(at('/admissions/applications?ay=AY2026')).toBe('application');
     expect(at('/records/students')).toBe('record');
   });
@@ -156,14 +147,14 @@ describe('primaryStudentVerb — what Enter runs', () => {
     expect(
       primaryStudentVerb(ENROLLED, 'academic_coordinator', '/markbook')?.key
     ).toBe('record');
-    // In Billing, but this role cannot reach Billing.
+    // In P-Files, but this role cannot reach P-Files.
     expect(
-      primaryStudentVerb(ENROLLED, 'academic_coordinator', '/billing')?.key
+      primaryStudentVerb(ENROLLED, 'academic_coordinator', '/p-files')?.key
     ).toBe('record');
-    // An applicant has no Billing page.
-    expect(primaryStudentVerb(APPLICANT, 'admissions', '/billing')?.key).toBe(
-      'application'
-    );
+    // An applicant has no Records page.
+    expect(
+      primaryStudentVerb(APPLICANT, 'admissions', '/records/students')?.key
+    ).toBe('application');
   });
 
   it('is the application for an applicant, as before', () => {
