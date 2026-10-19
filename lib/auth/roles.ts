@@ -657,6 +657,7 @@ const BILLING_NAV: NavSection[] = [
     items: [
       { href: '/billing', label: 'Customers' },
       { href: '/billing/review', label: 'To review' },
+      { href: '/billing/banks', label: 'Bank accounts' },
       {
         href: '/billing/settings',
         label: 'QuickBooks',

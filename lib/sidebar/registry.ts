@@ -29,6 +29,7 @@ import {
   History,
   IdCard,
   KeyRound,
+  Landmark,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -216,6 +217,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/billing': Wallet,
       // Students the SIS couldn't match to a QuickBooks customer.
       '/billing/review': UserSearch,
+      // QuickBooks' bank accounts: balances and transactions.
+      '/billing/banks': Landmark,
       // Mapping, years, payment accounts, connection.
       '/billing/settings': SlidersHorizontal,
     },
