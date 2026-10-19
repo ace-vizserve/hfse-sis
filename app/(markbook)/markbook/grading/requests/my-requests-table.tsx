@@ -1,8 +1,12 @@
 'use client';
 
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, X } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { Badge } from '@/components/ui/badge';
@@ -543,23 +547,75 @@ export function MyRequestsTable({
     [data]
   );
 
+  // Bulk Cancel: the row's Cancel (PATCH {action:'cancel'}) once per ticked
+  // pending request.
+  const bulk = useBulkAction();
+  const [confirm, setConfirm] = useState<MyRequestRow[] | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
+
+  async function cancelRequests() {
+    const picked = confirm ?? [];
+    setConfirm(null);
+    await bulk(picked, {
+      pending: `Cancelling ${picked.length} ${picked.length === 1 ? 'request' : 'requests'}…`,
+      done: (n) => `${n} cancelled`,
+      failed: 'Could not cancel',
+      label: (r) => `${r.studentLabel} ${r.field_label}`,
+      one: (r) =>
+        apiFetch(
+          `/api/change-requests/${encodeURIComponent(r.id)}`,
+          jsonInit('PATCH', { action: 'cancel' })
+        ),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
   return (
-    <DataTable<MyRequestRow>
-      data={data}
-      columns={columns}
-      getRowId={(row) => row.id}
-      searchKeys={['field_label', 'reason_category', 'proposed_value']}
-      searchPlaceholder="Search field, reason, value…"
-      facets={facets}
-      statusTabs={STATUS_TABS}
-      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
-      url={{ enabled: true, namespace: 'myreq' }}
-      initialSort={[{ id: 'requested_at', desc: true }]}
-      pageSize={25}
-      pageSizeOptions={[10, 25, 50]}
-      csv={CSV_CONFIG}
-      emptyState={{ title: "You haven't filed any change requests yet." }}
-      emptyFilteredState={{ title: 'No requests match the current filter.' }}
-    />
+    <>
+      <DataTable<MyRequestRow>
+        data={data}
+        columns={columns}
+        getRowId={(row) => row.id}
+        searchKeys={['field_label', 'reason_category', 'proposed_value']}
+        searchPlaceholder="Search field, reason, value…"
+        facets={facets}
+        statusTabs={STATUS_TABS}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'myreq' }}
+        initialSort={[{ id: 'requested_at', desc: true }]}
+        pageSize={25}
+        pageSizeOptions={[10, 25, 50]}
+        csv={CSV_CONFIG}
+        selection={{
+          enabled: true,
+          enableRowSelection: (r) => r.status === 'pending',
+          bulkActions: [
+            {
+              key: 'cancel',
+              label: 'Cancel request',
+              icon: X,
+              destructive: true,
+              onTrigger: (rows) => setConfirm(rows),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
+        emptyState={{ title: "You haven't filed any change requests yet." }}
+        emptyFilteredState={{ title: 'No requests match the current filter.' }}
+      />
+      <BulkActionDialog
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={
+          confirm?.length === 1
+            ? 'Cancel this request?'
+            : `Cancel ${confirm?.length ?? 0} requests?`
+        }
+        description="This withdraws each request from whoever is deciding it now, and nobody further along will see it. You can file new ones if you change your mind."
+        confirmLabel="Cancel requests"
+        destructive
+        onConfirm={cancelRequests}
+      />
+    </>
   );
 }
