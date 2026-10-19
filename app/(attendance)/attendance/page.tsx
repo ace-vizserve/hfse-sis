@@ -18,6 +18,7 @@ import {
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { sgToday } from '@/lib/dates';
 import { Suspense } from 'react';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
 
@@ -86,14 +87,14 @@ import type { Role } from '@/lib/auth/roles';
 // `loadAdvisedSections` exists to prevent. The function is named
 // `…ForTeacher`; it resolves a teacher's dashboard; the literal says so.
 async function loadAdviserDashboardForTeacher(
-  userId: string
+  userId: string,
+  ayCode?: string
 ): Promise<AdviserDashboard | null> {
   const service = createServiceClient();
-  const { data: ayRow } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
+  const ayQuery = service.from('academic_years').select('id');
+  const { data: ayRow } = await (
+    ayCode ? ayQuery.eq('ay_code', ayCode) : ayQuery.eq('is_current', true)
+  ).maybeSingle();
   const academicYearId = (ayRow as { id: string } | null)?.id;
   if (!academicYearId) return null;
 
@@ -208,7 +209,19 @@ export default async function AttendanceDashboard({
   // teaching admin working as a teacher gets the first, because switching
   // changes her role.
   if (view === 'teacher') {
-    const teacherView = await loadAdviserDashboardForTeacher(session.id);
+    // Year on screen: ?ay= when it names a real year, else the current one.
+    const teacherSearch = await searchParams;
+    const teacherAyCodes = await listAyCodes(await createClient());
+    const teacherAy =
+      typeof teacherSearch.ay === 'string' &&
+      teacherAyCodes.includes(teacherSearch.ay)
+        ? teacherSearch.ay
+        : undefined;
+    const teacherCurrentAy = (await getCurrentAcademicYear())?.ay_code;
+    const teacherView = await loadAdviserDashboardForTeacher(
+      session.id,
+      teacherAy
+    );
     // Advises nothing in this view → the section picker, which now scopes the
     // same way and says so. A subject-teacher-only account lands on its empty
     // state rather than on a dashboard with no classes on it.
@@ -216,7 +229,18 @@ export default async function AttendanceDashboard({
     return (
       <PageShell>
         <DeclarationsWaitingPanel count={declarationsWaiting} />
-        <AdviserAttendanceDashboard data={teacherView} />
+        <AdviserAttendanceDashboard
+          data={teacherView}
+          ayControl={
+            teacherAyCodes.length > 0 ? (
+              <AySwitcher
+                current={teacherAy ?? teacherCurrentAy ?? teacherAyCodes[0]}
+                options={teacherAyCodes}
+                className="w-36"
+              />
+            ) : undefined
+          }
+        />
       </PageShell>
     );
   }

@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import { emailParentsPublication } from '@/lib/notifications/email-parents-publication';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { ayCodeForTerm } from '@/lib/cache/ay-code-for-row';
 import { computePublishReadiness } from '@/lib/markbook/publish-readiness';
 
 // GET /api/report-card-publications?section_id=...
@@ -284,7 +284,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  invalidateDrillTags('markbook', await requireCurrentAyCode(service));
+  invalidateDrillTags('markbook', await ayCodeForTerm(service, data.term_id));
 
   return NextResponse.json({ publication: data, notification });
 }

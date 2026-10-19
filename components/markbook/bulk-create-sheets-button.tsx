@@ -93,7 +93,7 @@ export function BulkCreateSheetsButton({
           loadingText="Creating…"
         >
           {!busy && <PackagePlus className="size-3.5" />}
-          Create all sheets
+          Create all sheets for {ayCode}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>

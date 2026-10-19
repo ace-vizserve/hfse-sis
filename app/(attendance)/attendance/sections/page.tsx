@@ -286,18 +286,10 @@ export default async function AttendanceSectionsListPage({
               className="w-36"
             />
           )}
-          {ay && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {ay.ay_code}
-            </Badge>
-          )}
           {activeTerm && (
             <Badge
               variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+              className="h-6 border-brand-indigo-soft bg-accent px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-indigo-deep"
             >
               {activeTerm.label}
             </Badge>

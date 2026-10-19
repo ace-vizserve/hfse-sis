@@ -25,7 +25,7 @@ import {
 } from '@/lib/notifications/email-change-request';
 import { createClient } from '@/lib/supabase/server';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { ayCodeForSection } from '@/lib/cache/ay-code-for-row';
 import {
   GRADE_CHANGE_SUBJECT_TYPE,
   resolveGradeChangeFlow,
@@ -549,7 +549,10 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  invalidateDrillTags('markbook', await requireCurrentAyCode(service));
+  invalidateDrillTags(
+    'markbook',
+    await ayCodeForSection(service, sheet.section_id)
+  );
 
   // Pre-flight: who is on step 1, with an email address. Resolved before the
   // response so a teacher whose request reaches nobody's inbox is told so and

@@ -1613,6 +1613,8 @@ export type DocumentValidationInput = z.infer<typeof DocumentValidationSchema>;
 
 export const AllowanceSchema = z.object({
   allowance: z.number().int().min(0).max(30),
+  // Year the enrolee number belongs to; omitted = the current year.
+  ayCode: z.string().min(1).optional(),
 });
 
 export type AllowanceInput = z.infer<typeof AllowanceSchema>;
@@ -1627,6 +1629,8 @@ export type AllowanceInput = z.infer<typeof AllowanceSchema>;
 
 export const VlAllowanceSchema = z.object({
   vlAllowance: z.number().int().min(0).max(10).nullable(),
+  // Year the enrolee number belongs to; omitted = the current year.
+  ayCode: z.string().min(1).optional(),
 });
 
 export type VlAllowanceInput = z.infer<typeof VlAllowanceSchema>;

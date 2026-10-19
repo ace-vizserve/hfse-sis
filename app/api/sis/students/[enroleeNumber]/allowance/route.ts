@@ -12,7 +12,7 @@ import {
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { AllowanceSchema } from '@/lib/schemas/sis';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { listAyCodes, requireCurrentAyCode } from '@/lib/academic-year';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 
 // PATCH /api/sis/students/[enroleeNumber]/allowance
@@ -53,7 +53,19 @@ export async function PATCH(
 
   const service = createServiceClient();
   const admissions = createAdmissionsClient();
-  const ayCode = await requireCurrentAyCode(service);
+  const currentAyCode = await requireCurrentAyCode(service);
+  // The enrolee number belongs to the year the caller is looking at; default
+  // is the current year so existing callers are unchanged.
+  let ayCode = currentAyCode;
+  if (parsed.data.ayCode && parsed.data.ayCode !== currentAyCode) {
+    if (!(await listAyCodes(service)).includes(parsed.data.ayCode)) {
+      return NextResponse.json(
+        { error: 'unknown academic year' },
+        { status: 400 }
+      );
+    }
+    ayCode = parsed.data.ayCode;
+  }
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
 
   // enroleeNumber → studentNumber via admissions applications.
@@ -138,6 +150,7 @@ export async function PATCH(
 
   revalidateTag(`sis:${ayCode}`, 'max');
   invalidateDrillTags('records', ayCode);
+  if (ayCode !== currentAyCode) invalidateDrillTags('records', currentAyCode);
 
   return NextResponse.json({ ok: true, changed: true, allowance });
 }
