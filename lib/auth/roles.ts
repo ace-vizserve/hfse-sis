@@ -644,6 +644,17 @@ const CLASSROOM_NAV: NavSection[] = [
       },
     ],
   },
+  {
+    label: 'Admin',
+    items: [
+      // Same office roles as Discipline (and its ROUTE_ACCESS row).
+      {
+        href: '/classroom/audit-log',
+        label: 'Audit Log',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+    ],
+  },
 ];
 
 // SIS admin hub — the system-level admin surface where structural ops live.
@@ -1152,6 +1163,11 @@ export const ROUTE_ACCESS: Array<{
   // every teacher.
   {
     prefix: '/classroom/discipline',
+    allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
+  // Classroom's audit log: office roles, as Discipline. Also above `/classroom`.
+  {
+    prefix: '/classroom/audit-log',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Classroom — a section × term workspace for teaching staff. Mandatory
