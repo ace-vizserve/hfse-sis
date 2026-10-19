@@ -11,7 +11,6 @@ import {
   Users,
 } from 'lucide-react';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardAction,
@@ -209,7 +208,6 @@ export default async function ReportCardsListPage({
             <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
               Report cards.
             </h1>
-            {ay && <Badge variant="outline">{ay.ay_code}</Badge>}
           </div>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Preview each student&apos;s report card before printing, and control
