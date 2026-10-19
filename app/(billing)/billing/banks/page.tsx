@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Landmark, Scale } from 'lucide-react';
+import { Landmark } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -6,7 +6,6 @@ import { BankPeriodPicker } from '@/components/billing/bank-period-picker';
 import { BankTransactionsTable } from '@/components/billing/bank-transactions-table';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import { PageShell } from '@/components/ui/page-shell';
 import type { BankLedger } from '@/lib/billing/bank-ledger';
 import {
@@ -155,48 +154,66 @@ export default async function BillingBanksPage({
           </nav>
 
           <section className="space-y-4">
+            {/* QuickBooks' Bank Register head: the account, its period, and
+                the Ending balance on the right. */}
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-                  {selected.name}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {formatDay(from)} to {formatDay(to)}
-                </p>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+                    Bank Register · {selected.name}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDay(from)} to {formatDay(to)}
+                  </p>
+                </div>
+                <BankPeriodPicker from={from} to={to} />
               </div>
-              <BankPeriodPicker from={from} to={to} />
-            </div>
-
-            <div className="@container/main">
-              <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @3xl/main:grid-cols-4">
-                <MetricCard
-                  label="Balance at start"
-                  value={
-                    ledger.opening === null ? '—' : formatSgd(ledger.opening)
-                  }
-                  icon={Scale}
-                  subtext={formatDay(from)}
-                />
-                <MetricCard
-                  label="Money in"
-                  value={formatSgd(ledger.moneyIn)}
-                  icon={ArrowDownLeft}
-                  subtext={`${ledger.rows.filter((r) => r.amount > 0).length.toLocaleString('en-SG')} transactions`}
-                />
-                <MetricCard
-                  label="Money out"
-                  value={formatSgd(ledger.moneyOut)}
-                  icon={ArrowUpRight}
-                  subtext={`${ledger.rows.filter((r) => r.amount < 0).length.toLocaleString('en-SG')} transactions`}
-                />
-                <MetricCard
-                  label="Balance at end"
-                  value={
-                    ledger.closing === null ? '—' : formatSgd(ledger.closing)
-                  }
-                  icon={Landmark}
-                  subtext={formatDay(to)}
-                />
+              <div className="space-y-2 md:text-right">
+                <p className="text-[12px] text-muted-foreground">
+                  Ending balance
+                </p>
+                <p
+                  className={cn(
+                    'font-serif text-[30px] font-semibold leading-none tabular-nums',
+                    selected.balance < 0
+                      ? 'text-destructive'
+                      : 'text-foreground'
+                  )}
+                >
+                  {formatSgd(selected.balance)}
+                </p>
+                <dl className="flex flex-wrap gap-x-5 gap-y-1 text-sm md:justify-end">
+                  <div className="flex gap-1.5">
+                    <dt className="text-muted-foreground">At start</dt>
+                    <dd className="tabular-nums">
+                      {ledger.opening === null
+                        ? '—'
+                        : formatSgd(ledger.opening)}
+                    </dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-muted-foreground">Deposits</dt>
+                    <dd className="tabular-nums">
+                      {formatSgd(ledger.moneyIn)}
+                    </dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-muted-foreground">Payments</dt>
+                    <dd className="tabular-nums">
+                      {formatSgd(ledger.moneyOut)}
+                    </dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="text-muted-foreground">
+                      At {formatDay(to)}
+                    </dt>
+                    <dd className="tabular-nums">
+                      {ledger.closing === null
+                        ? '—'
+                        : formatSgd(ledger.closing)}
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </div>
 
