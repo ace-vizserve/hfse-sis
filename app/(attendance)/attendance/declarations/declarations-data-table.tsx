@@ -2,7 +2,22 @@
 
 import { useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { CalendarCheck, Inbox, Plane, Stethoscope } from 'lucide-react';
+import {
+  CalendarCheck,
+  Check,
+  Inbox,
+  Plane,
+  Stethoscope,
+  X,
+} from 'lucide-react';
+
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { isEmptyRichText } from '@/lib/rich-text';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,6 +119,48 @@ export function DeclarationsQueueTable({
     setSeenOpenRequestId(openRequestId);
     setOpenRow(rows.find((r) => r.requestId === openRequestId) ?? null);
   }
+
+  // Bulk Approve / Turn down: the sheet's own call (POST /api/approvals/[id]/
+  // decide) once per ticked filing, with one note for all of them.
+  const bulk = useBulkAction();
+  const [decision, setDecision] = useState<{
+    action: 'approve' | 'reject';
+    rows: DeclarationQueueRow[];
+  } | null>(null);
+  const [bulkNote, setBulkNote] = useState('');
+  const [resetSignal, setResetSignal] = useState(0);
+
+  function openDecision(
+    action: 'approve' | 'reject',
+    picked: DeclarationQueueRow[]
+  ) {
+    setBulkNote('');
+    setDecision({ action, rows: picked.filter((r) => r.canDecide) });
+  }
+
+  async function confirmDecision() {
+    if (!decision) return;
+    const { action, rows: picked } = decision;
+    const note = bulkNote.trim();
+    setDecision(null);
+    const n = picked.length;
+    await bulk(picked, {
+      pending: `${action === 'approve' ? 'Approving' : 'Turning down'} ${n} ${n === 1 ? 'filing' : 'filings'}…`,
+      done: (c) => `${c} ${action === 'approve' ? 'approved' : 'turned down'}`,
+      failed:
+        action === 'approve' ? 'Could not approve' : 'Could not turn down',
+      label: (r) => r.studentName,
+      one: (r) =>
+        apiFetch(
+          `/api/approvals/${r.requestId}/decide`,
+          jsonInit('POST', { action, note: note || undefined })
+        ),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
+  const decisionCount = decision?.rows.length ?? 0;
+  const decisionNoun = decisionCount === 1 ? 'filing' : 'filings';
 
   const columns: ColumnDef<DeclarationQueueRow>[] = [
     {
@@ -386,7 +443,69 @@ export function DeclarationsQueueTable({
         // pass this already. Namespaced so the `?filing=` deep link the
         // attendance sheet builds cannot collide with a facet key.
         url={{ enabled: true, namespace: 'decl' }}
+        selection={{
+          enabled: true,
+          enableRowSelection: (row) => row.canDecide,
+          bulkActions: [
+            {
+              key: 'approve',
+              label: 'Approve',
+              icon: Check,
+              onTrigger: (picked) => openDecision('approve', picked),
+            },
+            {
+              key: 'reject',
+              label: 'Turn down',
+              icon: X,
+              destructive: true,
+              onTrigger: (picked) => openDecision('reject', picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
       />
+
+      <BulkActionDialog
+        open={decision !== null}
+        onOpenChange={(o) => !o && setDecision(null)}
+        title={
+          decision?.action === 'approve'
+            ? `Approve ${decisionCount} ${decisionNoun}?`
+            : `Turn down ${decisionCount} ${decisionNoun}?`
+        }
+        description={
+          decision?.action === 'approve'
+            ? 'Each is approved at your step, exactly as if you had opened and approved it. A step that needs everyone records your approval and waits for the others. Your note goes on all of them.'
+            : 'Each filing stops here and the parents are told. Your note goes to every parent as the reason.'
+        }
+        confirmLabel={decision?.action === 'approve' ? 'Approve' : 'Turn down'}
+        destructive={decision?.action === 'reject'}
+        confirmDisabled={
+          decision?.action === 'reject' && isEmptyRichText(bulkNote)
+        }
+        onConfirm={confirmDecision}
+      >
+        <Field>
+          <FieldLabel htmlFor="bulk-declaration-note">
+            Add a note{' '}
+            <span className="text-muted-foreground">
+              ({decision?.action === 'reject' ? 'required' : 'optional'})
+            </span>
+          </FieldLabel>
+          <RichTextEditor
+            id="bulk-declaration-note"
+            value={bulkNote}
+            maxLength={APPROVAL_NOTE_MAX}
+            rows={3}
+            aria-label="Add a note"
+            placeholder="Anything the next person, or the parent, should know."
+            onChange={setBulkNote}
+          />
+          <FieldDescription>
+            If you turn these down, the parents read this as the reason.
+          </FieldDescription>
+        </Field>
+      </BulkActionDialog>
 
       <DeclarationDecisionSheet
         row={openRow}
