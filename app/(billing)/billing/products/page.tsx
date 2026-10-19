@@ -38,6 +38,7 @@ export default async function BillingProductsPage() {
           <BillingPageHeader
             crumbs={[{ label: 'Sales' }, { label: 'Products & services' }]}
             title="Products & services"
+            description="Everything the school bills for, as QuickBooks keeps it."
           />
           {!connected ? (
             <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />

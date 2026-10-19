@@ -1,13 +1,21 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { Ban, ChevronDown, ExternalLink, Package } from 'lucide-react';
+import {
+  Ban,
+  ChevronDown,
+  CircleOff,
+  ExternalLink,
+  Package,
+  PackageCheck,
+  Wrench,
+} from 'lucide-react';
 import * as React from 'react';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
-import { FilterSelect } from '@/components/billing/customer-transactions';
 import { ProductSheet } from '@/components/billing/product-sheet';
 import { PrintIcon, RefreshIcon } from '@/components/billing/toolbar-icons';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,44 +44,28 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { formatSgd } from '@/lib/qbo/format';
 
-// Billing → Products & services, as QuickBooks' page: More ▾ and New
-// product/service ▾ at the top; Search, Type, Stock status and Filters (the
-// Status); Name · Sales description · Qty on hand · Category · SKU · Type ·
-// Price · Cost · Actions (Edit ▾: Run report, Duplicate, Make inactive);
-// Batch actions → Make inactive. Billing builds what a school bills with —
-// New service, Edit and Make inactive on a service; everything else opens
-// the same place in QuickBooks.
+// Billing → Products & services. WHAT is here is QuickBooks' page: More ▾ and
+// New product/service ▾; Active / Inactive / All, Type and Stock status;
+// Name · Sales description · Qty on hand · Category · SKU · Type · Price ·
+// Cost · Actions (Edit ▾: Run report, Duplicate, Make inactive); Make
+// inactive on the ticked rows. HOW it looks is the SIS's: hero, stat tiles
+// that open the matching tab, the shared DataTable with its footer bar.
+// Billing builds what a school bills with — New service, Edit and Make
+// inactive on a service; everything else opens the same place in QuickBooks.
 
-const TYPE_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'Bundle', label: 'Bundle' },
-  { value: 'Inventory', label: 'Inventory' },
-  { value: 'Non-inventory', label: 'Non-inventory' },
-  { value: 'Service', label: 'Service' },
-] as const;
-const STOCK_OPTIONS = [
-  { value: 'any', label: 'Any' },
-  { value: 'low', label: 'Low stock' },
-  { value: 'out', label: 'Out of stock' },
-] as const;
-const STATUS_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'all', label: 'All' },
-] as const;
+const TYPE_OPTIONS = ['Bundle', 'Inventory', 'Non-inventory', 'Service'];
+const STOCK_OPTIONS = ['Low stock', 'Out of stock'];
 
-type Stock = (typeof STOCK_OPTIONS)[number]['value'];
-type Status = (typeof STATUS_OPTIONS)[number]['value'];
-type TypeFilter = (typeof TYPE_OPTIONS)[number]['value'];
-
-function inStock(r: ProductRow, s: Stock): boolean {
-  if (s === 'any') return true;
-  if (r.qtyOnHand === null) return false;
-  if (s === 'out') return r.qtyOnHand <= 0;
-  return (
-    r.qtyOnHand > 0 && r.reorderPoint !== null && r.qtyOnHand <= r.reorderPoint
-  );
+/** QuickBooks' stock status of an item ('' when it keeps no stock). */
+function stockStatus(r: ProductRow): string {
+  if (r.qtyOnHand === null) return '';
+  if (r.qtyOnHand <= 0) return 'Out of stock';
+  if (r.reorderPoint !== null && r.qtyOnHand <= r.reorderPoint)
+    return 'Low stock';
+  return 'In stock';
 }
+
+const NS = 'billing-products';
 
 const money = (n: number | null) => (n ? formatSgd(n) : '');
 
@@ -105,9 +97,6 @@ export function ProductsView({
 }) {
   const run = useWriteAction();
   const qbItems = `${qbBase}/app/items`;
-  const [type, setType] = React.useState<TypeFilter>('all');
-  const [stock, setStock] = React.useState<Stock>('any');
-  const [status, setStatus] = React.useState<Status>('active');
   const [sheet, setSheet] = React.useState<{
     itemId: string | null;
     key: number;
@@ -118,15 +107,13 @@ export function ProductsView({
   const openSheet = (itemId: string | null) =>
     setSheet((s) => ({ itemId, key: (s?.key ?? 0) + 1 }));
 
-  const shown = React.useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          (type === 'all' || r.type === type) &&
-          inStock(r, stock) &&
-          (status === 'all' || (status === 'active') === r.active)
-      ),
-    [rows, type, stock, status]
+  const counts = React.useMemo(
+    () => ({
+      active: rows.filter((r) => r.active).length,
+      services: rows.filter((r) => r.active && r.type === 'Service').length,
+      inactive: rows.filter((r) => !r.active).length,
+    }),
+    [rows]
   );
 
   async function makeInactive(list: ProductRow[]) {
@@ -268,6 +255,14 @@ export function ProductsView({
         meta: { label: 'Type' },
       },
       {
+        // QuickBooks' Stock status filter; hidden until shown from Columns.
+        id: 'stock',
+        accessorFn: (r) => stockStatus(r),
+        header: 'Stock status',
+        meta: { label: 'Stock status' },
+        enableSorting: false,
+      },
+      {
         id: 'price',
         accessorFn: (r) => r.price ?? 0,
         header: ({ column }) => (
@@ -336,7 +331,7 @@ export function ProductsView({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     className="size-7"
                     aria-label={`More for ${r.name}`}
@@ -368,8 +363,11 @@ export function ProductsView({
     <BillingPageHeader
       crumbs={[{ label: 'Sales' }, { label: 'Products & services' }]}
       title="Products & services"
+      description="Everything the school bills for, as QuickBooks keeps it. Add or edit a service here; other kinds of item open in QuickBooks."
       actions={
         <>
+          <RefreshIcon />
+          <PrintIcon />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
@@ -409,6 +407,33 @@ export function ProductsView({
   return (
     <>
       {header}
+      {rows.length > 0 && (
+        <div className="@container/main">
+          <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-3">
+            <MetricCard
+              label="Active items"
+              value={counts.active}
+              icon={PackageCheck}
+              subtext="Offered on new invoices"
+              href={`?${NS}.status=active`}
+            />
+            <MetricCard
+              label="Services"
+              value={counts.services}
+              icon={Wrench}
+              subtext="Active services, the fees a school bills"
+              href={`?${NS}.status=active&${NS}.type=Service`}
+            />
+            <MetricCard
+              label="Inactive"
+              value={counts.inactive}
+              icon={CircleOff}
+              subtext="Kept for history, not offered"
+              href={`?${NS}.status=inactive`}
+            />
+          </div>
+        </div>
+      )}
       {rows.length === 0 ? (
         <Card className="py-0">
           <DataTableEmptyState
@@ -419,13 +444,14 @@ export function ProductsView({
         </Card>
       ) : (
         <DataTable<ProductRow>
-          data={shown}
+          data={rows}
           columns={columns}
           // Columns no item uses start hidden, so the row fits (Columns brings
           // them back).
           initialColumnVisibility={{
             qty: rows.some((r) => r.qtyOnHand != null),
             cost: false,
+            stock: false,
             sku: rows.some((r) => !!r.sku),
             description: rows.some((r) => !!r.description),
           }}
@@ -436,40 +462,30 @@ export function ProductsView({
             (r) => r.category ?? 'Uncategorized',
           ]}
           searchPlaceholder="Search by name, SKU or category"
-          toolbarFilters={
-            <div className="flex flex-wrap items-end gap-2">
-              <FilterSelect
-                id="items-type"
-                label="Type"
-                value={type}
-                options={TYPE_OPTIONS}
-                onChange={setType}
-              />
-              <FilterSelect
-                id="items-stock"
-                label="Stock status"
-                value={stock}
-                options={STOCK_OPTIONS}
-                onChange={setStock}
-              />
-              <FilterSelect
-                id="items-status"
-                label="Status"
-                value={status}
-                options={STATUS_OPTIONS}
-                onChange={setStatus}
-              />
-            </div>
-          }
-          toolbarTrailing={
-            <div className="flex items-center">
-              <RefreshIcon />
-              <PrintIcon />
-            </div>
-          }
+          statusTabs={[
+            {
+              value: 'active',
+              label: 'Active',
+              predicate: (r) => r.active,
+              isDefault: true,
+            },
+            {
+              value: 'inactive',
+              label: 'Inactive',
+              predicate: (r) => !r.active,
+            },
+            { value: 'all', label: 'All', predicate: () => true },
+          ]}
+          facets={[
+            { columnId: 'type', label: 'Type', valueOptions: TYPE_OPTIONS },
+            {
+              columnId: 'stock',
+              label: 'Stock status',
+              valueOptions: STOCK_OPTIONS,
+            },
+          ]}
           selection={{
             enabled: true,
-            placement: 'menu',
             enableRowSelection: (r) => r.active,
             bulkActions: [
               {
@@ -482,12 +498,12 @@ export function ProductsView({
           }}
           selectionResetSignal={reset}
           initialSort={[{ id: 'name', desc: false }]}
-          url={{ enabled: true, namespace: 'billing-products' }}
+          url={{ enabled: true, namespace: NS }}
           pageSize={50}
           csv={{ filename: 'billing-products.csv' }}
           emptyFilteredState={{
             title: 'Nothing matches.',
-            body: 'Set Type, Stock status or Status back, or clear the search.',
+            body: 'Clear Type or Stock status, pick another tab, or clear the search.',
           }}
         />
       )}

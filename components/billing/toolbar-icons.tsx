@@ -11,8 +11,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-// The small icon buttons QuickBooks puts above its lists and reports
-// (refresh, print, export, settings), each named on hover.
+// The small actions QuickBooks keeps beside its lists and reports (refresh,
+// print), drawn as SIS outline icon buttons and each named on hover. They sit
+// with the page's other actions in the header.
 
 export function ToolbarIcon({
   icon: Icon,
@@ -31,16 +32,15 @@ export function ToolbarIcon({
   loading?: boolean;
 }) {
   const button = href ? (
-    <Button asChild variant="ghost" size="icon" className="size-8">
+    <Button asChild variant="outline" size="icon">
       <a href={href} target="_blank" rel="noreferrer" aria-label={label}>
         <Icon className="size-4" />
       </a>
     </Button>
   ) : (
     <Button
-      variant="ghost"
+      variant="outline"
       size="icon"
-      className="size-8"
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
