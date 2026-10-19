@@ -39,7 +39,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 import { getRoleFromClaims } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
@@ -131,7 +132,12 @@ export default async function MarkbookHome({
   // below rather than sitting between two awaits.
   const service = createServiceClient();
 
-  const currentAy = await getCurrentAcademicYear(service);
+  // The year being viewed: `?ay=` when it names a real year, else the
+  // current one. Every loader below follows it.
+  const ayState = await resolveSelectedAy(service, resolvedSearchParams.ay);
+  const currentAy = ayState?.selected ?? null;
+  const isCurrentAy = ayState?.isCurrent ?? true;
+  const ayCodes = ayState?.ayCodes ?? [];
   // Named `view` because it decides only which dashboard this is.
   const view = role;
   const ayId = currentAy?.id ?? null;
@@ -154,21 +160,24 @@ export default async function MarkbookHome({
     view === 'school_admin' ||
     view === 'superadmin';
 
-  const [windows, ayCodes] = await Promise.all([
+  const windows = ayCode
+    ? await getDashboardWindows(ayCode)
+    : {
+        term: {
+          thisTerm: null,
+          lastTerm: null,
+          byNumber: { 1: null, 2: null, 3: null, 4: null },
+        },
+        ay: { thisAY: null, lastAY: null },
+        activeTermFallback: false,
+      };
+  // `ay` is overwritten with the validated code so a bad `?ay=` cannot
+  // reach the range resolver.
+  const rangeInput = resolveRange(
+    { ...resolvedSearchParams, ay: ayCode },
+    windows,
     ayCode
-      ? getDashboardWindows(ayCode)
-      : Promise.resolve({
-          term: {
-            thisTerm: null,
-            lastTerm: null,
-            byNumber: { 1: null, 2: null, 3: null, 4: null },
-          },
-          ay: { thisAY: null, lastAY: null },
-          activeTermFallback: false,
-        }),
-    listAyCodes(service),
-  ]);
-  const rangeInput = resolveRange(resolvedSearchParams, windows, ayCode);
+  );
 
   const [
     kpisResult,
@@ -337,15 +346,22 @@ export default async function MarkbookHome({
         description={heroDescription}
         badges={
           currentAy
-            ? [{ label: currentAy.ay_code }, { label: 'Current', tone: 'mint' }]
+            ? [
+                { label: currentAy.ay_code },
+                isCurrentAy
+                  ? { label: 'Current', tone: 'mint' }
+                  : { label: 'Historical', tone: 'muted' },
+              ]
             : []
         }
         actions={
-          // Teacher view gets no button — only the admin dashboard (this
-          // section) has anything to export. Gated on kpisResult (not just
-          // canSeeAdmin) so the button never appears without the Key
-          // figures data it depends on.
-          canSeeAdmin && kpisResult && ayCode ? (
+          // Admins export from here and switch year in the toolbar below;
+          // the teacher view has no toolbar, so the year switcher sits here.
+          // Gated on kpisResult (not just canSeeAdmin) so the export button
+          // never appears without the Key figures data it depends on.
+          isTeacher && ayCode ? (
+            <AySwitcher current={ayCode} options={ayCodes} className="w-40" />
+          ) : canSeeAdmin && kpisResult && ayCode ? (
             <ExportCsvButton
               data={buildMarkbookDashboardExport({
                 ayCode,
@@ -395,7 +411,6 @@ export default async function MarkbookHome({
           }
           termWindows={windows.term}
           ayWindows={windows.ay}
-          showAySwitcher={false}
           presets={TERM_SCOPED_PRESETS}
         />
       )}

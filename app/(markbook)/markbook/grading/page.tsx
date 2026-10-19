@@ -9,6 +9,8 @@ import {
   Plus,
   Sparkles,
 } from 'lucide-react';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { listAyCodes } from '@/lib/academic-year';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
@@ -227,10 +229,11 @@ export default async function GradingListPage({
         .order('term_number')
     : Promise.resolve({ data: [] });
 
-  const [sheetsRes, advisorRes, termLocksRes] = await Promise.all([
+  const [sheetsRes, advisorRes, termLocksRes, ayCodes] = await Promise.all([
     sheetsPromise,
     advisorPromise,
     termLocksPromise,
+    listAyCodes(supabase),
   ]);
   type TermLockRow = {
     id: string;
@@ -557,22 +560,31 @@ export default async function GradingListPage({
             One sheet per subject × section × term. Click a row to enter scores.
           </p>
         </div>
-        {canCreate && (
-          <div className="flex flex-wrap items-center gap-2">
-            {currentAy && (
-              <BulkCreateSheetsButton
-                ayId={currentAy.id}
-                ayCode={currentAy.ay_code}
-              />
-            )}
-            <Button asChild>
-              <Link href="/markbook/grading/new">
-                <Plus className="h-4 w-4" />
-                New grading sheet
-              </Link>
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {listedAy && (
+            <AySwitcher
+              current={listedAy.ay_code}
+              options={ayCodes}
+              className="w-40"
+            />
+          )}
+          {canCreate && (
+            <>
+              {currentAy && (
+                <BulkCreateSheetsButton
+                  ayId={currentAy.id}
+                  ayCode={currentAy.ay_code}
+                />
+              )}
+              <Button asChild>
+                <Link href="/markbook/grading/new">
+                  <Plus className="h-4 w-4" />
+                  New grading sheet
+                </Link>
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* Grading lock strip (per-term). Each term's lock time (migration 186,

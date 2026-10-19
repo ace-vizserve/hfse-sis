@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Select,
   SelectContent,
@@ -21,6 +21,7 @@ export function SectionPicker({
   selectedId?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Group sections by level for the SelectGroup rendering.
   const grouped = new Map<string, PickerSection[]>();
@@ -36,8 +37,15 @@ export function SectionPicker({
     <Select
       value={selectedId ?? ''}
       onValueChange={(v) => {
-        if (v) router.push(`/markbook/report-cards?section_id=${v}`);
-        else router.push('/markbook/report-cards');
+        // Keep the viewed year and term; sections belong to one year.
+        const next = new URLSearchParams();
+        for (const key of ['ay', 'term']) {
+          const value = searchParams.get(key);
+          if (value) next.set(key, value);
+        }
+        if (v) next.set('section_id', v);
+        const qs = next.toString();
+        router.push(`/markbook/report-cards${qs ? `?${qs}` : ''}`);
       }}
     >
       <SelectTrigger className="h-9 w-full sm:w-[260px]">

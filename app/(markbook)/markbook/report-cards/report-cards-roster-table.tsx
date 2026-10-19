@@ -23,6 +23,8 @@ export type ReportCardsRosterRow = {
   index_number: number;
   /** UUID from `public.students.id` — used for the report-card deep-link. */
   student_id: string;
+  /** The year this roster belongs to — the report card opens in that year. */
+  ay_code: string | null;
   /** Stable cross-year identifier per Hard Rule #4. */
   student_number: string;
   name: string;
@@ -98,7 +100,7 @@ const COLUMNS: ColumnDef<ReportCardsRosterRow>[] = [
       }
       return (
         <IdentifierLink
-          href={`/markbook/report-cards/${row.original.student_id}`}
+          href={`/markbook/report-cards/${row.original.student_id}${row.original.ay_code ? `?ay=${row.original.ay_code}` : ''}`}
         >
           {row.original.name}
         </IdentifierLink>

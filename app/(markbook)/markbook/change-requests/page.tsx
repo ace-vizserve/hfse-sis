@@ -23,7 +23,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { PageShell } from '@/components/ui/page-shell';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import {
   CHANGE_REQUEST_STATUS_CONFIG,
@@ -37,7 +39,12 @@ import {
 export default async function AdminChangeRequestsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sheet_id?: string; req?: string; action?: string }>;
+  searchParams: Promise<{
+    sheet_id?: string;
+    req?: string;
+    action?: string;
+    ay?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -87,17 +94,18 @@ export default async function AdminChangeRequestsPage({
     'grade_changes.approve'
   );
 
-  const { sheet_id, req: reqParam, action: actionParam } = await searchParams;
+  const {
+    sheet_id,
+    req: reqParam,
+    action: actionParam,
+    ay: ayParam,
+  } = await searchParams;
 
   // Current AY — used to scope the queue. Without this filter admins saw
   // change requests from every AY mixed in. `sections.academic_year_id`
   // is the FK column (uuid), not text `ay_code`.
-  const { data: ayData } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
-  const currentAyId = (ayData as { id: string } | null)?.id ?? null;
+  const ayState = await resolveSelectedAy(service, ayParam);
+  const currentAyId = ayState?.selected.id ?? null;
 
   // Designated-approver scope: school_admins see only requests where they are
   // the primary or secondary approver. Legacy rows with both approver columns
@@ -266,18 +274,28 @@ export default async function AdminChangeRequestsPage({
 
   return (
     <PageShell>
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Admin · Grade changes
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Change requests
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Review and decide on locked-sheet change requests from teachers.
-          Approved requests are applied by the registrar; rejected requests are
-          terminal and the teacher is notified.
-        </p>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Admin · Grade changes
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            Change requests
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Review and decide on locked-sheet change requests from teachers.
+            Approved requests are applied by the registrar; rejected requests
+            are terminal and the teacher is notified.
+          </p>
+        </div>
+        {ayState && (
+          <div className="w-full md:w-48">
+            <AySwitcher
+              current={ayState.selected.ay_code}
+              options={ayState.ayCodes}
+            />
+          </div>
+        )}
       </header>
 
       <div className="@container/main">

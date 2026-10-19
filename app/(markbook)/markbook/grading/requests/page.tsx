@@ -6,7 +6,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { PageShell } from '@/components/ui/page-shell';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 import { type ChangeRequestStatus } from '@/lib/markbook/change-request-status';
 import {
   getStaffDisplayNameById,
@@ -70,7 +72,12 @@ function fieldLabel(field: string, slot: number | null): string {
   }
 }
 
-export default async function MyRequestsPage() {
+export default async function MyRequestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string | string[] }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const { role, id: userId } = sessionUser;
@@ -82,12 +89,8 @@ export default async function MyRequestsPage() {
   // AY-scoped via `sections.academic_year_id` (uuid FK, not text ay_code).
   const service = createServiceClient();
 
-  const { data: ayData } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
-  const currentAyId = (ayData as { id: string } | null)?.id ?? null;
+  const ayState = await resolveSelectedAy(service, ayParam);
+  const currentAyId = ayState?.selected.id ?? null;
 
   let listQuery = service
     .from('grade_change_requests')
@@ -251,17 +254,27 @@ export default async function MyRequestsPage() {
 
   return (
     <PageShell>
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Grading · Change requests
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          My requests
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Track the change requests you have filed on locked grading sheets.
-          Approved requests are applied by the registrar.
-        </p>
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Grading · Change requests
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            My requests
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Track the change requests you have filed on locked grading sheets.
+            Approved requests are applied by the registrar.
+          </p>
+        </div>
+        {ayState && (
+          <div className="w-full md:w-48">
+            <AySwitcher
+              current={ayState.selected.ay_code}
+              options={ayState.ayCodes}
+            />
+          </div>
+        )}
       </header>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
