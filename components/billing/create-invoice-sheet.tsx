@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -60,6 +61,7 @@ type Line = {
   unitPrice: string;
 };
 type Result = {
+  qboInvoiceId: string;
   docNumber: string | null;
   sentTo: string | null;
   warnings: string[];
@@ -90,6 +92,7 @@ export function CreateInvoiceSheet({
   }>;
 }) {
   const run = useWriteAction();
+  const router = useRouter();
   const items = useQuery({
     queryKey: ['qbo-items'],
     queryFn: () => apiFetch<{ items: Item[] }>('/api/quickbooks/items'),
@@ -211,7 +214,14 @@ export function CreateInvoiceSheet({
           ? `${what} created and emailed to ${d.sentTo}`
           : `${what} created in QuickBooks`;
       },
-      onResolved: () => onOpenChange(false),
+      // Open the new invoice; its page reads QuickBooks fresh, so no refresh.
+      onResolved: (d) => {
+        onOpenChange(false);
+        router.push(
+          `/billing/${encodeURIComponent(studentNumber)}/invoices/${encodeURIComponent(d.qboInvoiceId)}`
+        );
+      },
+      refresh: false,
     });
     setSaving(false);
   }

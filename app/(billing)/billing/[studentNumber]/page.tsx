@@ -2,7 +2,10 @@ import {
   AlertTriangle,
   ArrowLeft,
   Coins,
+  FileText,
+  FolderOpen,
   Layers,
+  UserRound,
   UserSearch,
   Wallet,
 } from 'lucide-react';
@@ -19,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomerPage } from '@/lib/billing/customer-page.server';
 import { formatDay } from '@/lib/billing/view';
+import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { formatSgd } from '@/lib/qbo/format';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -53,6 +57,33 @@ export default async function BillingCustomerPage({
     page.student?.name ?? page.link?.displayName ?? page.studentNumber;
   const b = page.balances;
   const openCount = page.openInvoices.length;
+
+  // The same student in the other modules — the application and documents of
+  // their newest year, and the record. Only links this role can open.
+  const en = page.student?.enroleeNumber;
+  const ayQ = page.student?.ayCode
+    ? `?ay=${encodeURIComponent(page.student.ayCode)}`
+    : '';
+  const related = [
+    en && {
+      label: `Application${page.student?.ayCode ? ` · ${page.student.ayCode}` : ''}`,
+      href: `/admissions/applications/${encodeURIComponent(en)}${ayQ}`,
+      icon: FileText,
+    },
+    en && {
+      label: 'Documents',
+      href: `/p-files/${encodeURIComponent(en)}${ayQ}`,
+      icon: FolderOpen,
+    },
+    {
+      label: 'Student record',
+      href: `/records/students/${encodeURIComponent(page.studentNumber)}`,
+      icon: UserRound,
+    },
+  ].filter(
+    (l): l is { label: string; href: string; icon: typeof FileText } =>
+      !!l && isRouteAllowed(hrefPathname(l.href), sessionUser.role)
+  );
 
   return (
     <PageShell>
@@ -90,6 +121,21 @@ export default async function BillingCustomerPage({
               'Not linked to a QuickBooks customer yet.'
             )}
           </p>
+          {related.length > 0 && (
+            <nav
+              aria-label="This student elsewhere"
+              className="flex flex-wrap gap-2"
+            >
+              {related.map((l) => (
+                <Button key={l.href} asChild variant="outline" size="sm">
+                  <Link href={l.href}>
+                    <l.icon className="size-3.5" />
+                    {l.label}
+                  </Link>
+                </Button>
+              ))}
+            </nav>
+          )}
         </div>
         {page.link && page.connected && (
           <div className="flex flex-wrap items-center gap-2">
