@@ -15,11 +15,15 @@ export function SendInvoiceButton({
   qboInvoiceId,
   label,
   disabledReason,
+  variant = 'outline',
+  className,
 }: {
   qboInvoiceId: string;
   label: 'Send' | 'Send again';
   /** Set when it can't be sent (no email, voided) — the button is disabled and says why. */
   disabledReason?: string | null;
+  variant?: 'default' | 'outline';
+  className?: string;
 }) {
   const run = useWriteAction();
   // One request id per send. A sent email takes a fresh one for the next
@@ -44,7 +48,8 @@ export function SendInvoiceButton({
   });
   return (
     <Button
-      variant="outline"
+      variant={variant}
+      className={className}
       disabled={!!disabledReason}
       title={disabledReason ?? undefined}
       loading={send.isPending}

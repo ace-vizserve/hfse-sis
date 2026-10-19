@@ -203,6 +203,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.invoice.create': 'QuickBooks invoice created',
   'qbo.invoice.link': 'QuickBooks invoice linked',
   'qbo.invoice.send': 'QuickBooks invoice emailed',
+  'qbo.invoice.void': 'QuickBooks invoice voided',
   'qbo.customer.create': 'QuickBooks customer added',
   'qbo.customer.update': 'QuickBooks customer edited',
   'qbo.connection.connect': 'QuickBooks connected',
@@ -1929,6 +1930,12 @@ function templateSummary(
       if (customer) parts.push(customer);
       return joinParts(parts);
     }
+    case 'qbo.invoice.void':
+      return joinParts(
+        [str(ctx.doc_number) ? `invoice ${str(ctx.doc_number)}` : ''].filter(
+          Boolean
+        )
+      );
     case 'qbo.invoice.send':
       return joinParts(
         [

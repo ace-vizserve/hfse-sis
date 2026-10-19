@@ -25,18 +25,34 @@ import {
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
 import {
+  addressLines,
   readCustomerProfile,
   readInvoiceDetail,
   type CustomerProfile,
   type InvoiceDetail,
+  type QbAddress,
 } from '@/lib/billing/live.server';
 import type { CreditSource } from '@/lib/billing/payment-plan';
 import { loadStudentInfo } from '@/lib/billing/students.server';
 import { round2, todaySg } from '@/lib/billing/view';
-import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
-import { qboInvoiceUrl } from '@/lib/qbo/env';
+import {
+  connectedRealmId,
+  qboErrorMessage,
+  qboRequest,
+} from '@/lib/qbo/client';
+import { qboInvoiceUrl, type QboEnvironment } from '@/lib/qbo/env';
+
+/** The company block QuickBooks prints at the head of an invoice. */
+export type CompanyBlock = {
+  name: string;
+  address: string[];
+  email: string | null;
+  phone: string | null;
+};
 
 export type InvoicePage = {
+  environment: QboEnvironment;
+  company: CompanyBlock | null;
   studentNumber: string;
   studentName: string;
   customerName: string;
@@ -77,16 +93,18 @@ export async function loadInvoicePage(
   // contact details, and a refresh of the stored copy for the payments.
   // The third entry is effect-only: it refreshes the stored copy, so its
   // result is not destructured; the payments below are read from the store.
-  const [detail, profile /* , refreshed (effect only) */] = await Promise.all([
-    readInvoiceDetail(service, qboInvoiceId).then(
-      (d) => ({ d, e: null as string | null }),
-      (e) => ({ d: null, e: qboErrorMessage(e) })
-    ),
-    readCustomerProfile(service, link.qbo_customer_id as string).catch(
-      () => null
-    ),
-    loadCustomerHistory(service, studentNumber).catch(() => null),
-  ]);
+  const [detail, profile, company /* , refreshed (effect only) */] =
+    await Promise.all([
+      readInvoiceDetail(service, qboInvoiceId).then(
+        (d) => ({ d, e: null as string | null }),
+        (e) => ({ d: null, e: qboErrorMessage(e) })
+      ),
+      readCustomerProfile(service, link.qbo_customer_id as string).catch(
+        () => null
+      ),
+      readCompany(service, realmId),
+      loadCustomerHistory(service, studentNumber).catch(() => null),
+    ]);
   if (detail.d && detail.d.customerId !== link.qbo_customer_id) return null;
 
   const [inv, pays, sends, dep, conn, info, siblings, methods] =
@@ -181,7 +199,11 @@ export async function loadInvoicePage(
         : null,
   });
 
+  const environment =
+    (conn.data?.environment as QboEnvironment | undefined) ?? 'sandbox';
   return {
+    environment,
+    company,
     studentNumber,
     studentName: info.get(studentNumber)?.name ?? (link.display_name as string),
     customerName: link.display_name as string,
@@ -191,11 +213,7 @@ export async function loadInvoicePage(
     profile,
     activity,
     payments,
-    qbUrl: qboInvoiceUrl(
-      (conn.data?.environment as 'sandbox' | 'production' | undefined) ??
-        'sandbox',
-      qboInvoiceId
-    ),
+    qbUrl: qboInvoiceUrl(environment, qboInvoiceId),
     credits: toCreditSources(allPayments),
     depositAccounts: dep,
     paymentMethods: methods,
@@ -207,6 +225,33 @@ export async function loadInvoicePage(
       qboInvoiceId
     ),
   };
+}
+
+/** QuickBooks' company name, address, email and phone, read live; null when
+ *  QuickBooks can't be read (the invoice still shows). */
+async function readCompany(
+  service: SupabaseClient,
+  realmId: string
+): Promise<CompanyBlock | null> {
+  try {
+    const { CompanyInfo: c } = await qboRequest<{
+      CompanyInfo?: {
+        CompanyName?: string;
+        CompanyAddr?: QbAddress;
+        Email?: { Address?: string };
+        PrimaryPhone?: { FreeFormNumber?: string };
+      };
+    }>(service, 'GET', `/companyinfo/${encodeURIComponent(realmId)}`);
+    if (!c?.CompanyName) return null;
+    return {
+      name: c.CompanyName,
+      address: addressLines(c.CompanyAddr),
+      email: c.Email?.Address?.trim() || null,
+      phone: c.PrimaryPhone?.FreeFormNumber?.trim() || null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** The invoices either side of this one, oldest first. */

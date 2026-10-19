@@ -195,6 +195,7 @@ export async function readAging(
 }
 
 export type InvoiceDetailLine = {
+  itemId: string | null;
   itemName: string | null;
   description: string | null;
   qty: number | null;
@@ -212,7 +213,11 @@ export type InvoiceDetail = {
   total: number;
   balance: number;
   subtotal: number;
+  /** The invoice's Discount line, 0 when it has none. */
+  discount: number;
   tax: number;
+  /** A deposit taken on the invoice, 0 when none. */
+  deposit: number;
   state: 'open' | 'paid' | 'voided';
   lines: InvoiceDetailLine[];
   billAddress: string[];
@@ -253,6 +258,7 @@ export async function readInvoiceDetail(
         };
       }>;
       TxnTaxDetail?: { TotalTax?: number };
+      Deposit?: number;
       BillAddr?: QbAddress;
       BillEmail?: { Address?: string };
       BillEmailCc?: { Address?: string };
@@ -293,6 +299,7 @@ export async function readInvoiceDetail(
   const lines: InvoiceDetailLine[] = sales.map((l) => {
     const code = l.SalesItemLineDetail?.TaxCodeRef?.value ?? null;
     return {
+      itemId: l.SalesItemLineDetail?.ItemRef?.value ?? null,
       itemName: l.SalesItemLineDetail?.ItemRef?.name ?? null,
       description: l.Description?.trim() || null,
       qty: l.SalesItemLineDetail?.Qty ?? null,
@@ -313,7 +320,11 @@ export async function readInvoiceDetail(
     subtotal: Number(
       subtotalLine?.Amount ?? lines.reduce((s, l) => s + l.amount, 0)
     ),
+    discount: (inv.Line ?? [])
+      .filter((l) => l.DetailType === 'DiscountLineDetail')
+      .reduce((s, l) => s + Number(l.Amount ?? 0), 0),
     tax: Number(inv.TxnTaxDetail?.TotalTax ?? 0),
+    deposit: Number(inv.Deposit ?? 0),
     state: invoiceState(inv),
     lines,
     billAddress: addressLines(inv.BillAddr),

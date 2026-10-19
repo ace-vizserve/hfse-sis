@@ -17,12 +17,14 @@ export function InvoicePayButton(props: {
   depositAccounts: Array<{ id: string; label: string }>;
   paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
+  variant?: 'default' | 'ghost';
 }) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState(0);
   return (
     <>
       <Button
+        variant={props.variant ?? 'default'}
         onClick={() => {
           setKey((k) => k + 1);
           setOpen(true);

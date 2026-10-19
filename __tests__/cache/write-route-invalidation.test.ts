@@ -78,6 +78,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // the admissions/records drill tags itself.
   'app/api/billing/invoices/[invoiceId]/send/route.ts':
     'Emails through QuickBooks; the only SIS write is the qbo.invoice.send audit_log row, which no cached surface reads.',
+  'app/api/billing/invoices/[invoiceId]/void/route.ts':
+    'Stores the voided invoice in qbo_invoices (read uncached by the Billing loaders); the stage reset goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/customer/route.ts':
     'Adds the customer in QuickBooks, then links it (qbo_customers, billing_link_review — read uncached); stage moves from the history load go through writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/invoices/route.ts':
