@@ -42,6 +42,8 @@ import {
   formatPoints,
 } from '@/lib/house-points/standings';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { HouseRow } from '@/lib/sis/houses';
 
@@ -289,6 +291,32 @@ export function HouseMembersTable({
     setRemoveBusy(false);
   }
 
+  // Bulk Remove from house: the row's own DELETE once per ticked member.
+  const bulk = useBulkAction();
+  const [bulkRemoving, setBulkRemoving] = React.useState<HouseMember[] | null>(
+    null
+  );
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  async function removeMany() {
+    const picked = bulkRemoving ?? [];
+    setBulkRemoving(null);
+    if (!manage) return;
+    await bulk(picked, {
+      pending: `Removing ${picked.length} ${picked.length === 1 ? 'student' : 'students'}…`,
+      done: (n) =>
+        `Removed ${n} ${n === 1 ? 'student' : 'students'} from ${houseName}`,
+      failed: 'Could not remove',
+      label: (m) => m.name,
+      one: (m) =>
+        apiFetch<{ ok: true }>(
+          `/api/sis/houses/${encodeURIComponent(manage.houseCode)}/members`,
+          jsonInit('DELETE', { ayCode, sectionStudentId: m.sectionStudentId })
+        ),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
   const facets = React.useMemo(() => {
     const collator = new Intl.Collator('en', { numeric: true });
     return [
@@ -315,6 +343,19 @@ export function HouseMembersTable({
         initialSort={[{ id: 'class', desc: false }]}
         pageSize={25}
         csv={{ filename: `${fileStem}-members.csv` }}
+        selection={{
+          enabled: Boolean(manage),
+          bulkActions: [
+            {
+              key: 'remove',
+              label: 'Remove from house',
+              icon: UserMinus,
+              destructive: true,
+              onTrigger: (picked) => setBulkRemoving(picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
         emptyState={{
           title: 'No members yet',
           body: manage
@@ -325,6 +366,16 @@ export function HouseMembersTable({
           title: 'No members match.',
           body: 'Clear the search or a filter to see every member.',
         }}
+      />
+
+      <BulkActionDialog
+        open={bulkRemoving !== null}
+        onOpenChange={(o) => !o && setBulkRemoving(null)}
+        title={`Remove ${bulkRemoving?.length ?? 0} ${bulkRemoving?.length === 1 ? 'student' : 'students'} from ${houseName}?`}
+        description={`They will have no house until someone puts them in one, and the house points they have earned leave ${houseName} with them.`}
+        confirmLabel="Remove from house"
+        destructive
+        onConfirm={removeMany}
       />
 
       {/* On the page canvas, not inside a drawer, so the confirm is not
