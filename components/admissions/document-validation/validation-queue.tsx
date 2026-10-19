@@ -8,6 +8,8 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   CalendarClock,
+  Check,
+  X,
   ChevronRight,
   GalleryHorizontalEndIcon,
   ListIcon,
@@ -27,6 +29,8 @@ import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
 
 import { RejectDialog } from './reject-dialog';
 import { TriagePane } from './triage-pane';
@@ -176,6 +180,53 @@ export function ValidationQueue({
   });
 
   const run = useWriteAction();
+
+  // Bulk Approve / Reject: the row's own PATCH once per ticked document that
+  // is waiting for review. Straight to the route, not through `statusMutation`,
+  // so the batch reports once instead of toasting per document.
+  const bulk = useBulkAction();
+  const [bulkApprove, setBulkApprove] = React.useState<
+    ValidationQueueRow[] | null
+  >(null);
+  const [bulkReject, setBulkReject] = React.useState<
+    ValidationQueueRow[] | null
+  >(null);
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  const patchOne = React.useCallback(
+    (row: ValidationQueueRow, body: PatchBody) =>
+      apiFetch(
+        `/api/sis/students/${encodeURIComponent(row.enroleeNumber)}/document/${encodeURIComponent(row.slotKey)}?ay=${encodeURIComponent(ayCode)}`,
+        jsonInit('PATCH', body)
+      ),
+    [ayCode]
+  );
+
+  async function approveMany() {
+    const picked = bulkApprove ?? [];
+    setBulkApprove(null);
+    await bulk(picked, {
+      pending: `Approving ${picked.length} ${picked.length === 1 ? 'document' : 'documents'}…`,
+      done: (n) => `${n} approved`,
+      failed: 'Could not approve',
+      label: (r) => `${r.fullName} ${r.slotLabel}`,
+      one: (r) => patchOne(r, { status: 'Valid' }),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
+  async function rejectMany(reason: string) {
+    const picked = bulkReject ?? [];
+    await bulk(picked, {
+      pending: `Rejecting ${picked.length} ${picked.length === 1 ? 'document' : 'documents'}…`,
+      done: (n) => `${n} rejected`,
+      failed: 'Could not reject',
+      label: (r) => `${r.fullName} ${r.slotLabel}`,
+      one: (r) => patchOne(r, { status: 'Rejected', rejectionReason: reason }),
+    });
+    setBulkReject(null);
+    setResetSignal((s) => s + 1);
+  }
 
   // Keeps the `Promise<boolean>` contract TriagePane + RejectDialog depend on
   // (true → advance / close). `run` resolves `undefined` on failure, and the
@@ -472,6 +523,26 @@ export function ValidationQueue({
         searchPlaceholder="Search student or document…"
         facets={facets}
         toolbarTrailing={modeToggle}
+        selection={{
+          enabled: canValidate,
+          enableRowSelection: (r) => r.status === 'Uploaded',
+          bulkActions: [
+            {
+              key: 'approve',
+              label: 'Approve',
+              icon: Check,
+              onTrigger: (picked) => setBulkApprove(picked),
+            },
+            {
+              key: 'reject',
+              label: 'Reject',
+              icon: X,
+              destructive: true,
+              onTrigger: (picked) => setBulkReject(picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
         // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
         url={{ enabled: true, namespace: 'validation' }}
         pageSize={25}
@@ -501,6 +572,30 @@ export function ValidationQueue({
           ),
         }}
       />
+      {canValidate && (
+        <>
+          <BulkActionDialog
+            open={bulkApprove !== null}
+            onOpenChange={(o) => !o && setBulkApprove(null)}
+            title={`Approve ${bulkApprove?.length ?? 0} ${bulkApprove?.length === 1 ? 'document' : 'documents'}?`}
+            description="Each document is marked Valid, exactly as Approve does on its row."
+            confirmLabel="Approve"
+            onConfirm={approveMany}
+          />
+          <RejectDialog
+            open={bulkReject != null}
+            onOpenChange={(open) => {
+              if (!open) setBulkReject(null);
+            }}
+            slotLabel=""
+            studentName=""
+            title={`Reject ${bulkReject?.length ?? 0} ${bulkReject?.length === 1 ? 'document' : 'documents'}?`}
+            description="Each parent is notified by email with the reason below and can re-upload after seeing the message. The same reason goes to all of them."
+            confirmLabel="Reject documents"
+            onConfirm={rejectMany}
+          />
+        </>
+      )}
       {canValidate && (
         <RejectDialog
           open={rejectTarget != null}
