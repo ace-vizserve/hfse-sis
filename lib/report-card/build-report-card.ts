@@ -226,7 +226,11 @@ export type PreloadedCalendarDates = {
 export async function buildReportCard(
   supabase: SupabaseClient,
   studentId: string,
-  preloadedCalendar?: PreloadedCalendarDates
+  preloadedCalendar?: PreloadedCalendarDates,
+  options?: {
+    /** Build the card for this academic year instead of the current one. */
+    ayCode?: string;
+  }
 ): Promise<
   | { ok: true; payload: ReportCardPayload }
   | { ok: false; error: BuildReportCardError }
@@ -279,11 +283,18 @@ export async function buildReportCard(
       .select('id, student_number, last_name, first_name, middle_name')
       .eq('id', studentId)
       .single(),
-    supabase
-      .from('academic_years')
-      .select('id, label')
-      .eq('is_current', true)
-      .single(),
+    // The current year unless the caller names one (staff preview of a past
+    // year). The parent portal and the report-card API never pass `ayCode`.
+    (options?.ayCode
+      ? supabase
+          .from('academic_years')
+          .select('id, label')
+          .eq('ay_code', options.ayCode)
+      : supabase
+          .from('academic_years')
+          .select('id, label')
+          .eq('is_current', true)
+    ).single(),
     supabase
       .from('section_students')
       .select(

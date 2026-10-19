@@ -18,6 +18,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { CategoryLinePoint } from '@/components/dashboard/charts/category-line-chart';
 import type { ComparisonBarPoint } from '@/components/dashboard/charts/comparison-bar-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { ExportCsvButton } from '@/components/dashboard/export-csv-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -557,7 +558,8 @@ export default async function MarkbookInsightsPage({
         }
       />
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <AySwitcher current={selectedAy} options={ayCodes} className="w-40" />
         <CompareAyPicker
           primaryAy={selectedAy}
           ayCodes={ayCodes}

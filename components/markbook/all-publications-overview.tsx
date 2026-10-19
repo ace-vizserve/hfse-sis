@@ -27,6 +27,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 export type PublicationOverviewRow = {
   id: string;
   section_id: string;
+  /** The year the section belongs to, so its link opens in that year. */
+  ay_code?: string;
   section_name: string;
   level_label: string;
   level_code: string;
@@ -91,7 +93,7 @@ const COLUMNS: ColumnDef<PublicationOverviewRow>[] = [
     meta: { label: 'Section' },
     cell: ({ row }) => (
       <IdentifierLink
-        href={`/markbook/report-cards?section_id=${row.original.section_id}`}
+        href={`/markbook/report-cards?section_id=${row.original.section_id}${row.original.ay_code ? `&ay=${row.original.ay_code}` : ''}`}
       >
         {row.original.section_name}
       </IdentifierLink>
@@ -205,8 +207,11 @@ const FACETS: FacetConfig[] = [
 export function AllPublicationsOverview({
   publications,
   currentTermId,
+  currentTermLabel,
 }: {
   publications: PublicationOverviewRow[];
+  /** Name of the picked term, shown on the first tab ("Term 2"). */
+  currentTermLabel?: string | null;
   /** When set + the table is on the "Current term" tab (default), only
    *  rows for that term render. Setting null disables the filter. */
   currentTermId?: string | null;
@@ -242,7 +247,7 @@ export function AllPublicationsOverview({
     ? [
         {
           value: 'current',
-          label: 'Current term',
+          label: currentTermLabel || 'Current term',
           predicate: (r) => r.term_id === currentTermId,
           isDefault: true,
           countOverride: () => currentTermCount,

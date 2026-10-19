@@ -12,6 +12,7 @@ import { sgToday } from '@/lib/dates';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
+import { TermSelect } from '@/components/markbook/term-select';
 import { PrintButton } from '../../../[studentId]/print-button';
 import { AutoPrintTrigger } from './auto-print-trigger';
 
@@ -107,6 +108,14 @@ export default async function SectionPrintPage({
       : (resolvedTerm?.term_number ?? 1)
   ) as 1 | 2 | 3 | 4;
 
+  // Terms of THIS section's year, for the picker.
+  const termOptions = [...(ayTerms ?? [])]
+    .sort((a, b) => a.term_number - b.term_number)
+    .map((t) => ({
+      termNumber: t.term_number,
+      label: t.term_number === 4 ? 'Final' : `Term ${t.term_number}`,
+    }));
+
   const studentIds: string[] = (enrolments ?? [])
     .map((e) => {
       const s = Array.isArray(e.student) ? e.student[0] : e.student;
@@ -146,7 +155,11 @@ export default async function SectionPrintPage({
   const cards = (
     await Promise.all(
       studentIds.map(async (id) => {
-        const result = await buildReportCard(supabase, id, preloadedCalendar);
+        // Built for the section's own year, so a past year's section prints
+        // its own cards rather than failing as "not enrolled this year".
+        const result = await buildReportCard(supabase, id, preloadedCalendar, {
+          ayCode: ay.ay_code,
+        });
         return result.ok ? { studentId: id, payload: result.payload } : null;
       })
     )
@@ -193,7 +206,10 @@ export default async function SectionPrintPage({
               for the whole section.
             </p>
           </div>
-          <PrintButton />
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <TermSelect terms={termOptions} selectedTerm={viewingTermNumber} />
+            <PrintButton />
+          </div>
         </div>
       </div>
 

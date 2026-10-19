@@ -10,6 +10,8 @@ import { resolveCurrentTerm } from '@/lib/sis/current-term';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { PublicationStatus } from '@/components/admin/publication-status';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 import { PrintButton } from './print-button';
 
 export default async function ReportCardPreview({
@@ -17,10 +19,10 @@ export default async function ReportCardPreview({
   searchParams,
 }: {
   params: Promise<{ studentId: string }>;
-  searchParams: Promise<{ term?: string }>;
+  searchParams: Promise<{ term?: string; ay?: string }>;
 }) {
   const { studentId } = await params;
-  const { term: termParam } = await searchParams;
+  const { term: termParam, ay: ayParam } = await searchParams;
   const [supabase, viewer] = await Promise.all([
     createClient(),
     getSessionUser(),
@@ -47,7 +49,31 @@ export default async function ReportCardPreview({
   // control, and merging the two names would hide that distinction.
   const canSeeDiagnostics = canManage;
 
-  const result = await buildReportCard(supabase, studentId);
+  // The year being viewed: `?ay=` when it names a real year, else the current
+  // one. `students.id` is one row per person across years (Hard Rule #4's
+  // studentNumber lives on it), so the year only decides which of the
+  // student's section enrolments the card is built from.
+  const ayState = await resolveSelectedAy(supabase, ayParam);
+  const viewedAyCode = ayState?.selected.ay_code ?? null;
+  const ayQuery =
+    viewedAyCode && !ayState?.isCurrent ? `ay=${viewedAyCode}` : '';
+  const ayControl = ayState ? (
+    <div className="w-full md:w-48">
+      <AySwitcher
+        current={ayState.selected.ay_code}
+        options={ayState.ayCodes}
+      />
+    </div>
+  ) : null;
+
+  const result = await buildReportCard(
+    supabase,
+    studentId,
+    undefined,
+    ayState && !ayState.isCurrent
+      ? { ayCode: ayState.selected.ay_code }
+      : undefined
+  );
   if (!result.ok) {
     // These two diagnostic states are for the people who can act on them.
     // Returning them to anyone who passes the broad `/markbook` prefix would
@@ -59,9 +85,12 @@ export default async function ReportCardPreview({
     }
     if (canSeeDiagnostics && result.error.kind === 'not_enrolled_this_ay') {
       return (
-        <div className="text-sm text-muted-foreground">
-          Student is not enrolled in the current academic year (
-          {result.error.ayLabel}).
+        <div className="space-y-4">
+          <div className="flex md:justify-end">{ayControl}</div>
+          <div className="text-sm text-muted-foreground">
+            Student is not enrolled in {result.error.ayLabel}. Pick another
+            academic year above.
+          </div>
         </div>
       );
     }
@@ -126,7 +155,7 @@ export default async function ReportCardPreview({
         <Link
           href={
             canManage
-              ? '/markbook/report-cards'
+              ? `/markbook/report-cards${ayQuery ? `?${ayQuery}` : ''}`
               : `/classroom/${payload.section.id}/students`
           }
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -148,6 +177,7 @@ export default async function ReportCardPreview({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {ayControl}
             <PrintButton />
           </div>
         </header>
@@ -166,7 +196,7 @@ export default async function ReportCardPreview({
               {termOptions.map((t) => (
                 <TabsTrigger key={t.id} value={String(t.term_number)} asChild>
                   <Link
-                    href={`/markbook/report-cards/${studentId}?term=${t.term_number}`}
+                    href={`/markbook/report-cards/${studentId}?term=${t.term_number}${ayQuery ? `&${ayQuery}` : ''}`}
                   >
                     {t.term_number === 4 ? 'Final' : t.label}
                   </Link>

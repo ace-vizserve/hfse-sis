@@ -4,7 +4,8 @@ import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
-import { Badge } from '@/components/ui/badge';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -33,7 +34,12 @@ type LevelLite = {
   level_type: 'primary' | 'secondary';
 };
 
-export default async function SectionsListPage() {
+export default async function SectionsListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string | string[] }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const supabase = await createClient();
   const view = await getSessionUser();
   const role = view?.role ?? null;
@@ -77,11 +83,8 @@ export default async function SectionsListPage() {
   const noScopedClasses =
     scope.sectionIds !== null && scope.sectionIds.length === 0;
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  const ayState = await resolveSelectedAy(supabase, ayParam);
+  const ay = ayState?.selected ?? null;
 
   let sectionsQuery = ay
     ? supabase
@@ -209,18 +212,17 @@ export default async function SectionsListPage() {
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {scope.isOversight
-              ? 'Every section for the current academic year. Click a section to view the grading sheets. Section setup (create, teacher assignments) lives in SIS Admin.'
+              ? 'Every section for the selected academic year. Click a section to view the grading sheets. Section setup (create, teacher assignments) lives in SIS Admin.'
               : 'The classes where you are a form adviser or subject teacher. Click a section to open its Classroom grades tab.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {ay && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {ay.ay_code}
-            </Badge>
+          {ayState && (
+            <AySwitcher
+              current={ayState.selected.ay_code}
+              options={ayState.ayCodes}
+              className="w-40"
+            />
           )}
           {canManage && (
             <Button asChild size="sm" variant="outline" className="gap-1.5">
@@ -253,7 +255,7 @@ export default async function SectionsListPage() {
             value={totalActive}
             icon={Users}
             footerTitle="Currently enrolled"
-            footerDetail="Across every section in the current AY"
+            footerDetail={`Across every section in ${ay?.ay_code ?? 'the current AY'}`}
           />
           <SummaryCard
             description="Withdrawn"

@@ -34,6 +34,9 @@ import {
   type ReportCardsRosterRow,
 } from './report-cards-roster-table';
 import { SectionPicker } from './section-picker';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { TermSelect } from '@/components/markbook/term-select';
+import { resolveSelectedAy } from '@/lib/markbook/selected-ay';
 
 type LevelLite = {
   id: string;
@@ -102,7 +105,11 @@ const ALLOWED_ROLES = new Set([
 export default async function ReportCardsListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section_id?: string }>;
+  searchParams: Promise<{
+    section_id?: string;
+    ay?: string;
+    term?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -117,11 +124,10 @@ export default async function ReportCardsListPage({
   const q = await searchParams;
   const supabase = await createClient();
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  // The year being viewed: `?ay=` when it names a real year, else the current
+  // one. Sections, terms and publications below all follow it.
+  const ayState = await resolveSelectedAy(supabase, q.ay);
+  const ay = ayState?.selected ?? null;
 
   const { data: sections } = ay
     ? await supabase
@@ -145,8 +151,26 @@ export default async function ReportCardsListPage({
         .order('term_number')
     : { data: [] };
   const termList = (terms ?? []) as TermLite[];
-  const currentTermId =
-    termList.find((t) => t.is_current)?.id ?? termList[0]?.id ?? null;
+  // The term being looked at: `?term=` when it is one of THIS year's terms;
+  // otherwise this year's current term when the year is the current one, else
+  // its last term.
+  const termParam = q.term ? parseInt(q.term, 10) : NaN;
+  const pickedTerm = termList.find((t) => t.term_number === termParam);
+  const pickedTermRow =
+    pickedTerm ??
+    (ayState?.isCurrent
+      ? (termList.find((t) => t.is_current) ?? termList[0])
+      : termList[termList.length - 1]) ??
+    null;
+  const currentTermId = pickedTermRow?.id ?? null;
+
+  // A section id left in the URL from another year belongs to that year's
+  // roster; treat it as "no section picked" rather than showing it under this
+  // year's name.
+  const sectionId =
+    q.section_id && sectionsList.some((s) => s.id === q.section_id)
+      ? q.section_id
+      : undefined;
 
   // Section-detail IDENTITY — which section is this page about. It names the
   // stat cards, the publish panel and the roster heading, so it is resolved
@@ -154,11 +178,11 @@ export default async function ReportCardsListPage({
   let selectedLabel: string | null = null;
   let selectedSectionName: string | null = null;
   let selectedLevelId: string | null = null;
-  if (q.section_id) {
+  if (sectionId) {
     const { data: sec } = await supabase
       .from('sections')
       .select('id, name, level:levels(id, label)')
-      .eq('id', q.section_id)
+      .eq('id', sectionId)
       .single();
     if (sec) {
       const lvl = first(
@@ -193,6 +217,22 @@ export default async function ReportCardsListPage({
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {ayState && (
+            <AySwitcher
+              current={ayState.selected.ay_code}
+              options={ayState.ayCodes}
+              className="w-36"
+            />
+          )}
+          {!sectionId && pickedTermRow && termList.length > 0 && (
+            <TermSelect
+              terms={termList.map((t) => ({
+                termNumber: t.term_number,
+                label: t.label,
+              }))}
+              selectedTerm={pickedTermRow.term_number}
+            />
+          )}
           {pickerSections.length > 0 && termList.length > 0 && (
             <BulkPublishDialog
               sections={pickerSections}
@@ -200,28 +240,31 @@ export default async function ReportCardsListPage({
               defaultTermId={currentTermId}
             />
           )}
-          <SectionPicker sections={pickerSections} selectedId={q.section_id} />
+          <SectionPicker sections={pickerSections} selectedId={sectionId} />
         </div>
       </header>
 
       {/* No section picked — current-term KPIs + cross-section publications overview */}
-      {!q.section_id && (
+      {!sectionId && (
         <Suspense fallback={<PublicationsOverviewFallback />}>
           <PublicationsOverviewSection
             sections={sectionsList}
             termList={termList}
             currentTermId={currentTermId}
+            ayCode={ay?.ay_code}
           />
         </Suspense>
       )}
 
       {/* Section picked — stats, publish windows, roster */}
-      {q.section_id && (
+      {sectionId && (
         <Suspense
           fallback={<SectionReportCardsFallback termCount={termList.length} />}
         >
           <SectionReportCardsBody
-            sectionId={q.section_id}
+            sectionId={sectionId}
+            ayCode={ay?.ay_code ?? null}
+            termNumber={pickedTermRow?.term_number ?? null}
             selectedLabel={selectedLabel}
             selectedSectionName={selectedSectionName}
             selectedLevelId={selectedLevelId}
@@ -247,10 +290,12 @@ async function PublicationsOverviewSection({
   sections,
   termList,
   currentTermId,
+  ayCode,
 }: {
   sections: SectionWithLevel[];
   termList: TermLite[];
   currentTermId: string | null;
+  ayCode: string | undefined;
 }) {
   const supabase = await createClient();
 
@@ -318,6 +363,7 @@ async function PublicationsOverviewSection({
       return {
         id: p.id,
         section_id: p.section_id,
+        ay_code: ayCode,
         section_name: sec?.name ?? '(unknown)',
         level_label: lvl?.label ?? '',
         level_code: lvl?.code ?? '',
@@ -422,6 +468,9 @@ async function PublicationsOverviewSection({
       <AllPublicationsOverview
         publications={overviewRows}
         currentTermId={currentTermId}
+        currentTermLabel={
+          termList.find((t) => t.id === currentTermId)?.label ?? null
+        }
       />
     </>
   );
@@ -445,8 +494,14 @@ async function SectionReportCardsBody({
   selectedLevelId,
   termList,
   canPublish,
+  ayCode,
+  termNumber,
 }: {
   sectionId: string;
+  /** The viewed year — carried onto each student's report card link. */
+  ayCode: string | null;
+  /** The term chosen on the page, carried onto Print all. */
+  termNumber: number | null;
   selectedLabel: string | null;
   selectedSectionName: string | null;
   selectedLevelId: string | null;
@@ -533,6 +588,7 @@ async function SectionReportCardsBody({
         enrolment_id: e.id,
         index_number: e.index_number,
         student_id: s?.id ?? '',
+        ay_code: ayCode,
         student_number: s?.student_number ?? '',
         name: s
           ? [s.last_name, s.first_name, s.middle_name]
@@ -607,7 +663,7 @@ async function SectionReportCardsBody({
               </span>
               {rosterRows.length > 0 && (
                 <Link
-                  href={`/markbook/report-cards/section/${sectionId}/print`}
+                  href={`/markbook/report-cards/section/${sectionId}/print${termNumber ? `?term=${termNumber}` : ''}`}
                   className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                 >
                   <Printer className="h-3 w-3" />
