@@ -40,3 +40,12 @@ export function qboInvoiceUrl(
       : 'app.sandbox.qbo.intuit.com';
   return `https://${host}/app/invoice?txnId=${encodeURIComponent(invoiceId)}`;
 }
+
+/** A page of the QuickBooks web app, e.g. `/app/recvpayment?txnId=12`. */
+export function qboAppUrl(environment: QboEnvironment, path: string): string {
+  const host =
+    environment === 'production'
+      ? 'app.qbo.intuit.com'
+      : 'app.sandbox.qbo.intuit.com';
+  return `https://${host}${path}`;
+}

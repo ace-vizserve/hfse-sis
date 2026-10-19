@@ -220,8 +220,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/billing': Wallet,
       // QuickBooks' Invoices list, across every linked customer.
       '/billing/invoices': FileText,
-      // Every payment received, and what it paid.
-      '/billing/payments': HandCoins,
+      // QuickBooks' Sales transactions: every invoice and payment.
+      '/billing/sales': HandCoins,
       // QuickBooks' items — what can go on an invoice.
       '/billing/products': Package,
       // QuickBooks' A/R aging summary report.

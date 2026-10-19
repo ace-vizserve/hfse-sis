@@ -90,16 +90,19 @@ const invoiceHref = (r: InvoiceListRow) =>
 const customerHref = (r: InvoiceListRow, next?: 'payment') =>
   `/billing/${encodeURIComponent(r.studentNumber)}${next ? `?new=${next}` : ''}`;
 
+/** What Send needs of an invoice. */
+export type SendableInvoice = { id: string; docNumber: string | null };
+
 /** Emails invoices through QuickBooks one after another (the send route
  *  takes one invoice); says how many went. Each invoice keeps its request id
  *  until our route says nothing was sent (`shouldRenewRequestId`), exactly as
  *  the single Send button does — so a retry after a lost or unclear answer
  *  is replayed by QuickBooks, never emailed twice. */
-function useSendInvoices() {
+export function useSendInvoices() {
   const run = useWriteAction();
   const ids = React.useRef(new Map<string, string>());
   const send = useMutation({
-    mutationFn: async (rows: InvoiceListRow[]) => {
+    mutationFn: async (rows: SendableInvoice[]) => {
       let sent = 0;
       const failed: string[] = [];
       const unclear: string[] = [];
@@ -131,7 +134,7 @@ function useSendInvoices() {
       return { sent, failed, unclear };
     },
   });
-  return (rows: InvoiceListRow[]) =>
+  return (rows: SendableInvoice[]) =>
     run(() => send.mutateAsync(rows), {
       pending:
         rows.length === 1
