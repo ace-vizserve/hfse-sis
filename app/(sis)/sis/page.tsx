@@ -16,7 +16,7 @@ import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { SisUrlMissingBanner } from '@/components/sis/sis-url-missing-banner';
 import { StructuralChangesFeedCard } from '@/components/sis/structural-changes-feed-card';
 import { SystemHealthStrip } from '@/components/sis/system-health-strip';
-import { Badge } from '@/components/ui/badge';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { resolveCompareAy } from '@/lib/dashboard/comparison';
@@ -60,7 +60,12 @@ import {
 // Layout: hero → year band (signature element) → stat band → 3:2
 // "Needs attention" / "Coming up" → quick actions. Everything below the
 // hero is status or a launch point — nothing here duplicates the sidebar.
-export default async function SisAdminHub() {
+export default async function SisAdminHub({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   const role = sessionUser.role;
@@ -85,7 +90,26 @@ export default async function SisAdminHub() {
   const canManageAccounts = role === 'superadmin';
 
   const service = createServiceClient();
-  const currentAy = await getCurrentAcademicYear(service);
+  const [realCurrentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(service),
+    listAyCodes(service),
+  ]);
+  // The year on screen: ?ay= when it names a real year, else the current one.
+  // `currentAy` below is that year (kept under the old name so the loaders
+  // underneath read unchanged).
+  let currentAy = realCurrentAy;
+  if (
+    ayParam &&
+    ayCodes.includes(ayParam) &&
+    ayParam !== realCurrentAy?.ay_code
+  ) {
+    const { data: picked } = await service
+      .from('academic_years')
+      .select('id, ay_code, label')
+      .eq('ay_code', ayParam)
+      .maybeSingle();
+    if (picked) currentAy = picked as typeof realCurrentAy;
+  }
   const ayCode = currentAy?.ay_code ?? '';
 
   // Plain RangeInput objects built directly via raw Date.UTC math (KD #32) —
@@ -124,7 +148,6 @@ export default async function SisAdminHub() {
   // hides inside the deepest loader instead of adding to it. The AY-code list
   // stays here because `compareAyCode` is derived from it and half that fan-out
   // is keyed on the result.
-  const ayCodes = ayCode ? await listAyCodes(service) : [];
   const compareAyCode = ayCode
     ? resolveCompareAy(undefined, ayCodes, ayCode)
     : null;
@@ -257,13 +280,9 @@ export default async function SisAdminHub() {
         }
         description="Setup progress, today's numbers, and what needs attention — everything else is one click in the sidebar."
         chips={
-          ayCode && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {ayCode}
-            </Badge>
+          ayCode &&
+          ayCodes.length > 0 && (
+            <AySwitcher current={ayCode} options={ayCodes} className="w-36" />
           )
         }
       />
