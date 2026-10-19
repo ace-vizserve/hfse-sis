@@ -217,7 +217,12 @@ export async function qboRequest<T>(
   method: 'GET' | 'POST',
   path: string,
   body?: unknown,
-  opts?: { contentType?: string; requestId?: string }
+  opts?: {
+    contentType?: string;
+    requestId?: string;
+    /** 'pdf': ask for a PDF and return its bytes (an ArrayBuffer). */
+    as?: 'pdf';
+  }
 ): Promise<T> {
   const conn = await loadConnection(service);
   const base = `${qboApiBase(conn.environment)}/v3/company/${conn.realm_id}`;
@@ -235,7 +240,7 @@ export async function qboRequest<T>(
       method,
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
+        Accept: opts?.as === 'pdf' ? 'application/pdf' : 'application/json',
         ...(body
           ? { 'Content-Type': 'application/json' }
           : opts?.contentType
@@ -255,6 +260,8 @@ export async function qboRequest<T>(
       attempt--; // a throttle retry does not use up the 401 retry
       continue;
     }
+    if (opts?.as === 'pdf' && res.ok)
+      return (await res.arrayBuffer()) as unknown as T;
     const json = await res.json().catch(() => null);
     const fault = json?.Fault?.Error?.[0];
     if (!res.ok || fault) {
