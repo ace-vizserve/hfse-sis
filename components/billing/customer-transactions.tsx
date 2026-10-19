@@ -702,67 +702,72 @@ export function CustomerTransactions({
       </Card>
     );
 
+  // QuickBooks: Batch actions · Type · Status · Date in one row.
+  const filters = (
+    <>
+      <FilterSelect
+        id="txn-type"
+        label="Type"
+        value={type}
+        options={TYPE_OPTIONS}
+        onChange={setType}
+      />
+      <FilterSelect
+        id="txn-status"
+        label="Status"
+        value={status}
+        options={STATUS_OPTIONS}
+        onChange={setStatus}
+        className="w-36"
+      />
+      <FilterSelect
+        id="txn-date"
+        label="Date"
+        value={date}
+        options={DATE_OPTIONS}
+        onChange={setDate}
+        className="w-40"
+      />
+      {date === 'custom' && (
+        <>
+          <div className="space-y-1">
+            <Label
+              htmlFor="txn-from"
+              className="text-[12px] text-muted-foreground"
+            >
+              From
+            </Label>
+            <DatePicker
+              id="txn-from"
+              value={custom.from}
+              onChange={(from) => setCustom((c) => ({ ...c, from }))}
+              placeholder="Any date"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label
+              htmlFor="txn-to"
+              className="text-[12px] text-muted-foreground"
+            >
+              To
+            </Label>
+            <DatePicker
+              id="txn-to"
+              value={custom.to}
+              onChange={(to) => setCustom((c) => ({ ...c, to }))}
+              placeholder="Any date"
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
+
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3">
-        <FilterSelect
-          id="txn-type"
-          label="Type"
-          value={type}
-          options={TYPE_OPTIONS}
-          onChange={setType}
-        />
-        <FilterSelect
-          id="txn-status"
-          label="Status"
-          value={status}
-          options={STATUS_OPTIONS}
-          onChange={setStatus}
-          className="w-36"
-        />
-        <FilterSelect
-          id="txn-date"
-          label="Date"
-          value={date}
-          options={DATE_OPTIONS}
-          onChange={setDate}
-          className="w-40"
-        />
-        {date === 'custom' && (
-          <>
-            <div className="space-y-1">
-              <Label
-                htmlFor="txn-from"
-                className="text-[12px] text-muted-foreground"
-              >
-                From
-              </Label>
-              <DatePicker
-                id="txn-from"
-                value={custom.from}
-                onChange={(from) => setCustom((c) => ({ ...c, from }))}
-                placeholder="Any date"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label
-                htmlFor="txn-to"
-                className="text-[12px] text-muted-foreground"
-              >
-                To
-              </Label>
-              <DatePicker
-                id="txn-to"
-                value={custom.to}
-                onChange={(to) => setCustom((c) => ({ ...c, to }))}
-                placeholder="Any date"
-              />
-            </div>
-          </>
-        )}
-      </div>
       <DataTable<TxnRow>
         data={shown}
+        toolbarFilters={filters}
         columns={columns}
         getRowId={(r) => r.key}
         selectionResetSignal={reset}
