@@ -1104,28 +1104,32 @@ export function EditStageDialog({
                     </div>
                   )}
 
-                  <FormField
-                    control={form.control}
-                    name="remarks"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Remarks</FormLabel>
-                        <FormControl>
-                          <RichTextEditor
-                            value={field.value ?? ''}
-                            onChange={(v) =>
-                              field.onChange(v === '' ? null : v)
-                            }
-                            onBlur={field.onBlur}
-                            rows={4}
-                            placeholder="Notes for this stage…"
-                            maxLength={4000}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {/* Ending the application: its Notes say why, so Remarks
+                      stands aside (whatever it holds is kept). */}
+                  {!endingApplication && (
+                    <FormField
+                      control={form.control}
+                      name="remarks"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Remarks</FormLabel>
+                          <FormControl>
+                            <RichTextEditor
+                              value={field.value ?? ''}
+                              onChange={(v) =>
+                                field.onChange(v === '' ? null : v)
+                              }
+                              onBlur={field.onBlur}
+                              rows={4}
+                              placeholder="Notes for this stage…"
+                              maxLength={4000}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
 
                 <DialogFooter className="shrink-0 gap-2 border-t border-border pt-4">
