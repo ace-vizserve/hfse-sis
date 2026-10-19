@@ -4,6 +4,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 import {
   ChevronDown,
   Copy,
+  Ban,
+  CircleCheck,
   GraduationCap,
   KeyRound,
   Loader2,
@@ -20,6 +22,8 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import {
   AssignmentChips,
@@ -886,6 +890,59 @@ export function StaffAccountsClient({
     handleManageAssignments
   );
 
+  // Bulk Disable / Enable / Delete: the row's own calls (PATCH {disabled} and
+  // DELETE on /api/sis/admin/users/[id]) once per ticked account. Superadmin
+  // only, and never your own account, exactly as the row controls.
+  const bulk = useBulkAction();
+  const [pending, setPending] = useState<{
+    kind: 'disable' | 'enable' | 'delete';
+    users: AdminUserRow[];
+  } | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
+
+  function openBulk(
+    kind: 'disable' | 'enable' | 'delete',
+    picked: AdminUserRow[]
+  ) {
+    const eligible = picked.filter(
+      (u) =>
+        u.id !== currentUserId &&
+        (kind === 'delete' || (kind === 'disable' ? !u.disabled : u.disabled))
+    );
+    if (eligible.length > 0) setPending({ kind, users: eligible });
+  }
+
+  async function confirmBulk() {
+    if (!pending) return;
+    const { kind, users: picked } = pending;
+    setPending(null);
+    const n = picked.length;
+    const noun = n === 1 ? 'account' : 'accounts';
+    await bulk(picked, {
+      pending: `${kind === 'disable' ? 'Disabling' : kind === 'enable' ? 'Enabling' : 'Deleting'} ${n} ${noun}…`,
+      done: (c) =>
+        `${c} ${c === 1 ? 'account' : 'accounts'} ${kind === 'disable' ? 'disabled' : kind === 'enable' ? 'enabled' : 'deleted'}`,
+      failed:
+        kind === 'disable'
+          ? 'Could not disable'
+          : kind === 'enable'
+            ? 'Could not enable'
+            : 'Could not delete',
+      label: (u) => u.email,
+      one: (u) =>
+        kind === 'delete'
+          ? apiFetch(`/api/sis/admin/users/${u.id}`, jsonInit('DELETE'))
+          : apiFetch(
+              `/api/sis/admin/users/${u.id}`,
+              jsonInit('PATCH', { disabled: kind === 'disable' })
+            ),
+    });
+    setResetSignal((s) => s + 1);
+  }
+
+  const pendingCount = pending?.users.length ?? 0;
+  const pendingNoun = pendingCount === 1 ? 'account' : 'accounts';
+
   const toolbarTrailing = canManage ? (
     <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
   ) : (
@@ -936,6 +993,32 @@ export function StaffAccountsClient({
         // narrow was complexity added, not removed (Tesler's Law/Choice
         // Overload); the menu itself stays for anyone who wants to hide it.
         pageSize={25}
+        selection={{
+          enabled: canManage,
+          enableRowSelection: (r) => r.id !== currentUserId,
+          bulkActions: [
+            {
+              key: 'disable',
+              label: 'Disable',
+              icon: Ban,
+              onTrigger: (picked) => openBulk('disable', picked),
+            },
+            {
+              key: 'enable',
+              label: 'Enable',
+              icon: CircleCheck,
+              onTrigger: (picked) => openBulk('enable', picked),
+            },
+            {
+              key: 'delete',
+              label: 'Delete',
+              icon: Trash2,
+              destructive: true,
+              onTrigger: (picked) => openBulk('delete', picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
         emptyState={{
           icon: Users,
           title: 'No staff users yet.',
@@ -960,6 +1043,33 @@ export function StaffAccountsClient({
         ayCode={ayCode}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+      />
+      <BulkActionDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={
+          pending?.kind === 'delete'
+            ? `Delete ${pendingCount} ${pendingNoun}?`
+            : pending?.kind === 'enable'
+              ? `Enable ${pendingCount} ${pendingNoun}?`
+              : `Disable ${pendingCount} ${pendingNoun}?`
+        }
+        description={
+          pending?.kind === 'delete'
+            ? 'This permanently removes each account. It only succeeds for an account that has never done anything the system tracks. For any that has, you will see which ones, and should use Disable instead.'
+            : pending?.kind === 'enable'
+              ? 'Each person can sign in again.'
+              : 'Each person can no longer sign in. Their records are kept, and you can enable them again.'
+        }
+        confirmLabel={
+          pending?.kind === 'delete'
+            ? 'Delete'
+            : pending?.kind === 'enable'
+              ? 'Enable'
+              : 'Disable'
+        }
+        destructive={pending?.kind === 'delete'}
+        onConfirm={confirmBulk}
       />
     </>
   );
