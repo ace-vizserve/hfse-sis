@@ -2,16 +2,7 @@
 
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Mail,
-  Printer,
-  UserX,
-  Wallet,
-  X,
-} from 'lucide-react';
+import { ChevronDown, ExternalLink, Mail, Printer, Wallet } from 'lucide-react';
 import Link from 'next/link';
 
 import { useSendInvoices } from '@/components/billing/use-send-invoices';
@@ -37,24 +28,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { IdentifierLink } from '@/components/ui/identifier-link';
-import type {
-  CustomerListRow,
-  CustomersList,
-} from '@/lib/billing/customers.server';
+import type { CustomerListRow } from '@/lib/billing/customers.server';
 import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
 
-// Billing → Customers, laid out as QuickBooks' Customers list: the money bar
-// on top (click a segment to list those customers), then Name · Company
-// name · Phone · Open balance · Action. Action is QuickBooks' split link —
-// Receive payment when they owe, Create invoice when they don't — and its ▾
-// carries QuickBooks' menu in QuickBooks' order. Send reminder and Create
-// invoice happen here; the rest open that action in QuickBooks. Batch
-// actions are QuickBooks' two: Email (a reminder of every open invoice of
-// the ticked customers) and Make inactive (in QuickBooks).
-
-type Segment = 'estimates' | 'overdue' | 'open' | 'paid';
+// Billing → Customers. What it holds is QuickBooks' Customers list — Name ·
+// Company name · Phone · Open balance · Action. Action is QuickBooks' split
+// link (Receive payment when they owe, Create invoice when they don't) and
+// its ▾ carries QuickBooks' menu in QuickBooks' order; Send reminder and
+// Create invoice happen here, the rest open that action in QuickBooks. How
+// it looks is the SIS's: status tabs (the page's stat tiles deep-link to
+// them), a Level facet, and Email reminders in the selection footer.
 
 const customerHref = (r: CustomerListRow, next?: 'payment' | 'invoice') =>
   `/billing/${encodeURIComponent(r.studentNumber)}${next ? `?new=${next}` : ''}`;
@@ -88,7 +73,7 @@ function CustomerRowMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
           className="size-7"
           aria-label={`More for ${row.customerName}`}
@@ -295,127 +280,16 @@ function buildColumns(
   ];
 }
 
-/** QuickBooks' money bar: each segment's figure over a coloured strip; a
- *  click lists those customers. QuickBooks' "Unbilled income" segment is
- *  left out — its API doesn't give that figure. */
-function MoneyBar({
-  totals,
-  active,
-  onPick,
-}: {
-  totals: CustomersList['totals'];
-  active: Segment | null;
-  onPick: (s: Segment | null) => void;
-}) {
-  const [open, setOpen] = React.useState(true);
-  const n = (v: number) => v.toLocaleString('en-SG');
-  const segments: Array<{
-    key: Segment;
-    value: number;
-    label: string;
-    bar: string;
-  }> = [
-    ...(totals.estimates
-      ? [
-          {
-            key: 'estimates' as const,
-            value: totals.estimates.total,
-            label: `${n(totals.estimates.count)} estimates`,
-            bar: 'bg-brand-sky',
-          },
-        ]
-      : []),
-    {
-      key: 'overdue',
-      value: totals.overdue,
-      label: `${n(totals.overdueInvoices)} overdue invoices`,
-      bar: 'bg-brand-amber',
-    },
-    {
-      key: 'open',
-      value: totals.openBalance,
-      label: `${n(totals.openInvoices)} open invoices`,
-      bar: 'bg-hairline-strong',
-    },
-    {
-      key: 'paid',
-      value: totals.paidLast30,
-      label: `${n(totals.paymentsLast30)} recently paid`,
-      bar: 'bg-brand-mint',
-    },
-  ];
-  return (
-    <div className="rounded-xl border border-border bg-muted/60 p-4 sm:p-5">
-      {open && (
-        <div
-          className="grid grid-cols-2 gap-4 sm:gap-1 md:grid-cols-[repeat(var(--segments),minmax(0,1fr))]"
-          style={{ '--segments': segments.length } as React.CSSProperties}
-        >
-          {segments.map((s) => (
-            <Button
-              key={s.key}
-              variant="ghost"
-              onClick={() => onPick(active === s.key ? null : s.key)}
-              aria-pressed={active === s.key}
-              className={cn(
-                'group block h-auto min-w-0 space-y-2 whitespace-normal rounded-md p-1 text-left font-normal transition-opacity hover:bg-transparent',
-                active && active !== s.key && 'opacity-50'
-              )}
-            >
-              <span className="block font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-                S${Math.round(s.value).toLocaleString('en-SG')}
-              </span>
-              <span className="block text-[13px] text-muted-foreground">
-                {s.label}
-              </span>
-              <span
-                className={cn(
-                  'block h-3 rounded-sm transition-all group-hover:h-4',
-                  s.bar,
-                  active === s.key && 'h-4'
-                )}
-              />
-            </Button>
-          ))}
-        </div>
-      )}
-      <div className={cn('flex justify-end', open && 'mt-2')}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={() => setOpen((o) => !o)}
-          aria-label={open ? 'Hide the money bar' : 'Show the money bar'}
-          aria-expanded={open}
-        >
-          {open ? (
-            <ChevronUp className="size-4" />
-          ) : (
-            <ChevronDown className="size-4" />
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const SEGMENT_LABEL: Record<Segment, string> = {
-  estimates: 'Estimates',
-  overdue: 'Overdue',
-  open: 'Open invoices',
-  paid: 'Recently paid',
-};
-
 export function CustomersTable({
   rows,
-  totals,
   qbBase,
+  withEstimates = false,
 }: {
   rows: CustomerListRow[];
-  totals: CustomersList['totals'];
   qbBase: string;
+  /** QuickBooks' estimates could be read — offer the Estimates tab. */
+  withEstimates?: boolean;
 }) {
-  const [segment, setSegment] = React.useState<Segment | null>(null);
   // Customers whose open invoices Send reminder is about to email.
   const [remind, setRemind] = React.useState<CustomerListRow[] | null>(null);
   const [reset, setReset] = React.useState(0);
@@ -428,18 +302,44 @@ export function CustomersTable({
     const t = Date.parse(`${todaySg()}T00:00:00Z`) - 30 * 86_400_000;
     return new Date(t).toISOString().slice(0, 10);
   }, []);
-  const shown = React.useMemo(() => {
-    if (!segment) return rows;
-    return rows.filter((r) =>
-      segment === 'estimates'
-        ? r.estimates > 0
-        : segment === 'overdue'
-          ? r.overdue > 0
-          : segment === 'open'
-            ? r.openBalance > 0
-            : !!r.lastPayment && r.lastPayment >= since30
-    );
-  }, [rows, segment, since30]);
+  // QuickBooks' money figures as the SIS's status tabs; the stat tiles above
+  // deep-link to them.
+  const statusTabs = React.useMemo(
+    () => [
+      {
+        value: 'all',
+        label: 'All',
+        predicate: () => true,
+        isDefault: true,
+      },
+      {
+        value: 'owing',
+        label: 'Owing',
+        predicate: (r: CustomerListRow) => r.openBalance > 0,
+      },
+      {
+        value: 'overdue',
+        label: 'Overdue',
+        predicate: (r: CustomerListRow) => r.overdue > 0,
+      },
+      {
+        value: 'paid',
+        label: 'Paid recently',
+        predicate: (r: CustomerListRow) =>
+          !!r.lastPayment && r.lastPayment >= since30,
+      },
+      ...(withEstimates
+        ? [
+            {
+              value: 'estimates',
+              label: 'Estimates',
+              predicate: (r: CustomerListRow) => r.estimates > 0,
+            },
+          ]
+        : []),
+    ],
+    [since30, withEstimates]
+  );
   const facets = React.useMemo(
     () => [
       {
@@ -473,9 +373,8 @@ export function CustomersTable({
   const remindCustomers = new Set((remind ?? []).map((r) => r.customerId)).size;
   return (
     <>
-      <MoneyBar totals={totals} active={segment} onPick={setSegment} />
       <DataTable<CustomerListRow>
-        data={shown}
+        data={rows}
         columns={columns}
         getRowId={(r) => r.studentNumber}
         searchKeys={[
@@ -485,21 +384,9 @@ export function CustomersTable({
           (r) => r.companyName ?? '',
           (r) => r.phone ?? '',
         ]}
-        searchPlaceholder="Search"
+        searchPlaceholder="Search name, parents, phone or student no.…"
+        statusTabs={statusTabs}
         facets={facets}
-        toolbarFilters={
-          segment && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8"
-              onClick={() => setSegment(null)}
-            >
-              {SEGMENT_LABEL[segment]}
-              <X className="size-3.5" />
-            </Button>
-          )
-        }
         toolbarTrailing={
           <Button
             variant="outline"
@@ -513,21 +400,12 @@ export function CustomersTable({
         }
         selection={{
           enabled: true,
-          placement: 'menu',
           bulkActions: [
             {
               key: 'email',
-              label: 'Email',
+              label: 'Email reminders',
               icon: Mail,
               onTrigger: (picked) => setRemind(picked),
-            },
-            {
-              key: 'inactive',
-              label: 'Make inactive',
-              icon: UserX,
-              onTrigger: () => {
-                window.open(`${qbBase}/app/customers`, '_blank', 'noreferrer');
-              },
             },
           ],
         }}
@@ -545,7 +423,7 @@ export function CustomersTable({
         csv={{ filename: 'billing-customers.csv' }}
         emptyFilteredState={{
           title: 'No customers match.',
-          body: 'Clear the search, a filter, or the money-bar selection.',
+          body: 'Clear the search or a filter, or pick another tab.',
         }}
       />
       <AlertDialog open={!!remind} onOpenChange={(o) => !o && setRemind(null)}>
