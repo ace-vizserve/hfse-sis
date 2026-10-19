@@ -51,6 +51,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
+import { BatchActionsMenu } from './batch-actions-menu';
 import { BulkActionFooter } from './bulk-action-footer';
 import { resolveColumnLabel } from './column-label';
 import { exportCsv } from './csv';
@@ -670,6 +671,14 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     <div className="flex flex-col gap-3">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
+        {selection?.enabled &&
+          selection.bulkActions &&
+          selection.placement === 'menu' && (
+            <BatchActionsMenu
+              selectedRows={selectedRows}
+              actions={selection.bulkActions}
+            />
+          )}
         {toolbarLeading}
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
@@ -971,13 +980,15 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         )}
       </div>
 
-      {selection?.enabled && selection.bulkActions && (
-        <BulkActionFooter
-          selectedRows={selectedRows}
-          actions={selection.bulkActions}
-          onClear={() => table.resetRowSelection()}
-        />
-      )}
+      {selection?.enabled &&
+        selection.bulkActions &&
+        selection.placement !== 'menu' && (
+          <BulkActionFooter
+            selectedRows={selectedRows}
+            actions={selection.bulkActions}
+            onClear={() => table.resetRowSelection()}
+          />
+        )}
 
       {csv && exportEverOpened && !csv.advanced && (
         <DataTableExportSheet

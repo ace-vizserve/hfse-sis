@@ -630,6 +630,7 @@ export function SalesTable({
             searchPlaceholder="Search no., customer or memo"
             selection={{
               enabled: true,
+              placement: 'menu',
               enableRowSelection: (r) =>
                 r.kind === 'invoice' && r.statusKey !== 'voided',
               bulkActions: [

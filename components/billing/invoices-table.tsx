@@ -30,6 +30,7 @@ import {
 } from '@/components/billing/invoice-row-menu';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -143,9 +144,12 @@ export function InvoicesTable({
   rows,
   bar,
   qbBase,
+  createAction,
 }: {
   rows: InvoiceListRow[];
   bar: InvoicesList['bar'];
+  /** QuickBooks' Create invoice button, at the end of the filter row. */
+  createAction?: React.ReactNode;
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
 }) {
@@ -350,6 +354,11 @@ export function InvoicesTable({
   return (
     <>
       <MoneyBar bar={bar} />
+      <Tabs defaultValue="all">
+        <TabsList variant="line">
+          <TabsTrigger value="all">All invoices</TabsTrigger>
+        </TabsList>
+      </Tabs>
       {rows.length === 0 ? (
         <Card className="py-0">
           <DataTableEmptyState
@@ -360,55 +369,58 @@ export function InvoicesTable({
         </Card>
       ) : (
         <>
-          <div className="flex flex-wrap items-end gap-3">
-            <FilterSelect
-              id="inv-status"
-              label="Status"
-              value={status}
-              options={STATUS_OPTIONS}
-              onChange={setStatus}
-            />
-            <FilterSelect
-              id="inv-date"
-              label="Date"
-              value={date}
-              options={DATE_OPTIONS}
-              onChange={setDate}
-            />
-            {date === 'custom' && (
-              <>
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="inv-from"
-                    className="text-[12px] text-muted-foreground"
-                  >
-                    From
-                  </Label>
-                  <DatePicker
-                    id="inv-from"
-                    value={custom.from}
-                    onChange={(from) => setCustom((c) => ({ ...c, from }))}
-                    placeholder="Any date"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="inv-to"
-                    className="text-[12px] text-muted-foreground"
-                  >
-                    To
-                  </Label>
-                  <DatePicker
-                    id="inv-to"
-                    value={custom.to}
-                    onChange={(to) => setCustom((c) => ({ ...c, to }))}
-                    placeholder="Any date"
-                  />
-                </div>
-              </>
-            )}
-          </div>
           <DataTable<InvoiceListRow>
+            toolbarFilters={
+              <>
+                <FilterSelect
+                  id="inv-status"
+                  label="Status"
+                  value={status}
+                  options={STATUS_OPTIONS}
+                  onChange={setStatus}
+                />
+                <FilterSelect
+                  id="inv-date"
+                  label="Date"
+                  value={date}
+                  options={DATE_OPTIONS}
+                  onChange={setDate}
+                />
+                {date === 'custom' && (
+                  <>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="inv-from"
+                        className="text-[12px] text-muted-foreground"
+                      >
+                        From
+                      </Label>
+                      <DatePicker
+                        id="inv-from"
+                        value={custom.from}
+                        onChange={(from) => setCustom((c) => ({ ...c, from }))}
+                        placeholder="Any date"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="inv-to"
+                        className="text-[12px] text-muted-foreground"
+                      >
+                        To
+                      </Label>
+                      <DatePicker
+                        id="inv-to"
+                        value={custom.to}
+                        onChange={(to) => setCustom((c) => ({ ...c, to }))}
+                        placeholder="Any date"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            }
+            toolbarTrailing={createAction}
             data={shown}
             columns={columns}
             getRowId={(r) => r.id}
@@ -421,6 +433,7 @@ export function InvoicesTable({
             searchPlaceholder="Search number or customer"
             selection={{
               enabled: true,
+              placement: 'menu',
               enableRowSelection: (r) => r.state !== 'voided',
               bulkActions: [
                 {

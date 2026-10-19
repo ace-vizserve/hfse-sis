@@ -167,6 +167,9 @@ export type SelectionConfig<TRow> = {
    *  true are selectable (TanStack `enableRowSelection` predicate). Use to
    *  exclude rows a bulk action can't apply to (e.g. already-locked sheets). */
   enableRowSelection?: (row: TRow) => boolean;
+  /** Where the bulk actions live: the sticky footer bar (default) or a
+   *  QuickBooks-style "Batch actions ▾" menu at the start of the toolbar. */
+  placement?: 'footer' | 'menu';
 };
 
 export type ExpandableConfig<TRow> = {

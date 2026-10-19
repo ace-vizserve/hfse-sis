@@ -770,6 +770,7 @@ export function CustomerTransactions({
           canRecord
             ? {
                 enabled: true,
+                placement: 'menu',
                 enableRowSelection: (r) =>
                   r.kind === 'invoice' && r.statusKey !== 'voided',
                 bulkActions: [
