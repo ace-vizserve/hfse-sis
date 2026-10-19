@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { ChevronDown, ExternalLink, Settings } from 'lucide-react';
+import { ChevronDown, ExternalLink, Printer } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -26,7 +26,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { stashInvoiceCopy, type InvoiceCopy } from '@/lib/billing/invoice-copy';
@@ -34,10 +38,12 @@ import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
-// The invoice screen's menus, as QuickBooks has them. What the SIS can do for
-// a linked student's invoice runs here (Print or download, Make a copy, Void
-// an unpaid invoice, Send); the rest opens the invoice in QuickBooks, where
-// QuickBooks does it (editing the lines, Delete, recurring, credit memos).
+// The invoice page's actions, with QuickBooks' menus item for item: Print ▾,
+// More actions ▾ and Send ▾. What the SIS can do for a linked student's
+// invoice runs here (Print / Download PDF, Make a copy, Void an unpaid
+// invoice, Send); the rest opens the invoice in QuickBooks, where QuickBooks
+// does it (editing the lines, Delete, recurring, credit memos, the invoice
+// form's setup).
 
 const QbLink = ({ href, children }: { href: string; children: string }) => (
   <DropdownMenuItem asChild>
@@ -48,41 +54,14 @@ const QbLink = ({ href, children }: { href: string; children: string }) => (
   </DropdownMenuItem>
 );
 
-/** Top bar's Manage: QuickBooks' Manage panel (Customization, Payment
- *  options, Design, Scheduling) is invoice-form setup, kept in QuickBooks. */
-export function InvoiceManageMenu({
-  qbUrl,
-  qbSettingsUrl,
-}: {
-  qbUrl: string;
-  qbSettingsUrl: string;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost">
-          <Settings className="size-4" />
-          Manage
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <QbLink href={qbUrl}>Customization</QbLink>
-        <QbLink href={qbUrl}>Payment options</QbLink>
-        <QbLink href={qbUrl}>Design</QbLink>
-        <QbLink href={qbUrl}>Scheduling</QbLink>
-        <DropdownMenuSeparator />
-        <QbLink href={qbSettingsUrl}>Edit default settings</QbLink>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function InvoiceFooterBar({
+export function InvoiceScreenActions({
   invoiceId,
   docNumber,
   studentNumber,
   qbUrl,
   qbCreditMemoUrl,
+  qbSettingsUrl,
+  qbCompanyUrl,
   copy,
   voidable,
   voidBlocked,
@@ -94,6 +73,10 @@ export function InvoiceFooterBar({
   studentNumber: string;
   qbUrl: string;
   qbCreditMemoUrl: string;
+  /** QuickBooks' Sales settings (the invoice form's defaults). */
+  qbSettingsUrl: string;
+  /** QuickBooks' Company settings (the name and address on the invoice). */
+  qbCompanyUrl: string;
   /** The lines Make a copy carries into Create invoice; null when unreadable. */
   copy: InvoiceCopy | null;
   /** Unpaid and not voided: Void runs here. */
@@ -132,118 +115,124 @@ export function InvoiceFooterBar({
   const name = docNumber ? `invoice ${docNumber}` : 'this invoice';
 
   return (
-    <footer className="shrink-0 border-t border-border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <span aria-hidden className="hidden w-48 lg:block" />
-        <div className="flex flex-wrap items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost">Print or download</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-48">
-              <DropdownMenuItem asChild>
-                <a
-                  href={invoicePdfHref(invoiceId)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Print
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  void downloadInvoicePdfs([{ id: invoiceId, docNumber }])
-                }
-              >
-                Download
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button asChild variant="ghost">
-            <a href={qbUrl} target="_blank" rel="noreferrer">
-              Make recurring
-            </a>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline">
+            <Printer className="size-4" />
+            Print
+            <ChevronDown className="size-4 opacity-60" />
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost">
-                More actions
-                <ChevronDown className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-60">
-              <DropdownMenuItem
-                disabled={!copy}
-                onSelect={() => {
-                  if (!copy) return;
-                  stashInvoiceCopy(studentNumber, copy);
-                  router.push(
-                    `/billing/${encodeURIComponent(studentNumber)}?new=invoice`
-                  );
-                }}
-              >
-                Make a copy
-              </DropdownMenuItem>
-              <QbLink href={qbCreditMemoUrl}>Create a credit memo</QbLink>
-              <QbLink href={qbUrl}>Delete</QbLink>
-              <QbLink href={qbUrl}>Create shipping label</QbLink>
-              {voidable ? (
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={() => setConfirmVoid(true)}
-                >
-                  Void
-                </DropdownMenuItem>
-              ) : voidBlocked ? (
-                <QbLink href={qbUrl}>Void</QbLink>
-              ) : null}
-              <QbLink href={qbUrl}>Transaction journal</QbLink>
-              <DropdownMenuItem asChild>
-                <a href="#invoice-activity">Audit history</a>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline">
-            <a href={qbUrl} target="_blank" rel="noreferrer">
-              Edit in QuickBooks
-              <ExternalLink className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem asChild>
+            <a
+              href={invoicePdfHref(invoiceId)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Print
             </a>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() =>
+              void downloadInvoicePdfs([{ id: invoiceId, docNumber }])
+            }
+          >
+            Download PDF
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline">
+            More actions
+            <ChevronDown className="size-4 opacity-60" />
           </Button>
-          <div className="flex items-center">
-            <SendInvoiceButton
-              qboInvoiceId={invoiceId}
-              label={sendLabel}
-              disabledReason={sendBlocked}
-              variant="default"
-              className="rounded-r-none"
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  aria-label="More ways to send"
-                  className="rounded-l-none border-l border-white/25"
-                >
-                  <ChevronDown className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem asChild>
-                  <a
-                    href={invoicePdfHref(invoiceId)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Print or preview
-                  </a>
-                </DropdownMenuItem>
-                <QbLink href={qbUrl}>Share invoice link</QbLink>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuItem
+            disabled={!copy}
+            onSelect={() => {
+              if (!copy) return;
+              stashInvoiceCopy(studentNumber, copy);
+              router.push(
+                `/billing/${encodeURIComponent(studentNumber)}?new=invoice`
+              );
+            }}
+          >
+            Make a copy
+          </DropdownMenuItem>
+          {voidable && (
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => setConfirmVoid(true)}
+            >
+              Void
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem asChild>
+            <a href="#invoice-activity">Audit history</a>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            In QuickBooks
+          </DropdownMenuLabel>
+          <QbLink href={qbUrl}>Open in QuickBooks</QbLink>
+          <QbLink href={qbUrl}>Make recurring</QbLink>
+          <QbLink href={qbCreditMemoUrl}>Create a credit memo</QbLink>
+          {voidBlocked && <QbLink href={qbUrl}>Void</QbLink>}
+          <QbLink href={qbUrl}>Delete</QbLink>
+          <QbLink href={qbUrl}>Create shipping label</QbLink>
+          <QbLink href={qbUrl}>Transaction journal</QbLink>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Invoice form setup</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <QbLink href={qbUrl}>Customization</QbLink>
+              <QbLink href={qbUrl}>Payment options</QbLink>
+              <QbLink href={qbUrl}>Design</QbLink>
+              <QbLink href={qbUrl}>Scheduling</QbLink>
+              <DropdownMenuSeparator />
+              <QbLink href={qbSettingsUrl}>Edit default settings</QbLink>
+              <QbLink href={qbCompanyUrl}>Edit company</QbLink>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <div className="flex items-center">
+        <SendInvoiceButton
+          qboInvoiceId={invoiceId}
+          label={sendLabel}
+          disabledReason={sendBlocked}
+          variant="outline"
+          className="rounded-r-none"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="More ways to send"
+              className="-ml-px rounded-l-none"
+            >
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem asChild>
+              <a
+                href={invoicePdfHref(invoiceId)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Print or preview
+              </a>
+            </DropdownMenuItem>
+            <QbLink href={qbUrl}>Share invoice link</QbLink>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <AlertDialog open={confirmVoid} onOpenChange={setConfirmVoid}>
@@ -277,6 +266,6 @@ export function InvoiceFooterBar({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </footer>
+    </>
   );
 }

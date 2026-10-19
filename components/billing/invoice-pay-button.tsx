@@ -18,17 +18,15 @@ export function InvoicePayButton(props: {
   paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
   /** 'outline' as a secondary action. A Billing button is never ghost (Mr
-   *  Ace), so a leftover 'ghost' is shown as outline too. */
-  variant?: 'default' | 'outline' | 'ghost';
+   *  Ace). */
+  variant?: 'default' | 'outline';
 }) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState(0);
   return (
     <>
       <Button
-        variant={
-          (props.variant ?? 'default') === 'default' ? 'default' : 'outline'
-        }
+        variant={props.variant ?? 'default'}
         onClick={() => {
           setKey((k) => k + 1);
           setOpen(true);

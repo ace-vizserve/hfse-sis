@@ -1,24 +1,34 @@
 import {
   AlertTriangle,
+  ArrowLeft,
+  CalendarDays,
+  CalendarX2,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
-  History,
-  X,
+  ReceiptText,
+  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { InvoiceActivity } from '@/components/billing/invoice-activity';
 import { InvoicePayButton } from '@/components/billing/invoice-pay-button';
-import {
-  InvoiceFooterBar,
-  InvoiceManageMenu,
-} from '@/components/billing/invoice-screen-actions';
+import { InvoiceScreenActions } from '@/components/billing/invoice-screen-actions';
 import { InvoiceStatusBadge } from '@/components/billing/invoice-status-badge';
 import { RefreshButton } from '@/components/billing/refresh-button';
+import { MetricCard } from '@/components/dashboard/metric-card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { PageShell } from '@/components/ui/page-shell';
 import {
   Table,
   TableBody,
@@ -27,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { InvoiceCopy } from '@/lib/billing/invoice-copy';
 import { loadInvoicePage } from '@/lib/billing/invoice-page.server';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
@@ -35,49 +46,31 @@ import { formatSgd } from '@/lib/qbo/format';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { cn } from '@/lib/utils';
 
 const daysBetween = (a: string, b: string) =>
   Math.round(
     (Date.parse(`${b}T00:00:00`) - Date.parse(`${a}T00:00:00`)) / 86_400_000
   );
 
-/** A read-only value drawn as QuickBooks' form box, with its label above. */
-function Box({
-  label,
-  children,
-  className,
-  tall,
-}: {
-  label: string;
-  children: ReactNode;
-  className?: string;
-  tall?: boolean;
-}) {
+const Empty = () => <span className="text-muted-foreground">—</span>;
+
+/** One labelled value in the invoice card's details grid. */
+function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={cn('space-y-1', className)}>
-      <p className="text-[13px] text-muted-foreground">{label}</p>
-      <div
-        className={cn(
-          'rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-input',
-          tall ? 'min-h-20 py-2 leading-relaxed' : 'flex h-9 items-center'
-        )}
-      >
-        {children}
-      </div>
+    <div className="min-w-0 space-y-1">
+      <dt className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="text-sm leading-relaxed text-foreground">{children}</dd>
     </div>
   );
 }
 
-const Empty = () => <span className="text-muted-foreground">—</span>;
-
-// One invoice as QuickBooks' invoice screen (Mr Ace, 2026-10-19: "use QB as
-// reference"): a full screen with the title bar (history, Invoice no., close),
-// the view switch, ‹ Invoice no. › and Receive payment / Manage; the invoice
-// itself in QuickBooks' order; Invoice activity on the right; and QuickBooks'
-// footer bar (Print or download, Make recurring, More actions | Edit in
-// QuickBooks, Send ▾). The lines are read-only here — they are edited in
-// QuickBooks.
+// One invoice. QuickBooks decides what is here (its actions and menus, the
+// invoice's own fields, each line's GST code, Invoice activity); the SIS
+// decides how it looks — a detail page inside Billing with the hero, stat
+// tiles, Invoice / PDF view tabs and cards. The lines are read-only here —
+// they are edited in QuickBooks.
 export default async function BillingInvoicePage({
   params,
   searchParams,
@@ -147,91 +140,66 @@ export default async function BillingInvoicePage({
         }
       : null;
 
-  const views = [
-    { label: 'Invoice', href: invHref(page.row.id, false), on: !pdfView },
-    { label: 'PDF view', href: invHref(page.row.id, true), on: pdfView },
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Title bar: history, the invoice, close. */}
-      <header className="shrink-0 border-b border-border bg-card">
-        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="size-9"
-            title="Invoice activity"
-          >
-            <a href="#invoice-activity" aria-label="Invoice activity">
-              <History className="size-5" />
-            </a>
-          </Button>
-          <h1 className="min-w-0 truncate font-serif text-[22px] font-semibold tracking-tight text-foreground">
-            Invoice {docNo ?? ''}
-          </h1>
-          <InvoiceStatusBadge status={page.row.status} />
-          {overdueDays > 0 && (
-            <span className="hidden text-sm text-destructive sm:inline">
-              Overdue {overdueDays} {overdueDays === 1 ? 'day' : 'days'}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-1">
+    <PageShell>
+      <Link
+        href={customerHref}
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        {page.customerName}
+      </Link>
+
+      <BillingPageHeader
+        crumbs={[{ label: 'Invoice' }]}
+        title={`Invoice ${docNo ?? 'without a number'}`}
+        description={`An invoice of ${page.customerName}, read live from QuickBooks. Its lines are changed in QuickBooks.`}
+        actions={
+          <>
             <RefreshButton label="Refresh" />
-            <Button asChild variant="ghost" size="icon" className="size-9">
-              <Link
-                href={customerHref}
-                aria-label={`Close, back to ${page.customerName}`}
-              >
-                <X className="size-5" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-        {/* View switch | ‹ Invoice no. › | Receive payment, Manage. */}
-        <div className="grid grid-cols-1 items-center gap-2 px-4 sm:px-6 lg:grid-cols-[1fr_auto_1fr]">
-          <nav aria-label="Invoice view" className="flex gap-1">
-            {views.map((v) => (
-              <Link
-                key={v.label}
-                href={v.href}
-                aria-current={v.on ? 'page' : undefined}
-                className={cn(
-                  '-mb-px border-b-2 px-3 py-2.5 text-sm transition-colors',
-                  v.on
-                    ? 'border-primary font-medium text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {v.label}
-              </Link>
-            ))}
-          </nav>
-          <nav
-            aria-label="This customer's invoices"
-            className="flex items-center justify-center gap-1"
-          >
-            <Stepper
-              href={page.older ? invHref(page.older.id) : null}
-              label={`Older: ${page.older?.docNumber ?? 'invoice'}`}
+            <nav
+              aria-label="This customer's other invoices"
+              className="flex items-center gap-1"
             >
-              <ChevronLeft className="size-4" />
-            </Stepper>
-            <span className="text-sm tabular-nums text-foreground">
-              Invoice {docNo ?? '—'}
-            </span>
-            <Stepper
-              href={page.newer ? invHref(page.newer.id) : null}
-              label={`Newer: ${page.newer?.docNumber ?? 'invoice'}`}
-            >
-              <ChevronRight className="size-4" />
-            </Stepper>
-          </nav>
-          <div className="flex items-center justify-end gap-1 pb-1 lg:pb-0">
+              <Stepper
+                href={page.older ? invHref(page.older.id) : null}
+                label={`Older invoice${page.older?.docNumber ? ` ${page.older.docNumber}` : ''}`}
+              >
+                <ChevronLeft className="size-4" />
+              </Stepper>
+              <Stepper
+                href={page.newer ? invHref(page.newer.id) : null}
+                label={`Newer invoice${page.newer?.docNumber ? ` ${page.newer.docNumber}` : ''}`}
+              >
+                <ChevronRight className="size-4" />
+              </Stepper>
+            </nav>
+            <InvoiceScreenActions
+              invoiceId={page.row.id}
+              docNumber={docNo}
+              studentNumber={studentNumber}
+              qbUrl={page.qbUrl}
+              qbCreditMemoUrl={qboAppUrl(page.environment, '/app/creditmemo')}
+              qbSettingsUrl={qboAppUrl(
+                page.environment,
+                '/app/settings?p=Sales'
+              )}
+              qbCompanyUrl={qboAppUrl(
+                page.environment,
+                '/app/settings?p=Company'
+              )}
+              copy={copy}
+              voidable={unpaid}
+              voidBlocked={
+                !isVoided && !unpaid
+                  ? 'This invoice has a payment, so it is voided in QuickBooks.'
+                  : null
+              }
+              sendLabel={sent ? 'Send again' : 'Send'}
+              sendBlocked={sendBlocked}
+            />
             {!isVoided && balance > 0 && (
               <InvoicePayButton
-                variant="ghost"
                 studentNumber={studentNumber}
                 studentName={page.studentName}
                 invoice={{
@@ -249,312 +217,264 @@ export default async function BillingInvoicePage({
                 customerBalance={page.profile?.balance ?? null}
               />
             )}
-            <InvoiceManageMenu
-              qbUrl={page.qbUrl}
-              qbSettingsUrl={qboAppUrl(
-                page.environment,
-                '/app/settings?p=Sales'
-              )}
-            />
+          </>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <InvoiceStatusBadge status={page.row.status} />
+          {overdueDays > 0 && (
+            <span className="text-sm text-destructive">
+              Overdue {overdueDays} {overdueDays === 1 ? 'day' : 'days'}
+            </span>
+          )}
+          {page.row.tile && (
+            <Badge
+              variant="secondary"
+              className="h-6 font-mono text-[10px] uppercase tracking-wider"
+            >
+              {page.row.tile}
+            </Badge>
+          )}
+        </div>
+      </BillingPageHeader>
+
+      {page.detailError && (
+        <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
+            <AlertTriangle className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              Showing what the SIS last read
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {page.detailError} GST codes and the billing address need
+              QuickBooks; refresh to try again.
+            </p>
           </div>
         </div>
-      </header>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-muted/50">
-        <div className="mx-auto grid max-w-400 grid-cols-1 items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 space-y-4">
-            {page.detailError && (
-              <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-5">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
-                  <AlertTriangle className="size-4" />
-                </div>
-                <div className="flex-1 space-y-1.5">
-                  <p className="font-serif text-base font-semibold text-foreground">
-                    Showing what the SIS last read
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {page.detailError} GST codes and the billing address need
-                    QuickBooks; refresh to try again.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {pdfView ? (
-              <iframe
-                title={`Invoice ${docNo ?? ''} PDF`}
-                src={`/api/billing/invoices/${encodeURIComponent(page.row.id)}/pdf`}
-                className="h-[calc(100dvh-14rem)] min-h-[480px] w-full rounded-xl border border-border bg-card shadow-sm"
-              />
-            ) : (
-              <article className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-                {/* INVOICE, the company, Balance due. */}
-                <div className="flex flex-wrap items-start justify-between gap-6 px-6 py-6 sm:px-8">
-                  <div className="space-y-3">
-                    <h2 className="font-serif text-[32px] font-semibold leading-none tracking-tight text-brand-indigo">
-                      INVOICE
-                    </h2>
-                    {page.company ? (
-                      <div className="flex flex-wrap gap-x-10 gap-y-2 text-sm leading-relaxed text-foreground">
-                        <div>
-                          <p className="font-semibold">{page.company.name}</p>
-                          {page.company.address.map((l) => (
-                            <p key={l}>{l}</p>
-                          ))}
-                        </div>
-                        <div>
-                          {page.company.email && <p>{page.company.email}</p>}
-                          {page.company.phone && <p>{page.company.phone}</p>}
-                        </div>
-                      </div>
-                    ) : null}
-                    <a
-                      href={qboAppUrl(
-                        page.environment,
-                        '/app/settings?p=Company'
-                      )}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[13px] text-primary hover:underline"
-                    >
-                      Edit company
-                      <ExternalLink className="size-3" />
-                    </a>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[13px] text-muted-foreground">
-                      Balance due
-                    </p>
-                    <p className="font-serif text-[30px] font-semibold leading-tight tabular-nums text-foreground">
-                      {formatSgd(balance)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Customer, email, Cc, Bill to | Invoice no., Terms, dates. */}
-                <div className="grid grid-cols-1 gap-x-8 gap-y-4 bg-accent/50 px-6 py-6 sm:px-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
-                  <div className="space-y-3">
-                    <Box label="Customer">
-                      <Link
-                        href={customerHref}
-                        className="truncate font-medium text-foreground hover:underline"
-                      >
-                        {page.customerName}
-                      </Link>
-                    </Box>
-                    <Box label="Customer email">
-                      {email ? (
-                        <span className="truncate">{email}</span>
-                      ) : (
-                        <Empty />
-                      )}
-                    </Box>
-                    {d?.billEmailCc && <Box label="Cc">{d.billEmailCc}</Box>}
-                    <Box label="Bill to" tall>
-                      {page.profile?.companyName && (
-                        <span className="block">
-                          {page.profile.companyName}
-                        </span>
-                      )}
-                      {address.length
-                        ? address.map((l) => (
-                            <span key={l} className="block">
-                              {l}
-                            </span>
-                          ))
-                        : !page.profile?.companyName && <Empty />}
-                    </Box>
-                    <Link
-                      href={customerHref}
-                      className="inline-block text-[13px] text-primary hover:underline"
-                    >
-                      Edit Customer
-                    </Link>
-                  </div>
-                  <div className="space-y-3">
-                    <Box label="Invoice no.">
-                      <span className="tabular-nums">{docNo ?? <Empty />}</span>
-                    </Box>
-                    <Box label="Terms">{d?.terms ?? <Empty />}</Box>
-                    <Box label="Invoice date">
-                      <span className="tabular-nums">
-                        {formatDay(d?.txnDate ?? page.row.txnDate)}
-                      </span>
-                    </Box>
-                    <Box label="Due date">
-                      <span
-                        className={cn(
-                          'tabular-nums',
-                          overdueDays > 0 && 'text-destructive'
-                        )}
-                      >
-                        {formatDay(due)}
-                      </span>
-                    </Box>
-                    {d?.location && <Box label="Location">{d.location}</Box>}
-                  </div>
-                </div>
-
-                {/* Product or service. */}
-                <div className="px-6 pt-6 sm:px-8">
-                  <h3 className="font-serif text-base font-semibold text-foreground">
-                    Product or service
-                  </h3>
-                </div>
-                <div className="px-2 sm:px-4">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10 pl-4">#</TableHead>
-                        <TableHead>Product/service</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Rate</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="pr-4">Tax</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(d?.lines ?? []).map((l, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="pl-4 tabular-nums text-muted-foreground">
-                            {i + 1}
-                          </TableCell>
-                          <TableCell className="text-foreground">
-                            {l.itemName ?? '—'}
-                          </TableCell>
-                          <TableCell className="whitespace-normal text-muted-foreground">
-                            {l.description ?? ''}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {l.qty ?? ''}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {l.rate != null ? formatSgd(l.rate) : ''}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatSgd(l.amount)}
-                          </TableCell>
-                          <TableCell className="pr-4 text-muted-foreground">
-                            {l.taxCode ?? '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!d && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={7}
-                            className="px-4 text-muted-foreground"
-                          >
-                            {page.row.items}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Notes left, totals right. */}
-                <div className="mt-4 grid grid-cols-1 gap-8 border-t border-border px-6 py-6 sm:px-8 md:grid-cols-[minmax(0,1fr)_340px]">
-                  <div className="max-w-md space-y-4">
-                    <Box label="Note to customer" tall>
-                      {d?.customerMemo ?? page.row.memo ?? <Empty />}
-                    </Box>
-                    <Box label="Internal customer notes (hidden)" tall>
-                      {page.profile?.notes ?? <Empty />}
-                    </Box>
-                    <Box label="Memo on statement (hidden)" tall>
-                      {d?.privateNote ?? <Empty />}
-                    </Box>
-                  </div>
-                  <dl className="grid h-fit grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm">
-                    {d && (
-                      <>
-                        <dt className="text-muted-foreground">Subtotal</dt>
-                        <dd className="text-right tabular-nums">
-                          {formatSgd(d.subtotal)}
-                        </dd>
-                        {d.discount > 0 && (
-                          <>
-                            <dt className="text-muted-foreground">Discount</dt>
-                            <dd className="text-right tabular-nums">
-                              −{formatSgd(d.discount)}
-                            </dd>
-                          </>
-                        )}
-                        <dt className="text-muted-foreground">GST</dt>
-                        <dd className="text-right tabular-nums">
-                          {formatSgd(d.tax)}
-                        </dd>
-                      </>
-                    )}
-                    <dt className="pt-2 font-semibold text-foreground">
-                      Invoice total
-                    </dt>
-                    <dd className="pt-2 text-right font-semibold tabular-nums">
-                      {formatSgd(total)}
-                    </dd>
-                    {d && d.deposit > 0 && (
-                      <>
-                        <dt className="text-muted-foreground">Deposit</dt>
-                        <dd className="text-right tabular-nums">
-                          −{formatSgd(d.deposit)}
-                        </dd>
-                      </>
-                    )}
-                    <dt className="text-muted-foreground">Amount paid</dt>
-                    <dd className="text-right tabular-nums">
-                      −{formatSgd(paid)}
-                    </dd>
-                    <dt className="border-t border-border pt-2 font-serif text-base font-semibold text-foreground">
-                      Balance due
-                    </dt>
-                    <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
-                      {formatSgd(balance)}
-                    </dd>
-                  </dl>
-                </div>
-              </article>
-            )}
-          </div>
-
-          <aside
-            id="invoice-activity"
-            className="scroll-mt-4 rounded-xl border border-border bg-card p-5 shadow-sm lg:sticky lg:top-0"
-          >
-            <h2 className="font-serif text-lg font-semibold tracking-tight text-foreground">
-              Invoice activity
-            </h2>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
-              Viewed is shown in QuickBooks only.
-            </p>
-            <div className="mt-4">
-              <InvoiceActivity
-                events={page.activity}
-                paymentHref={`${customerHref}?tab=payments`}
-              />
-            </div>
-          </aside>
+      <div className="@container/main">
+        <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+          <MetricCard
+            label="Total"
+            value={formatSgd(total)}
+            icon={ReceiptText}
+            subtext={d ? `GST ${formatSgd(d.tax)}` : undefined}
+          />
+          <MetricCard
+            label="Balance"
+            value={formatSgd(balance)}
+            icon={Wallet}
+            subtext={`${formatSgd(paid)} paid`}
+          />
+          <MetricCard
+            label="Invoice date"
+            value={formatDay(d?.txnDate ?? page.row.txnDate)}
+            icon={CalendarDays}
+            subtext={d?.terms ? `Terms: ${d.terms}` : undefined}
+          />
+          <MetricCard
+            label="Due date"
+            value={formatDay(due)}
+            icon={CalendarX2}
+            subtext={
+              overdueDays > 0
+                ? `${overdueDays} ${overdueDays === 1 ? 'day' : 'days'} overdue`
+                : balance > 0
+                  ? 'Not overdue'
+                  : 'Nothing owing'
+            }
+          />
         </div>
       </div>
 
-      <InvoiceFooterBar
-        invoiceId={page.row.id}
-        docNumber={docNo}
-        studentNumber={studentNumber}
-        qbUrl={page.qbUrl}
-        qbCreditMemoUrl={qboAppUrl(page.environment, '/app/creditmemo')}
-        copy={copy}
-        voidable={unpaid}
-        voidBlocked={
-          !isVoided && !unpaid
-            ? 'This invoice has a payment, so it is voided in QuickBooks.'
-            : null
-        }
-        sendLabel={sent ? 'Send again' : 'Send'}
-        sendBlocked={sendBlocked}
-      />
-    </div>
+      <Tabs value={pdfView ? 'pdf' : 'invoice'}>
+        <TabsList>
+          <TabsTrigger value="invoice" asChild>
+            <Link href={invHref(page.row.id, false)}>Invoice</Link>
+          </TabsTrigger>
+          <TabsTrigger value="pdf" asChild>
+            <Link href={invHref(page.row.id, true)}>PDF view</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {pdfView ? (
+          <iframe
+            title={`Invoice ${docNo ?? ''} PDF`}
+            src={`/api/billing/invoices/${encodeURIComponent(page.row.id)}/pdf`}
+            className="h-[calc(100dvh-12rem)] min-h-[480px] w-full rounded-xl border border-border bg-card shadow-sm"
+          />
+        ) : (
+          <Card className="min-w-0 gap-0 py-0">
+            <CardHeader className="border-b border-border py-5">
+              <CardTitle className="font-serif text-lg font-semibold tracking-tight">
+                Invoice details
+              </CardTitle>
+              <CardDescription>
+                GST follows each item&rsquo;s tax code in QuickBooks.
+              </CardDescription>
+            </CardHeader>
+
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-4 border-b border-border px-6 py-5 sm:grid-cols-2 xl:grid-cols-3">
+              <Detail label="Customer">
+                <Link
+                  href={customerHref}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {page.customerName}
+                </Link>
+              </Detail>
+              <Detail label="Customer email">
+                {email ? <span className="break-all">{email}</span> : <Empty />}
+              </Detail>
+              {d?.billEmailCc && <Detail label="Cc">{d.billEmailCc}</Detail>}
+              <Detail label="Bill to">
+                {page.profile?.companyName && (
+                  <span className="block">{page.profile.companyName}</span>
+                )}
+                {address.length
+                  ? address.map((l) => (
+                      <span key={l} className="block">
+                        {l}
+                      </span>
+                    ))
+                  : !page.profile?.companyName && <Empty />}
+              </Detail>
+              <Detail label="Terms">{d?.terms ?? <Empty />}</Detail>
+              {d?.location && <Detail label="Location">{d.location}</Detail>}
+            </dl>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10 pl-6">#</TableHead>
+                  <TableHead>Product or service</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead>GST code</TableHead>
+                  <TableHead className="pr-6 text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(d?.lines ?? []).map((l, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="pl-6 tabular-nums text-muted-foreground">
+                      {i + 1}
+                    </TableCell>
+                    <TableCell className="text-foreground">
+                      {l.itemName ?? '—'}
+                    </TableCell>
+                    <TableCell className="whitespace-normal text-muted-foreground">
+                      {l.description ?? ''}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.qty ?? ''}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.rate != null ? formatSgd(l.rate) : ''}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {l.taxCode ?? '—'}
+                    </TableCell>
+                    <TableCell className="pr-6 text-right tabular-nums">
+                      {formatSgd(l.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!d && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="px-6 text-muted-foreground"
+                    >
+                      {page.row.items}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+
+            <div className="grid grid-cols-1 gap-8 border-t border-border px-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,300px)]">
+              <dl className="grid content-start gap-4">
+                <Detail label="Note to customer">
+                  {d?.customerMemo ?? page.row.memo ?? <Empty />}
+                </Detail>
+                <Detail label="Internal customer notes (hidden)">
+                  {page.profile?.notes ?? <Empty />}
+                </Detail>
+                <Detail label="Memo on statement (hidden)">
+                  {d?.privateNote ?? <Empty />}
+                </Detail>
+              </dl>
+              <dl className="grid h-fit grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm">
+                {d && (
+                  <>
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="text-right tabular-nums">
+                      {formatSgd(d.subtotal)}
+                    </dd>
+                    {d.discount > 0 && (
+                      <>
+                        <dt className="text-muted-foreground">Discount</dt>
+                        <dd className="text-right tabular-nums">
+                          −{formatSgd(d.discount)}
+                        </dd>
+                      </>
+                    )}
+                    <dt className="text-muted-foreground">GST</dt>
+                    <dd className="text-right tabular-nums">
+                      {formatSgd(d.tax)}
+                    </dd>
+                  </>
+                )}
+                <dt className="font-semibold text-foreground">Invoice total</dt>
+                <dd className="text-right font-semibold tabular-nums">
+                  {formatSgd(total)}
+                </dd>
+                {d && d.deposit > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Deposit</dt>
+                    <dd className="text-right tabular-nums">
+                      −{formatSgd(d.deposit)}
+                    </dd>
+                  </>
+                )}
+                <dt className="text-muted-foreground">Amount paid</dt>
+                <dd className="text-right tabular-nums">−{formatSgd(paid)}</dd>
+                <dt className="border-t border-border pt-2 font-serif text-base font-semibold text-foreground">
+                  Balance due
+                </dt>
+                <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
+                  {formatSgd(balance)}
+                </dd>
+              </dl>
+            </div>
+          </Card>
+        )}
+
+        <Card id="invoice-activity" className="scroll-mt-4">
+          <CardHeader>
+            <CardTitle className="font-serif text-lg font-semibold tracking-tight">
+              Invoice activity
+            </CardTitle>
+            <CardDescription>
+              Viewed is shown in QuickBooks only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <InvoiceActivity
+              events={page.activity}
+              paymentHref={`${customerHref}?tab=payments`}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </PageShell>
   );
 }
 
@@ -570,10 +490,11 @@ function Stepper({
   return (
     <Button
       asChild={!!href}
-      variant="ghost"
+      variant="outline"
       size="icon"
-      className="size-8"
       disabled={!href}
+      aria-label={href ? undefined : label}
+      title={label}
     >
       {href ? (
         <Link href={href} aria-label={label}>
