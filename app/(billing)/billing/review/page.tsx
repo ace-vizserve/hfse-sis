@@ -1,8 +1,8 @@
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
+import { RefreshButton } from '@/components/billing/refresh-button';
 import { ReviewBoard } from '@/components/billing/review-board';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadReviewList } from '@/lib/billing/review.server';
@@ -12,7 +12,9 @@ import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Billing → To review. Students the SIS could not match to a QuickBooks
-// customer by itself: pick a suggestion, pick another, or add them.
+// customer by itself: pick a suggestion, pick another, or add them. No
+// QuickBooks page matches it, so it takes the Billing header and
+// QuickBooks' list conventions (underline tabs, an Action column of links).
 export default async function BillingReviewPage({
   searchParams,
 }: {
@@ -30,25 +32,19 @@ export default async function BillingReviewPage({
 
   return (
     <PageShell>
-      <Link
-        href="/billing"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      <BillingPageHeader
+        crumbs={[
+          { label: 'Customers', href: '/billing' },
+          { label: 'To review' },
+        ]}
+        title="To review"
+        actions={list && <RefreshButton label="Refresh" />}
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Customers
-      </Link>
-      <header className="space-y-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Billing · QuickBooks
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          To review.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+        <p className="max-w-2xl text-sm text-muted-foreground">
           Students the SIS could not match to a QuickBooks customer by itself.
           Pick the right customer, or add the student to QuickBooks.
         </p>
-      </header>
+      </BillingPageHeader>
       {!list ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : (

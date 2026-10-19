@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, UserPlus } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
 import {
@@ -153,13 +153,24 @@ export function ReviewBoard({
       },
       {
         id: 'actions',
-        header: '',
-        meta: { label: 'Actions' },
+        header: () => <div className="text-right">Action</div>,
+        meta: { label: 'Action', excludeFromExport: true },
         cell: ({ row }) => (
-          <div className="flex justify-end gap-2 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
             <Button
               size="sm"
-              variant="ghost"
+              variant="link"
+              className="h-auto p-0"
+              disabled={!!busy || !row.original.newName}
+              onClick={() => setAdd(row.original)}
+            >
+              Add to QuickBooks
+            </Button>
+            <span className="h-4 w-px bg-border" aria-hidden />
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0"
               disabled={!!busy}
               onClick={() => {
                 setPickKey((k) => k + 1);
@@ -167,15 +178,6 @@ export function ReviewBoard({
               }}
             >
               Pick another
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!!busy || !row.original.newName}
-              onClick={() => setAdd(row.original)}
-            >
-              <UserPlus className="size-3.5" />
-              Add to QuickBooks
             </Button>
           </div>
         ),
@@ -189,7 +191,7 @@ export function ReviewBoard({
   return (
     <>
       <Tabs defaultValue={focusGroup ?? defaultKey} className="gap-4">
-        <TabsList>
+        <TabsList variant="line">
           {groups.map((g) => (
             <TabsTrigger key={g.key} value={g.key}>
               {g.label}{' '}
