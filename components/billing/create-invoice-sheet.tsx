@@ -3,19 +3,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field';
+import { FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -29,11 +22,10 @@ import {
   SheetClose,
   SheetContent,
   SheetDescription,
-  SheetFooter,
-  SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
 import { stageForAccount, type InvoiceLine } from '@/lib/billing/classify';
+import { clearInvoiceCopy, readInvoiceCopy } from '@/lib/billing/invoice-copy';
 import {
   duplicateTileWarning,
   mapsFromData,
@@ -44,6 +36,7 @@ import { shouldRenewRequestId } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { cn } from '@/lib/utils';
 
 type Item = {
   id: string;
@@ -67,6 +60,46 @@ type Result = {
   warnings: string[];
 };
 
+const emptyLine = (key: number): Line => ({
+  key,
+  itemId: '',
+  description: '',
+  qty: '1',
+  unitPrice: '',
+});
+
+/** A label over its control, as QuickBooks' invoice form sets them. */
+function Labelled({
+  label,
+  htmlFor,
+  children,
+  className,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('space-y-1', className)}>
+      <label
+        htmlFor={htmlFor}
+        className="block text-[13px] text-muted-foreground"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// Create invoice, laid out as QuickBooks' new-invoice screen (Mr Ace,
+// 2026-10-19: "use QB as reference"): the invoice head (INVOICE, Balance
+// due), the customer band (customer and email | Invoice no., Invoice date,
+// Due date), the Product or service lines with Add product or service / Clear
+// all lines, Note to customer beside the totals, and QuickBooks' footer bar —
+// Cancel | Save and close, Save and send. The customer is always the
+// student's linked QuickBooks customer.
 export function CreateInvoiceSheet({
   open,
   onOpenChange,
@@ -98,18 +131,30 @@ export function CreateInvoiceSheet({
     queryFn: () => apiFetch<{ items: Item[] }>('/api/quickbooks/items'),
     staleTime: 5 * 60 * 1000,
   });
-  const [lines, setLines] = useState<Line[]>([
-    { key: 1, itemId: '', description: '', qty: '1', unitPrice: '' },
-  ]);
+  // Make a copy (the invoice page's More actions): its lines and note start
+  // the form, once — the stored copy is cleared after the form has it.
+  const [copy] = useState(() => readInvoiceCopy(studentNumber));
+  useEffect(() => clearInvoiceCopy(studentNumber), [studentNumber]);
+  const [lines, setLines] = useState<Line[]>(() =>
+    copy
+      ? copy.lines.map((l, i) => ({
+          key: i + 1,
+          itemId: l.itemId,
+          description: l.description,
+          qty: String(l.qty),
+          unitPrice: String(l.unitPrice),
+        }))
+      : [emptyLine(1)]
+  );
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [dueDate, setDueDate] = useState('');
-  const [memo, setMemo] = useState('');
+  const [memo, setMemo] = useState(copy?.memo ?? '');
   const [docNumber, setDocNumber] = useState('');
-  const [send, setSend] = useState(!!customerEmail);
+  const copiedFrom = copy ? (copy.from ?? 'an invoice') : null;
   // One id per open: a retry of the same submit can't create it twice.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [showErrors, setShowErrors] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<null | 'close' | 'send'>(null);
 
   const parsed = lines.map((l) => ({
     ...l,
@@ -164,7 +209,7 @@ export function CreateInvoiceSheet({
   }, [items.data, lines, txnDate, maps, studentNumber, existing]);
 
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (send: boolean) => {
       try {
         return await apiFetch<Result>(
           `/api/billing/students/${encodeURIComponent(studentNumber)}/invoices`,
@@ -197,16 +242,18 @@ export function CreateInvoiceSheet({
   });
   const setLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const nextKey = () => Math.max(0, ...lines.map((x) => x.key)) + 1;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(send: boolean) {
     if (!valid) {
       setShowErrors(true);
       return;
     }
-    setSaving(true);
-    await run(() => save.mutateAsync(), {
-      pending: 'Creating the invoice in QuickBooks…',
+    setSaving(send ? 'send' : 'close');
+    await run(() => save.mutateAsync(send), {
+      pending: send
+        ? 'Creating the invoice in QuickBooks and emailing it…'
+        : 'Creating the invoice in QuickBooks…',
       success: (d) => {
         for (const w of d.warnings) toast.warning(w);
         const what = d.docNumber ? `Invoice ${d.docNumber}` : 'The invoice';
@@ -223,32 +270,109 @@ export function CreateInvoiceSheet({
       },
       refresh: false,
     });
-    setSaving(false);
+    setSaving(null);
   }
+
+  const amountOf = (l: Line) =>
+    l.qty.trim() !== '' &&
+    Number(l.qty) > 0 &&
+    Number(l.unitPrice) >= 0 &&
+    l.unitPrice.trim() !== ''
+      ? formatSgd(Math.round(Number(l.qty) * Number(l.unitPrice) * 100) / 100)
+      : '';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-none lg:w-[min(1280px,96vw)]"
       >
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <SheetHeader className="shrink-0 gap-1.5 border-b border-border p-5">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              {studentName}
-            </p>
-            <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
-              Create invoice
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit(false);
+          }}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          {/* Title bar, as QuickBooks: the form's name and close. */}
+          <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border pl-4 pr-14 sm:pl-6">
+            <SheetTitle className="font-serif text-[22px] font-semibold tracking-tight">
+              Invoice
             </SheetTitle>
-            <SheetDescription>
-              Created in QuickBooks first. Leave the number blank and QuickBooks
-              picks the next one.
+            <SheetDescription className="truncate text-sm">
+              New, for {studentName} — created in QuickBooks
             </SheetDescription>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            <FieldGroup>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted/50 p-3 sm:p-6">
+            <article className="mx-auto max-w-360 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              {/* INVOICE and Balance due. */}
+              <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 sm:px-8">
+                <h2 className="font-serif text-[32px] font-semibold leading-none tracking-tight text-brand-indigo">
+                  INVOICE
+                </h2>
+                <div className="text-right">
+                  <p className="text-[13px] text-muted-foreground">
+                    Balance due
+                  </p>
+                  <p className="font-serif text-[26px] font-semibold leading-tight tabular-nums text-foreground">
+                    {formatSgd(total)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Customer | Invoice no., Invoice date, Due date. */}
+              <div className="grid grid-cols-1 gap-x-8 gap-y-4 bg-accent/50 px-5 py-5 sm:px-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+                <div className="space-y-3">
+                  <Labelled label="Customer">
+                    <div className="flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground shadow-input">
+                      <span className="truncate">{studentName}</span>
+                    </div>
+                  </Labelled>
+                  <Labelled label="Customer email">
+                    <div className="flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-input">
+                      {customerEmail ? (
+                        <span className="truncate">{customerEmail}</span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          None in QuickBooks
+                        </span>
+                      )}
+                    </div>
+                  </Labelled>
+                </div>
+                <div className="space-y-3">
+                  <Labelled label="Invoice no." htmlFor="bill-doc-number">
+                    <Input
+                      id="bill-doc-number"
+                      value={docNumber}
+                      maxLength={21}
+                      onChange={(e) => setDocNumber(e.target.value)}
+                      placeholder="QuickBooks’ next number"
+                      className="bg-card tabular-nums"
+                    />
+                  </Labelled>
+                  <Labelled label="Invoice date" htmlFor="bill-txn-date">
+                    <DatePicker
+                      id="bill-txn-date"
+                      value={txnDate}
+                      onChange={(d) => setTxnDate(d || todaySg())}
+                      allowClear={false}
+                    />
+                  </Labelled>
+                  <Labelled label="Due date" htmlFor="bill-due-date">
+                    <DatePicker
+                      id="bill-due-date"
+                      value={dueDate}
+                      onChange={setDueDate}
+                      placeholder="The customer’s terms"
+                    />
+                  </Labelled>
+                </div>
+              </div>
+
               {warning && (
-                <div className="flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4">
+                <div className="mx-5 mt-5 flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4 sm:mx-8">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
                     <AlertTriangle className="size-4" />
                   </div>
@@ -256,239 +380,253 @@ export function CreateInvoiceSheet({
                 </div>
               )}
 
-              <Field>
-                <FieldLabel>Lines</FieldLabel>
-                {items.isError && (
-                  <FieldError>{(items.error as Error).message}</FieldError>
-                )}
-                <div className="space-y-3">
-                  {lines.map((l) => (
-                    <div
-                      key={l.key}
-                      className="space-y-2 rounded-md border border-border p-3"
-                    >
-                      <div className="flex items-start gap-2">
-                        <Select
-                          value={l.itemId}
-                          onValueChange={(id) => {
-                            const it = items.data?.items.find(
-                              (x) => x.id === id
-                            );
-                            const prev = items.data?.items.find(
-                              (x) => x.id === l.itemId
-                            );
-                            const untouched =
-                              !l.description ||
-                              l.description === (prev?.description ?? '');
-                            setLine(l.key, {
-                              itemId: id,
-                              unitPrice:
-                                it?.unitPrice != null
-                                  ? String(it.unitPrice)
-                                  : '',
-                              description: untouched
-                                ? (it?.description ?? '')
-                                : l.description,
-                            });
-                          }}
-                        >
-                          <SelectTrigger className="w-full" aria-label="Item">
-                            <SelectValue
-                              placeholder={
-                                items.isLoading
-                                  ? 'Loading items…'
-                                  : 'Choose an item'
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(items.data?.items ?? []).map((it) => (
-                              <SelectItem key={it.id} value={it.id}>
-                                {it.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {lines.length > 1 && (
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Remove line"
-                            onClick={() =>
-                              setLines((ls) =>
-                                ls.filter((x) => x.key !== l.key)
-                              )
-                            }
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <Input
-                        value={l.description}
-                        onChange={(e) =>
-                          setLine(l.key, { description: e.target.value })
-                        }
-                        placeholder="Description (optional)"
-                        aria-label="Description"
-                      />
-                      <div className="grid grid-cols-[5rem_1fr_auto] items-center gap-2">
-                        <Input
-                          inputMode="decimal"
-                          value={l.qty}
-                          onChange={(e) =>
-                            setLine(l.key, { qty: e.target.value })
-                          }
-                          aria-label="Quantity"
-                          className="tabular-nums"
-                        />
-                        <Input
-                          inputMode="decimal"
-                          value={l.unitPrice}
-                          onChange={(e) =>
-                            setLine(l.key, { unitPrice: e.target.value })
-                          }
-                          placeholder="Price"
-                          aria-label="Price"
-                          className="tabular-nums"
-                        />
-                        <span className="min-w-24 text-right text-sm tabular-nums text-foreground">
-                          {l.qty.trim() !== '' &&
-                          Number(l.qty) > 0 &&
-                          Number(l.unitPrice) >= 0 &&
-                          l.unitPrice.trim() !== ''
-                            ? formatSgd(
-                                Math.round(
-                                  Number(l.qty) * Number(l.unitPrice) * 100
-                                ) / 100
-                              )
-                            : '—'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+              {/* Product or service. */}
+              <div className="px-5 pt-6 sm:px-8">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="font-serif text-base font-semibold text-foreground">
+                    Product or service
+                  </h3>
+                  {copiedFrom && (
+                    <p className="text-[13px] text-muted-foreground">
+                      Copied from invoice {copiedFrom}
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center justify-between pt-1">
+                {items.isError && (
+                  <FieldError className="mt-2">
+                    {(items.error as Error).message}
+                  </FieldError>
+                )}
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-[13px] text-muted-foreground">
+                        <th className="w-8 py-2 pr-2 font-medium">#</th>
+                        <th className="w-[30%] py-2 pr-2 font-medium">
+                          Product/service
+                        </th>
+                        <th className="py-2 pr-2 font-medium">Description</th>
+                        <th className="w-20 py-2 pr-2 text-right font-medium">
+                          Qty
+                        </th>
+                        <th className="w-32 py-2 pr-2 text-right font-medium">
+                          Rate
+                        </th>
+                        <th className="w-32 py-2 pr-2 text-right font-medium">
+                          Amount
+                        </th>
+                        <th className="w-10 py-2" aria-label="Delete" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((l, i) => (
+                        <tr
+                          key={l.key}
+                          className="border-b border-border align-middle"
+                        >
+                          <td className="py-2 pr-2 tabular-nums text-muted-foreground">
+                            {i + 1}
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Select
+                              value={l.itemId}
+                              onValueChange={(id) => {
+                                const it = items.data?.items.find(
+                                  (x) => x.id === id
+                                );
+                                const prev = items.data?.items.find(
+                                  (x) => x.id === l.itemId
+                                );
+                                const untouched =
+                                  !l.description ||
+                                  l.description === (prev?.description ?? '');
+                                setLine(l.key, {
+                                  itemId: id,
+                                  unitPrice:
+                                    it?.unitPrice != null
+                                      ? String(it.unitPrice)
+                                      : '',
+                                  description: untouched
+                                    ? (it?.description ?? '')
+                                    : l.description,
+                                });
+                              }}
+                            >
+                              <SelectTrigger
+                                className="w-full"
+                                aria-label={`Product or service, line ${i + 1}`}
+                              >
+                                <SelectValue
+                                  placeholder={
+                                    items.isLoading
+                                      ? 'Loading products…'
+                                      : 'Choose a product or service'
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(items.data?.items ?? []).map((it) => (
+                                  <SelectItem key={it.id} value={it.id}>
+                                    {it.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Input
+                              value={l.description}
+                              onChange={(e) =>
+                                setLine(l.key, { description: e.target.value })
+                              }
+                              aria-label={`Description, line ${i + 1}`}
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Input
+                              inputMode="decimal"
+                              value={l.qty}
+                              onChange={(e) =>
+                                setLine(l.key, { qty: e.target.value })
+                              }
+                              aria-label={`Qty, line ${i + 1}`}
+                              className="text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Input
+                              inputMode="decimal"
+                              value={l.unitPrice}
+                              onChange={(e) =>
+                                setLine(l.key, { unitPrice: e.target.value })
+                              }
+                              aria-label={`Rate, line ${i + 1}`}
+                              className="text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="py-2 pr-2 text-right tabular-nums text-foreground">
+                            {amountOf(l)}
+                          </td>
+                          <td className="py-2 text-right">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-8"
+                              aria-label={`Delete line ${i + 1}`}
+                              disabled={lines.length === 1}
+                              onClick={() =>
+                                setLines((ls) =>
+                                  ls.filter((x) => x.key !== l.key)
+                                )
+                              }
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      setLines((ls) => [
-                        ...ls,
-                        {
-                          key: Math.max(...ls.map((x) => x.key)) + 1,
-                          itemId: '',
-                          description: '',
-                          qty: '1',
-                          unitPrice: '',
-                        },
-                      ])
+                      setLines((ls) => [...ls, emptyLine(nextKey())])
                     }
                   >
                     <Plus className="size-3.5" />
-                    Add line
+                    Add product or service
                   </Button>
-                  <p className="text-sm text-foreground">
-                    Total before GST{' '}
-                    <span className="font-semibold tabular-nums">
-                      {formatSgd(total)}
-                    </span>
-                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setLines([emptyLine(nextKey())])}
+                  >
+                    Clear all lines
+                  </Button>
                 </div>
-                <FieldDescription>
-                  GST follows each item&rsquo;s tax code in QuickBooks; the
-                  invoice page shows the GST QuickBooks worked out.
-                </FieldDescription>
                 {showErrors && !linesValid && (
-                  <FieldError>
-                    Each line needs an item, a quantity above 0 and a price.
+                  <FieldError className="mt-2">
+                    Each line needs a product or service, a quantity above 0 and
+                    a rate.
                   </FieldError>
                 )}
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="bill-doc-number">Invoice no.</FieldLabel>
-                <Input
-                  id="bill-doc-number"
-                  value={docNumber}
-                  maxLength={21}
-                  onChange={(e) => setDocNumber(e.target.value)}
-                  placeholder="QuickBooks’ next number"
-                  className="font-mono tabular-nums"
-                />
-                <FieldDescription>
-                  Type your own, e.g. HFSE062240, or leave blank.
-                </FieldDescription>
-              </Field>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="bill-txn-date">Invoice date</FieldLabel>
-                  <DatePicker
-                    id="bill-txn-date"
-                    value={txnDate}
-                    onChange={(d) => setTxnDate(d || todaySg())}
-                    allowClear={false}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="bill-due-date">Due date</FieldLabel>
-                  <DatePicker
-                    id="bill-due-date"
-                    value={dueDate}
-                    onChange={setDueDate}
-                    placeholder="Usual terms"
-                  />
-                  <FieldDescription>
-                    Blank uses QuickBooks’ usual terms.
-                  </FieldDescription>
-                </Field>
               </div>
 
-              <Field>
-                <FieldLabel htmlFor="bill-memo">
-                  Message to the parents
-                </FieldLabel>
-                <Input
-                  id="bill-memo"
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                />
-                <FieldDescription>Shown on the invoice.</FieldDescription>
-              </Field>
-
-              <Field orientation="horizontal">
-                <Checkbox
-                  id="bill-send"
-                  checked={send}
-                  disabled={!customerEmail}
-                  onCheckedChange={(v) => setSend(v === true)}
-                />
-                <FieldLabel htmlFor="bill-send" className="font-normal">
-                  {customerEmail
-                    ? `Email it now to ${customerEmail}`
-                    : 'Email it now — the QuickBooks customer has no email'}
-                </FieldLabel>
-              </Field>
-            </FieldGroup>
+              {/* Note to customer left, totals right. */}
+              <div className="mt-6 grid grid-cols-1 gap-8 border-t border-border px-5 py-6 sm:px-8 md:grid-cols-[minmax(0,1fr)_340px]">
+                <Labelled
+                  label="Note to customer"
+                  htmlFor="bill-memo"
+                  className="max-w-md"
+                >
+                  {/* Plain text: QuickBooks prints the note as typed. */}
+                  <Input
+                    id="bill-memo"
+                    value={memo}
+                    maxLength={1000}
+                    onChange={(e) => setMemo(e.target.value)}
+                    className="bg-card"
+                  />
+                </Labelled>
+                <dl className="grid h-fit grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm">
+                  <dt className="text-muted-foreground">Subtotal</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatSgd(total)}
+                  </dd>
+                  <dt className="text-muted-foreground">GST</dt>
+                  <dd className="text-right text-muted-foreground">
+                    By each item&rsquo;s tax code
+                  </dd>
+                  <dt className="border-t border-border pt-2 font-serif text-base font-semibold text-foreground">
+                    Total before GST
+                  </dt>
+                  <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
+                    {formatSgd(total)}
+                  </dd>
+                </dl>
+              </div>
+            </article>
           </div>
-          <SheetFooter className="shrink-0 gap-2 border-t border-border bg-background p-5">
+
+          {/* Footer bar, as QuickBooks: Cancel | Save and close, Save and send. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-3 sm:px-6">
             <SheetClose asChild>
-              <Button type="button" variant="outline" disabled={saving}>
+              <Button type="button" variant="ghost" disabled={!!saving}>
                 Cancel
               </Button>
             </SheetClose>
-            <Button
-              type="submit"
-              loading={saving}
-              loadingText="Saving in QuickBooks…"
-              disabled={saving}
-            >
-              Create in QuickBooks
-            </Button>
-          </SheetFooter>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                variant="outline"
+                loading={saving === 'close'}
+                loadingText="Saving in QuickBooks…"
+                disabled={!!saving}
+              >
+                Save and close
+              </Button>
+              <Button
+                type="button"
+                loading={saving === 'send'}
+                loadingText="Saving and sending…"
+                disabled={!!saving || !customerEmail}
+                title={
+                  customerEmail
+                    ? `Creates it and emails it to ${customerEmail}`
+                    : 'The QuickBooks customer has no email to send to.'
+                }
+                onClick={() => void submit(true)}
+              >
+                Save and send
+              </Button>
+            </div>
+          </div>
         </form>
       </SheetContent>
     </Sheet>
