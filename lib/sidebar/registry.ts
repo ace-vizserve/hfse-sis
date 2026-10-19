@@ -205,6 +205,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // verdict being handed down. Moved here from the records module with
       // the page itself, 2026-09-11.
       '/classroom/discipline': Gavel,
+      '/classroom/audit-log': ICON_AUDIT_LOG,
     },
     // No quick action — the single nav item (All classes) is already the
     // destination, same reasoning as Attendance/Evaluation above.
