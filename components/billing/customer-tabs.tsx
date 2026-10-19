@@ -133,7 +133,7 @@ function CustomerDetails({
           can&rsquo;t be shown. Refresh to try again.
         </p>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <DetailCard
             eyebrow="QuickBooks"
             title="Contact info"
