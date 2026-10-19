@@ -30,7 +30,7 @@ import {
 import {
   useSendInvoices,
   type SendableInvoice,
-} from '@/components/billing/invoices-table';
+} from '@/components/billing/use-send-invoices';
 import {
   AlertDialog,
   AlertDialogAction,

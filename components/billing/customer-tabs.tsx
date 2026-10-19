@@ -189,6 +189,7 @@ export function CustomerTabs({
   paymentMethods,
   canRecord,
   customerBalance,
+  qbBase,
   initialTab,
 }: {
   studentNumber: string;
@@ -204,6 +205,7 @@ export function CustomerTabs({
   paymentMethods?: Array<{ id: string; label: string }>;
   canRecord: boolean;
   customerBalance?: number | null;
+  qbBase?: string | null;
   /** `?tab=payments` (the invoice page's "View payment") opens the list on
    *  Payments; `?tab=details` opens Customer Details. */
   initialTab: 'transactions' | 'payments' | 'details';
@@ -230,6 +232,7 @@ export function CustomerTabs({
           paymentMethods={paymentMethods}
           canRecord={canRecord}
           customerBalance={customerBalance}
+          qbBase={qbBase}
           initialType={initialTab === 'payments' ? 'payments' : 'all'}
         />
       </TabsContent>

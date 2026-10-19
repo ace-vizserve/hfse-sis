@@ -7,11 +7,32 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleDashed,
+  Download,
   FileText,
   HandCoins,
+  Send,
 } from 'lucide-react';
 
+import {
+  InvoiceRowMenu,
+  downloadInvoicePdfs,
+  invoicePdfHref,
+} from '@/components/billing/invoice-row-menu';
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
+import {
+  useSendInvoices,
+  type SendableInvoice,
+} from '@/components/billing/use-send-invoices';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
@@ -322,6 +343,7 @@ export function CustomerTransactions({
   paymentMethods,
   canRecord,
   customerBalance,
+  qbBase = null,
   initialType = 'all',
 }: {
   studentNumber: string;
@@ -336,6 +358,8 @@ export function CustomerTransactions({
   /** False when QuickBooks isn't connected — Receive payment is hidden. */
   canRecord: boolean;
   customerBalance?: number | null;
+  /** The QuickBooks web app's address, for Open in QuickBooks. */
+  qbBase?: string | null;
   initialType?: TypeFilter;
 }) {
   const today = React.useMemo(() => todaySg(), []);
@@ -344,6 +368,8 @@ export function CustomerTransactions({
   const [date, setDate] = React.useState<DateFilter>('all');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [reset, setReset] = React.useState(0);
+  const [confirm, setConfirm] = React.useState<SendableInvoice[] | null>(null);
+  const sendInvoices = useSendInvoices();
   const [paying, setPaying] = React.useState<{
     key: number;
     invoices: PayableInvoice[];
@@ -367,6 +393,24 @@ export function CustomerTransactions({
       return true;
     });
   }, [rows, type, status, date, custom, today]);
+
+  // QuickBooks' Total line: invoices less payments, of what's listed.
+  const total = React.useMemo(
+    () =>
+      Math.round(
+        shown.reduce(
+          (s, r) =>
+            s +
+            (r.kind === 'payment'
+              ? -r.amount
+              : r.statusKey === 'voided'
+                ? 0
+                : r.amount),
+          0
+        ) * 100
+      ) / 100,
+    [shown]
+  );
 
   const openById = React.useMemo(
     () => new Map(openInvoices.map((o) => [o.id, o])),
@@ -494,11 +538,39 @@ export function CustomerTransactions({
         meta: { label: 'Action', excludeFromExport: true },
         enableSorting: false,
         enableHiding: false,
+        // QuickBooks: View | Receive payment ▾ on an open invoice, View |
+        // Print ▾ on a paid one, View on a payment.
         cell: ({ row }) => {
           const r = row.original;
-          const open = r.kind === 'invoice' ? openById.get(r.id) : undefined;
+          if (r.kind === 'payment')
+            return (
+              <div className="flex justify-end">
+                {qbBase && (
+                  <Button
+                    asChild
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0"
+                  >
+                    <a
+                      href={`${qbBase}/app/recvpayment?txnId=${encodeURIComponent(r.id)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View in QuickBooks
+                    </a>
+                  </Button>
+                )}
+              </div>
+            );
+          const open = openById.get(r.id);
+          const inv = r.invoice!;
           return (
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <Button asChild variant="link" size="sm" className="h-auto p-0">
+                <Link href={invoiceHref(r.id)}>View</Link>
+              </Button>
+              <span className="h-4 w-px bg-border" aria-hidden />
               {open && canRecord ? (
                 <Button
                   variant="link"
@@ -513,11 +585,35 @@ export function CustomerTransactions({
                 >
                   Receive payment
                 </Button>
-              ) : r.kind === 'invoice' ? (
+              ) : (
                 <Button asChild variant="link" size="sm" className="h-auto p-0">
-                  <Link href={invoiceHref(r.id)}>View</Link>
+                  <a
+                    href={invoicePdfHref(r.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Print
+                  </a>
                 </Button>
-              ) : null}
+              )}
+              <InvoiceRowMenu
+                invoice={{
+                  id: inv.id,
+                  docNumber: inv.docNumber,
+                  studentNumber,
+                  state: inv.state,
+                  balance: inv.balance,
+                }}
+                qbUrl={
+                  qbBase
+                    ? `${qbBase}/app/invoice?txnId=${encodeURIComponent(inv.id)}`
+                    : null
+                }
+                onSend={() =>
+                  setConfirm([{ id: inv.id, docNumber: inv.docNumber }])
+                }
+                showCustomer={false}
+              />
             </div>
           );
         },
@@ -593,7 +689,7 @@ export function CustomerTransactions({
         enableSorting: false,
       },
     ];
-  }, [studentNumber, customerName, openById, canRecord]);
+  }, [studentNumber, customerName, openById, canRecord, qbBase]);
 
   if (rows.length === 0)
     return (
@@ -675,8 +771,28 @@ export function CustomerTransactions({
             ? {
                 enabled: true,
                 enableRowSelection: (r) =>
-                  r.kind === 'invoice' && openById.has(r.id),
+                  r.kind === 'invoice' && r.statusKey !== 'voided',
                 bulkActions: [
+                  {
+                    key: 'send',
+                    label: 'Send',
+                    icon: Send,
+                    onTrigger: (picked) =>
+                      setConfirm(
+                        picked.map((r) => ({ id: r.id, docNumber: r.no }))
+                      ),
+                  },
+                  {
+                    key: 'print',
+                    label: 'Print',
+                    icon: Download,
+                    onTrigger: async (picked) => {
+                      await downloadInvoicePdfs(
+                        picked.map((r) => ({ id: r.id, docNumber: r.no }))
+                      );
+                      setReset((n) => n + 1);
+                    },
+                  },
                   {
                     key: 'receive',
                     label: 'Receive payment',
@@ -716,6 +832,43 @@ export function CustomerTransactions({
           body: 'Set Type, Status or Date back to All, or clear the search.',
         }}
       />
+      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <span className="font-semibold text-foreground">Total</span>
+        <span className="font-semibold tabular-nums text-foreground">
+          {formatSgd(total)}
+        </span>
+      </div>
+      <AlertDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.length === 1
+                ? `Email ${confirm[0].docNumber ?? 'this invoice'}?`
+                : `Email ${confirm?.length ?? 0} invoices?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              QuickBooks emails each invoice to the customer&rsquo;s billing
+              address, as Send does in QuickBooks.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const picked = confirm ?? [];
+                setConfirm(null);
+                await sendInvoices(picked);
+                setReset((n) => n + 1);
+              }}
+            >
+              Send
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {paying && (
         <RecordPaymentSheet
           key={paying.key}

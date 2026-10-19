@@ -23,6 +23,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomerPage } from '@/lib/billing/customer-page.server';
 import { formatDay } from '@/lib/billing/view';
 import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
+import { qboAppUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { formatSgd } from '@/lib/qbo/format';
 import { getSessionUser } from '@/lib/supabase/server';
@@ -356,6 +357,7 @@ export default async function BillingCustomerPage({
             paymentMethods={page.paymentMethods}
             canRecord={page.connected}
             customerBalance={b.openBalance}
+            qbBase={page.environment ? qboAppUrl(page.environment, '') : null}
             initialTab={initialTab}
           />
 
