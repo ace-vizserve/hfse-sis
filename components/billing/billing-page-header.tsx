@@ -38,7 +38,7 @@ export function BillingPageHeader({
           : 'flex flex-col gap-5 md:flex-row md:items-end md:justify-between'
       }
     >
-      <div className="space-y-4">
+      <div className="min-w-0 flex-1 space-y-4">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           {eyebrow}
         </p>
@@ -53,7 +53,9 @@ export function BillingPageHeader({
         {children}
       </div>
       {actions && (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-2 xl:shrink-0 xl:flex-nowrap">
+          {actions}
+        </div>
       )}
     </header>
   );

@@ -8,11 +8,7 @@ import { Button } from '@/components/ui/button';
 
 // Every Billing page reads QuickBooks when it loads, so refreshing is simply
 // loading the page again.
-export function RefreshButton({
-  label = 'Refresh from QuickBooks',
-}: {
-  label?: string;
-}) {
+export function RefreshButton({ label = 'Refresh' }: { label?: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   return (

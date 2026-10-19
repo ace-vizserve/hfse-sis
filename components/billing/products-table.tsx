@@ -14,7 +14,8 @@ import * as React from 'react';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { ProductSheet } from '@/components/billing/product-sheet';
-import { PrintIcon, RefreshIcon } from '@/components/billing/toolbar-icons';
+import { RefreshButton } from '@/components/billing/refresh-button';
+import { PrintIcon } from '@/components/billing/toolbar-icons';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import {
   AlertDialog,
@@ -366,7 +367,7 @@ export function ProductsView({
       description="Everything the school bills for, as QuickBooks keeps it. Add or edit a service here; other kinds of item open in QuickBooks."
       actions={
         <>
-          <RefreshIcon />
+          <RefreshButton />
           <PrintIcon />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -1,8 +1,6 @@
 'use client';
 
-import { Printer, RefreshCw, type LucideIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useTransition } from 'react';
+import { Printer, type LucideIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -11,9 +9,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-// The small actions QuickBooks keeps beside its lists and reports (refresh,
-// print), drawn as SIS outline icon buttons and each named on hover. They sit
-// with the page's other actions in the header.
+// The small actions QuickBooks keeps beside its lists and reports (print),
+// drawn as SIS outline icon buttons and each named on hover. They sit with
+// the page's other actions in the header.
 
 export function ToolbarIcon({
   icon: Icon,
@@ -54,20 +52,6 @@ export function ToolbarIcon({
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-/** Reads QuickBooks again (every Billing page reads it when it loads). */
-export function RefreshIcon() {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  return (
-    <ToolbarIcon
-      icon={RefreshCw}
-      label="Refresh from QuickBooks"
-      loading={pending}
-      onClick={() => start(() => router.refresh())}
-    />
   );
 }
 

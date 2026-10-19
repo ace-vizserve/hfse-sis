@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
-import { RefreshIcon } from '@/components/billing/toolbar-icons';
+import { RefreshButton } from '@/components/billing/refresh-button';
 import {
   ReportExportButton,
   ReportPaper,
@@ -150,7 +150,7 @@ export default async function BillingReportPage({
                 {report && !error && (
                   <ReportExportButton report={report} csvName={csvName} />
                 )}
-                <RefreshIcon />
+                <RefreshButton />
               </>
             ) : undefined
           }
