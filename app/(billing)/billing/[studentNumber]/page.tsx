@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  ArrowLeft,
+  ChevronLeft,
   FileText,
   FolderOpen,
   Mail,
@@ -15,14 +15,16 @@ import { CreditPanel } from '@/components/billing/credit-panel';
 import { CustomerActions } from '@/components/billing/customer-actions';
 import { EditCustomerButton } from '@/components/billing/edit-customer-button';
 import { CustomerTabs } from '@/components/billing/customer-tabs';
+import { CustomerNavPanel } from '@/components/billing/customer-nav-panel';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomerPage } from '@/lib/billing/customer-page.server';
-import { formatDay } from '@/lib/billing/view';
+import { loadCustomerNav } from '@/lib/billing/customer-nav.server';
 import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
+import { connectedRealmId } from '@/lib/qbo/client';
 import { qboAppUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { formatSgd } from '@/lib/qbo/format';
@@ -47,16 +49,23 @@ export default async function BillingCustomerPage({
     await Promise.all([params, searchParams]);
   const initialTab =
     tab === 'payments' || tab === 'details' ? tab : 'transactions';
+  const service = createServiceClient();
   const page = await loadCustomerPage(
-    createServiceClient(),
+    service,
     decodeURIComponent(studentNumber)
   );
   if (!page) notFound();
+  // The left panel's customers (QuickBooks' customer list on this page).
+  const realmId = page.connected
+    ? await connectedRealmId(service).catch(() => null)
+    : null;
+  const nav = realmId
+    ? await loadCustomerNav(service, realmId).catch(() => [])
+    : [];
 
   const name =
     page.student?.name ?? page.link?.displayName ?? page.studentNumber;
   const b = page.balances;
-  const openCount = page.openInvoices.length;
 
   // The same student in the other modules — the application and documents of
   // their newest year, and the record. Only links this role can open.
@@ -85,73 +94,23 @@ export default async function BillingCustomerPage({
       !!l && isRouteAllowed(hrefPathname(l.href), sessionUser.role)
   );
 
-  // QuickBooks' own page for this customer, where Edit lives.
+  // QuickBooks' own page for this customer.
   const qbHref =
     page.link && page.environment
-      ? `https://${page.environment === 'sandbox' ? 'app.sandbox.' : ''}qbo.intuit.com/app/customerdetail?nameId=${encodeURIComponent(page.link.customerId)}`
+      ? `${qboAppUrl(page.environment, '')}/app/customerdetail?nameId=${encodeURIComponent(page.link.customerId)}`
       : null;
   const p = page.profile;
 
-  return (
-    <PageShell>
-      {/* Laid out as QuickBooks' customer page: back to Customers, Edit and
-          New transaction on the right, the customer card beside a Summary,
-          then Transaction List / Customer Details. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+  if (!page.connected || !page.link)
+    return (
+      <PageShell>
         <Link
           href="/billing"
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="size-4" />
           Customers
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          {related.map((l) => (
-            <Button key={l.href} asChild variant="ghost" size="sm">
-              <Link href={l.href}>
-                <l.icon className="size-3.5" />
-                {l.label}
-              </Link>
-            </Button>
-          ))}
-          {page.link && page.connected && (
-            <>
-              <RefreshButton label="Refresh" />
-              <EditCustomerButton
-                studentNumber={page.studentNumber}
-                qbHref={qbHref}
-              />
-              <CustomerActions
-                studentNumber={page.studentNumber}
-                studentName={name}
-                customerEmail={p?.email ?? null}
-                maps={page.maps}
-                existing={page.invoices.map((i) => ({
-                  docNumber: i.docNumber,
-                  ayCode: i.ayCode,
-                  stageKeys: i.stageKeys,
-                  state: i.state,
-                }))}
-                openInvoices={page.openInvoices}
-                credits={page.credits}
-                depositAccounts={page.depositAccounts}
-                paymentMethods={page.paymentMethods}
-                customerBalance={b.openBalance}
-                initialSheet={
-                  newSheet === 'payment' || newSheet === 'invoice'
-                    ? newSheet
-                    : null
-                }
-                initialInvoiceId={
-                  newSheet === 'payment' ? (newInvoice ?? null) : null
-                }
-              />
-            </>
-          )}
-        </div>
-      </div>
-
-      {!page.connected || !page.link ? (
         <header className="space-y-2">
           <h1 className="font-serif text-[30px] font-semibold leading-tight tracking-tight text-foreground">
             {name}
@@ -163,50 +122,95 @@ export default async function BillingCustomerPage({
               : ''}
           </p>
         </header>
-      ) : null}
-
-      {!page.connected ? (
-        <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
-      ) : !page.link ? (
-        <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <UserSearch className="size-4" />
+        {!page.connected ? (
+          <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
+        ) : (
+          <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <UserSearch className="size-4" />
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <p className="font-serif text-base font-semibold text-foreground">
+                Find their QuickBooks customer
+              </p>
+              <p className="text-sm text-muted-foreground">
+                The SIS couldn&rsquo;t match this student to a QuickBooks
+                customer by itself. Pick the right one, or add them to
+                QuickBooks.
+              </p>
+              <Button asChild variant="outline" size="sm" className="mt-2">
+                <Link
+                  href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
+                >
+                  Open in To review
+                </Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex-1 space-y-1.5">
-            <p className="font-serif text-base font-semibold text-foreground">
-              Find their QuickBooks customer
-            </p>
-            <p className="text-sm text-muted-foreground">
-              The SIS couldn&rsquo;t match this student to a QuickBooks customer
-              by itself. Pick the right one, or add them to QuickBooks.
-            </p>
-            <Button asChild variant="outline" size="sm" className="mt-2">
-              <Link
-                href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
-              >
-                Open in To review
-              </Link>
-            </Button>
+        )}
+      </PageShell>
+    );
+
+  // Laid out as QuickBooks' customer page: ‹ Customers with Edit ▾ and New
+  // transaction ▾ on one bar; the customer list down the left; the customer
+  // card beside the Summary; then the tabs and the list.
+  return (
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 px-4 py-6 md:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href="/billing"
+          className="inline-flex w-fit items-center gap-1 text-[15px] text-primary hover:underline"
+        >
+          <ChevronLeft className="size-4" />
+          Customers
+        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton label="Refresh" />
+          <EditCustomerButton
+            studentNumber={page.studentNumber}
+            qbHref={qbHref}
+          />
+          <CustomerActions
+            studentNumber={page.studentNumber}
+            studentName={name}
+            customerEmail={p?.email ?? null}
+            maps={page.maps}
+            existing={page.invoices.map((i) => ({
+              docNumber: i.docNumber,
+              ayCode: i.ayCode,
+              stageKeys: i.stageKeys,
+              state: i.state,
+            }))}
+            openInvoices={page.openInvoices}
+            credits={page.credits}
+            depositAccounts={page.depositAccounts}
+            paymentMethods={page.paymentMethods}
+            customerBalance={b.openBalance}
+            initialSheet={
+              newSheet === 'payment' || newSheet === 'invoice' ? newSheet : null
+            }
+            initialInvoiceId={
+              newSheet === 'payment' ? (newInvoice ?? null) : null
+            }
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="hidden lg:block">
+          <div className="sticky top-4 h-[calc(100vh-7rem)]">
+            <CustomerNavPanel customers={nav} current={page.studentNumber} />
           </div>
         </div>
-      ) : (
-        <>
-          {page.refreshError && (
-            <div className="flex items-start gap-4 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-5">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
-                <AlertTriangle className="size-4" />
-              </div>
-              <div className="flex-1 space-y-1.5">
-                <p className="font-serif text-base font-semibold text-foreground">
-                  Showing what the SIS last read
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {page.refreshError} Refresh to try QuickBooks again.
-                </p>
-              </div>
-            </div>
-          )}
 
+        <div className="min-w-0 space-y-4">
+          {page.refreshError && (
+            <p className="flex items-start gap-2 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-ink">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              Showing what the SIS last read: {page.refreshError} Refresh to try
+              QuickBooks again.
+            </p>
+          )}
           {page.stageWarning && (
             <p className="flex items-start gap-2 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -214,62 +218,54 @@ export default async function BillingCustomerPage({
             </p>
           )}
 
-          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <Card>
-              <CardContent className="space-y-5">
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="font-serif text-[30px] font-semibold leading-tight tracking-tight text-foreground">
-                      {page.link.displayName}
-                    </h1>
-                    {p?.email && (
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
+          <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <Card className="py-5">
+              <CardContent className="space-y-4 px-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-serif text-[26px] font-semibold leading-tight tracking-tight text-foreground">
+                    {page.link.displayName}
+                  </h1>
+                  {p?.email && (
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                    >
+                      <a
+                        href={`mailto:${p.email}`}
+                        aria-label={`Email ${p.email}`}
+                        title={p.email}
                       >
-                        <a
-                          href={`mailto:${p.email}`}
-                          aria-label={`Email ${p.email}`}
-                          title={p.email}
-                        >
-                          <Mail className="size-4" />
-                        </a>
-                      </Button>
-                    )}
-                    {(p?.phone || p?.mobile) && (
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
+                        <Mail className="size-4" />
+                      </a>
+                    </Button>
+                  )}
+                  {(p?.phone || p?.mobile) && (
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                    >
+                      <a
+                        href={`tel:${p.phone ?? p.mobile}`}
+                        aria-label={`Call ${p.phone ?? p.mobile}`}
+                        title={p.phone ?? p.mobile ?? undefined}
                       >
-                        <a
-                          href={`tel:${p.phone ?? p.mobile}`}
-                          aria-label={`Call ${p.phone ?? p.mobile}`}
-                          title={p.phone ?? p.mobile ?? undefined}
-                        >
-                          <Phone className="size-4" />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                  <p className="font-mono text-[12px] tabular-nums text-muted-foreground">
-                    {page.studentNumber}
-                    {page.student?.level
-                      ? ` · ${page.student.level}, ${page.student.ayCode}`
-                      : ''}
-                  </p>
+                        <Phone className="size-4" />
+                      </a>
+                    </Button>
+                  )}
                 </div>
-                <dl className="grid grid-cols-1 gap-x-10 gap-y-4 text-sm sm:grid-cols-2">
-                  <div className="space-y-1">
+                <dl className="space-y-3 text-sm">
+                  <div className="space-y-0.5">
                     <dt className="text-[12px] text-muted-foreground">
                       Company
                     </dt>
                     <dd className="text-foreground">{p?.companyName ?? '—'}</dd>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <dt className="text-[12px] text-muted-foreground">
                       Billing address
                     </dt>
@@ -277,47 +273,64 @@ export default async function BillingCustomerPage({
                       {p?.billAddress.length ? p.billAddress.join(', ') : '—'}
                     </dd>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <dt className="text-[12px] text-muted-foreground">Notes</dt>
-                    <dd className="text-foreground">{p?.notes || '—'}</dd>
+                    <dd className="text-foreground">
+                      {p?.notes || (
+                        <span className="text-muted-foreground">
+                          Add notes with Edit
+                        </span>
+                      )}
+                    </dd>
                   </div>
+                  {/* QuickBooks' Custom Fields slot: what the SIS knows. */}
                   <div className="space-y-1">
                     <dt className="text-[12px] text-muted-foreground">
-                      {page.stages
-                        ? `Admissions · ${page.stages.ayCode}`
-                        : 'Admissions'}
+                      Student
                     </dt>
-                    <dd className="text-foreground">
-                      {page.stages
-                        ? `Registration: ${page.stages.registration ?? '—'} · Fees: ${page.stages.fees ?? '—'}`
-                        : 'No application on record'}
+                    <dd className="space-y-1.5 text-foreground">
+                      <div className="font-mono text-[12px] tabular-nums text-muted-foreground">
+                        {page.studentNumber}
+                        {page.student?.level
+                          ? ` · ${page.student.level}, ${page.student.ayCode}`
+                          : ''}
+                        {page.stages
+                          ? ` · Registration: ${page.stages.registration ?? '—'} · Fees: ${page.stages.fees ?? '—'}`
+                          : ''}
+                      </div>
+                      {related.length > 0 && (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {related.map((l) => (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              className="inline-flex items-center gap-1 text-[13px] text-primary hover:underline"
+                            >
+                              <l.icon className="size-3.5" />
+                              {l.label}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
                     </dd>
                   </div>
                 </dl>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-serif text-lg font-semibold tracking-tight">
+            <Card className="py-5">
+              <CardContent className="space-y-5 px-5">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-foreground">
                   Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
+                </p>
                 <SummaryLine
                   bar="bg-brand-amber"
                   value={formatSgd(b.openBalance)}
                   label="Open balance"
-                  note={`${openCount} open ${openCount === 1 ? 'invoice' : 'invoices'}`}
                 />
                 <SummaryLine
                   bar="bg-destructive"
                   value={formatSgd(b.overdue)}
                   label="Overdue payment"
-                  note={
-                    page.overdueOldest
-                      ? `Oldest: ${page.overdueOldest.docNumber ?? 'an invoice'}, due ${formatDay(page.overdueOldest.dueDate)}`
-                      : undefined
-                  }
                 />
                 {b.credit > 0 && (
                   <SummaryLine
@@ -360,17 +373,9 @@ export default async function BillingCustomerPage({
             qbBase={page.environment ? qboAppUrl(page.environment, '') : null}
             initialTab={initialTab}
           />
-
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            {b.source === 'quickbooks'
-              ? 'Read from QuickBooks just now'
-              : 'Balances added up from the last QuickBooks read'}{' '}
-            · QuickBooks is the record for money · Every action is in the audit
-            log
-          </p>
-        </>
-      )}
-    </PageShell>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -379,22 +384,19 @@ function SummaryLine({
   bar,
   value,
   label,
-  note,
 }: {
   bar: string;
   value: string;
   label: string;
-  note?: string;
 }) {
   return (
     <div className="flex gap-3">
       <span aria-hidden className={`w-1 shrink-0 rounded-full ${bar}`} />
       <div className="space-y-0.5">
-        <p className="font-serif text-[24px] font-semibold leading-none tabular-nums text-foreground">
+        <p className="font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
           {value}
         </p>
         <p className="text-sm text-foreground">{label}</p>
-        {note && <p className="text-[12px] text-muted-foreground">{note}</p>}
       </div>
     </div>
   );

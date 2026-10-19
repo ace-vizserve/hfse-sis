@@ -215,7 +215,7 @@ export function CustomerTabs({
       defaultValue={initialTab === 'details' ? 'details' : 'transactions'}
       className="gap-4"
     >
-      <TabsList>
+      <TabsList variant="line">
         <TabsTrigger value="transactions">Transaction List</TabsTrigger>
         <TabsTrigger value="details">Customer Details</TabsTrigger>
       </TabsList>

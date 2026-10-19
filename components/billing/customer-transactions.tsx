@@ -497,7 +497,7 @@ export function CustomerTransactions({
               </span>
             );
           return (
-            <span className="line-clamp-1 max-w-72 text-sm text-muted-foreground">
+            <span className="line-clamp-2 max-w-44 text-sm text-muted-foreground">
               {row.original.memo ?? ''}
             </span>
           );
@@ -557,7 +557,7 @@ export function CustomerTransactions({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      View in QuickBooks
+                      View
                     </a>
                   </Button>
                 )}
@@ -816,6 +816,8 @@ export function CustomerTransactions({
         ]}
         searchPlaceholder="Find by number or memo"
         initialColumnVisibility={{
+          // Every row is this customer; the left panel already names them.
+          customer: false,
           dueDate: false,
           balance: false,
           depositTo: false,

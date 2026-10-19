@@ -37,6 +37,9 @@ const tabsListVariants = cva('group/tabs-list inline-flex w-fit text-ink-4', {
       // sentence-case labels are what still tell the two apart.
       segmented:
         'items-center justify-center rounded-lg border border-hairline bg-muted p-[3px] shadow-input group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col',
+      // Underline — page-level tabs on a hairline rule, the active tab
+      // underlined in the brand colour (QuickBooks' page tabs, used by Billing).
+      line: 'w-full items-end gap-6 border-b border-border',
     },
   },
   defaultVariants: {
@@ -86,6 +89,9 @@ function TabsTrigger({
         // gradient tile — user-flagged design-review finding.
         'group-data-[variant=segmented]/tabs-list:h-[calc(100%-1px)] group-data-[variant=segmented]/tabs-list:flex-1 group-data-[variant=segmented]/tabs-list:rounded-md group-data-[variant=segmented]/tabs-list:border group-data-[variant=segmented]/tabs-list:border-transparent group-data-[variant=segmented]/tabs-list:px-3 group-data-[variant=segmented]/tabs-list:py-1 group-data-[variant=segmented]/tabs-list:text-sm group-data-[variant=segmented]/tabs-list:font-medium group-data-[variant=segmented]/tabs-list:text-ink-3 group-data-[variant=segmented]/tabs-list:data-[state=inactive]:hover:bg-card/70 group-data-[variant=segmented]/tabs-list:data-[state=inactive]:hover:text-foreground',
         'group-data-[variant=segmented]/tabs-list:data-[state=active]:bg-gradient-to-br group-data-[variant=segmented]/tabs-list:data-[state=active]:from-brand-indigo group-data-[variant=segmented]/tabs-list:data-[state=active]:to-brand-navy group-data-[variant=segmented]/tabs-list:data-[state=active]:text-white group-data-[variant=segmented]/tabs-list:data-[state=active]:shadow-brand-tile group-data-[variant=segmented]/tabs-list:data-[state=active]:font-semibold',
+
+        // LINE — sentence-case label over a 2px rule that turns brand on the active tab.
+        'group-data-[variant=line]/tabs-list:-mb-px group-data-[variant=line]/tabs-list:border-b-2 group-data-[variant=line]/tabs-list:border-transparent group-data-[variant=line]/tabs-list:px-1 group-data-[variant=line]/tabs-list:pb-2.5 group-data-[variant=line]/tabs-list:pt-1 group-data-[variant=line]/tabs-list:text-[15px] group-data-[variant=line]/tabs-list:text-ink-3 group-data-[variant=line]/tabs-list:data-[state=inactive]:hover:text-foreground group-data-[variant=line]/tabs-list:data-[state=active]:border-primary group-data-[variant=line]/tabs-list:data-[state=active]:font-medium group-data-[variant=line]/tabs-list:data-[state=active]:text-foreground',
 
         className
       )}
