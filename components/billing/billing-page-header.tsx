@@ -12,6 +12,7 @@ export function BillingPageHeader({
   title,
   description,
   actions,
+  stackActions = false,
   children,
 }: {
   /** Shown as the eyebrow ("Billing · Invoices"). */
@@ -19,6 +20,9 @@ export function BillingPageHeader({
   title: string;
   description?: ReactNode;
   actions?: ReactNode;
+  /** Put the actions in one row under the description — for a page with
+   *  more actions than fit beside the title. */
+  stackActions?: boolean;
   /** Anything under the description (rare). */
   children?: ReactNode;
 }) {
@@ -27,7 +31,13 @@ export function BillingPageHeader({
     .slice(0, 2)
     .join(' · ');
   return (
-    <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+    <header
+      className={
+        stackActions
+          ? 'flex flex-col gap-5'
+          : 'flex flex-col gap-5 md:flex-row md:items-end md:justify-between'
+      }
+    >
       <div className="space-y-4">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           {eyebrow}

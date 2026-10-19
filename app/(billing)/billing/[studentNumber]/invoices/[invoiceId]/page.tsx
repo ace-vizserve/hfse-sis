@@ -40,7 +40,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { InvoiceCopy } from '@/lib/billing/invoice-copy';
 import { loadInvoicePage } from '@/lib/billing/invoice-page.server';
-import { formatDay, round2, todaySg } from '@/lib/billing/view';
+import { formatShortDay, round2, todaySg } from '@/lib/billing/view';
 import { qboAppUrl } from '@/lib/qbo/env';
 import { formatSgd } from '@/lib/qbo/format';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
@@ -152,6 +152,7 @@ export default async function BillingInvoicePage({
 
       <BillingPageHeader
         crumbs={[{ label: 'Invoice' }]}
+        stackActions
         title={`Invoice ${docNo ?? 'without a number'}`}
         description={`An invoice of ${page.customerName}, read live from QuickBooks. Its lines are changed in QuickBooks.`}
         actions={
@@ -271,20 +272,28 @@ export default async function BillingInvoicePage({
           />
           <MetricCard
             label="Invoice date"
-            value={formatDay(d?.txnDate ?? page.row.txnDate)}
+            // Day and month as the figure, the year below — a full date wraps
+            // at laptop width.
+            value={formatShortDay(d?.txnDate ?? page.row.txnDate) ?? '—'}
             icon={CalendarDays}
-            subtext={d?.terms ? `Terms: ${d.terms}` : undefined}
+            subtext={[
+              (d?.txnDate ?? page.row.txnDate)?.slice(0, 4),
+              d?.terms ? `Terms: ${d.terms}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           />
           <MetricCard
             label="Due date"
-            value={formatDay(due)}
+            value={formatShortDay(due) ?? '—'}
             icon={CalendarX2}
             subtext={
-              overdueDays > 0
+              (due ? `${due.slice(0, 4)} · ` : '') +
+              (overdueDays > 0
                 ? `${overdueDays} ${overdueDays === 1 ? 'day' : 'days'} overdue`
                 : balance > 0
                   ? 'Not overdue'
-                  : 'Nothing owing'
+                  : 'Nothing owing')
             }
           />
         </div>
@@ -329,7 +338,13 @@ export default async function BillingInvoicePage({
                 </Link>
               </Detail>
               <Detail label="Customer email">
-                {email ? <span className="break-all">{email}</span> : <Empty />}
+                {email ? (
+                  <span className="block truncate" title={email}>
+                    {email}
+                  </span>
+                ) : (
+                  <Empty />
+                )}
               </Detail>
               {d?.billEmailCc && <Detail label="Cc">{d.billEmailCc}</Detail>}
               <Detail label="Bill to">
