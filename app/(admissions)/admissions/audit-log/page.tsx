@@ -42,6 +42,8 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'billing.mapping.update',
   'billing.years.update',
   'billing.deposit_accounts.update',
+  'qbo.item.create',
+  'qbo.item.update',
   'sis.stp.update',
   'sis.precourse.update',
   // lib/audit/modules.ts files discount codes under Admissions, but this list

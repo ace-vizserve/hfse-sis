@@ -1,136 +1,530 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { Package } from 'lucide-react';
+import { Ban, ChevronDown, ExternalLink, Package } from 'lucide-react';
+import * as React from 'react';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
+import { FilterSelect } from '@/components/billing/customer-transactions';
+import { ProductSheet } from '@/components/billing/product-sheet';
+import { PrintIcon, RefreshIcon } from '@/components/billing/toolbar-icons';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ProductRow } from '@/lib/billing/live.server';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { formatSgd } from '@/lib/qbo/format';
 
-// Billing → Products & services, as QuickBooks' list: Name · Type · Sales
-// description · Sales price · Income account, Active by default.
+// Billing → Products & services, as QuickBooks' page: More ▾ and New
+// product/service ▾ at the top; Search, Type, Stock status and Filters (the
+// Status); Name · Sales description · Qty on hand · Category · SKU · Type ·
+// Price · Cost · Actions (Edit ▾: Run report, Duplicate, Make inactive);
+// Batch actions → Make inactive. Billing builds what a school bills with —
+// New service, Edit and Make inactive on a service; everything else opens
+// the same place in QuickBooks.
 
-const columns: ColumnDef<ProductRow, unknown>[] = [
-  {
-    id: 'name',
-    accessorFn: (r) => r.name,
-    header: ({ column }) => (
-      <SortableHeader column={column}>Name</SortableHeader>
-    ),
-    meta: { label: 'Name' },
-    cell: ({ row }) => (
-      <span className="font-medium text-foreground">
-        {row.original.name}
-        {!row.original.active && (
-          <Badge variant="secondary" className="ml-2 h-5">
-            Inactive
-          </Badge>
-        )}
-      </span>
-    ),
-    enableHiding: false,
-  },
-  {
-    id: 'type',
-    accessorFn: (r) => r.type,
-    header: ({ column }) => (
-      <SortableHeader column={column}>Type</SortableHeader>
-    ),
-    meta: { label: 'Type' },
-  },
-  {
-    id: 'description',
-    accessorFn: (r) => r.description ?? '',
-    header: 'Sales description',
-    meta: { label: 'Sales description' },
-    cell: ({ row }) => (
-      <span className="line-clamp-2 max-w-md text-sm text-muted-foreground">
-        {row.original.description ?? ''}
-      </span>
-    ),
-    enableSorting: false,
-  },
-  {
-    id: 'price',
-    accessorFn: (r) => r.price ?? -1,
-    header: ({ column }) => (
-      <div className="flex justify-end">
-        <SortableHeader column={column} align="right">
-          Sales price
-        </SortableHeader>
-      </div>
-    ),
-    meta: { label: 'Sales price' },
-    cell: ({ row }) => (
-      <div className="whitespace-nowrap text-right tabular-nums">
-        {row.original.price === null ? '' : formatSgd(row.original.price)}
-      </div>
-    ),
-  },
-  {
-    id: 'incomeAccount',
-    accessorFn: (r) => r.incomeAccount ?? '',
-    header: ({ column }) => (
-      <SortableHeader column={column}>Income account</SortableHeader>
-    ),
-    meta: { label: 'Income account' },
-  },
-];
+const TYPE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'Bundle', label: 'Bundle' },
+  { value: 'Inventory', label: 'Inventory' },
+  { value: 'Non-inventory', label: 'Non-inventory' },
+  { value: 'Service', label: 'Service' },
+] as const;
+const STOCK_OPTIONS = [
+  { value: 'any', label: 'Any' },
+  { value: 'low', label: 'Low stock' },
+  { value: 'out', label: 'Out of stock' },
+] as const;
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'all', label: 'All' },
+] as const;
 
-export function ProductsTable({ rows }: { rows: ProductRow[] }) {
-  if (rows.length === 0)
-    return (
-      <Card className="py-0">
-        <DataTableEmptyState
-          icon={Package}
-          title="No products or services"
-          body="QuickBooks has no products or services yet. Add them in QuickBooks; they show here when the page opens."
-        />
-      </Card>
-    );
+type Stock = (typeof STOCK_OPTIONS)[number]['value'];
+type Status = (typeof STATUS_OPTIONS)[number]['value'];
+type TypeFilter = (typeof TYPE_OPTIONS)[number]['value'];
+
+function inStock(r: ProductRow, s: Stock): boolean {
+  if (s === 'any') return true;
+  if (r.qtyOnHand === null) return false;
+  if (s === 'out') return r.qtyOnHand <= 0;
   return (
-    <DataTable<ProductRow>
-      data={rows}
-      columns={columns}
-      getRowId={(r) => r.id}
-      searchKeys={[(r) => r.name, (r) => r.description ?? '']}
-      searchPlaceholder="Search name or description"
-      facets={[
-        {
-          columnId: 'type',
-          label: 'Type',
-          valueOptions: [...new Set(rows.map((r) => r.type))].sort(),
+    r.qtyOnHand > 0 && r.reorderPoint !== null && r.qtyOnHand <= r.reorderPoint
+  );
+}
+
+const money = (n: number | null) => (n ? formatSgd(n) : '');
+
+/** QuickBooks' link for anything Billing leaves to QuickBooks. */
+function QbItem({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenuItem asChild>
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+        <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+      </a>
+    </DropdownMenuItem>
+  );
+}
+
+export function ProductsView({
+  rows,
+  qbBase,
+}: {
+  rows: ProductRow[];
+  /** The QuickBooks web app's address (sandbox or production). */
+  qbBase: string;
+}) {
+  const run = useWriteAction();
+  const qbItems = `${qbBase}/app/items`;
+  const [type, setType] = React.useState<TypeFilter>('all');
+  const [stock, setStock] = React.useState<Stock>('any');
+  const [status, setStatus] = React.useState<Status>('active');
+  const [sheet, setSheet] = React.useState<{
+    itemId: string | null;
+    key: number;
+  } | null>(null);
+  const [confirm, setConfirm] = React.useState<ProductRow[] | null>(null);
+  const [reset, setReset] = React.useState(0);
+
+  const openSheet = (itemId: string | null) =>
+    setSheet((s) => ({ itemId, key: (s?.key ?? 0) + 1 }));
+
+  const shown = React.useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          (type === 'all' || r.type === type) &&
+          inStock(r, stock) &&
+          (status === 'all' || (status === 'active') === r.active)
+      ),
+    [rows, type, stock, status]
+  );
+
+  async function makeInactive(list: ProductRow[]) {
+    const targets = list.filter((r) => r.active);
+    if (targets.length === 0) return;
+    await run(
+      async () => {
+        const failed: string[] = [];
+        for (const r of targets) {
+          try {
+            await apiFetch(
+              `/api/billing/products/${encodeURIComponent(r.id)}/inactive`,
+              jsonInit('POST', { requestId: crypto.randomUUID() })
+            );
+          } catch (e) {
+            failed.push(
+              `${r.name}: ${e instanceof Error ? e.message : 'not saved'}`
+            );
+          }
+        }
+        if (failed.length === targets.length)
+          throw new Error(failed.join(' · '));
+        return { done: targets.length - failed.length, failed };
+      },
+      {
+        pending:
+          targets.length === 1
+            ? `Making ${targets[0].name} inactive…`
+            : `Making ${targets.length} items inactive…`,
+        success: (d) =>
+          d.failed.length
+            ? {
+                title: `${d.done} made inactive, ${d.failed.length} not`,
+                description: d.failed.join(' · '),
+              }
+            : d.done === 1
+              ? `${targets[0].name} is inactive`
+              : `${d.done} items are inactive`,
+        onResolved: () => setReset((n) => n + 1),
+      }
+    );
+  }
+
+  const columns = React.useMemo<ColumnDef<ProductRow, unknown>[]>(
+    () => [
+      {
+        id: 'name',
+        accessorFn: (r) => r.name,
+        header: ({ column }) => (
+          <SortableHeader column={column}>Name</SortableHeader>
+        ),
+        meta: { label: 'Name' },
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <span className="inline-flex min-w-48 flex-wrap items-center gap-2">
+              {r.type === 'Service' ? (
+                <button
+                  type="button"
+                  onClick={() => openSheet(r.id)}
+                  className="text-left font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {r.name}
+                </button>
+              ) : (
+                <span className="font-medium text-foreground">{r.name}</span>
+              )}
+              {!r.active && (
+                <Badge variant="secondary" className="h-5">
+                  Inactive
+                </Badge>
+              )}
+            </span>
+          );
         },
-        {
-          columnId: 'incomeAccount',
-          label: 'Income account',
-          valueOptions: [
-            ...new Set(rows.map((r) => r.incomeAccount ?? '').filter(Boolean)),
-          ].sort(),
+        enableHiding: false,
+      },
+      {
+        id: 'description',
+        accessorFn: (r) => r.description ?? '',
+        header: 'Sales description',
+        meta: { label: 'Sales description' },
+        cell: ({ row }) => (
+          <span className="line-clamp-2 max-w-64 text-sm text-muted-foreground">
+            {row.original.description ?? ''}
+          </span>
+        ),
+        enableSorting: false,
+      },
+      {
+        id: 'qty',
+        accessorFn: (r) => r.qtyOnHand ?? -Infinity,
+        header: ({ column }) => (
+          <div className="flex justify-end">
+            <SortableHeader column={column} align="right">
+              Qty on hand
+            </SortableHeader>
+          </div>
+        ),
+        meta: { label: 'Qty on hand' },
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums">
+            {row.original.qtyOnHand ?? ''}
+          </div>
+        ),
+      },
+      {
+        id: 'category',
+        accessorFn: (r) => r.category ?? 'Uncategorized',
+        header: ({ column }) => (
+          <SortableHeader column={column}>Category</SortableHeader>
+        ),
+        meta: { label: 'Category' },
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {row.original.category ?? 'Uncategorized'}
+          </span>
+        ),
+      },
+      {
+        id: 'sku',
+        accessorFn: (r) => r.sku ?? '',
+        header: ({ column }) => (
+          <SortableHeader column={column}>SKU</SortableHeader>
+        ),
+        meta: { label: 'SKU' },
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap font-mono text-[13px]">
+            {row.original.sku ?? ''}
+          </span>
+        ),
+      },
+      {
+        id: 'type',
+        accessorFn: (r) => r.type,
+        header: ({ column }) => (
+          <SortableHeader column={column}>Type</SortableHeader>
+        ),
+        meta: { label: 'Type' },
+      },
+      {
+        id: 'price',
+        accessorFn: (r) => r.price ?? 0,
+        header: ({ column }) => (
+          <div className="flex justify-end">
+            <SortableHeader column={column} align="right">
+              Price
+            </SortableHeader>
+          </div>
+        ),
+        meta: { label: 'Price' },
+        cell: ({ row }) => (
+          <div className="whitespace-nowrap text-right tabular-nums">
+            {money(row.original.price)}
+          </div>
+        ),
+      },
+      {
+        id: 'cost',
+        accessorFn: (r) => r.cost ?? 0,
+        header: ({ column }) => (
+          <div className="flex justify-end">
+            <SortableHeader column={column} align="right">
+              Cost
+            </SortableHeader>
+          </div>
+        ),
+        meta: { label: 'Cost' },
+        cell: ({ row }) => (
+          <div className="whitespace-nowrap text-right tabular-nums">
+            {money(row.original.cost)}
+          </div>
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <div className="text-right">Actions</div>,
+        meta: { label: 'Actions', excludeFromExport: true },
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          const service = r.type === 'Service';
+          return (
+            <div className="flex items-center justify-end">
+              {service ? (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-1"
+                  onClick={() => openSheet(r.id)}
+                >
+                  Edit
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-1"
+                >
+                  <a href={qbItems} target="_blank" rel="noreferrer">
+                    Edit
+                  </a>
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={`More for ${r.name}`}
+                  >
+                    <ChevronDown className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <QbItem href={qbItems}>Run report</QbItem>
+                  <QbItem href={qbItems}>Duplicate</QbItem>
+                  {r.active ? (
+                    <DropdownMenuItem onSelect={() => setConfirm([r])}>
+                      Make inactive
+                    </DropdownMenuItem>
+                  ) : (
+                    <QbItem href={qbItems}>Make active</QbItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
         },
-      ]}
-      statusTabs={[
-        {
-          value: 'active',
-          label: 'Active',
-          predicate: (r) => r.active,
-          isDefault: true,
-        },
-        { value: 'inactive', label: 'Inactive', predicate: (r) => !r.active },
-        { value: 'all', label: 'All', predicate: () => true },
-      ]}
-      initialSort={[{ id: 'name', desc: false }]}
-      url={{ enabled: true, namespace: 'billing-products' }}
-      pageSize={50}
-      csv={{ filename: 'billing-products.csv' }}
-      emptyFilteredState={{
-        title: 'Nothing matches.',
-        body: 'Clear the search or a filter.',
-      }}
+      },
+    ],
+    [qbItems]
+  );
+
+  const header = (
+    <BillingPageHeader
+      crumbs={[{ label: 'Sales' }, { label: 'Products & services' }]}
+      title="Products & services"
+      actions={
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                More
+                <ChevronDown className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <QbItem href={qbItems}>Manage categories</QbItem>
+              <QbItem href={qbItems}>Run report</QbItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                New product/service
+                <ChevronDown className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuItem onSelect={() => openSheet(null)}>
+                Service
+              </DropdownMenuItem>
+              <QbItem href={qbItems}>Inventory item</QbItem>
+              <QbItem href={qbItems}>Non-inventory item</QbItem>
+              <QbItem href={qbItems}>Bundle</QbItem>
+              <DropdownMenuSeparator />
+              <QbItem href={qbItems}>Batch import</QbItem>
+              <QbItem href={qbItems}>Import from sales channel</QbItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      }
     />
+  );
+
+  return (
+    <>
+      {header}
+      {rows.length === 0 ? (
+        <Card className="py-0">
+          <DataTableEmptyState
+            icon={Package}
+            title="No products or services"
+            body="Add a service with New product/service. It shows here and in QuickBooks."
+          />
+        </Card>
+      ) : (
+        <DataTable<ProductRow>
+          data={shown}
+          columns={columns}
+          getRowId={(r) => r.id}
+          searchKeys={[
+            (r) => r.name,
+            (r) => r.sku ?? '',
+            (r) => r.category ?? 'Uncategorized',
+          ]}
+          searchPlaceholder="Search by name, SKU or category"
+          toolbarFilters={
+            <div className="flex flex-wrap items-end gap-2">
+              <FilterSelect
+                id="items-type"
+                label="Type"
+                value={type}
+                options={TYPE_OPTIONS}
+                onChange={setType}
+                className="h-8 w-40"
+              />
+              <FilterSelect
+                id="items-stock"
+                label="Stock status"
+                value={stock}
+                options={STOCK_OPTIONS}
+                onChange={setStock}
+                className="h-8 w-36"
+              />
+              <FilterSelect
+                id="items-status"
+                label="Status"
+                value={status}
+                options={STATUS_OPTIONS}
+                onChange={setStatus}
+                className="h-8 w-32"
+              />
+            </div>
+          }
+          toolbarTrailing={
+            <div className="flex items-center">
+              <RefreshIcon />
+              <PrintIcon />
+            </div>
+          }
+          selection={{
+            enabled: true,
+            placement: 'menu',
+            enableRowSelection: (r) => r.active,
+            bulkActions: [
+              {
+                key: 'inactive',
+                label: 'Make inactive',
+                icon: Ban,
+                onTrigger: (selected) => setConfirm(selected),
+              },
+            ],
+          }}
+          selectionResetSignal={reset}
+          initialSort={[{ id: 'name', desc: false }]}
+          url={{ enabled: true, namespace: 'billing-products' }}
+          pageSize={50}
+          csv={{ filename: 'billing-products.csv' }}
+          emptyFilteredState={{
+            title: 'Nothing matches.',
+            body: 'Set Type, Stock status or Status back, or clear the search.',
+          }}
+        />
+      )}
+      {sheet && (
+        <ProductSheet
+          key={sheet.key}
+          open
+          onOpenChange={(o) => !o && setSheet(null)}
+          itemId={sheet.itemId}
+        />
+      )}
+      <AlertDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.length === 1
+                ? `Make ${confirm[0].name} inactive?`
+                : `Make ${confirm?.length ?? 0} items inactive?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              QuickBooks keeps the history, but stops offering{' '}
+              {confirm?.length === 1 ? 'it' : 'them'} on new invoices. It can be
+              made active again in QuickBooks.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const picked = confirm ?? [];
+                setConfirm(null);
+                void makeInactive(picked);
+              }}
+            >
+              Make inactive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

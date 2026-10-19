@@ -118,6 +118,9 @@ export const ALL_AUDIT_ACTIONS = [
   'billing.mapping.update',
   'billing.years.update',
   'billing.deposit_accounts.update',
+  // Billing → Products & services: New service, Edit, Make inactive.
+  'qbo.item.create',
+  'qbo.item.update',
   // What parents may pick on the enrolment forms (migration 174). Opening and
   // closing a session are separate actions, so "when was Morning closed for
   // P2" is answerable without reading a diff.
@@ -313,6 +316,7 @@ export type AuditEntityType =
   | 'qbo_customer'
   | 'qbo_connection'
   | 'qbo_payment'
+  | 'qbo_item'
   | 'billing_setting'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.

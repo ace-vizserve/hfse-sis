@@ -215,6 +215,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'billing.mapping.update': 'Billing tile mapping changed',
   'billing.years.update': 'Billing year ranges changed',
   'billing.deposit_accounts.update': 'Payment accounts changed',
+  'qbo.item.create': 'QuickBooks product/service added',
+  'qbo.item.update': 'QuickBooks product/service edited',
   'admission_option.create': 'Enrolment form option added',
   'admission_option.update': 'Enrolment form option edited',
   'admission_option.open': 'Enrolment form session reopened',
@@ -1959,6 +1961,17 @@ function templateSummary(
       return joinParts([str(ctx.company_name)].filter(Boolean));
     case 'qbo.customer.link':
       return joinParts([str(ctx.display_name)].filter(Boolean));
+    case 'qbo.item.create':
+      return joinParts([str(ctx.name)].filter(Boolean));
+    case 'qbo.item.update':
+      return joinParts(
+        [
+          str(ctx.name),
+          Array.isArray(ctx.changed)
+            ? (ctx.changed as string[]).join(', ')
+            : '',
+        ].filter(Boolean)
+      );
     case 'qbo.payment.create': {
       const parts: string[] = [];
       const total = Number(ctx.total);

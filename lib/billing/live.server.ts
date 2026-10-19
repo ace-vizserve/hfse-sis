@@ -412,9 +412,28 @@ export type ProductRow = {
   price: number | null;
   incomeAccount: string | null;
   active: boolean;
+  sku: string | null;
+  /** QuickBooks' product category; null = Uncategorized. */
+  category: string | null;
+  /** Purchase cost; null when QuickBooks has none (or 0). */
+  cost: number | null;
+  /** Quantity on hand; null for items that don't track quantity. */
+  qtyOnHand: number | null;
+  /** QuickBooks' reorder point, for the Low stock filter. */
+  reorderPoint: number | null;
+  taxable: boolean;
 };
 
-/** QuickBooks' Products and Services list, read live (active and inactive). */
+// QuickBooks' API item types → the names its Products & services page uses.
+const ITEM_TYPE_LABEL: Record<string, string> = {
+  Service: 'Service',
+  Inventory: 'Inventory',
+  NonInventory: 'Non-inventory',
+  Group: 'Bundle',
+};
+
+/** QuickBooks' Products and Services list, read live (active and inactive).
+ *  Categories are not products, so they are left out, as QuickBooks does. */
 export async function readProducts(
   service: SupabaseClient
 ): Promise<ProductRow[]> {
@@ -427,16 +446,46 @@ export async function readProducts(
     UnitPrice?: number;
     IncomeAccountRef?: { name?: string };
     Active?: boolean;
+    Sku?: string;
+    SubItem?: boolean;
+    ParentRef?: { value: string; name?: string };
+    PurchaseCost?: number;
+    TrackQtyOnHand?: boolean;
+    QtyOnHand?: number;
+    ReorderPoint?: number;
+    Taxable?: boolean;
   }>(service, 'Item', 'Active IN (true, false)');
+  const categoryName = new Map(
+    rows
+      .filter((i) => i.Type === 'Category')
+      .map((i) => [i.Id, i.FullyQualifiedName ?? i.Name])
+  );
   return rows
-    .map((i) => ({
-      id: i.Id,
-      name: i.FullyQualifiedName ?? i.Name,
-      type: i.Type ?? 'Service',
-      description: i.Description?.trim() || null,
-      price: typeof i.UnitPrice === 'number' ? i.UnitPrice : null,
-      incomeAccount: i.IncomeAccountRef?.name ?? null,
-      active: i.Active !== false,
-    }))
+    .filter((i) => i.Type !== 'Category')
+    .map((i) => {
+      const parent = i.SubItem ? i.ParentRef?.value : undefined;
+      const category = parent ? (categoryName.get(parent) ?? null) : null;
+      return {
+        id: i.Id,
+        // Under a category QuickBooks shows the item's own name; under a
+        // parent item, the full "Parent:Item" name.
+        name: category || !parent ? i.Name : (i.FullyQualifiedName ?? i.Name),
+        type: ITEM_TYPE_LABEL[i.Type ?? 'Service'] ?? i.Type ?? 'Service',
+        description: i.Description?.trim() || null,
+        price: typeof i.UnitPrice === 'number' ? i.UnitPrice : null,
+        incomeAccount: i.IncomeAccountRef?.name ?? null,
+        active: i.Active !== false,
+        sku: i.Sku?.trim() || null,
+        category,
+        cost: i.PurchaseCost ? i.PurchaseCost : null,
+        qtyOnHand:
+          i.TrackQtyOnHand && typeof i.QtyOnHand === 'number'
+            ? i.QtyOnHand
+            : null,
+        reorderPoint:
+          typeof i.ReorderPoint === 'number' ? i.ReorderPoint : null,
+        taxable: i.Taxable === true,
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
