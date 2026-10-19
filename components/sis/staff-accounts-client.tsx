@@ -1162,7 +1162,7 @@ function InviteUserDialog({
 
   const createMutation = useMutation({
     mutationFn: (vars: { email: string; roles: Role[] }) =>
-      apiFetch(
+      apiFetch<{ id?: string }>(
         '/api/sis/admin/users',
         jsonInit('POST', {
           email: vars.email,
@@ -1195,31 +1195,17 @@ function InviteUserDialog({
     const payload = { email: trimmedEmail, roles };
     await run(() => createMutation.mutateAsync(payload), {
       pending: `Creating the account for ${trimmedEmail}…`,
-      // The "account + teacher assignment" job used to span two pages
-      // (KD #154 / SIS Admin IA Phase 4). When the new account is a teacher,
-      // point straight at the Assignments cut of this same page so the
-      // registrar/superadmin can finish the job in one visit. That needs a
-      // toast action, which a plain message can't carry — so it is raised here
-      // and `null` returned to stop a second, plainer one landing on top.
-      success: () => {
-        const message = `Account created for ${trimmedEmail}. Share the password securely.`;
-        if (roles.includes('teacher')) {
-          toast.success(message, {
-            action: {
-              label: 'Now assign their classes →',
-              onClick: () => router.push('/sis/admin/staff'),
-            },
-          });
-          return null;
-        }
-        return message;
-      },
+      success: `Account created for ${trimmedEmail}. Share the password securely.`,
       error: (e: unknown) =>
         e instanceof Error ? e.message : 'user creation failed',
-      onResolved: () => {
+      // Open the new person's page — where their classes are assigned, so a
+      // new teacher's account and assignments are one visit.
+      onResolved: (d) => {
         onOpenChange(false);
         resetForm();
+        if (d.id) router.push(`/sis/admin/staff/${encodeURIComponent(d.id)}`);
       },
+      refresh: (d) => !d.id,
     });
     setSaving(false);
   }
