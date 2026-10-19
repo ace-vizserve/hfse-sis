@@ -12,8 +12,10 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getSessionUser } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import type { Role } from '@/lib/auth/roles';
 import { FeedbackTable } from './feedback-table';
 
@@ -67,25 +69,36 @@ export default async function FeedbackPage({
   if (!ALLOWED_ROLES.includes(sessionUser.role as Role)) redirect('/');
 
   const params = await searchParams;
-  const currentAy = await getCurrentAcademicYear();
-  const selectedAy = params.ay ?? currentAy?.ay_code ?? '';
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(createServiceClient()),
+  ]);
+  const selectedAy =
+    params.ay && ayCodes.includes(params.ay)
+      ? params.ay
+      : (currentAy?.ay_code ?? '');
   if (!selectedAy) redirect('/admissions');
 
   const { rows, stats } = await getAdmissionsFeedback(selectedAy);
 
   return (
     <PageShell>
-      <header className="space-y-2">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Admissions · Analytics · {selectedAy}
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Application feedback.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Parent ratings and comments about the online application form
-          experience.
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Admissions · Analytics · {selectedAy}
+          </p>
+          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
+            Application feedback.
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Parent ratings and comments about the online application form
+            experience.
+          </p>
+        </div>
+        <div className="sm:w-40">
+          <AySwitcher current={selectedAy} options={ayCodes} />
+        </div>
       </header>
 
       <div className="@container/main">
