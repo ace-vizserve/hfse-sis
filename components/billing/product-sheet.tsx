@@ -30,7 +30,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import {
   EMPTY_PRODUCT_FORM,
   parsePrice,
@@ -208,11 +207,12 @@ export function ProductSheet({
                   <FieldLabel htmlFor="item-description">
                     Sales description
                   </FieldLabel>
-                  <Textarea
+                  {/* QuickBooks keeps plain text here, so a plain input (as
+                      the customer form's Notes). */}
+                  <Input
                     id="item-description"
                     value={current.description}
                     onChange={(e) => set('description', e.target.value)}
-                    rows={3}
                     maxLength={4000}
                   />
                   <FieldDescription>
