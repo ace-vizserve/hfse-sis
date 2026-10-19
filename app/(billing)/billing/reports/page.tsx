@@ -1,19 +1,32 @@
-import { FileChartColumn } from 'lucide-react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
-import { Card } from '@/components/ui/card';
+import {
+  ReportList,
+  type ListedReport,
+} from '@/components/billing/report-list';
 import { PageShell } from '@/components/ui/page-shell';
-import { REPORT_GROUPS, REPORTS } from '@/lib/billing/report-catalog';
+import {
+  QB_LIST_ORDER,
+  QB_ONLY_REPORTS,
+  REPORT_GROUPS,
+  REPORTS,
+} from '@/lib/billing/report-catalog';
 import { connectedRealmId } from '@/lib/qbo/client';
+import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// Billing → Reports: QuickBooks' Standard reports the SIS can open, grouped
-// and named as QuickBooks' own list ("Who owes you"). Each opens the report
-// read live from QuickBooks.
+// Billing → Reports, as QuickBooks' Standard reports page: the reports the
+// SIS reads live from QuickBooks, grouped and named as QuickBooks lists them,
+// with the rest of each list opening in QuickBooks.
+const rank = (title: string) => {
+  const i = QB_LIST_ORDER.indexOf(title);
+  return i < 0 ? QB_LIST_ORDER.length : i;
+};
+
 export default async function BillingReportsPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -22,51 +35,38 @@ export default async function BillingReportsPage() {
     () => null
   );
 
+  const reports: ListedReport[] = [
+    ...REPORTS.map((r) => ({
+      id: r.key,
+      title: r.title,
+      group: r.group,
+      href: `/billing/reports/${r.key}`,
+    })),
+    ...QB_ONLY_REPORTS.map((r) => ({
+      id: `qb:${r.title}`,
+      title: r.title,
+      group: r.group,
+      href: null,
+    })),
+  ].sort((a, b) => rank(a.title) - rank(b.title));
+
   return (
     <PageShell>
-      <header className="space-y-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Billing · QuickBooks
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Reports.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          QuickBooks&rsquo; standard reports, read from QuickBooks when you open
-          one.
-        </p>
-      </header>
-
+      <BillingPageHeader
+        crumbs={[{ label: 'Reports' }, { label: 'Standard reports' }]}
+        title="Standard reports"
+      />
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : (
-        REPORT_GROUPS.map((group) => (
-          <Card key={group} className="gap-4 px-6 py-5">
-            <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
-              {group}
-            </h2>
-            <ul className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
-              {REPORTS.filter((r) => r.group === group).map((r) => (
-                <li key={r.key} className="border-b border-border">
-                  <Link
-                    href={`/billing/reports/${r.key}`}
-                    className="group flex items-start gap-3 py-3"
-                  >
-                    <FileChartColumn className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium text-foreground group-hover:text-primary">
-                        {r.title}
-                      </span>
-                      <span className="block text-[13px] text-muted-foreground">
-                        {r.blurb}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ))
+        <ReportList
+          reports={reports}
+          groups={REPORT_GROUPS}
+          qbReportsUrl={qboAppUrl(
+            qboEnv()?.environment ?? 'sandbox',
+            '/app/standardreports'
+          )}
+        />
       )}
     </PageShell>
   );

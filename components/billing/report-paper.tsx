@@ -1,11 +1,31 @@
 'use client';
 
-import { ChevronDown, ChevronRight, Download } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  EllipsisVertical,
+  ExternalLink,
+  Mail,
+  Upload,
+} from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 
+import {
+  PrintIcon,
+  RefreshIcon,
+  ToolbarIcon,
+} from '@/components/billing/toolbar-icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -49,6 +69,7 @@ export function ReportPaper({
   studentByCustomer,
   readAt,
   csvName,
+  qbReportsUrl,
 }: {
   reportKey: string;
   companyName: string;
@@ -60,10 +81,13 @@ export function ReportPaper({
   studentByCustomer: Record<string, string>;
   readAt: string;
   csvName: string;
+  /** QuickBooks' Standard reports page, for what is done there. */
+  qbReportsUrl: string;
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
     () => new Set()
   );
+  const [compact, setCompact] = React.useState(true);
   const allKeys = React.useMemo(() => sectionKeys(report.rows), [report.rows]);
   const lines = React.useMemo(
     () => reportLines(report, collapsed),
@@ -104,31 +128,88 @@ export function ReportPaper({
 
   return (
     <Card className="mx-auto w-full max-w-6xl gap-0 py-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-        {allKeys.length > 0 ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setCollapsed(
-                collapsed.size === allKeys.length ? new Set() : new Set(allKeys)
-              )
-            }
-          >
-            {collapsed.size === allKeys.length ? 'Expand all' : 'Collapse all'}
-          </Button>
-        ) : (
-          <span />
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={download}
-          disabled={report.noData}
-        >
-          <Download className="size-4" />
-          Export CSV
-        </Button>
+      {/* QuickBooks' report toolbar: Compact ▾ on the left; refresh, email,
+          print, export and ⋮ on the right. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-1">
+              {compact ? 'Compact' : 'Normal'}
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-40">
+            <DropdownMenuRadioGroup
+              value={compact ? 'compact' : 'normal'}
+              onValueChange={(v) => setCompact(v === 'compact')}
+            >
+              <DropdownMenuRadioItem value="compact">
+                Compact
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="normal">
+                Normal
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="flex items-center">
+          <RefreshIcon />
+          <ToolbarIcon icon={Mail} label="Email" href={qbReportsUrl} />
+          <PrintIcon />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label="Export"
+                disabled={report.noData}
+              >
+                <Upload className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onSelect={download}>
+                Export to CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label="More report options"
+              >
+                <EllipsisVertical className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {allKeys.length > 0 && (
+                <DropdownMenuItem
+                  onSelect={() =>
+                    setCollapsed(
+                      collapsed.size === allKeys.length
+                        ? new Set()
+                        : new Set(allKeys)
+                    )
+                  }
+                >
+                  {collapsed.size === allKeys.length
+                    ? 'Expand all'
+                    : 'Collapse all'}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem asChild>
+                <a href={qbReportsUrl} target="_blank" rel="noreferrer">
+                  Open in QuickBooks
+                  <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <div className="space-y-1 px-6 pt-7 pb-5 text-center">
@@ -145,7 +226,10 @@ export function ReportPaper({
           report period above.
         </p>
       ) : (
-        <Table data-report={reportKey}>
+        <Table
+          data-report={reportKey}
+          className={cn(compact ? '[&_td]:py-1 text-[13px]' : '[&_td]:py-2.5')}
+        >
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               {cols.map((c, i) => (

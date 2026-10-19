@@ -1,11 +1,12 @@
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
-import { RefreshButton } from '@/components/billing/refresh-button';
 import { ReportPaper } from '@/components/billing/report-paper';
 import { ReportPeriodPicker } from '@/components/billing/report-period-picker';
+import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
 import type { ParsedReport } from '@/lib/billing/report';
 import { reportDef } from '@/lib/billing/report-catalog';
@@ -17,6 +18,7 @@ import {
 } from '@/lib/billing/reports.server';
 import { todaySg } from '@/lib/billing/view';
 import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
+import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -102,38 +104,54 @@ export default async function BillingReportPage({
       ? `${def.key}-${dates.asOf}.csv`
       : `${def.key}-${dates.from}-to-${dates.to}.csv`;
 
+  const qbReportsUrl = qboAppUrl(
+    qboEnv()?.environment ?? 'sandbox',
+    '/app/standardreports'
+  );
+
   return (
     <PageShell>
-      <header className="space-y-4">
+      <div className="space-y-2">
         <Link
           href="/billing/reports"
           className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
         >
           <ChevronLeft className="size-4" />
-          Back to reports
+          Back to standard reports
         </Link>
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Billing · QuickBooks report
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          {def.title}.
-        </h1>
-      </header>
+        <BillingPageHeader
+          title={def.title}
+          actions={
+            realmId ? (
+              <>
+                <Button asChild variant="outline">
+                  <a href={qbReportsUrl} target="_blank" rel="noreferrer">
+                    <SlidersHorizontal className="size-4" />
+                    Customize
+                  </a>
+                </Button>
+                <Button asChild>
+                  <a href={qbReportsUrl} target="_blank" rel="noreferrer">
+                    Save As
+                  </a>
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
+      </div>
 
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : (
         <>
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <ReportPeriodPicker
-              kind={def.period}
-              period={dates.period}
-              asOf={dates.asOf}
-              from={dates.from}
-              to={dates.to}
-            />
-            <RefreshButton />
-          </div>
+          <ReportPeriodPicker
+            kind={def.period}
+            period={dates.period}
+            asOf={dates.asOf}
+            from={dates.from}
+            to={dates.to}
+          />
           {error || !report ? (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
               <p className="font-serif text-base font-semibold text-foreground">
@@ -155,6 +173,7 @@ export default async function BillingReportPage({
               studentByCustomer={students}
               readAt={readAt}
               csvName={csvName}
+              qbReportsUrl={qbReportsUrl}
             />
           )}
         </>

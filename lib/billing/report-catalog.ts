@@ -4,7 +4,8 @@ import type { CustomerSource } from '@/lib/billing/report';
 // as QuickBooks' Standard reports list names them. Each one was checked
 // against the Reports API (2026-10-19); QuickBooks reports the API cannot
 // produce (Collections Report, Invoices and Received Payments, Statement
-// List, Terms List, Unbilled charges) are deliberately not listed.
+// List, Terms List, Unbilled charges) are listed in QB_ONLY_REPORTS and open
+// in QuickBooks.
 
 export type ReportDef = {
   key: string;
@@ -103,6 +104,39 @@ export const REPORTS: ReportDef[] = [
 export const REPORT_GROUPS: ReportDef['group'][] = [
   'Who owes you',
   'For my accountant',
+];
+
+/** QuickBooks' own order of its Standard reports list (2026-10-19), which
+ *  is not alphabetical; a report not in it goes last. */
+export const QB_LIST_ORDER = [
+  'Accounts receivable aging summary',
+  'Accounts receivable aging detail',
+  'Collections Report',
+  'Customer Balance Summary',
+  'Customer Balance Detail',
+  'Invoice List',
+  'Invoices and Received Payments',
+  'Open Invoices',
+  'Statement List',
+  'Terms List',
+  'Unbilled charges',
+  'Unbilled time',
+  'General Ledger',
+];
+
+/** The rest of QuickBooks' "Who owes you" list (2026-10-19). The Reports API
+ *  can't produce these, so the list opens them in QuickBooks. */
+export const QB_ONLY_REPORTS: Array<{
+  title: string;
+  group: ReportDef['group'];
+}> = [
+  { title: 'Collections Report', group: 'Who owes you' },
+  { title: 'Invoice List', group: 'Who owes you' },
+  { title: 'Invoices and Received Payments', group: 'Who owes you' },
+  { title: 'Statement List', group: 'Who owes you' },
+  { title: 'Terms List', group: 'Who owes you' },
+  { title: 'Unbilled charges', group: 'Who owes you' },
+  { title: 'Unbilled time', group: 'Who owes you' },
 ];
 
 export function reportDef(key: string): ReportDef | null {
