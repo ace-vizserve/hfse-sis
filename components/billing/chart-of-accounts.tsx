@@ -98,99 +98,101 @@ export function ChartOfAccounts({
 
   const columns = React.useMemo<ColumnDef<AccountRow, unknown>[]>(
     () =>
-      [
-        {
-          id: 'name',
-          accessorFn: (r) => r.fullName,
-          header: 'Name',
-          meta: { label: 'Name' },
-          enableHiding: false,
-          cell: ({ row }) => {
-            const r = row.original;
-            return (
-              <span
-                className="inline-flex min-w-48 items-center gap-1.5"
-                style={{ paddingLeft: `${r.depth * 20}px` }}
-                title={r.fullName}
-              >
-                {r.depth > 0 && (
-                  <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
-                )}
-                {r.number && (
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {r.number}
-                  </span>
-                )}
-                <span className="font-medium text-foreground">{r.name}</span>
-              </span>
-            );
-          },
-        },
-        {
-          id: 'type',
-          accessorFn: (r) => r.typeLabel,
-          header: 'Account type',
-          meta: { label: 'Account type' },
-          cell: ({ row }) => {
-            const r = row.original;
-            return (
-              <span className="flex items-center justify-between gap-3 text-muted-foreground">
-                {r.typeLabel}
+      (
+        [
+          {
+            id: 'name',
+            accessorFn: (r) => r.fullName,
+            header: 'Name',
+            meta: { label: 'Name' },
+            enableHiding: false,
+            cell: ({ row }) => {
+              const r = row.original;
+              return (
                 <span
-                  className={cn(
-                    'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold',
-                    r.statement === 'BAL'
-                      ? 'bg-brand-mint/30 text-ink'
-                      : 'bg-accent text-accent-foreground'
-                  )}
-                  title={
-                    r.statement === 'BAL'
-                      ? 'Balance sheet account'
-                      : 'Profit and loss account'
-                  }
+                  className="inline-flex min-w-48 items-center gap-1.5"
+                  style={{ paddingLeft: `${r.depth * 20}px` }}
+                  title={r.fullName}
                 >
-                  {r.statement}
+                  {r.depth > 0 && (
+                    <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
+                  {r.number && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {r.number}
+                    </span>
+                  )}
+                  <span className="font-medium text-foreground">{r.name}</span>
                 </span>
-              </span>
-            );
+              );
+            },
           },
-        },
-        {
-          id: 'detail',
-          accessorFn: (r) => r.detailType,
-          header: 'Detail type',
-          meta: { label: 'Detail type' },
-          cell: ({ row }) => (
-            <span className="text-muted-foreground">
-              {row.original.detailType}
-            </span>
-          ),
-        },
-        {
-          id: 'balance',
-          accessorFn: (r) => r.balance,
-          header: () => <div className="text-right">QuickBooks balance</div>,
-          meta: { label: 'QuickBooks balance' },
-          cell: ({ row }) => (
-            <div className="whitespace-nowrap text-right tabular-nums">
-              {row.original.balance === null
-                ? ''
-                : formatSgd(row.original.balance)}
-            </div>
-          ),
-        },
-        {
-          id: 'actions',
-          header: () => <div className="text-right">Action</div>,
-          meta: { label: 'Action', excludeFromExport: true },
-          enableHiding: false,
-          cell: ({ row }) => (
-            <div className="flex justify-end">
-              <AccountAction row={row.original} qbBase={qbBase} />
-            </div>
-          ),
-        },
-      ].map((c) => ({ ...c, enableSorting: false })),
+          {
+            id: 'type',
+            accessorFn: (r) => r.typeLabel,
+            header: 'Account type',
+            meta: { label: 'Account type' },
+            cell: ({ row }) => {
+              const r = row.original;
+              return (
+                <span className="flex items-center justify-between gap-3 text-muted-foreground">
+                  {r.typeLabel}
+                  <span
+                    className={cn(
+                      'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+                      r.statement === 'BAL'
+                        ? 'bg-brand-mint/30 text-ink'
+                        : 'bg-accent text-accent-foreground'
+                    )}
+                    title={
+                      r.statement === 'BAL'
+                        ? 'Balance sheet account'
+                        : 'Profit and loss account'
+                    }
+                  >
+                    {r.statement}
+                  </span>
+                </span>
+              );
+            },
+          },
+          {
+            id: 'detail',
+            accessorFn: (r) => r.detailType,
+            header: 'Detail type',
+            meta: { label: 'Detail type' },
+            cell: ({ row }) => (
+              <span className="text-muted-foreground">
+                {row.original.detailType}
+              </span>
+            ),
+          },
+          {
+            id: 'balance',
+            accessorFn: (r) => r.balance,
+            header: () => <div className="text-right">QuickBooks balance</div>,
+            meta: { label: 'QuickBooks balance' },
+            cell: ({ row }) => (
+              <div className="whitespace-nowrap text-right tabular-nums">
+                {row.original.balance === null
+                  ? ''
+                  : formatSgd(row.original.balance)}
+              </div>
+            ),
+          },
+          {
+            id: 'actions',
+            header: () => <div className="text-right">Action</div>,
+            meta: { label: 'Action', excludeFromExport: true },
+            enableHiding: false,
+            cell: ({ row }) => (
+              <div className="flex justify-end">
+                <AccountAction row={row.original} qbBase={qbBase} />
+              </div>
+            ),
+          },
+        ] as ColumnDef<AccountRow, unknown>[]
+      ).map((c) => ({ ...c, enableSorting: false })),
     // No sorting: the rows keep QuickBooks' order, sub-accounts under parents.
     [qbBase]
   );
