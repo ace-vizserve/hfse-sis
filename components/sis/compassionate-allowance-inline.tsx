@@ -16,11 +16,14 @@ const DEFAULT_ALLOWANCE = 5;
 
 export function CompassionateAllowanceInline({
   enroleeNumber,
+  ayCode,
   initial,
   disabled,
   disabledReason,
 }: {
   enroleeNumber: string;
+  /** Year the enrolee number belongs to; omitted = the current year. */
+  ayCode?: string;
   initial: number | null;
   disabled?: boolean;
   disabledReason?: string;
@@ -39,7 +42,7 @@ export function CompassionateAllowanceInline({
     mutationFn: (allowance: number) =>
       apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/allowance`,
-        jsonInit('PATCH', { allowance })
+        jsonInit('PATCH', { allowance, ayCode })
       ),
   });
 

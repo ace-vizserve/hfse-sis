@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import {
   ArrowUpRight,
   CalendarCheck,
@@ -132,9 +133,12 @@ function TodayRow({
 }
 
 export function AdviserAttendanceDashboard({
+  ayControl,
   data,
 }: {
   data: AdviserDashboard;
+  /** Year switcher, shown at the right of the header. */
+  ayControl?: ReactNode;
 }) {
   const outstanding = data.sections.filter((s) => s.today.kind === 'unmarked');
   const allDone =
@@ -157,7 +161,7 @@ export function AdviserAttendanceDashboard({
             <CalendarOff className="size-5" />
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             My classes · Attendance
           </p>
@@ -170,6 +174,7 @@ export function AdviserAttendanceDashboard({
             </p>
           )}
         </div>
+        {ayControl && <div className="ml-auto shrink-0">{ayControl}</div>}
       </header>
 
       {/* Today. Collapsed to one line when there is nothing to do — the whole

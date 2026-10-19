@@ -304,9 +304,10 @@ export default async function AttendanceStudentDetailPage({
             {fullName}.
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Daily ledger and compassionate-leave quota for the current academic
-            year. Daily writes still happen on the section&apos;s daily-entry
-            surface{activeSectionId ? ' — ' : '. '}
+            Daily ledger and compassionate-leave quota for{' '}
+            {ayCode ?? 'the selected'}
+            academic year. Daily writes still happen on the section&apos;s
+            daily-entry surface{activeSectionId ? ' — ' : '. '}
             {activeSectionId ? (
               <Link
                 href={`/attendance/${activeSectionId}`}
@@ -404,6 +405,7 @@ export default async function AttendanceStudentDetailPage({
             </div>
             <CompassionateAllowanceInline
               enroleeNumber={enroleeNumber ?? ''}
+              ayCode={ayCode ?? undefined}
               initial={allowance}
               disabled={!enroleeNumber}
               disabledReason={
@@ -476,6 +478,7 @@ export default async function AttendanceStudentDetailPage({
             </div>
             <VacationAllowanceInline
               enroleeNumber={enroleeNumber ?? ''}
+              ayCode={ayCode ?? undefined}
               initial={studentRow.vacation_leave_allowance_per_term}
               schoolDefault={schoolConfig.defaultVlAllowancePerTerm}
               disabled={!enroleeNumber}

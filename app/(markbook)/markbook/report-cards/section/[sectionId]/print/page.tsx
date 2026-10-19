@@ -185,7 +185,7 @@ export default async function SectionPrintPage({
 
       <div className="section-print-toolbar mx-auto flex w-full max-w-[8.5in] flex-col gap-4 px-4 py-6">
         <Link
-          href={`/markbook/report-cards?section_id=${sectionId}`}
+          href={`/markbook/report-cards?section_id=${sectionId}&ay=${encodeURIComponent(ay.ay_code)}`}
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

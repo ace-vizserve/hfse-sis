@@ -19,12 +19,15 @@ import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 // override so any future change to the school default propagates automatically.
 export function VacationAllowanceInline({
   enroleeNumber,
+  ayCode,
   initial,
   schoolDefault,
   disabled,
   disabledReason,
 }: {
   enroleeNumber: string;
+  /** Year the enrolee number belongs to; omitted = the current year. */
+  ayCode?: string;
   initial: number | null;
   schoolDefault: number;
   disabled?: boolean;
@@ -45,7 +48,7 @@ export function VacationAllowanceInline({
     mutationFn: (vlAllowance: number | null) =>
       apiFetch(
         `/api/sis/students/${encodeURIComponent(enroleeNumber)}/vl-allowance`,
-        jsonInit('PATCH', { vlAllowance })
+        jsonInit('PATCH', { vlAllowance, ayCode })
       ),
   });
 

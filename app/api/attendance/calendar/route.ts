@@ -11,7 +11,7 @@ import {
   type Audience,
 } from '@/lib/schemas/attendance';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { ayCodeForTerm } from '@/lib/cache/ay-code-for-row';
 
 // POST /api/attendance/calendar
 // Body â€” either:
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
         inserted: count ?? rows.length,
       },
     });
-    invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+    invalidateDrillTags('attendance', await ayCodeForTerm(service, termId));
     return NextResponse.json({
       ok: true,
       seeded: rows.length,
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     context: { action: 'upsert', audience, rows: rows.length, diffs },
   });
 
-  invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+  invalidateDrillTags('attendance', await ayCodeForTerm(service, termId));
 
   return NextResponse.json({ ok: true, upserted: rows.length });
 }
@@ -262,7 +262,7 @@ export async function DELETE(request: NextRequest) {
     },
   });
 
-  invalidateDrillTags('attendance', await requireCurrentAyCode(service));
+  invalidateDrillTags('attendance', await ayCodeForTerm(service, termId));
 
   return NextResponse.json({ ok: true });
 }

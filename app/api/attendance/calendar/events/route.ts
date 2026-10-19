@@ -8,7 +8,7 @@ import {
   CalendarEventUpdateSchema,
 } from '@/lib/schemas/attendance';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
-import { requireCurrentAyCode } from '@/lib/academic-year';
+import { ayCodeForTerm } from '@/lib/cache/ay-code-for-row';
 
 // What an audit row says about an event: every field a person can set, read
 // back from the database. Shared by PATCH (before and after) and DELETE (what
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
   // 60s priority panel TTL doesn't strand stale dates after the registrar
   // moves an event.
   {
-    const ayCode = await requireCurrentAyCode(service);
+    const ayCode = await ayCodeForTerm(service, termId);
     invalidateDrillTags('attendance', ayCode);
     invalidateDrillTags('evaluation', ayCode);
   }
@@ -234,7 +234,10 @@ export async function PATCH(request: NextRequest) {
   // 60s priority panel TTL doesn't strand stale dates after the registrar
   // moves an event.
   {
-    const ayCode = await requireCurrentAyCode(service);
+    const ayCode = await ayCodeForTerm(
+      service,
+      afterRow?.term_id ?? (beforeRow as EventAuditRow | null)?.term_id
+    );
     invalidateDrillTags('attendance', ayCode);
     invalidateDrillTags('evaluation', ayCode);
   }
@@ -288,7 +291,7 @@ export async function DELETE(request: NextRequest) {
   // 60s priority panel TTL doesn't strand stale dates after the registrar
   // moves an event.
   {
-    const ayCode = await requireCurrentAyCode(service);
+    const ayCode = await ayCodeForTerm(service, deleted?.term_id);
     invalidateDrillTags('attendance', ayCode);
     invalidateDrillTags('evaluation', ayCode);
   }
