@@ -214,8 +214,7 @@ function CustomerFilter({
   const [open, setOpen] = React.useState(false);
   const picked = customers.find((c) => c.studentNumber === value);
   return (
-    <div className="space-y-1">
-      <Label className="text-[12px] text-muted-foreground">Customer</Label>
+    <div>
       <div className="flex items-center gap-1">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
@@ -223,11 +222,11 @@ function CustomerFilter({
               variant="outline"
               role="combobox"
               aria-expanded={open}
-              className="h-9 w-64 justify-between font-normal"
+              aria-label="Customer"
+              className="h-8 w-auto max-w-72 justify-between gap-1.5 px-3 text-[13px] font-normal"
             >
-              <span className="truncate">
-                {picked ? picked.name : 'All customers'}
-              </span>
+              <span className="text-muted-foreground">Customer</span>
+              <span className="truncate">{picked ? picked.name : 'All'}</span>
               <ChevronsUpDown className="size-4 opacity-60" />
             </Button>
           </PopoverTrigger>
@@ -410,7 +409,10 @@ export function SalesTable({
         header: 'Memo',
         meta: { label: 'Memo' },
         cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-72 text-sm text-muted-foreground">
+          <span
+            title={row.original.memo ?? undefined}
+            className="block max-w-40 truncate text-sm text-muted-foreground"
+          >
             {row.original.memo ?? ''}
           </span>
         ),
@@ -667,6 +669,8 @@ export function SalesTable({
             }}
             selectionResetSignal={reset}
             initialColumnVisibility={{
+              // Empty on most rows; Columns brings it back.
+              memo: false,
               dueDate: false,
               balance: false,
               studentNumber: false,

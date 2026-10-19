@@ -77,7 +77,9 @@ export default async function BillingLayout({
         expandedGroups={expandedGroups}
         roles={roles}
       />
-      <SidebarInset>
+      {/* min-w-0: a wide table scrolls inside its own box instead of
+          widening the whole page (Billing lists are wide). */}
+      <SidebarInset className="min-w-0">
         <AyBanner />
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md">
           <div className="flex items-center w-full mx-auto max-w-[1440px]">
@@ -94,7 +96,7 @@ export default async function BillingLayout({
             </div>
           </div>
         </header>
-        <div className="flex-1 bg-muted px-6 py-8 md:px-10 md:py-10">
+        <div className="flex-1 bg-muted px-4 py-6 md:px-6 md:py-8">
           {children}
         </div>
       </SidebarInset>

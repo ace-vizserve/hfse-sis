@@ -421,6 +421,14 @@ export function ProductsView({
         <DataTable<ProductRow>
           data={shown}
           columns={columns}
+          // Columns no item uses start hidden, so the row fits (Columns brings
+          // them back).
+          initialColumnVisibility={{
+            qty: rows.some((r) => r.qtyOnHand != null),
+            cost: false,
+            sku: rows.some((r) => !!r.sku),
+            description: rows.some((r) => !!r.description),
+          }}
           getRowId={(r) => r.id}
           searchKeys={[
             (r) => r.name,
