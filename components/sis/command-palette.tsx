@@ -7,7 +7,7 @@ import {
   SearchIcon,
   UserIcon,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import * as React from 'react';
 
@@ -217,6 +217,8 @@ export function CommandPalette({
   hiddenModules?: readonly SidebarModule[];
 }) {
   const router = useRouter();
+  // Enter on a student opens them in the module you are standing in.
+  const pathname = usePathname();
   const { open, setOpen } = useCommandPaletteContext();
   const [query, setQuery] = React.useState('');
   // Debounced query that actually drives the search read — the raw `query`
@@ -430,11 +432,11 @@ export function CommandPalette({
     } satisfies RecentStudent);
   }
 
-  /** Enter on a student — the primary verb, which resolves to the record for
-   *  an enrolled student and the application for an applicant. That is exactly
-   *  where the old studentHref() sent you, so the fast path is unchanged. */
+  /** Enter on a student — the student in the module you are in (Billing →
+   *  their Billing page); elsewhere the record for an enrolled student and
+   *  the application for an applicant. */
   function openStudentPrimary(s: StudentMatch) {
-    const verb = primaryStudentVerb(s, role);
+    const verb = primaryStudentVerb(s, role, pathname);
     if (!verb) return;
     rememberStudent(s);
     go(verb.href);
