@@ -14,11 +14,7 @@ import {
   readCustomerProfile,
   type CustomerProfile,
 } from '@/lib/billing/live.server';
-import type {
-  CreditSource,
-  OpenInvoice,
-  PayableInvoice,
-} from '@/lib/billing/payment-plan';
+import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/maps.server';
 import {

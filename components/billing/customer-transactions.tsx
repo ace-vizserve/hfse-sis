@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CircleDashed,
   FileText,
+  HandCoins,
 } from 'lucide-react';
 
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
@@ -30,7 +31,7 @@ import type {
   InvoiceRowView,
   PaymentRowView,
 } from '@/lib/billing/customer-page.server';
-import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
 import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
@@ -318,7 +319,7 @@ export function CustomerTransactions({
   customerName: string;
   invoices: InvoiceRowView[];
   payments: PaymentRowView[];
-  openInvoices: Array<OpenInvoice & { items: string }>;
+  openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   /** False when QuickBooks isn't connected — Receive payment is hidden. */
@@ -332,7 +333,7 @@ export function CustomerTransactions({
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [paying, setPaying] = React.useState<{
     key: number;
-    invoice: OpenInvoice & { items: string };
+    invoices: PayableInvoice[];
   } | null>(null);
 
   const rows = React.useMemo(
@@ -493,7 +494,7 @@ export function CustomerTransactions({
                   onClick={() =>
                     setPaying((p) => ({
                       key: (p?.key ?? 0) + 1,
-                      invoice: open,
+                      invoices: [open],
                     }))
                   }
                 >
@@ -655,6 +656,29 @@ export function CustomerTransactions({
         data={shown}
         columns={columns}
         getRowId={(r) => r.key}
+        selection={
+          canRecord
+            ? {
+                enabled: true,
+                enableRowSelection: (r) =>
+                  r.kind === 'invoice' && openById.has(r.id),
+                bulkActions: [
+                  {
+                    key: 'receive',
+                    label: 'Receive payment',
+                    icon: HandCoins,
+                    onTrigger: (picked) =>
+                      setPaying((p) => ({
+                        key: (p?.key ?? 0) + 1,
+                        invoices: picked
+                          .map((r) => openById.get(r.id))
+                          .filter((o): o is PayableInvoice => !!o),
+                      })),
+                  },
+                ],
+              }
+            : undefined
+        }
         searchKeys={[
           (r) => r.no ?? '',
           (r) => r.memo ?? '',
@@ -685,7 +709,7 @@ export function CustomerTransactions({
           onOpenChange={(o) => !o && setPaying(null)}
           studentNumber={studentNumber}
           studentName={studentName}
-          openInvoices={[paying.invoice]}
+          openInvoices={paying.invoices}
           credits={credits}
           depositAccounts={depositAccounts}
           mode="pay"
