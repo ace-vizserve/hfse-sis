@@ -11,6 +11,9 @@ import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { AssignSectionDialog } from '@/components/sis/assign-section-dialog';
+import { BulkSectionPicker } from '@/components/sis/bulk-section-picker';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
@@ -114,6 +117,53 @@ export function UnsyncedStudentsQueue({
   const [dialogRow, setDialogRow] = React.useState<UnsyncedStudentRow | null>(
     null
   );
+
+  // Bulk Assign section: the row's own POST (assign-section) once per ticked
+  // student, with one class picked for all. A class belongs to one level in one
+  // year, so the ticked students must share both.
+  const bulk = useBulkAction();
+  const [bulkRows, setBulkRows] = React.useState<UnsyncedStudentRow[] | null>(
+    null
+  );
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  const bulkKeys = new Set(
+    (bulkRows ?? []).map((r) => sectionMapKey(r.ayCode, r.levelApplied ?? ''))
+  );
+  const bulkLevel =
+    bulkKeys.size === 1
+      ? (sectionsByLevel[Array.from(bulkKeys)[0]] ?? null)
+      : null;
+  const bulkBlocked =
+    bulkKeys.size > 1
+      ? 'These students are at different levels or years, so no one class fits them all. Tick one level and year at a time.'
+      : null;
+
+  async function assignMany(sectionId: string) {
+    const picked = bulkRows ?? [];
+    const sectionName =
+      bulkLevel?.sections.find((s) => s.id === sectionId)?.name ?? 'the class';
+    setBulkRows(null);
+    let lateJoiners = 0;
+    await bulk(picked, {
+      pending: `Assigning ${picked.length} ${picked.length === 1 ? 'student' : 'students'}…`,
+      done: (n) =>
+        `${n} assigned to ${sectionName}` +
+        (lateJoiners > 0
+          ? `. ${lateJoiners} joined after the year began.`
+          : ''),
+      failed: 'Could not assign',
+      label: fullNameOf,
+      one: async (r) => {
+        const body = await apiFetch<{ midTermEnrolment?: unknown }>(
+          `/api/sis/students/${encodeURIComponent(r.enroleeNumber)}/assign-section?ay=${encodeURIComponent(r.ayCode)}`,
+          jsonInit('POST', { sectionId })
+        );
+        if (body?.midTermEnrolment) lateJoiners += 1;
+      },
+    });
+    setResetSignal((s) => s + 1);
+  }
 
   const columns = React.useMemo<ColumnDef<UnsyncedStudentRow>[]>(
     () => [
@@ -300,6 +350,20 @@ export function UnsyncedStudentsQueue({
           },
         ]}
         url={{ enabled: true, namespace: 'unsynced' }}
+        selection={{
+          enabled: true,
+          enableRowSelection: (r) =>
+            r.gapReason === 'no_class_section' || r.gapReason === 'not_synced',
+          bulkActions: [
+            {
+              key: 'assign',
+              label: 'Assign section',
+              icon: GraduationCap,
+              onTrigger: (picked) => setBulkRows(picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
         initialSort={[{ id: 'enroleeFullName', desc: false }]}
         emptyState={{
           icon: UserX,
@@ -310,6 +374,26 @@ export function UnsyncedStudentsQueue({
           title: 'No matches',
           body: 'Try clearing the search.',
         }}
+      />
+      <BulkSectionPicker
+        open={bulkRows !== null}
+        onOpenChange={(o) => !o && setBulkRows(null)}
+        title={`Assign ${bulkRows?.length ?? 0} ${bulkRows?.length === 1 ? 'student' : 'students'} to a class`}
+        description={
+          bulkLevel?.level?.label
+            ? `Pick one class at ${bulkLevel.level.label}. Once assigned they join the roster, and their attendance starts.`
+            : 'Pick one class. Once assigned they join the roster, and their attendance starts.'
+        }
+        confirmLabel="Assign section"
+        options={(bulkLevel?.sections ?? []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          isAtCapacity: s.isAtCapacity,
+          note: `${s.activeCount} in class${s.chosenCount > 0 ? ` · ${s.chosenCount} waiting to enrol` : ''}`,
+        }))}
+        emptyText="There are no classes at this level yet. Create one under SIS Admin → Section setup, then come back."
+        blocked={bulkBlocked}
+        onConfirm={assignMany}
       />
       {dialogRow && (
         <AssignSectionDialog
