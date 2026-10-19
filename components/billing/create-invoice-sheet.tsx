@@ -6,13 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { SheetFields, SheetSection } from '@/components/billing/sheet-section';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Field,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -300,9 +300,9 @@ export function CreateInvoiceSheet({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <FieldGroup>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+            <SheetSection title="Invoice details">
+              <SheetFields>
                 <Field>
                   <FieldLabel htmlFor="bill-email">Customer email</FieldLabel>
                   <Input
@@ -342,28 +342,29 @@ export function CreateInvoiceSheet({
                     placeholder="The customer’s terms"
                   />
                 </Field>
-              </div>
+              </SheetFields>
 
               {warning && (
-                <div className="flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4">
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-amber to-brand-amber/80 text-ink shadow-brand-tile">
                     <AlertTriangle className="size-4" />
                   </div>
                   <p className="text-sm text-ink">{warning}</p>
                 </div>
               )}
+            </SheetSection>
 
-              {/* The lines: product or service (with its description), qty,
-                  rate, amount. */}
-              <section className="overflow-hidden rounded-xl border border-border bg-card">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
-                  <h3 className="font-serif text-base font-semibold tracking-tight text-foreground">
-                    Products and services
-                  </h3>
-                  <p className="text-[12px] text-muted-foreground">
-                    {lines.length === 1 ? '1 line' : `${lines.length} lines`}
-                  </p>
-                </div>
+            {/* The lines: product or service (with its description), qty,
+                rate, amount. */}
+            <SheetSection
+              title="Products and services"
+              aside={
+                <p className="text-[12px] text-muted-foreground">
+                  {lines.length === 1 ? '1 line' : `${lines.length} lines`}
+                </p>
+              }
+            >
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
                 {items.isError && (
                   <FieldError className="px-4 pt-3">
                     {(items.error as Error).message}
@@ -515,16 +516,20 @@ export function CreateInvoiceSheet({
                     Clear all
                   </Button>
                 </div>
-              </section>
+              </div>
               {showErrors && !linesValid && (
                 <FieldError>
                   Each line needs a product or service, a quantity above 0 and a
                   rate.
                 </FieldError>
               )}
+            </SheetSection>
 
+            <SheetSection title="Note to customer">
               <Field>
-                <FieldLabel htmlFor="bill-memo">Note to customer</FieldLabel>
+                <FieldLabel htmlFor="bill-memo" className="sr-only">
+                  Note to customer
+                </FieldLabel>
                 {/* Plain text: QuickBooks prints the note as typed. */}
                 <Input
                   id="bill-memo"
@@ -536,22 +541,22 @@ export function CreateInvoiceSheet({
                   Printed on the invoice the customer receives.
                 </FieldDescription>
               </Field>
+            </SheetSection>
 
-              <dl className="ml-auto grid w-full max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
-                <dt className="text-muted-foreground">Subtotal</dt>
-                <dd className="text-right tabular-nums">{formatSgd(total)}</dd>
-                <dt className="text-muted-foreground">GST</dt>
-                <dd className="text-right text-muted-foreground">
-                  By each item&rsquo;s tax code
-                </dd>
-                <dt className="border-t border-border pt-2 whitespace-nowrap font-serif text-base font-semibold text-foreground">
-                  Total before GST
-                </dt>
-                <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
-                  {formatSgd(total)}
-                </dd>
-              </dl>
-            </FieldGroup>
+            <dl className="ml-auto grid w-full max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+              <dt className="text-muted-foreground">Subtotal</dt>
+              <dd className="text-right tabular-nums">{formatSgd(total)}</dd>
+              <dt className="text-muted-foreground">GST</dt>
+              <dd className="text-right text-muted-foreground">
+                By each item&rsquo;s tax code
+              </dd>
+              <dt className="border-t border-border pt-2 whitespace-nowrap font-serif text-base font-semibold text-foreground">
+                Total before GST
+              </dt>
+              <dd className="border-t border-border pt-2 text-right font-serif text-base font-semibold tabular-nums">
+                {formatSgd(total)}
+              </dd>
+            </dl>
           </div>
 
           <SheetFooter className="shrink-0 flex-row flex-wrap justify-end gap-2 border-t border-border bg-background px-6 py-4">

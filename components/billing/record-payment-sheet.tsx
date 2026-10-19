@@ -5,6 +5,7 @@ import { Search } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { SheetFields, SheetSection } from '@/components/billing/sheet-section';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -12,7 +13,6 @@ import {
   Field,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -336,40 +336,40 @@ export function RecordPaymentSheet({
                 ? `Put ${studentName}'s credit towards open invoices, recorded in QuickBooks.`
                 : `Money received from ${studentName}, recorded in QuickBooks and paid against the invoices you tick.`}
             </SheetDescription>
-          </SheetHeader>
-          <div className="flex shrink-0 flex-wrap gap-x-8 gap-y-2 border-b border-border bg-muted/30 px-6 py-3">
-            <div>
-              <p className="text-[11px] font-medium text-muted-foreground">
-                Amount received
-              </p>
-              <p className="font-serif text-lg font-semibold tabular-nums text-foreground">
-                {formatSgd(cash)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-medium text-muted-foreground">
-                {customerBalance != null
-                  ? 'Customer balance'
-                  : 'Owed on these invoices'}
-              </p>
-              <p className="font-serif text-lg font-semibold tabular-nums text-foreground">
-                {formatSgd(customerBalance ?? owed)}
-              </p>
-            </div>
-            {creditTotal > 0 && (
+            <div className="flex flex-wrap gap-x-8 gap-y-2 pt-2">
               <div>
-                <p className="text-[11px] font-medium text-muted-foreground">
-                  Credit available
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Amount received
                 </p>
                 <p className="font-serif text-lg font-semibold tabular-nums text-foreground">
-                  {formatSgd(creditTotal)}
+                  {formatSgd(cash)}
                 </p>
               </div>
-            )}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <FieldGroup>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  {customerBalance != null
+                    ? 'Customer balance'
+                    : 'Owed on these invoices'}
+                </p>
+                <p className="font-serif text-lg font-semibold tabular-nums text-foreground">
+                  {formatSgd(customerBalance ?? owed)}
+                </p>
+              </div>
+              {creditTotal > 0 && (
+                <div>
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Credit available
+                  </p>
+                  <p className="font-serif text-lg font-semibold tabular-nums text-foreground">
+                    {formatSgd(creditTotal)}
+                  </p>
+                </div>
+              )}
+            </div>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+            <SheetSection title="Payment details">
+              <SheetFields>
                 <Field>
                   <FieldLabel htmlFor="pay-date">Payment date</FieldLabel>
                   <DatePicker
@@ -458,12 +458,12 @@ export function RecordPaymentSheet({
                     <FieldError>Enter an amount of 0 or more.</FieldError>
                   )}
                 </Field>
-              </div>
+              </SheetFields>
 
               {creditTotal > 0 && (
                 <label
                   htmlFor="pay-credit"
-                  className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground has-[[data-state=checked]]:border-brand-indigo has-[[data-state=checked]]:bg-brand-indigo/5"
+                  className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground has-[[data-state=checked]]:border-brand-indigo has-[[data-state=checked]]:bg-brand-indigo/5"
                 >
                   <Checkbox
                     id="pay-credit"
@@ -484,189 +484,186 @@ export function RecordPaymentSheet({
                   <span className="tabular-nums">{formatSgd(creditTotal)}</span>
                 </label>
               )}
+            </SheetSection>
 
-              <section className="space-y-3">
-                {invoices.length === 0 ? (
-                  <>
-                    <h3 className="font-serif text-base font-semibold tracking-tight text-foreground">
-                      Outstanding invoices
-                    </h3>
-                    <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                      Nothing is owing. The payment will be kept as credit.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-end justify-between gap-3">
-                      <h3 className="font-serif text-base font-semibold tracking-tight text-foreground">
-                        Outstanding invoices
-                      </h3>
-                      <div className="relative w-full max-w-56">
-                        <Search
-                          aria-hidden
-                          className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                        />
-                        <Input
-                          aria-label="Find invoice no."
-                          placeholder="Find invoice no."
-                          value={find}
-                          onChange={(e) => setFind(e.target.value)}
-                          className="pl-8"
-                        />
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto rounded-xl border border-border">
-                      <Table className="[&_td]:px-3 [&_th]:px-3">
-                        <TableHeader>
-                          <TableRow className="bg-muted/40">
-                            <TableHead className="w-10">
-                              <Checkbox
-                                aria-label="Tick all"
-                                disabled={visible.length === 0}
-                                checked={
-                                  visible.length > 0 &&
-                                  visibleTicked === visible.length
-                                    ? true
-                                    : visibleTicked === 0
-                                      ? false
-                                      : 'indeterminate'
-                                }
-                                onCheckedChange={(v) =>
-                                  tick(
-                                    visible.map((i) => i.id),
-                                    v === true
-                                  )
-                                }
-                              />
-                            </TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Due date</TableHead>
-                            <TableHead className="text-right">
-                              Original amount
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Open balance
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Payment
-                            </TableHead>
+            <SheetSection
+              title="Outstanding invoices"
+              aside={
+                invoices.length > 0 && (
+                  <div className="relative w-full max-w-56">
+                    <Search
+                      aria-hidden
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      aria-label="Find invoice no."
+                      placeholder="Find invoice no."
+                      value={find}
+                      onChange={(e) => setFind(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+                )
+              }
+            >
+              {invoices.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                  Nothing is owing. The payment will be kept as credit.
+                </p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <Table className="[&_td]:px-3 [&_th]:px-3">
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="w-10">
+                            <Checkbox
+                              aria-label="Tick all"
+                              disabled={visible.length === 0}
+                              checked={
+                                visible.length > 0 &&
+                                visibleTicked === visible.length
+                                  ? true
+                                  : visibleTicked === 0
+                                    ? false
+                                    : 'indeterminate'
+                              }
+                              onCheckedChange={(v) =>
+                                tick(
+                                  visible.map((i) => i.id),
+                                  v === true
+                                )
+                              }
+                            />
+                          </TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Due date</TableHead>
+                          <TableHead className="text-right">
+                            Original amount
+                          </TableHead>
+                          <TableHead className="text-right">
+                            Open balance
+                          </TableHead>
+                          <TableHead className="text-right">Payment</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visible.length === 0 && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="py-6 text-center text-sm text-muted-foreground"
+                            >
+                              No invoice number matches “{find.trim()}”.
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {visible.length === 0 && (
-                            <TableRow>
-                              <TableCell
-                                colSpan={6}
-                                className="py-6 text-center text-sm text-muted-foreground"
-                              >
-                                No invoice number matches “{find.trim()}”.
+                        )}
+                        {visible.map((i) => {
+                          const on = isTicked(i.id);
+                          const doc = i.docNumber ?? i.id;
+                          const bad =
+                            typed?.has(i.id) && cellBad(i.id, typed.get(i.id)!);
+                          return (
+                            <TableRow
+                              key={i.id}
+                              data-state={on ? 'selected' : undefined}
+                            >
+                              <TableCell>
+                                <Checkbox
+                                  aria-label={`Pay ${doc}`}
+                                  checked={on}
+                                  onCheckedChange={(v) =>
+                                    tick([i.id], v === true)
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell className="whitespace-normal">
+                                <span className="block whitespace-nowrap">
+                                  Invoice{' '}
+                                  <span className="font-mono tabular-nums">
+                                    {doc}
+                                  </span>
+                                </span>
+                                <span className="block max-w-52 truncate text-[12px] text-muted-foreground">
+                                  <span className="tabular-nums">
+                                    {formatDay(i.txnDate)}
+                                  </span>
+                                  {i.items ? `, ${i.items}` : ''}
+                                </span>
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap tabular-nums">
+                                {i.dueDate ? formatDay(i.dueDate) : '—'}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {i.total !== undefined
+                                  ? formatSgd(i.total)
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatSgd(i.balance)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Input
+                                  aria-label={`Payment for ${doc}`}
+                                  aria-invalid={bad || undefined}
+                                  inputMode="decimal"
+                                  value={cellText(i.id)}
+                                  onChange={(e) =>
+                                    typeCell(i.id, e.target.value)
+                                  }
+                                  className="ml-auto h-8 w-28 text-right tabular-nums"
+                                />
                               </TableCell>
                             </TableRow>
-                          )}
-                          {visible.map((i) => {
-                            const on = isTicked(i.id);
-                            const doc = i.docNumber ?? i.id;
-                            const bad =
-                              typed?.has(i.id) &&
-                              cellBad(i.id, typed.get(i.id)!);
-                            return (
-                              <TableRow
-                                key={i.id}
-                                data-state={on ? 'selected' : undefined}
-                              >
-                                <TableCell>
-                                  <Checkbox
-                                    aria-label={`Pay ${doc}`}
-                                    checked={on}
-                                    onCheckedChange={(v) =>
-                                      tick([i.id], v === true)
-                                    }
-                                  />
-                                </TableCell>
-                                <TableCell className="whitespace-normal">
-                                  <span className="block whitespace-nowrap">
-                                    Invoice{' '}
-                                    <span className="font-mono tabular-nums">
-                                      {doc}
-                                    </span>
-                                  </span>
-                                  <span className="block max-w-52 truncate text-[12px] text-muted-foreground">
-                                    <span className="tabular-nums">
-                                      {formatDay(i.txnDate)}
-                                    </span>
-                                    {i.items ? `, ${i.items}` : ''}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="whitespace-nowrap tabular-nums">
-                                  {i.dueDate ? formatDay(i.dueDate) : '—'}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {i.total !== undefined
-                                    ? formatSgd(i.total)
-                                    : '—'}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {formatSgd(i.balance)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Input
-                                    aria-label={`Payment for ${doc}`}
-                                    aria-invalid={bad || undefined}
-                                    inputMode="decimal"
-                                    value={cellText(i.id)}
-                                    onChange={(e) =>
-                                      typeCell(i.id, e.target.value)
-                                    }
-                                    className="ml-auto h-8 w-28 text-right tabular-nums"
-                                  />
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </>
-                )}
-                {showErrors && badCells.length > 0 && (
-                  <FieldError>
-                    A payment can be from 0 up to that invoice&apos;s open
-                    balance.
-                  </FieldError>
-                )}
-                <p className="text-[12px] text-muted-foreground">
-                  Ticked invoices are paid oldest first, up to the amount
-                  received, or type the payment for each invoice. Untick all to
-                  keep the money as credit on the customer.
-                </p>
-              </section>
-
-              <dl className="ml-auto grid w-full max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
-                {plan.creditUsed > 0 && (
-                  <>
-                    <dt className="text-muted-foreground">Credit used</dt>
-                    <dd className="text-right tabular-nums">
-                      {formatSgd(plan.creditUsed)}
-                    </dd>
-                  </>
-                )}
-                <dt className="text-muted-foreground">Amount to apply</dt>
-                <dd className="text-right tabular-nums">
-                  {formatSgd(plan.cashApplied)}
-                </dd>
-                <dt className="text-muted-foreground">Amount to credit</dt>
-                <dd className="text-right tabular-nums">
-                  {formatSgd(plan.leftover)}
-                </dd>
-              </dl>
-              {showErrors && nothingToDo && (
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+              {showErrors && badCells.length > 0 && (
                 <FieldError>
-                  Enter the amount received, or use credit on a ticked invoice.
+                  A payment can be from 0 up to that invoice&apos;s open
+                  balance.
                 </FieldError>
               )}
+              <p className="text-[12px] text-muted-foreground">
+                Ticked invoices are paid oldest first, up to the amount
+                received, or type the payment for each invoice. Untick all to
+                keep the money as credit on the customer.
+              </p>
+            </SheetSection>
 
+            <dl className="ml-auto grid w-full max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+              {plan.creditUsed > 0 && (
+                <>
+                  <dt className="text-muted-foreground">Credit used</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatSgd(plan.creditUsed)}
+                  </dd>
+                </>
+              )}
+              <dt className="text-muted-foreground">Amount to apply</dt>
+              <dd className="text-right tabular-nums">
+                {formatSgd(plan.cashApplied)}
+              </dd>
+              <dt className="text-muted-foreground">Amount to credit</dt>
+              <dd className="text-right tabular-nums">
+                {formatSgd(plan.leftover)}
+              </dd>
+            </dl>
+            {showErrors && nothingToDo && (
+              <FieldError>
+                Enter the amount received, or use credit on a ticked invoice.
+              </FieldError>
+            )}
+
+            <SheetSection title="Memo">
               <Field>
-                <FieldLabel htmlFor="pay-memo">Memo</FieldLabel>
+                <FieldLabel htmlFor="pay-memo" className="sr-only">
+                  Memo
+                </FieldLabel>
                 <Input
                   id="pay-memo"
                   value={memo}
@@ -680,7 +677,7 @@ export function RecordPaymentSheet({
                   the SIS.
                 </FieldDescription>
               </Field>
-            </FieldGroup>
+            </SheetSection>
           </div>
           <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <SheetClose asChild>

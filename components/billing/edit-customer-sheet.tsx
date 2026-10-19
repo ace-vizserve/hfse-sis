@@ -1,16 +1,11 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { MapPin, NotebookPen, UserRound } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { SheetFields, SheetSection } from '@/components/billing/sheet-section';
 import { Button } from '@/components/ui/button';
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
   Sheet,
@@ -27,31 +22,11 @@ import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
-// Customer page → Edit: QuickBooks' Customer form (Name and contact,
-// Addresses, Notes), read from QuickBooks when it opens and saved back to it.
+// Customer page → Edit: QuickBooks' Customer form (name, contact, billing
+// address, notes), read from QuickBooks when it opens and saved back to it.
 // QuickBooks' fields are plain text, so Notes is a plain input here.
 
 type Key = keyof CustomerForm;
-
-function Section({
-  icon: Icon,
-  title,
-  children,
-}: {
-  icon: typeof UserRound;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-4">
-      <h3 className="flex items-center gap-2 border-b border-border pb-2 font-serif text-base font-semibold text-foreground">
-        <Icon className="size-4 text-muted-foreground" />
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
 
 export function EditCustomerSheet({
   open,
@@ -128,9 +103,18 @@ export function EditCustomerSheet({
     setSaving(false);
   }
 
-  const text = (k: Key, label: string, opts?: { mono?: boolean }) => (
+  const text = (
+    k: Key,
+    label: string,
+    opts?: { mono?: boolean; hideLabel?: boolean }
+  ) => (
     <Field>
-      <FieldLabel htmlFor={`cust-${k}`}>{label}</FieldLabel>
+      <FieldLabel
+        htmlFor={`cust-${k}`}
+        className={opts?.hideLabel ? 'sr-only' : undefined}
+      >
+        {label}
+      </FieldLabel>
       <Input
         id={`cust-${k}`}
         value={current?.[k] ?? ''}
@@ -159,7 +143,7 @@ export function EditCustomerSheet({
               Changes are saved straight to QuickBooks.
             </SheetDescription>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
             {read.isError ? (
               <p className="text-sm text-destructive">
                 {read.error instanceof Error
@@ -174,16 +158,16 @@ export function EditCustomerSheet({
                 ))}
               </div>
             ) : (
-              <FieldGroup className="gap-8">
-                <Section icon={UserRound} title="Name and contact">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-[80px_1fr_1fr_1fr_80px]">
+              <div className="space-y-8">
+                <SheetSection title="Name">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-[80px_1fr_1fr_1fr_80px]">
                     {text('title', 'Title')}
                     {text('givenName', 'First name')}
                     {text('middleName', 'Middle name')}
                     {text('familyName', 'Last name')}
                     {text('suffix', 'Suffix')}
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <SheetFields>
                     {text('companyName', 'Company name')}
                     <Field>
                       <FieldLabel htmlFor="cust-displayName">
@@ -201,6 +185,10 @@ export function EditCustomerSheet({
                         </FieldError>
                       )}
                     </Field>
+                  </SheetFields>
+                </SheetSection>
+                <SheetSection title="Contact">
+                  <SheetFields>
                     <Field>
                       <FieldLabel htmlFor="cust-email">Email</FieldLabel>
                       <Input
@@ -219,25 +207,22 @@ export function EditCustomerSheet({
                     {text('fax', 'Fax', { mono: true })}
                     {text('other', 'Other', { mono: true })}
                     {text('website', 'Website')}
-                  </div>
-                </Section>
-                <Section icon={MapPin} title="Addresses">
-                  <p className="text-[13px] font-medium text-foreground">
-                    Billing address
-                  </p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  </SheetFields>
+                </SheetSection>
+                <SheetSection title="Billing address">
+                  <SheetFields>
                     {text('billLine1', 'Street address 1')}
                     {text('billLine2', 'Street address 2')}
                     {text('billCity', 'City')}
                     {text('billState', 'State')}
                     {text('billPostalCode', 'Postal code', { mono: true })}
                     {text('billCountry', 'Country')}
-                  </div>
-                </Section>
-                <Section icon={NotebookPen} title="Notes">
-                  {text('notes', 'Notes')}
-                </Section>
-              </FieldGroup>
+                  </SheetFields>
+                </SheetSection>
+                <SheetSection title="Notes">
+                  {text('notes', 'Notes', { hideLabel: true })}
+                </SheetSection>
+              </div>
             )}
           </div>
           <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">

@@ -3,13 +3,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
+import { SheetFields, SheetSection } from '@/components/billing/sheet-section';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Field,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -159,7 +159,7 @@ export function ProductSheet({
               QuickBooks.
             </SheetDescription>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
             {loadError ? (
               <p className="text-sm text-destructive">
                 {loadError instanceof Error
@@ -174,127 +174,131 @@ export function ProductSheet({
                 ))}
               </div>
             ) : (
-              <FieldGroup className="gap-5">
-                <Field>
-                  <FieldLabel htmlFor="item-name">Name *</FieldLabel>
-                  <Input
-                    id="item-name"
-                    value={current.name}
-                    onChange={(e) => set('name', e.target.value)}
-                    aria-invalid={showErrors && nameMissing}
-                    maxLength={100}
-                  />
-                  {showErrors && nameMissing && (
-                    <FieldError>Name is required.</FieldError>
-                  )}
-                </Field>
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="space-y-8">
+                <SheetSection title="Basic info">
                   <Field>
-                    <FieldLabel htmlFor="item-sku">SKU</FieldLabel>
+                    <FieldLabel htmlFor="item-name">Name *</FieldLabel>
                     <Input
-                      id="item-sku"
-                      value={current.sku}
-                      onChange={(e) => set('sku', e.target.value)}
-                      className="font-mono"
+                      id="item-name"
+                      value={current.name}
+                      onChange={(e) => set('name', e.target.value)}
+                      aria-invalid={showErrors && nameMissing}
                       maxLength={100}
                     />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="item-category">Category</FieldLabel>
-                    <Select
-                      value={current.categoryId || NONE}
-                      onValueChange={(v) =>
-                        set('categoryId', v === NONE ? '' : v)
-                      }
-                    >
-                      <SelectTrigger id="item-category" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>Uncategorized</SelectItem>
-                        {options.data.categories.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-                <Field>
-                  <FieldLabel htmlFor="item-description">
-                    Sales description
-                  </FieldLabel>
-                  {/* QuickBooks keeps plain text here, so a plain input (as
-                      the customer form's Notes). */}
-                  <Input
-                    id="item-description"
-                    value={current.description}
-                    onChange={(e) => set('description', e.target.value)}
-                    maxLength={4000}
-                  />
-                  <FieldDescription>
-                    Printed on invoices under the service&rsquo;s name.
-                  </FieldDescription>
-                </Field>
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="item-price">
-                      Sales price/rate
-                    </FieldLabel>
-                    <Input
-                      id="item-price"
-                      inputMode="decimal"
-                      value={current.price}
-                      onChange={(e) => set('price', e.target.value)}
-                      className="tabular-nums"
-                      aria-invalid={showErrors && priceBad}
-                    />
-                    {showErrors && priceBad && (
-                      <FieldError>That is not a price.</FieldError>
+                    {showErrors && nameMissing && (
+                      <FieldError>Name is required.</FieldError>
                     )}
                   </Field>
-                  <Field>
-                    <FieldLabel htmlFor="item-income">
-                      Income account *
-                    </FieldLabel>
-                    <Select
-                      value={current.incomeAccountId || undefined}
-                      onValueChange={(v) => set('incomeAccountId', v)}
-                    >
-                      <SelectTrigger
-                        id="item-income"
-                        className="w-full"
-                        aria-invalid={showErrors && accountMissing}
+                  <SheetFields>
+                    <Field>
+                      <FieldLabel htmlFor="item-sku">SKU</FieldLabel>
+                      <Input
+                        id="item-sku"
+                        value={current.sku}
+                        onChange={(e) => set('sku', e.target.value)}
+                        className="font-mono"
+                        maxLength={100}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="item-category">Category</FieldLabel>
+                      <Select
+                        value={current.categoryId || NONE}
+                        onValueChange={(v) =>
+                          set('categoryId', v === NONE ? '' : v)
+                        }
                       >
-                        <SelectValue placeholder="Choose an account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {options.data.incomeAccounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {showErrors && accountMissing && (
-                      <FieldError>
-                        Pick the income account it posts to.
-                      </FieldError>
-                    )}
+                        <SelectTrigger id="item-category" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE}>Uncategorized</SelectItem>
+                          {options.data.categories.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </SheetFields>
+                </SheetSection>
+                <SheetSection title="Sales">
+                  <Field>
+                    <FieldLabel htmlFor="item-description">
+                      Sales description
+                    </FieldLabel>
+                    {/* QuickBooks keeps plain text here, so a plain input (as
+                      the customer form's Notes). */}
+                    <Input
+                      id="item-description"
+                      value={current.description}
+                      onChange={(e) => set('description', e.target.value)}
+                      maxLength={4000}
+                    />
+                    <FieldDescription>
+                      Printed on invoices under the service&rsquo;s name.
+                    </FieldDescription>
                   </Field>
-                </div>
-                <Field orientation="horizontal">
-                  <Checkbox
-                    id="item-taxable"
-                    checked={current.taxable}
-                    onCheckedChange={(v) => set('taxable', v === true)}
-                  />
-                  <FieldLabel htmlFor="item-taxable" className="font-normal">
-                    Taxable
-                  </FieldLabel>
-                </Field>
-              </FieldGroup>
+                  <SheetFields>
+                    <Field>
+                      <FieldLabel htmlFor="item-price">
+                        Sales price/rate
+                      </FieldLabel>
+                      <Input
+                        id="item-price"
+                        inputMode="decimal"
+                        value={current.price}
+                        onChange={(e) => set('price', e.target.value)}
+                        className="tabular-nums"
+                        aria-invalid={showErrors && priceBad}
+                      />
+                      {showErrors && priceBad && (
+                        <FieldError>That is not a price.</FieldError>
+                      )}
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="item-income">
+                        Income account *
+                      </FieldLabel>
+                      <Select
+                        value={current.incomeAccountId || undefined}
+                        onValueChange={(v) => set('incomeAccountId', v)}
+                      >
+                        <SelectTrigger
+                          id="item-income"
+                          className="w-full"
+                          aria-invalid={showErrors && accountMissing}
+                        >
+                          <SelectValue placeholder="Choose an account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {options.data.incomeAccounts.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {showErrors && accountMissing && (
+                        <FieldError>
+                          Pick the income account it posts to.
+                        </FieldError>
+                      )}
+                    </Field>
+                  </SheetFields>
+                  <Field orientation="horizontal">
+                    <Checkbox
+                      id="item-taxable"
+                      checked={current.taxable}
+                      onCheckedChange={(v) => set('taxable', v === true)}
+                    />
+                    <FieldLabel htmlFor="item-taxable" className="font-normal">
+                      Taxable
+                    </FieldLabel>
+                  </Field>
+                </SheetSection>
+              </div>
             )}
           </div>
           <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">

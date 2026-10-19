@@ -4,6 +4,7 @@ import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { SheetSection } from '@/components/billing/sheet-section';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
@@ -68,7 +69,7 @@ export function PickCustomerSheet({
         side="right"
         className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
       >
-        <SheetHeader className="shrink-0 gap-1.5 border-b border-border p-5">
+        <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {studentName}
           </p>
@@ -80,59 +81,79 @@ export function PickCustomerSheet({
             invoice and payment of that customer.
           </SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-          <Field>
-            <FieldLabel htmlFor="pick-q">QuickBooks customer</FieldLabel>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="pick-q"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                placeholder="e.g. OBIAS"
-                className="pl-8"
-              />
-            </div>
-            <FieldDescription>At least two letters.</FieldDescription>
-          </Field>
-          {found.isError ? (
-            <p className="text-sm text-destructive">
-              {(found.error as Error).message}
-            </p>
-          ) : q.length < 2 ? null : found.isLoading ||
-            found.isPlaceholderData ? (
-            <p className="text-sm text-muted-foreground">Searching…</p>
-          ) : list.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No QuickBooks customer has “{q}” in their name.
-            </p>
-          ) : (
-            <RadioGroup
-              value={picked}
-              onValueChange={setPicked}
-              className="gap-1.5"
+        <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+          <SheetSection title="Search QuickBooks">
+            <Field>
+              <FieldLabel htmlFor="pick-q" className="sr-only">
+                Customer name
+              </FieldLabel>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="pick-q"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder="e.g. OBIAS"
+                  className="pl-8"
+                />
+              </div>
+              <FieldDescription>At least two letters.</FieldDescription>
+            </Field>
+          </SheetSection>
+          {q.length < 2 ? null : (
+            <SheetSection
+              title="Customers found"
+              aside={
+                !found.isLoading &&
+                !found.isPlaceholderData &&
+                !found.isError ? (
+                  <p className="text-[12px] text-muted-foreground">
+                    {list.length === 1
+                      ? '1 customer'
+                      : `${list.length} customers`}
+                  </p>
+                ) : null
+              }
             >
-              {list.map((c) => (
-                <label
-                  key={c.id}
-                  className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground has-[[data-state=checked]]:border-brand-indigo has-[[data-state=checked]]:bg-brand-indigo/5 has-[[data-disabled]]:opacity-60"
+              {found.isError ? (
+                <p className="text-sm text-destructive">
+                  {(found.error as Error).message}
+                </p>
+              ) : found.isLoading || found.isPlaceholderData ? (
+                <p className="text-sm text-muted-foreground">Searching…</p>
+              ) : list.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No QuickBooks customer has “{q}” in their name.
+                </p>
+              ) : (
+                <RadioGroup
+                  value={picked}
+                  onValueChange={setPicked}
+                  className="gap-1.5"
                 >
-                  <RadioGroupItem
-                    value={c.id}
-                    disabled={!!c.linkedTo && c.linkedTo !== studentNumber}
-                  />
-                  <span className="flex-1">{c.displayName}</span>
-                  {c.linkedTo && c.linkedTo !== studentNumber && (
-                    <Badge variant="secondary" className="h-5">
-                      Linked to {c.linkedTo}
-                    </Badge>
-                  )}
-                </label>
-              ))}
-            </RadioGroup>
+                  {list.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-sm text-foreground has-[[data-state=checked]]:border-brand-indigo has-[[data-state=checked]]:bg-brand-indigo/5 has-[[data-disabled]]:opacity-60"
+                    >
+                      <RadioGroupItem
+                        value={c.id}
+                        disabled={!!c.linkedTo && c.linkedTo !== studentNumber}
+                      />
+                      <span className="flex-1">{c.displayName}</span>
+                      {c.linkedTo && c.linkedTo !== studentNumber && (
+                        <Badge variant="secondary" className="h-5">
+                          Linked to {c.linkedTo}
+                        </Badge>
+                      )}
+                    </label>
+                  ))}
+                </RadioGroup>
+              )}
+            </SheetSection>
           )}
         </div>
-        <SheetFooter className="shrink-0 gap-2 border-t border-border bg-background p-5">
+        <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
           <SheetClose asChild>
             <Button type="button" variant="outline" disabled={link.isPending}>
               Cancel
