@@ -277,11 +277,14 @@ function CustomerFilter({
 export function SalesTable({
   list,
   qbBase,
+  newTransaction,
   initialType = 'all',
 }: {
   list: SalesList;
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
+  /** QuickBooks' New transaction ▾, at the end of the filter row. */
+  newTransaction?: React.ReactNode;
   initialType?: TypeFilter;
 }) {
   const today = React.useMemo(() => todaySg(), []);
@@ -465,7 +468,7 @@ export function SalesTable({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    View in QuickBooks
+                    View
                   </a>
                 </Button>
               </div>
@@ -549,64 +552,68 @@ export function SalesTable({
     [invoiceById, qbBase]
   );
 
+  // QuickBooks' filter row: Type · Date · Customer, after Batch actions.
+  const filters = (
+    <>
+      <FilterSelect
+        id="sales-type"
+        label="Type"
+        value={type}
+        options={TYPE_OPTIONS}
+        onChange={setType}
+        className="w-48"
+      />
+      <FilterSelect
+        id="sales-date"
+        label="Date"
+        value={date}
+        options={DATE_OPTIONS}
+        onChange={setDate}
+        className="w-40"
+      />
+      {date === 'custom' && (
+        <>
+          <div className="space-y-1">
+            <Label
+              htmlFor="sales-from"
+              className="text-[12px] text-muted-foreground"
+            >
+              From
+            </Label>
+            <DatePicker
+              id="sales-from"
+              value={custom.from}
+              onChange={(from) => setCustom((c) => ({ ...c, from }))}
+              placeholder="Any date"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label
+              htmlFor="sales-to"
+              className="text-[12px] text-muted-foreground"
+            >
+              To
+            </Label>
+            <DatePicker
+              id="sales-to"
+              value={custom.to}
+              onChange={(to) => setCustom((c) => ({ ...c, to }))}
+              placeholder="Any date"
+            />
+          </div>
+        </>
+      )}
+      <CustomerFilter
+        customers={list.customers}
+        value={customer}
+        onChange={setCustomer}
+      />
+    </>
+  );
+
   return (
     <>
       <MoneyBar bar={list.bar} active={type} onPick={setType} />
-      <div className="flex flex-wrap items-end gap-3">
-        <FilterSelect
-          id="sales-type"
-          label="Type"
-          value={type}
-          options={TYPE_OPTIONS}
-          onChange={setType}
-          className="w-48"
-        />
-        <FilterSelect
-          id="sales-date"
-          label="Date"
-          value={date}
-          options={DATE_OPTIONS}
-          onChange={setDate}
-          className="w-40"
-        />
-        {date === 'custom' && (
-          <>
-            <div className="space-y-1">
-              <Label
-                htmlFor="sales-from"
-                className="text-[12px] text-muted-foreground"
-              >
-                From
-              </Label>
-              <DatePicker
-                id="sales-from"
-                value={custom.from}
-                onChange={(from) => setCustom((c) => ({ ...c, from }))}
-                placeholder="Any date"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label
-                htmlFor="sales-to"
-                className="text-[12px] text-muted-foreground"
-              >
-                To
-              </Label>
-              <DatePicker
-                id="sales-to"
-                value={custom.to}
-                onChange={(to) => setCustom((c) => ({ ...c, to }))}
-                placeholder="Any date"
-              />
-            </div>
-          </>
-        )}
-        <CustomerFilter
-          customers={list.customers}
-          value={customer}
-          onChange={setCustomer}
-        />
-      </div>
       {rows.length === 0 ? (
         <Card className="py-0">
           <DataTableEmptyState
@@ -619,6 +626,8 @@ export function SalesTable({
         <div className="space-y-2">
           <DataTable<SalesRow>
             data={shown}
+            toolbarFilters={filters}
+            toolbarTrailing={newTransaction}
             columns={columns}
             getRowId={(r) => r.key}
             searchKeys={[
