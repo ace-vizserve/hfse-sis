@@ -265,15 +265,16 @@ const SCANNED = CONVERTED_ROOTS.flatMap((root) =>
  * surface most in need of a pending toast.
  */
 const WRITE_MARKER = /jsonInit\(|method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/;
+// useBulkAction (lib/hooks/use-bulk-action.ts) wraps useWriteAction, so a file
+// using it reports through the same lifecycle.
+const USES_WRITE_HOOK = /useWriteAction|useBulkAction/;
 const writes = SCANNED.filter((f) => WRITE_MARKER.test(f.source));
-const converted = writes.filter((f) => f.source.includes('useWriteAction'));
+const converted = writes.filter((f) => USES_WRITE_HOOK.test(f.source));
 
 describe('every write routes through useWriteAction', () => {
   it('has no unconverted write that is not exempt', () => {
     const unexplained = writes
-      .filter(
-        (f) => !f.source.includes('useWriteAction') && !NOT_CONVERTED[f.file]
-      )
+      .filter((f) => !USES_WRITE_HOOK.test(f.source) && !NOT_CONVERTED[f.file])
       .map((f) => `${f.file} writes but does not use useWriteAction`);
     expect(unexplained).toEqual([]);
   });
@@ -297,9 +298,7 @@ describe('every write routes through useWriteAction', () => {
     // A file that has since converted, moved or stopped writing.
     const stale = Object.keys(NOT_CONVERTED).filter(
       (file) =>
-        !writes.some(
-          (f) => f.file === file && !f.source.includes('useWriteAction')
-        )
+        !writes.some((f) => f.file === file && !USES_WRITE_HOOK.test(f.source))
     );
     expect(stale).toEqual([]);
   });
