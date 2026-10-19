@@ -27,6 +27,7 @@ import type { RetentionStackRow } from '@/components/dashboard/charts/retention-
 import { SparklineChart } from '@/components/dashboard/charts/sparkline-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { BuildingHistoryCard } from '@/components/dashboard/insights/building-history-card';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { RecommendationCallout } from '@/components/dashboard/insights/recommendation-callout';
@@ -603,7 +604,12 @@ export default async function RecordsInsightsPage({
         actions={<ExportCsvButton data={exportData} />}
       />
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <AySwitcher
+          current={selectedAy}
+          options={ayCodes}
+          className="h-9 w-36"
+        />
         <CompareAyPicker
           primaryAy={selectedAy}
           ayCodes={ayCodes}
