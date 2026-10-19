@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, Link2, Search, UserPlus } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Link2, UserPlus } from 'lucide-react';
 
 import { PickCustomerSheet } from '@/components/billing/pick-customer-sheet';
 import {
@@ -21,6 +21,12 @@ import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { ReviewRow } from '@/lib/billing/review.server';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -31,6 +37,18 @@ type Busy = { studentNumber: string; what: string } | null;
 type Bulk = { kind: 'link' | 'add'; rows: ReviewRow[] } | null;
 
 const TAKEN = 'already linked to another student';
+
+// The reason in a few words, for the Why column and its filter; the full
+// sentence shows on hover.
+function whyLabel(reason: string): string {
+  if (reason.startsWith('No QuickBooks customer')) return 'No match';
+  if (reason.startsWith('The matching customer is already linked'))
+    return 'Match already linked';
+  if (reason.startsWith('The typed invoice number'))
+    return 'Invoice under another name';
+  if (reason.startsWith('More than one')) return 'Several matches';
+  return 'Needs a check';
+}
 
 // The one suggestion a bulk Link can use: a student with exactly one
 // customer still free to link. Two or more need a person to choose.
@@ -130,6 +148,25 @@ export function ReviewBoard({
     : [];
   const bulkSkipped = bulk ? bulk.rows.length - bulkTargets.length : 0;
 
+  const linkTo = React.useCallback(
+    (row: ReviewRow, customerId: string, displayName: string) => {
+      setBusy({ studentNumber: row.studentNumber, what: customerId });
+      void run(
+        () =>
+          link.mutateAsync({ studentNumber: row.studentNumber, customerId }),
+        {
+          pending: 'Linking and reading their invoices…',
+          success: (d) =>
+            `${row.name} linked to ${d.displayName ?? displayName}`,
+        }
+      ).finally(() => setBusy(null));
+    },
+    [link, run]
+  );
+
+  // Student · Why (short, a facet) · the QuickBooks customers that could be
+  // theirs, one line each with what QuickBooks holds and its own Link ·
+  // Action: Pick another, ▾ Add to QuickBooks.
   const columns = React.useMemo<ColumnDef<ReviewRow, unknown>[]>(
     () => [
       {
@@ -140,7 +177,7 @@ export function ReviewBoard({
         ),
         meta: { label: 'Student' },
         cell: ({ row }) => (
-          <div className="space-y-0.5">
+          <div className="min-w-52 space-y-0.5">
             <div className="font-medium text-foreground">
               {row.original.name}
             </div>
@@ -154,15 +191,21 @@ export function ReviewBoard({
       },
       {
         id: 'why',
-        accessorFn: (r) => r.reason,
-        header: 'Why',
+        accessorFn: (r) => whyLabel(r.reason),
+        header: ({ column }) => (
+          <SortableHeader column={column}>Why</SortableHeader>
+        ),
         meta: { label: 'Why' },
+        filterFn: (row, id, value: string[]) =>
+          !value?.length || value.includes(row.getValue<string>(id)),
         cell: ({ row }) => (
-          <span className="block min-w-48 text-sm text-muted-foreground">
-            {row.original.reason}
+          <span
+            className="whitespace-nowrap text-sm text-foreground"
+            title={row.original.reason}
+          >
+            {whyLabel(row.original.reason)}
           </span>
         ),
-        enableSorting: false,
       },
       {
         id: 'suggested',
@@ -173,70 +216,59 @@ export function ReviewBoard({
           row.original.candidates.length === 0 ? (
             <span className="text-sm text-muted-foreground">None</span>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {row.original.candidates.map((c) => (
-                <Button
-                  key={c.customerId}
-                  size="sm"
-                  variant="outline"
-                  disabled={!!busy || c.reason === TAKEN}
-                  loading={
-                    busy?.studentNumber === row.original.studentNumber &&
-                    busy.what === c.customerId
-                  }
-                  loadingText="Linking…"
-                  title={
-                    c.reason === TAKEN
-                      ? 'Already linked to another student'
-                      : `Link ${row.original.name} to ${c.displayName}`
-                  }
-                  className="h-auto max-w-72 flex-col items-start gap-0.5 whitespace-normal py-1.5 text-left"
-                  onClick={() => {
-                    setBusy({
-                      studentNumber: row.original.studentNumber,
-                      what: c.customerId,
-                    });
-                    void run(
-                      () =>
-                        link.mutateAsync({
-                          studentNumber: row.original.studentNumber,
-                          customerId: c.customerId,
-                        }),
-                      {
-                        pending: 'Linking and reading their invoices…',
-                        success: (d) =>
-                          `${row.original.name} linked to ${d.displayName}`,
-                      }
-                    ).finally(() => setBusy(null));
-                  }}
-                >
-                  <span className="font-medium text-foreground">
-                    {c.displayName}
-                  </span>
-                  {/* What QuickBooks holds for this candidate, so two
-                      look-alike names can be told apart: the parents, and
-                      the open balance. */}
-                  {c.details ? (
-                    <>
-                      <span className="text-[12px] font-normal text-muted-foreground">
-                        {c.details.companyName ?? 'No parents listed'}
+            <ul className="min-w-80 divide-y divide-hairline">
+              {row.original.candidates.map((c) => {
+                const taken = c.reason === TAKEN;
+                const d = c.details;
+                return (
+                  <li
+                    key={c.customerId}
+                    className="flex items-center gap-4 py-1.5 first:pt-0 last:pb-0"
+                  >
+                    {/* What QuickBooks holds, so look-alike names can be
+                        told apart: the parents and the open balance. */}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {c.displayName}
+                      </div>
+                      <div className="truncate text-[12px] text-muted-foreground">
+                        {d
+                          ? [
+                              d.companyName ?? 'No parents listed',
+                              `${formatSgd(d.balance)} open`,
+                              !d.active && 'Inactive in QuickBooks',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')
+                          : 'Details couldn’t be read'}
+                      </div>
+                    </div>
+                    {taken ? (
+                      <span className="shrink-0 text-[12px] text-muted-foreground">
+                        Linked to another student
                       </span>
-                      <span className="text-[12px] font-normal text-muted-foreground">
-                        {c.reason} · Open balance{' '}
-                        <span className="tabular-nums text-foreground">
-                          {formatSgd(c.details.balance)}
-                        </span>
-                        {!c.details.active && ' · Inactive in QuickBooks'}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-[12px] font-normal text-muted-foreground">
-                      {c.reason} · details couldn&rsquo;t be read
-                    </span>
-                  )}
-                </Button>
-              ))}
-            </div>
+                    ) : (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto shrink-0 p-0"
+                        disabled={!!busy}
+                        loading={
+                          busy?.studentNumber === row.original.studentNumber &&
+                          busy.what === c.customerId
+                        }
+                        loadingText="Linking…"
+                        onClick={() =>
+                          linkTo(row.original, c.customerId, c.displayName)
+                        }
+                      >
+                        Link
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           ),
         enableSorting: false,
       },
@@ -245,40 +277,48 @@ export function ReviewBoard({
         header: () => <div className="text-right">Action</div>,
         meta: { label: 'Action', excludeFromExport: true },
         cell: ({ row }) => (
-          <div className="flex justify-end gap-2 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
             <Button
+              variant="link"
               size="sm"
-              variant="outline"
-              disabled={!!busy || !row.original.newName}
-              loading={
-                busy?.studentNumber === row.original.studentNumber &&
-                busy.what === 'add'
-              }
-              loadingText="Adding…"
-              onClick={() => setAdd(row.original)}
-            >
-              <UserPlus className="size-3.5" />
-              Add to QuickBooks
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
+              className="h-auto p-0"
               disabled={!!busy}
               onClick={() => {
                 setPickKey((k) => k + 1);
                 setPick(row.original);
               }}
             >
-              <Search className="size-3.5" />
               Pick another
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-7"
+                  disabled={!!busy}
+                  aria-label={`More for ${row.original.name}`}
+                >
+                  <ChevronDown className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  disabled={!row.original.newName}
+                  onSelect={() => setAdd(row.original)}
+                >
+                  <UserPlus className="size-4" />
+                  Add to QuickBooks
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ),
         enableSorting: false,
         enableHiding: false,
       },
     ],
-    [busy, link, run]
+    [busy, linkTo]
   );
 
   return (
@@ -311,6 +351,15 @@ export function ReviewBoard({
                 getRowId={(r) => r.studentNumber}
                 searchKeys={[(r) => r.name, (r) => r.studentNumber]}
                 searchPlaceholder="Search name or student number"
+                facets={[
+                  {
+                    columnId: 'why',
+                    label: 'Why',
+                    valueOptions: [
+                      ...new Set(g.rows.map((r) => whyLabel(r.reason))),
+                    ].sort(),
+                  },
+                ]}
                 initialSearch={
                   focus && g.key === focusGroup ? focus : undefined
                 }
