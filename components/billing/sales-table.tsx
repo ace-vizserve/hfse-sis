@@ -2,25 +2,21 @@
 
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  Check,
-  ChevronsUpDown,
-  Download,
-  FileText,
-  Send,
-  X,
-} from 'lucide-react';
+import { Check, ChevronDown, Download, FileText, Send, X } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 import {
-  DATE_OPTIONS,
-  FilterSelect,
   StatusCell,
   dateRange,
   invoiceRow,
   type DateFilter,
   type TxnRow,
 } from '@/components/billing/customer-transactions';
+import {
+  DateRangeFilter,
+  isDateFilter,
+} from '@/components/billing/date-range-filter';
 import {
   InvoiceRowMenu,
   downloadInvoicePdfs,
@@ -42,20 +38,28 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
-import { DatePicker } from '@/components/ui/date-picker';
+import type { StatusTabConfig } from '@/components/ui/data-table/types';
 import { IdentifierLink } from '@/components/ui/identifier-link';
-import { Label } from '@/components/ui/label';
 import {
   Popover,
   PopoverContent,
@@ -68,10 +72,14 @@ import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
 
-// Billing → Sales transactions, laid out as QuickBooks' page: the money bar
-// (each segment filters the list), Type / Date / Customer filters, Date ·
-// Type · No. · Customer · Memo · Amount · Status · Action with QuickBooks'
-// row ▾ and Batch actions (Send, Print), and the Total line under the list.
+// Billing → Sales transactions: QuickBooks' page (its Type list, Date and
+// Customer filters, Date · Type · No. · Customer · Memo · Amount · Status ·
+// Action with the row ▾, Send / Print on ticked invoices, the Total line) in
+// the SIS's table — Type as status tabs, Date and Customer as toolbar chips,
+// the bulk bar in the footer, Total as a card under the list.
+//
+// URL namespace "billing-sales": the page's stat tiles deep-link into the
+// tabs with `?billing-sales.status=overdue`.
 
 export type SalesRow = TxnRow & {
   studentNumber: string;
@@ -80,16 +88,24 @@ export type SalesRow = TxnRow & {
   credit: number;
 };
 
+// QuickBooks' Type list, in its order.
 const TYPE_OPTIONS = [
-  { value: 'all', label: 'All transactions' },
-  { value: 'invoices', label: 'All invoices' },
-  { value: 'open', label: 'Open invoices' },
-  { value: 'overdue', label: 'Overdue invoices' },
-  { value: 'paid', label: 'Paid invoices' },
+  { value: 'all', label: 'All' },
+  { value: 'invoices', label: 'Invoices' },
+  { value: 'open', label: 'Open' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'paid', label: 'Paid' },
   { value: 'payments', label: 'Money received' },
-  { value: 'unapplied', label: 'Unapplied payments' },
+  { value: 'unapplied', label: 'Unapplied' },
 ] as const;
 type TypeFilter = (typeof TYPE_OPTIONS)[number]['value'];
+
+const TYPE_TABS: Array<StatusTabConfig<SalesRow>> = TYPE_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+  predicate: (r: SalesRow) => matches(r, o.value),
+  isDefault: o.value === 'all',
+}));
 
 function matches(r: SalesRow, t: TypeFilter): boolean {
   switch (t) {
@@ -113,6 +129,10 @@ function matches(r: SalesRow, t: TypeFilter): boolean {
   }
 }
 
+/** What the search box looks in — the table's search and the Total. */
+const searchText = (r: SalesRow) =>
+  [r.no ?? '', r.customerName, r.memo ?? '', r.studentNumber].join(' ');
+
 function paymentRow(p: PaymentListRow): SalesRow {
   const unapplied = p.appliedTo.length === 0;
   return {
@@ -135,73 +155,8 @@ function paymentRow(p: PaymentListRow): SalesRow {
   };
 }
 
-/** QuickBooks' money bar on Sales transactions. */
-function MoneyBar({
-  bar,
-  active,
-  onPick,
-}: {
-  bar: SalesList['bar'];
-  active: TypeFilter;
-  onPick: (t: TypeFilter) => void;
-}) {
-  const segs: Array<{
-    type: TypeFilter;
-    value: number;
-    label: string;
-    tone: string;
-  }> = [
-    {
-      type: 'overdue',
-      value: bar.overdue,
-      label: `${bar.overdueCount.toLocaleString('en-SG')} overdue invoices`,
-      tone: 'bg-brand-amber',
-    },
-    {
-      type: 'open',
-      value: bar.open,
-      label: `${bar.openCount.toLocaleString('en-SG')} open invoices and credits`,
-      tone: 'bg-hairline-strong',
-    },
-    {
-      type: 'payments',
-      value: bar.paid,
-      label: `${bar.paidCount.toLocaleString('en-SG')} recently paid`,
-      tone: 'bg-brand-mint',
-    },
-  ];
-  return (
-    <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
-      {segs.map((s) => (
-        <Button
-          key={s.type}
-          variant="ghost"
-          aria-pressed={active === s.type}
-          onClick={() => onPick(active === s.type ? 'all' : s.type)}
-          className={cn(
-            'group block h-auto space-y-2 whitespace-normal rounded-md p-2 text-left font-normal hover:bg-muted/60',
-            active !== 'all' && active !== s.type && 'opacity-50'
-          )}
-        >
-          <span className="block font-serif text-[22px] font-semibold leading-none tabular-nums text-foreground">
-            {formatSgd(s.value)}
-          </span>
-          <span className="block text-[13px] text-muted-foreground">
-            {s.label}
-          </span>
-          <span
-            className={cn(
-              'block h-3 rounded-sm transition-all group-hover:h-4',
-              s.tone,
-              active === s.type && 'h-4'
-            )}
-          />
-        </Button>
-      ))}
-    </div>
-  );
-}
-
+/** QuickBooks' Customer filter as the SIS's dashed toolbar chip: one
+ *  customer at a time, searchable, cleared from inside the list. */
 function CustomerFilter({
   customers,
   value,
@@ -214,83 +169,104 @@ function CustomerFilter({
   const [open, setOpen] = React.useState(false);
   const picked = customers.find((c) => c.studentNumber === value);
   return (
-    <div>
-      <div className="flex items-center gap-1">
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              aria-label="Customer"
-              className="h-8 w-auto max-w-72 justify-between gap-1.5 px-3 text-[13px] font-normal"
-            >
-              <span className="text-muted-foreground">Customer</span>
-              <span className="truncate">{picked ? picked.name : 'All'}</span>
-              <ChevronsUpDown className="size-4 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-0">
-            <Command>
-              <CommandInput placeholder="Search customers" />
-              <CommandList>
-                <CommandEmpty>No customer by that name.</CommandEmpty>
-                {customers.map((c) => (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={picked ? `Customer: ${picked.name}` : 'Customer'}
+          className="h-8 max-w-72 border-dashed"
+        >
+          Customer
+          {picked && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+              <Badge
+                variant="secondary"
+                className="block min-w-0 truncate rounded-sm px-1.5 font-sans text-xs font-normal normal-case tracking-normal"
+              >
+                {picked.name}
+              </Badge>
+            </>
+          )}
+          <ChevronDown className="ml-1 h-3 w-3 opacity-60" aria-hidden />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-0">
+        <Command>
+          <CommandInput placeholder="Search customers" />
+          <CommandList>
+            <CommandEmpty>No customer by that name.</CommandEmpty>
+            <CommandGroup>
+              {customers.map((c) => (
+                <CommandItem
+                  key={c.studentNumber}
+                  value={`${c.name} ${c.studentNumber}`}
+                  onSelect={() => {
+                    onChange(c.studentNumber);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 size-4',
+                      value === c.studentNumber ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <span className="flex-1 truncate">{c.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {value && (
+              <>
+                <CommandSeparator />
+                <CommandGroup>
                   <CommandItem
-                    key={c.studentNumber}
-                    value={`${c.name} ${c.studentNumber}`}
                     onSelect={() => {
-                      onChange(c.studentNumber);
+                      onChange(null);
                       setOpen(false);
                     }}
+                    className="justify-center text-xs"
                   >
-                    <Check
-                      className={cn(
-                        'size-4',
-                        value === c.studentNumber ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                    <span className="flex-1 truncate">{c.name}</span>
+                    <X className="mr-1 h-3 w-3" /> All customers
                   </CommandItem>
-                ))}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        {value && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            aria-label="All customers"
-            onClick={() => onChange(null)}
-          >
-            <X className="size-4" />
-          </Button>
-        )}
-      </div>
-    </div>
+                </CommandGroup>
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 export function SalesTable({
   list,
   qbBase,
-  newTransaction,
-  initialType = 'all',
+  initialDate,
 }: {
   list: SalesList;
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
-  /** QuickBooks' New transaction ▾, at the end of the filter row. */
-  newTransaction?: React.ReactNode;
-  initialType?: TypeFilter;
+  /** The Date filter to open on (`?date=`; a stat tile widens it). */
+  initialDate?: string;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const [type, setType] = React.useState<TypeFilter>(initialType);
-  const [date, setDate] = React.useState<DateFilter>('last-3-months');
+  const [date, setDate] = React.useState<DateFilter>(
+    isDateFilter(initialDate) ? initialDate : 'last-3-months'
+  );
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [customer, setCustomer] = React.useState<string | null>(null);
+  // The table keeps its Type tab and search in the URL (`billing-sales.*`);
+  // the Total under the list reads them from there so it adds up what is
+  // listed, as QuickBooks' Total line does.
+  const params = useSearchParams();
+  const typeParam = params.get('billing-sales.status');
+  const type: TypeFilter =
+    TYPE_OPTIONS.find((o) => o.value === typeParam)?.value ?? 'all';
+  const query = (params.get('billing-sales.q') ?? '').toLowerCase();
   const [confirm, setConfirm] = React.useState<SendableInvoice[] | null>(null);
   const [reset, setReset] = React.useState(0);
   const sendInvoices = useSendInvoices();
@@ -311,33 +287,39 @@ export function SalesTable({
     ],
     [list, today]
   );
+  // Date and Customer are filtered here; Type and search inside the table.
   const shown = React.useMemo(() => {
     const [from, to] = dateRange(date, today, custom);
     return rows.filter((r) => {
-      if (!matches(r, type)) return false;
       if (customer && r.studentNumber !== customer) return false;
       const d = r.date?.slice(0, 10) ?? '';
       if (from && d < from) return false;
       if (to && d > to) return false;
       return true;
     });
-  }, [rows, type, date, custom, customer, today]);
+  }, [rows, date, custom, customer, today]);
   // QuickBooks' Total line: invoices less payments, of what's listed.
   const total = React.useMemo(
     () =>
       Math.round(
-        shown.reduce(
-          (s, r) =>
-            s +
-            (r.kind === 'invoice' && r.statusKey !== 'voided'
-              ? r.amount
-              : r.kind === 'payment'
-                ? -r.amount
-                : 0),
-          0
-        ) * 100
+        shown
+          .filter(
+            (r) =>
+              matches(r, type) &&
+              (!query || searchText(r).toLowerCase().includes(query))
+          )
+          .reduce(
+            (s, r) =>
+              s +
+              (r.kind === 'invoice' && r.statusKey !== 'voided'
+                ? r.amount
+                : r.kind === 'payment'
+                  ? -r.amount
+                  : 0),
+            0
+          ) * 100
       ) / 100,
-    [shown]
+    [shown, type, query]
   );
 
   const columns = React.useMemo<ColumnDef<SalesRow, unknown>[]>(
@@ -554,55 +536,15 @@ export function SalesTable({
     [invoiceById, qbBase]
   );
 
-  // QuickBooks' filter row: Type · Date · Customer, after Batch actions.
+  // QuickBooks' Date and Customer filters, as the SIS's toolbar chips.
   const filters = (
     <>
-      <FilterSelect
-        id="sales-type"
-        label="Type"
-        value={type}
-        options={TYPE_OPTIONS}
-        onChange={setType}
-      />
-      <FilterSelect
-        id="sales-date"
-        label="Date"
+      <DateRangeFilter
         value={date}
-        options={DATE_OPTIONS}
         onChange={setDate}
+        custom={custom}
+        onCustomChange={setCustom}
       />
-      {date === 'custom' && (
-        <>
-          <div className="space-y-1">
-            <Label
-              htmlFor="sales-from"
-              className="text-[12px] text-muted-foreground"
-            >
-              From
-            </Label>
-            <DatePicker
-              id="sales-from"
-              value={custom.from}
-              onChange={(from) => setCustom((c) => ({ ...c, from }))}
-              placeholder="Any date"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label
-              htmlFor="sales-to"
-              className="text-[12px] text-muted-foreground"
-            >
-              To
-            </Label>
-            <DatePicker
-              id="sales-to"
-              value={custom.to}
-              onChange={(to) => setCustom((c) => ({ ...c, to }))}
-              placeholder="Any date"
-            />
-          </div>
-        </>
-      )}
       <CustomerFilter
         customers={list.customers}
         value={customer}
@@ -613,7 +555,6 @@ export function SalesTable({
 
   return (
     <>
-      <MoneyBar bar={list.bar} active={type} onPick={setType} />
       {rows.length === 0 ? (
         <Card className="py-0">
           <DataTableEmptyState
@@ -623,23 +564,18 @@ export function SalesTable({
           />
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4">
           <DataTable<SalesRow>
             data={shown}
             toolbarFilters={filters}
-            toolbarTrailing={newTransaction}
+            statusTabs={TYPE_TABS}
             columns={columns}
             getRowId={(r) => r.key}
-            searchKeys={[
-              (r) => r.no ?? '',
-              (r) => r.customerName,
-              (r) => r.memo ?? '',
-              (r) => r.studentNumber,
-            ]}
+            searchKeys={[searchText]}
+            // The Total below reads the tab and search back from the URL.
             searchPlaceholder="Search no., customer or memo"
             selection={{
               enabled: true,
-              placement: 'menu',
               enableRowSelection: (r) =>
                 r.kind === 'invoice' && r.statusKey !== 'voided',
               bulkActions: [
@@ -681,15 +617,22 @@ export function SalesTable({
             csv={{ filename: 'billing-sales-transactions.csv' }}
             emptyFilteredState={{
               title: 'No transactions match.',
-              body: 'Set Type or Date back, pick All customers, or clear the search.',
+              body: 'Pick All, set Date to Any date, clear Customer, or clear the search.',
             }}
           />
-          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-            <span className="font-semibold text-foreground">Total</span>
-            <span className="font-semibold tabular-nums text-foreground">
-              {formatSgd(total)}
-            </span>
-          </div>
+          <Card className="bg-gradient-to-t from-primary/5 to-card shadow-xs">
+            <CardHeader>
+              <CardTitle className="font-serif text-lg font-semibold tracking-tight">
+                Total
+              </CardTitle>
+              <CardDescription>
+                The invoices listed less the payments listed.
+              </CardDescription>
+              <CardAction className="self-center font-serif text-2xl font-semibold tabular-nums text-foreground">
+                {formatSgd(total)}
+              </CardAction>
+            </CardHeader>
+          </Card>
         </div>
       )}
       <AlertDialog

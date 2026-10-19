@@ -22,6 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { formatDay } from '@/lib/billing/view';
 import { cn } from '@/lib/utils';
 
 export const isDateFilter = (v: string | null | undefined): v is DateFilter =>
@@ -44,9 +45,15 @@ export function DateRangeFilter({
   const [open, setOpen] = React.useState(false);
   const picked = DATE_OPTIONS.find((o) => o.value === value);
   const shown =
-    value === 'custom'
-      ? [custom.from || 'Any date', custom.to || 'Any date'].join(' – ')
-      : picked?.label;
+    value !== 'custom'
+      ? picked?.label
+      : custom.from && custom.to
+        ? `${formatDay(custom.from)} – ${formatDay(custom.to)}`
+        : custom.from
+          ? `From ${formatDay(custom.from)}`
+          : custom.to
+            ? `Until ${formatDay(custom.to)}`
+            : 'Custom';
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -57,7 +64,7 @@ export function DateRangeFilter({
               <span className="mx-1 h-4 w-px bg-border" aria-hidden />
               <Badge
                 variant="secondary"
-                className="rounded-sm px-1.5 font-normal"
+                className="rounded-sm px-1.5 font-sans text-xs font-normal normal-case tracking-normal"
               >
                 {shown}
               </Badge>
