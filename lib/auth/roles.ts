@@ -670,6 +670,10 @@ const BILLING_NAV: NavSection[] = [
       },
     ],
   },
+  {
+    label: 'Admin',
+    items: [{ href: '/billing/audit-log', label: 'Audit Log' }],
+  },
 ];
 
 // SIS admin hub — the system-level admin surface where structural ops live.

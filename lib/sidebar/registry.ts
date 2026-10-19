@@ -235,6 +235,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/billing/banks': Landmark,
       // Mapping, years, payment accounts, connection.
       '/billing/settings': SlidersHorizontal,
+      '/billing/audit-log': ICON_AUDIT_LOG,
     },
     // No quick action — Customers is already the first row.
     quickActionByRole: {},
