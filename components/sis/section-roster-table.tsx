@@ -10,6 +10,10 @@ import { EnrollmentStatusBadge } from '@/components/ui/enrollment-status-badge';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { Button } from '@/components/ui/button';
 import { HoverHint } from '@/components/ui/hover-hint';
+import { BulkSectionPicker } from '@/components/sis/bulk-section-picker';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { MAX_ACTIVE_PER_SECTION } from '@/lib/sis/class-assignment';
 
 import { EnrolmentEditSheet } from '@/components/sis/enrolment-edit-sheet';
 import {
@@ -88,6 +92,32 @@ export function SectionRosterTable({
         })),
     [rows]
   );
+
+  // Bulk Move: the row's own transfer (POST transfer-section) once per ticked
+  // student, with one target class picked for all. Withdrawn students and rows
+  // without an admissions record can't be moved, same as the row's Move button.
+  const bulk = useBulkAction();
+  const [moving, setMoving] = React.useState<SectionRosterRow[] | null>(null);
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  async function moveMany(targetSectionId: string) {
+    const picked = moving ?? [];
+    const targetName =
+      siblings.find((s) => s.id === targetSectionId)?.name ?? 'the new class';
+    setMoving(null);
+    await bulk(picked, {
+      pending: `Moving ${picked.length} ${picked.length === 1 ? 'student' : 'students'}…`,
+      done: (n) => `${n} moved from ${sectionName} to ${targetName}`,
+      failed: 'Could not move',
+      label: (r) => r.studentName,
+      one: (r) =>
+        apiFetch(
+          `/api/sis/students/${encodeURIComponent(r.enroleeNumber ?? '')}/transfer-section?ay=${encodeURIComponent(ayCode)}`,
+          jsonInit('POST', { targetSectionId })
+        ),
+    });
+    setResetSignal((s) => s + 1);
+  }
 
   const columns: ColumnDef<SectionRosterRow>[] = React.useMemo(
     () => [
@@ -387,31 +417,68 @@ export function SectionRosterTable({
   ];
 
   return (
-    <DataTable<SectionRosterRow>
-      data={rows}
-      columns={columns}
-      getRowId={(row) => row.enrolmentId}
-      searchKeys={['studentName', 'studentNumber']}
-      searchPlaceholder="Search student…"
-      statusTabs={statusTabs}
-      // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
-      url={{ enabled: true, namespace: 'roster' }}
-      initialSort={[{ id: 'indexNumber', desc: false }]}
-      initialColumnVisibility={{
-        enrollment_date: false,
-        withdrawal_date: false,
-        termJoined: false,
-      }}
-      hidePagination={true}
-      emptyState={{
-        icon: Users,
-        title: 'No students in this section.',
-        body: 'Students appear here once they’re assigned to this section from Admissions or moved in from another section.',
-      }}
-      emptyFilteredState={{
-        title: 'No students match.',
-        body: 'Try a different tab or clear the search.',
-      }}
-    />
+    <>
+      <DataTable<SectionRosterRow>
+        data={rows}
+        columns={columns}
+        getRowId={(row) => row.enrolmentId}
+        searchKeys={['studentName', 'studentNumber']}
+        searchPlaceholder="Search student…"
+        statusTabs={statusTabs}
+        // Namespaced url-state so filters persist + are shareable; leaves the page's own params untouched (KD #84)
+        url={{ enabled: true, namespace: 'roster' }}
+        initialSort={[{ id: 'indexNumber', desc: false }]}
+        initialColumnVisibility={{
+          enrollment_date: false,
+          withdrawal_date: false,
+          termJoined: false,
+        }}
+        hidePagination={true}
+        selection={{
+          enabled: true,
+          enableRowSelection: (r) =>
+            r.enrollmentStatus !== 'withdrawn' && Boolean(r.enroleeNumber),
+          bulkActions: [
+            {
+              key: 'move',
+              label: 'Move to section',
+              icon: ArrowRightLeft,
+              onTrigger: (picked) => setMoving(picked),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
+        emptyState={{
+          icon: Users,
+          title: 'No students in this section.',
+          body: 'Students appear here once they’re assigned to this section from Admissions or moved in from another section.',
+        }}
+        emptyFilteredState={{
+          title: 'No students match.',
+          body: 'Try a different tab or clear the search.',
+        }}
+      />
+      <BulkSectionPicker
+        open={moving !== null}
+        onOpenChange={(o) => !o && setMoving(null)}
+        title={`Move ${moving?.length ?? 0} ${moving?.length === 1 ? 'student' : 'students'}`}
+        description={
+          <>
+            Currently in <strong>{sectionName}</strong>. Pick a target section
+            at the same level. Each move is atomic: the old enrolment is marked
+            withdrawn and a new active row is created in one step.
+          </>
+        }
+        confirmLabel="Move students"
+        options={siblings.map((s) => ({
+          id: s.id,
+          name: s.name,
+          isAtCapacity: s.isAtCapacity,
+          note: `${s.activeCount}/${MAX_ACTIVE_PER_SECTION}`,
+        }))}
+        emptyText={`No other sections at this level for ${ayCode}.`}
+        onConfirm={moveMany}
+      />
+    </>
   );
 }
