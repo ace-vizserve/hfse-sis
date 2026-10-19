@@ -14,7 +14,11 @@ import {
   readCustomerProfile,
   type CustomerProfile,
 } from '@/lib/billing/live.server';
-import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import type {
+  CreditSource,
+  OpenInvoice,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/maps.server';
 import {
@@ -82,7 +86,7 @@ export type CustomerPage = {
   balances: Balances;
   invoices: InvoiceRowView[];
   payments: PaymentRowView[];
-  openInvoices: Array<OpenInvoice & { items: string }>;
+  openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   maps: MapsData;
@@ -374,6 +378,8 @@ export async function loadCustomerPage(
       txnDate: i.txnDate,
       balance: round2(i.balance),
       items: i.items,
+      dueDate: i.dueDate,
+      total: i.total,
     })),
     credits: toCreditSources(payments),
     depositAccounts: dep,

@@ -23,6 +23,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -35,14 +43,13 @@ import {
   oldestFirst,
   planPayment,
   type CreditSource,
-  type OpenInvoice,
+  type PayableInvoice,
 } from '@/lib/billing/payment-plan';
 import { shouldRenewRequestId } from '@/lib/billing/request-id';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
-import { cn } from '@/lib/utils';
 
 export function RecordPaymentSheet({
   open,
@@ -58,7 +65,7 @@ export function RecordPaymentSheet({
   onOpenChange: (o: boolean) => void;
   studentNumber: string;
   studentName: string;
-  openInvoices: Array<OpenInvoice & { items: string }>;
+  openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   /** 'credit' opens it as Use credit: credit ticked, no new money. */
@@ -171,48 +178,52 @@ export function RecordPaymentSheet({
       return n;
     });
 
+  // Laid out as QuickBooks' Receive Payment: Amount received and the customer
+  // balance top right, Payment date / Reference no. / Deposit to / Amount
+  // received, then Outstanding Transactions. Paid oldest first, up to the
+  // amount, as before.
+  const title = mode === 'credit' ? 'Use credit' : 'Receive Payment';
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-4xl"
       >
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <SheetHeader className="shrink-0 gap-1.5 border-b border-border p-5">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              {studentName}
-            </p>
-            <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
-              {mode === 'credit' ? 'Use credit' : 'Record payment'}
-            </SheetTitle>
-            <SheetDescription>
-              Recorded in QuickBooks first. The SIS saves it once QuickBooks
-              accepts.
-            </SheetDescription>
+          <SheetHeader className="shrink-0 border-b border-border p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4 pr-8">
+              <div className="space-y-1">
+                <SheetTitle className="font-serif text-[24px] leading-tight tracking-tight">
+                  {title}
+                </SheetTitle>
+                <SheetDescription>
+                  Customer:{' '}
+                  <span className="font-medium text-foreground">
+                    {studentName}
+                  </span>
+                </SheetDescription>
+              </div>
+              <div className="text-right">
+                <p className="text-[12px] text-muted-foreground">
+                  Amount received
+                </p>
+                <p className="font-serif text-[30px] font-semibold leading-none tabular-nums text-foreground">
+                  {formatSgd(amountValid ? cash : 0)}
+                </p>
+                <p className="mt-1.5 text-[12px] text-muted-foreground">
+                  Customer balance{' '}
+                  <span className="tabular-nums text-foreground">
+                    {formatSgd(owed)}
+                  </span>
+                </p>
+              </div>
+            </div>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <FieldGroup>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field>
-                  <FieldLabel htmlFor="pay-amount">
-                    Amount received (S$)
-                  </FieldLabel>
-                  <Input
-                    id="pay-amount"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder={
-                      mode === 'credit' ? '0.00 — credit only' : '0.00'
-                    }
-                    className="tabular-nums"
-                  />
-                  {showErrors && !amountValid && (
-                    <FieldError>Enter an amount of 0 or more.</FieldError>
-                  )}
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="pay-date">Date received</FieldLabel>
+                  <FieldLabel htmlFor="pay-date">Payment date</FieldLabel>
                   <DatePicker
                     id="pay-date"
                     value={txnDate}
@@ -220,10 +231,18 @@ export function RecordPaymentSheet({
                     allowClear={false}
                   />
                 </Field>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="pay-account">Paid into</FieldLabel>
+                  <FieldLabel htmlFor="pay-ref">Reference no.</FieldLabel>
+                  <Input
+                    id="pay-ref"
+                    value={reference}
+                    maxLength={21}
+                    onChange={(e) => setReference(e.target.value)}
+                    className="font-mono"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="pay-account">Deposit to</FieldLabel>
                   <Select
                     value={account}
                     onValueChange={setAccount}
@@ -251,15 +270,20 @@ export function RecordPaymentSheet({
                   )}
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="pay-ref">Reference no.</FieldLabel>
+                  <FieldLabel htmlFor="pay-amount">Amount received</FieldLabel>
                   <Input
-                    id="pay-ref"
-                    value={reference}
-                    maxLength={21}
-                    onChange={(e) => setReference(e.target.value)}
-                    placeholder="Bank or card reference"
-                    className="font-mono"
+                    id="pay-amount"
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder={
+                      mode === 'credit' ? '0.00 — credit only' : '0.00'
+                    }
+                    className="tabular-nums"
                   />
+                  {showErrors && !amountValid && (
+                    <FieldError>Enter an amount of 0 or more.</FieldError>
+                  )}
                 </Field>
               </div>
 
@@ -288,56 +312,110 @@ export function RecordPaymentSheet({
                 </label>
               )}
 
-              <Field>
-                <FieldLabel>Pays these invoices</FieldLabel>
-                <FieldDescription>
-                  Oldest first, up to the amount. Untick all to keep the money
-                  as credit on the customer.
-                </FieldDescription>
+              <section className="space-y-2">
+                <h3 className="font-serif text-lg font-semibold tracking-tight text-foreground">
+                  Outstanding Transactions
+                </h3>
                 {invoices.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Nothing is owing. The payment will be kept as credit.
                   </p>
                 ) : (
-                  <div className="space-y-1.5">
-                    {invoices.map((i) => {
-                      const on = ticked.has(i.id);
-                      const pays = applied.get(i.id) ?? 0;
-                      return (
-                        <label
-                          key={i.id}
-                          className={cn(
-                            'grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-border px-3 py-2.5 text-sm',
-                            on && 'border-brand-indigo bg-brand-indigo/5'
-                          )}
-                        >
-                          <Checkbox
-                            checked={on}
-                            onCheckedChange={(v) => toggle(i.id, v === true)}
-                          />
-                          <span className="min-w-0">
-                            <span className="font-mono font-semibold tabular-nums">
-                              {i.docNumber ?? i.id}
-                            </span>
-                            <span className="ml-2 text-muted-foreground">
-                              {i.items}
-                            </span>
-                            <span className="block text-[12px] text-muted-foreground">
-                              {formatDay(i.txnDate)} · owes{' '}
-                              {formatSgd(i.balance)}
-                            </span>
-                          </span>
-                          <span className="text-right tabular-nums">
-                            {on && pays > 0 ? `pays ${formatSgd(pays)}` : '—'}
-                          </span>
-                        </label>
-                      );
-                    })}
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="w-10">
+                            <Checkbox
+                              aria-label="Tick all"
+                              checked={
+                                ticked.size === invoices.length
+                                  ? true
+                                  : ticked.size === 0
+                                    ? false
+                                    : 'indeterminate'
+                              }
+                              onCheckedChange={(v) =>
+                                setTicked(
+                                  v === true
+                                    ? new Set(invoices.map((i) => i.id))
+                                    : new Set()
+                                )
+                              }
+                            />
+                          </TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Due date</TableHead>
+                          <TableHead className="text-right">
+                            Original amount
+                          </TableHead>
+                          <TableHead className="text-right">
+                            Open balance
+                          </TableHead>
+                          <TableHead className="text-right">Payment</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {invoices.map((i) => {
+                          const on = ticked.has(i.id);
+                          const pays = applied.get(i.id) ?? 0;
+                          return (
+                            <TableRow
+                              key={i.id}
+                              data-state={on ? 'selected' : undefined}
+                            >
+                              <TableCell>
+                                <Checkbox
+                                  aria-label={`Pay ${i.docNumber ?? i.id}`}
+                                  checked={on}
+                                  onCheckedChange={(v) =>
+                                    toggle(i.id, v === true)
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell className="min-w-48">
+                                <span>
+                                  Invoice #{' '}
+                                  <span className="font-mono tabular-nums">
+                                    {i.docNumber ?? i.id}
+                                  </span>{' '}
+                                  <span className="tabular-nums text-muted-foreground">
+                                    ({formatDay(i.txnDate)})
+                                  </span>
+                                </span>
+                                <span className="block max-w-64 truncate text-[12px] text-muted-foreground">
+                                  {i.items}
+                                </span>
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap tabular-nums">
+                                {i.dueDate ? formatDay(i.dueDate) : '—'}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {i.total !== undefined
+                                  ? formatSgd(i.total)
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatSgd(i.balance)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {on && pays > 0 ? formatSgd(pays) : ''}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
-              </Field>
+                <p className="text-[12px] text-muted-foreground">
+                  Ticked invoices are paid oldest first, up to the amount
+                  received. Untick all to keep the money as credit on the
+                  customer.
+                </p>
+              </section>
 
-              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-md bg-muted/40 p-3 text-sm">
+              <dl className="ml-auto grid w-full max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
                 {plan.creditUsed > 0 && (
                   <>
                     <dt className="text-muted-foreground">Credit used</dt>
@@ -346,18 +424,13 @@ export function RecordPaymentSheet({
                     </dd>
                   </>
                 )}
-                <dt className="text-muted-foreground">From this payment</dt>
+                <dt className="text-muted-foreground">Amount to apply</dt>
                 <dd className="text-right tabular-nums">
                   {formatSgd(plan.cashApplied)}
                 </dd>
-                <dt className="text-muted-foreground">Left over</dt>
+                <dt className="text-muted-foreground">Amount to credit</dt>
                 <dd className="text-right tabular-nums">
                   {formatSgd(plan.leftover)}
-                  {plan.leftover > 0 && (
-                    <span className="block text-[12px] text-muted-foreground">
-                      stays as credit on the customer
-                    </span>
-                  )}
                 </dd>
               </dl>
               {showErrors && nothingToDo && (
@@ -367,19 +440,19 @@ export function RecordPaymentSheet({
               )}
             </FieldGroup>
           </div>
-          <SheetFooter className="shrink-0 gap-2 border-t border-border bg-background p-5">
+          <SheetFooter className="shrink-0 flex-row justify-between gap-2 border-t border-border bg-background p-5">
             <SheetClose asChild>
-              <Button type="button" variant="outline" disabled={saving}>
+              <Button type="button" variant="ghost" disabled={saving}>
                 Cancel
               </Button>
             </SheetClose>
             <Button
               type="submit"
               loading={saving}
-              loadingText="Saving in QuickBooks…"
+              loadingText="Recording…"
               disabled={saving}
             >
-              {cash > 0 ? 'Record in QuickBooks' : 'Use credit in QuickBooks'}
+              {cash > 0 ? 'Record and close' : 'Use credit and close'}
             </Button>
           </SheetFooter>
         </form>

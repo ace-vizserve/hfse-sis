@@ -13,6 +13,12 @@ export type OpenInvoice = {
   txnDate: string | null;
   balance: number;
 };
+/** An open invoice as the payment form lists it. */
+export type PayableInvoice = OpenInvoice & {
+  items: string;
+  dueDate?: string | null;
+  total?: number;
+};
 export type CreditSource = {
   paymentId: string;
   txnDate: string | null;

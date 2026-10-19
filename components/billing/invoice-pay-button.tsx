@@ -5,14 +5,14 @@ import { useState } from 'react';
 
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
 import { Button } from '@/components/ui/button';
-import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
 
 // The invoice page's primary action: Record payment with only this invoice
 // listed.
 export function InvoicePayButton(props: {
   studentNumber: string;
   studentName: string;
-  invoice: OpenInvoice & { items: string };
+  invoice: PayableInvoice;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
 }) {

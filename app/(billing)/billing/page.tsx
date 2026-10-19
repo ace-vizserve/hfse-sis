@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomersList } from '@/lib/billing/customers.server';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
-import { formatSgd } from '@/lib/qbo/format';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 

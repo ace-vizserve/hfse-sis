@@ -138,6 +138,8 @@ export default async function BillingInvoicePage({
                 txnDate: page.row.txnDate,
                 balance,
                 items: page.row.items,
+                dueDate: page.row.dueDate,
+                total: page.row.total,
               }}
               credits={page.credits}
               depositAccounts={page.depositAccounts}
